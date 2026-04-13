@@ -25,6 +25,8 @@ type BillingPatientRow = BillingPatient & {
 
 type EncounterChargeLine = {
   id: string;
+  encounterId: string;
+  chargeId: string;
   encounterDate: string;
   provider: string;
   appointmentType: string;
@@ -435,7 +437,7 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 }
 
 export default function BillingPage() {
-  const { encountersByNewest } = useEncounterNotes();
+  const { encountersByNewest, removeCharge } = useEncounterNotes();
   const { officeSettings } = useOfficeSettings();
   const { contacts } = useContactDirectory();
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
@@ -530,6 +532,8 @@ export default function BillingPage() {
       .flatMap((encounter) =>
         encounter.charges.map((charge) => ({
           id: `${encounter.id}-${charge.id}`,
+          encounterId: encounter.id,
+          chargeId: charge.id,
           encounterDate: toUsDate(encounter.encounterDate),
           provider: encounter.provider,
           appointmentType: encounter.appointmentType,
@@ -787,6 +791,7 @@ export default function BillingPage() {
                   <th className="px-4 py-3">Un</th>
                   <th className="px-4 py-3">Charge</th>
                   <th className="px-4 py-3">Tax</th>
+                  <th className="px-4 py-3 w-12"></th>
                 </tr>
               </thead>
               <tbody>
@@ -801,11 +806,25 @@ export default function BillingPage() {
                     <td className="px-4 py-3">{line.units}</td>
                     <td className="px-4 py-3">{formatMoney(line.lineTotal)}</td>
                     <td className="px-4 py-3">{formatMoney(0)}</td>
+                    <td className="px-4 py-2">
+                      <button
+                        className="rounded-lg bg-red-500 px-2 py-1 text-xs font-semibold text-white hover:bg-red-600 active:scale-95 print:hidden"
+                        onClick={() => {
+                          if (window.confirm(`Delete "${line.description}" (${line.procedureCode}) from ${line.encounterDate}?`)) {
+                            removeCharge(line.encounterId, line.chargeId);
+                            setMessage(`Removed ${line.procedureCode} - ${line.description}.`);
+                          }
+                        }}
+                        type="button"
+                      >
+                        Del
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {encounterChargeLines.length === 0 && (
                   <tr>
-                    <td className="px-4 py-4 text-sm text-[var(--text-muted)]" colSpan={7}>
+                    <td className="px-4 py-4 text-sm text-[var(--text-muted)]" colSpan={8}>
                       No encounter charges found for this patient.
                     </td>
                   </tr>
