@@ -891,8 +891,14 @@ export async function pushLocalStateToCloud() {
     // even if this client check is bypassed, Postgres will reject the
     // write. This is just the polite first line of defense so we don't
     // round-trip a guaranteed-to-fail upsert.
-    const localKeyCount = countMeaningfulKeys(localSnapshot);
-    const localSize = JSON.stringify(localSnapshot).length;
+    // Exclude encounter notes from the size comparison — they are
+    // intentionally pruned from localStorage (only recent 90 days
+    // cached) and dual-written to their own cloud table separately.
+    const ENCOUNTER_KEY = "casemate.encounter-notes.v1";
+    const localForGuard = { ...localSnapshot };
+    delete localForGuard[ENCOUNTER_KEY];
+    const localKeyCount = countMeaningfulKeys(localForGuard);
+    const localSize = JSON.stringify(localForGuard).length;
 
     let remote: Awaited<ReturnType<typeof fetchRemoteSnapshot>> = null;
     try {
@@ -907,7 +913,8 @@ export async function pushLocalStateToCloud() {
     }
 
     if (remote && remote.snapshot && typeof remote.snapshot === "object") {
-      const remoteSnapshot = remote.snapshot as Record<string, unknown>;
+      const remoteSnapshot = { ...(remote.snapshot as Record<string, unknown>) };
+      delete remoteSnapshot[ENCOUNTER_KEY];
       const remoteSize = JSON.stringify(remoteSnapshot).length;
       const remoteKeyCount = countMeaningfulKeys(remoteSnapshot);
 
