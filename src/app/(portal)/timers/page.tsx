@@ -13,23 +13,20 @@ type CloudTimer = {
   room_color: string;
   label: string;
   total_seconds: number;
-  /** ISO timestamp when the timer will finish (set on start/resume) */
   ends_at: string;
-  /** Seconds remaining when paused (0 = running) */
   paused_remaining: number;
   finished: boolean;
   dismissed: boolean;
 };
 
-type TimerPreset = { id: string; label: string; minutes: number };
+type RoomPreset = { id: string; minutes: number };
 
 type SoundRepeat = "1" | "3" | "5" | "until-off";
 
 /* ─── Constants ─── */
 
 const TABLE = "room_timers";
-const PRESETS_KEY = "casemate.timer-presets.v1";
-const HIDDEN_PRESETS_KEY = "casemate.timer-hidden-presets.v1";
+const ROOM_PRESETS_KEY = "casemate.room-timer-presets.v1";
 const SOUND_REPEAT_KEY = "casemate.timer-sound-repeat.v1";
 const POLL_MS = 2000;
 
@@ -60,47 +57,26 @@ function loadSoundRepeat(): SoundRepeat {
   return "3";
 }
 
-function loadPresets(): TimerPreset[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(PRESETS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (p: unknown): p is TimerPreset =>
-        !!p && typeof p === "object" && "id" in p && "label" in p && "minutes" in p,
-    );
-  } catch {
-    return [];
-  }
-}
+/* ── Per-room presets ── */
 
-function savePresets(presets: TimerPreset[]) {
-  try {
-    window.localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
-  } catch {}
-}
+type RoomPresetsMap = Record<string, RoomPreset[]>;
 
-/** Map of roomId → set of presetIds hidden from that room */
-type HiddenPresetsMap = Record<string, string[]>;
-
-function loadHiddenPresets(): HiddenPresetsMap {
+function loadRoomPresets(): RoomPresetsMap {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(HIDDEN_PRESETS_KEY);
+    const raw = window.localStorage.getItem(ROOM_PRESETS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
-    return parsed as HiddenPresetsMap;
+    return parsed as RoomPresetsMap;
   } catch {
     return {};
   }
 }
 
-function saveHiddenPresets(map: HiddenPresetsMap) {
+function saveRoomPresets(map: RoomPresetsMap) {
   try {
-    window.localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify(map));
+    window.localStorage.setItem(ROOM_PRESETS_KEY, JSON.stringify(map));
   } catch {}
 }
 
@@ -214,11 +190,9 @@ export default function TimersPage() {
   const [finishedBanner, setFinishedBanner] = useState<CloudTimer | null>(null);
   const [customMinutes, setCustomMinutes] = useState<Record<string, string>>({});
   const [soundRepeat, setSoundRepeat] = useState<SoundRepeat>(loadSoundRepeat);
-  const [presets, setPresets] = useState<TimerPreset[]>(loadPresets);
+  const [roomPresets, setRoomPresets] = useState<RoomPresetsMap>(loadRoomPresets);
+  const [addingPresetRoom, setAddingPresetRoom] = useState<string | null>(null);
   const [newPresetMinutes, setNewPresetMinutes] = useState("");
-  const [showPresetEditor, setShowPresetEditor] = useState(false);
-  const [hiddenPresets, setHiddenPresets] = useState<HiddenPresetsMap>(loadHiddenPresets);
-  const [showRestoreRoom, setShowRestoreRoom] = useState<string | null>(null);
 
   const finishedIdsRef = useRef<Set<string>>(new Set());
   const stopChimeRef = useRef<(() => void) | null>(null);
@@ -245,7 +219,6 @@ export default function TimersPage() {
     for (const t of timers) {
       const rem = remainingSeconds(t);
       if (rem <= 0 && !t.finished && t.paused_remaining === 0) {
-        // Mark finished in cloud
         void upsertTimer({ ...t, finished: true });
       }
       if ((t.finished || rem <= 0) && !finishedIdsRef.current.has(t.id)) {
@@ -258,7 +231,6 @@ export default function TimersPage() {
     }
   }, [timers, soundRepeat]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopChimeRef.current?.();
@@ -342,74 +314,41 @@ export default function TimersPage() {
     [customMinutes, startTimer],
   );
 
-  // ── Preset management ──
-  const addPreset = useCallback(() => {
-    const mins = parseFloat(newPresetMinutes);
-    if (!mins || mins <= 0) return;
-    const label = `${mins} min`;
-    const next = [...presets, { id: createId("pre"), label, minutes: mins }];
-    setPresets(next);
-    savePresets(next);
-    setNewPresetMinutes("");
-  }, [newPresetMinutes, presets]);
-
-  const removePreset = useCallback(
-    (presetId: string) => {
-      const next = presets.filter((p) => p.id !== presetId);
-      setPresets(next);
-      savePresets(next);
-      // Also clean up hidden-presets references
-      setHiddenPresets((prev) => {
-        const cleaned = { ...prev };
-        for (const roomId of Object.keys(cleaned)) {
-          cleaned[roomId] = cleaned[roomId].filter((id) => id !== presetId);
-          if (cleaned[roomId].length === 0) delete cleaned[roomId];
-        }
-        saveHiddenPresets(cleaned);
-        return cleaned;
-      });
-    },
-    [presets],
-  );
-
-  const hidePresetFromRoom = useCallback(
-    (roomId: string, presetId: string) => {
-      setHiddenPresets((prev) => {
-        const arr = prev[roomId] ?? [];
-        if (arr.includes(presetId)) return prev;
-        const next = { ...prev, [roomId]: [...arr, presetId] };
-        saveHiddenPresets(next);
-        return next;
-      });
-    },
-    [],
-  );
-
-  const restorePresetToRoom = useCallback(
-    (roomId: string, presetId: string) => {
-      setHiddenPresets((prev) => {
-        const arr = (prev[roomId] ?? []).filter((id) => id !== presetId);
-        const next = { ...prev };
-        if (arr.length === 0) delete next[roomId];
-        else next[roomId] = arr;
-        saveHiddenPresets(next);
-        return next;
-      });
-    },
-    [],
-  );
-
-  const restoreAllPresetsToRoom = useCallback(
+  // ── Per-room preset management ──
+  const addPresetToRoom = useCallback(
     (roomId: string) => {
-      setHiddenPresets((prev) => {
-        const next = { ...prev };
-        delete next[roomId];
-        saveHiddenPresets(next);
-        return next;
-      });
-      setShowRestoreRoom(null);
+      const mins = parseFloat(newPresetMinutes);
+      if (!mins || mins <= 0) return;
+      const current = roomPresets[roomId] ?? [];
+      // Don't add duplicate minutes
+      if (current.some((p) => p.minutes === mins)) {
+        setNewPresetMinutes("");
+        setAddingPresetRoom(null);
+        return;
+      }
+      const next: RoomPresetsMap = {
+        ...roomPresets,
+        [roomId]: [...current, { id: createId("rp"), minutes: mins }],
+      };
+      setRoomPresets(next);
+      saveRoomPresets(next);
+      setNewPresetMinutes("");
+      setAddingPresetRoom(null);
     },
-    [],
+    [newPresetMinutes, roomPresets],
+  );
+
+  const removePresetFromRoom = useCallback(
+    (roomId: string, presetId: string) => {
+      const current = roomPresets[roomId] ?? [];
+      const filtered = current.filter((p) => p.id !== presetId);
+      const next: RoomPresetsMap = { ...roomPresets };
+      if (filtered.length === 0) delete next[roomId];
+      else next[roomId] = filtered;
+      setRoomPresets(next);
+      saveRoomPresets(next);
+    },
+    [roomPresets],
   );
 
   // Group timers by room
@@ -468,80 +407,25 @@ export default function TimersPage() {
               Timers sync across all your devices. Set on desktop, dismiss on tablet.
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-[var(--text-muted)]">Sound Repeat</span>
-              <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                value={soundRepeat}
-                onChange={(e) => {
-                  const v = e.target.value as SoundRepeat;
-                  setSoundRepeat(v);
-                  try { window.localStorage.setItem(SOUND_REPEAT_KEY, v); } catch {}
-                }}
-              >
-                <option value="1">1 time</option>
-                <option value="3">3 times</option>
-                <option value="5">5 times</option>
-                <option value="until-off">Until dismissed</option>
-              </select>
-            </label>
-            <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
-              onClick={() => setShowPresetEditor(!showPresetEditor)}
-              type="button"
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold text-[var(--text-muted)]">Sound Repeat</span>
+            <select
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+              value={soundRepeat}
+              onChange={(e) => {
+                const v = e.target.value as SoundRepeat;
+                setSoundRepeat(v);
+                try { window.localStorage.setItem(SOUND_REPEAT_KEY, v); } catch {}
+              }}
             >
-              {showPresetEditor ? "Hide Presets" : "Edit Presets"}
-            </button>
-          </div>
+              <option value="1">1 time</option>
+              <option value="3">3 times</option>
+              <option value="5">5 times</option>
+              <option value="until-off">Until dismissed</option>
+            </select>
+          </label>
         </div>
       </section>
-
-      {/* ── Preset Editor ── */}
-      {showPresetEditor && (
-        <section className="panel-card p-4">
-          <h3 className="text-base font-semibold">My Timer Presets</h3>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Create quick-start presets. They appear on all rooms — hover and tap × to hide from specific rooms.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input
-              className="w-24 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              inputMode="decimal"
-              onChange={(e) => setNewPresetMinutes(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") addPreset(); }}
-              placeholder="Minutes"
-              value={newPresetMinutes}
-            />
-            <button
-              className="rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-95"
-              onClick={addPreset}
-              type="button"
-            >
-              Add
-            </button>
-          </div>
-          {presets.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {presets.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center gap-1.5 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1"
-                >
-                  <span className="text-sm font-semibold">{p.minutes} min</span>
-                  <button
-                    className="ml-1 text-xs text-red-400 hover:text-red-600"
-                    onClick={() => removePreset(p.id)}
-                    type="button"
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
 
       {/* ── No Rooms ── */}
       {activeRooms.length === 0 && (
@@ -560,6 +444,9 @@ export default function TimersPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {activeRooms.map((room) => {
           const roomTimers = timersByRoom.get(room.id) ?? [];
+          const myPresets = roomPresets[room.id] ?? [];
+          const isAddingPreset = addingPresetRoom === room.id;
+
           return (
             <section key={room.id} className="panel-card overflow-hidden">
               {/* Room header */}
@@ -579,72 +466,85 @@ export default function TimersPage() {
               </div>
 
               <div className="space-y-3 p-4">
-                {/* Preset buttons */}
-                {(() => {
-                  const roomHidden = hiddenPresets[room.id] ?? [];
-                  const visible = presets.filter((p) => !roomHidden.includes(p.id));
-                  const hiddenList = presets.filter((p) => roomHidden.includes(p.id));
-                  const hasHidden = hiddenList.length > 0;
-                  return (visible.length > 0 || hasHidden) ? (
-                    <div className="space-y-1.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {visible.map((preset) => (
-                          <span key={preset.id} className="group relative inline-flex">
-                            <button
-                              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
-                              onClick={() =>
-                                void startTimer(room.id, room.name, room.color, Math.round(preset.minutes * 60), preset.label)
-                              }
-                              type="button"
-                            >
-                              {preset.minutes} min
-                            </button>
-                            <button
-                              className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-red-400 text-[10px] leading-none text-white shadow group-hover:flex"
-                              onClick={() => hidePresetFromRoom(room.id, preset.id)}
-                              title="Hide from this room"
-                              type="button"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                        {hasHidden && (
-                          <button
-                            className="rounded-lg border border-dashed border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-muted)] transition-all hover:bg-[var(--bg-soft)] active:scale-95"
-                            onClick={() => setShowRestoreRoom(showRestoreRoom === room.id ? null : room.id)}
-                            type="button"
-                            title="Restore hidden presets"
-                          >
-                            + {hiddenList.length} hidden
-                          </button>
-                        )}
-                      </div>
-                      {showRestoreRoom === room.id && hiddenList.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
-                          <span className="text-[10px] font-semibold uppercase text-[var(--text-muted)]">Restore:</span>
-                          {hiddenList.map((p) => (
-                            <button
-                              key={p.id}
-                              className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold transition-all hover:bg-emerald-50 active:scale-95"
-                              onClick={() => restorePresetToRoom(room.id, p.id)}
-                              type="button"
-                            >
-                              + {p.minutes} min
-                            </button>
-                          ))}
-                          <button
-                            className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-all active:scale-95"
-                            onClick={() => restoreAllPresetsToRoom(room.id)}
-                            type="button"
-                          >
-                            Restore All
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : null;
-                })()}
+                {/* Room presets + add button */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {myPresets.map((preset) => (
+                    <span key={preset.id} className="group relative inline-flex">
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
+                        onClick={() =>
+                          void startTimer(
+                            room.id,
+                            room.name,
+                            room.color,
+                            Math.round(preset.minutes * 60),
+                            `${preset.minutes} min`,
+                          )
+                        }
+                        type="button"
+                      >
+                        {preset.minutes} min
+                      </button>
+                      <button
+                        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-400 text-[10px] leading-none text-white opacity-0 shadow transition-opacity group-hover:opacity-100"
+                        onClick={() => removePresetFromRoom(room.id, preset.id)}
+                        title="Remove preset"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+
+                  {/* Add preset inline */}
+                  {isAddingPreset ? (
+                    <span className="inline-flex items-center gap-1">
+                      <input
+                        autoFocus
+                        className="w-16 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs"
+                        inputMode="decimal"
+                        onChange={(e) => setNewPresetMinutes(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addPresetToRoom(room.id);
+                          if (e.key === "Escape") {
+                            setAddingPresetRoom(null);
+                            setNewPresetMinutes("");
+                          }
+                        }}
+                        placeholder="Min"
+                        value={newPresetMinutes}
+                      />
+                      <button
+                        className="rounded-lg bg-[var(--brand-primary)] px-2 py-1.5 text-xs font-semibold text-white active:scale-95"
+                        onClick={() => addPresetToRoom(room.id)}
+                        type="button"
+                      >
+                        Add
+                      </button>
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)] active:scale-95"
+                        onClick={() => {
+                          setAddingPresetRoom(null);
+                          setNewPresetMinutes("");
+                        }}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className="rounded-lg border border-dashed border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-muted)] transition-all hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)] active:scale-95"
+                      onClick={() => {
+                        setAddingPresetRoom(room.id);
+                        setNewPresetMinutes("");
+                      }}
+                      type="button"
+                    >
+                      + Preset
+                    </button>
+                  )}
+                </div>
 
                 {/* Custom timer */}
                 <div className="flex gap-1.5">
