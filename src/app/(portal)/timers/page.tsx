@@ -429,13 +429,48 @@ export default function TimersPage() {
 
       {/* ── No Rooms ── */}
       {activeRooms.length === 0 && (
-        <section className="panel-card p-6 text-center">
+        <section className="panel-card p-6 text-center space-y-3">
           <p className="text-sm text-[var(--text-muted)]">
-            No rooms configured. Go to{" "}
+            No rooms found on this device. If you configured rooms on another device, tap Sync to pull them.
+          </p>
+          <button
+            className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-all active:scale-95"
+            onClick={async () => {
+              try {
+                const { fetchAllKvValues } = await import("@/lib/kv-cloud");
+                const kv = await fetchAllKvValues();
+                if (!kv) {
+                  alert("Could not reach the cloud. Check your connection.");
+                  return;
+                }
+                const roomsKey = "casemate.schedule-rooms.v1";
+                const val = kv.get(roomsKey);
+                if (val) {
+                  window.localStorage.setItem(roomsKey, JSON.stringify(val));
+                  // Also pull appointment types and schedule settings
+                  const typesVal = kv.get("casemate.schedule-appointment-types.v1");
+                  if (typesVal) window.localStorage.setItem("casemate.schedule-appointment-types.v1", JSON.stringify(typesVal));
+                  const settingsVal = kv.get("casemate.schedule-settings.v1");
+                  if (settingsVal) window.localStorage.setItem("casemate.schedule-settings.v1", JSON.stringify(settingsVal));
+                  window.location.reload();
+                } else {
+                  const wsId = window.localStorage.getItem("casemate.active-workspace-id.v1") || "(empty)";
+                  alert(`No rooms found in cloud for workspace: ${wsId}\n\nKV keys found: ${kv.size}\n\nMake sure rooms are set up in Settings on your desktop.`);
+                }
+              } catch (err) {
+                alert(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            type="button"
+          >
+            Sync Rooms from Cloud
+          </button>
+          <p className="text-xs text-[var(--text-muted)]">
+            Or go to{" "}
             <a href="/settings" className="font-semibold text-[var(--brand-primary)] underline">
               Settings
             </a>{" "}
-            to set up your rooms first.
+            to set up rooms on this device.
           </p>
         </section>
       )}
