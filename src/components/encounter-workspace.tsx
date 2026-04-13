@@ -1492,23 +1492,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       setMessage("Treatment not found.");
       return;
     }
-    // If this treatment is already on the encounter, bump units instead of adding a duplicate
-    const existing = selectedEncounter.charges.find(
-      (c) => c.procedureCode.toUpperCase() === treatment.procedureCode.toUpperCase(),
-    );
-    if (existing) {
-      updateCharge(selectedEncounter.id, existing.id, { units: existing.units + treatment.defaultUnits });
-      setMessage(`Increased "${treatment.name}" units to ${existing.units + treatment.defaultUnits}.`);
-      return;
-    }
-    const added = addCharge(selectedEncounter.id, {
+    const chargeInput = {
       treatmentMacroId: treatment.id,
       name: treatment.name,
       procedureCode: treatment.procedureCode,
       unitPrice: treatment.unitPrice,
       units: treatment.defaultUnits,
-    });
-    setMessage(added ? "Treatment added to encounter charges." : "Unable to add treatment.");
+    };
+    // First attempt without bumping — detect duplicate
+    const result = addCharge(selectedEncounter.id, chargeInput);
+    if (result === "duplicate") {
+      if (window.confirm(`"${treatment.name}" is already added. Add another unit?`)) {
+        addCharge(selectedEncounter.id, chargeInput, { bumpIfDuplicate: true });
+        setMessage(`Added unit to "${treatment.name}".`);
+      }
+      return;
+    }
+    setMessage(result === "added" ? "Treatment added to encounter charges." : "Unable to add treatment.");
   };
 
   const encounterChargeTotal = useMemo(() => {
@@ -1871,6 +1871,44 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     </div>
                   </div>
                 )}
+
+                {/* Encounter Warnings */}
+                {filteredEncounterList.length > 0 && (() => {
+                  const warnings: Array<{ encId: string; date: string; issues: string[] }> = [];
+                  for (const enc of filteredEncounterList) {
+                    const issues: string[] = [];
+                    if (!enc.soap.subjective.trim()) issues.push("S");
+                    if (!enc.soap.objective.trim()) issues.push("O");
+                    if (!enc.soap.assessment.trim()) issues.push("A");
+                    if (!enc.soap.plan.trim()) issues.push("P");
+                    if (enc.charges.length === 0) issues.push("No Charges");
+                    if (issues.length > 0 && !enc.signed) {
+                      warnings.push({ encId: enc.id, date: enc.encounterDate, issues });
+                    }
+                  }
+                  if (warnings.length === 0) return null;
+                  return (
+                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Encounter Warnings</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {warnings.map((w) => (
+                          <li key={w.encId} className="flex items-center gap-2 text-xs text-amber-800">
+                            <button
+                              type="button"
+                              className="font-semibold underline hover:text-amber-900"
+                              onClick={() => setSelectedEncounterId(w.encId)}
+                            >
+                              {w.date}
+                            </button>
+                            <span className="text-amber-600">
+                              Missing: {w.issues.join(", ")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
 
                 {allPatientAppointments.length === 0 && filteredEncounterList.length === 0 && normalizeLookupText(encounterSearch) && (
                   <p className="mt-3 text-sm text-[var(--text-muted)]">No appointments or encounters found.</p>

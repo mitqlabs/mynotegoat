@@ -337,28 +337,58 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
+  /**
+   * Add a charge. Returns "added" | "bumped" | "duplicate" | false.
+   * - "added": new charge added
+   * - "bumped": existing charge found, units increased
+   * - "duplicate": existing charge found but caller should confirm
+   * - false: invalid input
+   *
+   * Pass `bumpIfDuplicate: true` to auto-bump units on duplicates.
+   */
   const addCharge = useCallback(
-    (encounterId: string, input: Omit<EncounterChargeEntry, "id">) => {
+    (encounterId: string, input: Omit<EncounterChargeEntry, "id">, options?: { bumpIfDuplicate?: boolean }): "added" | "bumped" | "duplicate" | false => {
       const name = input.name.trim();
       const procedureCode = input.procedureCode.trim().toUpperCase();
       if (!name || !procedureCode) {
         return false;
       }
-      upsertEncounter(encounterId, (current) => ({
-        ...current,
-        charges: [
-          ...current.charges,
-          {
-            id: createEncounterChargeId(),
-            treatmentMacroId: input.treatmentMacroId,
-            name,
-            procedureCode,
-            unitPrice: Math.max(0, Number(input.unitPrice) || 0),
-            units: Math.max(1, Math.round(Number(input.units) || 1)),
-          },
-        ],
-      }));
-      return true;
+      let result: "added" | "bumped" | "duplicate" = "added";
+      const unitsToAdd = Math.max(1, Math.round(Number(input.units) || 1));
+      upsertEncounter(encounterId, (current) => {
+        const existing = current.charges.find(
+          (c) => c.procedureCode.toUpperCase() === procedureCode,
+        );
+        if (existing) {
+          if (options?.bumpIfDuplicate) {
+            result = "bumped";
+            return {
+              ...current,
+              charges: current.charges.map((c) =>
+                c.id === existing.id ? { ...c, units: c.units + unitsToAdd } : c,
+              ),
+            };
+          }
+          result = "duplicate";
+          return current; // no change — let caller decide
+        }
+        result = "added";
+        return {
+          ...current,
+          charges: [
+            ...current.charges,
+            {
+              id: createEncounterChargeId(),
+              treatmentMacroId: input.treatmentMacroId,
+              name,
+              procedureCode,
+              unitPrice: Math.max(0, Number(input.unitPrice) || 0),
+              units: unitsToAdd,
+            },
+          ],
+        };
+      });
+      return result;
     },
     [upsertEncounter],
   );
