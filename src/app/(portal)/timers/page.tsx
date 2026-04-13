@@ -29,6 +29,7 @@ type SoundRepeat = "1" | "3" | "5" | "until-off";
 
 const TABLE = "room_timers";
 const PRESETS_KEY = "casemate.timer-presets.v1";
+const HIDDEN_PRESETS_KEY = "casemate.timer-hidden-presets.v1";
 const SOUND_REPEAT_KEY = "casemate.timer-sound-repeat.v1";
 const POLL_MS = 2000;
 
@@ -78,6 +79,28 @@ function loadPresets(): TimerPreset[] {
 function savePresets(presets: TimerPreset[]) {
   try {
     window.localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+  } catch {}
+}
+
+/** Map of roomId → set of presetIds hidden from that room */
+type HiddenPresetsMap = Record<string, string[]>;
+
+function loadHiddenPresets(): HiddenPresetsMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_PRESETS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as HiddenPresetsMap;
+  } catch {
+    return {};
+  }
+}
+
+function saveHiddenPresets(map: HiddenPresetsMap) {
+  try {
+    window.localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify(map));
   } catch {}
 }
 
@@ -194,6 +217,8 @@ export default function TimersPage() {
   const [presets, setPresets] = useState<TimerPreset[]>(loadPresets);
   const [newPresetMinutes, setNewPresetMinutes] = useState("");
   const [showPresetEditor, setShowPresetEditor] = useState(false);
+  const [hiddenPresets, setHiddenPresets] = useState<HiddenPresetsMap>(loadHiddenPresets);
+  const [showRestoreRoom, setShowRestoreRoom] = useState<string | null>(null);
 
   const finishedIdsRef = useRef<Set<string>>(new Set());
   const stopChimeRef = useRef<(() => void) | null>(null);
@@ -333,8 +358,58 @@ export default function TimersPage() {
       const next = presets.filter((p) => p.id !== presetId);
       setPresets(next);
       savePresets(next);
+      // Also clean up hidden-presets references
+      setHiddenPresets((prev) => {
+        const cleaned = { ...prev };
+        for (const roomId of Object.keys(cleaned)) {
+          cleaned[roomId] = cleaned[roomId].filter((id) => id !== presetId);
+          if (cleaned[roomId].length === 0) delete cleaned[roomId];
+        }
+        saveHiddenPresets(cleaned);
+        return cleaned;
+      });
     },
     [presets],
+  );
+
+  const hidePresetFromRoom = useCallback(
+    (roomId: string, presetId: string) => {
+      setHiddenPresets((prev) => {
+        const arr = prev[roomId] ?? [];
+        if (arr.includes(presetId)) return prev;
+        const next = { ...prev, [roomId]: [...arr, presetId] };
+        saveHiddenPresets(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const restorePresetToRoom = useCallback(
+    (roomId: string, presetId: string) => {
+      setHiddenPresets((prev) => {
+        const arr = (prev[roomId] ?? []).filter((id) => id !== presetId);
+        const next = { ...prev };
+        if (arr.length === 0) delete next[roomId];
+        else next[roomId] = arr;
+        saveHiddenPresets(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const restoreAllPresetsToRoom = useCallback(
+    (roomId: string) => {
+      setHiddenPresets((prev) => {
+        const next = { ...prev };
+        delete next[roomId];
+        saveHiddenPresets(next);
+        return next;
+      });
+      setShowRestoreRoom(null);
+    },
+    [],
   );
 
   // Group timers by room
@@ -427,7 +502,7 @@ export default function TimersPage() {
         <section className="panel-card p-4">
           <h3 className="text-base font-semibold">My Timer Presets</h3>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Create quick-start presets that appear on every room card.
+            Create quick-start presets. They appear on all rooms — hover and tap × to hide from specific rooms.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
@@ -505,22 +580,71 @@ export default function TimersPage() {
 
               <div className="space-y-3 p-4">
                 {/* Preset buttons */}
-                {presets.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {presets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
-                        onClick={() =>
-                          void startTimer(room.id, room.name, room.color, Math.round(preset.minutes * 60), preset.label)
-                        }
-                        type="button"
-                      >
-                        {preset.minutes} min
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {(() => {
+                  const roomHidden = hiddenPresets[room.id] ?? [];
+                  const visible = presets.filter((p) => !roomHidden.includes(p.id));
+                  const hiddenList = presets.filter((p) => roomHidden.includes(p.id));
+                  const hasHidden = hiddenList.length > 0;
+                  return (visible.length > 0 || hasHidden) ? (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {visible.map((preset) => (
+                          <span key={preset.id} className="group relative inline-flex">
+                            <button
+                              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
+                              onClick={() =>
+                                void startTimer(room.id, room.name, room.color, Math.round(preset.minutes * 60), preset.label)
+                              }
+                              type="button"
+                            >
+                              {preset.minutes} min
+                            </button>
+                            <button
+                              className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-red-400 text-[10px] leading-none text-white shadow group-hover:flex"
+                              onClick={() => hidePresetFromRoom(room.id, preset.id)}
+                              title="Hide from this room"
+                              type="button"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        {hasHidden && (
+                          <button
+                            className="rounded-lg border border-dashed border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-muted)] transition-all hover:bg-[var(--bg-soft)] active:scale-95"
+                            onClick={() => setShowRestoreRoom(showRestoreRoom === room.id ? null : room.id)}
+                            type="button"
+                            title="Restore hidden presets"
+                          >
+                            + {hiddenList.length} hidden
+                          </button>
+                        )}
+                      </div>
+                      {showRestoreRoom === room.id && hiddenList.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+                          <span className="text-[10px] font-semibold uppercase text-[var(--text-muted)]">Restore:</span>
+                          {hiddenList.map((p) => (
+                            <button
+                              key={p.id}
+                              className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold transition-all hover:bg-emerald-50 active:scale-95"
+                              onClick={() => restorePresetToRoom(room.id, p.id)}
+                              type="button"
+                            >
+                              + {p.minutes} min
+                            </button>
+                          ))}
+                          <button
+                            className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-all active:scale-95"
+                            onClick={() => restoreAllPresetsToRoom(room.id)}
+                            type="button"
+                          >
+                            Restore All
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Custom timer */}
                 <div className="flex gap-1.5">
