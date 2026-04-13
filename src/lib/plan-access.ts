@@ -9,6 +9,7 @@ export type PortalFeature =
   | "keyDates"
   | "myFiles"
   | "billing"
+  | "timers"
   | "settings";
 
 export type PortalNavItem = {
@@ -26,6 +27,7 @@ export const portalNavItems: PortalNavItem[] = [
   { href: "/key-dates", label: "Key Dates", feature: "keyDates" },
   { href: "/my-files", label: "My Files", feature: "myFiles" },
   { href: "/billing", label: "Billing", feature: "billing" },
+  { href: "/timers", label: "Timers", feature: "timers" },
   { href: "/settings", label: "Settings", feature: "settings" },
 ];
 
@@ -36,6 +38,7 @@ const planFeatureMap: Record<PlanTier, PortalFeature[]> = {
     "contacts",
     "keyDates",
     "myFiles",
+    "timers",
     "settings",
   ],
   track_schedule: [
@@ -45,6 +48,7 @@ const planFeatureMap: Record<PlanTier, PortalFeature[]> = {
     "appointments",
     "keyDates",
     "myFiles",
+    "timers",
     "settings",
   ],
   complete: [
@@ -56,6 +60,7 @@ const planFeatureMap: Record<PlanTier, PortalFeature[]> = {
     "keyDates",
     "myFiles",
     "billing",
+    "timers",
     "settings",
   ],
 };
@@ -124,6 +129,9 @@ export function resolvePortalFeatureFromPath(pathname: string): PortalFeature | 
   }
   if (pathname.startsWith("/billing")) {
     return "billing";
+  }
+  if (pathname.startsWith("/timers")) {
+    return "timers";
   }
   if (pathname.startsWith("/settings")) {
     return "settings";
