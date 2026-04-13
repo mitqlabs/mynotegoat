@@ -313,7 +313,6 @@ export function EditAppointmentModal({
                 return (
                   <option key={`edit-status-${option}`} disabled={disabled} value={option}>
                     {formatAppointmentStatusLabel(option)}
-                    {disabled ? " (requires Checked In first)" : ""}
                   </option>
                 );
               })}

@@ -4474,7 +4474,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                         value={status}
                                       >
                                         {formatAppointmentStatusLabel(status)}
-                                        {disabled ? " (requires Checked In first)" : ""}
                                       </option>
                                     );
                                   })}

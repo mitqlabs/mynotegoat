@@ -2124,7 +2124,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                             value={option}
                           >
                             {formatAppointmentStatusLabel(option)}
-                            {disabled ? " (requires Checked In first)" : ""}
                           </option>
                         );
                       })}
