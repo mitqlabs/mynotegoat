@@ -192,7 +192,6 @@ export default function TimersPage() {
   const [customMinutes, setCustomMinutes] = useState<Record<string, string>>({});
   const [soundRepeat, setSoundRepeat] = useState<SoundRepeat>(loadSoundRepeat);
   const [presets, setPresets] = useState<TimerPreset[]>(loadPresets);
-  const [newPresetLabel, setNewPresetLabel] = useState("");
   const [newPresetMinutes, setNewPresetMinutes] = useState("");
   const [showPresetEditor, setShowPresetEditor] = useState(false);
 
@@ -320,15 +319,14 @@ export default function TimersPage() {
 
   // ── Preset management ──
   const addPreset = useCallback(() => {
-    const label = newPresetLabel.trim();
     const mins = parseFloat(newPresetMinutes);
-    if (!label || !mins || mins <= 0) return;
+    if (!mins || mins <= 0) return;
+    const label = `${mins} min`;
     const next = [...presets, { id: createId("pre"), label, minutes: mins }];
     setPresets(next);
     savePresets(next);
-    setNewPresetLabel("");
     setNewPresetMinutes("");
-  }, [newPresetLabel, newPresetMinutes, presets]);
+  }, [newPresetMinutes, presets]);
 
   const removePreset = useCallback(
     (presetId: string) => {
@@ -431,13 +429,7 @@ export default function TimersPage() {
           <p className="mt-1 text-xs text-[var(--text-muted)]">
             Create quick-start presets that appear on every room card.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <input
-              className="w-36 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              onChange={(e) => setNewPresetLabel(e.target.value)}
-              placeholder="Label (e.g. Decompression)"
-              value={newPresetLabel}
-            />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               className="w-24 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
               inputMode="decimal"
@@ -451,7 +443,7 @@ export default function TimersPage() {
               onClick={addPreset}
               type="button"
             >
-              Add Preset
+              Add
             </button>
           </div>
           {presets.length > 0 && (
@@ -461,8 +453,7 @@ export default function TimersPage() {
                   key={p.id}
                   className="flex items-center gap-1.5 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1"
                 >
-                  <span className="text-sm font-semibold">{p.label}</span>
-                  <span className="text-xs text-[var(--text-muted)]">{p.minutes}m</span>
+                  <span className="text-sm font-semibold">{p.minutes} min</span>
                   <button
                     className="ml-1 text-xs text-red-400 hover:text-red-600"
                     onClick={() => removePreset(p.id)}
@@ -525,7 +516,7 @@ export default function TimersPage() {
                         }
                         type="button"
                       >
-                        {preset.label} ({preset.minutes}m)
+                        {preset.minutes} min
                       </button>
                     ))}
                   </div>
