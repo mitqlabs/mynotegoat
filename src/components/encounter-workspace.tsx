@@ -1725,6 +1725,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Type</th>
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Status</th>
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Enc.</th>
+                            <th className="w-6 px-1 py-1"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1825,6 +1826,27 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                     </button>
                                   ) : (
                                     <span className="text-xs text-[var(--text-muted)]">-</span>
+                                  )}
+                                </td>
+                                <td className="px-1 py-1.5 text-center">
+                                  {linked && (
+                                    <button
+                                      className="rounded p-0.5 text-[10px] text-red-400 hover:bg-red-50 hover:text-red-600 active:scale-90"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`)) {
+                                          deleteEncounter(linked.id);
+                                          if (resolvedEncounterId === linked.id) {
+                                            setSelectedEncounterId("");
+                                          }
+                                          setMessage(`Encounter for ${dateUs} deleted.`);
+                                        }
+                                      }}
+                                      title="Delete encounter"
+                                      type="button"
+                                    >
+                                      ✕
+                                    </button>
                                   )}
                                 </td>
                               </tr>
