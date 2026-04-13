@@ -303,17 +303,54 @@ export function loadEncounterNoteRecords() {
 
 let previousNotesById: Map<string, EncounterNoteRecord> = new Map();
 
+/**
+ * Max number of days to keep encounters cached in localStorage.
+ * Older encounters are still safe in the cloud — they just won't
+ * take up localStorage space.  This prevents the 5 MB quota from
+ * filling up as the encounter list grows over months/years.
+ */
+const LOCAL_CACHE_DAYS = 90;
+
+/**
+ * Return only the encounters that are recent enough to cache locally.
+ * Encounters older than LOCAL_CACHE_DAYS are still dual-written to the
+ * cloud but excluded from the localStorage blob.
+ */
+function pruneForLocalStorage(records: EncounterNoteRecord[]): EncounterNoteRecord[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - LOCAL_CACHE_DAYS);
+  const cutoffStamp = cutoff.getTime();
+
+  return records.filter((r) => {
+    // Parse MM/DD/YYYY encounter date
+    const match = r.encounterDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return true; // keep records with unparseable dates (safety)
+    const dateStamp = new Date(
+      Number(match[3]),
+      Number(match[1]) - 1,
+      Number(match[2]),
+    ).getTime();
+    return dateStamp >= cutoffStamp;
+  });
+}
+
 export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolean {
   if (typeof window === "undefined") {
     return false;
   }
+
+  // Only cache recent encounters in localStorage to stay under 5 MB.
+  // ALL records still go to the cloud via dual-write below.
+  const localSubset = pruneForLocalStorage(records);
+
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localSubset));
   } catch (err) {
     // localStorage can throw QuotaExceededError — log but don't crash the app.
     console.error("[encounter-notes] localStorage write failed:", err);
     return false;
   }
+  // Always dual-write the FULL set to cloud (not the pruned subset)
   void dualWriteEncounterNotesToCloud(records, previousNotesById);
   previousNotesById = new Map(records.map((n) => [n.id, n]));
   return true;
@@ -416,8 +453,10 @@ export function replaceEncounterNotesFromCloud(cloudRecords: EncounterNoteRecord
   }
 
   const merged = Array.from(mergedById.values());
+  // Only cache recent encounters locally to avoid filling the 5 MB quota
+  const localSubset = pruneForLocalStorage(merged);
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localSubset));
   } catch {
     // Quota exceeded — localStorage can't hold this, but we still update
     // the in-memory previousNotesById so dual-write diffs work correctly.
