@@ -15,6 +15,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { resolveAuthAccessState } from "@/lib/auth-access";
 import type { PlanTier } from "@/lib/plan-access";
 import { PlanTierProvider } from "@/lib/plan-context";
+import { GlobalTimerAlerts } from "@/components/global-timer-alerts";
 
 export default function PortalLayout({
   children,
@@ -243,6 +244,8 @@ export default function PortalLayout({
   return (
     <PlanTierProvider planTier={planTier}>
       <AppShell planTier={planTier}>
+        {/* Global timer alerts — runs on every page */}
+        <GlobalTimerAlerts />
         {/* Sync status indicator */}
         <div className="pointer-events-none fixed bottom-3 right-3 z-50">
           {syncStatus === "syncing" && (
