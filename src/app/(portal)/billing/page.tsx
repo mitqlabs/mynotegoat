@@ -527,8 +527,9 @@ export default function BillingPage() {
     if (!activePatientId) {
       return [] as EncounterChargeLine[];
     }
-    return encountersByNewest
+    return [...encountersByNewest]
       .filter((encounter) => encounter.patientId === activePatientId)
+      .sort((a, b) => toSortStamp(toUsDate(a.encounterDate)) - toSortStamp(toUsDate(b.encounterDate)))
       .flatMap((encounter) =>
         encounter.charges.map((charge) => ({
           id: `${encounter.id}-${charge.id}`,
