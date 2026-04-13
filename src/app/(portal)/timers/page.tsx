@@ -5,8 +5,6 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 
 /* ─── Types ─── */
 
-type TimerPreset = { label: string; seconds: number };
-
 type ActiveTimer = {
   id: string;
   roomId: string;
@@ -18,16 +16,6 @@ type ActiveTimer = {
   running: boolean;
   finished: boolean;
 };
-
-/* ─── Presets ─── */
-
-const PRESETS: TimerPreset[] = [
-  { label: "5 min", seconds: 5 * 60 },
-  { label: "10 min", seconds: 10 * 60 },
-  { label: "15 min", seconds: 15 * 60 },
-  { label: "20 min", seconds: 20 * 60 },
-  { label: "30 min", seconds: 30 * 60 },
-];
 
 /* ─── Helpers ─── */
 
@@ -295,26 +283,10 @@ export default function TimersPage() {
               </div>
 
               <div className="space-y-3 p-4">
-                {/* Preset buttons */}
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESETS.map((preset) => (
-                    <button
-                      key={preset.label}
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
-                      onClick={() =>
-                        startTimer(room.id, room.name, room.color, preset.seconds, preset.label)
-                      }
-                      type="button"
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-
                 {/* Custom timer */}
                 <div className="flex gap-1.5">
                   <input
-                    className="w-20 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs"
+                    className="w-24 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                     inputMode="decimal"
                     onChange={(e) =>
                       setCustomMinutes((prev) => ({ ...prev, [room.id]: e.target.value }))
@@ -322,7 +294,7 @@ export default function TimersPage() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleCustomStart(room.id, room.name, room.color);
                     }}
-                    placeholder="Min"
+                    placeholder="Minutes"
                     value={customMinutes[room.id] ?? ""}
                   />
                   <button
