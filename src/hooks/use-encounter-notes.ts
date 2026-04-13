@@ -47,14 +47,33 @@ export function useEncounterNotes() {
   // when counter hits 0 (meaning a DIFFERENT hook instance wrote).
   const selfWriteCountRef = useRef(0);
 
-  // If localStorage is empty (quota exceeded), fetch from cloud
+  // Merge cloud encounters into state.  localStorage only caches the
+  // last 90 days, so we always pull from the cloud to ensure older
+  // encounters (needed for billing, reports, etc.) are available.
   useEffect(() => {
-    const local = loadEncounterNoteRecords();
-    if (local.length > 0) return; // localStorage has data, no need for fallback
     void loadEncounterNotesFromCloud().then((cloud) => {
-      if (cloud && cloud.length > 0) {
-        setEncounters(cloud);
-      }
+      if (!cloud || cloud.length === 0) return;
+      setEncounters((local) => {
+        // Merge: for each record keep the newer copy by updatedAt;
+        // include cloud-only records that were pruned from localStorage.
+        const byId = new Map(local.map((n) => [n.id, n]));
+        let changed = false;
+        for (const c of cloud) {
+          const existing = byId.get(c.id);
+          if (!existing) {
+            byId.set(c.id, c);
+            changed = true;
+          } else {
+            const localTime = Date.parse(existing.updatedAt) || 0;
+            const cloudTime = Date.parse(c.updatedAt) || 0;
+            if (cloudTime > localTime) {
+              byId.set(c.id, c);
+              changed = true;
+            }
+          }
+        }
+        return changed ? Array.from(byId.values()) : local;
+      });
     });
   }, []);
 
