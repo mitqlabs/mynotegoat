@@ -531,25 +531,24 @@ async function bootstrapTableBackedEntities() {
     return;
   }
 
-  // Push any local-only patients to the cloud (catches accumulation from
-  // before sync was active, OR from failed dual-writes).
-  const cloudPatientIds = new Set(tableRows.map((r) => r.id));
-  const localOnlyPatients = patients.filter((p) => !cloudPatientIds.has(p.id));
-  if (localOnlyPatients.length > 0) {
+  if (tableRows.length === 0 && patients.length > 0) {
+    // First-run migration: table empty but legacy blob has patients.
+    // Push every existing patient to the table. Runs ONLY when the table
+    // is truly empty for this workspace so a flag re-flip never re-uploads.
     console.info(
-      `[Cloud Sync] Pushing ${localOnlyPatients.length} local-only patient(s) to cloud...`,
+      `[Cloud Sync] Migrating ${patients.length} patient(s) from legacy blob to table...`,
     );
-    const result = await bulkUpsertPatientsToTable(localOnlyPatients);
+    const result = await bulkUpsertPatientsToTable([...patients]);
     if (!result.ok) {
-      console.error("[Cloud Sync] Patient push failed:", result.error);
+      console.error("[Cloud Sync] Patient migration failed:", result.error);
     } else {
-      console.info(`[Cloud Sync] Pushed ${result.count} patient(s).`);
+      console.info(`[Cloud Sync] Migrated ${result.count} patient(s).`);
     }
+    return;
   }
 
-  // Re-fetch (now containing union) and replace local from cloud.
-  const merged = await fetchAllPatientsFromTable();
-  if (merged === null || merged.length === 0) {
+  if (tableRows.length === 0) {
+    // Table empty AND legacy blob empty — nothing to do.
     return;
   }
 
@@ -558,11 +557,11 @@ async function bootstrapTableBackedEntities() {
   // the localStorage write doesn't trigger a push to the legacy blob row.
   pauseSync();
   try {
-    replacePatientsFromCloud(merged);
+    replacePatientsFromCloud(tableRows);
   } finally {
     resumeSync();
   }
-  console.info(`[Cloud Sync] Loaded ${merged.length} patient(s) from table.`);
+  console.info(`[Cloud Sync] Loaded ${tableRows.length} patient(s) from table.`);
 
   // ── Phase 2: schedule appointments ──
   if (isCloudEntityEnabled("scheduleAppointments")) {
@@ -586,33 +585,24 @@ async function bootstrapTableBackedEntities() {
       const apptsRows = await fetchAllAppointmentsFromTable();
       if (apptsRows !== null) {
         const localAppts = loadScheduleAppointments();
-        const cloudIds = new Set(apptsRows.map((r) => r.id));
-        const localOnlyAppts = localAppts.filter((a) => !cloudIds.has(a.id));
-
-        // 1. Push any local-only appointments to cloud (catches device that
-        //    accumulated appointments before sync was active).
-        if (localOnlyAppts.length > 0) {
+        if (apptsRows.length === 0 && localAppts.length > 0) {
           console.info(
-            `[Cloud Sync] Pushing ${localOnlyAppts.length} local-only appointment(s) to cloud...`,
+            `[Cloud Sync] Migrating ${localAppts.length} appointment(s) to table...`,
           );
-          const result = await bulkUpsertAppointmentsToTable(localOnlyAppts);
+          const result = await bulkUpsertAppointmentsToTable(localAppts);
           if (result.ok) {
-            console.info(`[Cloud Sync] Pushed ${result.count} appointment(s).`);
+            console.info(`[Cloud Sync] Migrated ${result.count} appointment(s).`);
           } else {
-            console.error("[Cloud Sync] Appointment push failed:", result.error);
+            console.error("[Cloud Sync] Appointment migration failed:", result.error);
           }
-        }
-
-        // 2. Pull cloud (now containing union of cloud + local-only) into local.
-        const merged = await fetchAllAppointmentsFromTable();
-        if (merged !== null && merged.length > 0) {
+        } else if (apptsRows.length > 0) {
           pauseSync();
           try {
-            replaceAppointmentsFromCloud(merged);
+            replaceAppointmentsFromCloud(apptsRows);
           } finally {
             resumeSync();
           }
-          console.info(`[Cloud Sync] Loaded ${merged.length} appointment(s) from table.`);
+          console.info(`[Cloud Sync] Loaded ${apptsRows.length} appointment(s) from table.`);
         }
       }
     }
@@ -758,32 +748,24 @@ async function bootstrapTableBackedEntities() {
       const notesRows = await fetchAllEncounterNotesFromTable();
       if (notesRows !== null) {
         const localNotes = loadEncounterNoteRecords();
-        const cloudIds = new Set(notesRows.map((r) => r.id));
-        const localOnlyNotes = localNotes.filter((n) => !cloudIds.has(n.id));
-
-        // 1. Push any local-only encounter notes to cloud.
-        if (localOnlyNotes.length > 0) {
+        if (notesRows.length === 0 && localNotes.length > 0) {
           console.info(
-            `[Cloud Sync] Pushing ${localOnlyNotes.length} local-only encounter note(s) to cloud...`,
+            `[Cloud Sync] Migrating ${localNotes.length} encounter note(s) to table...`,
           );
-          const result = await bulkUpsertEncounterNotesToTable(localOnlyNotes);
+          const result = await bulkUpsertEncounterNotesToTable(localNotes);
           if (result.ok) {
-            console.info(`[Cloud Sync] Pushed ${result.count} encounter note(s).`);
+            console.info(`[Cloud Sync] Migrated ${result.count} encounter note(s).`);
           } else {
-            console.error("[Cloud Sync] Encounter notes push failed:", result.error);
+            console.error("[Cloud Sync] Encounter notes migration failed:", result.error);
           }
-        }
-
-        // 2. Pull cloud (now containing union) into local.
-        const merged = await fetchAllEncounterNotesFromTable();
-        if (merged !== null && merged.length > 0) {
+        } else if (notesRows.length > 0) {
           pauseSync();
           try {
-            replaceEncounterNotesFromCloud(merged);
+            replaceEncounterNotesFromCloud(notesRows);
           } finally {
             resumeSync();
           }
-          console.info(`[Cloud Sync] Loaded ${merged.length} encounter note(s) from table.`);
+          console.info(`[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`);
         }
       }
     }
