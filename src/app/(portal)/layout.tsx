@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
 import {
   buildWorkspaceIdForUser,
@@ -16,6 +17,17 @@ import { resolveAuthAccessState } from "@/lib/auth-access";
 import type { PlanTier } from "@/lib/plan-access";
 import { PlanTierProvider } from "@/lib/plan-context";
 
+// Lazy-load with ssr:false so the module-level audio listeners in
+// global-timer-alerts.tsx never execute during SSR.  The component is
+// rendered only inside the `mounted` gate below, so it will never
+// issue Supabase calls until auth bootstrap has fully completed.
+const GlobalTimerAlerts = dynamic(
+  () =>
+    import("@/components/global-timer-alerts").then((m) => ({
+      default: m.GlobalTimerAlerts,
+    })),
+  { ssr: false },
+);
 
 export default function PortalLayout({
   children,
@@ -271,6 +283,7 @@ export default function PortalLayout({
             </button>
           </div>
         )}
+        <GlobalTimerAlerts />
         {children}
       </AppShell>
     </PlanTierProvider>
