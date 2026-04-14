@@ -63,6 +63,10 @@ export interface PatientRecord {
   mriReferrals?: unknown[];
   specialistReferrals?: unknown[];
   alerts?: string[];
+  /** Soft-delete flag — patient is hidden but recoverable */
+  deleted?: boolean;
+  /** ISO timestamp of when the patient was soft-deleted */
+  deletedAt?: string;
 }
 
 export interface AppointmentRecord {
@@ -591,9 +595,42 @@ export function deletePatientRecord(patientId: string): boolean {
   if (index === -1) {
     return false;
   }
+  // Soft-delete: mark as deleted instead of removing
+  const nextPatients = patients.map((entry) =>
+    entry.id === normalizedPatientId
+      ? { ...entry, deleted: true, deletedAt: new Date().toISOString() }
+      : entry,
+  );
+  persistPatients(nextPatients);
+  return true;
+}
+
+export function restorePatientRecord(patientId: string): boolean {
+  const normalizedPatientId = cleanString(patientId);
+  if (!normalizedPatientId) return false;
+  const patient = patients.find((entry) => entry.id === normalizedPatientId);
+  if (!patient || !patient.deleted) return false;
+  const nextPatients = patients.map((entry) =>
+    entry.id === normalizedPatientId
+      ? { ...entry, deleted: undefined, deletedAt: undefined }
+      : entry,
+  );
+  persistPatients(nextPatients);
+  return true;
+}
+
+export function permanentlyDeletePatientRecord(patientId: string): boolean {
+  const normalizedPatientId = cleanString(patientId);
+  if (!normalizedPatientId) return false;
+  const index = patients.findIndex((entry) => entry.id === normalizedPatientId);
+  if (index === -1) return false;
   const nextPatients = patients.filter((entry) => entry.id !== normalizedPatientId);
   persistPatients(nextPatients);
   return true;
+}
+
+export function getDeletedPatients(): PatientRecord[] {
+  return patients.filter((p) => p.deleted === true);
 }
 
 /**

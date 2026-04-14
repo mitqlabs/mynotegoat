@@ -12,14 +12,16 @@ import {
   addFileRecord,
   removeFileRecord,
   renameFileRecord,
+  restoreFileRecord as restoreFileOp,
+  restoreFolderRecord as restoreFolderOp,
+  getDeletedFiles,
+  getDeletedFolders,
   loadFileManagerState,
   saveFileManagerState,
   syncPatientFolders,
 } from "@/lib/file-manager";
 import {
   uploadFileToStorage,
-  deleteFileFromStorage,
-  deleteFilesFromStorage,
 } from "@/lib/file-storage";
 
 export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStatusConfig[] = []) {
@@ -83,17 +85,12 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
 
   const deleteUserFolder = useCallback(
     async (folderId: string) => {
-      let pathsToDelete: string[] = [];
       setState((current) => {
         const result = deleteFolderOp(current, folderId);
-        pathsToDelete = result.deletedStoragePaths;
+        // Soft-delete — no storage paths to delete
         saveFileManagerState(result.state);
         return result.state;
       });
-      // Delete actual files from storage in background
-      if (pathsToDelete.length > 0) {
-        await deleteFilesFromStorage(pathsToDelete);
-      }
     },
     [],
   );
@@ -140,19 +137,44 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
 
   const deleteFile = useCallback(
     async (fileId: string) => {
-      let pathToDelete: string | null = null;
       setState((current) => {
         const result = removeFileRecord(current, fileId);
-        pathToDelete = result.storagePath;
+        // Soft-delete — storagePath is null, no storage deletion needed
         saveFileManagerState(result.state);
         return result.state;
       });
-      if (pathToDelete) {
-        await deleteFileFromStorage(pathToDelete);
-      }
     },
     [],
   );
+
+  // --- Restore operations (trash) ---
+
+  const restoreFile = useCallback(
+    (fileId: string) => {
+      setState((current) => {
+        const next = restoreFileOp(current, fileId);
+        saveFileManagerState(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const restoreFolder = useCallback(
+    (folderId: string) => {
+      setState((current) => {
+        const next = restoreFolderOp(current, folderId);
+        saveFileManagerState(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  // --- Trash queries ---
+
+  const deletedFiles = getDeletedFiles(state);
+  const deletedFolders = getDeletedFolders(state);
 
   return {
     state,
@@ -162,5 +184,9 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     uploadFile,
     renameFile,
     deleteFile,
+    restoreFile,
+    restoreFolder,
+    deletedFiles,
+    deletedFolders,
   };
 }

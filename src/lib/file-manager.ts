@@ -16,6 +16,8 @@ export type FileFolder = {
   patientId?: string;
   createdAt: string;
   updatedAt: string;
+  deleted?: boolean;
+  deletedAt?: string;
 };
 
 export type FileRecord = {
@@ -27,6 +29,8 @@ export type FileRecord = {
   sizeBytes: number;
   createdAt: string;
   updatedAt: string;
+  deleted?: boolean;
+  deletedAt?: string;
 };
 
 export type FileManagerState = {
@@ -142,19 +146,25 @@ export function deleteFolder(
     return { state, deletedStoragePaths: [] };
   }
 
+  const now = new Date().toISOString();
   const descendantIds = collectDescendantFolderIds(state.folders, folderId);
   descendantIds.add(folderId);
 
-  const deletedStoragePaths = state.files
-    .filter((f) => descendantIds.has(f.folderId))
-    .map((f) => f.storagePath);
-
+  // Soft-delete: mark folders and files as deleted instead of removing
   return {
     state: {
-      folders: state.folders.filter((f) => !descendantIds.has(f.id) && f.id !== folderId),
-      files: state.files.filter((f) => !descendantIds.has(f.folderId)),
+      folders: state.folders.map((f) =>
+        descendantIds.has(f.id) || f.id === folderId
+          ? { ...f, deleted: true, deletedAt: now }
+          : f,
+      ),
+      files: state.files.map((f) =>
+        descendantIds.has(f.folderId)
+          ? { ...f, deleted: true, deletedAt: now }
+          : f,
+      ),
     },
-    deletedStoragePaths,
+    deletedStoragePaths: [], // Don't delete storage — keep for recovery
   };
 }
 
@@ -180,14 +190,54 @@ export function removeFileRecord(
   state: FileManagerState,
   fileId: string,
 ): { state: FileManagerState; storagePath: string | null } {
+  const now = new Date().toISOString();
   const file = state.files.find((f) => f.id === fileId);
+  // Soft-delete: mark as deleted instead of removing
   return {
     state: {
       ...state,
-      files: state.files.filter((f) => f.id !== fileId),
+      files: state.files.map((f) =>
+        f.id === fileId ? { ...f, deleted: true, deletedAt: now } : f,
+      ),
     },
-    storagePath: file?.storagePath ?? null,
+    storagePath: null, // Don't delete storage — keep for recovery
   };
+}
+
+export function restoreFileRecord(
+  state: FileManagerState,
+  fileId: string,
+): FileManagerState {
+  return {
+    ...state,
+    files: state.files.map((f) =>
+      f.id === fileId ? { ...f, deleted: undefined, deletedAt: undefined } : f,
+    ),
+  };
+}
+
+export function restoreFolderRecord(
+  state: FileManagerState,
+  folderId: string,
+): FileManagerState {
+  // Restore folder and all its files
+  return {
+    ...state,
+    folders: state.folders.map((f) =>
+      f.id === folderId ? { ...f, deleted: undefined, deletedAt: undefined } : f,
+    ),
+    files: state.files.map((f) =>
+      f.folderId === folderId && f.deleted ? { ...f, deleted: undefined, deletedAt: undefined } : f,
+    ),
+  };
+}
+
+export function getDeletedFiles(state: FileManagerState): FileRecord[] {
+  return state.files.filter((f) => f.deleted === true);
+}
+
+export function getDeletedFolders(state: FileManagerState): FileFolder[] {
+  return state.folders.filter((f) => f.deleted === true);
 }
 
 export function renameFileRecord(
@@ -209,7 +259,7 @@ export function renameFileRecord(
 
 export function getFoldersInParent(state: FileManagerState, parentId: string | null) {
   return state.folders
-    .filter((f) => f.parentId === parentId)
+    .filter((f) => f.parentId === parentId && !f.deleted)
     .sort((a, b) => {
       // System folders first, then alphabetical
       if (a.isSystemFolder !== b.isSystemFolder) return a.isSystemFolder ? -1 : 1;
@@ -219,7 +269,7 @@ export function getFoldersInParent(state: FileManagerState, parentId: string | n
 
 export function getFilesInFolder(state: FileManagerState, folderId: string) {
   return state.files
-    .filter((f) => f.folderId === folderId)
+    .filter((f) => f.folderId === folderId && !f.deleted)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -318,6 +368,8 @@ export function syncPatientFolders(
 
   // 3. For each patient, determine the correct parent folder
   for (const patient of patients) {
+    // Skip soft-deleted patients — their folders stay intact for recovery
+    if (patient.deleted) continue;
     const initialExamDate = patient.matrix?.initialExam ?? "";
     const year = extractYearFromDate(initialExamDate) || extractYearFromDate(patient.dateOfLoss) || new Date().getFullYear().toString();
     const dolCanonical = toUsDateCanonical(patient.dateOfLoss);

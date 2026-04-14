@@ -18,7 +18,7 @@ import {
   formatUsDateDisplay,
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
-import { createPatientRecord, patients, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { createPatientRecord, getDeletedPatients, patients, restorePatientRecord, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
@@ -86,7 +86,7 @@ function saveColumnOrder(order: ListColumnId[]) {
   window.localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify(order));
 }
 
-type PatientView = "list" | "detail" | "caseFlow" | "toDo" | "birthdays";
+type PatientView = "list" | "detail" | "caseFlow" | "toDo" | "birthdays" | "trash";
 
 type DetailRow = {
   label: string;
@@ -568,6 +568,9 @@ export default function PatientsPage() {
     // Split query into individual words so "john doe" matches "Doe, John"
     const qWords = q.replace(/[,.:;]/g, " ").split(/\s+/).filter(Boolean);
     const filtered = patients.filter((patient) => {
+      // Skip soft-deleted patients
+      if (patient.deleted) return false;
+
       const nameNorm = patient.fullName.toLowerCase().replace(/[,.:;]/g, " ");
       const attNorm = patient.attorney.toLowerCase().replace(/[,.:;]/g, " ");
       const haystack = `${nameNorm} ${attNorm}`;
@@ -1064,6 +1067,16 @@ export default function PatientsPage() {
           >
             <span className="text-base leading-none">&#127874;</span>
             Birthdays
+          </button>
+          <button
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
+              view === "trash" ? "bg-red-600 text-white" : "bg-[var(--bg-soft)]"
+            }`}
+            onClick={() => setView("trash")}
+            type="button"
+          >
+            <span className="text-base leading-none">🗑️</span>
+            Trash
           </button>
         </div>
 
@@ -1632,6 +1645,61 @@ export default function PatientsPage() {
           )}
         </div>
       )}
+
+      {view === "trash" && (() => {
+        const deletedPatients = getDeletedPatients();
+        return (
+          <div className="space-y-4">
+            <section className="panel-card p-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl" role="img" aria-label="trash">🗑️</span>
+                <div>
+                  <h4 className="text-lg font-semibold">Deleted Patients</h4>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    {deletedPatients.length} patient{deletedPatients.length !== 1 ? "s" : ""} in trash. Restore to recover the patient and their files.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {deletedPatients.length === 0 ? (
+              <section className="panel-card p-6 text-center">
+                <p className="text-3xl" role="img" aria-label="empty">✨</p>
+                <p className="mt-2 text-sm text-[var(--text-muted)]">Trash is empty.</p>
+              </section>
+            ) : (
+              <div className="space-y-2">
+                {deletedPatients.map((p) => {
+                  const deletedDate = p.deletedAt
+                    ? new Date(p.deletedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                    : "Unknown";
+                  return (
+                    <article key={p.id} className="panel-card flex items-center gap-4 p-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-bold">{p.fullName}</p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          DOL: {p.dateOfLoss} &bull; Attorney: {p.attorney} &bull; Deleted: {deletedDate}
+                        </p>
+                      </div>
+                      <button
+                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-all active:scale-95"
+                        onClick={() => {
+                          if (restorePatientRecord(p.id)) {
+                            setView("list");
+                          }
+                        }}
+                        type="button"
+                      >
+                        Restore
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {showNewPatientModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">

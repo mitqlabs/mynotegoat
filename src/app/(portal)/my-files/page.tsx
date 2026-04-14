@@ -109,7 +109,14 @@ export default function MyFilesPage() {
     uploadFile,
     renameFile,
     deleteFile,
+    restoreFile,
+    restoreFolder,
+    deletedFiles,
+    deletedFolders,
   } = useFileManager(patients, caseStatuses);
+
+  const [showTrash, setShowTrash] = useState(false);
+  const trashCount = deletedFiles.length + deletedFolders.length;
 
   // Navigation state — open to specific folder if ?folder= param is present
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(() => {
@@ -147,12 +154,12 @@ export default function MyFilesPage() {
   // When searching, find all matching folders and files across the entire tree
   const searchMatchFolders = useMemo(() => {
     if (!isSearching) return [];
-    return state.folders.filter((f) => f.name.toLowerCase().includes(searchLower));
+    return state.folders.filter((f) => !f.deleted && f.name.toLowerCase().includes(searchLower));
   }, [state.folders, isSearching, searchLower]);
 
   const searchMatchFiles = useMemo(() => {
     if (!isSearching) return [];
-    return state.files.filter((f) => f.name.toLowerCase().includes(searchLower));
+    return state.files.filter((f) => !f.deleted && f.name.toLowerCase().includes(searchLower));
   }, [state.files, isSearching, searchLower]);
 
   const subfoldersRaw = useMemo(
@@ -223,7 +230,7 @@ export default function MyFilesPage() {
     setDeletingFolderId(folderId);
     await deleteUserFolder(folderId);
     setDeletingFolderId(null);
-    setMessage("Folder deleted.");
+    setMessage("Folder moved to trash.");
   };
 
   // ---------------------------------------------------------------------------
@@ -266,7 +273,7 @@ export default function MyFilesPage() {
     setDeletingFileId(fileId);
     await deleteFile(fileId);
     setDeletingFileId(null);
-    setMessage("File deleted.");
+    setMessage("File moved to trash.");
   };
 
   const handleDownload = (file: FileRecord) => {
@@ -584,6 +591,19 @@ export default function MyFilesPage() {
           </>
         )}
 
+        {/* Trash toggle */}
+        <button
+          className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-colors ${
+            showTrash
+              ? "border-red-300 bg-red-50 text-red-700"
+              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+          }`}
+          onClick={() => setShowTrash((prev) => !prev)}
+          type="button"
+        >
+          🗑️ Trash{trashCount > 0 ? ` (${trashCount})` : ""}
+        </button>
+
         {/* View mode toggle */}
         <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-[var(--line-soft)] bg-white p-0.5">
           <button
@@ -778,8 +798,8 @@ export default function MyFilesPage() {
                 </thead>
                 <tbody>
                   {subfolders.map((folder) => {
-                    const childFolderCount = state.folders.filter((f) => f.parentId === folder.id).length;
-                    const childFileCount = state.files.filter((f) => f.folderId === folder.id).length;
+                    const childFolderCount = state.folders.filter((f) => f.parentId === folder.id && !f.deleted).length;
+                    const childFileCount = state.files.filter((f) => f.folderId === folder.id && !f.deleted).length;
                     const itemCount = childFolderCount + childFileCount;
 
                     return (
@@ -1071,6 +1091,116 @@ export default function MyFilesPage() {
           </div>
         )}
       </div>
+
+      {/* Trash View */}
+      {showTrash && (
+        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/50 p-4">
+          <h2 className="text-lg font-semibold text-red-800 mb-3">🗑️ Trash</h2>
+          {deletedFolders.length === 0 && deletedFiles.length === 0 && (
+            <p className="text-sm text-[var(--text-muted)]">Trash is empty.</p>
+          )}
+
+          {/* Deleted Folders */}
+          {deletedFolders.length > 0 && (
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-red-600">
+                Deleted Folders
+              </p>
+              <div className="overflow-hidden rounded-xl border border-red-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-red-100 bg-red-50">
+                      <th className="px-3 py-2 text-left font-semibold text-red-700">Name</th>
+                      <th className="hidden px-3 py-2 text-left font-semibold text-red-700 md:table-cell">Deleted</th>
+                      <th className="px-3 py-2 text-right font-semibold text-red-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deletedFolders.map((folder) => (
+                      <tr key={folder.id} className="border-b border-red-100 last:border-b-0">
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg opacity-50">📁</span>
+                            <span className="font-medium text-[var(--text-heading)]">{folder.name}</span>
+                          </div>
+                        </td>
+                        <td className="hidden px-3 py-2 text-[var(--text-muted)] md:table-cell">
+                          {folder.deletedAt ? formatDate(folder.deletedAt) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                            onClick={() => {
+                              restoreFolder(folder.id);
+                              setMessage(`Folder "${folder.name}" restored.`);
+                            }}
+                            type="button"
+                          >
+                            Restore
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Deleted Files */}
+          {deletedFiles.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-red-600">
+                Deleted Files
+              </p>
+              <div className="overflow-hidden rounded-xl border border-red-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-red-100 bg-red-50">
+                      <th className="px-3 py-2 text-left font-semibold text-red-700">Name</th>
+                      <th className="hidden px-3 py-2 text-left font-semibold text-red-700 sm:table-cell">Size</th>
+                      <th className="hidden px-3 py-2 text-left font-semibold text-red-700 md:table-cell">Deleted</th>
+                      <th className="px-3 py-2 text-right font-semibold text-red-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deletedFiles.map((file) => (
+                      <tr key={file.id} className="border-b border-red-100 last:border-b-0">
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="opacity-50">{getFileIcon(file.mimeType)}</span>
+                            <span className="font-medium text-[var(--text-heading)] truncate max-w-[200px] sm:max-w-[300px]">
+                              {file.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="hidden px-3 py-2 text-[var(--text-muted)] sm:table-cell">
+                          {formatFileSize(file.sizeBytes)}
+                        </td>
+                        <td className="hidden px-3 py-2 text-[var(--text-muted)] md:table-cell">
+                          {file.deletedAt ? formatDate(file.deletedAt) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                            onClick={() => {
+                              restoreFile(file.id);
+                              setMessage(`File "${file.name}" restored.`);
+                            }}
+                            type="button"
+                          >
+                            Restore
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Preview Modal */}
       {previewFile && (
