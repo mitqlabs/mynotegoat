@@ -43,7 +43,8 @@ type SettingsSectionKey =
   | "subscription"
   | "backup"
   | "recovery"
-  | "security";
+  | "security"
+  | "account";
 
 const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   office: false,
@@ -62,6 +63,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   backup: false,
   recovery: false,
   security: false,
+  account: false,
 };
 
 type BackupModuleId =
@@ -798,6 +800,168 @@ function CollapsibleSection({
       </div>
       {isOpen ? <div className="mt-3">{children}</div> : null}
     </section>
+  );
+}
+
+function ChangePasswordSection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) return;
+        const { data } = await supabase.auth.getUser();
+        if (!cancelled) setUserEmail(data?.user?.email ?? "");
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+
+    if (newPassword.length < 8) {
+      setErrorMessage("New password must be at least 8 characters.");
+      setStatus("error");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMessage("New password and confirmation do not match.");
+      setStatus("error");
+      return;
+    }
+    if (!currentPassword) {
+      setErrorMessage("Please enter your current password.");
+      setStatus("error");
+      return;
+    }
+
+    setStatus("saving");
+    try {
+      const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        setErrorMessage("Authentication client unavailable.");
+        setStatus("error");
+        return;
+      }
+
+      // Verify the current password by re-authenticating with it.
+      if (!userEmail) {
+        setErrorMessage("Could not verify account email — please refresh and try again.");
+        setStatus("error");
+        return;
+      }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: currentPassword,
+      });
+      if (signInError) {
+        setErrorMessage("Current password is incorrect.");
+        setStatus("error");
+        return;
+      }
+
+      // Now update the password.
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) {
+        setErrorMessage(updateError.message || "Failed to update password.");
+        setStatus("error");
+        return;
+      }
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 4000);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Unexpected error.");
+      setStatus("error");
+    }
+  };
+
+  return (
+    <form className="grid gap-3 max-w-md" onSubmit={handleSubmit}>
+      {userEmail && (
+        <p className="text-sm text-[var(--text-muted)]">
+          Signed in as <span className="font-semibold">{userEmail}</span>
+        </p>
+      )}
+      <label className="grid gap-1">
+        <span className="text-sm font-semibold text-[var(--text-muted)]">Current Password</span>
+        <input
+          autoComplete="current-password"
+          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          type="password"
+          value={currentPassword}
+        />
+      </label>
+      <label className="grid gap-1">
+        <span className="text-sm font-semibold text-[var(--text-muted)]">New Password</span>
+        <input
+          autoComplete="new-password"
+          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+          minLength={8}
+          onChange={(e) => setNewPassword(e.target.value)}
+          type="password"
+          value={newPassword}
+        />
+        <span className="text-xs text-[var(--text-muted)]">At least 8 characters.</span>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-sm font-semibold text-[var(--text-muted)]">Confirm New Password</span>
+        <input
+          autoComplete="new-password"
+          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          type="password"
+          value={confirmPassword}
+        />
+      </label>
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          className={`rounded-xl px-4 py-2 text-sm font-bold text-white shadow-md transition ${
+            status === "saving"
+              ? "bg-gray-400 cursor-wait"
+              : status === "saved"
+                ? "bg-emerald-600"
+                : status === "error"
+                  ? "bg-red-600"
+                  : "bg-[var(--brand-primary)] hover:opacity-90"
+          }`}
+          disabled={status === "saving"}
+          type="submit"
+        >
+          {status === "saving"
+            ? "Updating..."
+            : status === "saved"
+              ? "Password Updated!"
+              : status === "error"
+                ? "Try Again"
+                : "Update Password"}
+        </button>
+        {status === "error" && errorMessage && (
+          <span className="text-sm text-red-600">{errorMessage}</span>
+        )}
+      </div>
+    </form>
   );
 }
 
@@ -3275,6 +3439,15 @@ export default function SettingsPage() {
         description="Manage your plan and billing details through Stripe."
       >
         <SubscriptionSection />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        isOpen={expandedSections.account}
+        onToggle={() => toggleSection("account")}
+        title="Account / Change Password"
+        description="Update your sign-in password."
+      >
+        <ChangePasswordSection />
       </CollapsibleSection>
 
       <CollapsibleSection
