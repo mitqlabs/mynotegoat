@@ -186,6 +186,17 @@ function formatDateLabel(value: string) {
   });
 }
 
+/** Short weekday + US date, e.g. "Mon 04/14/2026" */
+function formatUsDateWithWeekday(value: string) {
+  const parsed = parseIsoDate(value);
+  if (!parsed) return formatUsDateFromIso(value);
+  const weekday = parsed.toLocaleDateString(undefined, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+  return `${weekday} ${formatUsDateFromIso(value)}`;
+}
+
 function getPatientNameParts(fullName: string) {
   const trimmed = fullName.trim();
   if (!trimmed) {
@@ -1174,7 +1185,7 @@ export default function AppointmentsPage() {
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold">{appointment.patientName}</span>
                         <span className="block text-xs text-[var(--text-muted)]">
-                          {formatUsDateFromIso(appointment.date)} • {formatTimeLabel(appointment.startTime)} •{" "}
+                          {formatUsDateWithWeekday(appointment.date)} • {formatTimeLabel(appointment.startTime)} •{" "}
                           {appointment.appointmentType}
                         </span>
                       </span>
@@ -2026,7 +2037,7 @@ export default function AppointmentsPage() {
         onClose={() => setRescheduleAppointmentId(null)}
         onRescheduled={(oldAppointment, newAppointment) => {
           setScheduleAlert(
-            `Rescheduled ${oldAppointment.patientName} to ${formatUsDateFromIso(newAppointment.date)} at ${formatTimeLabel(newAppointment.startTime)}.`,
+            `Rescheduled ${oldAppointment.patientName} to ${formatUsDateWithWeekday(newAppointment.date)} at ${formatTimeLabel(newAppointment.startTime)}.`,
           );
           setSelectedAppointmentId(null);
         }}
@@ -2041,7 +2052,7 @@ export default function AppointmentsPage() {
                 <h4 className="text-xl font-semibold">Assign Room on Check-In</h4>
                 <p className="text-sm text-[var(--text-muted)]">
                   {checkInPromptAppointment.patientName} •{" "}
-                  {formatUsDateFromIso(checkInPromptAppointment.date)} •{" "}
+                  {formatUsDateWithWeekday(checkInPromptAppointment.date)} •{" "}
                   {formatTimeLabel(checkInPromptAppointment.startTime)}
                 </p>
               </div>
