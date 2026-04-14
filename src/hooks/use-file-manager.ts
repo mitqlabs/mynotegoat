@@ -34,17 +34,26 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
   useEffect(() => {
     setState((current) => {
       const synced = syncPatientFolders(current, patients, caseStatuses);
-      // Only update if folders actually changed
-      if (synced.folders.length !== current.folders.length) {
-        saveFileManagerState(synced);
-        return synced;
-      }
-      // Check if any folder was renamed/moved
-      const changed = synced.folders.some((sf, i) => {
-        const cf = current.folders[i];
-        return !cf || cf.name !== sf.name || cf.parentId !== sf.parentId;
-      });
-      if (changed) {
+      // Detect any change: folder count, file count, name/parent/patientId/deleted shifts
+      const folderChanged =
+        synced.folders.length !== current.folders.length ||
+        synced.folders.some((sf) => {
+          const cf = current.folders.find((c) => c.id === sf.id);
+          return (
+            !cf ||
+            cf.name !== sf.name ||
+            cf.parentId !== sf.parentId ||
+            cf.patientId !== sf.patientId ||
+            !!cf.deleted !== !!sf.deleted
+          );
+        });
+      const fileChanged =
+        synced.files.length !== current.files.length ||
+        synced.files.some((sf) => {
+          const cf = current.files.find((c) => c.id === sf.id);
+          return !cf || !!cf.deleted !== !!sf.deleted;
+        });
+      if (folderChanged || fileChanged) {
         saveFileManagerState(synced);
         return synced;
       }

@@ -322,11 +322,13 @@ export function syncPatientFolders(
   caseStatuses: CaseStatusConfig[] = [],
 ): FileManagerState {
   let folders = [...state.folders];
+  let files = [...state.files];
   const now = new Date().toISOString();
 
   // Build a lookup of status names that have autoFolder enabled
+  const autoFolderStatuses = caseStatuses.filter((s) => s.autoFolder);
   const autoFolderStatusNames = new Set(
-    caseStatuses.filter((s) => s.autoFolder).map((s) => s.name.toLowerCase()),
+    autoFolderStatuses.map((s) => s.name.toLowerCase()),
   );
 
   // 1. Ensure root "Patient Folders" system folder exists
@@ -343,99 +345,167 @@ export function syncPatientFolders(
     folders.push(root);
   }
 
-  // 2. Ensure status folders exist for every autoFolder status
-  for (const s of caseStatuses) {
-    if (!s.autoFolder) continue;
-    const statusFolderId = `SYSTEM-STATUS-${s.name.toUpperCase().replace(/\s+/g, "-")}`;
-    let statusFolder = folders.find((f) => f.id === statusFolderId);
-    if (!statusFolder) {
-      statusFolder = {
-        id: statusFolderId,
-        name: s.name,
+  // 2. Migration: remove old root-level status folders (now nested under years)
+  // Old IDs look like "SYSTEM-STATUS-DROPPED"; new IDs look like "SYSTEM-STATUS-2026-DROPPED"
+  folders = folders.filter(
+    (f) =>
+      !(
+        f.isSystemFolder &&
+        f.id.startsWith("SYSTEM-STATUS-") &&
+        !/^SYSTEM-STATUS-\d{4}-/.test(f.id)
+      ),
+  );
+
+  // Helper: ensure year folder exists
+  const ensureYearFolder = (year: string): string => {
+    const yearFolderId = `SYSTEM-YEAR-${year}`;
+    if (!folders.find((f) => f.id === yearFolderId)) {
+      folders.push({
+        id: yearFolderId,
+        name: year,
         parentId: PATIENT_FOLDERS_ROOT_ID,
         isSystemFolder: true,
         createdAt: now,
         updatedAt: now,
-      };
-      folders.push(statusFolder);
-    } else if (statusFolder.name !== s.name) {
-      // Update name if status was renamed
+      });
+    }
+    return yearFolderId;
+  };
+
+  // Helper: ensure status folder nested under a year folder
+  const ensureStatusFolder = (year: string, statusName: string): string => {
+    const yearFolderId = ensureYearFolder(year);
+    const statusFolderId = `SYSTEM-STATUS-${year}-${statusName
+      .toUpperCase()
+      .replace(/\s+/g, "-")}`;
+    const existing = folders.find((f) => f.id === statusFolderId);
+    if (!existing) {
+      folders.push({
+        id: statusFolderId,
+        name: statusName,
+        parentId: yearFolderId,
+        isSystemFolder: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else if (existing.name !== statusName || existing.parentId !== yearFolderId) {
       folders = folders.map((f) =>
-        f.id === statusFolderId ? { ...f, name: s.name, updatedAt: now } : f,
+        f.id === statusFolderId
+          ? { ...f, name: statusName, parentId: yearFolderId, updatedAt: now }
+          : f,
       );
     }
-  }
+    return statusFolderId;
+  };
 
   // 3. For each patient, determine the correct parent folder
   for (const patient of patients) {
     // Skip soft-deleted patients — their folders stay intact for recovery
     if (patient.deleted) continue;
     const initialExamDate = patient.matrix?.initialExam ?? "";
-    const year = extractYearFromDate(initialExamDate) || extractYearFromDate(patient.dateOfLoss) || new Date().getFullYear().toString();
+    const year =
+      extractYearFromDate(initialExamDate) ||
+      extractYearFromDate(patient.dateOfLoss) ||
+      new Date().getFullYear().toString();
     const dolCanonical = toUsDateCanonical(patient.dateOfLoss);
     if (!dolCanonical) continue; // skip patients with invalid DOL
 
-    // Determine if this patient should go in a status folder or year folder
+    // Determine target parent: status folder under year, or year itself for ACTIVE
     const patientStatusLower = (patient.caseStatus ?? "").toLowerCase();
     const useStatusFolder = autoFolderStatusNames.has(patientStatusLower);
 
     let targetParentId: string;
-
     if (useStatusFolder) {
-      // Find the matching status to get its exact name for the folder ID
-      const matchedStatus = caseStatuses.find(
-        (s) => s.autoFolder && s.name.toLowerCase() === patientStatusLower,
-      );
-      targetParentId = matchedStatus
-        ? `SYSTEM-STATUS-${matchedStatus.name.toUpperCase().replace(/\s+/g, "-")}`
-        : `SYSTEM-YEAR-${year}`;
+      const matchedStatus = autoFolderStatuses.find(
+        (s) => s.name.toLowerCase() === patientStatusLower,
+      )!;
+      targetParentId = ensureStatusFolder(year, matchedStatus.name);
     } else {
-      // Year folder
-      const yearFolderId = `SYSTEM-YEAR-${year}`;
-      let yearFolder = folders.find((f) => f.id === yearFolderId);
-      if (!yearFolder) {
-        yearFolder = {
-          id: yearFolderId,
-          name: year,
-          parentId: PATIENT_FOLDERS_ROOT_ID,
-          isSystemFolder: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-        folders.push(yearFolder);
-      }
-      targetParentId = yearFolderId;
+      targetParentId = ensureYearFolder(year);
     }
 
-    // Patient folder
-    const patientFolderId = `SYSTEM-PATIENT-${patient.id}`;
     const expectedName = buildPatientFolderName(patient);
-    let patientFolder = folders.find((f) => f.id === patientFolderId);
+    const expectedCaseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
 
+    // 3a. Look for existing folder by patientId metadata (handles rename/restore)
+    let patientFolder = folders.find(
+      (f) => f.patientId === patient.id && f.isSystemFolder && !f.deleted,
+    );
+
+    // 3b. If none, look for an orphan folder with the same case number (deleted or
+    //     attached to a no-longer-existing patient) — auto-merge it.
+    if (!patientFolder && expectedCaseNumber) {
+      const livingPatientIds = new Set(
+        patients.filter((p) => !p.deleted).map((p) => p.id),
+      );
+      const orphan = folders.find(
+        (f) =>
+          f.isSystemFolder &&
+          f.id.startsWith("SYSTEM-PATIENT-") &&
+          (f.deleted || (f.patientId && !livingPatientIds.has(f.patientId))) &&
+          f.name.startsWith(`${expectedCaseNumber} `),
+      );
+      if (orphan) {
+        const oldFolderId = orphan.id;
+        // Restore the orphan folder + all its descendants and their files,
+        // and reattach to the new patient.
+        folders = folders.map((f) =>
+          f.id === oldFolderId
+            ? {
+                ...f,
+                deleted: undefined,
+                deletedAt: undefined,
+                patientId: patient.id,
+                name: expectedName,
+                parentId: targetParentId,
+                updatedAt: now,
+              }
+            : f,
+        );
+        const descendantIds = collectDescendantFolderIds(folders, oldFolderId);
+        if (descendantIds.size > 0) {
+          folders = folders.map((f) =>
+            descendantIds.has(f.id) && f.deleted
+              ? { ...f, deleted: undefined, deletedAt: undefined, updatedAt: now }
+              : f,
+          );
+        }
+        const restoredFolderIds = new Set<string>([oldFolderId, ...descendantIds]);
+        files = files.map((f) =>
+          restoredFolderIds.has(f.folderId) && f.deleted
+            ? { ...f, deleted: undefined, deletedAt: undefined }
+            : f,
+        );
+        continue; // patient handled
+      }
+    }
+
+    // 3c. Create new folder if still none
     if (!patientFolder) {
-      patientFolder = {
-        id: patientFolderId,
+      folders.push({
+        id: `SYSTEM-PATIENT-${patient.id}`,
         name: expectedName,
         parentId: targetParentId,
         isSystemFolder: true,
         patientId: patient.id,
         createdAt: now,
         updatedAt: now,
-      };
-      folders.push(patientFolder);
-    } else {
-      // Update name if patient was renamed, or move to correct parent folder
-      if (patientFolder.name !== expectedName || patientFolder.parentId !== targetParentId) {
-        folders = folders.map((f) =>
-          f.id === patientFolderId
-            ? { ...f, name: expectedName, parentId: targetParentId, updatedAt: now }
-            : f,
-        );
-      }
+      });
+    } else if (
+      patientFolder.name !== expectedName ||
+      patientFolder.parentId !== targetParentId
+    ) {
+      // 3d. Update name and/or move folder to new parent (status changed, etc.)
+      const targetId = patientFolder.id;
+      folders = folders.map((f) =>
+        f.id === targetId
+          ? { ...f, name: expectedName, parentId: targetParentId, updatedAt: now }
+          : f,
+      );
     }
   }
 
-  return { ...state, folders };
+  return { ...state, folders, files };
 }
 
 // ---------------------------------------------------------------------------
