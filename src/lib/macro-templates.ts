@@ -13,11 +13,27 @@ export interface MacroQuestion {
   options: string[];
   multiSelect?: boolean;
   /**
+   * Opt-in flag for showing the per-option encounter-charge picker on this
+   * question in the macro-settings panel. Default: false.
+   *
+   * Most questions (e.g. "Patient reports:", "Reassessment:") never trigger
+   * charges, so hiding the `$` picker UI on every option by default keeps
+   * the editor clean. Only treatment-style questions opt in by flipping
+   * this to true, which then surfaces the per-option `$` button for
+   * linking to a CPT from Billing Macros.
+   *
+   * When false, the reconciler ignores any `optionCharges` data on this
+   * question (so turning the toggle off temporarily doesn't lose the
+   * user's existing links — flip it back on to restore them).
+   */
+  linksCharges?: boolean;
+  /**
    * Optional per-option encounter charges, keyed by option label (exact match).
-   * When a user picks an option during macro run that has an entry here, the
-   * matching charge is added to the encounter's billing list. De-duplication
-   * happens by procedureCode — if the same option charge is picked across
-   * multiple regions/macros, only one billing row is created.
+   * When a user picks an option during macro run that has an entry here AND
+   * the question has `linksCharges: true`, the matching charge is added to
+   * the encounter's billing list. De-duplication happens by procedureCode —
+   * if the same option charge is picked across multiple regions/macros,
+   * only one billing row is created.
    *
    * Example: a "Treatments Performed" question with options ["Laser",
    * "Massage", "E-Stim"] can link "Massage" to CPT 97124 so that answering
@@ -264,7 +280,17 @@ function normalizeQuestion(value: unknown): MacroQuestion | null {
       }
     }
   }
+  // Back-compat: questions created before the `linksCharges` flag existed
+  // may already have optionCharges populated. Auto-opt-in those questions so
+  // the existing UI behavior is preserved on first load. New questions
+  // (no optionCharges yet) default to false and must be explicitly enabled.
+  const linksCharges =
+    row.linksCharges === true ||
+    (row.linksCharges === undefined && Object.keys(optionCharges).length > 0);
   const result: MacroQuestion = { id, label, options, multiSelect };
+  if (linksCharges) {
+    result.linksCharges = true;
+  }
   if (Object.keys(optionCharges).length) {
     result.optionCharges = optionCharges;
   }

@@ -562,6 +562,10 @@ export function useEncounterNotes() {
           const macro = macroLibraryById.get(run.macroId);
           if (!macro) continue;
           for (const question of macro.questions) {
+            // Respect the question-level opt-in flag. If the user turned
+            // `linksCharges` off, ignore any stale optionCharges data so
+            // their encounter charges aren't silently mutated.
+            if (!question.linksCharges) continue;
             if (!question.optionCharges) continue;
             const answer = run.answers[question.id];
             const picks = Array.isArray(answer) ? answer : answer ? [answer] : [];

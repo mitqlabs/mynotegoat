@@ -722,6 +722,26 @@ export function MacroSettingsPanel() {
                           />
                           Multi
                         </label>
+                        {/* Opt-in: only questions marked "Links charges" show
+                            the per-option $ picker below. Hides visual clutter
+                            for the vast majority of questions that don't trigger
+                            encounter charges (e.g. "Patient reports:"). */}
+                        <label
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                          title="Enable per-option encounter charge linking for this question"
+                        >
+                          <input
+                            checked={question.linksCharges === true}
+                            onChange={(event) =>
+                              updateQuestion(selectedMacro.id, question.id, (current) => ({
+                                ...current,
+                                linksCharges: event.target.checked || undefined,
+                              }))
+                            }
+                            type="checkbox"
+                          />
+                          Links charges
+                        </label>
                         <button
                           className="rounded-lg border border-[var(--line-soft)] px-2 py-0.5 text-xs"
                           onClick={() => appendToBody(insertQuestionToken(question.id))}
@@ -747,7 +767,11 @@ export function MacroSettingsPanel() {
                           time this specific answer auto-adds that charge. */}
                       <div className="flex flex-wrap gap-1">
                         {question.options.map((option, optIndex) => {
-                          const linked = question.optionCharges?.[option];
+                          // Only treat as "linked" visually if the question
+                          // has opted into charge linking. Stale optionCharges
+                          // data from a toggled-off question should look neutral.
+                          const rawLink = question.optionCharges?.[option];
+                          const linked = question.linksCharges ? rawLink : undefined;
                           const pickerOpen =
                             chargePickerFor?.questionId === question.id &&
                             chargePickerFor?.option === option;
@@ -766,33 +790,39 @@ export function MacroSettingsPanel() {
                               }
                             >
                               {option}
-                              {linked && (
+                              {/* $ picker and linked-CPT badge only render
+                                  when this question has opted in via the
+                                  "Links charges" toggle. Keeps unrelated
+                                  questions visually clean. */}
+                              {question.linksCharges && linked && (
                                 <span className="rounded bg-emerald-200 px-1 py-0 font-mono text-[10px] font-semibold text-emerald-900">
                                   {linked.procedureCode}
                                 </span>
                               )}
-                              <button
-                                className={`ml-0.5 text-xs font-bold ${
-                                  linked
-                                    ? "text-emerald-700 hover:text-emerald-900"
-                                    : "text-[var(--text-muted)] hover:text-[var(--brand-primary)]"
-                                }`}
-                                onClick={() => {
-                                  if (pickerOpen) {
-                                    setChargePickerFor(null);
-                                  } else {
-                                    setChargePickerFor({
-                                      questionId: question.id,
-                                      option,
-                                    });
-                                    setChargePickerSearch("");
-                                  }
-                                }}
-                                title={linked ? "Change or unlink charge" : "Link a charge"}
-                                type="button"
-                              >
-                                $
-                              </button>
+                              {question.linksCharges && (
+                                <button
+                                  className={`ml-0.5 text-xs font-bold ${
+                                    linked
+                                      ? "text-emerald-700 hover:text-emerald-900"
+                                      : "text-[var(--text-muted)] hover:text-[var(--brand-primary)]"
+                                  }`}
+                                  onClick={() => {
+                                    if (pickerOpen) {
+                                      setChargePickerFor(null);
+                                    } else {
+                                      setChargePickerFor({
+                                        questionId: question.id,
+                                        option,
+                                      });
+                                      setChargePickerSearch("");
+                                    }
+                                  }}
+                                  title={linked ? "Change or unlink charge" : "Link a charge"}
+                                  type="button"
+                                >
+                                  $
+                                </button>
+                              )}
                               <button
                                 className="ml-0.5 text-[var(--text-muted)] hover:text-[#b43b34]"
                                 onClick={() =>
@@ -819,8 +849,10 @@ export function MacroSettingsPanel() {
                       {/* Per-option charge picker popover. Shows below the
                           options row for the currently-selected option only.
                           Search by name / CPT and click a treatment to link.
-                          "Unlink" clears the entry. */}
-                      {chargePickerFor?.questionId === question.id &&
+                          "Unlink" clears the entry. Only renders when this
+                          question has opted in via "Links charges". */}
+                      {question.linksCharges &&
+                        chargePickerFor?.questionId === question.id &&
                         question.options.includes(chargePickerFor.option) && (
                           <div className="rounded-xl border border-emerald-300 bg-white p-2">
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
