@@ -1082,6 +1082,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+// Result row for the Test Cloud Write probe. Each table gets a row with
+// the exact Postgres error text (or a success tick) so the user can copy
+// the error when reporting a sync failure.
+type ProbeResult = {
+  table: string;
+  ok: boolean | null; // null = not yet tested
+  error: string | null;
+  hint?: string;
+};
+
 function DiagnosticsSection() {
   const [state, setState] = useState<DiagnosticsState>({
     loading: true,
@@ -1098,6 +1108,8 @@ function DiagnosticsSection() {
     casemateBytes: 0,
   });
   const [refreshTick, setRefreshTick] = useState(0);
+  const [probes, setProbes] = useState<ProbeResult[]>([]);
+  const [probing, setProbing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1304,7 +1316,221 @@ function DiagnosticsSection() {
         ) : null}
       </section>
 
-      <div className="flex justify-end">
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Test Cloud Write
+        </h3>
+        <p className="mb-2 text-xs text-[var(--text-muted)]">
+          Inserts and immediately deletes a dummy row in each cloud table to surface
+          the exact Postgres error the app is hitting. The rows never stick around and
+          your real data is untouched. If a row reports an error, copy the error text —
+          that&apos;s what the red &quot;Cloud sync failed&quot; pill is actually complaining about.
+        </p>
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
+          {probes.length === 0 ? (
+            <div className="py-2 text-sm text-[var(--text-muted)]">No probe run yet.</div>
+          ) : (
+            probes.map((p) => (
+              <div
+                key={p.table}
+                className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] py-2 last:border-b-0"
+              >
+                <span className="text-sm font-medium text-[var(--text-muted)]">{p.table}</span>
+                <span
+                  className={`max-w-xs break-all text-right font-mono text-xs ${
+                    p.ok === null
+                      ? "text-[var(--text-muted)]"
+                      : p.ok
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                  }`}
+                >
+                  {p.ok === null ? "…" : p.ok ? "✓ OK" : p.error || "failed"}
+                  {p.hint ? (
+                    <div className="mt-1 text-[10px] font-normal text-amber-300">{p.hint}</div>
+                  ) : null}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={probing || !state.activeWorkspaceId || !state.workspaceMatchesAuth}
+          onClick={async () => {
+            // Try inserting + deleting a disposable row in each cloud table.
+            // The row ids are prefixed `__probe__` so they're obvious in the
+            // DB if anything ever gets left behind. Runs sequentially so we
+            // can report results incrementally.
+            setProbing(true);
+            const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+            const supabase = getSupabaseBrowserClient();
+            if (!supabase || !state.activeWorkspaceId) {
+              setProbing(false);
+              return;
+            }
+            const ws = state.activeWorkspaceId;
+            const probeId = `__probe__${Date.now()}`;
+            const targets: Array<{
+              table: string;
+              row: Record<string, unknown>;
+            }> = [
+              {
+                table: "patients",
+                row: {
+                  id: probeId,
+                  workspace_id: ws,
+                  full_name: "__probe__",
+                  dob: "",
+                  phone: "",
+                  attorney: "",
+                  case_status: "Active",
+                  date_of_loss: "",
+                  last_update: "",
+                  priority: "Normal",
+                },
+              },
+              {
+                table: "schedule_appointments",
+                row: {
+                  id: probeId,
+                  workspace_id: ws,
+                  patient_id: "",
+                  patient_name: "__probe__",
+                  provider: "",
+                  location: "",
+                  appointment_type: "",
+                  case_label: "",
+                  room: "",
+                  date: "",
+                  start_time: "08:00",
+                  duration_min: 30,
+                  status: "Scheduled",
+                  note: "",
+                  override_office_hours: false,
+                },
+              },
+              {
+                table: "encounter_notes",
+                row: {
+                  id: probeId,
+                  workspace_id: ws,
+                  patient_id: "",
+                  patient_name: "__probe__",
+                  provider: "",
+                  appointment_type: "",
+                  encounter_date: "",
+                  start_time: "",
+                  soap: { subjective: "", objective: "", assessment: "", plan: "" },
+                  macro_runs: [],
+                  diagnoses: [],
+                  charges: [],
+                  signed: false,
+                  signed_at: "",
+                  created_at_record: "",
+                  updated_at_record: "",
+                },
+              },
+              {
+                table: "app_snapshots",
+                row: {
+                  workspace_id: ws,
+                  snapshot: { "__probe__": "ignore" },
+                  updated_at: new Date().toISOString(),
+                },
+              },
+            ];
+
+            // Seed all rows as pending so the UI shows progress
+            setProbes(
+              targets.map((t) => ({ table: t.table, ok: null, error: null })),
+            );
+
+            const results: ProbeResult[] = [];
+            for (const t of targets) {
+              try {
+                // app_snapshots is the only table we don't want to insert-
+                // then-delete against — the protect trigger would kick.
+                // Instead we just do a select to confirm the caller can
+                // read the row.
+                if (t.table === "app_snapshots") {
+                  const { error } = await supabase
+                    .from("app_snapshots")
+                    .select("workspace_id", { head: true, count: "exact" })
+                    .eq("workspace_id", ws);
+                  results.push({
+                    table: "app_snapshots (read probe)",
+                    ok: !error,
+                    error: error ? `${error.code ?? ""} ${error.message}`.trim() : null,
+                    hint: error
+                      ? "If this fails, the legacy blob table is the problem."
+                      : undefined,
+                  });
+                  setProbes([...results, ...targets.slice(results.length).map((x) => ({
+                    table: x.table,
+                    ok: null as boolean | null,
+                    error: null,
+                  }))]);
+                  continue;
+                }
+
+                const upsertConflict =
+                  t.table === "app_snapshots" ? "workspace_id" : "workspace_id,id";
+                const { error: upErr } = await supabase
+                  .from(t.table)
+                  .upsert(t.row, { onConflict: upsertConflict });
+                if (upErr) {
+                  results.push({
+                    table: t.table,
+                    ok: false,
+                    error: `${upErr.code ?? ""} ${upErr.message}`.trim(),
+                    hint:
+                      upErr.message.toLowerCase().includes("row-level security") ||
+                      upErr.message.toLowerCase().includes("policy")
+                        ? "RLS policy rejected — workspace_id prefix likely does not match auth.uid()."
+                        : upErr.message.toLowerCase().includes("does not exist") ||
+                            upErr.message.toLowerCase().includes("relation")
+                          ? "Table missing — run the SQL migration for this table in Supabase."
+                          : upErr.message.toLowerCase().includes("null value")
+                            ? "A NOT NULL column is missing from the code path — schema drift."
+                            : undefined,
+                  });
+                } else {
+                  // Clean up the probe row immediately.
+                  const { error: delErr } = await supabase
+                    .from(t.table)
+                    .delete()
+                    .eq("workspace_id", ws)
+                    .eq("id", probeId);
+                  results.push({
+                    table: t.table,
+                    ok: !delErr,
+                    error: delErr ? `${delErr.code ?? ""} ${delErr.message}`.trim() : null,
+                  });
+                }
+              } catch (err) {
+                results.push({
+                  table: t.table,
+                  ok: false,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+              setProbes([...results, ...targets.slice(results.length).map((x) => ({
+                table: x.table,
+                ok: null as boolean | null,
+                error: null,
+              }))]);
+            }
+            setProbes(results);
+            setProbing(false);
+          }}
+          className="rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/20 disabled:opacity-40"
+        >
+          {probing ? "Probing…" : "Run Test Cloud Write"}
+        </button>
         <button
           type="button"
           onClick={() => setRefreshTick((t) => t + 1)}
