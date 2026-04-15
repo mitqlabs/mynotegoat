@@ -2735,7 +2735,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                         <button
                           className="rounded-lg p-1 text-[#b43b34] hover:bg-red-50 transition-colors disabled:opacity-30"
                           disabled={selectedEncounter.signed}
-                          onClick={() => { if (window.confirm(`Remove charge "${entry.name}"?`)) removeCharge(selectedEncounter.id, entry.id); }}
+                          onClick={() => {
+                            // Pass macroLibraryById so linked charges also
+                            // unpick their option in the SOAP — otherwise
+                            // the next reconcile would re-add the charge.
+                            if (window.confirm(`Remove charge "${entry.name}"?`)) {
+                              removeCharge(selectedEncounter.id, entry.id, macroLibraryById);
+                            }
+                          }}
                           title="Remove charge"
                           type="button"
                         >

@@ -7,6 +7,7 @@ import {
   createEncounterId,
   createEncounterMacroRunId,
   forceSaveAllEncountersToCloud,
+  encounterSections,
   getNowUsDate,
   loadEncounterNoteRecords,
   loadEncounterNotesFromCloud,
@@ -17,7 +18,12 @@ import {
   type EncounterNoteRecord,
   type EncounterSection,
 } from "@/lib/encounter-notes";
-import type { MacroLinkedCharge, MacroTemplate } from "@/lib/macro-templates";
+import {
+  formatMacroAnswerValue,
+  renderMacroPromptSpan,
+  type MacroLinkedCharge,
+  type MacroTemplate,
+} from "@/lib/macro-templates";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
 
 const SYNC_KEY = "casemate.encounter-notes.v1";
@@ -36,6 +42,35 @@ type UpdateEncounterPatch = Partial<
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+/**
+ * Rewrite a single macro prompt span inside an HTML string. Used when we
+ * programmatically clear an option pick (e.g. via removeCharge unpick) so
+ * the rendered SOAP and the run's stored generatedText both reflect the
+ * new answer value without a full template re-render.
+ *
+ * Matches the exact attribute shape emitted by `renderMacroPromptSpan` and
+ * replaces with a freshly rendered span for the same run+prompt. If no
+ * matching span is found, returns the input unchanged.
+ */
+function replacePromptSpan(
+  html: string,
+  runId: string,
+  promptId: string,
+  newValue: string,
+): string {
+  // Escape regex metacharacters in ids (they're usually safe, but be
+  // defensive — underscores and hyphens are fine, but future id formats
+  // could include dots or plus signs).
+  const safeRun = runId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const safePrompt = promptId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `<span class="macro-prompt" contenteditable="false" data-macro-run-id="${safeRun}" data-prompt-id="${safePrompt}">[\\s\\S]*?</span>`,
+    "g",
+  );
+  if (!pattern.test(html)) return html;
+  return html.replace(pattern, renderMacroPromptSpan(runId, promptId, newValue));
 }
 
 export function useEncounterNotes() {
@@ -498,12 +533,122 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
+  /**
+   * Remove a charge row. If the charge was auto-added by the option-linked
+   * pipeline (has `linkedMacroRunId`), also unpick every matching option
+   * across every macro run on this encounter — identified by CPT match.
+   *
+   * This keeps SOAP and billing in sync: if the user removes "LLLT" from
+   * billing, the "Treatments Performed:" question no longer claims LLLT
+   * was done, so the next reconciliation won't re-add it.
+   *
+   * Dedup note: several regions may all pick the same CPT (Head + Cervical
+   * both picking LLLT). Since the dedup keeps only one charge row, removing
+   * that one row unpicks the option in every region that contributed it.
+   * That is intentional — the user is saying "I didn't do this at all."
+   *
+   * If macroLibraryById isn't provided we fall back to the old behavior
+   * (remove charge only, no unpick). Callers that want SOAP/billing sync
+   * should pass it.
+   */
   const removeCharge = useCallback(
-    (encounterId: string, chargeId: string) => {
-      upsertEncounter(encounterId, (current) => ({
-        ...current,
-        charges: current.charges.filter((entry) => entry.id !== chargeId),
-      }));
+    (
+      encounterId: string,
+      chargeId: string,
+      macroLibraryById?: Map<string, MacroTemplate>,
+    ) => {
+      upsertEncounter(encounterId, (current) => {
+        const target = current.charges.find((c) => c.id === chargeId);
+        if (!target) return current;
+
+        const filteredCharges = current.charges.filter((c) => c.id !== chargeId);
+
+        // Fast path: no unpick logic needed.
+        if (!target.linkedMacroRunId || !macroLibraryById) {
+          return { ...current, charges: filteredCharges };
+        }
+
+        const targetCode = target.procedureCode.toUpperCase();
+        // Collect the (runId, questionId, newValueStr) tuples we need to
+        // rewrite in the SOAP section HTML so the visible prompt span
+        // matches the new answer. Without this, the SOAP would keep
+        // showing the old pick text until the user re-opens the picker.
+        const soapRewrites: Array<{
+          runId: string;
+          questionId: string;
+          newValue: string;
+        }> = [];
+
+        const updatedRuns = current.macroRuns.map((run) => {
+          const macro = macroLibraryById.get(run.macroId);
+          if (!macro) return run;
+          let touched = false;
+          const nextAnswers: typeof run.answers = { ...run.answers };
+          let nextGeneratedText = run.generatedText;
+          for (const question of macro.questions) {
+            if (!question.linksCharges || !question.optionCharges) continue;
+            const answer = run.answers[question.id];
+            if (answer === undefined) continue;
+            const isMultiCandidate = Array.isArray(answer);
+            const picks = isMultiCandidate ? answer : [answer];
+            const nextPicks = picks.filter((pick) => {
+              const link = question.optionCharges?.[pick];
+              return !link || link.procedureCode.toUpperCase() !== targetCode;
+            });
+            if (nextPicks.length !== picks.length) {
+              touched = true;
+              const nextAnswer = isMultiCandidate
+                ? nextPicks
+                : nextPicks[0] ?? "";
+              nextAnswers[question.id] = nextAnswer;
+              const newValueStr = formatMacroAnswerValue(nextAnswer);
+              // Rewrite the prompt span inside the run's own generatedText
+              // so re-salting or prompt-level editing starts from the
+              // correct baseline.
+              nextGeneratedText = replacePromptSpan(
+                nextGeneratedText,
+                run.id,
+                question.id,
+                newValueStr,
+              );
+              soapRewrites.push({
+                runId: run.id,
+                questionId: question.id,
+                newValue: newValueStr,
+              });
+            }
+          }
+          return touched
+            ? { ...run, answers: nextAnswers, generatedText: nextGeneratedText }
+            : run;
+        });
+
+        // Apply the same prompt-span rewrites to every SOAP section so the
+        // rendered HTML matches the new picks.
+        let nextSoap = current.soap;
+        if (soapRewrites.length > 0) {
+          nextSoap = { ...current.soap };
+          for (const section of encounterSections) {
+            let sectionText = nextSoap[section];
+            for (const rewrite of soapRewrites) {
+              sectionText = replacePromptSpan(
+                sectionText,
+                rewrite.runId,
+                rewrite.questionId,
+                rewrite.newValue,
+              );
+            }
+            nextSoap[section] = sectionText;
+          }
+        }
+
+        return {
+          ...current,
+          charges: filteredCharges,
+          macroRuns: updatedRuns,
+          soap: nextSoap,
+        };
+      });
     },
     [upsertEncounter],
   );
