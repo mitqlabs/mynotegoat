@@ -20,6 +20,16 @@ export interface EncounterDiagnosisEntry {
 export interface EncounterChargeEntry {
   id: string;
   treatmentMacroId?: string;
+  /**
+   * If set, this charge was adopted or created by the option-linked charge
+   * pipeline for the referenced macro run. Reconciliation uses this as the
+   * signal that it is allowed to delete or update the row when macro-run
+   * answers change. Charges without this field are considered "user-owned"
+   * (manually added or billing-macro-added) and left untouched by the
+   * reconciler. Once reconciliation adopts a charge, the field remains set
+   * until the charge is removed.
+   */
+  linkedMacroRunId?: string;
   name: string;
   procedureCode: string;
   unitPrice: number;
@@ -168,6 +178,7 @@ function normalizeCharge(value: unknown): EncounterChargeEntry | null {
   return {
     id,
     treatmentMacroId: typeof row.treatmentMacroId === "string" ? row.treatmentMacroId : undefined,
+    linkedMacroRunId: typeof row.linkedMacroRunId === "string" ? row.linkedMacroRunId : undefined,
     name,
     procedureCode,
     unitPrice,

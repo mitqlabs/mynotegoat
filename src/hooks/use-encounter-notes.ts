@@ -17,6 +17,7 @@ import {
   type EncounterNoteRecord,
   type EncounterSection,
 } from "@/lib/encounter-notes";
+import type { MacroLinkedCharge, MacroTemplate } from "@/lib/macro-templates";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
 
 const SYNC_KEY = "casemate.encounter-notes.v1";
@@ -522,6 +523,115 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
+  /**
+   * Reconcile option-linked encounter charges against the current macro-run
+   * answers. Call this after:
+   *  - adding or editing a macro run (answers changed)
+   *  - removing a macro run
+   *  - SALT'ing SOAP macro runs from a prior encounter
+   *
+   * Logic (runs atomically inside a single upsertEncounter):
+   *  1. Build the "expected" set of (procedureCode → MacroLinkedCharge)
+   *     from every picked answer in every macro run in this encounter.
+   *  2. For each expected code:
+   *       - If a charge already exists with that code: adopt it by
+   *         setting linkedMacroRunId. Leave name/price/units alone so
+   *         any manual edits the user made survive.
+   *       - Else: insert a new charge with units=1 and the link flag set.
+   *  3. Drop any charge that has linkedMacroRunId set but whose code is
+   *     no longer expected — that's a picked-and-then-unpicked option.
+   *
+   * Charges with NO linkedMacroRunId and NO matching expected code are
+   * user-owned; the reconciler never removes them.
+   *
+   * Returns a summary of what changed so the caller can surface a
+   * message in the UI.
+   */
+  const reconcileLinkedCharges = useCallback(
+    (
+      encounterId: string,
+      macroLibraryById: Map<string, MacroTemplate>,
+    ): { added: string[]; removed: string[] } => {
+      const changed = { added: [] as string[], removed: [] as string[] };
+      upsertEncounter(encounterId, (current) => {
+        const expected = new Map<
+          string,
+          { link: MacroLinkedCharge; firstRunId: string }
+        >();
+        for (const run of current.macroRuns) {
+          const macro = macroLibraryById.get(run.macroId);
+          if (!macro) continue;
+          for (const question of macro.questions) {
+            if (!question.optionCharges) continue;
+            const answer = run.answers[question.id];
+            const picks = Array.isArray(answer) ? answer : answer ? [answer] : [];
+            for (const pick of picks) {
+              const link = question.optionCharges[pick];
+              if (!link?.procedureCode || !link?.name) continue;
+              const code = link.procedureCode.toUpperCase();
+              if (!expected.has(code)) {
+                expected.set(code, {
+                  link: { ...link, procedureCode: code },
+                  firstRunId: run.id,
+                });
+              }
+            }
+          }
+        }
+
+        const nextCharges: EncounterChargeEntry[] = [];
+        const adopted = new Set<string>();
+        for (const charge of current.charges) {
+          const code = charge.procedureCode.toUpperCase();
+          const match = expected.get(code);
+          if (match) {
+            adopted.add(code);
+            // Adopt if not already linked. Preserve user-edited name/price/units.
+            if (!charge.linkedMacroRunId) {
+              nextCharges.push({ ...charge, linkedMacroRunId: match.firstRunId });
+            } else {
+              nextCharges.push(charge);
+            }
+            continue;
+          }
+          if (charge.linkedMacroRunId) {
+            // Was previously linked; no longer expected → remove.
+            changed.removed.push(charge.name);
+            continue;
+          }
+          // User-owned manual / billing-macro charge — keep untouched.
+          nextCharges.push(charge);
+        }
+
+        for (const [code, { link, firstRunId }] of expected) {
+          if (adopted.has(code)) continue;
+          nextCharges.push({
+            id: createEncounterChargeId(),
+            linkedMacroRunId: firstRunId,
+            name: link.name,
+            procedureCode: code,
+            unitPrice: Math.max(0, Number(link.unitPrice) || 0),
+            units: 1,
+          });
+          changed.added.push(link.name);
+        }
+
+        if (changed.added.length === 0 && changed.removed.length === 0) {
+          // Check for adoption-only changes (newly tagged linkedMacroRunId).
+          const adoptionChanged = nextCharges.some((c, i) => {
+            const prev = current.charges[i];
+            return prev && c.linkedMacroRunId !== prev.linkedMacroRunId;
+          });
+          if (!adoptionChanged) return current;
+        }
+
+        return { ...current, charges: nextCharges };
+      });
+      return changed;
+    },
+    [upsertEncounter],
+  );
+
   const setSigned = useCallback(
     (encounterId: string, signed: boolean) => {
       upsertEncounter(encounterId, (current) => ({
@@ -574,6 +684,7 @@ export function useEncounterNotes() {
     updateCharge,
     removeCharge,
     moveCharge,
+    reconcileLinkedCharges,
     setSigned,
     deleteEncounter,
     forceSaveAll,

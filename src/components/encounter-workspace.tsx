@@ -64,6 +64,28 @@ function rewriteMacroRunIds(html: string): { html: string; idMap: Map<string, st
   return { html: next, idMap };
 }
 
+/**
+ * Format the delta returned by reconcileLinkedCharges into a human-readable
+ * status suffix. Returns an empty string when nothing changed so callers can
+ * concatenate it unconditionally (e.g. `${base}${formatChargeDelta(...)}`).
+ *
+ * Examples:
+ *   formatChargeDelta(["Massage"], []) === " Charges added: Massage."
+ *   formatChargeDelta([], ["Hot Pack"]) === " Charges removed: Hot Pack."
+ *   formatChargeDelta(["Laser"], ["Massage"]) === " Charges added: Laser. Charges removed: Massage."
+ *   formatChargeDelta([], []) === ""
+ */
+function formatChargeDelta(added: string[], removed: string[]): string {
+  const parts: string[] = [];
+  if (added.length > 0) {
+    parts.push(`Charges added: ${added.join(", ")}.`);
+  }
+  if (removed.length > 0) {
+    parts.push(`Charges removed: ${removed.join(", ")}.`);
+  }
+  return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+}
+
 function getNames(fullName: string) {
   const [lastName = "", firstName = ""] = fullName.split(",").map((value) => value.trim());
   return { firstName, lastName };
@@ -658,6 +680,16 @@ function AppointmentsOverview({
 
 export function EncounterWorkspace({ initialPatientId, initialEncounterId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
+
+  // Indexed view of all macro templates for O(1) lookup during charge
+  // reconciliation. Rebuilt whenever templates change.
+  const macroLibraryById = useMemo(() => {
+    const map = new Map<string, typeof macroLibrary.templates[number]>();
+    for (const t of macroLibrary.templates) {
+      map.set(t.id, t);
+    }
+    return map;
+  }, [macroLibrary.templates]);
   // Tracks the macro id being dragged so the drop target knows what to
   // move. null outside an active drag. Per-chip drop handlers only accept
   // drops from within the same section + folder (enforced server-side in
@@ -681,6 +713,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     updateCharge,
     removeCharge,
     moveCharge,
+    reconcileLinkedCharges,
     setSigned,
     deleteEncounter,
     forceSaveAll,
@@ -976,10 +1009,25 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       });
     });
     const macroSuffix = totalMacros > 0 ? ` (with ${totalMacros} editable macro${totalMacros === 1 ? "" : "s"})` : "";
-    setMessage(
-      `Auto-Salted ${sectionsWithText.length} SOAP section${sectionsWithText.length === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.`,
+    // Reconcile so any linked-charge options on the copied macro runs get
+    // their encounter charges added (or adopted if autoSaltCharges already
+    // ran and brought matching CPTs along).
+    const { added, removed } = reconcileLinkedCharges(
+      selectedEncounter.id,
+      macroLibraryById,
     );
-  }, [autoSalt, selectedEncounter, saltSourceEncounter, setSoapSection, addMacroRun]);
+    setMessage(
+      `Auto-Salted ${sectionsWithText.length} SOAP section${sectionsWithText.length === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
+    );
+  }, [
+    autoSalt,
+    selectedEncounter,
+    saltSourceEncounter,
+    setSoapSection,
+    addMacroRun,
+    reconcileLinkedCharges,
+    macroLibraryById,
+  ]);
 
   // Auto-Salt Charges: when enabled and a new encounter is selected that has no charges,
   // automatically copy charges from the most recent prior encounter.
@@ -1009,12 +1057,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         units: charge.units,
       })),
     );
+    // Adopt any CPT-matching salted charges into the linked state so later
+    // option edits can remove them. Safe to call with zero macro runs — it's
+    // a no-op when nothing is expected.
+    reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
     if (copiedCount > 0) {
       setMessage(
         `Auto-Salted ${copiedCount} charge${copiedCount === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}.`,
       );
     }
-  }, [autoSaltCharges, selectedEncounter, saltSourceEncounter, addChargesBulk]);
+  }, [
+    autoSaltCharges,
+    selectedEncounter,
+    saltSourceEncounter,
+    addChargesBulk,
+    reconcileLinkedCharges,
+    macroLibraryById,
+  ]);
 
   const sectionMacros = useMemo(
     () =>
@@ -1129,41 +1188,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       return;
     }
 
-    // Auto-add charges linked to picked answer options. For each question in
-    // the macro, look at the user's answer(s) and check whether any picked
-    // option has an entry in `optionCharges`. If so, add the charge to the
-    // encounter. addCharge dedupes by procedureCode, so running the same
-    // treatment option across multiple regions (e.g. "Massage" picked for
-    // Cervical AND Lumbar) adds exactly one row with 1 unit — no doubling.
-    // Units stay manual after that.
-    //
-    // Runs for BOTH brand-new macro runs and edits to an existing run. If
-    // the user edits a previous run to pick a newly-added option with a
-    // linked charge, they still get billed correctly. Edits that keep the
-    // same picks are a silent no-op because the charge already exists.
-    const applyLinkedCharges = (): string[] => {
-      const added: string[] = [];
-      for (const question of macro.questions) {
-        if (!question.optionCharges) continue;
-        const answer = answers[question.id];
-        const picked = Array.isArray(answer) ? answer : answer ? [answer] : [];
-        for (const pick of picked) {
-          const link = question.optionCharges[pick];
-          if (!link?.procedureCode || !link?.name) continue;
-          const result = addCharge(selectedEncounter.id, {
-            name: link.name,
-            procedureCode: link.procedureCode,
-            unitPrice: link.unitPrice,
-            units: 1,
-            treatmentMacroId: macro.id,
-          });
-          if (result === "added") {
-            added.push(link.name);
-          }
-        }
-      }
-      return added;
-    };
+    // Reconciliation is run AFTER the macro run is added/updated below.
+    // It looks at every macro run's current picked answers and adds /
+    // removes linked charges so the billing list always matches what is
+    // actually selected in the SOAP notes. Removing an option (e.g.
+    // replacing Massage with Intersegmental Traction on Lumbar) will
+    // drop the Massage charge if no other run still picks it.
 
     if (existingRun) {
       const currentSectionText = selectedEncounter.soap[activeSection];
@@ -1209,12 +1239,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         answers: { ...answers },
         generatedText,
       });
-      const chargesAdded = applyLinkedCharges();
-      const linkedChargeMessage = chargesAdded.length
-        ? ` Charge${chargesAdded.length === 1 ? "" : "s"} added: ${chargesAdded.join(", ")}.`
-        : "";
+      const { added, removed } = reconcileLinkedCharges(
+        selectedEncounter.id,
+        macroLibraryById,
+      );
       setMessage(
-        `${sectionLabels[activeSection]} macro updated: ${macro.buttonName}.${linkedChargeMessage}`,
+        `${sectionLabels[activeSection]} macro updated: ${macro.buttonName}.${formatChargeDelta(added, removed)}`,
       );
       return;
     }
@@ -1230,13 +1260,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       generatedText,
     });
 
-    const chargesAdded = applyLinkedCharges();
-    const linkedChargeMessage = chargesAdded.length
-      ? ` Charge${chargesAdded.length === 1 ? "" : "s"} added: ${chargesAdded.join(", ")}.`
-      : "";
-
+    const { added, removed } = reconcileLinkedCharges(
+      selectedEncounter.id,
+      macroLibraryById,
+    );
     setMessage(
-      `${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.${linkedChargeMessage}`,
+      `${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.${formatChargeDelta(added, removed)}`,
     );
   };
 
@@ -1398,7 +1427,16 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       copiedRunCount += 1;
     });
     const macroSuffix = copiedRunCount > 0 ? ` (with ${copiedRunCount} editable macro${copiedRunCount === 1 ? "" : "s"})` : "";
-    setMessage(`Copied ${sectionLabels[activeSection]} from ${saltSourceEncounter.encounterDate}${macroSuffix}.`);
+    // Reconcile charges after copying macro runs so linked-charge options on
+    // the copied runs get their encounter charges adopted (from salted charges
+    // matching the same CPT) or added fresh.
+    const { added, removed } = reconcileLinkedCharges(
+      selectedEncounter.id,
+      macroLibraryById,
+    );
+    setMessage(
+      `Copied ${sectionLabels[activeSection]} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
+    );
   };
 
   const handleCopyAllSoapFromSelected = () => {
@@ -1459,8 +1497,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       totalSections += 1;
     });
     const macroSuffix = totalMacros > 0 ? ` (with ${totalMacros} editable macro${totalMacros === 1 ? "" : "s"})` : "";
+    const { added, removed } = reconcileLinkedCharges(
+      selectedEncounter.id,
+      macroLibraryById,
+    );
     setMessage(
-      `Copied ${totalSections} SOAP section${totalSections === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.`,
+      `Copied ${totalSections} SOAP section${totalSections === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
     );
   };
 
@@ -1498,6 +1540,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         units: charge.units,
       })),
     );
+    // After bulk-copying charges, reconcile so any of them whose CPT matches
+    // a picked macro-option get tagged with linkedMacroRunId (adopted).
+    // Without this, later option removals wouldn't clean them up.
+    reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
     setMessage(
       `Copied ${copiedCount} charge${copiedCount === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}.`,
     );
@@ -2381,6 +2427,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                   onClick={() => {
                                     if (window.confirm(`Remove "${run.macroName}" input?`)) {
                                       removeMacroRun(selectedEncounter.id, run.id);
+                                      // Reconcile so any charges that were
+                                      // auto-added by this run's picked
+                                      // options get removed from billing.
+                                      const { added, removed } = reconcileLinkedCharges(
+                                        selectedEncounter.id,
+                                        macroLibraryById,
+                                      );
+                                      if (added.length > 0 || removed.length > 0) {
+                                        setMessage(
+                                          `Removed ${run.macroName}.${formatChargeDelta(added, removed)}`,
+                                        );
+                                      }
                                     }
                                   }}
                                   title={`Remove ${run.macroName}`}
