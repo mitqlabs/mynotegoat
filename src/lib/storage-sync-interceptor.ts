@@ -60,6 +60,19 @@ function notifyStatus(status: "syncing" | "synced" | "error") {
   }
 }
 
+/**
+ * Public escape hatch for *cloud-table* writes that fail outside the blob
+ * autosave path (e.g., dual-writes to dedicated tables). Flips the UI
+ * indicator to "error" and logs for diagnosis. Callers should still throw
+ * upstream so the caller's own error-handling can run.
+ */
+export function reportCloudWriteError(source: string, error: unknown) {
+  syncErrorCount += 1;
+  const msg = error instanceof Error ? error.message : String(error);
+  console.error(`[Cloud Write] ${source} failed:`, msg);
+  notifyStatus("error");
+}
+
 function doSync(): Promise<void> {
   // If a sync is already running, return its promise so callers actually
   // await it instead of resolving immediately. Critical for "Save & Close"

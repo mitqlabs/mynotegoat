@@ -350,8 +350,16 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
     console.error("[encounter-notes] localStorage write failed:", err);
     return false;
   }
-  // Always dual-write the FULL set to cloud (not the pruned subset)
-  void dualWriteEncounterNotesToCloud(records, previousNotesById);
+  // Always dual-write the FULL set to cloud (not the pruned subset).
+  // We don't await here because saveEncounterNoteRecords is sync for
+  // backwards compatibility, but the inner function now reports failures
+  // through the sync status system and rejects instead of silently swallowing.
+  // The `.catch` below ONLY exists to prevent unhandled-promise-rejection
+  // warnings — the actual error surfacing happens inside the dual-write
+  // via reportCloudWriteError. Keep this; don't swallow the error upstream.
+  dualWriteEncounterNotesToCloud(records, previousNotesById).catch(() => {
+    /* already reported via reportCloudWriteError inside dualWrite */
+  });
   previousNotesById = new Map(records.map((n) => [n.id, n]));
   return true;
 }
@@ -388,33 +396,53 @@ export async function forceSaveAllEncountersToCloud(
   }
 }
 
+/**
+ * Dual-write changed encounters to the cloud table. Returns a promise that
+ * resolves when every upsert/delete has settled. Failures are surfaced via
+ * the sync status system AND re-thrown as an aggregate error so the caller
+ * can choose to react (e.g., the "Save All Encounters" button can show a
+ * toast). Previous behavior was fire-and-forget with silent `console.error`
+ * — that's the exact pattern that lost 94 encounters.
+ */
 async function dualWriteEncounterNotesToCloud(
   nextRecords: EncounterNoteRecord[],
   prevById: Map<string, EncounterNoteRecord>,
-) {
-  try {
-    const [{ isCloudEntityEnabled }, { upsertEncounterNoteToTable, deleteEncounterNoteFromTable }] =
-      await Promise.all([
-        import("@/lib/feature-flags"),
-        import("@/lib/encounter-notes-cloud"),
-      ]);
-    if (!isCloudEntityEnabled("encounterNotes")) return;
+): Promise<void> {
+  const [{ isCloudEntityEnabled }, { upsertEncounterNoteToTable, deleteEncounterNoteFromTable }, { reportCloudWriteError }] =
+    await Promise.all([
+      import("@/lib/feature-flags"),
+      import("@/lib/encounter-notes-cloud"),
+      import("@/lib/storage-sync-interceptor"),
+    ]);
+  if (!isCloudEntityEnabled("encounterNotes")) return;
 
-    const nextById = new Map(nextRecords.map((n) => [n.id, n]));
-    for (const note of nextRecords) {
-      const prev = prevById.get(note.id);
-      if (!prev || JSON.stringify(prev) !== JSON.stringify(note)) {
-        void upsertEncounterNoteToTable(note);
-      }
+  const nextById = new Map(nextRecords.map((n) => [n.id, n]));
+  const ops: Promise<unknown>[] = [];
+  for (const note of nextRecords) {
+    const prev = prevById.get(note.id);
+    if (!prev || JSON.stringify(prev) !== JSON.stringify(note)) {
+      ops.push(upsertEncounterNoteToTable(note));
     }
-    for (const prevId of prevById.keys()) {
-      if (!nextById.has(prevId)) {
-        void deleteEncounterNoteFromTable(prevId);
-      }
-    }
-  } catch (error) {
-    console.error("[encounter-notes] dual-write failed:", error);
   }
+  for (const prevId of prevById.keys()) {
+    if (!nextById.has(prevId)) {
+      ops.push(deleteEncounterNoteFromTable(prevId));
+    }
+  }
+  if (ops.length === 0) return;
+
+  const results = await Promise.allSettled(ops);
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failures.length === 0) return;
+
+  // Every individual op already called reportCloudWriteError — this is the
+  // aggregate signal for any caller that wants a single pass/fail answer.
+  const aggregate = new Error(
+    `[encounter-notes] ${failures.length} of ${ops.length} cloud op(s) failed — ` +
+      `first reason: ${failures[0].reason instanceof Error ? failures[0].reason.message : String(failures[0].reason)}`,
+  );
+  reportCloudWriteError("encounter-notes dual-write", aggregate);
+  throw aggregate;
 }
 
 /**
