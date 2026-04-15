@@ -821,6 +821,17 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         ? initialPatientEncounterId
         : filteredEncounterList[0]?.id ?? null;
 
+  // Reset the salt-source dropdown whenever the selected encounter changes so
+  // auto-salt always defaults to the most-recent prior encounter instead of
+  // carrying over a stale selection from the encounter the user was just on.
+  const prevEncounterIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (resolvedEncounterId !== prevEncounterIdRef.current) {
+      prevEncounterIdRef.current = resolvedEncounterId;
+      setSaltSourceEncounterIdDraft("");
+    }
+  }, [resolvedEncounterId]);
+
   const selectedEncounter = useMemo(
     () => encountersByNewest.find((entry) => entry.id === resolvedEncounterId) ?? null,
     [encountersByNewest, resolvedEncounterId],

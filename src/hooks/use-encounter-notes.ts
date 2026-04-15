@@ -504,7 +504,11 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
-  /** Add multiple charges in a single atomic state update (no race conditions). */
+  /**
+   * Add multiple charges in a single atomic state update (no race conditions).
+   * Skips any input whose CPT already exists on the encounter so SALT +
+   * reconcile can't create duplicate rows.
+   */
   const addChargesBulk = useCallback(
     (encounterId: string, inputs: Omit<EncounterChargeEntry, "id">[]) => {
       const valid = inputs
@@ -523,11 +527,26 @@ export function useEncounterNotes() {
         })
         .filter((c): c is NonNullable<typeof c> => c !== null) as EncounterChargeEntry[];
       if (valid.length === 0) return 0;
-      upsertEncounter(encounterId, (current) => ({
-        ...current,
-        charges: [...current.charges, ...valid],
-      }));
-      return valid.length;
+      let addedCount = 0;
+      upsertEncounter(encounterId, (current) => {
+        // Build a set of CPTs already on the encounter so we skip duplicates.
+        const existingCodes = new Set(
+          current.charges.map((c) => c.procedureCode.toUpperCase()),
+        );
+        const toAdd: EncounterChargeEntry[] = [];
+        for (const entry of valid) {
+          if (existingCodes.has(entry.procedureCode)) continue;
+          existingCodes.add(entry.procedureCode); // also dedup within batch
+          toAdd.push(entry);
+        }
+        addedCount = toAdd.length;
+        if (toAdd.length === 0) return current;
+        return {
+          ...current,
+          charges: [...current.charges, ...toAdd],
+        };
+      });
+      return addedCount;
     },
     [upsertEncounter],
   );
@@ -753,11 +772,23 @@ export function useEncounterNotes() {
 
         const nextCharges: EncounterChargeEntry[] = [];
         const adopted = new Set<string>();
+        // Track all CPTs already emitted so we never produce duplicate rows.
+        // This is the safety net for any code path that inadvertently added
+        // the same CPT twice (e.g. addChargesBulk running right after
+        // reconcile in the same render cycle).
+        const emittedCodes = new Set<string>();
         for (const charge of current.charges) {
           const code = charge.procedureCode.toUpperCase();
           const match = expected.get(code);
           if (match) {
+            if (adopted.has(code)) {
+              // Duplicate CPT row — drop the extra. This happens when
+              // auto-salt charges runs after auto-salt SOAP reconcile added
+              // the same CPT in the same render cycle.
+              continue;
+            }
             adopted.add(code);
+            emittedCodes.add(code);
             // Adopt if not already linked. Preserve user-edited name/price/units.
             if (!charge.linkedMacroRunId) {
               nextCharges.push({ ...charge, linkedMacroRunId: match.firstRunId });
@@ -771,7 +802,10 @@ export function useEncounterNotes() {
             changed.removed.push(charge.name);
             continue;
           }
-          // User-owned manual / billing-macro charge — keep untouched.
+          // User-owned manual / billing-macro charge — keep untouched,
+          // but skip if we already have a row with this CPT.
+          if (emittedCodes.has(code)) continue;
+          emittedCodes.add(code);
           nextCharges.push(charge);
         }
 
