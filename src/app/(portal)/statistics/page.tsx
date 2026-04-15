@@ -26,6 +26,37 @@ function monthNameFromDate(dateValue: string) {
   return date.toLocaleString("en-US", { month: "long" });
 }
 
+/**
+ * Parse a date string that may be in several formats and return the year
+ * and month name. Initial Exam is stored as the user typed it (US format
+ * MM/DD/YYYY), while other dates are ISO (YYYY-MM-DD). Returns null if
+ * the value is empty or unparseable so the chart can skip it instead of
+ * bucketing everything under a bogus month.
+ */
+function parseFlexibleDate(value: string | undefined): { year: number; monthName: string } | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return null;
+
+  // ISO first: YYYY-MM-DD (optionally followed by anything)
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    if (!Number.isFinite(year) || month < 1 || month > 12) return null;
+    return { year, monthName: monthOrder[month - 1] };
+  }
+
+  // US: M/D/YY or M/D/YYYY (optionally followed by anything)
+  const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (!usMatch) return null;
+  const month = Number(usMatch[1]);
+  let year = Number(usMatch[3]);
+  if (year < 100) year += 2000;
+  if (!Number.isFinite(year) || month < 1 || month > 12) return null;
+  return { year, monthName: monthOrder[month - 1] };
+}
+
 function normalizeAttorneyKey(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -87,16 +118,35 @@ function formatAverageCaseCount(value: number) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+/**
+ * Default the year filter to the current calendar year if any patient
+ * has a date-of-loss in it. Otherwise fall back to "ALL" so a brand-new
+ * account doesn't open to an empty chart. Evaluated once at mount.
+ */
+function getDefaultYear(): string {
+  const currentYear = new Date().getFullYear().toString();
+  const hasCurrentYear = patients.some((patient) => {
+    try {
+      return new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString() === currentYear;
+    } catch {
+      return false;
+    }
+  });
+  return hasCurrentYear ? currentYear : "ALL";
+}
+
 export default function StatisticsPage() {
   const { caseStatuses } = useCaseStatuses();
-  const [searchDraft, setSearchDraft] = useState("");
-  const [yearDraft, setYearDraft] = useState("ALL");
-  const [attorneyDraft, setAttorneyDraft] = useState("ALL");
-  const [statusDraft, setStatusDraft] = useState("ALL");
+  // Live filters — every dropdown/search update applies immediately, no
+  // Go button. Previously we had a draft/applied split gated behind GO;
+  // that friction wasn't worth the re-render cost on a mock-data page.
   const [search, setSearch] = useState("");
-  const [year, setYear] = useState("ALL");
+  const [year, setYear] = useState<string>(getDefaultYear);
   const [attorney, setAttorney] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+  // Billing Snapshot starts hidden so nothing sensitive is visible when
+  // the page first opens — click to reveal.
+  const [showBilling, setShowBilling] = useState(false);
 
   const years = useMemo(
     () =>
@@ -127,13 +177,6 @@ export default function StatisticsPage() {
     () => caseStatuses.map((statusConfig) => statusConfig.name),
     [caseStatuses],
   );
-
-  const applyFilters = () => {
-    setSearch(searchDraft.trim());
-    setYear(yearDraft);
-    setAttorney(attorneyDraft);
-    setStatus(statusDraft);
-  };
 
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
@@ -194,21 +237,29 @@ export default function StatisticsPage() {
     return counts;
   }, [caseStatuses, filteredPatients]);
 
+  // Cases By Month buckets by the patient's INITIAL EXAM date (the day
+  // the patient first walked into the office), not date-of-loss. We parse
+  // the raw user-entered value flexibly (US or ISO), skip anything
+  // unparseable or missing, and — when a specific year is selected in
+  // the filter — only count exams that fall inside that calendar year.
+  // "ALL" aggregates across every year's exams.
   const monthCounts = useMemo(() => {
     const counts: Record<string, number> = Object.fromEntries(
       monthOrder.map((monthName) => [monthName, 0]),
     ) as Record<string, number>;
 
     filteredPatients.forEach((patient) => {
-      const month = monthNameFromDate(patient.dateOfLoss);
-      counts[month] += 1;
+      const parsed = parseFlexibleDate(patient.matrix?.initialExam);
+      if (!parsed) return;
+      if (year !== "ALL" && parsed.year.toString() !== year) return;
+      counts[parsed.monthName] += 1;
     });
 
     return monthOrder.map((monthName) => ({
       month: monthName,
       count: counts[monthName],
     }));
-  }, [filteredPatients]);
+  }, [filteredPatients, year]);
 
   const totalCasesAcrossMonths = monthCounts.reduce((sum, entry) => sum + entry.count, 0);
   const monthsWithCases = monthCounts.filter((entry) => entry.count > 0).length;
@@ -411,36 +462,23 @@ export default function StatisticsPage() {
         </div>
 
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
-          <div className="grid gap-3 md:grid-cols-[180px_1fr_170px] md:items-center">
+          <div className="grid gap-3 md:grid-cols-[180px_1fr] md:items-center">
             <label className="text-sm font-semibold text-[var(--text-muted)]">Patient Name</label>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setSearchDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  applyFilters();
-                }
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search patient or attorney"
-              value={searchDraft}
+              value={search}
             />
-            <button
-              className="rounded-xl bg-[#1f6b2c] px-4 py-2 font-semibold text-white"
-              onClick={applyFilters}
-              type="button"
-            >
-              SEARCH
-            </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_96px]">
+          <div className="grid gap-3 md:grid-cols-3">
             <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Year
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
-                onChange={(event) => setYearDraft(event.target.value)}
-                value={yearDraft}
+                onChange={(event) => setYear(event.target.value)}
+                value={year}
               >
                 {years.map((yearOption) => (
                   <option key={yearOption} value={yearOption}>
@@ -454,8 +492,8 @@ export default function StatisticsPage() {
               Attorney
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
-                onChange={(event) => setAttorneyDraft(event.target.value)}
-                value={attorneyDraft}
+                onChange={(event) => setAttorney(event.target.value)}
+                value={attorney}
               >
                 {attorneyOptions.map((attorneyOption) => (
                   <option key={attorneyOption} value={attorneyOption}>
@@ -469,8 +507,8 @@ export default function StatisticsPage() {
               Status
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
-                onChange={(event) => setStatusDraft(event.target.value)}
-                value={statusDraft}
+                onChange={(event) => setStatus(event.target.value)}
+                value={status}
               >
                 <option value="ALL">ALL</option>
                 {statusFilterOptions.map((statusOption) => (
@@ -480,16 +518,6 @@ export default function StatisticsPage() {
                 ))}
               </select>
             </label>
-
-            <div className="flex items-end">
-              <button
-                className="h-[42px] w-full rounded-xl bg-[#1f6b2c] px-4 py-2 font-semibold text-white"
-                onClick={applyFilters}
-                type="button"
-              >
-                GO
-              </button>
-            </div>
           </div>
         </div>
       </section>
@@ -497,32 +525,64 @@ export default function StatisticsPage() {
       <div className="space-y-5">
         <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
           <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Billing Snapshot</h4>
-            <div className="mt-4 space-y-2 text-sm">
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Billed</span>
-                <span className="font-bold">{formatMoney(billingData.billedTotal)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Paid</span>
-                <span className="font-bold">{formatMoney(billingData.paidTotal)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">% Paid (Paid Cases)</span>
-                <span className="font-bold">{billingData.paidRate.toFixed(1)}%</span>
-              </p>
-              <p className="text-xs text-[var(--text-muted)]">
-                Uses only cases with payments or Paid status for percentage.
-              </p>
-              <div className="my-2 border-t border-[var(--line-soft)]" />
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg/Billed</span>
-                <span className="font-bold">{formatMoney(billingData.avgBilled)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg/Paid</span>
-                <span className="font-bold">{formatMoney(billingData.avgPaid)}</span>
-              </p>
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-lg font-semibold">Billing Snapshot</h4>
+              <button
+                aria-label={showBilling ? "Hide billing numbers" : "Show billing numbers"}
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
+                onClick={() => setShowBilling((prev) => !prev)}
+                type="button"
+              >
+                {showBilling ? "Hide" : "Show"}
+              </button>
+            </div>
+            {/*
+              Billing Snapshot stays hidden until the user explicitly asks
+              for it. When hidden we render a blurred copy of the numbers
+              so the layout doesn't jump, plus a "click to reveal" button
+              on top. This is for office-walk-by privacy — anyone glancing
+              at the screen shouldn't see totals.
+            */}
+            <div className="relative mt-4">
+              <div
+                className={`space-y-2 text-sm transition-[filter] ${showBilling ? "" : "pointer-events-none select-none blur-md"}`}
+                aria-hidden={!showBilling}
+              >
+                <p className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)]">Billed</span>
+                  <span className="font-bold">{formatMoney(billingData.billedTotal)}</span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)]">Paid</span>
+                  <span className="font-bold">{formatMoney(billingData.paidTotal)}</span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)]">% Paid (Paid Cases)</span>
+                  <span className="font-bold">{billingData.paidRate.toFixed(1)}%</span>
+                </p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Uses only cases with payments or Paid status for percentage.
+                </p>
+                <div className="my-2 border-t border-[var(--line-soft)]" />
+                <p className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)]">Avg/Billed</span>
+                  <span className="font-bold">{formatMoney(billingData.avgBilled)}</span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)]">Avg/Paid</span>
+                  <span className="font-bold">{formatMoney(billingData.avgPaid)}</span>
+                </p>
+              </div>
+              {!showBilling && (
+                <button
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-white/60 text-sm font-semibold text-[var(--text-primary)] hover:bg-white/80"
+                  onClick={() => setShowBilling(true)}
+                  type="button"
+                >
+                  <span>Click to reveal</span>
+                  <span className="text-xs font-normal text-[var(--text-muted)]">Hidden for privacy</span>
+                </button>
+              )}
             </div>
           </article>
 
