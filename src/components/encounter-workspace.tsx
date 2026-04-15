@@ -2082,7 +2082,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                   <div className="min-w-0">
                     <h3 className="truncate text-lg font-semibold leading-tight">{selectedEncounter.patientName}</h3>
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                      <span>{selectedEncounter.encounterDate}</span>
+                      <span>
+                        {selectedEncounter.encounterDate}
+                        {/* Show linked appointment time beside the date so the
+                            provider can see at a glance when the patient is
+                            scheduled without cross-referencing the schedule
+                            tab. Only renders when an appointment is linked. */}
+                        {linkedAppointmentForStatus?.startTime && (
+                          <span className="ml-1.5 font-semibold text-[var(--text-main)]">
+                            @ {formatTimeLabel(linkedAppointmentForStatus.startTime)}
+                          </span>
+                        )}
+                      </span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${selectedEncounter.signed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                         {selectedEncounter.signed ? "Closed" : "Open"}
                       </span>
