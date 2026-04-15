@@ -14,6 +14,26 @@ export interface MacroQuestion {
   multiSelect?: boolean;
 }
 
+/**
+ * Optional charge template attached to a macro. When a macro with this field
+ * is run inside an encounter, an encounter charge matching these values is
+ * added to the encounter's billing list — but only once per encounter. If a
+ * charge with the same `procedureCode` already exists on the encounter,
+ * re-running the macro is a no-op (no unit doubling, no duplicate rows).
+ * Units always start at 1 and must be bumped manually by the user.
+ *
+ * Used for "treatment" macros where tapping the macro should both insert the
+ * SOAP text AND drop the associated CPT charge into billing in a single step.
+ */
+export interface MacroLinkedCharge {
+  /** CPT / HCPCS code, e.g. "97124". Uppercased on normalization. */
+  procedureCode: string;
+  /** Display name, e.g. "Therapeutic Massage". */
+  name: string;
+  /** Charge per unit in dollars. */
+  unitPrice: number;
+}
+
 export interface MacroTemplate {
   id: string;
   section: MacroSection;
@@ -23,6 +43,13 @@ export interface MacroTemplate {
   active: boolean;
   /** Optional folder name for grouping macros within a section */
   folder?: string;
+  /**
+   * Optional charge auto-added to the encounter when this macro is run.
+   * See MacroLinkedCharge. Only attached when explicitly set in the macro
+   * editor — most macros (subjective/objective/history intake etc.) will
+   * leave this undefined.
+   */
+  linkedCharge?: MacroLinkedCharge;
 }
 
 export interface MacroLibraryConfig {
@@ -217,6 +244,31 @@ function normalizeQuestion(value: unknown): MacroQuestion | null {
   return { id, label, options, multiSelect };
 }
 
+function normalizeLinkedCharge(value: unknown): MacroLinkedCharge | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  const procedureCode =
+    typeof row.procedureCode === "string" ? row.procedureCode.trim().toUpperCase() : "";
+  const name = typeof row.name === "string" ? row.name.trim() : "";
+  const unitPriceRaw = row.unitPrice;
+  let unitPrice: number;
+  if (typeof unitPriceRaw === "number" && Number.isFinite(unitPriceRaw)) {
+    unitPrice = unitPriceRaw;
+  } else if (typeof unitPriceRaw === "string" && unitPriceRaw.trim()) {
+    const parsed = Number(unitPriceRaw);
+    unitPrice = Number.isFinite(parsed) ? parsed : 0;
+  } else {
+    unitPrice = 0;
+  }
+  if (unitPrice < 0) unitPrice = 0;
+  if (!procedureCode || !name) {
+    return null;
+  }
+  return { procedureCode, name, unitPrice };
+}
+
 function normalizeTemplate(value: unknown): MacroTemplate | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -233,6 +285,7 @@ function normalizeTemplate(value: unknown): MacroTemplate | null {
     ? row.questions.map(normalizeQuestion).filter((item): item is MacroQuestion => Boolean(item))
     : [];
   const folder = typeof row.folder === "string" && row.folder.trim() ? row.folder.trim() : undefined;
+  const linkedCharge = normalizeLinkedCharge(row.linkedCharge);
   return {
     id,
     section,
@@ -241,6 +294,7 @@ function normalizeTemplate(value: unknown): MacroTemplate | null {
     questions,
     active: row.active !== false,
     ...(folder ? { folder } : {}),
+    ...(linkedCharge ? { linkedCharge } : {}),
   };
 }
 

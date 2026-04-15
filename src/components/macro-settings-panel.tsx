@@ -562,6 +562,123 @@ export function MacroSettingsPanel() {
                 />
               </div>
 
+              {/* Linked Encounter Charge (optional).
+                  When set, running this macro inside an encounter auto-adds
+                  a matching charge to the encounter's billing list. The
+                  charge is de-duplicated by procedureCode — tapping the
+                  macro multiple times (or for multiple regions) will NOT
+                  add duplicate rows or double units. Units stay manual. */}
+              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Linked Encounter Charge</p>
+                  {selectedMacro.linkedCharge ? (
+                    <button
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-heading)]"
+                      onClick={() =>
+                        updateMacro(selectedMacro.id, (current) => {
+                          const next = { ...current };
+                          delete next.linkedCharge;
+                          return next;
+                        })
+                      }
+                      type="button"
+                    >
+                      Remove Link
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                      onClick={() =>
+                        updateMacro(selectedMacro.id, (current) => ({
+                          ...current,
+                          linkedCharge: { procedureCode: "", name: "", unitPrice: 0 },
+                        }))
+                      }
+                      type="button"
+                    >
+                      + Add Linked Charge
+                    </button>
+                  )}
+                </div>
+                {selectedMacro.linkedCharge && (
+                  <>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Running this macro inside an encounter automatically adds this
+                      charge to billing — once per encounter. Units start at 1 and
+                      must be adjusted manually.
+                    </p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">
+                          CPT / HCPCS Code
+                        </span>
+                        <input
+                          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-mono"
+                          onChange={(event) =>
+                            updateMacro(selectedMacro.id, (current) => ({
+                              ...current,
+                              linkedCharge: {
+                                procedureCode: event.target.value.toUpperCase(),
+                                name: current.linkedCharge?.name ?? "",
+                                unitPrice: current.linkedCharge?.unitPrice ?? 0,
+                              },
+                            }))
+                          }
+                          placeholder="97124"
+                          value={selectedMacro.linkedCharge.procedureCode}
+                        />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">
+                          Charge Name
+                        </span>
+                        <input
+                          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                          onChange={(event) =>
+                            updateMacro(selectedMacro.id, (current) => ({
+                              ...current,
+                              linkedCharge: {
+                                procedureCode: current.linkedCharge?.procedureCode ?? "",
+                                name: event.target.value,
+                                unitPrice: current.linkedCharge?.unitPrice ?? 0,
+                              },
+                            }))
+                          }
+                          placeholder="Therapeutic Massage"
+                          value={selectedMacro.linkedCharge.name}
+                        />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">
+                          Unit Price ($)
+                        </span>
+                        <input
+                          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                          inputMode="decimal"
+                          onChange={(event) => {
+                            const parsed = Number(event.target.value);
+                            const safe = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+                            updateMacro(selectedMacro.id, (current) => ({
+                              ...current,
+                              linkedCharge: {
+                                procedureCode: current.linkedCharge?.procedureCode ?? "",
+                                name: current.linkedCharge?.name ?? "",
+                                unitPrice: safe,
+                              },
+                            }));
+                          }}
+                          placeholder="0.00"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={selectedMacro.linkedCharge.unitPrice}
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold">Choose Your Auto Fields</p>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
@@ -1186,7 +1187,30 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       answers: { ...answers },
       generatedText,
     });
-    setMessage(`${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.`);
+
+    // If this macro is linked to an encounter charge (treatment macros),
+    // drop the charge into billing. addCharge de-duplicates by
+    // procedureCode, so running the same macro for multiple regions (e.g.
+    // Therapeutic Massage for Cervical AND Lumbar) adds exactly one row
+    // with 1 unit — no doubling. Units stay manual after that.
+    let linkedChargeMessage = "";
+    if (macro.linkedCharge?.procedureCode && macro.linkedCharge?.name) {
+      const chargeResult = addCharge(selectedEncounter.id, {
+        name: macro.linkedCharge.name,
+        procedureCode: macro.linkedCharge.procedureCode,
+        unitPrice: macro.linkedCharge.unitPrice,
+        units: 1,
+        treatmentMacroId: macro.id,
+      });
+      if (chargeResult === "added") {
+        linkedChargeMessage = ` Charge added: ${macro.linkedCharge.name}.`;
+      }
+      // "duplicate" is the expected path on subsequent taps — silent no-op.
+    }
+
+    setMessage(
+      `${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.${linkedChargeMessage}`,
+    );
   };
 
   const handleRunMacroClick = (macro: MacroTemplate) => {
@@ -1943,6 +1967,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               </>
             )}
           </article>
+          {/* Patient Files preview — quick inline access to imaging / PDFs for
+              the current patient without leaving the encounter. Preview only.
+              Full edit/delete/email lives on the My Files page. */}
+          {selectedEncounter && (
+            <PatientFilesPreviewPanel patientId={selectedEncounter.patientId} />
+          )}
         </aside>
 
         <article className="panel-card p-4">
@@ -2549,7 +2579,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                         <span>Treatment</span>
                         <span>CPT</span>
                         <span>Price</span>
-                        <span>Qty</span>
+                        <span>Units</span>
                         <span>Total</span>
                         <span />
                       </div>
@@ -2601,7 +2631,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                           type="number"
                           value={entry.unitPrice}
                         />
-                        {/* Qty */}
+                        {/* Units */}
                         <input
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
                           disabled={selectedEncounter.signed}
