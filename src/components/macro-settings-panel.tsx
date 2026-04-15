@@ -98,6 +98,12 @@ export function MacroSettingsPanel() {
     () => billingMacros.treatments.filter((t) => t.active),
     [billingMacros.treatments],
   );
+  // Which option pill currently has its charge-picker popover open.
+  // Tracked by questionId + option label so each pill can independently
+  // show its own picker without a mess of per-option state.
+  const [chargePickerFor, setChargePickerFor] = useState<
+    { questionId: string; option: string } | null
+  >(null);
   const [chargePickerSearch, setChargePickerSearch] = useState("");
   const [activeSection, setActiveSection] = useState<MacroSection>("subjective");
   const [selectedMacroId, setSelectedMacroId] = useState<string | null>(null);
@@ -574,127 +580,6 @@ export function MacroSettingsPanel() {
                 />
               </div>
 
-              {/* Linked Encounter Charge (optional).
-                  When set, running this macro inside an encounter auto-adds
-                  a matching charge to the encounter's billing list. The
-                  charge is de-duplicated by procedureCode — tapping the
-                  macro multiple times (or for multiple regions) will NOT
-                  add duplicate rows or double units. Units stay manual.
-
-                  The picker is driven off Billing Macros → Treatments, so
-                  CPT / name / price are authored in one place (no retyping,
-                  no drift). Search by name or CPT, click to link. */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Linked Encounter Charge</p>
-                  {selectedMacro.linkedCharge && (
-                    <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-heading)]"
-                      onClick={() => {
-                        updateMacro(selectedMacro.id, (current) => {
-                          const next = { ...current };
-                          delete next.linkedCharge;
-                          return next;
-                        });
-                        setChargePickerSearch("");
-                      }}
-                      type="button"
-                    >
-                      Remove Link
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  Running this macro inside an encounter automatically adds this
-                  charge to billing — once per encounter. Units start at 1 and
-                  must be adjusted manually.
-                </p>
-                {selectedMacro.linkedCharge ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--brand-primary)] bg-white px-3 py-2">
-                    <span className="rounded bg-[#e9f4fb] px-2 py-0.5 font-mono text-xs font-semibold text-[var(--brand-primary)]">
-                      {selectedMacro.linkedCharge.procedureCode}
-                    </span>
-                    <span className="text-sm font-semibold">
-                      {selectedMacro.linkedCharge.name}
-                    </span>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      ${selectedMacro.linkedCharge.unitPrice.toFixed(2)} / unit
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    {activeTreatments.length === 0 ? (
-                      <p className="mt-2 rounded-lg border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-xs text-[var(--text-muted)]">
-                        No treatment charges yet. Add them in{" "}
-                        <strong>Settings → Billing Macro Settings → Treatments</strong>,
-                        then come back here to link one.
-                      </p>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        <input
-                          className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                          onChange={(event) => setChargePickerSearch(event.target.value)}
-                          placeholder="Search treatments by name or CPT..."
-                          value={chargePickerSearch}
-                        />
-                        <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--line-soft)] bg-white">
-                          {(() => {
-                            const q = chargePickerSearch.trim().toLowerCase();
-                            const filtered = q
-                              ? activeTreatments.filter(
-                                  (t) =>
-                                    t.name.toLowerCase().includes(q) ||
-                                    t.procedureCode.toLowerCase().includes(q),
-                                )
-                              : activeTreatments;
-                            if (!filtered.length) {
-                              return (
-                                <p className="px-3 py-2 text-xs text-[var(--text-muted)]">
-                                  No treatments match &ldquo;{chargePickerSearch}&rdquo;.
-                                </p>
-                              );
-                            }
-                            return filtered.map((treatment) => (
-                              <button
-                                className="flex w-full items-center gap-2 border-b border-[var(--line-soft)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[#e9f4fb]"
-                                key={treatment.id}
-                                onClick={() => {
-                                  updateMacro(selectedMacro.id, (current) => ({
-                                    ...current,
-                                    linkedCharge: {
-                                      procedureCode: treatment.procedureCode
-                                        .trim()
-                                        .toUpperCase(),
-                                      name: treatment.name.trim(),
-                                      unitPrice: Math.max(
-                                        0,
-                                        Number(treatment.unitPrice) || 0,
-                                      ),
-                                    },
-                                  }));
-                                  setChargePickerSearch("");
-                                }}
-                                type="button"
-                              >
-                                <span className="rounded bg-[var(--bg-soft)] px-2 py-0.5 font-mono text-xs font-semibold">
-                                  {treatment.procedureCode}
-                                </span>
-                                <span className="flex-1 truncate font-semibold">
-                                  {treatment.name}
-                                </span>
-                                <span className="text-xs text-[var(--text-muted)]">
-                                  ${treatment.unitPrice.toFixed(2)}
-                                </span>
-                              </button>
-                            ));
-                          })()}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold">Choose Your Auto Fields</p>
@@ -853,28 +738,221 @@ export function MacroSettingsPanel() {
                         </button>
                       </div>
 
+                      {/* Option pills with per-option linked-charge support.
+                          Each pill shows its option text and a small "$" badge
+                          whose color indicates whether a charge is linked.
+                          Clicking the $ opens a popover picker for THIS option
+                          only — picking a Billing Macro treatment writes it
+                          into optionCharges[optionLabel] so that at macro run
+                          time this specific answer auto-adds that charge. */}
                       <div className="flex flex-wrap gap-1">
-                        {question.options.map((option, optIndex) => (
-                          <span
-                            key={`${question.id}-opt-${optIndex}`}
-                            className="inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-0.5 text-xs"
-                          >
-                            {option}
-                            <button
-                              className="ml-0.5 text-[var(--text-muted)] hover:text-[#b43b34]"
-                              onClick={() =>
-                                updateQuestion(selectedMacro.id, question.id, (current) => ({
-                                  ...current,
-                                  options: current.options.filter((_, i) => i !== optIndex),
-                                }))
+                        {question.options.map((option, optIndex) => {
+                          const linked = question.optionCharges?.[option];
+                          const pickerOpen =
+                            chargePickerFor?.questionId === question.id &&
+                            chargePickerFor?.option === option;
+                          return (
+                            <span
+                              key={`${question.id}-opt-${optIndex}`}
+                              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs ${
+                                linked
+                                  ? "border-emerald-400 bg-emerald-50"
+                                  : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
+                              }`}
+                              title={
+                                linked
+                                  ? `Linked charge: ${linked.procedureCode} ${linked.name} — $${linked.unitPrice.toFixed(2)}`
+                                  : "No linked charge"
                               }
-                              type="button"
                             >
-                              ×
-                            </button>
-                          </span>
-                        ))}
+                              {option}
+                              {linked && (
+                                <span className="rounded bg-emerald-200 px-1 py-0 font-mono text-[10px] font-semibold text-emerald-900">
+                                  {linked.procedureCode}
+                                </span>
+                              )}
+                              <button
+                                className={`ml-0.5 text-xs font-bold ${
+                                  linked
+                                    ? "text-emerald-700 hover:text-emerald-900"
+                                    : "text-[var(--text-muted)] hover:text-[var(--brand-primary)]"
+                                }`}
+                                onClick={() => {
+                                  if (pickerOpen) {
+                                    setChargePickerFor(null);
+                                  } else {
+                                    setChargePickerFor({
+                                      questionId: question.id,
+                                      option,
+                                    });
+                                    setChargePickerSearch("");
+                                  }
+                                }}
+                                title={linked ? "Change or unlink charge" : "Link a charge"}
+                                type="button"
+                              >
+                                $
+                              </button>
+                              <button
+                                className="ml-0.5 text-[var(--text-muted)] hover:text-[#b43b34]"
+                                onClick={() =>
+                                  updateQuestion(selectedMacro.id, question.id, (current) => {
+                                    const nextOptionCharges = { ...(current.optionCharges ?? {}) };
+                                    delete nextOptionCharges[option];
+                                    const hasAny = Object.keys(nextOptionCharges).length > 0;
+                                    return {
+                                      ...current,
+                                      options: current.options.filter((_, i) => i !== optIndex),
+                                      ...(hasAny ? { optionCharges: nextOptionCharges } : { optionCharges: undefined }),
+                                    };
+                                  })
+                                }
+                                type="button"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
                       </div>
+
+                      {/* Per-option charge picker popover. Shows below the
+                          options row for the currently-selected option only.
+                          Search by name / CPT and click a treatment to link.
+                          "Unlink" clears the entry. */}
+                      {chargePickerFor?.questionId === question.id &&
+                        question.options.includes(chargePickerFor.option) && (
+                          <div className="rounded-xl border border-emerald-300 bg-white p-2">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <span className="font-semibold">
+                                Link charge to option:{" "}
+                                <span className="rounded bg-emerald-100 px-1.5 py-0.5">
+                                  {chargePickerFor.option}
+                                </span>
+                              </span>
+                              <div className="flex gap-1">
+                                {question.optionCharges?.[chargePickerFor.option] && (
+                                  <button
+                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 font-semibold text-[#b43b34] hover:bg-red-50"
+                                    onClick={() => {
+                                      const optLabel = chargePickerFor.option;
+                                      updateQuestion(selectedMacro.id, question.id, (current) => {
+                                        const nextOptionCharges = { ...(current.optionCharges ?? {}) };
+                                        delete nextOptionCharges[optLabel];
+                                        const hasAny = Object.keys(nextOptionCharges).length > 0;
+                                        return {
+                                          ...current,
+                                          ...(hasAny
+                                            ? { optionCharges: nextOptionCharges }
+                                            : { optionCharges: undefined }),
+                                        };
+                                      });
+                                      setChargePickerFor(null);
+                                    }}
+                                    type="button"
+                                  >
+                                    Unlink
+                                  </button>
+                                )}
+                                <button
+                                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 font-semibold text-[var(--text-muted)]"
+                                  onClick={() => setChargePickerFor(null)}
+                                  type="button"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            </div>
+                            {activeTreatments.length === 0 ? (
+                              <p className="rounded-lg border border-dashed border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-muted)]">
+                                No treatment charges yet. Add them in{" "}
+                                <strong>Settings → Billing Macro Settings → Treatments</strong>,
+                                then come back here to link one.
+                              </p>
+                            ) : (
+                              <>
+                                <input
+                                  autoFocus
+                                  className="mb-2 w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                                  onChange={(event) => setChargePickerSearch(event.target.value)}
+                                  placeholder="Search by name or CPT..."
+                                  value={chargePickerSearch}
+                                />
+                                <div className="max-h-40 overflow-y-auto rounded-lg border border-[var(--line-soft)]">
+                                  {(() => {
+                                    const q = chargePickerSearch.trim().toLowerCase();
+                                    const filtered = q
+                                      ? activeTreatments.filter(
+                                          (t) =>
+                                            t.name.toLowerCase().includes(q) ||
+                                            t.procedureCode.toLowerCase().includes(q),
+                                        )
+                                      : activeTreatments;
+                                    if (!filtered.length) {
+                                      return (
+                                        <p className="px-2 py-1.5 text-xs text-[var(--text-muted)]">
+                                          No treatments match &ldquo;{chargePickerSearch}&rdquo;.
+                                        </p>
+                                      );
+                                    }
+                                    return filtered.map((treatment) => {
+                                      const current =
+                                        question.optionCharges?.[chargePickerFor.option];
+                                      const isCurrent =
+                                        current?.procedureCode === treatment.procedureCode;
+                                      return (
+                                        <button
+                                          className={`flex w-full items-center gap-2 border-b border-[var(--line-soft)] px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-emerald-50 ${
+                                            isCurrent ? "bg-emerald-50" : "bg-white"
+                                          }`}
+                                          key={treatment.id}
+                                          onClick={() => {
+                                            const optLabel = chargePickerFor.option;
+                                            updateQuestion(
+                                              selectedMacro.id,
+                                              question.id,
+                                              (cur) => ({
+                                                ...cur,
+                                                optionCharges: {
+                                                  ...(cur.optionCharges ?? {}),
+                                                  [optLabel]: {
+                                                    procedureCode: treatment.procedureCode
+                                                      .trim()
+                                                      .toUpperCase(),
+                                                    name: treatment.name.trim(),
+                                                    unitPrice: Math.max(
+                                                      0,
+                                                      Number(treatment.unitPrice) || 0,
+                                                    ),
+                                                  },
+                                                },
+                                              }),
+                                            );
+                                            setChargePickerFor(null);
+                                          }}
+                                          type="button"
+                                        >
+                                          <span className="rounded bg-[var(--bg-soft)] px-1.5 py-0 font-mono font-semibold">
+                                            {treatment.procedureCode}
+                                          </span>
+                                          <span className="flex-1 truncate font-semibold">
+                                            {treatment.name}
+                                          </span>
+                                          <span className="text-[var(--text-muted)]">
+                                            ${treatment.unitPrice.toFixed(2)}
+                                          </span>
+                                          {isCurrent && (
+                                            <span className="text-emerald-700">✓</span>
+                                          )}
+                                        </button>
+                                      );
+                                    });
+                                  })()}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
 
                       <div className="flex items-center gap-1">
                         <input

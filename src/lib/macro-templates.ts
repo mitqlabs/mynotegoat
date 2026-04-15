@@ -12,18 +12,37 @@ export interface MacroQuestion {
   label: string;
   options: string[];
   multiSelect?: boolean;
+  /**
+   * Optional per-option encounter charges, keyed by option label (exact match).
+   * When a user picks an option during macro run that has an entry here, the
+   * matching charge is added to the encounter's billing list. De-duplication
+   * happens by procedureCode — if the same option charge is picked across
+   * multiple regions/macros, only one billing row is created.
+   *
+   * Example: a "Treatments Performed" question with options ["Laser",
+   * "Massage", "E-Stim"] can link "Massage" to CPT 97124 so that answering
+   * "Massage" auto-adds the Therapeutic Massage charge.
+   *
+   * Keyed by label string (not index) so option reordering is safe. If an
+   * option is renamed in the editor, the user must re-link — that's cheaper
+   * than a fuzzy match that could silently bill the wrong code.
+   */
+  optionCharges?: Record<string, MacroLinkedCharge>;
 }
 
 /**
- * Optional charge template attached to a macro. When a macro with this field
- * is run inside an encounter, an encounter charge matching these values is
- * added to the encounter's billing list — but only once per encounter. If a
- * charge with the same `procedureCode` already exists on the encounter,
- * re-running the macro is a no-op (no unit doubling, no duplicate rows).
- * Units always start at 1 and must be bumped manually by the user.
+ * Optional encounter charge attached to a specific answer option within a
+ * MacroQuestion. When a user picks that option at macro-run time, the
+ * matching charge is added to the encounter's billing list — but only once
+ * per encounter (de-duped by `procedureCode`). If the same option is picked
+ * again for a different region, no duplicate row is created and no unit
+ * doubling occurs. Units always start at 1 and must be bumped manually by
+ * the user.
  *
- * Used for "treatment" macros where tapping the macro should both insert the
- * SOAP text AND drop the associated CPT charge into billing in a single step.
+ * Example: a "Treatments Performed" question with options ["Laser",
+ * "Massage", "E-Stim"] can have `optionCharges["Massage"] = { procedureCode:
+ * "97124", name: "Therapeutic Massage", unitPrice: 45 }` so that picking
+ * "Massage" in the encounter auto-drops the charge into billing.
  */
 export interface MacroLinkedCharge {
   /** CPT / HCPCS code, e.g. "97124". Uppercased on normalization. */
@@ -43,13 +62,6 @@ export interface MacroTemplate {
   active: boolean;
   /** Optional folder name for grouping macros within a section */
   folder?: string;
-  /**
-   * Optional charge auto-added to the encounter when this macro is run.
-   * See MacroLinkedCharge. Only attached when explicitly set in the macro
-   * editor — most macros (subjective/objective/history intake etc.) will
-   * leave this undefined.
-   */
-  linkedCharge?: MacroLinkedCharge;
 }
 
 export interface MacroLibraryConfig {
@@ -241,7 +253,22 @@ function normalizeQuestion(value: unknown): MacroQuestion | null {
           .filter((option) => option.length > 0)
       : [];
   const multiSelect = row.multiSelect === true;
-  return { id, label, options, multiSelect };
+  const optionCharges: Record<string, MacroLinkedCharge> = {};
+  if (row.optionCharges && typeof row.optionCharges === "object") {
+    for (const [key, raw] of Object.entries(
+      row.optionCharges as Record<string, unknown>,
+    )) {
+      const normalized = normalizeLinkedCharge(raw);
+      if (normalized && key.trim()) {
+        optionCharges[key.trim()] = normalized;
+      }
+    }
+  }
+  const result: MacroQuestion = { id, label, options, multiSelect };
+  if (Object.keys(optionCharges).length) {
+    result.optionCharges = optionCharges;
+  }
+  return result;
 }
 
 function normalizeLinkedCharge(value: unknown): MacroLinkedCharge | null {
@@ -285,7 +312,6 @@ function normalizeTemplate(value: unknown): MacroTemplate | null {
     ? row.questions.map(normalizeQuestion).filter((item): item is MacroQuestion => Boolean(item))
     : [];
   const folder = typeof row.folder === "string" && row.folder.trim() ? row.folder.trim() : undefined;
-  const linkedCharge = normalizeLinkedCharge(row.linkedCharge);
   return {
     id,
     section,
@@ -294,7 +320,6 @@ function normalizeTemplate(value: unknown): MacroTemplate | null {
     questions,
     active: row.active !== false,
     ...(folder ? { folder } : {}),
-    ...(linkedCharge ? { linkedCharge } : {}),
   };
 }
 

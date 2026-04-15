@@ -1129,6 +1129,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       return;
     }
 
+    // Auto-add charges linked to picked answer options. For each question in
+    // the macro, look at the user's answer(s) and check whether any picked
+    // option has an entry in `optionCharges`. If so, add the charge to the
+    // encounter. addCharge dedupes by procedureCode, so running the same
+    // treatment option across multiple regions (e.g. "Massage" picked for
+    // Cervical AND Lumbar) adds exactly one row with 1 unit — no doubling.
+    // Units stay manual after that.
+    //
+    // Runs for BOTH brand-new macro runs and edits to an existing run. If
+    // the user edits a previous run to pick a newly-added option with a
+    // linked charge, they still get billed correctly. Edits that keep the
+    // same picks are a silent no-op because the charge already exists.
+    const applyLinkedCharges = (): string[] => {
+      const added: string[] = [];
+      for (const question of macro.questions) {
+        if (!question.optionCharges) continue;
+        const answer = answers[question.id];
+        const picked = Array.isArray(answer) ? answer : answer ? [answer] : [];
+        for (const pick of picked) {
+          const link = question.optionCharges[pick];
+          if (!link?.procedureCode || !link?.name) continue;
+          const result = addCharge(selectedEncounter.id, {
+            name: link.name,
+            procedureCode: link.procedureCode,
+            unitPrice: link.unitPrice,
+            units: 1,
+            treatmentMacroId: macro.id,
+          });
+          if (result === "added") {
+            added.push(link.name);
+          }
+        }
+      }
+      return added;
+    };
+
     if (existingRun) {
       const currentSectionText = selectedEncounter.soap[activeSection];
       let nextSectionText = currentSectionText;
@@ -1173,7 +1209,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         answers: { ...answers },
         generatedText,
       });
-      setMessage(`${sectionLabels[activeSection]} macro updated: ${macro.buttonName}.`);
+      const chargesAdded = applyLinkedCharges();
+      const linkedChargeMessage = chargesAdded.length
+        ? ` Charge${chargesAdded.length === 1 ? "" : "s"} added: ${chargesAdded.join(", ")}.`
+        : "";
+      setMessage(
+        `${sectionLabels[activeSection]} macro updated: ${macro.buttonName}.${linkedChargeMessage}`,
+      );
       return;
     }
 
@@ -1188,25 +1230,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       generatedText,
     });
 
-    // If this macro is linked to an encounter charge (treatment macros),
-    // drop the charge into billing. addCharge de-duplicates by
-    // procedureCode, so running the same macro for multiple regions (e.g.
-    // Therapeutic Massage for Cervical AND Lumbar) adds exactly one row
-    // with 1 unit — no doubling. Units stay manual after that.
-    let linkedChargeMessage = "";
-    if (macro.linkedCharge?.procedureCode && macro.linkedCharge?.name) {
-      const chargeResult = addCharge(selectedEncounter.id, {
-        name: macro.linkedCharge.name,
-        procedureCode: macro.linkedCharge.procedureCode,
-        unitPrice: macro.linkedCharge.unitPrice,
-        units: 1,
-        treatmentMacroId: macro.id,
-      });
-      if (chargeResult === "added") {
-        linkedChargeMessage = ` Charge added: ${macro.linkedCharge.name}.`;
-      }
-      // "duplicate" is the expected path on subsequent taps — silent no-op.
-    }
+    const chargesAdded = applyLinkedCharges();
+    const linkedChargeMessage = chargesAdded.length
+      ? ` Charge${chargesAdded.length === 1 ? "" : "s"} added: ${chargesAdded.join(", ")}.`
+      : "";
 
     setMessage(
       `${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.${linkedChargeMessage}`,
