@@ -45,6 +45,25 @@ function nowIso() {
 }
 
 /**
+ * Strip empty block wrappers from the leading AND trailing edge of an HTML
+ * string. Covers every empty-paragraph variant a contentEditable or our
+ * template renderer might emit:
+ *   - <p></p>, <p><br></p>, <p><br/></p>
+ *   - <p>&nbsp;</p>, <p> </p>
+ *   - <div></div>, <div><br></div>
+ * Run against both the existing SOAP text and the incoming snippet inside
+ * `appendSoapSection` so that inserting after an editor that left behind
+ * trailing empty paragraphs doesn't compound into 2–3 blank lines.
+ */
+function stripEdgeEmptyBlocks(html: string): string {
+  const emptyBlockPattern =
+    /(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)/gi;
+  const leading = new RegExp(`^(?:${emptyBlockPattern.source})+`, "gi");
+  const trailing = new RegExp(`(?:${emptyBlockPattern.source})+$`, "gi");
+  return html.replace(leading, "").replace(trailing, "");
+}
+
+/**
  * Rewrite a single macro prompt span inside an HTML string. Used when we
  * programmatically clear an option pick (e.g. via removeCharge unpick) so
  * the rendered SOAP and the run's stored generatedText both reflect the
@@ -318,12 +337,16 @@ export function useEncounterNotes() {
 
   const appendSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, snippet: string) => {
-      const trimmed = snippet.trim();
+      const trimmed = stripEdgeEmptyBlocks(snippet.trim());
       if (!trimmed) {
         return;
       }
       upsertEncounter(encounterId, (current) => {
-        const existing = current.soap[section].trim();
+        const existing = stripEdgeEmptyBlocks(current.soap[section].trim());
+        // Use exactly one blank-paragraph separator between existing content
+        // and the new snippet. Without stripping the edges first, appending
+        // after an editor that left behind a trailing <p></p> would stack
+        // into 2–3 visible blank lines.
         const nextText = existing ? `${existing}<p><br></p>${trimmed}` : trimmed;
         return {
           ...current,
