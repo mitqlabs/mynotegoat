@@ -1345,7 +1345,7 @@ function DiagnosticsSection() {
                         : "text-red-400"
                   }`}
                 >
-                  {p.ok === null ? "…" : p.ok ? "✓ OK" : p.error || "failed"}
+                  {p.ok === null ? "…" : p.ok ? "OK ✓" : p.error || "failed"}
                   {p.hint ? (
                     <div className="mt-1 text-[10px] font-normal text-amber-300">{p.hint}</div>
                   ) : null}

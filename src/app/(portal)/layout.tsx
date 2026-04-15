@@ -315,7 +315,7 @@ export default function PortalLayout({
           )}
           {syncStatus === "synced" && showSavedFlash && (
             <div className="pointer-events-auto rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-              ✓ Cloud Saved!
+              Cloud Saved ✓
             </div>
           )}
         </div>
