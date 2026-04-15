@@ -712,7 +712,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     addChargesBulk,
     updateCharge,
     removeCharge,
-    moveCharge,
     reconcileLinkedCharges,
     setSigned,
     deleteEncounter,
@@ -1619,6 +1618,28 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     }
     return selectedEncounter.charges.reduce((sum, entry) => sum + entry.unitPrice * entry.units, 0);
   }, [selectedEncounter]);
+
+  /**
+   * Charges sorted by unit price descending so the most expensive codes
+   * always surface at the top. Stable tiebreaker on name so equally-priced
+   * entries keep a predictable order across renders. The underlying
+   * `selectedEncounter.charges` array itself is left alone — sort happens
+   * at display time only, so reconciliation / addCharge append logic
+   * stays simple.
+   */
+  const sortedSelectedCharges = useMemo(() => {
+    if (!selectedEncounter) return [];
+    return [...selectedEncounter.charges].sort(
+      (a, b) => b.unitPrice - a.unitPrice || a.name.localeCompare(b.name),
+    );
+  }, [selectedEncounter]);
+
+  const sortedSaltSourceCharges = useMemo(() => {
+    if (!saltSourceEncounter) return [];
+    return [...saltSourceEncounter.charges].sort(
+      (a, b) => b.unitPrice - a.unitPrice || a.name.localeCompare(b.name),
+    );
+  }, [saltSourceEncounter]);
 
   const setSoapPrintSelectionForCurrentPatient = (encounterIds: string[]) => {
     if (!filteredEncounterPatientId) {
@@ -2578,7 +2599,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                       ) : (
                         <>
                           <ul className="grid gap-1">
-                            {saltSourceEncounter.charges.map((charge) => (
+                            {sortedSaltSourceCharges.map((charge) => (
                               <li
                                 key={`prior-charge-${charge.id}`}
                                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5"
@@ -2659,39 +2680,21 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                       <p className="text-sm text-[var(--text-muted)]">No charges added for this encounter.</p>
                     )}
                     {selectedEncounter.charges.length > 0 && (
-                      <div className="mb-1 grid grid-cols-[28px_1fr_100px_80px_60px_70px_56px] items-center gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                        <span />
+                      <div className="mb-1 grid grid-cols-[1fr_100px_80px_60px_70px_56px] items-center gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                         <span>Treatment</span>
                         <span>CPT</span>
-                        <span>Price</span>
+                        <span>Price ↓</span>
                         <span>Units</span>
                         <span>Total</span>
                         <span />
                       </div>
                     )}
-                    {selectedEncounter.charges.map((entry, idx) => (
-                      <div key={entry.id} className="grid grid-cols-[28px_1fr_100px_80px_60px_70px_56px] items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-white px-1 py-0.5">
-                        {/* Move arrows */}
-                        <div className="flex flex-col items-center">
-                          <button
-                            className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--brand-primary)] disabled:opacity-30"
-                            disabled={selectedEncounter.signed || idx === 0}
-                            onClick={() => moveCharge(selectedEncounter.id, entry.id, "up")}
-                            title="Move up"
-                            type="button"
-                          >
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m5 15 7-7 7 7" /></svg>
-                          </button>
-                          <button
-                            className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--brand-primary)] disabled:opacity-30"
-                            disabled={selectedEncounter.signed || idx === selectedEncounter.charges.length - 1}
-                            onClick={() => moveCharge(selectedEncounter.id, entry.id, "down")}
-                            title="Move down"
-                            type="button"
-                          >
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m19 9-7 7-7-7" /></svg>
-                          </button>
-                        </div>
+                    {/* Auto-sorted by unit price (highest → lowest). Manual
+                        reorder arrows were removed because they'd fight the
+                        sort. Price is always canonical so charges come out
+                        the same order on every render / after any edit. */}
+                    {sortedSelectedCharges.map((entry) => (
+                      <div key={entry.id} className="grid grid-cols-[1fr_100px_80px_60px_70px_56px] items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-white px-1 py-0.5">
                         {/* Treatment */}
                         <input
                           className="w-full truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
