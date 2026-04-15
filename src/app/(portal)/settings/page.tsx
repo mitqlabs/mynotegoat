@@ -44,7 +44,8 @@ type SettingsSectionKey =
   | "backup"
   | "recovery"
   | "security"
-  | "account";
+  | "account"
+  | "diagnostics";
 
 const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   office: false,
@@ -64,6 +65,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   recovery: false,
   security: false,
   account: false,
+  diagnostics: false,
 };
 
 type BackupModuleId =
@@ -1042,6 +1044,275 @@ function SubscriptionSection() {
       >
         {loading ? "Opening..." : "Manage Subscription"}
       </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Diagnostics Section
+// ============================================================================
+// Surfaces the state that matters when something goes wrong silently — cloud
+// table row counts, auth user vs. active workspace match, sync status, and
+// localStorage footprint. Built in direct response to the 2026-04-14 data
+// loss incident where RLS silently rejected 94 encounter writes for weeks
+// and there was no place for the user to notice.
+
+type DiagnosticsState = {
+  loading: boolean;
+  error: string | null;
+  authUserId: string | null;
+  authEmail: string | null;
+  activeWorkspaceId: string | null;
+  workspacePrefix: string | null;
+  workspaceMatchesAuth: boolean;
+  cloudCounts: {
+    patients: number | null;
+    appointments: number | null;
+    encounters: number | null;
+  };
+  localStorageBytes: number;
+  localStorageKeyCount: number;
+  casemateKeyCount: number;
+  casemateBytes: number;
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function DiagnosticsSection() {
+  const [state, setState] = useState<DiagnosticsState>({
+    loading: true,
+    error: null,
+    authUserId: null,
+    authEmail: null,
+    activeWorkspaceId: null,
+    workspacePrefix: null,
+    workspaceMatchesAuth: false,
+    cloudCounts: { patients: null, appointments: null, encounters: null },
+    localStorageBytes: 0,
+    localStorageKeyCount: 0,
+    casemateKeyCount: 0,
+    casemateBytes: 0,
+  });
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [{ getSupabaseBrowserClient }, { getActiveWorkspaceIdSync }] = await Promise.all([
+          import("@/lib/supabase-browser"),
+          import("@/lib/workspace-storage"),
+        ]);
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+          if (!cancelled) {
+            setState((s) => ({ ...s, loading: false, error: "Supabase client not configured" }));
+          }
+          return;
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData?.user) {
+          if (!cancelled) {
+            setState((s) => ({
+              ...s,
+              loading: false,
+              error: authError?.message ?? "Not signed in",
+            }));
+          }
+          return;
+        }
+
+        const authUserId = authData.user.id;
+        const authEmail = authData.user.email ?? null;
+        const activeWorkspaceId = getActiveWorkspaceIdSync() || null;
+        const workspacePrefix = activeWorkspaceId?.split(":")[0] ?? null;
+        const workspaceMatchesAuth = workspacePrefix === authUserId;
+
+        // Cloud counts — each query is workspace-scoped via RLS. If the
+        // workspace mismatch is triggering, these will return 0 even though
+        // rows exist under the correct workspace_id.
+        const [patientsRes, apptsRes, encRes] = activeWorkspaceId
+          ? await Promise.all([
+              supabase
+                .from("patients")
+                .select("*", { count: "exact", head: true })
+                .eq("workspace_id", activeWorkspaceId),
+              supabase
+                .from("schedule_appointments")
+                .select("*", { count: "exact", head: true })
+                .eq("workspace_id", activeWorkspaceId),
+              supabase
+                .from("encounter_notes")
+                .select("*", { count: "exact", head: true })
+                .eq("workspace_id", activeWorkspaceId),
+            ])
+          : [
+              { count: null, error: null },
+              { count: null, error: null },
+              { count: null, error: null },
+            ];
+
+        // LocalStorage footprint
+        let localStorageBytes = 0;
+        let localStorageKeyCount = 0;
+        let casemateKeyCount = 0;
+        let casemateBytes = 0;
+        if (typeof window !== "undefined") {
+          for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (!key) continue;
+            const value = window.localStorage.getItem(key) ?? "";
+            const size = key.length + value.length;
+            localStorageBytes += size;
+            localStorageKeyCount += 1;
+            if (key.startsWith("casemate.")) {
+              casemateKeyCount += 1;
+              casemateBytes += size;
+            }
+          }
+        }
+
+        if (cancelled) return;
+        setState({
+          loading: false,
+          error: null,
+          authUserId,
+          authEmail,
+          activeWorkspaceId,
+          workspacePrefix,
+          workspaceMatchesAuth,
+          cloudCounts: {
+            patients: patientsRes.count ?? null,
+            appointments: apptsRes.count ?? null,
+            encounters: encRes.count ?? null,
+          },
+          localStorageBytes,
+          localStorageKeyCount,
+          casemateKeyCount,
+          casemateBytes,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setState((s) => ({
+            ...s,
+            loading: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          }));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTick]);
+
+  if (state.loading) {
+    return <p className="text-sm text-[var(--text-muted)]">Running diagnostics…</p>;
+  }
+
+  const row = (label: string, value: ReactNode, status?: "ok" | "warn" | "bad") => (
+    <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] py-2 last:border-b-0">
+      <span className="text-sm font-medium text-[var(--text-muted)]">{label}</span>
+      <span
+        className={`text-right font-mono text-xs ${
+          status === "bad"
+            ? "text-red-400"
+            : status === "warn"
+              ? "text-amber-400"
+              : status === "ok"
+                ? "text-emerald-400"
+                : "text-[var(--text-primary)]"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {state.error ? (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          {state.error}
+        </div>
+      ) : null}
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Authentication &amp; Workspace
+        </h3>
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
+          {row("Signed-in user", state.authEmail ?? "—")}
+          {row("Auth user ID", state.authUserId ?? "—")}
+          {row("Active workspace ID", state.activeWorkspaceId ?? "(none)")}
+          {row(
+            "Workspace matches auth user",
+            state.workspaceMatchesAuth ? "✓ yes" : "✗ NO — writes will be rejected by RLS",
+            state.workspaceMatchesAuth ? "ok" : "bad",
+          )}
+        </div>
+        {!state.workspaceMatchesAuth && state.activeWorkspaceId ? (
+          <p className="mt-2 text-xs text-red-300">
+            The workspace prefix ({state.workspacePrefix || "(empty)"}) does not match your
+            authenticated user ID. Every cloud write will be silently rejected by the database.
+            This is the same bug that caused the 2026-04-14 data loss. Sign out and sign back in
+            to refresh the workspace pointer.
+          </p>
+        ) : null}
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Cloud Row Counts (scoped to current workspace)
+        </h3>
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
+          {row("Patients", state.cloudCounts.patients ?? "—")}
+          {row("Appointments", state.cloudCounts.appointments ?? "—")}
+          {row("Encounter notes", state.cloudCounts.encounters ?? "—")}
+        </div>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          If these numbers drop unexpectedly, something is wiping data. Compare against your
+          previous values before making changes.
+        </p>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Local Storage
+        </h3>
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
+          {row("Total keys", state.localStorageKeyCount)}
+          {row("Total size", formatBytes(state.localStorageBytes))}
+          {row("casemate.* keys", state.casemateKeyCount)}
+          {row(
+            "casemate.* size",
+            formatBytes(state.casemateBytes),
+            state.casemateBytes > 4 * 1024 * 1024 ? "warn" : "ok",
+          )}
+        </div>
+        {state.casemateBytes > 4 * 1024 * 1024 ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Approaching the 5 MB localStorage quota. At the quota, new saves to localStorage
+            will fail. The app prunes old encounters automatically but if this keeps climbing,
+            investigate.
+          </p>
+        ) : null}
+      </section>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setRefreshTick((t) => t + 1)}
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] px-3 py-1.5 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-muted)]"
+        >
+          Refresh
+        </button>
+      </div>
     </div>
   );
 }
@@ -3462,6 +3733,15 @@ export default function SettingsPage() {
           <li>Run backup and restore tests before go-live.</li>
           <li>Switch to HIPAA cloud with BAA before storing real PHI.</li>
         </ul>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        isOpen={expandedSections.diagnostics}
+        onToggle={() => toggleSection("diagnostics")}
+        title="Diagnostics"
+        description="Live view of your account, workspace, cloud row counts, and local storage — useful when data looks wrong."
+      >
+        <DiagnosticsSection />
       </CollapsibleSection>
     </div>
   );
