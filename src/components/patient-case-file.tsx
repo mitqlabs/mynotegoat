@@ -1431,7 +1431,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // ── Patient Files state ────────────────────────────────────────────────
   const [fileManagerState, setFileManagerState] = useState<FileManagerState>(() => {
     const loaded = loadFileManagerState();
-    return syncPatientFolders(loaded, allPatients, caseStatuses);
+    const synced = syncPatientFolders(loaded, allPatients, caseStatuses);
+    // Persist the synced state so orphan-folder recovery (ID migration,
+    // reparenting, etc.) sticks across page navigations.
+    if (synced.folders.length !== loaded.folders.length ||
+        synced.folders.some((sf) => {
+          const lf = loaded.folders.find((l) => l.id === sf.id);
+          return !lf || lf.name !== sf.name || lf.parentId !== sf.parentId || lf.patientId !== sf.patientId || !!lf.deleted !== !!sf.deleted;
+        }) ||
+        synced.files.some((sf) => {
+          const lf = loaded.files.find((l) => l.id === sf.id);
+          return !lf || lf.folderId !== sf.folderId || !!lf.deleted !== !!sf.deleted;
+        })) {
+      saveFileManagerState(synced);
+    }
+    return synced;
   });
   // Look up the patient's folder by its patientId field instead of
   // constructing the ID — after orphan-folder recovery the folder ID may

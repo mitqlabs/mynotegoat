@@ -84,6 +84,7 @@ export function loadFileManagerState(): FileManagerState {
 export function saveFileManagerState(state: FileManagerState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", state));
 }
 
 // ---------------------------------------------------------------------------
