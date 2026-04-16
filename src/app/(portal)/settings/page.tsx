@@ -1594,7 +1594,8 @@ function splitNameForDedup(fullName: string): { first: string; last: string } {
 
 function normalizeDateForDedup(value: string): string {
   // Collapse both MM/DD/YYYY and YYYY-MM-DD into YYYY-MM-DD so cross-format
-  // duplicates are still caught.
+  // duplicates are still caught. Used INTERNALLY for comparison only —
+  // never rendered in the UI.
   if (!value) return "";
   const t = value.trim();
   const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -1605,6 +1606,22 @@ function normalizeDateForDedup(value: string): string {
     return `${year}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
   }
   return t;
+}
+
+/** Render any stored date string as MM/DD/YYYY for the UI. Never exposes
+ *  the internal ISO format to the user. Returns "—" for empty/unparseable. */
+function formatDateForDisplayUs(value: string | undefined): string {
+  if (!value) return "—";
+  const t = value.trim();
+  if (!t) return "—";
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[2].padStart(2, "0")}/${iso[3].padStart(2, "0")}/${iso[1]}`;
+  const us = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (us) {
+    const year = us[3].length === 2 ? `20${us[3]}` : us[3];
+    return `${us[1].padStart(2, "0")}/${us[2].padStart(2, "0")}/${year}`;
+  }
+  return t; // fallback: whatever it is
 }
 
 /**
@@ -1899,7 +1916,7 @@ function DuplicatePatientsSubsection() {
                               {p.fullName}
                             </span>
                             <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                              DOB {p.dob || "—"} · DOL {p.dateOfLoss || "—"} · {p.caseStatus}
+                              DOB {formatDateForDisplayUs(p.dob)} · DOL {formatDateForDisplayUs(p.dateOfLoss)} · {p.caseStatus}
                             </span>
                           </li>
                         ))}
