@@ -723,9 +723,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
 
   const { contacts: allContacts } = useContactDirectory();
   const specialistContactNames = useMemo(() => {
-    const nonSpecialistCategories = new Set(["attorney", "imaging", "hospital/er"]);
+    // Every contact is one of three fixed top-level categories now; only
+    // the Specialist category counts as a specialist referral target.
     return allContacts
-      .filter((c) => !nonSpecialistCategories.has(c.category.toLowerCase()))
+      .filter((c) => c.category.toLowerCase() === "specialist")
       .map((c) => c.name)
       .sort((a, b) => a.localeCompare(b));
   }, [allContacts]);

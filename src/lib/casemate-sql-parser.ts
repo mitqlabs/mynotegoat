@@ -559,12 +559,19 @@ export function parseCasemateSql(sql: string): CasemateData {
 /*  Data mapper: old Casemate rows → My Note Goat records             */
 /* ------------------------------------------------------------------ */
 
-const ROLODEX_CATEGORY_MAP: Record<string, string> = {
-  A: "Attorney",
-  P: "Pain Management",
-  O: "Orthopedic",
-  N: "Neurologist",
-  H: "Hospital/ER",
+/** Legacy MySQL rolodex category → new-schema { category, subCategory }.
+ *  In My Note Goat 2026+, every contact has one of three fixed top-level
+ *  categories (Attorney, Imaging Center, Specialist) plus an optional
+ *  sub-category label. */
+const ROLODEX_CATEGORY_MAP: Record<
+  string,
+  { category: "Attorney" | "Imaging Center" | "Specialist"; subCategory?: string }
+> = {
+  A: { category: "Attorney" },
+  P: { category: "Specialist", subCategory: "Pain Management" },
+  O: { category: "Specialist", subCategory: "Orthopedic" },
+  N: { category: "Specialist", subCategory: "Neurologist" },
+  H: { category: "Specialist", subCategory: "Hospital/ER" },
 };
 
 function isEmptyDate(d: string): boolean {
@@ -638,7 +645,8 @@ export interface MappedPatient {
 export interface MappedContact {
   id: string;
   name: string;
-  category: string;
+  category: "Attorney" | "Imaging Center" | "Specialist";
+  subCategory?: string;
   phone: string;
   email: string;
   fax: string;
@@ -978,15 +986,19 @@ export function buildMigrationPayload(
   const chiroRolodex = data.rolodex.filter(
     (r) => r.chiro_id === chiroId && r.active === "Y"
   );
-  const contacts: MappedContact[] = chiroRolodex.map((r) => ({
-    id: `cm-contact-${r.rolodex_id}`,
-    name: r.rolodex_name,
-    category: ROLODEX_CATEGORY_MAP[r.rolodex_category] ?? "Attorney",
-    phone: r.rolodex_phone,
-    email: r.rolodex_email,
-    fax: r.rolodex_fax,
-    address: "",
-  }));
+  const contacts: MappedContact[] = chiroRolodex.map((r) => {
+    const mapping = ROLODEX_CATEGORY_MAP[r.rolodex_category] ?? { category: "Attorney" as const };
+    return {
+      id: `cm-contact-${r.rolodex_id}`,
+      name: r.rolodex_name,
+      category: mapping.category,
+      ...(mapping.subCategory ? { subCategory: mapping.subCategory } : {}),
+      phone: r.rolodex_phone,
+      email: r.rolodex_email,
+      fax: r.rolodex_fax,
+      address: "",
+    };
+  });
 
   return { chiroId, patients, contacts };
 }

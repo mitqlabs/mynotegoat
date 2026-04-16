@@ -3,11 +3,20 @@
 import { useEffect, useState } from "react";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { resolveCategoryHint } from "@/lib/contact-categories";
+import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
 export type ContactGap = {
   name: string;
-  categoryHint?: string; // Suggest a category (e.g., "Attorney", "Specialist")
+  /** Free-form category hint — e.g. "Attorney", "Specialist", "Imaging
+   *  Center", or a legacy sub-category like "Pain Management". The prompt
+   *  auto-resolves this to one of the fixed top-level categories and
+   *  pre-fills the sub-category field if the hint was actually a sub. */
+  categoryHint?: string;
+  /** Optional sub-category pre-fill (e.g. "Orthopedic"). Shown as the
+   *  starting value when the popup opens. */
+  subCategoryHint?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -21,32 +30,38 @@ interface ContactGapPromptProps {
 }
 
 export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProps) {
-  const { categories } = useContactCategories();
+  const { subCategories } = useContactCategories();
   const { addContact } = useContactDirectory();
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState<ContactCategory>("Attorney");
+  const [subCategory, setSubCategory] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
 
+  // Sync local form state when a new `gap` arrives (popup opens or target
+  // patient/entry changes). React's lint rule flags this as a cascading
+  // re-render but that is the intended behavior here — we're syncing an
+  // external prop into local editable form state.
   useEffect(() => {
     if (!gap) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setName(gap.name);
     setPhone(formatUsPhoneInput(gap.phone ?? ""));
     setEmail(gap.email ?? "");
     setAddress(gap.address ?? "");
     setError("");
-    // Resolve initial category from hint
-    const hint = (gap.categoryHint ?? "").trim().toLowerCase();
-    const match = categories.find((c) => c.toLowerCase() === hint);
-    setCategory(match ?? gap.categoryHint ?? categories[0] ?? "Attorney");
-  }, [gap, categories]);
+    const resolved = resolveCategoryHint(gap.categoryHint);
+    setCategory(resolved.category);
+    setSubCategory(gap.subCategoryHint ?? resolved.subCategory ?? "");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [gap]);
 
   if (!gap) return null;
 
-  const categoryOptions = category && !categories.includes(category) ? [category, ...categories] : categories;
   const headline = gap.message ?? `"${gap.name}" is not in your Contacts — add them now?`;
+  const availableSubs = subCategories[category] ?? [];
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -57,7 +72,14 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
       setError("Phone is required.");
       return;
     }
-    const result = addContact({ name, category, phone, email, address });
+    const result = addContact({
+      name,
+      category,
+      subCategory: subCategory.trim() || undefined,
+      phone,
+      email,
+      address,
+    });
     if (!result.added) {
       setError(result.reason ?? "Could not save contact.");
       return;
@@ -96,15 +118,44 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
             <span className="text-sm font-semibold text-[var(--text-muted)]">Category</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value as ContactCategory;
+                setCategory(next);
+                // Clear sub-category when switching top-level to avoid
+                // mismatched labels (e.g. Orthopedic under Imaging Center).
+                setSubCategory("");
+              }}
               value={category}
             >
-              {categoryOptions.map((c) => (
+              {CONTACT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
               ))}
             </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">
+              Sub-Category (optional)
+            </span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              list={`contact-subcategory-options-${category.replace(/\s+/g, "-")}`}
+              onChange={(e) => setSubCategory(e.target.value)}
+              placeholder={
+                category === "Specialist"
+                  ? "e.g. Pain Management, Orthopedic, Neurologist…"
+                  : "Optional — type or pick"
+              }
+              value={subCategory}
+            />
+            <datalist
+              id={`contact-subcategory-options-${category.replace(/\s+/g, "-")}`}
+            >
+              {availableSubs.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </label>
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Phone *</span>

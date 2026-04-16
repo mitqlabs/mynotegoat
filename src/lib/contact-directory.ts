@@ -1,5 +1,5 @@
 import { contacts as defaultContacts, type ContactRecord } from "@/lib/mock-data";
-import { sanitizeContactCategory } from "@/lib/contact-categories";
+import { migrateLegacyCategory } from "@/lib/contact-categories";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
 const STORAGE_KEY = "casemate.contact-directory.v1";
@@ -9,11 +9,6 @@ function normalizeText(value: unknown, fallback = "") {
     return fallback;
   }
   return value.trim();
-}
-
-function normalizeCategory(value: unknown): ContactRecord["category"] {
-  const category = normalizeText(value);
-  return sanitizeContactCategory(category);
 }
 
 function normalizeContact(value: unknown): ContactRecord | null {
@@ -28,7 +23,15 @@ function normalizeContact(value: unknown): ContactRecord | null {
   const email = normalizeText(row.email);
   const fax = formatUsPhoneInput(normalizeText(row.fax));
   const address = normalizeText(row.address);
-  const category = normalizeCategory(row.category);
+
+  // Resolve top-level category + sub-category from whatever the saved row
+  // has. Legacy rows have a single free-form `category` string like
+  // "Pain Management" — those get mapped to
+  // { category: "Specialist", subCategory: "Pain Management" }.
+  const rawCategory = normalizeText(row.category);
+  const migrated = migrateLegacyCategory(rawCategory);
+  const savedSub = normalizeText(row.subCategory);
+  const subCategory = savedSub || migrated.subCategory || undefined;
 
   if (!id || !name || !phone) {
     return null;
@@ -37,7 +40,8 @@ function normalizeContact(value: unknown): ContactRecord | null {
   return {
     id,
     name,
-    category,
+    category: migrated.category,
+    ...(subCategory ? { subCategory } : {}),
     phone,
     email,
     fax,

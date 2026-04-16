@@ -8,17 +8,21 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 
 type ContactFormState = {
   name: string;
-  category: string;
+  category: ContactRecord["category"];
+  subCategory: string;
   phone: string;
   fax: string;
   email: string;
   address: string;
 };
 
-function createBlankContactForm(defaultCategory = "Attorney"): ContactFormState {
+function createBlankContactForm(
+  defaultCategory: ContactRecord["category"] = "Attorney",
+): ContactFormState {
   return {
     name: "",
     category: defaultCategory,
+    subCategory: "",
     phone: "",
     fax: "",
     email: "",
@@ -30,6 +34,7 @@ function toContactForm(contact: ContactRecord): ContactFormState {
   return {
     name: contact.name,
     category: contact.category,
+    subCategory: contact.subCategory ?? "",
     phone: contact.phone,
     fax: contact.fax ?? "",
     email: contact.email ?? "",
@@ -42,17 +47,11 @@ function normalizeLookupValue(value: string) {
 }
 
 export default function ContactsPage() {
-  const { categories } = useContactCategories();
+  const { categories, subCategories } = useContactCategories();
   const { contacts, addContact, updateContact } = useContactDirectory();
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
-  const defaultCategory = useMemo(
-    () =>
-      categories.find((entry) => normalizeLookupValue(entry) === "attorney") ??
-      categories[0] ??
-      "Attorney",
-    [categories],
-  );
+  const defaultCategory = useMemo<ContactRecord["category"]>(() => "Attorney", []);
 
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [addContactError, setAddContactError] = useState("");
@@ -77,19 +76,6 @@ export default function ContactsPage() {
       ? selectedCategory
       : "ALL";
   }, [categoryOptions, selectedCategory]);
-  const editCategoryOptions = useMemo(() => {
-    if (!editContactForm.category.trim()) {
-      return categoryOptions;
-    }
-    if (
-      categoryOptions.some(
-        (entry) => normalizeLookupValue(entry) === normalizeLookupValue(editContactForm.category),
-      )
-    ) {
-      return categoryOptions;
-    }
-    return [...categoryOptions, editContactForm.category];
-  }, [categoryOptions, editContactForm.category]);
 
   const filteredContacts = useMemo(() => {
     const list =
@@ -255,6 +241,11 @@ export default function ContactsPage() {
                 <>
                   <p className="mt-2 text-sm">
                     <span className="font-semibold">Category:</span> {contact.category}
+                    {contact.subCategory ? (
+                      <span className="ml-2 inline-block rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold">
+                        {contact.subCategory}
+                      </span>
+                    ) : null}
                   </p>
                   <p className="text-sm">
                     <span className="font-semibold">Phone:</span> {contact.phone}
@@ -285,19 +276,46 @@ export default function ContactsPage() {
                   />
                   <select
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    disabled={!categoryOptions.length}
                     onChange={(event) =>
-                      setEditContactForm((current) => ({ ...current, category: event.target.value }))
+                      setEditContactForm((current) => ({
+                        ...current,
+                        category: event.target.value as ContactRecord["category"],
+                        // Reset sub-category when top-level switches so stale
+                        // sub-labels from another category don't leak over.
+                        subCategory: "",
+                      }))
                     }
                     value={editContactForm.category}
                   >
-                    {editCategoryOptions.map((category) => (
+                    {categoryOptions.map((category) => (
                       <option key={`edit-contact-category-${category}`} value={category}>
                         {category}
                       </option>
                     ))}
-                    {!editCategoryOptions.length && <option value="">No categories configured</option>}
                   </select>
+                  <input
+                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    list={`edit-subcategory-options-${editContactForm.category.replace(/\s+/g, "-")}`}
+                    onChange={(event) =>
+                      setEditContactForm((current) => ({
+                        ...current,
+                        subCategory: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      editContactForm.category === "Specialist"
+                        ? "Sub-category (Pain Management, Orthopedic, …)"
+                        : "Sub-category (optional)"
+                    }
+                    value={editContactForm.subCategory}
+                  />
+                  <datalist
+                    id={`edit-subcategory-options-${editContactForm.category.replace(/\s+/g, "-")}`}
+                  >
+                    {(subCategories[editContactForm.category] ?? []).map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     inputMode="numeric"
@@ -397,9 +415,12 @@ export default function ContactsPage() {
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Category</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  disabled={!categoryOptions.length}
                   onChange={(event) =>
-                    setAddContactForm((current) => ({ ...current, category: event.target.value }))
+                    setAddContactForm((current) => ({
+                      ...current,
+                      category: event.target.value as ContactRecord["category"],
+                      subCategory: "",
+                    }))
                   }
                   value={addContactForm.category}
                 >
@@ -408,8 +429,36 @@ export default function ContactsPage() {
                       {category}
                     </option>
                   ))}
-                  {!categoryOptions.length && <option value="">No categories configured</option>}
                 </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">
+                  Sub-Category (optional)
+                </span>
+                <input
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  list={`add-subcategory-options-${addContactForm.category.replace(/\s+/g, "-")}`}
+                  onChange={(event) =>
+                    setAddContactForm((current) => ({
+                      ...current,
+                      subCategory: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    addContactForm.category === "Specialist"
+                      ? "Pain Management, Orthopedic, Neurologist…"
+                      : "Optional"
+                  }
+                  value={addContactForm.subCategory}
+                />
+                <datalist
+                  id={`add-subcategory-options-${addContactForm.category.replace(/\s+/g, "-")}`}
+                >
+                  {(subCategories[addContactForm.category] ?? []).map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
               </label>
 
               <label className="grid gap-1">

@@ -14,6 +14,7 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 type ContactDraft = {
   name: string;
   category: ContactRecord["category"];
+  subCategory?: string;
   phone: string;
   fax?: string;
   email?: string;
@@ -39,6 +40,7 @@ export function useContactDirectory() {
     (draft: ContactDraft): AddContactResult => {
       const name = draft.name.trim();
       const category = normalizeCategory(draft.category);
+      const subCategory = (draft.subCategory ?? "").trim() || undefined;
       const phone = formatUsPhoneInput(draft.phone);
       const fax = formatUsPhoneInput(draft.fax ?? "");
       const email = (draft.email ?? "").trim();
@@ -72,6 +74,7 @@ export function useContactDirectory() {
         id: createContactId(),
         name,
         category,
+        ...(subCategory ? { subCategory } : {}),
         phone,
         fax,
         email,
@@ -94,6 +97,7 @@ export function useContactDirectory() {
     (id: string, draft: ContactDraft): UpdateContactResult => {
       const name = draft.name.trim();
       const category = normalizeCategory(draft.category);
+      const subCategory = (draft.subCategory ?? "").trim() || undefined;
       const phone = formatUsPhoneInput(draft.phone);
       const fax = formatUsPhoneInput(draft.fax ?? "");
       const email = (draft.email ?? "").trim();
@@ -135,6 +139,7 @@ export function useContactDirectory() {
         ...target,
         name,
         category,
+        subCategory,
         phone,
         fax,
         email,

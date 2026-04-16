@@ -24,7 +24,7 @@ import { appointmentStatusOptions, formatAppointmentStatusLabel } from "@/lib/sc
 import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
 import { appointmentIntervalOptions, weekdayLabels } from "@/lib/schedule-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
-import { PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { CONTACT_CATEGORIES, PATIENTS_STORAGE_KEY, type ContactCategory } from "@/lib/mock-data";
 import type { DocumentTemplateScope } from "@/lib/document-templates";
 
 type SettingsSectionKey =
@@ -1950,8 +1950,9 @@ export default function SettingsPage() {
   } = useOfficeSettings();
   const {
     categories: contactCategories,
-    addCategory: addContactCategory,
-    removeCategory: removeContactCategory,
+    subCategories: contactSubCategories,
+    addSubCategory: addContactSubCategory,
+    removeSubCategory: removeContactSubCategory,
     resetToDefaults: resetContactCategoriesToDefaults,
   } = useContactCategories();
   const {
@@ -2056,7 +2057,10 @@ export default function SettingsPage() {
   const [roomNameDraft, setRoomNameDraft] = useState("");
   const [roomColorDraft, setRoomColorDraft] = useState("#0d79bf");
   const [roomError, setRoomError] = useState("");
-  const [contactCategoryDraft, setContactCategoryDraft] = useState("");
+  // Per-top-level sub-category input drafts
+  const [subCategoryDrafts, setSubCategoryDrafts] = useState<
+    Record<ContactCategory, string>
+  >({ Attorney: "", "Imaging Center": "", Specialist: "" });
   const [contactCategoryError, setContactCategoryError] = useState("");
   const [officeSettingsMessage, setOfficeSettingsMessage] = useState("");
   const [deletePasswordDraft, setDeletePasswordDraft] = useState("");
@@ -2231,18 +2235,19 @@ export default function SettingsPage() {
     setRoomColorDraft("#0d79bf");
   };
 
-  const handleAddContactCategory = () => {
-    const result = addContactCategory(contactCategoryDraft);
+  const handleAddSubCategory = (category: ContactCategory) => {
+    const draft = subCategoryDrafts[category];
+    const result = addContactSubCategory(category, draft);
     if (!result.ok) {
       setContactCategoryError(result.reason);
       return;
     }
     setContactCategoryError("");
-    setContactCategoryDraft("");
+    setSubCategoryDrafts((current) => ({ ...current, [category]: "" }));
   };
 
-  const handleRemoveContactCategory = (category: string) => {
-    const result = removeContactCategory(category);
+  const handleRemoveSubCategory = (category: ContactCategory, label: string) => {
+    const result = removeContactSubCategory(category, label);
     if (!result.ok) {
       setContactCategoryError(result.reason);
       return;
@@ -2705,61 +2710,103 @@ export default function SettingsPage() {
             Reset Category Defaults
           </button>
         }
-        description="Control contact category names used by Contacts and patient attorney/referral workflows."
+        description="Top-level categories are fixed (Attorney, Imaging Center, Specialist). Manage sub-categories under each one."
         isOpen={expandedSections.contactCategories}
         onToggle={() => toggleSection("contactCategories")}
         title="Contact Categories"
       >
-        <div className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="grid min-w-[240px] grow gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">New Category</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                onChange={(event) => setContactCategoryDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleAddContactCategory();
-                  }
-                }}
-                placeholder="Example: Chiropractic"
-                value={contactCategoryDraft}
-              />
-            </label>
-            <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
-              onClick={handleAddContactCategory}
-              type="button"
-            >
-              Add Category
-            </button>
-          </div>
-
+        <div className="space-y-3">
           {contactCategoryError && (
-            <p className="mt-2 text-sm font-semibold text-[#b43b34]">{contactCategoryError}</p>
+            <p className="text-sm font-semibold text-[#b43b34]">{contactCategoryError}</p>
           )}
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {contactCategories.map((category) => (
+          {CONTACT_CATEGORIES.map((category) => {
+            const subs = contactSubCategories[category] ?? [];
+            return (
               <div
-                key={`contact-category-${category}`}
-                className="flex items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2"
+                key={`contact-top-${category}`}
+                className="rounded-xl border border-[var(--line-soft)] bg-white p-4"
               >
-                <span className="font-semibold">{category}</span>
-                <button
-                  className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
-                  onClick={() => handleRemoveContactCategory(category)}
-                  type="button"
-                >
-                  Remove
-                </button>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h4 className="text-base font-semibold">{category}</h4>
+                  <span className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    Fixed top-level
+                  </span>
+                </div>
+                <p className="mb-3 text-xs text-[var(--text-muted)]">
+                  {category === "Attorney" &&
+                    "Law firms and attorneys. Sub-categories are optional (e.g. by practice area)."}
+                  {category === "Imaging Center" &&
+                    "X-Ray, MRI, CT facilities. Sub-categories are optional (e.g. by modality)."}
+                  {category === "Specialist" &&
+                    "Physicians and clinicians you refer out to. Use sub-categories for specialty (Pain Management, Orthopedic, Neurologist, Mental Health, etc.)."}
+                </p>
+
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="grid min-w-[220px] grow gap-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      New Sub-Category
+                    </span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setSubCategoryDrafts((current) => ({
+                          ...current,
+                          [category]: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleAddSubCategory(category);
+                        }
+                      }}
+                      placeholder={
+                        category === "Specialist"
+                          ? "e.g. Pain Management"
+                          : "Optional label"
+                      }
+                      value={subCategoryDrafts[category]}
+                    />
+                  </label>
+                  <button
+                    className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                    onClick={() => handleAddSubCategory(category)}
+                    type="button"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {subs.length === 0 ? (
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">
+                    No sub-categories yet.
+                  </p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {subs.map((sub) => (
+                      <span
+                        key={`${category}-sub-${sub}`}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2.5 py-1 text-xs font-semibold"
+                      >
+                        {sub}
+                        <button
+                          className="text-[var(--text-muted)] hover:text-red-500"
+                          onClick={() => handleRemoveSubCategory(category, sub)}
+                          title={`Remove "${sub}"`}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-            {contactCategories.length === 0 && (
-              <p className="text-sm text-[var(--text-muted)]">No categories configured yet.</p>
-            )}
-          </div>
+            );
+          })}
+          {/* Silence unused-var warning — contactCategories is exposed for
+              backward compat but not rendered directly here. */}
+          <div className="hidden">{contactCategories.length}</div>
         </div>
       </CollapsibleSection>
 

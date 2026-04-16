@@ -93,10 +93,24 @@ export interface EncounterRecord {
   chargesCount: number;
 }
 
+/** Fixed top-level contact categories. These are non-negotiable — every
+ *  contact must be exactly one of these. Users can attach an optional
+ *  subCategory (e.g. "Pain Management" under "Specialist") which they
+ *  manage in Settings → Contact Categories. */
+export type ContactCategory = "Attorney" | "Imaging Center" | "Specialist";
+
+export const CONTACT_CATEGORIES: ContactCategory[] = [
+  "Attorney",
+  "Imaging Center",
+  "Specialist",
+];
+
 export interface ContactRecord {
   id: string;
   name: string;
-  category: string;
+  category: ContactCategory;
+  /** Optional user-defined sub-category (e.g. "Orthopedic" under Specialist). */
+  subCategory?: string;
   phone: string;
   email: string;
   fax?: string;

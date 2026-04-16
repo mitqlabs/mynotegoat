@@ -210,8 +210,11 @@ function buildPatientNameLookupSet(fullName: string, firstName: string, lastName
 }
 
 function isSpecialistReferralContactCategory(category: string) {
-  const normalized = normalizeLookupValue(category);
-  return normalized !== "attorney" && normalized !== "imaging" && normalized !== "hospital/er";
+  // Only the fixed "Specialist" top-level category is a specialist.
+  // Attorneys and Imaging Centers are categorically different; the
+  // "Hospital/ER" label is now a sub-category under Specialist rather
+  // than its own top-level.
+  return normalizeLookupValue(category) === "specialist";
 }
 
 function supportsRegionLaterality(region: string) {
@@ -1180,7 +1183,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const imagingCenters = useMemo(
     () =>
       contacts
-        .filter((contact) => normalizeLookupValue(contact.category) === "imaging")
+        .filter(
+          (contact) => normalizeLookupValue(contact.category) === "imaging center",
+        )
         .map((contact) => contact.name)
         .sort((a, b) => a.localeCompare(b)),
     [contacts],
@@ -2250,6 +2255,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setMessage(editingId ? `${label} sent entry updated.` : `${label} sent entry added. Use Edit to update dates & findings.`);
     setEditingId(null);
     clearImagingDraft(mode);
+
+    // Contact gap check: if this imaging center isn't already a contact,
+    // offer to add it. Only on NEW entries (not edits) so repeatedly editing
+    // an existing referral doesn't pester the user every save.
+    if (!editingId) {
+      const centerName = nextEntry.center.trim();
+      const found = findContactByName(contacts, centerName, "Imaging Center");
+      if (!found) {
+        setContactGap({
+          name: centerName,
+          categoryHint: "Imaging Center",
+          message: `"${centerName}" isn't in your Contacts yet — add them now?`,
+        });
+      }
+    }
   };
 
   const editImagingReferral = (mode: ImagingMode, referralId: string) => {
