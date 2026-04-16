@@ -44,6 +44,24 @@ const cfColumnLabels: Record<CfColumnId, string> = {
   caseStatus: "Case Status",
 };
 
+/**
+ * Extract a 4-digit year from a date string in either ISO (YYYY-MM-DD) or US
+ * (MM/DD/YYYY, MM/DD/YY) format. Returns "" for empty/invalid values so the
+ * UI can skip them instead of rendering "NaN". Both formats exist in the
+ * patients list: SQL-imported patients are stored as MM/DD/YYYY, while
+ * UI-created patients are stored as YYYY-MM-DD.
+ */
+function extractYearFromDateString(value: string | undefined): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return "";
+  const iso = trimmed.match(/^(\d{4})-\d{1,2}-\d{1,2}/);
+  if (iso) return iso[1];
+  const us = trimmed.match(/^\d{1,2}\/\d{1,2}\/(\d{2,4})$/);
+  if (us) return us[1].length === 2 ? `20${us[1]}` : us[1];
+  return "";
+}
+
 function loadCfColumnOrder(): CfColumnId[] {
   if (typeof window === "undefined") return defaultCfColumnOrder;
   try {
@@ -496,15 +514,16 @@ export default function PatientsPage() {
   );
 
   const years = useMemo(
-    () =>
-      [
-        "ALL",
-        ...new Set(
-          patients.map((patient) =>
-            new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString(),
-          ),
-        ),
-      ],
+    () => {
+      const collected = new Set<string>();
+      for (const patient of patients) {
+        const y = extractYearFromDateString(patient.dateOfLoss);
+        if (y) collected.add(y);
+      }
+      // Newest year first so the dropdown opens to recent years
+      const sorted = Array.from(collected).sort((a, b) => Number(b) - Number(a));
+      return ["ALL", ...sorted];
+    },
     [],
   );
 
@@ -579,7 +598,7 @@ export default function PatientsPage() {
 
       const matchesYear =
         year === "ALL" ||
-        new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString() === year;
+        extractYearFromDateString(patient.dateOfLoss) === year;
 
       const matchesAttorney =
         attorney === "ALL" ||

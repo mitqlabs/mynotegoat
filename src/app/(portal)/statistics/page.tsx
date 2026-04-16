@@ -126,6 +126,7 @@ function formatAverageCaseCount(value: number) {
 function getDefaultYear(): string {
   const currentYear = new Date().getFullYear().toString();
   const hasCurrentYear = patients.some((patient) => {
+    if (!patient.dateOfLoss) return false;
     try {
       return new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString() === currentYear;
     } catch {
@@ -149,15 +150,18 @@ export default function StatisticsPage() {
   const [showBilling, setShowBilling] = useState(false);
 
   const years = useMemo(
-    () =>
-      [
-        "ALL",
-        ...new Set(
-          patients.map((patient) =>
-            new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString(),
-          ),
-        ),
-      ],
+    () => {
+      const collected = new Set<string>();
+      for (const patient of patients) {
+        const parsed = parseFlexibleDate(patient.dateOfLoss);
+        if (parsed && Number.isFinite(parsed.year)) {
+          collected.add(parsed.year.toString());
+        }
+      }
+      // Sort years newest-first for a more natural dropdown order
+      const sorted = Array.from(collected).sort((a, b) => Number(b) - Number(a));
+      return ["ALL", ...sorted];
+    },
     [],
   );
 
@@ -187,7 +191,7 @@ export default function StatisticsPage() {
 
       const matchesYear =
         year === "ALL" ||
-        new Date(`${patient.dateOfLoss}T00:00:00`).getFullYear().toString() === year;
+        (parseFlexibleDate(patient.dateOfLoss)?.year.toString() === year);
 
       const matchesAttorney =
         attorney === "ALL" ||

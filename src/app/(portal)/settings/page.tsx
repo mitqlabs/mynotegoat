@@ -1356,6 +1356,8 @@ function DiagnosticsSection() {
         </div>
       </section>
 
+      <DuplicatePatientsSubsection />
+
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -1540,6 +1542,168 @@ function DiagnosticsSection() {
         </button>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Duplicate Patients subsection
+// ============================================================================
+// Small diagnostic that scans the patient list for rows that look like the
+// same person — same full name (normalized) + same DOB, or same name + same
+// date of loss. A compact aesthetic table, collapsed by default. If the user
+// decides one is a real duplicate, they can open the patient and soft-delete
+// it from the patient page — we do not delete here.
+
+type DuplicateGroup = {
+  key: string;
+  reason: string;
+  patients: Array<{
+    id: string;
+    fullName: string;
+    dob: string;
+    dateOfLoss: string;
+    caseStatus: string;
+  }>;
+};
+
+function normalizeNameForDedup(name: string): string {
+  return name.trim().toLowerCase().replace(/[.,\s]+/g, " ").replace(/\s+/g, " ");
+}
+
+function normalizeDateForDedup(value: string): string {
+  // Collapse both MM/DD/YYYY and YYYY-MM-DD into YYYY-MM-DD so cross-format
+  // duplicates are still caught.
+  if (!value) return "";
+  const t = value.trim();
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const us = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (us) {
+    const year = us[3].length === 2 ? `20${us[3]}` : us[3];
+    return `${year}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+  }
+  return t;
+}
+
+function DuplicatePatientsSubsection() {
+  const [expanded, setExpanded] = useState(false);
+  const [scanned, setScanned] = useState(false);
+  const [groups, setGroups] = useState<DuplicateGroup[]>([]);
+
+  const runScan = async () => {
+    const { patients } = await import("@/lib/mock-data");
+    const byNameDob = new Map<string, DuplicateGroup>();
+    const byNameDol = new Map<string, DuplicateGroup>();
+
+    for (const p of patients) {
+      if (p.deleted) continue;
+      const name = normalizeNameForDedup(p.fullName);
+      if (!name) continue;
+      const dob = normalizeDateForDedup(p.dob);
+      const dol = normalizeDateForDedup(p.dateOfLoss);
+      const entry = {
+        id: p.id,
+        fullName: p.fullName,
+        dob: p.dob,
+        dateOfLoss: p.dateOfLoss,
+        caseStatus: p.caseStatus,
+      };
+
+      if (dob) {
+        const key = `${name}|${dob}`;
+        const existing = byNameDob.get(key);
+        if (existing) existing.patients.push(entry);
+        else byNameDob.set(key, { key, reason: "Same name + DOB", patients: [entry] });
+      }
+      if (dol) {
+        const key = `${name}|${dol}`;
+        const existing = byNameDol.get(key);
+        if (existing) existing.patients.push(entry);
+        else byNameDol.set(key, { key, reason: "Same name + date of loss", patients: [entry] });
+      }
+    }
+
+    const all: DuplicateGroup[] = [];
+    byNameDob.forEach((g) => { if (g.patients.length > 1) all.push(g); });
+    byNameDol.forEach((g) => {
+      if (g.patients.length <= 1) return;
+      // Skip if this exact set of IDs was already added under the DOB reason
+      const ids = g.patients.map((x) => x.id).sort().join(",");
+      const alreadyAdded = all.some((x) => x.patients.map((y) => y.id).sort().join(",") === ids);
+      if (!alreadyAdded) all.push(g);
+    });
+
+    setGroups(all);
+    setScanned(true);
+  };
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Duplicate Patients
+        </h3>
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded((v) => !v);
+            if (!expanded && !scanned) void runScan();
+          }}
+          className="text-xs font-medium text-[var(--brand-primary)] hover:underline"
+        >
+          {expanded ? "Hide" : scanned ? "Show" : "Scan"}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
+          {!scanned ? (
+            <p className="text-sm text-[var(--text-muted)]">Scanning…</p>
+          ) : groups.length === 0 ? (
+            <p className="text-sm text-emerald-400">✓ No duplicates found.</p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-[var(--text-muted)]">
+                Found {groups.length} possible duplicate group{groups.length === 1 ? "" : "s"}. Open
+                each patient from the Patients page to compare and decide which to keep.
+              </p>
+              <ul className="space-y-2">
+                {groups.map((g) => (
+                  <li key={g.key} className="rounded border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                      {g.reason}
+                    </div>
+                    <ul className="space-y-1">
+                      {g.patients.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="font-medium text-[var(--text-primary)]">
+                            {p.fullName}
+                          </span>
+                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                            DOB {p.dob || "—"} · DOL {p.dateOfLoss || "—"} · {p.caseStatus}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void runScan()}
+                  className="text-xs text-[var(--brand-primary)] hover:underline"
+                >
+                  Rescan
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
