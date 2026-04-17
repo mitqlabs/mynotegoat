@@ -51,6 +51,18 @@ interface NewAppointmentDraft {
   recurEndDate: string;
   recurVisitCount: number;
   overrideOfficeHours: boolean;
+  /** Per-weekday override times for the recurring series. Keyed by the
+   *  Sunday-0..Saturday-6 day-of-week number (same as `recurDays`). When
+   *  a day appears here, its time overrides `startTime` for that day's
+   *  generated appointments. Used to support e.g. "Mon 8:30, Wed 1:30,
+   *  Thu 10:00" without creating a separate series per day. Empty object
+   *  means "use startTime for every selected day" (the legacy behavior). */
+  perDayTimes: Record<number, string>;
+  /** Whether the "Different time per day" toggle is on. Driven from
+   *  state instead of inferred from perDayTimes so the user can have
+   *  the toggle visible while leaving per-day values blank (which means
+   *  that day falls back to startTime). */
+  usePerDayTimes: boolean;
 }
 
 const dayToggleOptions = [
@@ -182,7 +194,29 @@ function createInitialDraft(
     recurEndDate: addDays(selectedDate, 30),
     recurVisitCount: 12,
     overrideOfficeHours: false,
+    perDayTimes: {},
+    usePerDayTimes: false,
   };
+}
+
+/**
+ * Resolve the actual start-time that should be used for a given
+ * generated date. If the "Different time per day" toggle is on and the
+ * per-day override map has a non-empty time for that weekday, use it —
+ * otherwise fall back to the draft's single startTime.
+ *
+ * Only applies to weekly recurring appointments; daily recurrence and
+ * one-off appointments always use startTime as-is.
+ */
+function resolveTimeForDate(draft: NewAppointmentDraft, dateIso: string): string {
+  if (!draft.isRecurring || draft.recurUnit !== "weeks" || !draft.usePerDayTimes) {
+    return draft.startTime;
+  }
+  const parsed = parseIsoDate(dateIso);
+  if (!parsed) return draft.startTime;
+  const dayOfWeek = parsed.getUTCDay();
+  const override = draft.perDayTimes[dayOfWeek];
+  return override && override.trim() ? override : draft.startTime;
 }
 
 function getDatesForDraft(draft: NewAppointmentDraft) {
@@ -459,6 +493,26 @@ export function NewAppointmentModal({
       );
       return;
     }
+    // When the Different-time-per-day toggle is on, every non-blank
+    // per-day override ALSO needs to align to the interval — otherwise
+    // the schedule grid gets a misaligned pin that the user can't edit
+    // cleanly afterwards.
+    if (
+      draft.isRecurring &&
+      draft.recurUnit === "weeks" &&
+      draft.usePerDayTimes
+    ) {
+      for (const [dayStr, time] of Object.entries(draft.perDayTimes)) {
+        if (!time || !time.trim()) continue;
+        if (!isStartTimeAlignedToInterval(time, scheduleSettings.appointmentIntervalMin)) {
+          const dayNum = Number(dayStr);
+          setError(
+            `${weekdayLabels[dayNum] ?? "Day"} time (${time}) must align to ${scheduleSettings.appointmentIntervalMin}-minute intervals.`,
+          );
+          return;
+        }
+      }
+    }
 
     const sanitizedDraft: NewAppointmentDraft =
       draft.isRecurring && draft.recurUnit === "weeks"
@@ -501,17 +555,24 @@ export function NewAppointmentModal({
 
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const overbookedDates = scheduleDates.filter((dateIso) => {
+      const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
       const countAtSlot = scheduleAppointments.filter(
-        (entry) => entry.date === dateIso && entry.startTime === sanitizedDraft.startTime,
+        (entry) => entry.date === dateIso && entry.startTime === startTimeForDate,
       ).length;
       return countAtSlot >= slotCapacity;
     });
     if (overbookedDates.length) {
+      const detail = overbookedDates
+        .slice(0, 5)
+        .map((dateIso) => {
+          const t = resolveTimeForDate(sanitizedDraft, dateIso);
+          return `${formatUsDateFromIso(dateIso)} @ ${formatTimeLabel(t)}`;
+        })
+        .join(", ");
       setError(
-        `Time slot ${formatTimeLabel(sanitizedDraft.startTime)} is full (max ${slotCapacity}) on: ${overbookedDates
-          .slice(0, 5)
-          .map((dateIso) => formatUsDateFromIso(dateIso))
-          .join(", ")}${overbookedDates.length > 5 ? "..." : ""}`,
+        `Time slot full (max ${slotCapacity}) on: ${detail}${
+          overbookedDates.length > 5 ? "..." : ""
+        }`,
       );
       return;
     }
@@ -569,16 +630,22 @@ export function NewAppointmentModal({
     }
 
     if (scheduleSettings.enforceOfficeHours) {
-      const outsideOfficeHoursDate = scheduleDates.find(
-        (dateIso) =>
-          !isAppointmentWithinOfficeHours(scheduleSettings, dateIso, sanitizedDraft.startTime, durationMin),
-      );
+      const outsideOfficeHoursDate = scheduleDates.find((dateIso) => {
+        const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
+        return !isAppointmentWithinOfficeHours(
+          scheduleSettings,
+          dateIso,
+          startTimeForDate,
+          durationMin,
+        );
+      });
       if (
         outsideOfficeHoursDate &&
         (!scheduleSettings.allowOverride || !sanitizedDraft.overrideOfficeHours)
       ) {
+        const t = resolveTimeForDate(sanitizedDraft, outsideOfficeHoursDate);
         setError(
-          `Outside office hours on ${outsideOfficeHoursDate}. Enable override or adjust office hours.`,
+          `Outside office hours on ${outsideOfficeHoursDate} @ ${formatTimeLabel(t)}. Enable override or adjust office hours.`,
         );
         return;
       }
@@ -595,7 +662,10 @@ export function NewAppointmentModal({
       caseLabel,
       room: sanitizedDraft.room.trim(),
       date: dateIso,
-      startTime: sanitizedDraft.startTime,
+      // Per-day override time if set, else the single startTime. For
+      // one-off and daily-recurrence appointments this resolves to
+      // sanitizedDraft.startTime unchanged.
+      startTime: resolveTimeForDate(sanitizedDraft, dateIso),
       durationMin,
       status: "Scheduled",
       note: sanitizedDraft.note.trim(),
@@ -1019,6 +1089,93 @@ export function NewAppointmentModal({
                 <p className="mt-2 text-xs text-[var(--text-muted)]">
                   Only office-open days are selectable.
                 </p>
+
+                {/* Per-day time override — small opt-in so the weekly
+                    series can have different times per weekday (e.g. Mon
+                    8:30, Wed 1:30, Thu 10:00). Hidden behind a single
+                    checkbox so the normal single-time path stays clean. */}
+                {draft.recurDays.length > 1 && (
+                  <div className="mt-3 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                      <input
+                        checked={draft.usePerDayTimes}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            usePerDayTimes: event.target.checked,
+                          }))
+                        }
+                        type="checkbox"
+                      />
+                      Different time per day
+                    </label>
+                    {draft.usePerDayTimes && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {draft.recurDays
+                          .slice()
+                          .sort((a, b) => a - b)
+                          .map((day) => {
+                            const override = draft.perDayTimes[day] ?? "";
+                            return (
+                              <label
+                                key={`per-day-time-${day}`}
+                                className="grid gap-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2"
+                              >
+                                <span className="text-xs font-semibold text-[var(--text-muted)]">
+                                  {weekdayLabels[day]}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setDraft((current) => ({
+                                        ...current,
+                                        perDayTimes: {
+                                          ...current.perDayTimes,
+                                          [day]: value,
+                                        },
+                                      }));
+                                    }}
+                                    type="time"
+                                    value={override}
+                                  />
+                                  {override ? (
+                                    <button
+                                      className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                                      onClick={() =>
+                                        setDraft((current) => {
+                                          const next = { ...current.perDayTimes };
+                                          delete next[day];
+                                          return { ...current, perDayTimes: next };
+                                        })
+                                      }
+                                      title={`Clear — use the main Start Time (${formatTimeLabel(
+                                        draft.startTime,
+                                      )})`}
+                                      type="button"
+                                    >
+                                      ×
+                                    </button>
+                                  ) : null}
+                                </div>
+                                {!override ? (
+                                  <span className="text-[10px] text-[var(--text-muted)]">
+                                    Uses {formatTimeLabel(draft.startTime)}
+                                  </span>
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                      </div>
+                    )}
+                    {!draft.usePerDayTimes ? (
+                      <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                        Turn this on if Mon/Wed/Thu need different appointment times.
+                      </p>
+                    ) : null}
+                  </div>
+                )}
               </div>
             )}
           </div>
