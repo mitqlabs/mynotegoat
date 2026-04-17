@@ -6,7 +6,14 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import { patients } from "@/lib/mock-data";
+import { useContactDirectory } from "@/hooks/use-contact-directory";
+import {
+  ContactGapPrompt,
+  findContactByName,
+  type ContactGap,
+} from "@/components/contact-gap-prompt";
+import { createPatientRecord, patients } from "@/lib/mock-data";
+import { formatUsPhoneInput } from "@/lib/phone-format";
 import {
   findClosedKeyDateForDate,
   findKeyDatesForDate,
@@ -358,6 +365,49 @@ export function NewAppointmentModal({
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [error, setError] = useState("");
 
+  // ── Quick New Patient (inline create-from-scratch panel) ────────────────
+  // When the user's in the "New Appointment" flow and they realize the
+  // patient doesn't exist yet, they can click "+ New Patient" to expand
+  // a compact form that creates the patient + auto-selects them for the
+  // appointment, without having to close this modal and open another.
+  const { contacts } = useContactDirectory();
+  const [showQuickNewPatient, setShowQuickNewPatient] = useState(false);
+  const [quickNewPatientDraft, setQuickNewPatientDraft] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    attorney: "",
+    dateOfLoss: "",
+    notes: "",
+  });
+  const [quickNewPatientError, setQuickNewPatientError] = useState("");
+  const [quickAttorneyFocused, setQuickAttorneyFocused] = useState(false);
+  const [contactGap, setContactGap] = useState<ContactGap | null>(null);
+
+  const attorneyContactOptions = useMemo(
+    () => contacts.filter((c) => c.category.toLowerCase() === "attorney"),
+    [contacts],
+  );
+  const quickAttorneyMatches = useMemo(() => {
+    const q = quickNewPatientDraft.attorney.trim().toLowerCase();
+    if (!q) return [];
+    if (attorneyContactOptions.some((c) => c.name.trim().toLowerCase() === q)) return [];
+    return attorneyContactOptions.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [attorneyContactOptions, quickNewPatientDraft.attorney]);
+
+  const resetQuickNewPatientPanel = () => {
+    setShowQuickNewPatient(false);
+    setQuickNewPatientDraft({
+      firstName: "",
+      lastName: "",
+      phone: "",
+      attorney: "",
+      dateOfLoss: "",
+      notes: "",
+    });
+    setQuickNewPatientError("");
+  };
+
   // Reset draft whenever the modal opens
   useEffect(() => {
     if (!open) {
@@ -471,6 +521,52 @@ export function NewAppointmentModal({
     }));
     setShowPatientSuggestions(false);
     setError("");
+  };
+
+  const handleCreateQuickPatient = () => {
+    const firstName = quickNewPatientDraft.firstName.trim();
+    const lastName = quickNewPatientDraft.lastName.trim();
+    if (!firstName || !lastName) {
+      setQuickNewPatientError("First and last name are required.");
+      return;
+    }
+    let dolIso = "";
+    if (quickNewPatientDraft.dateOfLoss.trim()) {
+      const match = quickNewPatientDraft.dateOfLoss.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!match) {
+        setQuickNewPatientError("Date of Injury must be MM/DD/YYYY.");
+        return;
+      }
+      dolIso = `${match[3]}-${match[1]}-${match[2]}`;
+    }
+    const created = createPatientRecord({
+      firstName,
+      lastName,
+      attorney: quickNewPatientDraft.attorney.trim() || undefined,
+      phone: quickNewPatientDraft.phone.trim() || undefined,
+      dateOfLoss: dolIso,
+      notes: quickNewPatientDraft.notes.trim() || undefined,
+    });
+    if (!created) {
+      setQuickNewPatientError("Could not create patient.");
+      return;
+    }
+    // Auto-select the just-created patient into the appointment draft.
+    handleSelectPatient(created);
+    // Contact-gap check: if the attorney string doesn't match an existing
+    // Attorney-category contact, prompt to add one.
+    const attorneyName = created.attorney;
+    if (attorneyName && attorneyName.toLowerCase() !== "self") {
+      const found = findContactByName(contacts, attorneyName, "Attorney");
+      if (!found) {
+        setContactGap({
+          name: attorneyName,
+          categoryHint: "Attorney",
+          message: `"${attorneyName}" isn't in your Contacts yet — add them now?`,
+        });
+      }
+    }
+    resetQuickNewPatientPanel();
   };
 
   const handleSubmit = () => {
@@ -710,7 +806,18 @@ export function NewAppointmentModal({
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="relative grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
+              {!lockedPatientId && (
+                <button
+                  className="text-xs font-semibold text-[var(--brand-primary)] underline"
+                  onClick={() => setShowQuickNewPatient((v) => !v)}
+                  type="button"
+                >
+                  {showQuickNewPatient ? "Cancel new patient" : "+ New Patient"}
+                </button>
+              )}
+            </div>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 disabled:bg-[var(--bg-soft)]"
               disabled={Boolean(lockedPatientId)}
@@ -747,6 +854,142 @@ export function NewAppointmentModal({
               </div>
             )}
           </label>
+
+          {showQuickNewPatient && !lockedPatientId && (
+            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 md:col-span-2">
+              <div className="flex items-center justify-between gap-2">
+                <h5 className="text-sm font-semibold">Quick New Patient</h5>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Complete the rest of the chart later
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-5">
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Last Name *</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    onChange={(e) =>
+                      setQuickNewPatientDraft((c) => ({ ...c, lastName: e.target.value }))
+                    }
+                    value={quickNewPatientDraft.lastName}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">First Name *</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    onChange={(e) =>
+                      setQuickNewPatientDraft((c) => ({ ...c, firstName: e.target.value }))
+                    }
+                    value={quickNewPatientDraft.firstName}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Phone</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    inputMode="numeric"
+                    maxLength={12}
+                    onChange={(e) =>
+                      setQuickNewPatientDraft((c) => ({
+                        ...c,
+                        phone: formatUsPhoneInput(e.target.value),
+                      }))
+                    }
+                    placeholder="(555) 555-5555"
+                    value={quickNewPatientDraft.phone}
+                  />
+                </label>
+                <label className="relative grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Attorney</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    onBlur={() =>
+                      window.setTimeout(() => setQuickAttorneyFocused(false), 120)
+                    }
+                    onChange={(e) =>
+                      setQuickNewPatientDraft((c) => ({ ...c, attorney: e.target.value }))
+                    }
+                    onFocus={() => setQuickAttorneyFocused(true)}
+                    placeholder="Search or type attorney"
+                    value={quickNewPatientDraft.attorney}
+                  />
+                  {quickAttorneyFocused && quickAttorneyMatches.length > 0 && (
+                    <ul className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-56 overflow-auto rounded-lg border border-[var(--line-soft)] bg-white shadow-[0_12px_24px_rgba(14,41,62,0.14)]">
+                      {quickAttorneyMatches.map((entry) => (
+                        <li key={entry.id}>
+                          <button
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[rgba(13,121,191,0.08)]"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setQuickNewPatientDraft((c) => ({ ...c, attorney: entry.name }));
+                              setQuickAttorneyFocused(false);
+                            }}
+                            type="button"
+                          >
+                            <span className="font-medium">{entry.name}</span>
+                            <span className="text-xs text-[var(--text-muted)]">
+                              {entry.phone || ""}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    inputMode="numeric"
+                    maxLength={10}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, "").slice(0, 8);
+                      let formatted = raw;
+                      if (raw.length > 4)
+                        formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
+                      else if (raw.length > 2)
+                        formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+                      setQuickNewPatientDraft((c) => ({ ...c, dateOfLoss: formatted }));
+                    }}
+                    placeholder="MM/DD/YYYY"
+                    value={quickNewPatientDraft.dateOfLoss}
+                  />
+                </label>
+              </div>
+              <label className="mt-3 grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Note</span>
+                <textarea
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(e) =>
+                    setQuickNewPatientDraft((c) => ({ ...c, notes: e.target.value }))
+                  }
+                  placeholder="Anything from the call: chief complaint, referral source, language, ride needs, etc."
+                  rows={2}
+                  value={quickNewPatientDraft.notes}
+                />
+              </label>
+              {quickNewPatientError && (
+                <p className="mt-2 text-xs font-semibold text-[#b43b34]">{quickNewPatientError}</p>
+              )}
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold"
+                  onClick={resetQuickNewPatientPanel}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                  onClick={handleCreateQuickPatient}
+                  type="button"
+                >
+                  Create Patient
+                </button>
+              </div>
+            </div>
+          )}
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Provider *</span>
@@ -1243,6 +1486,7 @@ export function NewAppointmentModal({
           </button>
         </div>
       </section>
+      <ContactGapPrompt gap={contactGap} onClose={() => setContactGap(null)} />
     </div>
   );
 }
