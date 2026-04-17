@@ -112,23 +112,31 @@ export async function fetchAllAppointmentsFromTable(): Promise<ScheduleAppointme
 export async function bulkUpsertAppointmentsToTable(
   appointments: ScheduleAppointmentRecord[],
 ): Promise<{ ok: boolean; count: number; error?: string }> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { ok: false, count: 0, error: "supabase not configured" };
-  const workspaceId = getActiveWorkspaceOrNull();
-  if (!workspaceId) return { ok: false, count: 0, error: "no active workspace" };
-
   if (appointments.length === 0) return { ok: true, count: 0 };
 
-  const rows = appointments.map((a) => appointmentToRow(a, workspaceId));
-  const { error } = await supabase
-    .from("schedule_appointments")
-    .upsert(rows, { onConflict: "workspace_id,id" });
-
-  if (error) {
-    console.error("[appointments-cloud] bulk upsert failed:", error.message);
-    return { ok: false, count: 0, error: error.message };
+  // Same retry treatment as the per-row upsert path.
+  try {
+    const result = await withLockStealRetry(async () => {
+      const workspaceId = await resolveValidatedWorkspaceId(`bulk-upsert(${appointments.length})`);
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("[appointments-cloud] bulk upsert: supabase client not configured");
+      }
+      const rows = appointments.map((a) => appointmentToRow(a, workspaceId));
+      const { error } = await supabase
+        .from("schedule_appointments")
+        .upsert(rows, { onConflict: "workspace_id,id" });
+      if (error) {
+        throw new Error(`[appointments-cloud] bulk upsert failed: ${error.message}`);
+      }
+      return rows.length;
+    });
+    return { ok: true, count: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[appointments-cloud] bulk upsert failed:", message);
+    return { ok: false, count: 0, error: message };
   }
-  return { ok: true, count: rows.length };
 }
 
 /**

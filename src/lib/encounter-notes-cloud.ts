@@ -119,23 +119,34 @@ export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRe
 export async function bulkUpsertEncounterNotesToTable(
   notes: EncounterNoteRecord[],
 ): Promise<{ ok: boolean; count: number; error?: string }> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { ok: false, count: 0, error: "supabase not configured" };
-  const workspaceId = getActiveWorkspaceOrNull();
-  if (!workspaceId) return { ok: false, count: 0, error: "no active workspace" };
-
   if (notes.length === 0) return { ok: true, count: 0 };
 
-  const rows = notes.map((n) => noteToRow(n, workspaceId));
-  const { error } = await supabase
-    .from("encounter_notes")
-    .upsert(rows, { onConflict: "workspace_id,id" });
-
-  if (error) {
-    console.error("[encounter-notes-cloud] bulk upsert failed:", error.message);
-    return { ok: false, count: 0, error: error.message };
+  // Wrap the whole bulk upsert in the lock-steal / network retry helper.
+  // SAVE ENCOUNTERS used to fail outright on a single transient
+  // navigator-lock contention or WiFi blip — now it retries up to 4
+  // times (1 lock-steal + 3 network) before surfacing the error.
+  try {
+    const result = await withLockStealRetry(async () => {
+      const workspaceId = await resolveValidatedWorkspaceId(`bulk-upsert(${notes.length})`);
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("[encounter-notes-cloud] bulk upsert: supabase client not configured");
+      }
+      const rows = notes.map((n) => noteToRow(n, workspaceId));
+      const { error } = await supabase
+        .from("encounter_notes")
+        .upsert(rows, { onConflict: "workspace_id,id" });
+      if (error) {
+        throw new Error(`[encounter-notes-cloud] bulk upsert failed: ${error.message}`);
+      }
+      return rows.length;
+    });
+    return { ok: true, count: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[encounter-notes-cloud] bulk upsert failed:", message);
+    return { ok: false, count: 0, error: message };
   }
-  return { ok: true, count: rows.length };
 }
 
 /**

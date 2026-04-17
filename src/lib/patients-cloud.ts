@@ -197,25 +197,34 @@ export async function bulkUpsertPatientsToTable(patientsList: PatientRecord[]): 
   count: number;
   error?: string;
 }> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { ok: false, count: 0, error: "supabase not configured" };
-  const workspaceId = getActiveWorkspaceOrNull();
-  if (!workspaceId) return { ok: false, count: 0, error: "no active workspace" };
-
   if (patientsList.length === 0) {
     return { ok: true, count: 0 };
   }
 
-  const rows = patientsList.map((p) => patientToRow(p, workspaceId));
-  const { error } = await supabase
-    .from("patients")
-    .upsert(rows, { onConflict: "workspace_id,id" });
-
-  if (error) {
-    console.error("[patients-cloud] bulk upsert failed:", error.message);
-    return { ok: false, count: 0, error: error.message };
+  // Same retry treatment as the per-row upsert path so a single transient
+  // lock-steal or network blip doesn't blow up the entire bulk migration.
+  try {
+    const result = await withLockStealRetry(async () => {
+      const workspaceId = await resolveValidatedWorkspaceId(`bulk-upsert(${patientsList.length})`);
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("[patients-cloud] bulk upsert: supabase client not configured");
+      }
+      const rows = patientsList.map((p) => patientToRow(p, workspaceId));
+      const { error } = await supabase
+        .from("patients")
+        .upsert(rows, { onConflict: "workspace_id,id" });
+      if (error) {
+        throw new Error(`[patients-cloud] bulk upsert failed: ${error.message}`);
+      }
+      return rows.length;
+    });
+    return { ok: true, count: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[patients-cloud] bulk upsert failed:", message);
+    return { ok: false, count: 0, error: message };
   }
-  return { ok: true, count: rows.length };
 }
 
 export async function deletePatientFromTable(patientId: string): Promise<void> {
