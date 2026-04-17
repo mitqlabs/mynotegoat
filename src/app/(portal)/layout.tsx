@@ -11,7 +11,7 @@ import {
   prepareCloudStateBeforeMount,
   wipeLocalWorkspaceForSignOut,
 } from "@/lib/cloud-state";
-import { installStorageSyncInterceptor, onSyncStatusChange, pauseSync, resumeSync } from "@/lib/storage-sync-interceptor";
+import { forceSyncNow, installStorageSyncInterceptor, onSyncStatusChange, pauseSync, resumeSync } from "@/lib/storage-sync-interceptor";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { resolveAuthAccessState } from "@/lib/auth-access";
 import type { PlanTier } from "@/lib/plan-access";
@@ -39,6 +39,8 @@ export default function PortalLayout({
   const [planTier, setPlanTier] = useState<PlanTier>("complete");
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [errorPillDismissed, setErrorPillDismissed] = useState(false);
+  const [retryingSync, setRetryingSync] = useState(false);
   // When syncStatus flips to "synced" we flash a green "Cloud Saved!" pill for
   // a few seconds so the user has positive confirmation that their work made
   // it to the cloud. The flash is driven by a setTimeout started inside the
@@ -110,6 +112,9 @@ export default function PortalLayout({
           // legitimate bugs (RLS rejects, schema mismatches) indistinguishable
           // from transient network blips.
           setSyncErrorMessage(detail?.errorMessage ?? "Unknown error");
+          // Reset the dismiss flag on EVERY new error so a fresh failure
+          // re-shows the pill even if the user dismissed the previous one.
+          setErrorPillDismissed(false);
           setShowSavedFlash(false);
           if (savedFlashTimer) {
             clearTimeout(savedFlashTimer);
@@ -224,6 +229,27 @@ export default function PortalLayout({
     };
   }, [router]);
 
+  // Auto-retry the cloud sync when the tab regains focus while we're in
+  // an error state. Pattern: WiFi blip happens → red pill shows up →
+  // user goes off to do something → comes back to the tab → we silently
+  // try a fresh sync. If it works, the pill disappears and they never
+  // had to think about it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleFocus = () => {
+      if (syncStatus !== "error") return;
+      void forceSyncNow();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) handleFocus();
+    });
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [syncStatus]);
+
   if (bootstrapError) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 py-6 lg:px-8">
@@ -298,14 +324,48 @@ export default function PortalLayout({
             push, which both drops the red pill and triggers the green
             flash so the user has unambiguous confirmation. */}
         <div className="pointer-events-none fixed bottom-3 right-3 z-50 flex flex-col items-end gap-2">
-          {syncStatus === "error" && (
+          {syncStatus === "error" && !errorPillDismissed && (
             <div className="pointer-events-auto max-w-sm rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-lg">
-              <div>Cloud sync failed — retrying</div>
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  Cloud sync failed
+                  {retryingSync ? " — trying again…" : ""}
+                </span>
+                <button
+                  className="ml-2 rounded text-white/70 hover:text-white"
+                  onClick={() => setErrorPillDismissed(true)}
+                  title="Dismiss (your changes are still saved locally and will sync next time you edit)"
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mt-1 text-[10px] font-normal text-red-100">
+                Your work is safe in this browser — it just hasn&apos;t made it to
+                the cloud yet. Click Retry to try again.
+              </div>
               {syncErrorMessage && (
                 <div className="mt-1 max-h-24 overflow-hidden break-all font-mono text-[10px] font-normal text-red-100/90">
                   {syncErrorMessage}
                 </div>
               )}
+              <div className="mt-2 flex justify-end gap-1.5">
+                <button
+                  className="rounded bg-white/15 px-2 py-1 text-[10px] font-semibold hover:bg-white/25 disabled:opacity-50"
+                  disabled={retryingSync}
+                  onClick={async () => {
+                    setRetryingSync(true);
+                    try {
+                      await forceSyncNow();
+                    } finally {
+                      setRetryingSync(false);
+                    }
+                  }}
+                  type="button"
+                >
+                  {retryingSync ? "Retrying…" : "Retry now"}
+                </button>
+              </div>
             </div>
           )}
           {syncStatus === "syncing" && (
