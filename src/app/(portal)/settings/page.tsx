@@ -25,6 +25,13 @@ import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
 import { appointmentIntervalOptions, weekdayLabels } from "@/lib/schedule-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { CONTACT_CATEGORIES, PATIENTS_STORAGE_KEY, type ContactCategory } from "@/lib/mock-data";
+import {
+  dismissDuplicateGroup,
+  isDuplicateDismissed,
+  loadDuplicateDismissals,
+  undismissDuplicateGroup,
+} from "@/lib/duplicate-dismissals";
+import { MergePatientsModal } from "@/components/merge-patients-modal";
 import type { DocumentTemplateScope } from "@/lib/document-templates";
 
 type SettingsSectionKey =
@@ -1671,6 +1678,9 @@ function DuplicatePatientsSubsection() {
   const [expanded, setExpanded] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
+  const [dismissedGroups, setDismissedGroups] = useState<DuplicateGroup[]>([]);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<DuplicatePatient[] | null>(null);
 
   const runScan = async () => {
     const { patients } = await import("@/lib/mock-data");
@@ -1850,8 +1860,47 @@ function DuplicatePatientsSubsection() {
       return b.patients.length - a.patients.length;
     });
 
-    setGroups(result);
+    // Split into "needs review" vs "previously dismissed". The dismissed
+    // bucket is hidden by default but reachable via a small "Show
+    // dismissed" toggle so users can un-dismiss if they change their mind.
+    const dismissedSet = loadDuplicateDismissals();
+    const active: DuplicateGroup[] = [];
+    const dismissed: DuplicateGroup[] = [];
+    for (const g of result) {
+      const fp = g.patients.map((p) => p.id).sort().join("|");
+      if (dismissedSet.has(fp)) dismissed.push(g);
+      else active.push(g);
+    }
+
+    setGroups(active);
+    setDismissedGroups(dismissed);
     setScanned(true);
+  };
+
+  const handleDismiss = (group: DuplicateGroup) => {
+    dismissDuplicateGroup(group.patients.map((p) => p.id));
+    setGroups((current) => current.filter((g) => g.key !== group.key));
+    setDismissedGroups((current) => [group, ...current]);
+  };
+
+  const handleUndismiss = (group: DuplicateGroup) => {
+    undismissDuplicateGroup(group.patients.map((p) => p.id));
+    setDismissedGroups((current) => current.filter((g) => g.key !== group.key));
+    setGroups((current) => [group, ...current]);
+  };
+
+  const handleMergeClick = (group: DuplicateGroup) => {
+    setMergeTarget(group.patients);
+  };
+
+  const handleMerged = (winnerId: string) => {
+    // After a merge the loser ids are gone from the patients store, so
+    // the simplest correct thing is to re-scan. The fingerprint that
+    // contained those losers is also purged automatically by the merge
+    // helper, so future scans won't try to dismiss "ghost" groups.
+    setMergeTarget(null);
+    void runScan();
+    void winnerId;
   };
 
   return (
@@ -1875,56 +1924,62 @@ function DuplicatePatientsSubsection() {
         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
           {!scanned ? (
             <p className="text-sm text-[var(--text-muted)]">Scanning…</p>
-          ) : groups.length === 0 ? (
+          ) : groups.length === 0 && dismissedGroups.length === 0 ? (
             <p className="text-sm text-emerald-400">✓ No duplicates found.</p>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs text-[var(--text-muted)]">
-                Found {groups.length} possible duplicate group{groups.length === 1 ? "" : "s"}. Open
-                each patient from the Patients page to compare and decide which to keep.
-              </p>
-              <ul className="space-y-2">
-                {groups.map((g) => {
-                  const badge =
-                    g.confidence === "very_likely"
-                      ? { label: "VERY LIKELY", classes: "bg-red-500/20 text-red-300 border-red-500/40" }
-                      : g.confidence === "likely"
-                        ? { label: "LIKELY", classes: "bg-amber-500/20 text-amber-300 border-amber-500/40" }
-                        : { label: "POSSIBLE", classes: "bg-sky-500/20 text-sky-300 border-sky-500/40" };
-                  return (
-                    <li
-                      key={g.key}
-                      className="rounded border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2"
-                    >
-                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${badge.classes}`}
-                        >
-                          {badge.label}
-                        </span>
-                        <span className="text-[10px] text-[var(--text-muted)]">
-                          {g.reasons.join(" · ")}
-                        </span>
-                      </div>
-                      <ul className="space-y-1">
-                        {g.patients.map((p) => (
-                          <li
-                            key={p.id}
-                            className="flex items-center justify-between gap-2 text-xs"
-                          >
-                            <span className="font-medium text-[var(--text-primary)]">
-                              {p.fullName}
-                            </span>
-                            <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                              DOB {formatDateForDisplayUs(p.dob)} · DOL {formatDateForDisplayUs(p.dateOfLoss)} · {p.caseStatus}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  );
-                })}
-              </ul>
+              {groups.length > 0 ? (
+                <>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Found {groups.length} possible duplicate group
+                    {groups.length === 1 ? "" : "s"}. Use{" "}
+                    <span className="font-semibold">Merge</span> if it&apos;s really
+                    one patient, or{" "}
+                    <span className="font-semibold">Not a Duplicate</span> if
+                    they&apos;re separate cases (different dates of loss, etc.).
+                  </p>
+                  <ul className="space-y-2">
+                    {groups.map((g) => (
+                      <DuplicateGroupCard
+                        key={g.key}
+                        group={g}
+                        onDismiss={() => handleDismiss(g)}
+                        onMerge={() => handleMergeClick(g)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-sm text-emerald-400">
+                  ✓ No active duplicate groups.
+                </p>
+              )}
+
+              {dismissedGroups.length > 0 ? (
+                <div className="border-t border-[var(--border-subtle)] pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDismissed((v) => !v)}
+                    className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    {showDismissed ? "Hide" : "Show"} {dismissedGroups.length}{" "}
+                    dismissed group{dismissedGroups.length === 1 ? "" : "s"}
+                  </button>
+                  {showDismissed ? (
+                    <ul className="mt-2 space-y-2 opacity-60">
+                      {dismissedGroups.map((g) => (
+                        <DuplicateGroupCard
+                          key={g.key}
+                          group={g}
+                          dismissed
+                          onUndismiss={() => handleUndismiss(g)}
+                        />
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -1938,7 +1993,103 @@ function DuplicatePatientsSubsection() {
           )}
         </div>
       ) : null}
+
+      {mergeTarget ? (
+        <MergePatientsModal
+          group={mergeTarget}
+          onClose={() => setMergeTarget(null)}
+          onMerged={(winnerId) => handleMerged(winnerId)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function DuplicateGroupCard({
+  group,
+  onDismiss,
+  onMerge,
+  onUndismiss,
+  dismissed,
+}: {
+  group: DuplicateGroup;
+  onDismiss?: () => void;
+  onMerge?: () => void;
+  onUndismiss?: () => void;
+  dismissed?: boolean;
+}) {
+  const badge =
+    group.confidence === "very_likely"
+      ? { label: "VERY LIKELY", classes: "bg-red-500/20 text-red-300 border-red-500/40" }
+      : group.confidence === "likely"
+        ? { label: "LIKELY", classes: "bg-amber-500/20 text-amber-300 border-amber-500/40" }
+        : { label: "POSSIBLE", classes: "bg-sky-500/20 text-sky-300 border-sky-500/40" };
+
+  return (
+    <li className="rounded border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2">
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <span
+          className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${badge.classes}`}
+        >
+          {badge.label}
+        </span>
+        <span className="text-[10px] text-[var(--text-muted)]">
+          {group.reasons.join(" · ")}
+        </span>
+        {dismissed ? (
+          <span className="rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+            Dismissed
+          </span>
+        ) : null}
+      </div>
+      <ul className="space-y-1">
+        {group.patients.map((p) => (
+          <li
+            key={p.id}
+            className="flex items-center justify-between gap-2 text-xs"
+          >
+            <span className="font-medium text-[var(--text-primary)]">
+              {p.fullName}
+            </span>
+            <span className="font-mono text-[10px] text-[var(--text-muted)]">
+              DOB {formatDateForDisplayUs(p.dob)} · DOL{" "}
+              {formatDateForDisplayUs(p.dateOfLoss)} · {p.caseStatus}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5 border-t border-[var(--border-subtle)] pt-1.5">
+        {dismissed ? (
+          <button
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            onClick={onUndismiss}
+            type="button"
+          >
+            Restore to list
+          </button>
+        ) : (
+          <>
+            <button
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              onClick={onDismiss}
+              title="Mark this group as not actually duplicates (e.g. same patient with two different injury dates)"
+              type="button"
+            >
+              Not a Duplicate
+            </button>
+            <button
+              className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-0.5 text-[10px] font-semibold text-white hover:brightness-110"
+              onClick={onMerge}
+              title="Merge these records into one — combines fields and reassigns encounters/billing/files"
+              type="button"
+            >
+              Merge…
+            </button>
+          </>
+        )}
+      </div>
+    </li>
   );
 }
 
