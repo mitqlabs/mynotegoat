@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
@@ -234,21 +234,40 @@ export default function PortalLayout({
   // user goes off to do something → comes back to the tab → we silently
   // try a fresh sync. If it works, the pill disappears and they never
   // had to think about it.
+  //
+  // CRITICAL: the effect used to rebuild its handlers on every syncStatus
+  // change AND passed a different function reference to addEventListener
+  // vs removeEventListener for visibilitychange. Every status flip
+  // (syncing → synced → error, which can happen many times a minute
+  // under autosave) added a fresh listener that the cleanup never
+  // actually removed. After a few minutes of editing, hundreds of
+  // listeners were firing on every tab focus, each calling forceSyncNow
+  // which spawned cloud retry loops — that's what was pegging the CPU
+  // fan and blowing up Chrome's memory.
+  //
+  // Fix: pull the current syncStatus through a ref so the effect can
+  // stay mounted with a stable handler (deps: []) — one listener total,
+  // no leak, reads latest status on every fire.
+  const syncStatusRef = useRef(syncStatus);
+  useEffect(() => {
+    syncStatusRef.current = syncStatus;
+  }, [syncStatus]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleFocus = () => {
-      if (syncStatus !== "error") return;
+      if (syncStatusRef.current !== "error") return;
       void forceSyncNow();
     };
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibility = () => {
       if (!document.hidden) handleFocus();
-    });
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [syncStatus]);
+  }, []);
 
   if (bootstrapError) {
     return (
