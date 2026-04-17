@@ -2141,7 +2141,24 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                         if (result.ok) {
                           setMessage(`Encounters saved (${result.count}).${result.error ? ` Note: ${result.error}` : ""}`);
                         } else {
-                          setMessage(`Save failed: ${result.error || "Unknown error"}`);
+                          // Translate the raw technical error string into
+                          // something useful for the user. The retry helper
+                          // already tried 4 times under the hood — if we're
+                          // here, the cloud is genuinely unreachable. The
+                          // user's edits are still safe in localStorage.
+                          const raw = result.error ?? "Unknown error";
+                          const isNetworky =
+                            raw.includes("Failed to fetch") ||
+                            raw.includes("NetworkError") ||
+                            raw.includes("Load failed") ||
+                            raw.includes("Lock broken");
+                          if (isNetworky) {
+                            setMessage(
+                              "Cloud is unreachable right now — your changes are saved on this device and will sync automatically as soon as the connection recovers. Try again in a moment, or keep working.",
+                            );
+                          } else {
+                            setMessage(`Save failed: ${raw}`);
+                          }
                         }
                       }}
                       type="button"
