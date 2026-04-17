@@ -1267,67 +1267,63 @@ function DiagnosticsSection() {
         </div>
       ) : null}
 
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-          Authentication &amp; Workspace
-        </h3>
-        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
-          {row("Signed-in user", state.authEmail ?? "—")}
-          {row("Auth user ID", state.authUserId ?? "—")}
-          {row("Active workspace ID", state.activeWorkspaceId ?? "(none)")}
-          {row(
-            "Workspace matches auth user",
-            state.workspaceMatchesAuth ? "✓ yes" : "✗ NO — writes will be rejected by RLS",
-            state.workspaceMatchesAuth ? "ok" : "bad",
-          )}
-        </div>
-        {!state.workspaceMatchesAuth && state.activeWorkspaceId ? (
-          <p className="mt-2 text-xs text-red-300">
-            The workspace prefix ({state.workspacePrefix || "(empty)"}) does not match your
-            authenticated user ID. Every cloud write will be silently rejected by the database.
-            This is the same bug that caused the 2026-04-14 data loss. Sign out and sign back in
-            to refresh the workspace pointer.
-          </p>
-        ) : null}
-      </section>
+      {/* Three compact stat cards side-by-side — collapses to a single
+          column on narrow screens. Replaces the three full-width
+          sections so the Diagnostics panel fits on one screen. */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <section>
+          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Auth &amp; Workspace
+          </h3>
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-2 text-xs">
+            {row("User", state.authEmail ?? "—")}
+            {row("User ID", state.authUserId ? `${state.authUserId.slice(0, 8)}…` : "—")}
+            {row(
+              "WS match",
+              state.workspaceMatchesAuth ? "✓" : "✗ NO",
+              state.workspaceMatchesAuth ? "ok" : "bad",
+            )}
+          </div>
+          {!state.workspaceMatchesAuth && state.activeWorkspaceId ? (
+            <p className="mt-1 text-[10px] text-red-300">
+              WS/auth mismatch — cloud writes blocked. Sign out + in.
+            </p>
+          ) : null}
+        </section>
 
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-          Cloud Row Counts (scoped to current workspace)
-        </h3>
-        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
-          {row("Patients", state.cloudCounts.patients ?? "—")}
-          {row("Appointments", state.cloudCounts.appointments ?? "—")}
-          {row("Encounter notes", state.cloudCounts.encounters ?? "—")}
-        </div>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          If these numbers drop unexpectedly, something is wiping data. Compare against your
-          previous values before making changes.
-        </p>
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-          Local Storage
-        </h3>
-        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3">
-          {row("Total keys", state.localStorageKeyCount)}
-          {row("Total size", formatBytes(state.localStorageBytes))}
-          {row("casemate.* keys", state.casemateKeyCount)}
-          {row(
-            "casemate.* size",
-            formatBytes(state.casemateBytes),
-            state.casemateBytes > 4 * 1024 * 1024 ? "warn" : "ok",
-          )}
-        </div>
-        {state.casemateBytes > 4 * 1024 * 1024 ? (
-          <p className="mt-2 text-xs text-amber-300">
-            Approaching the 5 MB localStorage quota. At the quota, new saves to localStorage
-            will fail. The app prunes old encounters automatically but if this keeps climbing,
-            investigate.
+        <section>
+          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Cloud Rows
+          </h3>
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-2 text-xs">
+            {row("Patients", state.cloudCounts.patients ?? "—")}
+            {row("Appts", state.cloudCounts.appointments ?? "—")}
+            {row("Notes", state.cloudCounts.encounters ?? "—")}
+          </div>
+          <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+            Should only grow. Sudden drops = data loss — investigate.
           </p>
-        ) : null}
-      </section>
+        </section>
+
+        <section>
+          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Local Storage
+          </h3>
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-2 text-xs">
+            {row("Total", `${state.localStorageKeyCount} · ${formatBytes(state.localStorageBytes)}`)}
+            {row(
+              "App data",
+              `${state.casemateKeyCount} · ${formatBytes(state.casemateBytes)}`,
+              state.casemateBytes > 4 * 1024 * 1024 ? "warn" : "ok",
+            )}
+          </div>
+          {state.casemateBytes > 4 * 1024 * 1024 ? (
+            <p className="mt-1 text-[10px] text-amber-300">
+              Near 5 MB quota — saves may fail soon.
+            </p>
+          ) : null}
+        </section>
+      </div>
 
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -1547,6 +1543,49 @@ function DiagnosticsSection() {
           className="rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/20 disabled:opacity-40"
         >
           {probing ? "Probing…" : "Run Test Cloud Write"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            // Nuclear-option local-cache wipe. Cloud is already the
+            // source of truth for patients / appointments / encounter
+            // notes; wiping local just forces a fresh pull on next
+            // load. Useful when localStorage is bloated past safe
+            // levels and the user needs to recover without losing
+            // data. We keep: workspace pointer (so we don't lose auth
+            // context), sync-at timestamp (so bootstrap knows it's
+            // re-pulling a fresh state), and nothing else.
+            if (
+              !window.confirm(
+                "Wipe local cache?\n\n" +
+                  "This removes every casemate.* key from this browser. Your cloud " +
+                  "data is untouched — the app will pull a fresh copy from the cloud " +
+                  "on next load.\n\n" +
+                  "Use this if localStorage is near the 5 MB quota or the app is " +
+                  "crashing. Drafts saved on this device will be lost.\n\n" +
+                  "Continue?",
+              )
+            ) {
+              return;
+            }
+            const keysToDelete: string[] = [];
+            for (let i = 0; i < window.localStorage.length; i++) {
+              const key = window.localStorage.key(i);
+              if (!key) continue;
+              if (
+                key.startsWith("casemate.") &&
+                key !== "casemate.active-workspace-id.v1" &&
+                !key.startsWith("casemate.cloud-sync-at.")
+              ) {
+                keysToDelete.push(key);
+              }
+            }
+            for (const key of keysToDelete) window.localStorage.removeItem(key);
+            window.location.reload();
+          }}
+          className="rounded-lg border border-red-400/50 bg-red-500/10 px-3 py-1.5 text-sm font-semibold text-red-300 hover:bg-red-500/20"
+        >
+          Wipe Local Cache
         </button>
         <button
           type="button"
@@ -4697,6 +4736,20 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
+      {/* ── Diagnostics group ────────────────────────────────────────
+          Diagnostics sits FIRST in this tail group, followed by
+          Backup & Restore, Data Recovery, and Security Baseline. All
+          four are admin / troubleshooting tools — keeping them
+          physically adjacent makes them discoverable together. */}
+      <CollapsibleSection
+        isOpen={expandedSections.diagnostics}
+        onToggle={() => toggleSection("diagnostics")}
+        title="Diagnostics"
+        description="Live view of your account, workspace, cloud row counts, and local storage — useful when data looks wrong."
+      >
+        <DiagnosticsSection />
+      </CollapsibleSection>
+
       <CollapsibleSection
         description="Export selected settings/data into a backup file, then import into another office setup."
         isOpen={expandedSections.backup}
@@ -4944,18 +4997,6 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.subscription}
-        onToggle={() => toggleSection("subscription")}
-        title="Subscription"
-        description="Manage your plan and billing details through Stripe."
-      >
-        <SubscriptionSection />
-      </CollapsibleSection>
-
-      {/* (Change Password UI has been merged into Office / Account
-          Settings above. The standalone section was removed 2026-04-17.) */}
-
-      <CollapsibleSection
         isOpen={expandedSections.security}
         onToggle={() => toggleSection("security")}
         title="Security Baseline (Pre-PHI Checklist)"
@@ -4970,13 +5011,20 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.diagnostics}
-        onToggle={() => toggleSection("diagnostics")}
-        title="Diagnostics"
-        description="Live view of your account, workspace, cloud row counts, and local storage — useful when data looks wrong."
+        isOpen={expandedSections.subscription}
+        onToggle={() => toggleSection("subscription")}
+        title="Subscription"
+        description="Manage your plan and billing details through Stripe."
       >
-        <DiagnosticsSection />
+        <SubscriptionSection />
       </CollapsibleSection>
+
+      {/* (Change Password UI has been merged into Office / Account
+          Settings above. The standalone section was removed 2026-04-17.) */}
+
+      {/* (Security Baseline + Diagnostics got moved up into the
+          Diagnostics group at the bottom of the Settings list —
+          Diagnostics → Backup → Data Recovery → Security Baseline. */}
     </div>
   );
 }
