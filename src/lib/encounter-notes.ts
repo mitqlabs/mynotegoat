@@ -389,16 +389,31 @@ export async function forceSaveAllEncountersToCloud(
     return { ok: false, count: 0, error: "localStorage write failed (storage may be full)" };
   }
 
-  // 2. Bulk-upsert everything to cloud
+  // 2. Bulk-upsert everything to cloud, WITH visible status signals so the
+  // user gets the familiar blue "Saving to cloud..." pill during the
+  // write and the green "Cloud Saved ✓" pill when it succeeds. Without
+  // these signals the Save Encounters button looked silent even when
+  // the save was working — terrifying for a user who's worried their
+  // data isn't persisting.
+  const { reportCloudWriteStart, reportCloudWriteSuccess, reportCloudWriteError } =
+    await import("@/lib/storage-sync-interceptor");
   try {
     const { isCloudEntityEnabled } = await import("@/lib/feature-flags");
     if (!isCloudEntityEnabled("encounterNotes")) {
       return { ok: true, count: records.length, error: "Cloud sync is disabled" };
     }
+    reportCloudWriteStart("Save Encounters");
     const { bulkUpsertEncounterNotesToTable } = await import("@/lib/encounter-notes-cloud");
-    return await bulkUpsertEncounterNotesToTable(records);
+    const result = await bulkUpsertEncounterNotesToTable(records);
+    if (result.ok) {
+      reportCloudWriteSuccess("Save Encounters");
+    } else {
+      reportCloudWriteError("Save Encounters", new Error(result.error ?? "Unknown error"));
+    }
+    return result;
   } catch (error) {
     console.error("[encounter-notes] force cloud save failed:", error);
+    reportCloudWriteError("Save Encounters", error);
     return {
       ok: false,
       count: 0,
@@ -422,7 +437,7 @@ async function dualWriteEncounterNotesToCloud(
   const [
     { isCloudEntityEnabled },
     { upsertEncounterNoteToTable, deleteEncounterNoteFromTable },
-    { reportCloudWriteError },
+    { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess },
     { runBatched },
   ] = await Promise.all([
     import("@/lib/feature-flags"),
@@ -452,9 +467,18 @@ async function dualWriteEncounterNotesToCloud(
   }
   if (tasks.length === 0) return;
 
+  // Flip UI to "syncing" (blue pill) so the user sees their auto-save
+  // kick off. Every macro click / SOAP edit that triggers a cloud push
+  // shows the pill instead of silently happening in the background.
+  reportCloudWriteStart("encounter-notes auto-save");
   const results = await runBatched(tasks, 4);
   const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-  if (failures.length === 0) return;
+  if (failures.length === 0) {
+    // All ops succeeded — flash the green "Cloud Saved ✓" pill so the
+    // user gets positive confirmation that their work made it to cloud.
+    reportCloudWriteSuccess("encounter-notes auto-save");
+    return;
+  }
 
   // Every individual op already called reportCloudWriteError — this is the
   // aggregate signal for any caller that wants a single pass/fail answer.

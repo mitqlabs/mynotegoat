@@ -437,7 +437,7 @@ async function dualWritePatientsToCloud(
   const [
     { isCloudEntityEnabled },
     { upsertPatientToTable, deletePatientFromTable },
-    { reportCloudWriteError },
+    { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess },
     { runBatched },
   ] = await Promise.all([
     import("@/lib/feature-flags"),

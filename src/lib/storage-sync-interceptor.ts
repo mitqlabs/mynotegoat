@@ -85,6 +85,32 @@ export function reportCloudWriteError(source: string, error: unknown) {
   notifyStatus("error", { source, errorMessage: msg });
 }
 
+/**
+ * Companion to reportCloudWriteError for cloud-table write SUCCESSES. Flips
+ * the UI indicator to "synced" so the green "Cloud Saved ✓" pill flashes.
+ * Without this, dedicated-table dual-writes (patients, appointments,
+ * encounter-notes) succeeded silently — the user had no positive signal
+ * that their save actually made it to the cloud. That's scary when you
+ * just hit "Save Encounters" and the button just returns a plain message
+ * without the familiar confirmation pill.
+ */
+export function reportCloudWriteSuccess(source: string) {
+  // Reset the error counter so a stale error from a prior failed write
+  // doesn't keep the indicator red after a clean success.
+  syncErrorCount = 0;
+  notifyStatus("synced", { source });
+}
+
+/**
+ * Flip the indicator to "syncing" for dedicated-table writes — mirrors
+ * what the blob autosave path already does. Call this right before the
+ * cloud op starts so the user sees the blue "Saving to cloud..." pill
+ * while the write is in flight.
+ */
+export function reportCloudWriteStart(source: string) {
+  notifyStatus("syncing", { source });
+}
+
 function doSync(): Promise<void> {
   // If a sync is already running, return its promise so callers actually
   // await it instead of resolving immediately. Critical for "Save & Close"
