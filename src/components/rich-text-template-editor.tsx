@@ -358,6 +358,34 @@ export const RichTextTemplateEditor = forwardRef<
         onFocus={() => { isFocusedRef.current = true; }}
         onBlur={() => { isFocusedRef.current = false; emitChange(); }}
         onInput={emitChange}
+        onKeyDown={(event) => {
+          // Override the browser's default Enter behavior in
+          // contentEditable, which inserts a <p> block. Because
+          // .rich-text-editor p has a 0.7em bottom margin, every Enter
+          // press visually adds one line-height PLUS the margin — feels
+          // like two lines of jump, especially right after a macro
+          // insertion where the previous block is already a <p>.
+          //
+          // Switch to a single <br> on plain Enter (consistent single-
+          // line spacing, matches user expectations for "next line").
+          // Shift+Enter still falls through to the default paragraph
+          // behavior for the occasional user who wants the bigger gap.
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            // insertLineBreak is the standard execCommand for the
+            // Shift+Enter semantic. Fall back to insertHTML("<br>") on
+            // browsers that don't support it.
+            const supportsLineBreak =
+              typeof document.queryCommandSupported === "function" &&
+              document.queryCommandSupported("insertLineBreak");
+            if (supportsLineBreak) {
+              document.execCommand("insertLineBreak");
+            } else {
+              document.execCommand("insertHTML", false, "<br>");
+            }
+            emitChange();
+          }
+        }}
         onPaste={(event) => {
           // Intercept paste: strip foreign HTML and insert as clean text
           // to prevent broken markup from crashing the editor or wrecking state.
