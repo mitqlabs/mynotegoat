@@ -14,7 +14,7 @@
  * iframe; images render in an <img>; anything else falls back to a link.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getFilesInFolder,
   getFoldersInParent,
@@ -185,14 +185,21 @@ function FilePreviewModal({
     };
   }, [file.storagePath]);
 
-  // Escape to close for keyboard users.
+  // Escape to close for keyboard users. Pull onClose through a ref so
+  // this effect can stay mounted with `[]` deps — if the parent passes
+  // a new onClose identity on every render (common when the parent
+  // doesn't memoize), we don't want to thrash listener registration.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, []);
 
   const mime = file.mimeType.toLowerCase();
   const isPdf = mime === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");

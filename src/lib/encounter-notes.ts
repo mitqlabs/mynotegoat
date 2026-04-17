@@ -393,13 +393,19 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   }
   // Always dual-write the FULL set to cloud (not the pruned subset).
   // We don't await here because saveEncounterNoteRecords is sync for
-  // backwards compatibility, but the inner function now reports failures
-  // through the sync status system and rejects instead of silently swallowing.
-  // The `.catch` below ONLY exists to prevent unhandled-promise-rejection
-  // warnings — the actual error surfacing happens inside the dual-write
-  // via reportCloudWriteError. Keep this; don't swallow the error upstream.
-  dualWriteEncounterNotesToCloud(records, previousNotesById).catch(() => {
-    /* already reported via reportCloudWriteError inside dualWrite */
+  // backwards compatibility, but the inner function reports failures
+  // through the sync status system via reportCloudWriteError. The
+  // `.catch` below does NOT silently swallow — it routes any error
+  // that somehow ESCAPED dualWrite's own error reporting (e.g. the
+  // dynamic import throwing before dualWrite runs) into the same
+  // reportCloudWriteError pipeline so the user sees the red pill.
+  dualWriteEncounterNotesToCloud(records, previousNotesById).catch((err) => {
+    // Lazy-import to avoid a circular dep between encounter-notes and
+    // storage-sync-interceptor. The reportCloudWriteError helper flips
+    // the sync-status indicator to "error" and logs the message.
+    void import("@/lib/storage-sync-interceptor").then(({ reportCloudWriteError }) => {
+      reportCloudWriteError("encounter-notes dual-write (pre-run)", err);
+    });
   });
   previousNotesById = new Map(records.map((n) => [n.id, n]));
   return true;

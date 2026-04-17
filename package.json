@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/sanity-check.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sanity": "node scripts/sanity-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

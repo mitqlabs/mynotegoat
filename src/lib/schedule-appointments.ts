@@ -320,9 +320,13 @@ export function saveScheduleAppointments(records: ScheduleAppointmentRecord[]) {
 
   // Phase-2 dual-write. Async — now awaits every op and reports failures
   // via reportCloudWriteError (which flips the UI sync indicator to "error").
-  // `.catch` on the call below is just to prevent unhandled-rejection warnings.
-  dualWriteAppointmentsToCloud(next, previousAppointmentsById).catch(() => {
-    /* already reported via reportCloudWriteError inside dualWrite */
+  // `.catch` here routes any error that ESCAPED the dual-write's internal
+  // reporting (e.g. module import failure) into the same reporter so the
+  // user still sees the red pill — no silent swallowing.
+  dualWriteAppointmentsToCloud(next, previousAppointmentsById).catch((err) => {
+    void import("@/lib/storage-sync-interceptor").then(({ reportCloudWriteError }) => {
+      reportCloudWriteError("appointments dual-write (pre-run)", err);
+    });
   });
   previousAppointmentsById = new Map(next.map((a) => [a.id, a]));
 }

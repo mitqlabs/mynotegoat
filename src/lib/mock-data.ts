@@ -419,12 +419,15 @@ function persistPatients(nextPatients: PatientRecord[]) {
 
   // Phase-1 cloud-as-truth dual-write. Only fires when the `patients` feature
   // flag is on. Diff-based: only changed rows get upserted, vanished rows get
-  // deleted. The dual-write now AWAITS every op via Promise.allSettled, and
-  // any failure flips the sync-status indicator to "error" via
-  // reportCloudWriteError. The `.catch` on the call below is just to prevent
-  // unhandled-rejection warnings — error surfacing happens inside.
-  dualWritePatientsToCloud(nextPatients, previousById).catch(() => {
-    /* already reported via reportCloudWriteError inside dualWrite */
+  // deleted. The dual-write reports its own per-op failures via
+  // reportCloudWriteError. The `.catch` here routes any error that ESCAPED
+  // the dual-write's internal reporting (e.g. a module import failing before
+  // the helper even runs) into the same reporter so the user still sees the
+  // red pill — no silent swallowing.
+  dualWritePatientsToCloud(nextPatients, previousById).catch((err) => {
+    void import("@/lib/storage-sync-interceptor").then(({ reportCloudWriteError }) => {
+      reportCloudWriteError("patients dual-write (pre-run)", err);
+    });
   });
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
@@ -43,6 +43,15 @@ export default function PortalLayout({
   children: React.ReactNode;
 }>) {
   const router = useRouter();
+  // Pull the router through a ref so the bootstrap effect can have
+  // `[]` deps. Next.js's router object is already stable across
+  // renders, but the sanity-check script can't know that — using the
+  // ref keeps the lint/guard honest about "effects with listeners
+  // must have stable deps."
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
   const [mounted, setMounted] = useState(false);
   const [planTier, setPlanTier] = useState<PlanTier>("complete");
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
@@ -77,27 +86,27 @@ export default function PortalLayout({
       }
 
       if (access.state === "signed-out") {
-        router.replace("/auth/login");
+        routerRef.current.replace("/auth/login");
         return;
       }
 
       if (access.state === "email-unverified") {
-        router.replace("/auth/login?verify=1");
+        routerRef.current.replace("/auth/login?verify=1");
         return;
       }
 
       if (access.state === "pending-approval") {
-        router.replace("/auth/pending");
+        routerRef.current.replace("/auth/pending");
         return;
       }
 
       if (access.state !== "access-granted" || !access.userId) {
-        router.replace("/auth/login");
+        routerRef.current.replace("/auth/login");
         return;
       }
 
       if (access.isAdmin) {
-        router.replace("/admin");
+        routerRef.current.replace("/admin");
         return;
       }
 
@@ -265,7 +274,10 @@ export default function PortalLayout({
         authSubscription.unsubscribe();
       }
     };
-  }, [router]);
+    // Deps are intentionally `[]` — router is accessed through
+    // routerRef.current so re-runs on router-object identity changes
+    // (which shouldn't happen in Next.js anyway) don't stack listeners.
+  }, []);
 
   // (Auto-retry-on-focus was removed. The feature caused an event-listener
   //  leak — every syncStatus change re-ran the effect and stacked more
