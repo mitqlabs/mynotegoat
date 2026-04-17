@@ -447,17 +447,52 @@ async function dualWritePatientsToCloud(
   const nextById = new Map(nextPatients.map((entry) => [entry.id, entry]));
   const ops: Promise<unknown>[] = [];
 
-  // Upsert added or changed rows.
+  // Patient delta plan:
+  //   - Brand-new non-deleted patient → upsert
+  //   - Existing non-deleted patient that changed → upsert
+  //   - Patient whose `deleted` flag just flipped to true → DELETE from cloud
+  //     (the patients table has no `deleted` column, so the cloud row
+  //      going away IS the soft-delete. Local still has the row marked
+  //      deleted so it appears in Trash; cross-device pulls see it gone.
+  //      Restore below re-upserts it.)
+  //   - Patient whose `deleted` flag just flipped to false (restore) → upsert
+  //   - Patient that vanished from the array entirely → delete (permanent)
   for (const patient of nextPatients) {
     const previous = previousById.get(patient.id);
-    if (!previous || JSON.stringify(previous) !== JSON.stringify(patient)) {
+    const isDeletedNow = patient.deleted === true;
+    const wasDeletedBefore = previous?.deleted === true;
+
+    if (!previous) {
+      // Brand new — only sync if not already in the trash bucket.
+      if (!isDeletedNow) ops.push(upsertPatientToTable(patient));
+      continue;
+    }
+
+    if (isDeletedNow && !wasDeletedBefore) {
+      // Just soft-deleted — wipe the cloud row so it doesn't resurrect on
+      // next boot / next device.
+      ops.push(deletePatientFromTable(patient.id));
+      continue;
+    }
+
+    if (isDeletedNow && wasDeletedBefore) {
+      // Still in trash — cloud already doesn't have a row, nothing to do.
+      continue;
+    }
+
+    // Non-deleted in both states OR restore (was deleted, now not).
+    if (JSON.stringify(previous) !== JSON.stringify(patient)) {
       ops.push(upsertPatientToTable(patient));
     }
   }
 
-  // Delete rows that vanished from the next snapshot.
-  for (const previousId of previousById.keys()) {
+  // Patients that vanished from the array entirely (permanent delete). Also
+  // handles patients that were never in the array to begin with — no-op.
+  for (const [previousId, previous] of previousById) {
     if (!nextById.has(previousId)) {
+      // If the patient was already soft-deleted, its cloud row is already
+      // gone. Still issue the delete to make permanent delete idempotent.
+      void previous;
       ops.push(deletePatientFromTable(previousId));
     }
   }
@@ -486,11 +521,23 @@ async function dualWritePatientsToCloud(
  * so the localStorage write does not get pushed to the legacy blob row.
  */
 export function replacePatientsFromCloud(nextPatients: PatientRecord[]) {
-  patients.splice(0, patients.length, ...nextPatients);
+  // Preserve locally-soft-deleted patients that aren't in the cloud
+  // snapshot. The cloud table has no `deleted` column — a soft-delete is
+  // represented as "row gone from cloud + still present in local with
+  // deleted:true". Without this preservation, every page refresh would
+  // wipe the Trash tab because the cloud pull wouldn't include those
+  // rows. Cross-device behavior stays right too: if the user
+  // permanent-deletes on another device, the row never comes back to
+  // cloud, and our local trash copy is still restorable from THIS
+  // device until the user empties trash here.
+  const cloudIds = new Set(nextPatients.map((p) => p.id));
+  const localTrash = patients.filter((p) => p.deleted === true && !cloudIds.has(p.id));
+  const merged = [...nextPatients, ...localTrash];
+  patients.splice(0, patients.length, ...merged);
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(nextPatients));
+  window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(merged));
 }
 
 function createPatientId() {

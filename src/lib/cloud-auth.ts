@@ -111,18 +111,44 @@ function isLockStealError(err: unknown): boolean {
   return false;
 }
 
+function isTransientNetworkError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  // "Failed to fetch" is what every Chromium/WebKit browser throws for a
+  // network abort / no-response scenario. "TypeError: NetworkError..." is
+  // Firefox's equivalent. "Load failed" is Safari. All three are transient
+  // and safe to retry once — the supabase-js upsert/delete is idempotent
+  // on (workspace_id, id) so a duplicate retry is harmless.
+  return (
+    message.includes("Failed to fetch") ||
+    message.includes("NetworkError") ||
+    message.includes("Load failed")
+  );
+}
+
 /**
- * Wrap a Supabase operation so that a transient lock-steal error triggers
- * exactly one retry (after clearing the cached validation). Any other
- * error propagates unchanged. One retry is enough in practice because the
- * contesting lock holder releases the moment its own op finishes.
+ * Wrap a Supabase operation so that a transient lock-steal or network
+ * "Failed to fetch" error triggers exactly one retry (with a short
+ * backoff for network flaps). Any other error propagates unchanged.
+ *
+ * One retry is enough in practice:
+ *  - The lock-steal holder releases the moment its own op finishes
+ *  - Network flaps during bulk writes (merge, bulk patient update) are
+ *    almost always a single momentary blip; if it's actually down, the
+ *    second attempt fails too and the caller learns about it
  */
 export async function withLockStealRetry<T>(op: () => Promise<T>): Promise<T> {
   try {
     return await op();
   } catch (err) {
-    if (!isLockStealError(err)) throw err;
+    const shouldRetry = isLockStealError(err) || isTransientNetworkError(err);
+    if (!shouldRetry) throw err;
     invalidateCloudAuthCache();
+    // Small backoff so network errors don't instantly-retry into the same
+    // packet loss. Lock-steal errors retry immediately — backoff is
+    // harmless either way.
+    if (isTransientNetworkError(err)) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
     return await op();
   }
 }
