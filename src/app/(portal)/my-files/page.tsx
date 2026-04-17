@@ -111,6 +111,8 @@ export default function MyFilesPage() {
     deleteFile,
     restoreFile,
     restoreFolder,
+    permanentlyDeleteFile,
+    permanentlyDeleteFolder,
     deletedFiles,
     deletedFolders,
   } = useFileManager(patients, caseStatuses);
@@ -1128,16 +1130,36 @@ export default function MyFilesPage() {
                           {folder.deletedAt ? formatDate(folder.deletedAt) : "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
-                            onClick={() => {
-                              restoreFolder(folder.id);
-                              setMessage(`Folder "${folder.name}" restored.`);
-                            }}
-                            type="button"
-                          >
-                            Restore
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                              onClick={() => {
+                                restoreFolder(folder.id);
+                                setMessage(`Folder "${folder.name}" restored.`);
+                              }}
+                              type="button"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`,
+                                  )
+                                ) {
+                                  void permanentlyDeleteFolder(folder.id).then(() => {
+                                    setMessage(`Folder "${folder.name}" permanently deleted.`);
+                                  });
+                                }
+                              }}
+                              title="Permanently delete folder + every file inside (no undo)"
+                              type="button"
+                            >
+                              Delete Forever
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1181,16 +1203,36 @@ export default function MyFilesPage() {
                           {file.deletedAt ? formatDate(file.deletedAt) : "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
-                            onClick={() => {
-                              restoreFile(file.id);
-                              setMessage(`File "${file.name}" restored.`);
-                            }}
-                            type="button"
-                          >
-                            Restore
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                              onClick={() => {
+                                restoreFile(file.id);
+                                setMessage(`File "${file.name}" restored.`);
+                              }}
+                              type="button"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`,
+                                  )
+                                ) {
+                                  void permanentlyDeleteFile(file.id).then(() => {
+                                    setMessage(`File "${file.name}" permanently deleted.`);
+                                  });
+                                }
+                              }}
+                              title="Permanently delete file from cloud storage (no undo)"
+                              type="button"
+                            >
+                              Delete Forever
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

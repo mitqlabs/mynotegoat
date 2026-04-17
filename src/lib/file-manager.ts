@@ -241,6 +241,60 @@ export function getDeletedFolders(state: FileManagerState): FileFolder[] {
   return state.folders.filter((f) => f.deleted === true);
 }
 
+/**
+ * Permanently remove a file record from the manifest. Returns the storage
+ * path of the deleted file so the caller can clean it up from Supabase
+ * Storage in the same operation. Returns `null` if the file wasn't found
+ * or was never soft-deleted (we only allow permanent-delete from the
+ * trash so the user can't accidentally nuke an active file).
+ */
+export function permanentlyDeleteFileRecord(
+  state: FileManagerState,
+  fileId: string,
+): { state: FileManagerState; storagePath: string | null } {
+  const file = state.files.find((f) => f.id === fileId);
+  if (!file || !file.deleted) {
+    return { state, storagePath: null };
+  }
+  return {
+    state: {
+      ...state,
+      files: state.files.filter((f) => f.id !== fileId),
+    },
+    storagePath: file.storagePath,
+  };
+}
+
+/**
+ * Permanently remove a folder + every nested folder + every file under
+ * that subtree. Returns the list of storage paths that should be cleaned
+ * out of Supabase Storage by the caller. Refuses to act on system folders
+ * (those are auto-managed and a permanent delete would just spawn them
+ * back on the next sync).
+ */
+export function permanentlyDeleteFolderRecord(
+  state: FileManagerState,
+  folderId: string,
+): { state: FileManagerState; storagePaths: string[] } {
+  const folder = state.folders.find((f) => f.id === folderId);
+  if (!folder || !folder.deleted || folder.isSystemFolder) {
+    return { state, storagePaths: [] };
+  }
+  const descendantIds = collectDescendantFolderIds(state.folders, folderId);
+  descendantIds.add(folderId);
+  const storagePaths = state.files
+    .filter((f) => descendantIds.has(f.folderId))
+    .map((f) => f.storagePath)
+    .filter((p): p is string => Boolean(p));
+  return {
+    state: {
+      folders: state.folders.filter((f) => !descendantIds.has(f.id)),
+      files: state.files.filter((f) => !descendantIds.has(f.folderId)),
+    },
+    storagePaths,
+  };
+}
+
 export function renameFileRecord(
   state: FileManagerState,
   fileId: string,

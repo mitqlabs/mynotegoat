@@ -14,6 +14,8 @@ import {
   renameFileRecord,
   restoreFileRecord as restoreFileOp,
   restoreFolderRecord as restoreFolderOp,
+  permanentlyDeleteFileRecord,
+  permanentlyDeleteFolderRecord,
   getDeletedFiles,
   getDeletedFolders,
   loadFileManagerState,
@@ -22,6 +24,7 @@ import {
 } from "@/lib/file-manager";
 import {
   uploadFileToStorage,
+  deleteFilesFromStorage,
 } from "@/lib/file-storage";
 
 export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStatusConfig[] = []) {
@@ -180,6 +183,48 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     [],
   );
 
+  // --- Permanent-delete operations (irreversible — drops the metadata row
+  //     AND removes the underlying object from Supabase Storage). Only
+  //     succeeds against items already in the trash. ---
+
+  const permanentlyDeleteFile = useCallback(
+    async (fileId: string) => {
+      let toCleanUp: string | null = null;
+      setState((current) => {
+        const result = permanentlyDeleteFileRecord(current, fileId);
+        toCleanUp = result.storagePath;
+        if (toCleanUp) saveFileManagerState(result.state);
+        return result.state;
+      });
+      // Fire the storage delete after the state write so the UI updates
+      // immediately. Failure here doesn't restore the metadata row — the
+      // file is gone from the user's view either way; the worst case is a
+      // dangling blob in the bucket which can be reaped server-side.
+      if (toCleanUp) {
+        await deleteFilesFromStorage([toCleanUp]);
+      }
+    },
+    [],
+  );
+
+  const permanentlyDeleteFolder = useCallback(
+    async (folderId: string) => {
+      let toCleanUp: string[] = [];
+      setState((current) => {
+        const result = permanentlyDeleteFolderRecord(current, folderId);
+        toCleanUp = result.storagePaths;
+        // Always save — the helper returns the original state if it
+        // refused (e.g. system folder), so no harm.
+        saveFileManagerState(result.state);
+        return result.state;
+      });
+      if (toCleanUp.length > 0) {
+        await deleteFilesFromStorage(toCleanUp);
+      }
+    },
+    [],
+  );
+
   // --- Trash queries ---
 
   const deletedFiles = getDeletedFiles(state);
@@ -195,6 +240,8 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     deleteFile,
     restoreFile,
     restoreFolder,
+    permanentlyDeleteFile,
+    permanentlyDeleteFolder,
     deletedFiles,
     deletedFolders,
   };

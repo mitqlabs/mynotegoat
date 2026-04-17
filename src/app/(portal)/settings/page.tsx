@@ -10,6 +10,12 @@ import { PackageBuilderSettingsPanel } from "@/components/package-builder-settin
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactCategories } from "@/hooks/use-contact-categories";
+import { useFileManager } from "@/hooks/use-file-manager";
+import {
+  getDeletedPatients,
+  permanentlyDeletePatientRecord,
+  restorePatientRecord,
+} from "@/lib/mock-data";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useQuickStatsSettings } from "@/hooks/use-quick-stats-settings";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
@@ -1365,6 +1371,8 @@ function DiagnosticsSection() {
 
       <DuplicatePatientsSubsection />
 
+      <TrashSubsection />
+
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -2090,6 +2098,316 @@ function DuplicateGroupCard({
         )}
       </div>
     </li>
+  );
+}
+
+// ============================================================================
+// Trash subsection (unified)
+// ============================================================================
+// One place to see and clean up everything that's been soft-deleted across
+// the app: patient records, file folders, individual files. Each row has a
+// Restore button (puts it back) and a Permanently Delete button (gone for
+// good — patients drop the row from the cloud table; files also delete the
+// underlying object from Supabase Storage).
+//
+// We previously only had a Trash tab on the Patients page (patients only,
+// no permanent-delete) plus a separate Trash toggle on the My Files page
+// (files only, no permanent-delete). Both are now centralized here so
+// users never have to hunt for "how do I really delete this?"
+
+type TrashTab = "patients" | "folders" | "files";
+
+function TrashSubsection() {
+  const [expanded, setExpanded] = useState(false);
+  const [tab, setTab] = useState<TrashTab>("patients");
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [message, setMessage] = useState("");
+
+  // Patient trash — read directly from the in-memory store. The refresh
+  // tick forces a re-read after restore / permanent-delete so the list
+  // updates without a page reload.
+  const deletedPatients = useMemo(() => {
+    void refreshTick;
+    if (typeof window === "undefined") return [];
+    return getDeletedPatients();
+  }, [refreshTick]);
+
+  // File-manager trash uses the live hook so we get reactive updates.
+  // We pass empty patients/caseStatuses arrays — sync isn't needed for
+  // the trash view, we just want the deleted lists.
+  const fileManager = useFileManager([], []);
+  const { deletedFiles, deletedFolders, restoreFile, restoreFolder, permanentlyDeleteFile, permanentlyDeleteFolder } = fileManager;
+
+  const totalCount =
+    deletedPatients.length + deletedFolders.length + deletedFiles.length;
+
+  const restorePatient = (id: string, name: string) => {
+    restorePatientRecord(id);
+    setRefreshTick((t) => t + 1);
+    setMessage(`Restored "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const permanentDeletePatient = (id: string, name: string) => {
+    const confirmation = window.prompt(
+      `Permanently delete "${name}"?\n\n` +
+        "This removes the patient record forever — including the row in the cloud database. " +
+        "Encounters, appointments, billing, and files that referenced this patient will become " +
+        "orphaned but will NOT be deleted (they'll just point to a missing patient).\n\n" +
+        "To confirm, type DELETE below:",
+    );
+    if (confirmation !== "DELETE") {
+      if (confirmation !== null) {
+        setMessage("Cancelled — confirmation text didn't match.");
+        setTimeout(() => setMessage(""), 4000);
+      }
+      return;
+    }
+    const ok = permanentlyDeletePatientRecord(id);
+    setRefreshTick((t) => t + 1);
+    setMessage(ok ? `Permanently deleted "${name}".` : `Could not delete "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const handleRestoreFolder = (id: string, name: string) => {
+    restoreFolder(id);
+    setMessage(`Restored folder "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const handlePermanentDeleteFolder = async (id: string, name: string) => {
+    if (
+      !window.confirm(
+        `Permanently delete folder "${name}" and EVERY file inside it (across nested subfolders)?\n\n` +
+          "This removes the file metadata AND deletes the actual files from cloud storage. " +
+          "There's no undo.",
+      )
+    ) {
+      return;
+    }
+    await permanentlyDeleteFolder(id);
+    setMessage(`Permanently deleted folder "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const handleRestoreFile = (id: string, name: string) => {
+    restoreFile(id);
+    setMessage(`Restored "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  const handlePermanentDeleteFile = async (id: string, name: string) => {
+    if (
+      !window.confirm(
+        `Permanently delete "${name}"?\n\n` +
+          "This removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.",
+      )
+    ) {
+      return;
+    }
+    await permanentlyDeleteFile(id);
+    setMessage(`Permanently deleted "${name}".`);
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Trash{totalCount > 0 ? ` (${totalCount})` : ""}
+        </h3>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs font-medium text-[var(--brand-primary)] hover:underline"
+        >
+          {expanded ? "Hide" : "Show"}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
+          {totalCount === 0 ? (
+            <p className="text-sm text-emerald-400">✓ Trash is empty.</p>
+          ) : (
+            <div className="space-y-3">
+              {/* Tab strip */}
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ["patients", `Patients (${deletedPatients.length})`],
+                  ["folders", `Folders (${deletedFolders.length})`],
+                  ["files", `Files (${deletedFiles.length})`],
+                ] as Array<[TrashTab, string]>).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTab(key)}
+                    className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-colors ${
+                      tab === key
+                        ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                        : "border-[var(--border-subtle)] bg-[var(--surface-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {message ? (
+                <p className="text-xs font-semibold text-emerald-400">{message}</p>
+              ) : null}
+
+              {tab === "patients" ? (
+                deletedPatients.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No patients in trash.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {deletedPatients.map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">
+                            {p.fullName}
+                          </p>
+                          <p className="font-mono text-[10px] text-[var(--text-muted)]">
+                            DOL {formatDateForDisplayUs(p.dateOfLoss)} · Attorney{" "}
+                            {p.attorney || "—"} · Deleted{" "}
+                            {p.deletedAt
+                              ? new Date(p.deletedAt).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => restorePatient(p.id, p.fullName)}
+                            className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => permanentDeletePatient(p.id, p.fullName)}
+                            className="rounded-lg bg-red-500 px-2.5 py-0.5 text-[10px] font-semibold text-white"
+                          >
+                            Delete Forever
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+
+              {tab === "folders" ? (
+                deletedFolders.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No folders in trash.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {deletedFolders.map((f) => (
+                      <li
+                        key={f.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-[var(--text-primary)]">
+                            📁 {f.name}
+                          </p>
+                          <p className="font-mono text-[10px] text-[var(--text-muted)]">
+                            Deleted{" "}
+                            {f.deletedAt
+                              ? new Date(f.deletedAt).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreFolder(f.id, f.name)}
+                            className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handlePermanentDeleteFolder(f.id, f.name)}
+                            className="rounded-lg bg-red-500 px-2.5 py-0.5 text-[10px] font-semibold text-white"
+                          >
+                            Delete Forever
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+
+              {tab === "files" ? (
+                deletedFiles.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No files in trash.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {deletedFiles.map((f) => (
+                      <li
+                        key={f.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                            {f.name}
+                          </p>
+                          <p className="font-mono text-[10px] text-[var(--text-muted)]">
+                            {(f.sizeBytes / 1024).toFixed(1)} KB · Deleted{" "}
+                            {f.deletedAt
+                              ? new Date(f.deletedAt).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreFile(f.id, f.name)}
+                            className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handlePermanentDeleteFile(f.id, f.name)}
+                            className="rounded-lg bg-red-500 px-2.5 py-0.5 text-[10px] font-semibold text-white"
+                          >
+                            Delete Forever
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
