@@ -24,7 +24,14 @@ type SoundRepeat = "1" | "3" | "5" | "until-off";
 
 const TABLE = "room_timers";
 const SOUND_REPEAT_KEY = "casemate.timer-sound-repeat.v1";
-const POLL_MS = 2000;
+// Timers were previously polled every 2s on every portal page globally,
+// even when no timers were running. 30 Supabase round-trips per minute
+// per tab was a real background CPU + network drain. Bumping to 10s.
+// `remainingSeconds` is computed from the client clock using `ends_at`,
+// so the countdown display stays smooth between polls — the only
+// user-visible effect is that a timer STARTED on another device may
+// take up to 10s to appear in this tab's banner. Acceptable trade.
+const POLL_MS = 10_000;
 
 /* ─── Audio ─── */
 

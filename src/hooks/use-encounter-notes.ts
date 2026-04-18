@@ -143,15 +143,77 @@ export function useEncounterNotes() {
     });
   }, []);
 
+  // Debounced persistence. Before this change, every keystroke in a SOAP
+  // editor triggered saveEncounterNoteRecords, which:
+  //   - JSON.stringify'd the full encounter-notes blob (up to 1.25 MB)
+  //   - ran pruneForLocalStorage (multiple extra serializations)
+  //   - called localStorage.setItem (which the storage-sync interceptor
+  //     captured and queued a full-workspace cloud push behind)
+  //   - kicked off a dual-write to the encounter-notes cloud table
+  // Doing all that on every keypress is what pegged the fan and crashed
+  // Chrome during long editing sessions. The per-keystroke crash-safety
+  // net (draft-recovery.writeDraft) is cheap and still runs inline inside
+  // the editor's onInput handler — that's what survives if Chrome dies
+  // in the debounce window. The "committed" encounter-notes.v1 blob only
+  // needs to be refreshed after the user pauses typing.
+  const pendingRecordsRef = useRef<EncounterNoteRecord[] | null>(null);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingNow = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    const pending = pendingRecordsRef.current;
+    if (!pending) return;
+    pendingRecordsRef.current = null;
+    saveEncounterNoteRecords(pending);
+    selfWriteCountRef.current++;
+    notifyChange(SYNC_KEY);
+  }, []);
+
+  // Stable refs to the flush + pending state. The beforeunload /
+  // pagehide / visibilitychange listeners below reference these via
+  // ref so we can use `[]` deps on the effect — per sanity-check rule,
+  // listener-registering effects MUST have stable deps or refs only,
+  // otherwise listeners can accumulate on every render.
+  const flushRef = useRef(flushPendingNow);
+  flushRef.current = flushPendingNow;
+
+  useEffect(() => {
+    const flush = () => flushRef.current();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      // Final flush on unmount so a route change doesn't lose pending edits.
+      flush();
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   const updateRecords = useCallback((updater: (current: EncounterNoteRecord[]) => EncounterNoteRecord[]) => {
     setEncounters((current) => {
       const next = updater(current);
-      saveEncounterNoteRecords(next);
-      selfWriteCountRef.current++;
-      notifyChange(SYNC_KEY);
+      // React state updates immediately so typing stays responsive and the
+      // UI reflects the newest input. Persistence gets debounced so the
+      // heavy work (prune + stringify + dual-write) runs once per ~700ms
+      // of quiet instead of once per keystroke.
+      pendingRecordsRef.current = next;
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+      }
+      commitTimerRef.current = setTimeout(() => {
+        flushPendingNow();
+      }, 700);
       return next;
     });
-  }, []);
+  }, [flushPendingNow]);
 
   const upsertEncounter = useCallback(
     (encounterId: string, updater: (current: EncounterNoteRecord) => EncounterNoteRecord) => {

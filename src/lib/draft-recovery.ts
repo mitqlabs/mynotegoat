@@ -113,10 +113,17 @@ export type DraftEntry = {
 /**
  * Return every live draft in localStorage. Called on app load by the
  * Draft Recovery prompt to figure out if there's unflushed work from
- * a prior session. Entries older than `maxAgeMs` (default 7 days)
+ * a prior session. Entries older than `maxAgeMs` (default 24 hours)
  * are ignored and garbage-collected.
+ *
+ * The age window was 7 days historically, but drafts are a crash-
+ * recovery aid — nobody is going to meaningfully "recover" work from
+ * a week ago, and keeping them that long let the HTML snapshots
+ * accumulate into megabytes of localStorage quota during long-running
+ * sessions. 24 hours is ample for next-morning recovery after a
+ * crash the night before.
  */
-export function scanDrafts(maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): DraftEntry[] {
+export function scanDrafts(maxAgeMs: number = 24 * 60 * 60 * 1000): DraftEntry[] {
   if (typeof window === "undefined") return [];
   const now = Date.now();
   const entries: DraftEntry[] = [];

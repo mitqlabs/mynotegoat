@@ -21,6 +21,26 @@ const IGNORE_KEYS = new Set([
   "casemate.__safety-backup__.v1",
 ]);
 
+// Prefixes that should NOT trigger a cloud push. Drafts are the
+// per-keystroke last-ditch local safety net — they are flushed on
+// every `onInput` and would otherwise pin the CPU serializing the
+// entire localStorage and round-tripping Supabase on every keypress.
+// The committed encounter data is dual-written via its own cloud path
+// (encounter-notes-cloud.ts), so cloud durability is already covered.
+const IGNORE_PREFIXES: string[] = [
+  "casemate.draft.v1.",
+  "casemate.cloud-sync-at",
+];
+
+function shouldSyncKey(key: string): boolean {
+  if (!key.startsWith(CASEMATE_PREFIX)) return false;
+  if (IGNORE_KEYS.has(key)) return false;
+  for (const prefix of IGNORE_PREFIXES) {
+    if (key.startsWith(prefix)) return false;
+  }
+  return true;
+}
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let installed = false;
 let inflightSync: Promise<void> | null = null;
@@ -139,14 +159,45 @@ function doSync(): Promise<void> {
   return inflightSync;
 }
 
+// Coalesced cloud push. We intentionally use a longer window than the
+// old 300ms: on an active-editing session every keystroke pokes this,
+// and a short debounce meant full-workspace snapshot round-trips fired
+// every ~300ms of sustained typing — which pegged the CPU fan and
+// starved the main thread. 5s is still well inside "safe to lose on
+// crash" territory because the per-section draft keys (excluded from
+// the interceptor) survive a crash synchronously on every input, and
+// each feature group does its own dual-write to a dedicated cloud
+// table via dualWriteKv / saveFoo paths.
+const SYNC_DEBOUNCE_MS = 5_000;
+// Hard ceiling so a user typing non-stop still gets a push within this
+// window even if the trailing debounce keeps resetting. Without this,
+// a long uninterrupted edit could sit unsynced for minutes.
+const SYNC_MAX_DELAY_MS = 30_000;
+
+let firstPendingAt = 0;
+
 function scheduleSyncNow() {
   if (paused) return;
+  const now = Date.now();
+  if (firstPendingAt === 0) {
+    firstPendingAt = now;
+  }
   if (debounceTimer) {
     clearTimeout(debounceTimer);
   }
-  debounceTimer = setTimeout(() => {
+  // If we've been waiting longer than the max, flush immediately.
+  const waited = now - firstPendingAt;
+  if (waited >= SYNC_MAX_DELAY_MS) {
+    firstPendingAt = 0;
+    debounceTimer = null;
     void doSync();
-  }, 300);
+    return;
+  }
+  debounceTimer = setTimeout(() => {
+    firstPendingAt = 0;
+    debounceTimer = null;
+    void doSync();
+  }, SYNC_DEBOUNCE_MS);
 }
 
 export function installStorageSyncInterceptor() {
@@ -160,14 +211,14 @@ export function installStorageSyncInterceptor() {
 
   window.localStorage.setItem = (key: string, value: string) => {
     originalSetItem(key, value);
-    if (key.startsWith(CASEMATE_PREFIX) && !IGNORE_KEYS.has(key) && !key.startsWith("casemate.cloud-sync-at")) {
+    if (shouldSyncKey(key)) {
       scheduleSyncNow();
     }
   };
 
   window.localStorage.removeItem = (key: string) => {
     originalRemoveItem(key);
-    if (key.startsWith(CASEMATE_PREFIX) && !IGNORE_KEYS.has(key) && !key.startsWith("casemate.cloud-sync-at")) {
+    if (shouldSyncKey(key)) {
       scheduleSyncNow();
     }
   };

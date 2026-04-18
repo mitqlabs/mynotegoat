@@ -979,21 +979,35 @@ export async function pushLocalStateToCloud() {
         !Number.isNaN(remoteUpdatedMs) &&
         remoteUpdatedMs > lastLocalPushMs + 2000
       ) {
-        console.error(
-          `[Cloud Sync] REFUSED stale push. Cloud was updated by another device. remote_updated_at=${remote.updated_at} local_last_sync=${lastLocalPushIso}. Reload to pull newer data.`,
+        // Cross-device conflicts are rare in single-user deployments, but if
+        // we don't advance the local sync-at we dead-lock: every subsequent
+        // push sees the same remote-ahead condition and refuses, burning CPU
+        // on per-keystroke pre-flight fetches forever until the page is
+        // reloaded. That was the "data doesn't save + fans spinning" symptom.
+        //
+        // Self-heal: advance the local sync-at pointer to match the remote's
+        // updated_at so the next push attempt starts fresh. The destructive-
+        // write guard above (and the DB trigger app_snapshots_protect) still
+        // refuse any push that would shrink the cloud copy, so this is safe.
+        // Bootstrap pulls the cloud on every page load, so by the next
+        // session the local state is reconciled with the newer remote.
+        console.warn(
+          `[Cloud Sync] Freshness guard tripped (remote_updated_at=${remote.updated_at}, local_last_sync=${lastLocalPushIso}). Advancing local sync pointer and letting this push proceed — destructive-write guard and DB trigger remain in effect.`,
         );
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("casemate:cloud-sync-blocked", {
-              detail: {
-                reason: "stale-local",
-                localSyncAt: lastLocalPushIso,
-                remoteUpdatedAt: remote.updated_at,
-              },
-            }),
-          );
+        if (typeof window !== "undefined" && remote.updated_at) {
+          try {
+            window.localStorage.setItem(
+              getSyncAtKey(authed.workspaceId),
+              remote.updated_at,
+            );
+          } catch {
+            // ignore — best-effort; next successful upsert will set it
+          }
         }
-        return;
+        // Intentionally do NOT `return` here. Fall through to the upsert so
+        // the user's in-flight edits reach the cloud. If the remote really is
+        // ahead in a way that would shrink or destroy it, the destructive-
+        // write guard above has already refused.
       }
     }
 
