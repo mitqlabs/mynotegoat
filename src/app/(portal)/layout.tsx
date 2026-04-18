@@ -36,6 +36,13 @@ const DraftRecoveryBanner = dynamic(
     })),
   { ssr: false },
 );
+const OnboardingModal = dynamic(
+  () =>
+    import("@/components/onboarding-modal").then((m) => ({
+      default: m.OnboardingModal,
+    })),
+  { ssr: false },
+);
 
 export default function PortalLayout({
   children,
@@ -447,6 +454,7 @@ export default function PortalLayout({
         )}
         <GlobalTimerAlerts />
         <DraftRecoveryBanner />
+        <OnboardingModal />
         {children}
       </AppShell>
     </PlanTierProvider>

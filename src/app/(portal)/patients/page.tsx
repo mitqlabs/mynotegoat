@@ -20,6 +20,19 @@ import {
 } from "@/lib/follow-up-queue";
 import { createPatientRecord, patients, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { SmsSendMenu } from "@/components/sms-send-menu";
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { firstName: "", lastName: "" };
+  if (trimmed.includes(",")) {
+    const [last, rest] = trimmed.split(",", 2);
+    return { firstName: (rest ?? "").trim(), lastName: last.trim() };
+  }
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1] };
+}
 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
 const SORT_COLUMN_KEY = "casemate.patient-sort-column.v1";
@@ -82,7 +95,7 @@ function saveCfColumnOrder(order: CfColumnId[]) {
 const columnLabels: Record<ListColumnId, string> = {
   patient: "Patient",
   initialExam: "Initial Exam",
-  dateOfLoss: "Date Of Loss",
+  dateOfLoss: "Date Of Injury",
   attorney: "Attorney",
   status: "Status",
 };
@@ -130,13 +143,15 @@ type NewPatientDraft = {
   lienStatus: string;
   priorCare: string;
   caseStatus: PatientRecord["caseStatus"];
+  notes: string;
+  isCashPatient: boolean;
 };
 
 const detailRowsTemplate: DetailRow[] = [
   { label: "Attorney", key: "attorney" },
   { label: "Contact", key: "contact" },
   { label: "DOB", key: "dob" },
-  { label: "Date Of Loss", key: "dateOfLoss" },
+  { label: "Date Of Injury", key: "dateOfLoss" },
   { label: "Initial Exam", key: "initialExam" },
   { label: "Lien", key: "lien" },
   { label: "Prior Care", key: "priorCare" },
@@ -371,6 +386,8 @@ export default function PatientsPage() {
     lienStatus: defaultLienOption,
     priorCare: "",
     caseStatus: defaultCaseStatus,
+    notes: "",
+    isCashPatient: false,
   });
 
   const resetNewPatientDraft = () => {
@@ -393,6 +410,8 @@ export default function PatientsPage() {
       lienStatus: defaultLienOption,
       priorCare: "",
       caseStatus: defaultCaseStatus,
+      notes: "",
+      isCashPatient: false,
     });
   };
 
@@ -429,14 +448,20 @@ export default function PatientsPage() {
       setNewPatientMessage("Patient first and last name are required.");
       return;
     }
-    if (!newPatientDraft.dateOfLoss.trim()) {
-      setNewPatientMessage("Date Of Loss is required.");
+    // Cash patients don't track a date-of-injury — they walk in and pay
+    // at the desk. Skip the DOI requirement entirely in cash mode.
+    if (!newPatientDraft.isCashPatient && !newPatientDraft.dateOfLoss.trim()) {
+      setNewPatientMessage("Date Of Injury is required.");
       return;
     }
 
-    const attorneyName = cleanAttorneyLabel(newPatientDraft.attorney || "Self");
-    const attorneyPhone = formatUsPhoneInput(newPatientDraft.attorneyPhone);
-    if (normalizeAttorneyKey(attorneyName) !== "self" && attorneyPhone) {
+    const attorneyName = newPatientDraft.isCashPatient
+      ? "Self"
+      : cleanAttorneyLabel(newPatientDraft.attorney || "Self");
+    const attorneyPhone = newPatientDraft.isCashPatient
+      ? ""
+      : formatUsPhoneInput(newPatientDraft.attorneyPhone);
+    if (!newPatientDraft.isCashPatient && normalizeAttorneyKey(attorneyName) !== "self" && attorneyPhone) {
       const attorneyExists = contacts.some(
         (contact) =>
           normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -465,8 +490,8 @@ export default function PatientsPage() {
       maritalStatus: newPatientDraft.maritalStatus || undefined,
       attorney: attorneyName,
       dob: newPatientDraft.dob,
-      dateOfLoss: newPatientDraft.dateOfLoss,
-      initialExam: newPatientDraft.initialExam,
+      dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
+      initialExam: newPatientDraft.isCashPatient ? "" : newPatientDraft.initialExam,
       phone: formatUsPhoneInput(newPatientDraft.phone),
       email: newPatientDraft.email.trim(),
       address: composePatientAddress(
@@ -476,8 +501,10 @@ export default function PatientsPage() {
         newPatientDraft.addressZip,
       ),
       caseStatus: newPatientDraft.caseStatus,
-      lienStatus: newPatientDraft.lienStatus.trim(),
+      lienStatus: newPatientDraft.isCashPatient ? "" : newPatientDraft.lienStatus.trim(),
       priorCare: newPatientDraft.priorCare.trim(),
+      notes: newPatientDraft.notes.trim(),
+      isCashPatient: newPatientDraft.isCashPatient,
     });
 
     if (!createdPatient) {
@@ -1196,7 +1223,17 @@ export default function PatientsPage() {
                               {patient.fullName}
                             </Link>
                             {patient.phone && (
-                              <p className="text-sm text-[var(--text-muted)]">{patient.phone}</p>
+                              <p className="text-sm text-[var(--text-muted)]">
+                                <SmsSendMenu
+                                  context={{
+                                    patient: {
+                                      ...splitFullName(patient.fullName),
+                                      fullName: patient.fullName,
+                                    },
+                                  }}
+                                  phone={patient.phone}
+                                />
+                              </p>
                             )}
                           </td>
                         );
@@ -1641,7 +1678,17 @@ export default function PatientsPage() {
                           {entry.fullName}
                         </Link>
                         {entry.phone && (
-                          <p className="mt-0.5 text-sm text-[var(--text-muted)]">{entry.phone}</p>
+                          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+                            <SmsSendMenu
+                              context={{
+                                patient: {
+                                  ...splitFullName(entry.fullName),
+                                  fullName: entry.fullName,
+                                },
+                              }}
+                              phone={entry.phone}
+                            />
+                          </p>
                         )}
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                           <span className="rounded-full bg-[var(--bg-soft)] px-2.5 py-1 font-semibold">
@@ -1679,6 +1726,26 @@ export default function PatientsPage() {
                   Close
                 </button>
               </div>
+
+              <label className="mt-4 flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2">
+                <input
+                  checked={newPatientDraft.isCashPatient}
+                  className="h-4 w-4"
+                  onChange={(event) =>
+                    setNewPatientDraft((current) => ({
+                      ...current,
+                      isCashPatient: event.target.checked,
+                    }))
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block text-sm font-semibold">Cash Patient</span>
+                  <span className="block text-xs text-[var(--text-muted)]">
+                    No attorney, no injury date, no case-number workflow. Just the essentials.
+                  </span>
+                </span>
+              </label>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label className="grid gap-1">
@@ -1747,47 +1814,51 @@ export default function PatientsPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="new-patient-attorney-options"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      const matchedAttorney = attorneyContacts.find(
-                        (contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value),
-                      );
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        attorney: value,
-                        attorneyPhone: matchedAttorney
-                          ? formatUsPhoneInput(matchedAttorney.phone)
-                          : value.trim()
-                            ? current.attorneyPhone
-                            : "",
-                      }));
-                    }}
-                    placeholder="Self"
-                    value={newPatientDraft.attorney}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      list="new-patient-attorney-options"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const matchedAttorney = attorneyContacts.find(
+                          (contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value),
+                        );
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          attorney: value,
+                          attorneyPhone: matchedAttorney
+                            ? formatUsPhoneInput(matchedAttorney.phone)
+                            : value.trim()
+                              ? current.attorneyPhone
+                              : "",
+                        }));
+                      }}
+                      placeholder="Self"
+                      value={newPatientDraft.attorney}
+                    />
+                  </label>
+                )}
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    inputMode="numeric"
-                    maxLength={12}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        attorneyPhone: formatUsPhoneInput(event.target.value),
-                      }))
-                    }
-                    placeholder="818-555-0123"
-                    value={newPatientDraft.attorneyPhone}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={12}
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          attorneyPhone: formatUsPhoneInput(event.target.value),
+                        }))
+                      }
+                      placeholder="818-555-0123"
+                      value={newPatientDraft.attorneyPhone}
+                    />
+                  </label>
+                )}
 
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
@@ -1806,49 +1877,55 @@ export default function PatientsPage() {
                   />
                 </label>
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Loss *</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    inputMode="numeric"
-                    maxLength={10}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        dateOfLoss: formatUsDateInput(event.target.value),
-                      }))
-                    }
-                    placeholder="MM/DD/YYYY"
-                    value={newPatientDraft.dateOfLoss}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury *</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={10}
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          dateOfLoss: formatUsDateInput(event.target.value),
+                        }))
+                      }
+                      placeholder="MM/DD/YYYY"
+                      value={newPatientDraft.dateOfLoss}
+                    />
+                  </label>
+                )}
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    inputMode="numeric"
-                    maxLength={10}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        initialExam: formatUsDateInput(event.target.value),
-                      }))
-                    }
-                    placeholder="MM/DD/YYYY"
-                    value={newPatientDraft.initialExam}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={10}
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          initialExam: formatUsDateInput(event.target.value),
+                        }))
+                      }
+                      placeholder="MM/DD/YYYY"
+                      value={newPatientDraft.initialExam}
+                    />
+                  </label>
+                )}
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
-                    placeholder="MMDDYYLASTFIRST"
-                    readOnly
-                    value={newPatientCaseNumberPreview}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
+                      placeholder="MMDDYYLASTFIRST"
+                      readOnly
+                      value={newPatientCaseNumberPreview}
+                    />
+                  </label>
+                )}
 
                 <label className="grid gap-1 md:col-span-1 xl:col-span-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
@@ -1949,61 +2026,87 @@ export default function PatientsPage() {
               </div>
 
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
-                  <select
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        lienStatus: event.target.value,
-                      }))
-                    }
-                    value={newPatientDraft.lienStatus}
-                  >
-                    {lienOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
+                    <select
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          lienStatus: event.target.value,
+                        }))
+                      }
+                      value={newPatientDraft.lienStatus}
+                    >
+                      {lienOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        priorCare: event.target.value,
-                      }))
-                    }
-                    placeholder="Any prior treatment details"
-                    value={newPatientDraft.priorCare}
-                  />
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
+                    <input
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          priorCare: event.target.value,
+                        }))
+                      }
+                      placeholder="Any prior treatment details"
+                      value={newPatientDraft.priorCare}
+                    />
+                  </label>
+                )}
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
-                  <select
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        caseStatus: event.target.value as PatientRecord["caseStatus"],
-                      }))
-                    }
-                    value={newPatientDraft.caseStatus}
-                  >
-                    {caseStatuses.map((statusConfig) => (
-                      <option key={statusConfig.name} value={statusConfig.name}>
-                        {statusConfig.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!newPatientDraft.isCashPatient && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
+                    <select
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({
+                          ...current,
+                          caseStatus: event.target.value as PatientRecord["caseStatus"],
+                        }))
+                      }
+                      value={newPatientDraft.caseStatus}
+                    >
+                      {caseStatuses.map((statusConfig) => (
+                        <option key={statusConfig.name} value={statusConfig.name}>
+                          {statusConfig.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
+
+              <label className="mt-3 grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Notes</span>
+                <textarea
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(event) =>
+                    setNewPatientDraft((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    newPatientDraft.isCashPatient
+                      ? "Anything relevant — chief complaint, preferences, reminders."
+                      : "Optional notes about the patient."
+                  }
+                  rows={3}
+                  value={newPatientDraft.notes}
+                />
+              </label>
 
               {newPatientMessage && (
                 <p className="mt-3 text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>

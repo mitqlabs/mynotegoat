@@ -8,6 +8,7 @@ import { DocumentTemplateSettingsPanel } from "@/components/document-template-se
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
+import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useFileManager } from "@/hooks/use-file-manager";
@@ -52,6 +53,7 @@ type SettingsSectionKey =
   | "packageBuilder"
   | "documents"
   | "reports"
+  | "smsTemplates"
   | "emailSettings"
   | "subscription"
   | "backup"
@@ -72,6 +74,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   packageBuilder: false,
   documents: false,
   reports: false,
+  smsTemplates: false,
   emailSettings: false,
   subscription: false,
   backup: false,
@@ -98,6 +101,7 @@ type BackupModuleId =
   | "packageBuilder"
   | "documentTemplates"
   | "reportTemplates"
+  | "smsTemplates"
   | "appointments"
   | "encounters"
   | "patientDiagnoses"
@@ -211,6 +215,12 @@ const backupModules: BackupModuleDefinition[] = [
     label: "Narrative Report Templates",
     description: "Custom long-form report templates + prompt fields",
     keys: ["casemate.report-templates.v1"],
+  },
+  {
+    id: "smsTemplates",
+    label: "SMS / Text Templates",
+    description: "Patient text message templates (sent manually via Messages.app)",
+    keys: ["casemate.sms-templates.v1"],
   },
   {
     id: "appointments",
@@ -1786,7 +1796,7 @@ function DuplicatePatientsSubsection() {
           // Very likely: exact name + DOB + DOL
           if (firstMatches && dobMatches && dolMatches) {
             confidence = "very_likely";
-            reason = "Same name + DOB + DOL";
+            reason = "Same name + DOB + DOI";
           }
           // Likely: exact name + one strong identifier
           else if (firstMatches && dobMatches) {
@@ -1794,12 +1804,12 @@ function DuplicatePatientsSubsection() {
             reason = "Same name + DOB";
           } else if (firstMatches && dolMatches) {
             confidence = "likely";
-            reason = "Same name + DOL";
+            reason = "Same name + DOI";
           }
           // Possible: misspelled first name + DOB + DOL (very strong signal)
           else if (firstSimilar && dobMatches && dolMatches) {
             confidence = "possible";
-            reason = "Similar name (misspelling?) + DOB + DOL";
+            reason = "Similar name (misspelling?) + DOB + DOI";
           }
           // Possible: misspelled first name + DOB (same person, different injury?)
           else if (firstSimilar && dobMatches) {
@@ -1809,7 +1819,7 @@ function DuplicatePatientsSubsection() {
           // Possible: misspelled first name + DOL (same person, wrong DOB?)
           else if (firstSimilar && dolMatches) {
             confidence = "possible";
-            reason = "Similar name (misspelling?) + DOL";
+            reason = "Similar name (misspelling?) + DOI";
           }
 
           if (confidence) {
@@ -2099,7 +2109,7 @@ function DuplicateGroupCard({
               {p.fullName}
             </span>
             <span className="font-mono text-[10px] text-[var(--text-muted)]">
-              DOB {formatDateForDisplayUs(p.dob)} · DOL{" "}
+              DOB {formatDateForDisplayUs(p.dob)} · DOI{" "}
               {formatDateForDisplayUs(p.dateOfLoss)} · {p.caseStatus}
             </span>
           </li>
@@ -2312,7 +2322,7 @@ function TrashSubsection() {
                             {p.fullName}
                           </p>
                           <p className="font-mono text-[10px] text-[var(--text-muted)]">
-                            DOL {formatDateForDisplayUs(p.dateOfLoss)} · Attorney{" "}
+                            DOI {formatDateForDisplayUs(p.dateOfLoss)} · Attorney{" "}
                             {p.attorney || "—"} · Deleted{" "}
                             {p.deletedAt
                               ? new Date(p.deletedAt).toLocaleDateString("en-US", {
@@ -3677,6 +3687,62 @@ export default function SettingsPage() {
                   <p className="col-start-2 text-xs text-[var(--text-muted)]">
                     {formatDurationMinutes(entry.durationMin)}
                   </p>
+                  <div className="col-span-full flex flex-wrap items-center gap-3 border-t border-[var(--line-soft)] pt-2 text-xs">
+                    <span className="font-semibold text-[var(--text-muted)]">Patient types:</span>
+                    {(() => {
+                      const pi = entry.patientTypes.pi;
+                      const cash = entry.patientTypes.cash;
+                      const both = pi && cash;
+                      return (
+                        <>
+                          <label className="inline-flex items-center gap-1.5">
+                            <input
+                              checked={pi}
+                              onChange={(event) =>
+                                updateAppointmentType(entry.id, {
+                                  patientTypes: {
+                                    pi: event.target.checked,
+                                    cash: event.target.checked ? cash : true,
+                                  },
+                                })
+                              }
+                              type="checkbox"
+                            />
+                            PI
+                          </label>
+                          <label className="inline-flex items-center gap-1.5">
+                            <input
+                              checked={cash}
+                              onChange={(event) =>
+                                updateAppointmentType(entry.id, {
+                                  patientTypes: {
+                                    cash: event.target.checked,
+                                    pi: event.target.checked ? pi : true,
+                                  },
+                                })
+                              }
+                              type="checkbox"
+                            />
+                            Cash
+                          </label>
+                          <label className="inline-flex items-center gap-1.5">
+                            <input
+                              checked={both}
+                              onChange={(event) =>
+                                updateAppointmentType(entry.id, {
+                                  patientTypes: event.target.checked
+                                    ? { pi: true, cash: true }
+                                    : { pi: true, cash: false },
+                                })
+                              }
+                              type="checkbox"
+                            />
+                            Both
+                          </label>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               ))}
             </div>
@@ -4661,6 +4727,15 @@ export default function SettingsPage() {
         title="Narrative Report Builder"
       >
         <ReportTemplateSettingsPanel />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        description="Patient text message templates. Texts are sent manually through your Mac's Messages app — click a phone in the app, pick a template, hit send."
+        isOpen={expandedSections.smsTemplates}
+        onToggle={() => toggleSection("smsTemplates")}
+        title="SMS / Text Templates"
+      >
+        <SmsTemplateSettingsPanel />
       </CollapsibleSection>
 
       <CollapsibleSection

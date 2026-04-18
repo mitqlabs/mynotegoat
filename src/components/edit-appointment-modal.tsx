@@ -19,7 +19,8 @@ import {
   type AppointmentStatus,
   type ScheduleAppointmentRecord,
 } from "@/lib/schedule-appointments";
-import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
+import { filterAppointmentTypesForPatient, formatDurationMinutes } from "@/lib/schedule-appointment-types";
+import { patients } from "@/lib/mock-data";
 import {
   isAppointmentWithinOfficeHours,
   isStartTimeAlignedToInterval,
@@ -268,11 +269,19 @@ export function EditAppointmentModal({
               {!appointmentTypeByName.has(appointmentType.toLowerCase()) && (
                 <option value={appointmentType}>{appointmentType}</option>
               )}
-              {appointmentTypes.map((type) => (
-                <option key={`edit-type-${type.id}`} value={type.name}>
-                  {type.name}
-                </option>
-              ))}
+              {(() => {
+                const patient = appointment
+                  ? patients.find((p) => p.id === appointment.patientId)
+                  : null;
+                const list = patient
+                  ? filterAppointmentTypesForPatient(appointmentTypes, Boolean(patient.isCashPatient))
+                  : appointmentTypes;
+                return list.map((type) => (
+                  <option key={`edit-type-${type.id}`} value={type.name}>
+                    {type.name}
+                  </option>
+                ));
+              })()}
             </select>
             {selectedType && (
               <span className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">

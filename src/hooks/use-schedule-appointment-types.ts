@@ -39,7 +39,13 @@ export function useScheduleAppointmentTypes() {
   );
 
   const addAppointmentType = useCallback(
-    (name: string, color: string, durationMin: number, isDefault: boolean) => {
+    (
+      name: string,
+      color: string,
+      durationMin: number,
+      isDefault: boolean,
+      patientTypes: AppointmentTypeConfig["patientTypes"] = { pi: true, cash: true },
+    ) => {
       const normalizedName = name.trim();
       if (!normalizedName) {
         return false;
@@ -59,6 +65,7 @@ export function useScheduleAppointmentTypes() {
           color,
           durationMin: normalizeDuration(durationMin),
           isDefault,
+          patientTypes,
         };
         if (isDefault) {
           return [...current.map((entry) => ({ ...entry, isDefault: false })), nextType];
@@ -78,6 +85,7 @@ export function useScheduleAppointmentTypes() {
         name: string;
         color: string;
         durationMin: number;
+        patientTypes: AppointmentTypeConfig["patientTypes"];
       }>,
     ) => {
       updateTypes((current) =>
@@ -100,6 +108,7 @@ export function useScheduleAppointmentTypes() {
             ...(updates.durationMin !== undefined
               ? { durationMin: normalizeDuration(updates.durationMin) }
               : {}),
+            ...(updates.patientTypes !== undefined ? { patientTypes: updates.patientTypes } : {}),
           };
         }),
       );

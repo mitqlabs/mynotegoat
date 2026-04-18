@@ -70,7 +70,7 @@ const SCALAR_FIELDS: { key: ScalarField; label: string }[] = [
   { key: "address", label: "Address" },
   { key: "attorney", label: "Attorney" },
   { key: "caseStatus", label: "Case Status" },
-  { key: "dateOfLoss", label: "Date of Loss" },
+  { key: "dateOfLoss", label: "Date of Injury" },
   { key: "priority", label: "Priority" },
 ];
 
@@ -361,7 +361,7 @@ export function MergePatientsModal({
                 <div className="text-left">
                   <div className="font-semibold">{p.fullName}</div>
                   <div className="font-mono text-[10px] text-[var(--text-muted)]">
-                    DOB {asDisplay(p.dob)} · DOL {asDisplay(p.dateOfLoss)} · ID {p.id}
+                    DOB {asDisplay(p.dob)} · DOI {asDisplay(p.dateOfLoss)} · ID {p.id}
                   </div>
                 </div>
               </label>

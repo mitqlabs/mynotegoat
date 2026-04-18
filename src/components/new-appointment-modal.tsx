@@ -26,7 +26,7 @@ import {
   formatTimeLabel,
   type ScheduleAppointmentRecord,
 } from "@/lib/schedule-appointments";
-import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
+import { filterAppointmentTypesForPatient, formatDurationMinutes } from "@/lib/schedule-appointment-types";
 import {
   getNextBusinessDayIso,
   isAppointmentWithinOfficeHours,
@@ -364,6 +364,18 @@ export function NewAppointmentModal({
   const [patientSearchDraft, setPatientSearchDraft] = useState("");
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [error, setError] = useState("");
+
+  // Filter appointment types by the selected patient's kind (PI vs Cash).
+  // If no patient is selected yet, show all so the default type is visible
+  // while the user is still typing the name.
+  const visibleAppointmentTypes = useMemo(() => {
+    const selectedPatient = patients.find((p) => p.id === draft.patientId);
+    if (!selectedPatient) return appointmentTypes;
+    return filterAppointmentTypesForPatient(
+      appointmentTypes,
+      Boolean(selectedPatient.isCashPatient),
+    );
+  }, [appointmentTypes, draft.patientId]);
 
   // ── Quick New Patient (inline create-from-scratch panel) ────────────────
   // When the user's in the "New Appointment" flow and they realize the
@@ -1045,7 +1057,7 @@ export function NewAppointmentModal({
               }}
               value={draft.appointmentType}
             >
-              {appointmentTypes.map((type) => (
+              {visibleAppointmentTypes.map((type) => (
                 <option key={`type-option-${type.id}`} value={type.name}>
                   {type.name}
                 </option>

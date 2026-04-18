@@ -285,6 +285,11 @@ export function buildFollowUpItems(
   const rows: FollowUpItem[] = [];
 
   patientRows.forEach((patient) => {
+    // Cash patients never have a lien/submission lifecycle — no attorney,
+    // no R&B, no imaging follow-up queue. They're billed at the desk via
+    // Cash Payments and should not generate Case Flow items.
+    if (patient.isCashPatient) return;
+
     const patientStatusKey = patient.caseStatus.trim().toLowerCase();
     // Per-category status check — replaces the previous global early-return
     // on closedCaseStatuses. Each category checks its own clear set so

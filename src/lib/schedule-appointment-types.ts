@@ -1,23 +1,50 @@
+export interface AppointmentTypePatientTypes {
+  pi: boolean;
+  cash: boolean;
+}
+
 export interface AppointmentTypeConfig {
   id: string;
   name: string;
   color: string;
   durationMin: number;
   isDefault: boolean;
+  /**
+   * Which patient kinds this appointment type applies to. Used to filter
+   * the appointment-type dropdown based on whether the selected patient
+   * is Cash or PI. Any type missing this field is treated as "Both" so
+   * legacy configs continue to work without a migration step.
+   */
+  patientTypes: AppointmentTypePatientTypes;
 }
 
 const STORAGE_KEY = "casemate.schedule-appointment-types.v1";
 
+const bothPatientTypes: AppointmentTypePatientTypes = { pi: true, cash: true };
+const piOnly: AppointmentTypePatientTypes = { pi: true, cash: false };
+const cashOnly: AppointmentTypePatientTypes = { pi: false, cash: true };
+
 const defaultAppointmentTypes: Omit<AppointmentTypeConfig, "id">[] = [
-  { name: "Personal Injury Office Visit", color: "#ef7984", durationMin: 45, isDefault: true },
-  { name: "Personal Injury New Patient", color: "#e4e64a", durationMin: 60, isDefault: false },
-  { name: "Personal Injury Re-Exam", color: "#f39a1f", durationMin: 60, isDefault: false },
-  { name: "Personal Injury Discharge Visit", color: "#c93b1d", durationMin: 60, isDefault: false },
-  { name: "Spinal Decompression - C/S", color: "#73b4e4", durationMin: 30, isDefault: false },
-  { name: "Spinal Decompression - L/S", color: "#1f66e5", durationMin: 30, isDefault: false },
-  { name: "Cash New Patient", color: "#5b862b", durationMin: 50, isDefault: false },
-  { name: "Cash Office Visit", color: "#84cd15", durationMin: 30, isDefault: false },
+  { name: "Personal Injury Office Visit", color: "#ef7984", durationMin: 45, isDefault: true, patientTypes: piOnly },
+  { name: "Personal Injury New Patient", color: "#e4e64a", durationMin: 60, isDefault: false, patientTypes: piOnly },
+  { name: "Personal Injury Re-Exam", color: "#f39a1f", durationMin: 60, isDefault: false, patientTypes: piOnly },
+  { name: "Personal Injury Discharge Visit", color: "#c93b1d", durationMin: 60, isDefault: false, patientTypes: piOnly },
+  { name: "Spinal Decompression - C/S", color: "#73b4e4", durationMin: 30, isDefault: false, patientTypes: bothPatientTypes },
+  { name: "Spinal Decompression - L/S", color: "#1f66e5", durationMin: 30, isDefault: false, patientTypes: bothPatientTypes },
+  { name: "Cash New Patient", color: "#5b862b", durationMin: 50, isDefault: false, patientTypes: cashOnly },
+  { name: "Cash Office Visit", color: "#84cd15", durationMin: 30, isDefault: false, patientTypes: cashOnly },
 ];
+
+function normalizePatientTypes(value: unknown): AppointmentTypePatientTypes {
+  if (!value || typeof value !== "object") return { pi: true, cash: true };
+  const row = value as Partial<AppointmentTypePatientTypes>;
+  // Default to { pi: true, cash: true } when missing (legacy configs).
+  const pi = typeof row.pi === "boolean" ? row.pi : true;
+  const cash = typeof row.cash === "boolean" ? row.cash : true;
+  // Sanity: at least one must be true, otherwise the type is unusable.
+  if (!pi && !cash) return { pi: true, cash: true };
+  return { pi, cash };
+}
 
 function createTypeId(prefix = "apt-type") {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -64,6 +91,7 @@ function normalizeType(row: Partial<AppointmentTypeConfig>, index: number): Appo
     color: normalizeColor(row.color, fallback.color),
     durationMin: normalizeDuration(row.durationMin, fallback.durationMin),
     isDefault: Boolean(row.isDefault),
+    patientTypes: normalizePatientTypes(row.patientTypes),
   };
 }
 
@@ -150,6 +178,21 @@ export function saveAppointmentTypes(types: AppointmentTypeConfig[]) {
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ensureSingleDefault(types)));
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "schedulingSettings", types));
+}
+
+/**
+ * Filter appointment types to those applicable to the given patient.
+ * Cash patients see only types where patientTypes.cash is true; PI
+ * patients see only types where patientTypes.pi is true. Types missing
+ * the flag entirely are shown to everyone (legacy-config safety).
+ */
+export function filterAppointmentTypesForPatient(
+  types: AppointmentTypeConfig[],
+  isCashPatient: boolean,
+): AppointmentTypeConfig[] {
+  return types.filter((type) =>
+    isCashPatient ? type.patientTypes.cash : type.patientTypes.pi,
+  );
 }
 
 export function formatDurationMinutes(durationMin: number) {

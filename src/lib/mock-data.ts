@@ -67,6 +67,17 @@ export interface PatientRecord {
   deleted?: boolean;
   /** ISO timestamp of when the patient was soft-deleted */
   deletedAt?: string;
+  /** Cash patient (no attorney / injury / case-number workflow). PI patient when false/undefined. */
+  isCashPatient?: boolean;
+}
+
+export interface CashPaymentEntry {
+  id: string;
+  date: string; // US format MM/DD/YYYY
+  amount: number;
+  paymentType: "Cash" | "Venmo" | "Zelle" | "Cash App" | "Credit Card" | "Check" | "Other";
+  note?: string;
+  createdAt: string;
 }
 
 export interface AppointmentRecord {
@@ -580,6 +591,7 @@ export type CreatePatientDraft = {
   lienStatus?: string;
   priorCare?: string;
   notes?: string;
+  isCashPatient?: boolean;
 };
 
 export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | null {
@@ -590,6 +602,10 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
   }
 
   const fullName = `${lastName}, ${firstName}`;
+  const isCashPatient = draft.isCashPatient === true;
+  // Cash patients don't track a date-of-injury. Synthesize the created
+  // date so downstream code that expects a non-empty dateOfLoss (case
+  // number builder, follow-up queue, etc.) still behaves consistently.
   const dateOfLoss = toIsoDate(draft.dateOfLoss) || getTodayIsoDate();
   const dob = toIsoDate(draft.dob);
   const matrix: Partial<Record<PatientMatrixField, string>> = {};
@@ -630,6 +646,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
     lastUpdate: getTodayIsoDate(),
     priority: "Normal",
     matrix: Object.keys(matrix).length > 0 ? matrix : undefined,
+    isCashPatient: isCashPatient || undefined,
   };
 
   persistPatients([nextPatient, ...patients]);
@@ -639,7 +656,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }

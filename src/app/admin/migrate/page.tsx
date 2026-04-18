@@ -419,7 +419,7 @@ export default function MigrateCasematePage() {
                               <div key={i} className="py-0.5">
                                 {d.full_name}
                                 {d.date_of_loss
-                                  ? ` — DOL: ${d.date_of_loss}`
+                                  ? ` — DOI: ${d.date_of_loss}`
                                   : ""}
                               </div>
                             ))}
@@ -703,7 +703,7 @@ export default function MigrateCasematePage() {
         <h3 className="text-lg font-semibold text-emerald-900">Fix Imported Dates</h3>
         <p className="mt-1 text-sm text-emerald-800">
           Converts all dates in patient data from ISO format (2024-03-30) to US format (03/30/2024).
-          Fixes matrix fields (MRI, X-Ray, specialist, discharge, etc.), imaging referrals, specialist referrals, DOB, and date of loss.
+          Fixes matrix fields (MRI, X-Ray, specialist, discharge, etc.), imaging referrals, specialist referrals, DOB, and date of injury.
         </p>
         <div className="mt-3 flex items-center gap-3">
           <button

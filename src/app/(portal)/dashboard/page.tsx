@@ -3,13 +3,22 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { StatCard } from "@/components/stat-card";
+import { SetupChecklist } from "@/components/setup-checklist";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { usePriorityCaseRules } from "@/hooks/use-priority-case-rules";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useSmsTemplates } from "@/hooks/use-sms-templates";
 import { withAlpha } from "@/lib/color-utils";
 import { buildFollowUpItems, formatUsDateDisplay } from "@/lib/follow-up-queue";
 import { appointments, patients } from "@/lib/mock-data";
+import {
+  buildSmsUrl,
+  expandTokens,
+  type SmsTemplate,
+} from "@/lib/sms-templates";
 import { loadTasks, type TaskPriority, type TaskRecord } from "@/lib/tasks";
 
 function parseDateValue(dateValue: string) {
@@ -104,11 +113,40 @@ function compareTasksForDashboard(left: TaskRecord, right: TaskRecord) {
   return right.updatedAt.localeCompare(left.updatedAt);
 }
 
+function formatAppointmentTimeDisplay(startTime: string) {
+  const match = startTime.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return startTime;
+  const hours = Number(match[1]);
+  const minutes = match[2];
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${minutes} ${meridiem}`;
+}
+
+function getTomorrowIsoDate() {
+  const now = new Date();
+  now.setDate(now.getDate() + 1);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function pickReminderTemplate(templates: SmsTemplate[]): SmsTemplate | null {
+  const byReminder = templates.find((t) =>
+    t.name.toLowerCase().includes("reminder"),
+  );
+  return byReminder ?? templates[0] ?? null;
+}
+
 export default function DashboardPage() {
   const { caseStatuses, lienLabel } = useCaseStatuses();
   const { priorityRules } = usePriorityCaseRules();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
+  const { scheduleAppointments } = useScheduleAppointments();
+  const { smsTemplates } = useSmsTemplates();
+  const { officeSettings } = useOfficeSettings();
   const [tasksSnapshot, setTasksSnapshot] = useState<TaskRecord[]>(() => loadTasks());
 
   useEffect(() => {
@@ -403,13 +441,136 @@ export default function DashboardPage() {
     return items;
   }, [priorityCases, dashboardFollowUpItems, dashboardWorkspaceSettings.patientFollowUp.staleDaysThreshold, lienLabel]);
 
+  const tomorrowAppointments = useMemo(() => {
+    const tomorrow = getTomorrowIsoDate();
+    return scheduleAppointments
+      .filter((appt) => appt.date === tomorrow && appt.status === "Scheduled")
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [scheduleAppointments]);
+
+  const reminderTemplate = useMemo(
+    () => pickReminderTemplate(smsTemplates),
+    [smsTemplates],
+  );
+
+  const reminderEligible = useMemo(() => {
+    if (!reminderTemplate) return [];
+    return tomorrowAppointments
+      .map((appt) => {
+        const patient = patients.find((p) => p.id === appt.patientId);
+        const phone = patient?.phone ?? "";
+        if (!phone) return null;
+        const [lastName, firstNameRaw] = appt.patientName.includes(",")
+          ? appt.patientName.split(",", 2).map((s) => s.trim())
+          : ["", appt.patientName];
+        const firstName = firstNameRaw || appt.patientName.split(/\s+/)[0] || "";
+        const body = expandTokens(reminderTemplate.body, {
+          patient: {
+            firstName,
+            lastName,
+            fullName: appt.patientName,
+          },
+          appointment: {
+            time: formatAppointmentTimeDisplay(appt.startTime),
+            date: formatUsDateDisplay(appt.date),
+            type: appt.appointmentType,
+          },
+          office: {
+            officeName: officeSettings.officeName,
+            doctorName: officeSettings.doctorName,
+          },
+        });
+        return { appt, phone, url: buildSmsUrl(phone, body) };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  }, [tomorrowAppointments, reminderTemplate, officeSettings.officeName, officeSettings.doctorName]);
+
+  const sendAllReminders = () => {
+    if (typeof window === "undefined") return;
+    // Opening multiple sms: URLs in one click can be popup-blocked. Open the
+    // first synchronously and schedule the rest — most browsers allow this
+    // pattern when triggered from a direct user click.
+    for (let i = 0; i < reminderEligible.length; i++) {
+      const entry = reminderEligible[i];
+      if (i === 0) {
+        window.location.href = entry.url;
+      } else {
+        window.open(entry.url, "_blank");
+      }
+    }
+  };
+
   return (
     <div className="space-y-5">
+      <SetupChecklist />
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {computedStats.map((card) => (
           <StatCard key={card.label} label={card.label} value={card.value} />
         ))}
       </section>
+
+      {tomorrowAppointments.length > 0 && (
+        <section className="panel-card p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-semibold">Tomorrow&apos;s Appointments</h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                {tomorrowAppointments.length} scheduled · {reminderEligible.length} with phone on file
+              </p>
+            </div>
+            <button
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner disabled:opacity-50"
+              disabled={!reminderTemplate || reminderEligible.length === 0}
+              onClick={sendAllReminders}
+              title={
+                !reminderTemplate
+                  ? "Add a reminder template in Settings → SMS / Text Templates first"
+                  : undefined
+              }
+              type="button"
+            >
+              Send reminders ({reminderEligible.length})
+            </button>
+          </div>
+          <ul className="space-y-1.5">
+            {tomorrowAppointments.map((appt) => {
+              const entry = reminderEligible.find((e) => e.appt.id === appt.id);
+              return (
+                <li
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  key={appt.id}
+                >
+                  <div className="min-w-0">
+                    <span className="font-semibold">
+                      {formatAppointmentTimeDisplay(appt.startTime)}
+                    </span>
+                    <span className="mx-2 text-[var(--text-muted)]">·</span>
+                    <Link
+                      className="text-[var(--brand-primary)] hover:underline"
+                      href={appt.patientId ? `/patients/${appt.patientId}` : "/patients"}
+                    >
+                      {appt.patientName}
+                    </Link>
+                    <span className="ml-2 text-xs text-[var(--text-muted)]">
+                      {appt.appointmentType}
+                    </span>
+                  </div>
+                  {entry ? (
+                    <a
+                      className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+                      href={entry.url}
+                    >
+                      Send reminder
+                    </a>
+                  ) : (
+                    <span className="text-xs text-[var(--text-muted)]">No phone</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="panel-card p-4">
         <div className="mb-3 flex items-center justify-between gap-3">

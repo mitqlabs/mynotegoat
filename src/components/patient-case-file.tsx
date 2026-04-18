@@ -38,6 +38,8 @@ import { NewAppointmentModal } from "@/components/new-appointment-modal";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
 import { EditAppointmentModal } from "@/components/edit-appointment-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
+import { SmsSendMenu } from "@/components/sms-send-menu";
+import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { forceSyncNow } from "@/lib/storage-sync-interceptor";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { type TaskPriority } from "@/lib/tasks";
@@ -1241,6 +1243,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   );
   const [patientNotes, setPatientNotes] = useState(patient.matrix?.notes ?? "");
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
+  const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
 
   const [xray, setXray] = useState<ImagingFormState>({
     sentDate: "",
@@ -3188,11 +3191,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       sex: patientSex || undefined,
       maritalStatus: maritalStatus || undefined,
       dateOfLoss: toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss,
-      attorney: attorney.trim() || "Self",
+      attorney: isCashPatient ? "Self" : (attorney.trim() || "Self"),
       phone: formatUsPhoneInput(patientPhone) || "-",
       email: patientEmail.trim(),
       address: patientAddress.trim(),
       caseStatus: caseStatus as PatientRecord["caseStatus"],
+      isCashPatient: isCashPatient || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
       relatedCases: relatedCases.length > 0 ? relatedCases : undefined,
       xrayReferrals,
@@ -3453,27 +3457,44 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             />
           </label>
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              list="attorney-contacts"
-              ref={attorneyInputRef}
-              onBlur={handleAttorneyBlur}
-              onChange={(event) => handleAttorneyChange(event.target.value)}
-              value={attorney}
-            />
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                list="attorney-contacts"
+                ref={attorneyInputRef}
+                onBlur={handleAttorneyBlur}
+                onChange={(event) => handleAttorneyChange(event.target.value)}
+                value={attorney}
+              />
+            </label>
+          )}
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              readOnly
-              placeholder="(000) 000-0000"
-              value={attorneyPhone}
-            />
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                readOnly
+                placeholder="(000) 000-0000"
+                value={attorneyPhone}
+              />
+            </label>
+          )}
+
+          {isCashPatient && (
+            <label className="grid gap-1 md:col-span-2 flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">Cash Patient</span>
+              <button
+                className="ml-auto rounded-lg border border-amber-400 bg-white px-2 py-1 text-xs font-semibold text-amber-800"
+                onClick={() => setIsCashPatient(false)}
+                type="button"
+              >
+                Convert to PI
+              </button>
+            </label>
+          )}
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
@@ -3501,7 +3522,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </label>
 
           <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               onChange={(event) => setMaritalStatus(event.target.value as "Single" | "Married" | "Divorced" | "Widowed" | "Other" | "")}
@@ -3515,49 +3536,72 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </select>
           </label>
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Loss</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
-              placeholder="MM/DD/YYYY"
-              value={dateOfLoss}
-            />
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
+                placeholder="MM/DD/YYYY"
+                value={dateOfLoss}
+              />
+            </label>
+          )}
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
-              placeholder="MM/DD/YYYY"
-              value={initialExam}
-            />
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
+                placeholder="MM/DD/YYYY"
+                value={initialExam}
+              />
+            </label>
+          )}
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
-              placeholder="MMDDYYLASTFIRST"
-              readOnly
-              value={caseNumber}
-            />
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
+                placeholder="MMDDYYLASTFIRST"
+                readOnly
+                value={caseNumber}
+              />
+            </label>
+          )}
 
           <label className="grid gap-1 md:col-span-1 xl:col-span-2">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={12}
-              onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
-              value={patientPhone}
-            />
+            <div className="flex items-center gap-2">
+              <input
+                className="flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                inputMode="numeric"
+                maxLength={12}
+                onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
+                value={patientPhone}
+              />
+              {patientPhone.replace(/\D/g, "").length > 0 && (
+                <SmsSendMenu
+                  align="right"
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
+                  context={{
+                    patient: {
+                      firstName,
+                      lastName,
+                      fullName: [firstName, lastName].filter(Boolean).join(" "),
+                    },
+                  }}
+                  label="Text"
+                  phone={patientPhone}
+                />
+              )}
+            </div>
           </label>
 
           <label className="grid gap-1 md:col-span-1 xl:col-span-2">
@@ -3581,33 +3625,37 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
 
         <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-3">
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
-            <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setLienStatus(event.target.value)}
-              value={resolvedLienStatus}
-            >
-              {lienSelectOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => setLienStatus(event.target.value)}
+                value={resolvedLienStatus}
+              >
+                {lienSelectOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => setPriorCare(event.target.value)}
+                placeholder="Any prior treatment details"
+                value={priorCare}
+              />
+            </label>
+          )}
 
           <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPriorCare(event.target.value)}
-              placeholder="Any prior treatment details"
-              value={priorCare}
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               onChange={(event) => setCaseStatus(event.target.value)}
@@ -3621,6 +3669,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </select>
           </label>
         </div>
+
+        {isCashPatient && (
+          <div className="p-4">
+            <CashPaymentsSection patientId={patient.id} />
+          </div>
+        )}
 
         <div className="grid items-start gap-5 p-4 xl:grid-cols-3">
           <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">

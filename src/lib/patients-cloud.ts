@@ -56,6 +56,7 @@ interface PatientRow {
   mri_referrals: unknown[] | null;
   specialist_referrals: unknown[] | null;
   alerts: string[] | null;
+  is_cash_patient: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -82,6 +83,7 @@ function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
     mri_referrals: (patient.mriReferrals as unknown[] | undefined) ?? null,
     specialist_referrals: (patient.specialistReferrals as unknown[] | undefined) ?? null,
     alerts: patient.alerts ?? null,
+    is_cash_patient: patient.isCashPatient ?? false,
   };
 }
 
@@ -108,6 +110,7 @@ function rowToPatient(row: PatientRow): PatientRecord {
     mriReferrals: row.mri_referrals ?? undefined,
     specialistReferrals: row.specialist_referrals ?? undefined,
     alerts: row.alerts ?? undefined,
+    isCashPatient: row.is_cash_patient ?? false,
   };
 }
 
