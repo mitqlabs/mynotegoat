@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { CaseStatusConfig } from "@/lib/case-statuses";
 import {
@@ -33,11 +33,36 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     return syncPatientFolders(loaded, patients, caseStatuses);
   });
 
-  // Re-sync patient folders when patients change
+  // Re-sync patient folders when patients OR case-status auto-folder
+  // configuration meaningfully changes. Previously this effect's deps
+  // were `[patients, caseStatuses]`, which compares array REFERENCES.
+  // The default `caseStatuses = []` parameter creates a fresh array on
+  // every call, so callers that omit it (e.g. PatientFilesPreviewPanel)
+  // re-ran this effect on every parent re-render. With the patient
+  // case file re-rendering on every SOAP keystroke, that produced
+  // hundreds of saveFileManagerState() calls per second — each one
+  // a Supabase workspace_kv upsert. The browser ran out of socket
+  // file descriptors (ERR_INSUFFICIENT_RESOURCES) and the auth lock
+  // was constantly being stolen ("Lock broken by another request
+  // with the 'steal' option").
+  //
+  // Compute a stable content-signature instead and bail immediately
+  // when nothing meaningful changed.
+  const lastSyncSignatureRef = useRef<string>("");
   useEffect(() => {
+    const signature = JSON.stringify({
+      patientIds: patients
+        .map((p) => `${p.id}|${p.deleted ? 1 : 0}|${p.caseStatus}|${p.fullName}|${p.dateOfLoss}`)
+        .sort(),
+      statusKeys: caseStatuses
+        .map((s) => `${s.name.toLowerCase()}|${s.autoFolder ? 1 : 0}`)
+        .sort(),
+    });
+    if (signature === lastSyncSignatureRef.current) return;
+    lastSyncSignatureRef.current = signature;
+
     setState((current) => {
       const synced = syncPatientFolders(current, patients, caseStatuses);
-      // Detect any change: folder count, file count, name/parent/patientId/deleted shifts
       const folderChanged =
         synced.folders.length !== current.folders.length ||
         synced.folders.some((sf) => {

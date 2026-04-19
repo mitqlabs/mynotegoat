@@ -233,6 +233,33 @@ export default function PortalLayout({
     };
     window.addEventListener("casemate:listener-leak-detected", onLeak);
 
+    // Stale-chunk auto-reload. After a deploy, the running tab's bundle
+    // tries to lazy-load JS chunks whose hashed filenames no longer exist
+    // on the server — Next.js raises "Failed to load chunk …". The fix
+    // is always a hard refresh; we can do that for the user automatically.
+    // Guard against infinite reload loops by debouncing through
+    // sessionStorage: only one auto-reload per 30s window.
+    const onWindowError = (event: ErrorEvent) => {
+      const message = event.message ?? "";
+      const isChunkLoad =
+        message.includes("Failed to load chunk") ||
+        message.includes("ChunkLoadError") ||
+        message.includes("Loading chunk");
+      if (!isChunkLoad) return;
+      try {
+        const lastReload = Number(sessionStorage.getItem("ng:chunk-reload-at") ?? "0");
+        if (Date.now() - lastReload < 30_000) return;
+        sessionStorage.setItem("ng:chunk-reload-at", String(Date.now()));
+      } catch {
+        // sessionStorage may be unavailable; just reload.
+      }
+      // Use replace so back button doesn't loop the user back to the
+      // broken page. Pure JS-cache reload is enough — server already has
+      // the new chunks.
+      window.location.reload();
+    };
+    window.addEventListener("error", onWindowError);
+
     // Mid-session user switch guard. If the Supabase session changes underneath
     // us — sign-in as a different user, sign-out, token refresh that yields a
     // different user_id — the data already in memory belongs to the OLD user.
@@ -277,6 +304,7 @@ export default function PortalLayout({
       active = false;
       window.removeEventListener("casemate:cloud-sync-blocked", onBlocked);
       window.removeEventListener("casemate:listener-leak-detected", onLeak);
+      window.removeEventListener("error", onWindowError);
       if (authSubscription) {
         authSubscription.unsubscribe();
       }
