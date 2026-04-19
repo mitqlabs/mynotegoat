@@ -83,7 +83,13 @@ export const narrativeReportAutoFields: NarrativeReportAutoField[] = [
   { token: "BILLED_AMOUNT", label: "Billed Amount" },
   { token: "PAID_AMOUNT", label: "Paid Amount" },
   { token: "PERCENTAGE_PAID", label: "Percentage Paid" },
-  { token: "DISCHARGE_DATE", label: "Discharge Date" },
+  // DISCHARGE_DATE removed from the picker per user feedback — the
+  // dischargeDate field on PatientRecord is rarely populated, so the
+  // token resolved to an empty string in practice. Users now reach for
+  // the per-encounter ENCOUNTER_n_DATE / ENCOUNTER_n_TYPE pair (or the
+  // appointment-typed group tokens) which are always populated. Token
+  // is still resolved by report-generator so any pre-existing template
+  // that references it keeps rendering (just resolves to "").
   { token: "RB_SENT_DATE", label: "R&B Sent Date" },
   { token: "PAID_DATE", label: "Paid Date" },
   { token: "REVIEW_STATUS", label: "Review Status" },

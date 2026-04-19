@@ -347,9 +347,20 @@ function extractWeight(encounter: EncounterNoteRecord): number | null {
   return null;
 }
 
+function toTitleCase(value: string): string {
+  return value
+    .split(/(\s+|-|')/)
+    .map((part) => {
+      if (!part || /^(\s+|-|')$/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join("");
+}
+
 function buildDecompressionSummary(
   encountersAsc: EncounterNoteRecord[],
   patientFullName: string,
+  mrMrsMsLastName: string,
 ): string {
   // Only closed encounters with "decompression" in appointment type
   const decomp = encountersAsc.filter(
@@ -394,16 +405,24 @@ function buildDecompressionSummary(
     });
   }
 
-  // Build the patient's last name for "Mr./Mrs." — fall back to full name
-  const nameParts = patientFullName.trim().split(/\s+/);
-  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : patientFullName;
+  // Use the proper honorific + Title-Cased last name ("Mr. Smith") rather
+  // than the raw stored fullName, which is often "SMITH, JOHN" all-caps
+  // and reads strangely in a narrative paragraph. Fall back to the full
+  // name only when no honorific was supplied.
+  const subject = mrMrsMsLastName.trim()
+    ? toTitleCase(mrMrsMsLastName.trim())
+    : toTitleCase(patientFullName.trim());
+
+  // Suppress an obvious lint warning if patientFullName is unused after
+  // this refactor (kept as the safety-net fallback above).
+  void patientFullName;
 
   const sentences: string[] = [];
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
     const prefix = i === 0
-      ? `${patientFullName} completed`
-      : `${patientFullName} also completed`;
+      ? `${subject} completed`
+      : `${subject} also completed`;
 
     const typeLabel = toSentenceCase(g.typeName);
 
@@ -635,7 +654,11 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
   }
 
   // ── Decompression Treatment Summary ──
-  context.DECOMPRESSION_SUMMARY = buildDecompressionSummary(encountersAsc, input.patient.fullName);
+  context.DECOMPRESSION_SUMMARY = buildDecompressionSummary(
+    encountersAsc,
+    input.patient.fullName,
+    input.patient.mrMrsMsLastName,
+  );
 
   encounterSections.forEach((section) => {
     context[`FIRST_${section.toUpperCase()}`] =
