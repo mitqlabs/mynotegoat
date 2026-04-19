@@ -507,6 +507,51 @@ export async function forceSaveAllEncountersToCloud(
   }
 }
 
+// ── Single-writer queue for the encounter dual-write ──
+// Before this guard, rapid SOAP edits triggered overlapping cloud
+// pushes that contested the navigator.locks auth lock used by
+// supabase-js's getUser(). The losing op died with
+//   "Lock broken by another request with the 'steal' option"
+// and the user saw the blue "saving" pill stuck forever while
+// nothing actually persisted. We collapse concurrent writes here:
+// at most one push runs at a time; if a new one comes in mid-flight,
+// it replaces any earlier queued args (since the latest snapshot
+// supersedes anything in the middle), and runs as soon as the in-
+// flight one settles. End result: same data ends up in the cloud,
+// no lock contention, no stuck pill.
+let dualWriteInFlight: Promise<void> | null = null;
+let dualWritePending: {
+  records: EncounterNoteRecord[];
+  prevById: Map<string, EncounterNoteRecord>;
+} | null = null;
+
+async function runDualWriteSerialized(
+  records: EncounterNoteRecord[],
+  prevById: Map<string, EncounterNoteRecord>,
+): Promise<void> {
+  if (dualWriteInFlight) {
+    // Replace any previously queued args with the latest snapshot.
+    dualWritePending = { records, prevById };
+    return dualWriteInFlight;
+  }
+  const startNext = (
+    args: { records: EncounterNoteRecord[]; prevById: Map<string, EncounterNoteRecord> },
+  ): Promise<void> => {
+    return runDualWriteUnserialized(args.records, args.prevById).finally(() => {
+      const next = dualWritePending;
+      dualWritePending = null;
+      if (next) {
+        // Chain the queued run after the current one finishes.
+        dualWriteInFlight = startNext(next);
+      } else {
+        dualWriteInFlight = null;
+      }
+    });
+  };
+  dualWriteInFlight = startNext({ records, prevById });
+  return dualWriteInFlight;
+}
+
 /**
  * Dual-write changed encounters to the cloud table. Returns a promise that
  * resolves when every upsert/delete has settled. Failures are surfaced via
@@ -514,8 +559,18 @@ export async function forceSaveAllEncountersToCloud(
  * can choose to react (e.g., the "Save All Encounters" button can show a
  * toast). Previous behavior was fire-and-forget with silent `console.error`
  * — that's the exact pattern that lost 94 encounters.
+ *
+ * Public entry point routes through `runDualWriteSerialized` so concurrent
+ * callers from rapid SOAP edits don't lock-steal each other.
  */
-async function dualWriteEncounterNotesToCloud(
+function dualWriteEncounterNotesToCloud(
+  nextRecords: EncounterNoteRecord[],
+  prevById: Map<string, EncounterNoteRecord>,
+): Promise<void> {
+  return runDualWriteSerialized(nextRecords, prevById);
+}
+
+async function runDualWriteUnserialized(
   nextRecords: EncounterNoteRecord[],
   prevById: Map<string, EncounterNoteRecord>,
 ): Promise<void> {

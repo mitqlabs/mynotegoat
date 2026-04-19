@@ -208,9 +208,14 @@ export function useEncounterNotes() {
       if (commitTimerRef.current) {
         clearTimeout(commitTimerRef.current);
       }
+      // Tight debounce (250ms) — long enough to coalesce rapid keystrokes
+      // and avoid hammering the cloud table mid-burst, short enough that
+      // a Safari OOM-reload that fires before the timer is the rare edge
+      // case rather than the norm. The previous 700ms window was losing
+      // user data when the tab was killed by the OS before the flush ran.
       commitTimerRef.current = setTimeout(() => {
         flushPendingNow();
-      }, 700);
+      }, 250);
       return next;
     });
   }, [flushPendingNow]);
