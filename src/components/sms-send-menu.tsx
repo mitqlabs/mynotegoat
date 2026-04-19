@@ -21,13 +21,43 @@ type Props = {
   align?: "left" | "right";
 };
 
-// useLayoutEffect falls back to useEffect on the server so we don't get a
-// hydration warning; the popup coordinate math only ever runs on the client.
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const MENU_WIDTH = 240;
 const MENU_MARGIN = 8;
+
+// ── Module-level outside-click / Escape / scroll dispatcher ──
+// Each SmsSendMenu instance previously installed its own three document
+// listeners. With 100+ instances on the patients page the leak guard
+// (rightly) tripped at 100 mousedown handlers. Instead we install ONE
+// set of listeners at module load and let the currently-open menu
+// register a single close callback. Only one menu can be open at a
+// time anyway (opening a new one closes the previous via this ref).
+
+type CloseFn = (event: Event) => void;
+let activeClose: CloseFn | null = null;
+let listenersInstalled = false;
+
+function handleDocumentMouseDown(event: MouseEvent) {
+  activeClose?.(event);
+}
+function handleDocumentKeyDown(event: KeyboardEvent) {
+  if (event.key === "Escape") activeClose?.(event);
+}
+function handleWindowScroll(event: Event) {
+  activeClose?.(event);
+}
+
+function ensureGlobalListeners() {
+  if (listenersInstalled || typeof document === "undefined") return;
+  listenersInstalled = true;
+  document.addEventListener("mousedown", handleDocumentMouseDown);
+  document.addEventListener("keydown", handleDocumentKeyDown);
+  // Capture phase so a scrolling ancestor closes the menu before its own
+  // scroll handler fires.
+  window.addEventListener("scroll", handleWindowScroll, true);
+}
 
 /**
  * Clickable phone → opens a small menu of SMS templates → picks one →
@@ -36,8 +66,7 @@ const MENU_MARGIN = 8;
  * handoff to the native messaging app.
  *
  * The menu is portaled to document.body and positioned with fixed
- * coordinates so it floats above any ancestor with overflow: hidden
- * (patient cards, table cells, modal shells, etc.).
+ * coordinates so it floats above any ancestor with overflow: hidden.
  */
 export function SmsSendMenu({
   phone,
@@ -66,7 +95,6 @@ export function SmsSendMenu({
 
   const digits = phone.replace(/\D/g, "");
 
-  // Compute menu position whenever it opens, keeping it on-screen.
   useIsomorphicLayoutEffect(() => {
     if (!open) return;
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -79,41 +107,25 @@ export function SmsSendMenu({
     setCoords({ top, left });
   }, [open, align]);
 
-  // Close on outside click / Escape / scroll. Listeners install once
-  // and gate on a ref so the sanity-check rule for listener effects
-  // (which forbids non-stable deps) stays happy. The ref is kept in
-  // sync with `open` via the effect below.
-  const openRef = useRef(open);
+  // Register THIS menu as the active close target while it's open.
+  // No addEventListener calls in this effect — the actual document
+  // listeners live at module scope and are installed exactly once.
   useEffect(() => {
-    openRef.current = open;
-  }, [open]);
-
-  useEffect(() => {
-    const handleDocumentMouseDown = (event: MouseEvent) => {
-      if (!openRef.current) return;
+    if (!open) return;
+    ensureGlobalListeners();
+    const close: CloseFn = (event) => {
       const target = event.target as Node | null;
-      if (!target) return;
-      if (menuRef.current?.contains(target)) return;
-      if (buttonRef.current?.contains(target)) return;
+      if (target) {
+        if (menuRef.current?.contains(target)) return;
+        if (buttonRef.current?.contains(target)) return;
+      }
       setOpen(false);
     };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!openRef.current) return;
-      if (event.key === "Escape") setOpen(false);
-    };
-    const handleScroll = () => {
-      if (!openRef.current) return;
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", handleDocumentMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("scroll", handleScroll, true);
+    activeClose = close;
     return () => {
-      document.removeEventListener("mousedown", handleDocumentMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("scroll", handleScroll, true);
+      if (activeClose === close) activeClose = null;
     };
-  }, []);
+  }, [open]);
 
   const handlePick = (body: string) => {
     const expanded = expandTokens(body, resolvedContext);
