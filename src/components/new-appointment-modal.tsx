@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
@@ -81,6 +82,46 @@ const dayToggleOptions = [
   { day: 5, short: "F" },
   { day: 6, short: "S" },
 ];
+
+// Auto-format helpers for the date / time text inputs. Native
+// <input type="date"> and <input type="time"> require keyboard
+// tabbing between MM/DD/YYYY and HH/MM segments — slow when entering
+// many appointments. Text inputs with these formatters let the user
+// type 01262026 → 01/26/2026 and 0930 → 09:30 with no tabbing.
+function formatUsDateInput(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, "").slice(0, 8);
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function formatUsTimeInput(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, "").slice(0, 4);
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function isoDateToUs(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
+
+function usDateToIso(us: string): string {
+  const m = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return "";
+  return `${m[3]}-${m[1]}-${m[2]}`;
+}
+
+function isCompleteUsDate(value: string): boolean {
+  return /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/.test(value);
+}
+
+function isCompleteTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
 
 function getTodayIsoDate() {
   const now = new Date();
@@ -315,6 +356,7 @@ export function NewAppointmentModal({
   const { scheduleRooms } = useScheduleRooms();
   const { scheduleSettings } = useScheduleSettings();
   const { keyDates } = useKeyDates();
+  const { officeSettings } = useOfficeSettings();
 
   const defaultAppointmentType = useMemo(
     () => appointmentTypes.find((entry) => entry.isDefault) ?? appointmentTypes[0] ?? null,
@@ -364,6 +406,17 @@ export function NewAppointmentModal({
   const [patientSearchDraft, setPatientSearchDraft] = useState("");
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [error, setError] = useState("");
+
+  // Display strings for the auto-formatting date / time text inputs.
+  // Mirror the canonical ISO/24h state (`draft.startDate`, `draft.startTime`)
+  // so the input can show partial typing without corrupting the underlying
+  // value. We only push back to `draft` when the typed value parses as a
+  // complete date / time.
+  const [startDateDisplay, setStartDateDisplay] = useState(() =>
+    isoDateToUs(defaultStartDate),
+  );
+  const [startTimeDisplay, setStartTimeDisplay] = useState("");
+  const [recurEndDateDisplay, setRecurEndDateDisplay] = useState("");
 
   // Filter appointment types by the selected patient's kind (PI vs Cash).
   // If no patient is selected yet, show all so the default type is visible
@@ -427,6 +480,17 @@ export function NewAppointmentModal({
     }
     const baseDate = defaultStartDate;
     const initial = createInitialDraft(baseDate, defaultAppointmentType);
+    // Auto-fill provider / location from Office Settings when there's
+    // nothing else to seed. The previous defaults were "" (per the PII
+    // strip) so fresh modal opens were leaving these empty and the user
+    // had to type them every time. Office Settings already holds the
+    // single doctor / office name for this workspace.
+    if (!initial.provider) {
+      initial.provider = officeSettings.doctorName.trim() || "";
+    }
+    if (!initial.location) {
+      initial.location = officeSettings.officeName.trim() || "";
+    }
     if (lockedPatientId) {
       const lockedPatient = patients.find((p) => p.id === lockedPatientId);
       if (lockedPatient) {
@@ -440,9 +504,20 @@ export function NewAppointmentModal({
       setPatientSearchDraft("");
     }
     setDraft(initial);
+    setStartDateDisplay(isoDateToUs(initial.startDate));
+    setStartTimeDisplay(initial.startTime);
+    setRecurEndDateDisplay(isoDateToUs(initial.recurEndDate));
     setShowPatientSuggestions(false);
     setError("");
-  }, [open, initialDate, lockedPatientId, defaultAppointmentType, defaultStartDate]);
+  }, [
+    open,
+    initialDate,
+    lockedPatientId,
+    defaultAppointmentType,
+    defaultStartDate,
+    officeSettings.doctorName,
+    officeSettings.officeName,
+  ]);
 
   const patientById = useMemo(() => {
     const map = new Map<string, (typeof patients)[number]>();
@@ -1159,8 +1234,14 @@ export function NewAppointmentModal({
             <span className="text-sm font-semibold text-[var(--text-muted)]">Start Date *</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              inputMode="numeric"
+              maxLength={10}
               onChange={(event) => {
-                const nextStartDate = event.target.value;
+                const formatted = formatUsDateInput(event.target.value);
+                setStartDateDisplay(formatted);
+                if (!isCompleteUsDate(formatted)) return;
+                const nextStartDate = usDateToIso(formatted);
+                if (!nextStartDate) return;
                 const nextStartDay = getDayOfWeek(nextStartDate);
                 setDraft((current) => ({
                   ...current,
@@ -1175,20 +1256,30 @@ export function NewAppointmentModal({
                       : current.recurEndDate,
                 }));
               }}
-              type="date"
-              value={draft.startDate}
+              placeholder="MM/DD/YYYY"
+              value={startDateDisplay}
+            />
+            <DayScheduleHint
+              dateIso={draft.startDate}
+              scheduleAppointments={scheduleAppointments}
+              excludeAppointmentId={null}
             />
           </label>
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Start Time *</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, startTime: event.target.value }))
-              }
-              step={scheduleSettings.appointmentIntervalMin * 60}
-              type="time"
-              value={draft.startTime}
+              inputMode="numeric"
+              maxLength={5}
+              onChange={(event) => {
+                const formatted = formatUsTimeInput(event.target.value);
+                setStartTimeDisplay(formatted);
+                if (isCompleteTime(formatted)) {
+                  setDraft((current) => ({ ...current, startTime: formatted }));
+                }
+              }}
+              placeholder="HH:MM (24h)"
+              value={startTimeDisplay}
             />
           </label>
           <label className="grid gap-1">
@@ -1265,15 +1356,18 @@ export function NewAppointmentModal({
                   <span className="text-sm font-semibold text-[var(--text-muted)]">End Date *</span>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    min={draft.startDate}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        recurEndDate: event.target.value,
-                      }))
-                    }
-                    type="date"
-                    value={draft.recurEndDate}
+                    inputMode="numeric"
+                    maxLength={10}
+                    onChange={(event) => {
+                      const formatted = formatUsDateInput(event.target.value);
+                      setRecurEndDateDisplay(formatted);
+                      if (!isCompleteUsDate(formatted)) return;
+                      const iso = usDateToIso(formatted);
+                      if (!iso) return;
+                      setDraft((current) => ({ ...current, recurEndDate: iso }));
+                    }}
+                    placeholder="MM/DD/YYYY"
+                    value={recurEndDateDisplay}
                   />
                 </label>
               ) : (
@@ -1500,5 +1594,74 @@ export function NewAppointmentModal({
       </section>
       <ContactGapPrompt gap={contactGap} onClose={() => setContactGap(null)} />
     </div>
+  );
+}
+
+function formatTimeLabelLocal(value: string): string {
+  const m = value.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return value;
+  const hours = Number(m[1]);
+  const minutes = m[2];
+  const meridiem = hours >= 12 ? "PM" : "AM";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${minutes} ${meridiem}`;
+}
+
+/**
+ * Compact glanceable preview of what's already on the schedule for the
+ * selected start date. Shows under the Start Date input so the user can
+ * pick a non-conflicting time without leaving the modal. Empty days
+ * render a quiet "—" so the layout doesn't shift.
+ */
+function DayScheduleHint({
+  dateIso,
+  scheduleAppointments,
+  excludeAppointmentId,
+}: {
+  dateIso: string;
+  scheduleAppointments: ScheduleAppointmentRecord[];
+  excludeAppointmentId: string | null;
+}) {
+  const dayItems = useMemo(() => {
+    if (!dateIso) return [];
+    return scheduleAppointments
+      .filter(
+        (appt) =>
+          appt.date === dateIso &&
+          appt.id !== excludeAppointmentId &&
+          appt.status !== "Canceled",
+      )
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [dateIso, scheduleAppointments, excludeAppointmentId]);
+
+  if (!dateIso) return null;
+
+  if (dayItems.length === 0) {
+    return (
+      <span className="mt-1 text-xs text-[var(--text-muted)]">
+        Day is open — no other appointments scheduled.
+      </span>
+    );
+  }
+
+  return (
+    <details className="mt-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs">
+      <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">
+        {dayItems.length} other appointment{dayItems.length === 1 ? "" : "s"} on this day
+      </summary>
+      <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto pr-1">
+        {dayItems.map((appt) => (
+          <li className="flex items-center justify-between gap-2" key={appt.id}>
+            <span className="font-mono tabular-nums">
+              {formatTimeLabelLocal(appt.startTime)}
+            </span>
+            <span className="truncate">{appt.patientName}</span>
+            <span className="shrink-0 text-[var(--text-muted)]">
+              {appt.appointmentType}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
