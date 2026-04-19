@@ -132,31 +132,25 @@ export function reportCloudWriteStart(source: string) {
 }
 
 function doSync(): Promise<void> {
-  // If a sync is already running, return its promise so callers actually
-  // await it instead of resolving immediately. Critical for "Save & Close"
-  // flows that navigate away as soon as the await resolves — without this,
-  // the in-flight fetch gets aborted by the page unload and the cloud
-  // never receives the latest write.
+  // ── Blob-push DISABLED ──
+  // Every entity (patients, appointments, encounter-notes, KV settings,
+  // contacts, etc.) now dual-writes to its own dedicated cloud table or
+  // workspace_kv row. The legacy "push the entire localStorage as one
+  // big JSONB blob to app_snapshots" path is pure redundancy — and it
+  // was the source of constant supabase.auth.getSession() contention
+  // with the per-entity writes, killing them with the
+  //   "Lock broken by another request with the 'steal' option"
+  // AbortError. Symptom: blue "saving to cloud" pill stuck forever,
+  // brief red flash, encounters never persisted, draft-recovery banner
+  // showed unsaved work on every refresh.
+  //
+  // Resolution: skip the push entirely. Per-entity writers carry the
+  // freight from now on. Bootstrap still pulls from app_snapshots as a
+  // fallback for any pre-migration data that might still live there.
   if (inflightSync) {
     return inflightSync;
   }
-  notifyStatus("syncing", { source: "blob autosave" });
-  inflightSync = (async () => {
-    try {
-      await pushLocalStateToCloud();
-      lastSyncAt = Date.now();
-      syncErrorCount = 0;
-      notifyStatus("synced", { source: "blob autosave" });
-    } catch (error) {
-      syncErrorCount += 1;
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error("[Storage Sync] Cloud push failed:", error);
-      notifyStatus("error", { source: "blob autosave", errorMessage: msg });
-    } finally {
-      inflightSync = null;
-    }
-  })();
-  return inflightSync;
+  return Promise.resolve();
 }
 
 // Coalesced cloud push. We intentionally use a longer window than the

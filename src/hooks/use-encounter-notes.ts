@@ -919,6 +919,20 @@ export function useEncounterNotes() {
   const deleteEncounter = useCallback(
     (encounterId: string) => {
       updateRecords((current) => current.filter((entry) => entry.id !== encounterId));
+      // The auto-delete diff inside dualWriteEncounterNotesToCloud was
+      // removed because it was wiping rows that were merely missing from
+      // a pruned localStorage cache. User-initiated deletes go through
+      // this explicit cloud-delete instead so the row actually leaves
+      // the encounter_notes table.
+      void import("@/lib/encounter-notes-cloud").then(
+        ({ deleteEncounterNoteFromTable }) =>
+          deleteEncounterNoteFromTable(encounterId).catch((err) => {
+            console.error(
+              `[use-encounter-notes] cloud delete(${encounterId}) failed:`,
+              err,
+            );
+          }),
+      );
     },
     [updateRecords],
   );

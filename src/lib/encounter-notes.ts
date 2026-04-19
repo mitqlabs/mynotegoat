@@ -600,11 +600,20 @@ async function runDualWriteUnserialized(
       tasks.push(() => upsertEncounterNoteToTable(note));
     }
   }
-  for (const prevId of prevById.keys()) {
-    if (!nextById.has(prevId)) {
-      tasks.push(() => deleteEncounterNoteFromTable(prevId));
-    }
-  }
+  // ── Auto-delete REMOVED ──
+  // Previously we issued deletes for any prevById key not in nextRecords.
+  // That assumed nextRecords was always the canonical full set. It isn't:
+  //  - The localStorage cache prunes to the most recent 100 records / 90
+  //    days, so a fresh page load can produce a "next" set that's missing
+  //    older encounters — and the diff would queue deletes for them.
+  //  - forceSaveAll(patientId) intentionally passes a patient-scoped subset.
+  // Either way, an auto-delete here can wipe real data. The user just
+  // got rescued by a network "Failed to fetch" that aborted 22 deletes
+  // mid-flight; without that we'd have lost 22 encounters from cloud.
+  // Real deletions go through the explicit deleteEncounter() user action,
+  // which is wired separately. Leaving stale rows in the cloud is a far
+  // smaller harm than ever auto-deleting one.
+  // ──────────────────────────
   if (tasks.length === 0) return;
 
   // Flip UI to "syncing" (blue pill) so the user sees their auto-save
