@@ -86,7 +86,7 @@ export function AddressFieldGroup({
           />
         </label>
       </div>
-      <div className="grid gap-2 sm:grid-cols-[2fr_80px_140px]">
+      <div className="grid gap-2 sm:grid-cols-[220px_80px_120px] sm:justify-start">
         <label className="grid gap-1">
           <span className={labelCls}>City</span>
           <input
