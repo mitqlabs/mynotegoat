@@ -1687,21 +1687,31 @@ function DayScheduleHint({
   scheduleAppointments: ScheduleAppointmentRecord[];
   excludeAppointmentId: string | null;
 }) {
-  const dayItems = useMemo(() => {
+  // Group by start time and count — user doesn't need patient names
+  // or types for conflict-avoidance, just "which slots already have
+  // people scheduled". Less visual noise in the modal too.
+  const slotGroups = useMemo(() => {
     if (!dateIso) return [];
-    return scheduleAppointments
-      .filter(
-        (appt) =>
-          appt.date === dateIso &&
-          appt.id !== excludeAppointmentId &&
-          appt.status !== "Canceled",
-      )
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const counts = new Map<string, number>();
+    for (const appt of scheduleAppointments) {
+      if (appt.date !== dateIso) continue;
+      if (appt.id === excludeAppointmentId) continue;
+      if (appt.status === "Canceled") continue;
+      counts.set(appt.startTime, (counts.get(appt.startTime) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([startTime, count]) => ({ startTime, count }));
   }, [dateIso, scheduleAppointments, excludeAppointmentId]);
+
+  const totalCount = useMemo(
+    () => slotGroups.reduce((sum, group) => sum + group.count, 0),
+    [slotGroups],
+  );
 
   if (!dateIso) return null;
 
-  if (dayItems.length === 0) {
+  if (totalCount === 0) {
     return (
       <span className="mt-1 text-xs text-[var(--text-muted)]">
         Day is open — no other appointments scheduled.
@@ -1712,17 +1722,16 @@ function DayScheduleHint({
   return (
     <div className="mt-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1.5 text-xs">
       <p className="font-semibold text-[var(--text-muted)]">
-        {dayItems.length} other appointment{dayItems.length === 1 ? "" : "s"} on this day
+        {totalCount} other appointment{totalCount === 1 ? "" : "s"} on this day
       </p>
       <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pr-1">
-        {dayItems.map((appt) => (
-          <li className="flex items-center justify-between gap-2" key={appt.id}>
+        {slotGroups.map((group) => (
+          <li className="flex items-center justify-between gap-2" key={group.startTime}>
             <span className="font-mono tabular-nums">
-              {formatTimeLabelLocal(appt.startTime)}
+              {formatTimeLabelLocal(group.startTime)}
             </span>
-            <span className="truncate">{appt.patientName}</span>
-            <span className="shrink-0 text-[var(--text-muted)]">
-              {appt.appointmentType}
+            <span className="text-[var(--text-muted)]">
+              {group.count} appointment{group.count === 1 ? "" : "s"}
             </span>
           </li>
         ))}
