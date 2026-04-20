@@ -2621,8 +2621,13 @@ export default function SettingsPage() {
       return next;
     }
     const section = new URLSearchParams(window.location.search).get("section");
-    if (section && isSettingsSectionKey(section)) {
-      next[section] = true;
+    // Legacy "reports" deep link now expands the merged Document
+    // Templates section (which contains the narrative-report panel as
+    // a sub-section). Keeps onboarding + setup-checklist + patient-
+    // file deep links working without every caller having to change.
+    const resolvedSection = section === "reports" ? "documents" : section;
+    if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
+      next[resolvedSection] = true;
     }
     return next;
   });
@@ -4709,24 +4714,36 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        description="Create and edit document templates that merge patient and case data into printable PDFs."
+        description="Letters, specialist referrals, imaging requests, and narrative reports — all the printable documents Note Goat can produce for a patient."
         isOpen={expandedSections.documents}
         onToggle={() => toggleSection("documents")}
-        title="Document Template Settings"
+        title="Document Templates"
       >
-        <DocumentTemplateSettingsPanel
-          officeSettings={officeSettings}
-          preferredScope={preferredDocumentScope}
-        />
-      </CollapsibleSection>
+        <div className="space-y-6">
+          <section>
+            <div className="mb-2">
+              <h4 className="text-base font-semibold">Letters · Referrals · Imaging Requests</h4>
+              <p className="text-xs text-[var(--text-muted)]">
+                Short-form documents that merge patient and case data into printable PDFs.
+              </p>
+            </div>
+            <DocumentTemplateSettingsPanel
+              officeSettings={officeSettings}
+              preferredScope={preferredDocumentScope}
+            />
+          </section>
 
-      <CollapsibleSection
-        description="Create fully customizable narrative report templates that can pull from patient demographics, encounters, imaging, specialists, diagnoses, and runtime prompts."
-        isOpen={expandedSections.reports}
-        onToggle={() => toggleSection("reports")}
-        title="Narrative Report Builder"
-      >
-        <ReportTemplateSettingsPanel />
+          <section className="border-t border-[var(--line-soft)] pt-5">
+            <div className="mb-2">
+              <h4 className="text-base font-semibold">Narrative Reports</h4>
+              <p className="text-xs text-[var(--text-muted)]">
+                Long-form custom reports that pull from patient demographics, encounters, imaging,
+                specialists, diagnoses, and optional runtime prompts.
+              </p>
+            </div>
+            <ReportTemplateSettingsPanel />
+          </section>
+        </div>
       </CollapsibleSection>
 
       <CollapsibleSection
