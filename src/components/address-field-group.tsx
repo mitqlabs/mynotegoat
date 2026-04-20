@@ -62,28 +62,30 @@ export function AddressFieldGroup({
 
   return (
     <div className={`grid gap-2 ${className ?? ""}`}>
-      <label className="grid gap-1">
-        <span className={labelCls}>Address 1</span>
-        <input
-          className={inputCls}
-          onChange={(event) =>
-            emit({ ...parts, address1: event.target.value })
-          }
-          placeholder="Street address"
-          value={parts.address1}
-        />
-      </label>
-      <label className="grid gap-1">
-        <span className={labelCls}>Address 2</span>
-        <input
-          className={inputCls}
-          onChange={(event) =>
-            emit({ ...parts, address2: event.target.value })
-          }
-          placeholder="Unit / Suite / Apt (optional)"
-          value={parts.address2}
-        />
-      </label>
+      <div className="grid gap-2 sm:grid-cols-[2fr_1fr]">
+        <label className="grid gap-1">
+          <span className={labelCls}>Address 1</span>
+          <input
+            className={inputCls}
+            onChange={(event) =>
+              emit({ ...parts, address1: event.target.value })
+            }
+            placeholder="Street address"
+            value={parts.address1}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className={labelCls}>Address 2</span>
+          <input
+            className={inputCls}
+            onChange={(event) =>
+              emit({ ...parts, address2: event.target.value })
+            }
+            placeholder="Unit / Suite / Apt (optional)"
+            value={parts.address2}
+          />
+        </label>
+      </div>
       <div className="grid gap-2 sm:grid-cols-[2fr_80px_140px]">
         <label className="grid gap-1">
           <span className={labelCls}>City</span>
