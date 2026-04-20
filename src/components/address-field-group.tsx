@@ -61,75 +61,71 @@ export function AddressFieldGroup({
     : "rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2";
 
   return (
-    <div className={`grid gap-2 ${className ?? ""}`}>
-      <div className="grid gap-2 sm:grid-cols-[2fr_1fr]">
-        <label className="grid gap-1">
-          <span className={labelCls}>Address 1</span>
-          <input
-            className={inputCls}
-            onChange={(event) =>
-              emit({ ...parts, address1: event.target.value })
-            }
-            placeholder="Street address"
-            value={parts.address1}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className={labelCls}>Address 2</span>
-          <input
-            className={inputCls}
-            onChange={(event) =>
-              emit({ ...parts, address2: event.target.value })
-            }
-            placeholder="Unit / Suite / Apt (optional)"
-            value={parts.address2}
-          />
-        </label>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-[220px_80px_120px] sm:justify-start">
-        <label className="grid gap-1">
-          <span className={labelCls}>City</span>
-          <input
-            className={inputCls}
-            onChange={(event) =>
-              emit({ ...parts, city: event.target.value })
-            }
-            placeholder="City"
-            value={parts.city}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className={labelCls}>State</span>
-          <input
-            className={`${inputCls} uppercase`}
-            maxLength={2}
-            onChange={(event) =>
-              emit({
-                ...parts,
-                state: event.target.value.replace(/[^A-Za-z]/g, "").toUpperCase(),
-              })
-            }
-            placeholder="CA"
-            value={parts.state}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className={labelCls}>ZIP</span>
-          <input
-            className={inputCls}
-            inputMode="numeric"
-            maxLength={10}
-            onChange={(event) =>
-              emit({
-                ...parts,
-                zip: event.target.value.replace(/[^\d-]/g, ""),
-              })
-            }
-            placeholder="91206"
-            value={parts.zip}
-          />
-        </label>
-      </div>
+    <div className={`flex flex-wrap gap-2 ${className ?? ""}`}>
+      <label className="grid min-w-[180px] flex-[2_1_220px] gap-1">
+        <span className={labelCls}>Address 1</span>
+        <input
+          className={inputCls}
+          onChange={(event) =>
+            emit({ ...parts, address1: event.target.value })
+          }
+          placeholder="Street address"
+          value={parts.address1}
+        />
+      </label>
+      <label className="grid min-w-[140px] flex-[1_1_160px] gap-1">
+        <span className={labelCls}>Address 2</span>
+        <input
+          className={inputCls}
+          onChange={(event) =>
+            emit({ ...parts, address2: event.target.value })
+          }
+          placeholder="Unit / Suite (optional)"
+          value={parts.address2}
+        />
+      </label>
+      <label className="grid min-w-[140px] flex-[1_1_160px] gap-1">
+        <span className={labelCls}>City</span>
+        <input
+          className={inputCls}
+          onChange={(event) =>
+            emit({ ...parts, city: event.target.value })
+          }
+          placeholder="City"
+          value={parts.city}
+        />
+      </label>
+      <label className="grid w-[70px] shrink-0 gap-1">
+        <span className={labelCls}>State</span>
+        <input
+          className={`${inputCls} uppercase`}
+          maxLength={2}
+          onChange={(event) =>
+            emit({
+              ...parts,
+              state: event.target.value.replace(/[^A-Za-z]/g, "").toUpperCase(),
+            })
+          }
+          placeholder="CA"
+          value={parts.state}
+        />
+      </label>
+      <label className="grid w-[110px] shrink-0 gap-1">
+        <span className={labelCls}>ZIP</span>
+        <input
+          className={inputCls}
+          inputMode="numeric"
+          maxLength={10}
+          onChange={(event) =>
+            emit({
+              ...parts,
+              zip: event.target.value.replace(/[^\d-]/g, ""),
+            })
+          }
+          placeholder="91206"
+          value={parts.zip}
+        />
+      </label>
     </div>
   );
 }
