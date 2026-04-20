@@ -3681,7 +3681,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          <label className="grid gap-1 md:col-span-1 xl:col-span-2">
+          <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
             <div className="flex items-center gap-2">
               <input
@@ -3709,7 +3709,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </label>
 
-          <label className="grid gap-1 md:col-span-1 xl:col-span-2">
+          <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Email</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
