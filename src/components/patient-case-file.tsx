@@ -1185,16 +1185,29 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [contacts],
   );
-  const imagingCenters = useMemo(
+  const imagingCenterContacts = useMemo(
     () =>
       contacts
         .filter(
           (contact) => normalizeLookupValue(contact.category) === "imaging center",
         )
-        .map((contact) => contact.name)
-        .sort((a, b) => a.localeCompare(b)),
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [contacts],
   );
+  const imagingCenters = useMemo(
+    () => imagingCenterContacts.map((contact) => contact.name),
+    [imagingCenterContacts],
+  );
+  // Case-insensitive lookup so a user who typed "advanced imaging" matches
+  // the stored "Advanced Imaging" contact and still gets the address/phone
+  // rendered below the input.
+  const imagingCenterByName = useMemo(() => {
+    const map = new Map<string, (typeof contacts)[number]>();
+    for (const contact of imagingCenterContacts) {
+      map.set(contact.name.trim().toLowerCase(), contact);
+    }
+    return map;
+  }, [imagingCenterContacts]);
   const specialistContactDirectory = useMemo(
     () =>
       contacts
@@ -3789,6 +3802,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       placeholder="Select or type center"
                       value={xray.center}
                     />
+                    {(() => {
+                      const match = imagingCenterByName.get(xray.center.trim().toLowerCase());
+                      if (!match) return null;
+                      const bits = [match.phone, match.address].filter((v) => v && v.trim());
+                      if (bits.length === 0) return null;
+                      return (
+                        <span className="text-[11px] leading-4 text-[var(--text-muted)]">
+                          {bits.join(" · ")}
+                        </span>
+                      );
+                    })()}
                   </label>
                 </div>
 
@@ -3988,6 +4012,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       placeholder="Select or type center"
                       value={mri.center}
                     />
+                    {(() => {
+                      const match = imagingCenterByName.get(mri.center.trim().toLowerCase());
+                      if (!match) return null;
+                      const bits = [match.phone, match.address].filter((v) => v && v.trim());
+                      if (bits.length === 0) return null;
+                      return (
+                        <span className="text-[11px] leading-4 text-[var(--text-muted)]">
+                          {bits.join(" · ")}
+                        </span>
+                      );
+                    })()}
                   </label>
                 </div>
 
