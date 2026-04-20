@@ -2120,6 +2120,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       REFERRAL_SCHEDULED_DATE: "",
       IMAGING_TYPE: "",
       IMAGING_CENTER: "",
+      IMAGING_PHONE: "",
+      IMAGING_FAX: "",
+      IMAGING_EMAIL: "",
+      IMAGING_ADDRESS: "",
       IMAGING_REGIONS: "",
       IMAGING_SENT_DATE: "",
       IMAGING_DONE_DATE: "",
@@ -2518,10 +2522,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
+    // Look up the imaging center in the contacts directory so the
+    // template can pull phone / fax / email / address automatically,
+    // mirroring the SPECIALIST_* tokens used on specialist referrals.
+    // Case-insensitive match against the stored contact name.
+    const imagingCenterContact =
+      imagingCenterByName.get(entry.center.trim().toLowerCase()) ?? null;
+
     const context: Record<string, string> = {
       ...getCommonDocumentContext(),
       IMAGING_TYPE: entry.modalityLabel,
       IMAGING_CENTER: entry.center,
+      IMAGING_PHONE: imagingCenterContact?.phone ?? "",
+      IMAGING_FAX: imagingCenterContact?.fax ?? "",
+      IMAGING_EMAIL: imagingCenterContact?.email ?? "",
+      IMAGING_ADDRESS: imagingCenterContact?.address ?? "",
       IMAGING_REGIONS: formatImagingRegionsSummary(entry, mode),
       IMAGING_SENT_DATE: toUsDate(entry.sentDate),
       IMAGING_DONE_DATE: toUsDate(entry.doneDate),
@@ -3802,17 +3817,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       placeholder="Select or type center"
                       value={xray.center}
                     />
-                    {(() => {
-                      const match = imagingCenterByName.get(xray.center.trim().toLowerCase());
-                      if (!match) return null;
-                      const bits = [match.phone, match.address].filter((v) => v && v.trim());
-                      if (bits.length === 0) return null;
-                      return (
-                        <span className="text-[11px] leading-4 text-[var(--text-muted)]">
-                          {bits.join(" · ")}
-                        </span>
-                      );
-                    })()}
                   </label>
                 </div>
 
@@ -4012,17 +4016,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       placeholder="Select or type center"
                       value={mri.center}
                     />
-                    {(() => {
-                      const match = imagingCenterByName.get(mri.center.trim().toLowerCase());
-                      if (!match) return null;
-                      const bits = [match.phone, match.address].filter((v) => v && v.trim());
-                      if (bits.length === 0) return null;
-                      return (
-                        <span className="text-[11px] leading-4 text-[var(--text-muted)]">
-                          {bits.join(" · ")}
-                        </span>
-                      );
-                    })()}
                   </label>
                 </div>
 
