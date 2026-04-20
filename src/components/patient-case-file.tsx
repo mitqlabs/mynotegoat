@@ -3182,6 +3182,28 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
+    // Guard against accidentally creating an encounter for a future
+    // appointment. appointment.date is ISO YYYY-MM-DD; compare against
+    // today's local date string so time-zone / clock differences don't
+    // block a same-day appointment.
+    const todayIso = (() => {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    })();
+    if (appointment.date > todayIso) {
+      const proceed = window.confirm(
+        `This appointment is on ${appointmentDate}, which is in the future. ` +
+          `Are you sure you want to create an encounter now? Click Cancel if you opened the wrong appointment.`,
+      );
+      if (!proceed) {
+        setEncounterMessage("Encounter creation canceled — appointment is in the future.");
+        return;
+      }
+    }
+
     if (appointment.status !== "Check In" && appointment.status !== "Check Out") {
       setEncounterMessage(
         "Patient must be Checked In before starting an encounter. Update the appointment status first.",
@@ -3330,6 +3352,33 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         xrayFindings: xrayFindings.trim(),
         mriCtFindings: mriCtFindings.trim(),
         specialistRecommendations: specialistRecommendations.trim(),
+        // Derive the specialist matrix fields from the specialistReferrals
+        // array so the Case Flow queue sees what the user has actually
+        // logged in the Specialist panel. Without this sync, the user
+        // logs a specialist referral in the card but Case Flow keeps
+        // showing "Referral needs to be sent" because it only reads the
+        // matrix.
+        //    sent      → latest Sent date across all referrals
+        //    scheduled → latest Scheduled date
+        //    report    → latest Report-Received date
+        specialistSent: (() => {
+          const dates = specialistReferrals
+            .map((entry) => toIsoDateFromUsDate(entry.sentDate))
+            .filter((d) => d);
+          return dates.sort().at(-1) ?? "";
+        })(),
+        specialistScheduled: (() => {
+          const dates = specialistReferrals
+            .map((entry) => toIsoDateFromUsDate(entry.scheduledDate))
+            .filter((d) => d);
+          return dates.sort().at(-1) ?? "";
+        })(),
+        specialistReport: (() => {
+          const dates = specialistReferrals
+            .map((entry) => toIsoDateFromUsDate(entry.reportReceivedDate))
+            .filter((d) => d);
+          return dates.sort().at(-1) ?? "";
+        })(),
         notes: patientNotes.trim(),
         discharge: toIsoDateFromUsDate(dischargeDate),
         rbSent: toIsoDateFromUsDate(rbSentDate),

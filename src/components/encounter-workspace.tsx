@@ -1279,12 +1279,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         /(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)+$/gi,
         "",
       );
-    const editorHandle = soapEditorRef.current;
-    if (editorHandle) {
-      editorHandle.insertHtml(cleanedSnippet);
-    } else {
-      appendSoapSection(selectedEncounter.id, activeSection, cleanedSnippet);
-    }
+    // Always append to the END of the section rather than inserting at
+    // the current caret position. Insert-at-caret meant the cursor had
+    // to be at the bottom for the macro to land in the natural reading
+    // order; when the user was editing an earlier prompt answer and
+    // then clicked a new macro, that macro would land BEFORE the
+    // previous content. User feedback: "macros are not inserting above
+    // the rest" — fix is to make insertion order always be append.
+    appendSoapSection(selectedEncounter.id, activeSection, cleanedSnippet);
     addMacroRun(selectedEncounter.id, {
       id: snippetId,
       section: activeSection,
