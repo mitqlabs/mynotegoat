@@ -6618,44 +6618,87 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         .map((entry) => {
                           const region = entry.label;
                           const selected = editingImagingReferral.regions.includes(region);
+                          const hasLaterality = supportsRegionLaterality(region);
+                          const currentLaterality = editingImagingReferral.lateralityByRegion[region];
                           return (
-                            <button
-                              aria-pressed={selected}
-                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-                                selected
-                                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                                  : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
-                              }`}
+                            <div
+                              className="inline-flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-white p-0.5"
                               key={`edit-region-${region}`}
-                              onClick={() =>
-                                setEditingImagingReferral((current) => {
-                                  if (!current) return current;
-                                  const isSelected = current.regions.includes(region);
-                                  const nextRegions = isSelected
-                                    ? current.regions.filter((r) => r !== region)
-                                    : [...current.regions, region];
-                                  const nextFlexExt = isSelected
-                                    ? current.flexExtRegions.filter((r) => r !== region)
-                                    : current.flexExtRegions;
-                                  const nextLaterality = { ...current.lateralityByRegion };
-                                  if (isSelected) delete nextLaterality[region];
-                                  return {
-                                    ...current,
-                                    regions: nextRegions,
-                                    flexExtRegions: nextFlexExt,
-                                    lateralityByRegion: nextLaterality,
-                                  };
-                                })
-                              }
-                              type="button"
                             >
-                              {region}
-                            </button>
+                              <button
+                                aria-pressed={selected}
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                                  selected
+                                    ? "bg-[var(--brand-primary)] text-white"
+                                    : "text-[var(--text-main)] hover:bg-[var(--bg-soft)]"
+                                }`}
+                                onClick={() =>
+                                  setEditingImagingReferral((current) => {
+                                    if (!current) return current;
+                                    const isSelected = current.regions.includes(region);
+                                    const nextRegions = isSelected
+                                      ? current.regions.filter((r) => r !== region)
+                                      : [...current.regions, region];
+                                    const nextFlexExt = isSelected
+                                      ? current.flexExtRegions.filter((r) => r !== region)
+                                      : current.flexExtRegions;
+                                    const nextLaterality = { ...current.lateralityByRegion };
+                                    if (isSelected) {
+                                      delete nextLaterality[region];
+                                    } else if (supportsRegionLaterality(region) && !nextLaterality[region]) {
+                                      // Default to bilateral when a lateralizable
+                                      // region is newly added; user can pick L/R.
+                                      nextLaterality[region] = "BL";
+                                    }
+                                    return {
+                                      ...current,
+                                      regions: nextRegions,
+                                      flexExtRegions: nextFlexExt,
+                                      lateralityByRegion: nextLaterality,
+                                    };
+                                  })
+                                }
+                                type="button"
+                              >
+                                {region}
+                              </button>
+                              {selected && hasLaterality && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--bg-soft)] p-0.5">
+                                  {lateralityOptions.map((option) => (
+                                    <button
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                                        currentLaterality === option
+                                          ? "bg-[var(--brand-primary)] text-white"
+                                          : "text-[var(--text-muted)] hover:bg-white"
+                                      }`}
+                                      key={`edit-lat-${region}-${option}`}
+                                      onClick={() =>
+                                        setEditingImagingReferral((current) =>
+                                          current
+                                            ? {
+                                                ...current,
+                                                lateralityByRegion: {
+                                                  ...current.lateralityByRegion,
+                                                  [region]: option,
+                                                },
+                                              }
+                                            : current,
+                                        )
+                                      }
+                                      type="button"
+                                    >
+                                      {option}
+                                    </button>
+                                  ))}
+                                </span>
+                              )}
+                            </div>
                           );
                         })}
                     </div>
                     <span className="text-xs text-[var(--text-muted)]">
-                      Click to add or remove. Laterality / Flex-Ext settings carry over on toggles off.
+                      Click a region to add / remove. For lateralizable regions (shoulder, etc), L / R / BL buttons
+                      appear next to the pill so you can mark the side.
                     </span>
                   </>
                 )}
