@@ -45,6 +45,20 @@ function nowIso() {
 }
 
 /**
+ * MacroRun prune grace — see the long comment inside setSoapSection.
+ * Keyed by "${encounterId}:${runId}" → timestamp (ms) when the run's
+ * data-macro-run-id span first went missing from the HTML.
+ *
+ * Module-level on purpose: survives individual setSoapSection
+ * invocations, resets on full reload, and doesn't require plumbing
+ * extra state through React. Kept small by deleting entries whenever
+ * the id reappears or when the grace expires and the run is actually
+ * pruned.
+ */
+const macroRunPruneGrace = new Map<string, number>();
+const MACRO_RUN_PRUNE_GRACE_MS = 5000;
+
+/**
  * Strip empty block wrappers from the leading AND trailing edge of an HTML
  * string. Covers every empty-paragraph variant a contentEditable or our
  * template renderer might emit:
@@ -520,20 +534,51 @@ export function useEncounterNotes() {
   const setSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, value: string) => {
       upsertEncounter(encounterId, (current) => {
-        // Prune macroRuns whose rendered text (marked by
-        // data-macro-run-id="…" spans) no longer exists in the updated
-        // HTML for this section. When the user backspaces a macro
-        // block out of the SOAP editor, the span is removed from the
-        // HTML but the macroRun entry survived — which kept
-        // reconcileLinkedCharges seeing the run as "present" and
-        // kept its linked CPT charges on the encounter.
+        // MacroRun pruning with grace period.
+        //
+        // When a macroRun's data-macro-run-id span is no longer in the
+        // HTML we want to prune it (so the linked CPT charge gets
+        // removed too) — BUT not instantly. CMD X + CMD V (cut then
+        // paste to reorder a pill) temporarily removes the span from
+        // the DOM for a few hundred ms before it returns. Eager
+        // pruning on the cut keystroke killed the run before the
+        // paste arrived; then the pasted pill landed back in the HTML
+        // but the run was gone, so the charge didn't come back and
+        // clicking the pill no longer opened the picker.
+        //
+        // Grace window: we keep the run in state for up to
+        // PRUNE_GRACE_MS even when its id isn't in the current HTML.
+        // Each call either sets a "first missing at" timestamp, clears
+        // it when the id reappears, or commits the prune once the
+        // window elapses. The timestamp lives in a module-level Map
+        // so it survives individual setSoapSection invocations.
+        const nowMs = Date.now();
         const nextRuns = current.macroRuns.filter((run) => {
           if (run.section !== section) return true;
-          return value.includes(`data-macro-run-id="${run.id}"`);
+          const key = `${current.id}:${run.id}`;
+          const present = value.includes(`data-macro-run-id="${run.id}"`);
+          if (present) {
+            macroRunPruneGrace.delete(key);
+            return true;
+          }
+          const firstMissingAt = macroRunPruneGrace.get(key);
+          if (firstMissingAt === undefined) {
+            // Just went missing — mark and keep for the grace period.
+            macroRunPruneGrace.set(key, nowMs);
+            return true;
+          }
+          if (nowMs - firstMissingAt < MACRO_RUN_PRUNE_GRACE_MS) {
+            return true; // still inside the grace window
+          }
+          // Grace expired — commit the prune.
+          macroRunPruneGrace.delete(key);
+          return false;
         });
-        // If any run was pruned, drop every charge whose
-        // linkedMacroRunId points to a now-missing run. User-owned
-        // manual charges (no linkedMacroRunId) are left alone.
+        // If any run was actually pruned (grace expired), drop every
+        // charge whose linkedMacroRunId now points to a missing run.
+        // User-owned manual charges (no linkedMacroRunId) are left
+        // alone. Charges whose run is still in its grace window are
+        // also preserved so a quick cut+paste doesn't orphan them.
         let nextCharges = current.charges;
         if (nextRuns.length !== current.macroRuns.length) {
           const liveRunIds = new Set(nextRuns.map((r) => r.id));
