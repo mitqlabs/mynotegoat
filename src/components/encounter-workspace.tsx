@@ -769,6 +769,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   const [activeSection, setActiveSection] = useState<EncounterSection>("subjective");
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(initialEncounterId ?? null);
   const [encounterSearch, setEncounterSearch] = useState(initialEncounterSearchValue);
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "closed">("all");
   const [message, setMessage] = useState("");
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
@@ -795,6 +796,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     }
     return encountersByNewest.find((entry) => entry.id === selectedEncounterId)?.patientId ?? null;
   }, [encountersByNewest, selectedEncounterId]);
+
+  // Live autocomplete matches for the Patient search box. Scoped to
+  // patients (not encounter history) so "Smith" surfaces every patient
+  // named Smith, not a merged list of their encounters. When the
+  // current search string already equals a single patient's fullName
+  // exactly, suppress the dropdown — the user has finished picking.
+  const patientSearchMatches = useMemo(() => {
+    const query = normalizeLookupText(encounterSearch);
+    if (!query) return [];
+    const exactMatchedPatient = patients.find(
+      (p) => normalizeLookupText(p.fullName) === query,
+    );
+    if (exactMatchedPatient) return [];
+    return patients
+      .filter((p) => normalizeLookupText(p.fullName).includes(query))
+      .slice(0, 12);
+  }, [encounterSearch]);
 
   const filteredEncounterList = useMemo(() => {
     const query = normalizeLookupText(encounterSearch);
@@ -1851,14 +1869,48 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         <aside className="space-y-4">
           <article className="panel-card p-4">
             <div className="flex flex-wrap items-end gap-2">
-              <label className="grid flex-1 gap-1">
+              <label className="relative grid flex-1 gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Patient</span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setEncounterSearch(event.target.value)}
+                  onBlur={() => {
+                    // Small delay so a click on a suggestion registers
+                    // before the dropdown disappears.
+                    window.setTimeout(() => setShowPatientSuggestions(false), 150);
+                  }}
+                  onChange={(event) => {
+                    setEncounterSearch(event.target.value);
+                    setShowPatientSuggestions(true);
+                  }}
+                  onFocus={() => setShowPatientSuggestions(true)}
                   placeholder="Type patient name..."
                   value={encounterSearch}
                 />
+                {showPatientSuggestions && patientSearchMatches.length > 0 && (
+                  <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
+                    {patientSearchMatches.map((candidate) => (
+                      <li key={`encounter-patient-suggestion-${candidate.id}`}>
+                        <button
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--bg-soft)]"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setEncounterSearch(candidate.fullName);
+                            setSelectedEncounterId(null);
+                            setShowPatientSuggestions(false);
+                          }}
+                          type="button"
+                        >
+                          <span className="font-semibold">{candidate.fullName}</span>
+                          {candidate.dateOfLoss && (
+                            <span className="text-xs text-[var(--text-muted)]">
+                              DOI {toUsDate(candidate.dateOfLoss)}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </label>
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
@@ -3272,7 +3324,9 @@ function ImagingSpecialistSummary({
 
   return (
     <article className="panel-card p-3">
-      <h4 className="mb-2 text-sm font-semibold">Imaging & Specialist</h4>
+      <h4 className="mb-3 border-b border-[var(--line-soft)] pb-2 text-sm font-semibold">
+        Imaging & Specialist
+      </h4>
       <ul className="space-y-1.5 text-xs">
         {rows.map((row) => (
           <li
