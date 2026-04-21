@@ -2129,6 +2129,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               </>
             )}
           </article>
+          {/* Imaging & Specialist at-a-glance: lets the charting provider
+              see the most recent X-Ray / MRI / Specialist dates without
+              leaving the encounter to dig through the patient file.
+              Reads from the patient's referrals arrays — no new data
+              source required. */}
+          {selectedPatient && (
+            <ImagingSpecialistSummary patient={selectedPatient} />
+          )}
           {/* Patient Files preview — quick inline access to imaging / PDFs for
               the current patient without leaving the encounter. Preview only.
               Full edit/delete/email lives on the My Files page. */}
@@ -3171,5 +3179,118 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         </div>
       )}
     </div>
+  );
+}
+
+type ImagingSummaryEntry = Record<string, unknown>;
+
+function readStringField(entry: ImagingSummaryEntry, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = entry[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+/**
+ * Compact imaging / specialist summary shown in the charting side-rail.
+ * Surfaces the most recent entry of each category with its Sent date +
+ * Reviewed (or Completed) date so the provider can write notes like
+ * "reviewed MRI from 03/23" without leaving the encounter to check
+ * the patient file.
+ */
+function ImagingSpecialistSummary({
+  patient,
+}: {
+  patient: {
+    xrayReferrals?: unknown[];
+    mriReferrals?: unknown[];
+    specialistReferrals?: unknown[];
+  };
+}) {
+  const xrayEntries = (patient.xrayReferrals ?? []) as ImagingSummaryEntry[];
+  const mriEntries = (patient.mriReferrals ?? []) as ImagingSummaryEntry[];
+  const specEntries = (patient.specialistReferrals ?? []) as ImagingSummaryEntry[];
+
+  const pickMostRecent = (entries: ImagingSummaryEntry[]): ImagingSummaryEntry | null => {
+    if (entries.length === 0) return null;
+    // Entries are stored in creation order; the "most recent" for
+    // summary purposes is the last one. Covers the 95% single-referral
+    // case and gives a sensible default for the multi-referral case
+    // without introducing a dedicated sort by sentDate.
+    return entries[entries.length - 1] ?? null;
+  };
+
+  const latestXray = pickMostRecent(xrayEntries);
+  const latestMri = pickMostRecent(mriEntries);
+  const latestSpec = pickMostRecent(specEntries);
+
+  if (!latestXray && !latestMri && !latestSpec) {
+    return null;
+  }
+
+  type Row = { label: string; left: string; right: string; leftValue: string; rightValue: string };
+  const rows: Row[] = [];
+  if (latestXray) {
+    rows.push({
+      label: "X-Ray",
+      left: "Sent",
+      right: "Reviewed",
+      leftValue: toUsDate(readStringField(latestXray, "sentDate", "sent") ?? ""),
+      rightValue: toUsDate(
+        readStringField(latestXray, "reportReviewedDate", "reviewedDate", "reviewed") ?? "",
+      ),
+    });
+  }
+  if (latestMri) {
+    rows.push({
+      label: "MRI",
+      left: "Sent",
+      right: "Reviewed",
+      leftValue: toUsDate(readStringField(latestMri, "sentDate", "sent") ?? ""),
+      rightValue: toUsDate(
+        readStringField(latestMri, "reportReviewedDate", "reviewedDate", "reviewed") ?? "",
+      ),
+    });
+  }
+  if (latestSpec) {
+    rows.push({
+      label: "Specialist",
+      left: "Sent",
+      right: "Completed",
+      leftValue: toUsDate(readStringField(latestSpec, "sentDate", "sent") ?? ""),
+      rightValue: toUsDate(
+        readStringField(
+          latestSpec,
+          "completedDate",
+          "reportReceivedDate",
+          "reportDate",
+        ) ?? "",
+      ),
+    });
+  }
+
+  return (
+    <article className="panel-card p-3">
+      <h4 className="mb-2 text-sm font-semibold">Imaging & Specialist</h4>
+      <ul className="space-y-1.5 text-xs">
+        {rows.map((row) => (
+          <li
+            className="grid grid-cols-[72px_1fr_1fr] items-center gap-2"
+            key={`imaging-summary-${row.label}`}
+          >
+            <span className="font-semibold">{row.label}</span>
+            <span className="tabular-nums">
+              <span className="text-[var(--text-muted)]">{row.left}: </span>
+              {row.leftValue || <span className="text-[var(--text-muted)]">—</span>}
+            </span>
+            <span className="tabular-nums">
+              <span className="text-[var(--text-muted)]">{row.right}: </span>
+              {row.rightValue || <span className="text-[var(--text-muted)]">—</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </article>
   );
 }

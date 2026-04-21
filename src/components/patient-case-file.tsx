@@ -4005,7 +4005,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     {entry.modalityLabel} — {entry.center || "No Center"}
                   </p>
                   <p>Regions: {formatImagingRegionsSummary(entry, "xray")}</p>
-                  <p>Sent: {entry.sentDate || "-"} | Completed: {entry.doneDate || "-"}</p>
+                  <p>
+                    Sent: {entry.sentDate || "-"}
+                    {" | Completed: "}{entry.doneDate || "-"}
+                    {" | Reviewed: "}{entry.reportReviewedDate || "-"}
+                  </p>
                   {entry.findings?.trim() && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {entry.findings.trim()}
@@ -4199,7 +4203,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     {entry.modalityLabel} — {entry.center || "No Center"}
                   </p>
                   <p>Regions: {formatImagingRegionsSummary(entry, "mri")}</p>
-                  <p>Sent: {entry.sentDate || "-"} | Completed: {entry.doneDate || "-"}</p>
+                  <p>
+                    Sent: {entry.sentDate || "-"}
+                    {" | Completed: "}{entry.doneDate || "-"}
+                    {" | Reviewed: "}{entry.reportReviewedDate || "-"}
+                  </p>
                   {entry.findings?.trim() && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {entry.findings.trim()}
