@@ -6,6 +6,7 @@ import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { resolveCategoryHint } from "@/lib/contact-categories";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { AddressFieldGroup } from "@/components/address-field-group";
 
 export type ContactGap = {
   name: string;
@@ -176,14 +177,10 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
               value={email}
             />
           </label>
-          <label className="grid gap-1">
+          <div className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Address</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(e) => setAddress(e.target.value)}
-              value={address}
-            />
-          </label>
+            <AddressFieldGroup onChange={setAddress} value={address} />
+          </div>
           {error && <p className="text-sm font-semibold text-[#b43b34]">{error}</p>}
         </div>
 
