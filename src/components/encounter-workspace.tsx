@@ -2857,7 +2857,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     )}
                   </div>
 
-                  <div className="mt-3 max-h-56 space-y-1 overflow-auto rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+                  <div className="mt-3 space-y-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
                     {selectedEncounter.charges.length === 0 && (
                       <p className="text-sm text-[var(--text-muted)]">No charges added for this encounter.</p>
                     )}
