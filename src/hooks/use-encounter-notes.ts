@@ -55,12 +55,33 @@ function nowIso() {
  * `appendSoapSection` so that inserting after an editor that left behind
  * trailing empty paragraphs doesn't compound into 2–3 blank lines.
  */
+// Shared pattern for "visually empty paragraph" shapes a
+// contentEditable / macro-template pipeline can emit:
+//   <p></p>                      — no content
+//   <p><br></p>  <p><br/></p>    — single break, both self-closed variants
+//   <p>&nbsp;</p>                — non-breaking space placeholder
+//   <p><br><br></p>              — multiple breaks (happens when the
+//                                  editor records several Enter presses)
+//   <p class="..."></p>          — attribute-carrying empty paragraphs
+//   <div>…same variants…</div>   — some browsers emit div instead of p
+const emptyBlockPatternSource =
+  "<(?:p|div)(?:\\s[^>]*)?>\\s*(?:(?:&nbsp;|<br\\s*\\/?\\s*>)\\s*)*<\\/(?:p|div)>\\s*";
+
 function stripEdgeEmptyBlocks(html: string): string {
-  const emptyBlockPattern =
-    /(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)/gi;
-  const leading = new RegExp(`^(?:${emptyBlockPattern.source})+`, "gi");
-  const trailing = new RegExp(`(?:${emptyBlockPattern.source})+$`, "gi");
+  const leading = new RegExp(`^(?:${emptyBlockPatternSource})+`, "gi");
+  const trailing = new RegExp(`(?:${emptyBlockPatternSource})+$`, "gi");
   return html.replace(leading, "").replace(trailing, "");
+}
+
+/**
+ * Collapse runs of 2+ consecutive empty blocks anywhere in the HTML
+ * down to a single empty block. Keeps one visual blank line where
+ * the macros wanted a paragraph break, removes the stack of blanks
+ * that multiple macros would otherwise compound into.
+ */
+function collapseConsecutiveEmptyBlocks(html: string): string {
+  const run = new RegExp(`(?:${emptyBlockPatternSource}){2,}`, "gi");
+  return html.replace(run, "<p><br></p>");
 }
 
 /**
@@ -411,10 +432,16 @@ export function useEncounterNotes() {
       upsertEncounter(encounterId, (current) => {
         const existing = stripEdgeEmptyBlocks(current.soap[section].trim());
         // Use exactly one blank-paragraph separator between existing content
-        // and the new snippet. Without stripping the edges first, appending
-        // after an editor that left behind a trailing <p></p> would stack
-        // into 2–3 visible blank lines.
-        const nextText = existing ? `${existing}<p><br></p>${trimmed}` : trimmed;
+        // and the new snippet. Edges of both sides are stripped first, and
+        // then any interior runs of consecutive empty blocks (from macros
+        // that emit their own <p><br></p> between sub-sections) are
+        // collapsed to a single blank — otherwise two or three macros
+        // stacked up would render 2–3 visible blank lines between
+        // sections and the user had to backspace them out manually.
+        const composed = existing
+          ? `${existing}<p><br></p>${trimmed}`
+          : trimmed;
+        const nextText = collapseConsecutiveEmptyBlocks(composed);
         return {
           ...current,
           soap: {
