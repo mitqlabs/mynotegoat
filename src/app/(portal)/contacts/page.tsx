@@ -242,7 +242,7 @@ export default function ContactsPage() {
           const isEditing = editingContactId === contact.id;
 
           return (
-            <article key={contact.id} className="panel-card p-4">
+            <article key={contact.id} className="panel-card p-4 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-lg font-semibold">{contact.name}</h4>
                 {!isEditing && (
@@ -284,7 +284,7 @@ export default function ContactsPage() {
                   )}
                 </>
               ) : (
-                <form className="mt-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); saveEditedContact(); }}>
+                <form className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2" onSubmit={(e) => { e.preventDefault(); saveEditedContact(); }}>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
