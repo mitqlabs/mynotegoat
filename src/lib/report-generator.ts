@@ -236,7 +236,11 @@ function formatImagingSummary(entries: NarrativeImagingEntry[], fallbackLabel: s
       const modality = entry.modalityLabel || fallbackLabel;
       const line = `${index + 1}. ${modality} | Completed: ${toUsDate(entry.doneDate || "-")} | Center: ${entry.center || "-"} | Regions: ${formatImagingRegions(entry)}`;
       const findings = entry.findings?.trim();
-      return findings ? `${line}\n   Findings: ${findings}` : line;
+      // "Findings:" goes on its own line so when the body starts with a
+      // region heading ("Cervical:", "Lumbar:", etc.) the first heading
+      // doesn't get jammed onto the same visual line as the Findings:
+      // label — which read as "Findings: Cervical:" in the rendered report.
+      return findings ? `${line}\n   Findings:\n${findings}` : line;
     })
     .join("\n");
 }
@@ -249,7 +253,10 @@ function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
     .map((entry, index) => {
       const line = `${index + 1}. ${entry.specialist || "-"} | Sent: ${toUsDate(entry.sentDate || "-")} | Completed: ${toUsDate(entry.completedDate || "-")}`;
       const recs = entry.recommendations?.trim();
-      return recs ? `${line}\n   Recommendations: ${recs}` : line;
+      // Same rationale as the imaging "Findings:" change — keep the
+      // label on its own line so multi-line recommendation text doesn't
+      // collapse onto the label row.
+      return recs ? `${line}\n   Recommendations:\n${recs}` : line;
     })
     .join("\n");
 }
