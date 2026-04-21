@@ -9,17 +9,11 @@ import {
   sumCashPayments,
 } from "@/lib/cash-payments";
 import type { CashPaymentEntry } from "@/lib/mock-data";
+import { UsDateInput } from "@/components/us-date-input";
 
 type Props = {
   patientId: string;
 };
-
-function formatUsDateInput(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
 
 function getTodayUsDate(): string {
   const now = new Date();
@@ -93,17 +87,11 @@ export function CashPaymentsSection({ patientId }: Props) {
       <div className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 md:grid-cols-[140px_140px_160px_1fr_auto]">
         <label className="grid gap-1">
           <span className="text-xs font-semibold text-[var(--text-muted)]">Date</span>
-          <input
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-            inputMode="numeric"
-            maxLength={10}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                date: formatUsDateInput(event.target.value),
-              }))
+          <UsDateInput
+            className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+            onChange={(formatted) =>
+              setDraft((current) => ({ ...current, date: formatted }))
             }
-            placeholder="MM/DD/YYYY"
             value={draft.date}
           />
         </label>

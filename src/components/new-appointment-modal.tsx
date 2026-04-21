@@ -28,6 +28,7 @@ import {
   type ScheduleAppointmentRecord,
 } from "@/lib/schedule-appointments";
 import { filterAppointmentTypesForPatient, formatDurationMinutes } from "@/lib/schedule-appointment-types";
+import { UsDateInput } from "@/components/us-date-input";
 import {
   getNextBusinessDayIso,
   isAppointmentWithinOfficeHours,
@@ -83,19 +84,11 @@ const dayToggleOptions = [
   { day: 6, short: "S" },
 ];
 
-// Auto-format helpers for the date / time text inputs. Native
-// <input type="date"> and <input type="time"> require keyboard
-// tabbing between MM/DD/YYYY and HH/MM segments — slow when entering
-// many appointments. Text inputs with these formatters let the user
-// type 01262026 → 01/26/2026 and 0930 → 09:30 with no tabbing.
-function formatUsDateInput(rawValue: string): string {
-  const digits = rawValue.replace(/\D/g, "").slice(0, 8);
-  if (!digits) return "";
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
+// Auto-format helper for the time text inputs. Native <input type="time">
+// requires keyboard tabbing between HH/MM segments — slow when entering
+// many appointments. Text inputs with this formatter let the user type
+// 0930 → 09:30 with no tabbing. Date inputs use <UsDateInput> which has
+// its own formatter + calendar popup.
 function formatUsTimeInput(rawValue: string): string {
   const digits = rawValue.replace(/\D/g, "").slice(0, 4);
   if (!digits) return "";
@@ -1101,20 +1094,11 @@ export function NewAppointmentModal({
                 {!quickNewPatientDraft.isCashPatient && (
                 <label className="grid gap-1">
                   <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                    inputMode="numeric"
-                    maxLength={10}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, "").slice(0, 8);
-                      let formatted = raw;
-                      if (raw.length > 4)
-                        formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
-                      else if (raw.length > 2)
-                        formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
-                      setQuickNewPatientDraft((c) => ({ ...c, dateOfLoss: formatted }));
-                    }}
-                    placeholder="MM/DD/YYYY"
+                  <UsDateInput
+                    className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    onChange={(formatted) =>
+                      setQuickNewPatientDraft((c) => ({ ...c, dateOfLoss: formatted }))
+                    }
                     value={quickNewPatientDraft.dateOfLoss}
                   />
                 </label>
@@ -1308,12 +1292,9 @@ export function NewAppointmentModal({
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           <label className="grid gap-1 md:col-span-2">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Start Date *</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => {
-                const formatted = formatUsDateInput(event.target.value);
+            <UsDateInput
+              className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(formatted) => {
                 setStartDateDisplay(formatted);
                 if (!isCompleteUsDate(formatted)) return;
                 const nextStartDate = usDateToIso(formatted);
@@ -1332,7 +1313,6 @@ export function NewAppointmentModal({
                       : current.recurEndDate,
                 }));
               }}
-              placeholder="MM/DD/YYYY"
               value={startDateDisplay}
             />
             <DayScheduleHint
@@ -1451,19 +1431,15 @@ export function NewAppointmentModal({
               {draft.recurrenceEndMode === "date" ? (
                 <label className="grid gap-1 md:col-span-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">End Date *</span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    inputMode="numeric"
-                    maxLength={10}
-                    onChange={(event) => {
-                      const formatted = formatUsDateInput(event.target.value);
+                  <UsDateInput
+                    className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(formatted) => {
                       setRecurEndDateDisplay(formatted);
                       if (!isCompleteUsDate(formatted)) return;
                       const iso = usDateToIso(formatted);
                       if (!iso) return;
                       setDraft((current) => ({ ...current, recurEndDate: iso }));
                     }}
-                    placeholder="MM/DD/YYYY"
                     value={recurEndDateDisplay}
                   />
                 </label>

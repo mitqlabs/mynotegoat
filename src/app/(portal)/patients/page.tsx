@@ -21,6 +21,7 @@ import {
 import { createPatientRecord, patients, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { UsDateInput } from "@/components/us-date-input";
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
   const trimmed = fullName.trim();
@@ -893,13 +894,7 @@ export default function PatientsPage() {
   const taskOpenCount = tasks.filter((t) => !t.done).length;
   const taskDoneCount = tasks.length - taskOpenCount;
 
-  function formatTaskDateInput(rawValue: string) {
-    const digits = rawValue.replace(/\D/g, "").slice(0, 8);
-    if (!digits) return "";
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-  }
+  // formatTaskDateInput removed — <UsDateInput> does its own formatting.
 
   function toIsoFromUsDate(value: string) {
     const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -1538,14 +1533,10 @@ export default function PatientsPage() {
               </label>
               <label className="grid gap-1 md:col-span-3">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Due Date</span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  inputMode="numeric"
-                  maxLength={10}
-                  onChange={(e) => setTaskQuickDueDate(formatTaskDateInput(e.target.value))}
+                <UsDateInput
+                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(formatted) => setTaskQuickDueDate(formatted)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTask(); } }}
-                  placeholder="MM/DD/YYYY"
-                  type="text"
                   value={taskQuickDueDate}
                 />
               </label>
@@ -1597,7 +1588,7 @@ export default function PatientsPage() {
                           <div className="grid gap-2 sm:grid-cols-12">
                             <label className="grid gap-1 sm:col-span-6"><span className="text-xs font-semibold text-[var(--text-muted)]">Task</span><input className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(e) => setEditTaskTitle(e.target.value)} value={editTaskTitle} /></label>
                             <label className="grid gap-1 sm:col-span-3"><span className="text-xs font-semibold text-[var(--text-muted)]">Priority</span><select className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(e) => setEditTaskPriority(e.target.value as TaskPriority)} value={editTaskPriority}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option></select></label>
-                            <label className="grid gap-1 sm:col-span-3"><span className="text-xs font-semibold text-[var(--text-muted)]">Due Date</span><input className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" inputMode="numeric" maxLength={10} onChange={(e) => setEditTaskDueDate(formatTaskDateInput(e.target.value))} placeholder="MM/DD/YYYY" type="text" value={editTaskDueDate} /></label>
+                            <label className="grid gap-1 sm:col-span-3"><span className="text-xs font-semibold text-[var(--text-muted)]">Due Date</span><UsDateInput className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(formatted) => setEditTaskDueDate(formatted)} value={editTaskDueDate} /></label>
                           </div>
                         ) : (
                           <>

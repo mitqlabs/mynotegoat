@@ -14,6 +14,7 @@ import {
   type KeyDateRecord,
 } from "@/lib/key-dates";
 import { formatTimeLabel, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import { UsDateInput } from "@/components/us-date-input";
 
 type KeyDateDraft = {
   startDate: string;
@@ -28,20 +29,6 @@ type ConflictRow = {
   matches: KeyDateRecord[];
   hasClosedDate: boolean;
 };
-
-function formatUsDateInput(rawValue: string) {
-  const digits = rawValue.replace(/\D/g, "").slice(0, 8);
-  if (!digits) {
-    return "";
-  }
-  if (digits.length <= 2) {
-    return digits;
-  }
-  if (digits.length <= 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
 
 function toIsoFromUsDate(value: string) {
   const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -244,31 +231,24 @@ export default function KeyDatesPage() {
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Date *</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, startDate: formatUsDateInput(event.target.value) }))
+            <UsDateInput
+              className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(formatted) =>
+                setDraft((current) => ({ ...current, startDate: formatted }))
               }
-              placeholder="MM/DD/YYYY"
-              type="text"
               value={draft.startDate}
             />
           </label>
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Date Range End</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+            <UsDateInput
+              className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
               disabled={!draft.isRange}
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, endDate: formatUsDateInput(event.target.value) }))
+              onChange={(formatted) =>
+                setDraft((current) => ({ ...current, endDate: formatted }))
               }
               placeholder={draft.isRange ? "MM/DD/YYYY" : "Enable range below"}
-              type="text"
               value={draft.isRange ? draft.endDate : ""}
             />
           </label>
