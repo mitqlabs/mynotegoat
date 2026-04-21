@@ -57,12 +57,14 @@ function normalizeIncomingValue(value: string) {
 }
 
 function normalizeOutgoingValue(value: string) {
-  const normalized = value
-    .replace(/^\s+|\s+$/g, "")
-    .replace(/<div><br><\/div>/gi, "")
-    .replace(/<p><br><\/p>/gi, "")
-    .trim();
-  return normalized;
+  // Only strip leading/trailing whitespace. We deliberately do NOT
+  // nuke <p><br></p> or <div><br></div> here — those are the
+  // separators that appendSoapSection inserts between macros, and if
+  // we strip them on every keystroke the second macro snaps flush up
+  // against the first. The hook-level normalizer (normalizeEditorBlocks)
+  // already collapses runs of multiple empty blocks to a single one,
+  // so the editor just needs to pass the HTML through unchanged.
+  return value.replace(/^\s+|\s+$/g, "").trim();
 }
 
 function isSelectionInsideEditor(editor: HTMLDivElement | null) {

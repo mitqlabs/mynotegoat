@@ -90,14 +90,128 @@ function stripEdgeEmptyBlocks(html: string): string {
 }
 
 /**
- * Collapse runs of 2+ consecutive empty blocks anywhere in the HTML
- * down to a single empty block. Keeps one visual blank line where
- * the macros wanted a paragraph break, removes the stack of blanks
- * that multiple macros would otherwise compound into.
+ * DOM-based HTML normalizer for SOAP section content. Much more
+ * reliable than the regex-only `stripEdgeEmptyBlocks` +
+ * `collapseConsecutiveEmptyBlocks` combo because the browser sometimes
+ * emits obscure empty-block shapes (e.g. <p style="..."><span><br></span></p>)
+ * that regexes miss.
+ *
+ * Behavior:
+ *   - Strips any leading/trailing "visually empty" blocks.
+ *   - Reduces runs of 2+ consecutive empty blocks anywhere in the HTML
+ *     down to exactly one canonical <p><br></p> separator.
+ *   - Non-block whitespace-only text nodes between blocks are dropped.
+ *
+ * "Visually empty" = tagName is a block element (p, div, h1-h6,
+ * blockquote, pre), and after stripping whitespace there's no text
+ * content AND no interactive / atomic descendant (images, inputs,
+ * macro-prompt spans).
+ *
+ * Falls back to the regex strippers if DOMParser isn't available
+ * (SSR safety net — this code path only runs from user actions in
+ * the browser, but guard anyway).
  */
-function collapseConsecutiveEmptyBlocks(html: string): string {
+function normalizeEditorBlocks(html: string): string {
+  const source = html.trim();
+  if (!source) return "";
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    // SSR fallback — shouldn't be hit in practice, but return a safe
+    // reduction using the existing regex strippers.
+    return collapseConsecutiveEmptyBlocksRegex(stripEdgeEmptyBlocks(source));
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<!doctype html><body>${source}</body>`, "text/html");
+  const body = doc.body;
+
+  const isVisuallyEmpty = (el: Element): boolean => {
+    // Text must be entirely whitespace (including &nbsp; which is
+    // a non-breaking space char).
+    const text = (el.textContent ?? "").replace(/[\s\u00A0]/g, "");
+    if (text) return false;
+    // Any atomic/interactive content keeps the block alive.
+    if (el.querySelector("img, video, iframe, input, canvas, [data-macro-run-id], [data-prompt-id]")) {
+      return false;
+    }
+    return true;
+  };
+
+  const isBlockTag = (tag: string) =>
+    /^(P|DIV|H[1-6]|BLOCKQUOTE|PRE|SECTION|ARTICLE)$/i.test(tag);
+
+  // Walk top-level children, rebuilding into a cleaned list.
+  const nodes = Array.from(body.childNodes);
+  const cleaned: Node[] = [];
+  let lastWasEmpty = false;
+
+  const pushCanonicalEmpty = () => {
+    if (lastWasEmpty || cleaned.length === 0) return;
+    const p = doc.createElement("p");
+    p.appendChild(doc.createElement("br"));
+    cleaned.push(p);
+    lastWasEmpty = true;
+  };
+
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? "";
+      if (!text.trim()) continue; // whitespace-only text between blocks — drop
+      cleaned.push(node);
+      lastWasEmpty = false;
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+    const el = node as Element;
+    const tag = el.tagName;
+
+    // Stray <br> at the top level acts as a single blank line.
+    if (tag === "BR") {
+      pushCanonicalEmpty();
+      continue;
+    }
+
+    if (isBlockTag(tag) && isVisuallyEmpty(el)) {
+      pushCanonicalEmpty();
+      continue;
+    }
+
+    cleaned.push(node);
+    lastWasEmpty = false;
+  }
+
+  // Strip any trailing empties (pushCanonicalEmpty only skips them
+  // when they're the first node, not when content ended on an empty).
+  while (cleaned.length > 0) {
+    const last = cleaned[cleaned.length - 1];
+    if (last.nodeType === Node.ELEMENT_NODE) {
+      const el = last as Element;
+      if (isBlockTag(el.tagName) && isVisuallyEmpty(el)) {
+        cleaned.pop();
+        continue;
+      }
+    }
+    break;
+  }
+
+  const wrapper = doc.createElement("div");
+  cleaned.forEach((n) => wrapper.appendChild(n));
+  return wrapper.innerHTML;
+}
+
+/** Regex fallback used by the SSR branch of normalizeEditorBlocks. */
+function collapseConsecutiveEmptyBlocksRegex(html: string): string {
   const run = new RegExp(`(?:${emptyBlockPatternSource}){2,}`, "gi");
   return html.replace(run, "<p><br></p>");
+}
+
+/**
+ * @deprecated kept as a thin wrapper so older call sites keep working;
+ * all new code should call normalizeEditorBlocks which also handles
+ * leading/trailing stripping in the same pass.
+ */
+function collapseConsecutiveEmptyBlocks(html: string): string {
+  return collapseConsecutiveEmptyBlocksRegex(html);
 }
 
 /**
@@ -466,23 +580,22 @@ export function useEncounterNotes() {
 
   const appendSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, snippet: string) => {
-      const trimmed = stripEdgeEmptyBlocks(snippet.trim());
-      if (!trimmed) {
+      const trimmedSnippet = normalizeEditorBlocks(snippet);
+      if (!trimmedSnippet) {
         return;
       }
       upsertEncounter(encounterId, (current) => {
-        const existing = stripEdgeEmptyBlocks(current.soap[section].trim());
+        const existing = normalizeEditorBlocks(current.soap[section]);
         // Use exactly one blank-paragraph separator between existing content
-        // and the new snippet. Edges of both sides are stripped first, and
-        // then any interior runs of consecutive empty blocks (from macros
-        // that emit their own <p><br></p> between sub-sections) are
-        // collapsed to a single blank — otherwise two or three macros
-        // stacked up would render 2–3 visible blank lines between
-        // sections and the user had to backspace them out manually.
+        // and the new snippet. Both sides are fully normalized first, and
+        // the composed result is normalized again so any run of empty
+        // blocks (from contentEditable quirks or macro bodies that end in
+        // their own trailing paragraph) collapses to a single canonical
+        // <p><br></p>.
         const composed = existing
-          ? `${existing}<p><br></p>${trimmed}`
-          : trimmed;
-        const nextText = collapseConsecutiveEmptyBlocks(composed);
+          ? `${existing}<p><br></p>${trimmedSnippet}`
+          : trimmedSnippet;
+        const nextText = normalizeEditorBlocks(composed);
         return {
           ...current,
           soap: {
