@@ -113,9 +113,24 @@ export function DraftRecoveryBanner() {
         typeof encounter.soap === "object" && draft.section in encounter.soap
           ? (encounter.soap as Record<string, string>)[draft.section]
           : "";
-      // Content matches committed → already saved, clear the draft
-      // and move on.
+      // Content matches committed → already saved, clear the draft.
       if (committed === draft.html) {
+        clearDraft(draft.key);
+        continue;
+      }
+      // Encounter was saved AFTER this draft was written → the commit
+      // supersedes the draft. Happens when a user types, the editor
+      // flushes a committed save, THEN the user closes the tab before
+      // the "clear drafts on save" path in encounter-notes.ts can
+      // remove them (sanitizer / reconciler differences, last-
+      // millisecond writeDrafts that didn't have time to round-trip,
+      // etc). If the cloud-truth committed version is newer than the
+      // draft, the draft is stale — drop it silently.
+      const encounterUpdatedMs = Date.parse(encounter.updatedAt);
+      if (
+        !Number.isNaN(encounterUpdatedMs) &&
+        encounterUpdatedMs >= draft.at
+      ) {
         clearDraft(draft.key);
         continue;
       }
