@@ -61,11 +61,16 @@ export function AddressFieldGroup({
     : "rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2";
 
   return (
-    <div className={`flex flex-wrap gap-2 ${className ?? ""}`}>
-      <label className="grid min-w-[180px] flex-[2_1_220px] gap-1">
+    // `min-w-0` on the outer wrapper lets the flex container shrink
+    // inside a narrower grid cell without forcing horizontal scroll
+    // on the enclosing page. All fields also use `min-w-0` on their
+    // <input> so they don't enforce intrinsic widths from the
+    // placeholder text.
+    <div className={`flex w-full min-w-0 flex-wrap gap-2 ${className ?? ""}`}>
+      <label className="grid min-w-0 flex-[2_1_180px] gap-1">
         <span className={labelCls}>Address 1</span>
         <input
-          className={inputCls}
+          className={`${inputCls} min-w-0`}
           onChange={(event) =>
             emit({ ...parts, address1: event.target.value })
           }
@@ -73,10 +78,10 @@ export function AddressFieldGroup({
           value={parts.address1}
         />
       </label>
-      <label className="grid min-w-[140px] flex-[1_1_160px] gap-1">
+      <label className="grid min-w-0 flex-[1_1_130px] gap-1">
         <span className={labelCls}>Address 2</span>
         <input
-          className={inputCls}
+          className={`${inputCls} min-w-0`}
           onChange={(event) =>
             emit({ ...parts, address2: event.target.value })
           }
@@ -84,10 +89,10 @@ export function AddressFieldGroup({
           value={parts.address2}
         />
       </label>
-      <label className="grid min-w-[140px] flex-[1_1_160px] gap-1">
+      <label className="grid min-w-0 flex-[1_1_130px] gap-1">
         <span className={labelCls}>City</span>
         <input
-          className={inputCls}
+          className={`${inputCls} min-w-0`}
           onChange={(event) =>
             emit({ ...parts, city: event.target.value })
           }
@@ -95,10 +100,10 @@ export function AddressFieldGroup({
           value={parts.city}
         />
       </label>
-      <label className="grid w-[70px] shrink-0 gap-1">
+      <label className="grid w-[60px] shrink-0 gap-1">
         <span className={labelCls}>State</span>
         <input
-          className={`${inputCls} uppercase`}
+          className={`${inputCls} min-w-0 uppercase`}
           maxLength={2}
           onChange={(event) =>
             emit({
@@ -110,10 +115,10 @@ export function AddressFieldGroup({
           value={parts.state}
         />
       </label>
-      <label className="grid w-[110px] shrink-0 gap-1">
+      <label className="grid w-[96px] shrink-0 gap-1">
         <span className={labelCls}>ZIP</span>
         <input
-          className={inputCls}
+          className={`${inputCls} min-w-0`}
           inputMode="numeric"
           maxLength={10}
           onChange={(event) =>
