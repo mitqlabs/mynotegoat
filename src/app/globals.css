@@ -286,3 +286,22 @@ a {
   background: rgba(201, 66, 58, 0.16);
   color: #8f251f;
 }
+
+/*
+ * Document-template preview (and, mirrored, the generated PDF):
+ * stop mid-word wrapping and give every <p> a hanging indent so
+ * values that wrap fall back under the value column rather than
+ * the page's left margin.
+ */
+.preview-doc-content {
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+  -webkit-hyphens: none;
+  tab-size: 4;
+}
+.preview-doc-content p {
+  padding-left: 14em;
+  text-indent: -14em;
+  margin: 0 0 4px 0;
+}

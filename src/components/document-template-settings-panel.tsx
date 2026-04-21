@@ -497,13 +497,13 @@ export function DocumentTemplateSettingsPanel({
                     ) : null}
                     {previewHeader ? (
                       <div
-                        className="mb-4 whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]"
+                        className="preview-doc-content mb-4 whitespace-pre-wrap break-words text-sm leading-6"
                         dangerouslySetInnerHTML={{ __html: previewHeader }}
                         style={{ fontFamily: documentTemplates.header.fontFamily }}
                       />
                     ) : null}
                     <div
-                      className="whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]"
+                      className="preview-doc-content whitespace-pre-wrap break-words text-sm leading-6"
                       dangerouslySetInnerHTML={{ __html: previewBody }}
                       style={{ fontFamily: selectedTemplate.fontFamily }}
                     />

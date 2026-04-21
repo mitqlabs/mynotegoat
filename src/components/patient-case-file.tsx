@@ -566,32 +566,41 @@ function stripHtmlIndentation(html: string): string {
  * the first line.
  */
 function applyLabelValueHangingIndent(html: string): string {
-  // Phase 1: convert "Label:   value" rows.
+  // Label pattern — roughly "Word:", optionally multi-word, ending
+  // with a colon. Used to detect which <p>s introduce a NEW kv row
+  // vs. which ones are continuations of the previous value.
+  const labelPatternSource = "[A-Z][A-Za-z0-9 ()&/\\-]*?:";
+
+  // Phase 1: turn "Label:   value" rows into .kv grid rows. Tolerates
+  // 1+ whitespace OR nbsp between the label and value.
   let next = html.replace(
-    /<p([^>]*)>\s*([A-Z][A-Za-z0-9 ()&/\-]*?:)(?:&nbsp;|\s){2,}([\s\S]*?)<\/p>/g,
+    new RegExp(
+      `<p([^>]*)>\\s*(${labelPatternSource})(?:&nbsp;|\\s)+([\\s\\S]*?)<\\/p>`,
+      "g",
+    ),
     (_match, attrs, label, rest) => {
       return `<div class="kv"${attrs}><span class="kv-label">${label}</span><span class="kv-value">${rest.trim()}</span></div>`;
     },
   );
-  // Phase 2: if a <p> that starts with 2+ whitespace (a continuation of
-  // a multi-line value like the 2nd/3rd lines of an Imaging Center
-  // block) immediately follows a .kv row, tag it as a kv-cont so CSS
-  // puts it in the value column.
-  next = next.replace(
-    /(<div class="kv"[^>]*>[\s\S]*?<\/div>)\s*<p([^>]*)>\s*(?:&nbsp;|\s){2,}([\s\S]*?)<\/p>/g,
-    (_match, kvDiv, attrs, cont) => {
-      return `${kvDiv}<p class="kv-cont"${attrs}>${cont.trim()}</p>`;
-    },
+
+  // Phase 2: tag every <p> that immediately follows a .kv row or a
+  // previous .kv-cont AND doesn't start with a new label as a
+  // continuation. Loop until the text stabilizes so chains of 3+
+  // continuation lines all get picked up.
+  //
+  // Allowing continuations that have NO leading whitespace (not just
+  // 2+) is the critical difference from the earlier version — the
+  // user's imaging-center template renders the address paragraph
+  // without any leading space, so "strict 2+ whitespace" missed it.
+  const continuationRe = new RegExp(
+    `(<(?:div|p) class="kv(?:-cont)?"[^>]*>[\\s\\S]*?<\\/(?:div|p)>)\\s*<p([^>]*)>(?!\\s*${labelPatternSource}(?:&nbsp;|\\s))([\\s\\S]*?)<\\/p>`,
+    "g",
   );
-  // A third pass for chained continuations (3+ lines).
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 10; i++) {
     const before = next;
-    next = next.replace(
-      /(<p class="kv-cont"[^>]*>[\s\S]*?<\/p>)\s*<p([^>]*)>\s*(?:&nbsp;|\s){2,}([\s\S]*?)<\/p>/g,
-      (_match, contDiv, attrs, cont) => {
-        return `${contDiv}<p class="kv-cont"${attrs}>${cont.trim()}</p>`;
-      },
-    );
+    next = next.replace(continuationRe, (_match, prev, attrs, cont) => {
+      return `${prev}<p class="kv-cont"${attrs}>${cont.trim()}</p>`;
+    });
     if (before === next) break;
   }
   return next;
@@ -641,6 +650,13 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         margin-left: 0 !important; padding-left: 0 !important;
       }
       h1, h2, h3, h4, h5, h6 { margin: 14px 0 4px 0; text-indent: 0; }
+      /* Hanging-indent every paragraph in .content so wrapped values
+         fall under the value column instead of the left margin.
+         14em handles "Clinical Impression:" (the longest common
+         label). Shorter labels get extra space before the value but
+         every line WRAPS correctly under itself. Headings, lists
+         and the header block override this back to text-indent: 0. */
+      .content p { padding-left: 14em; text-indent: -14em; margin: 0 0 6px 0; }
       p { margin: 0 0 6px 0; text-indent: 0; }
       ul, ol { margin: 0 0 6px 0; padding-left: 20px; text-indent: 0; }
       li { margin: 0 0 2px 0; text-indent: 0; }
