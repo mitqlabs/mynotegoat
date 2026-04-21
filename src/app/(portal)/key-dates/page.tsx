@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useKeyDateDismissals } from "@/hooks/use-key-date-dismissals";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { patients } from "@/lib/mock-data";
 import {
   findKeyDatesForDate,
   formatKeyDateRange,
@@ -91,13 +94,15 @@ function compareConflictRows(left: ConflictRow, right: ConflictRow) {
 
 export default function KeyDatesPage() {
   const { keyDates, addKeyDate, updateKeyDate, removeKeyDate } = useKeyDates();
-  const { scheduleAppointments } = useScheduleAppointments();
+  const { scheduleAppointments, removeAppointment } = useScheduleAppointments();
+  const { dismissals, dismissAppointment, restoreAppointment } = useKeyDateDismissals();
+  const [showDismissed, setShowDismissed] = useState(false);
 
   const [draft, setDraft] = useState<KeyDateDraft>(() => createDraft());
   const [formError, setFormError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const warningRows = useMemo(() => {
+  const allWarningRows = useMemo(() => {
     const rows: ConflictRow[] = [];
     scheduleAppointments.forEach((appointment) => {
       const matches = findKeyDatesForDate(keyDates, appointment.date);
@@ -113,8 +118,47 @@ export default function KeyDatesPage() {
     return rows.sort(compareConflictRows);
   }, [keyDates, scheduleAppointments]);
 
+  // Rows not yet dismissed are what the user sees by default. Dismissed
+  // rows are tucked away behind a "Show N cleared" toggle so the user
+  // can un-dismiss one if they change their mind.
+  const warningRows = useMemo(
+    () => allWarningRows.filter((row) => !dismissals.has(row.appointment.id)),
+    [allWarningRows, dismissals],
+  );
+  const dismissedRows = useMemo(
+    () => allWarningRows.filter((row) => dismissals.has(row.appointment.id)),
+    [allWarningRows, dismissals],
+  );
+
   const closedWarnings = warningRows.filter((row) => row.hasClosedDate);
   const coveredWarnings = warningRows.filter((row) => !row.hasClosedDate);
+
+  const patientIdByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const patient of patients) {
+      if (!patient.deleted) {
+        map.set(patient.fullName.toLowerCase(), patient.id);
+      }
+    }
+    return map;
+  }, []);
+
+  const resolvePatientId = (appointment: ScheduleAppointmentRecord): string | null => {
+    if (appointment.patientId) return appointment.patientId;
+    return patientIdByName.get(appointment.patientName.toLowerCase()) ?? null;
+  };
+
+  const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
+    const confirmed = window.confirm(
+      `Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
+        "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard.",
+    );
+    if (!confirmed) return;
+    removeAppointment(appointment.id);
+    // The row disappears automatically once scheduleAppointments updates,
+    // but tidy up any stale dismissal just in case.
+    restoreAppointment(appointment.id);
+  };
 
   const startEditing = (row: KeyDateRecord) => {
     setEditingId(row.id);
@@ -370,6 +414,7 @@ export default function KeyDatesPage() {
                 <th className="px-4 py-3 font-semibold">Appointment</th>
                 <th className="px-4 py-3 font-semibold">Key Date Status</th>
                 <th className="px-4 py-3 font-semibold">Key Date Reason</th>
+                <th className="px-4 py-3 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -383,6 +428,7 @@ export default function KeyDatesPage() {
                     })})`,
                   )
                   .join("; ");
+                const patientId = resolvePatientId(row.appointment);
                 return (
                   <tr key={`warning-${row.appointment.id}`} className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-3">{formatUsDateFromIso(row.appointment.date)}</td>
@@ -401,12 +447,49 @@ export default function KeyDatesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">{reasonLabel}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <button
+                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          onClick={() => dismissAppointment(row.appointment.id)}
+                          title="Hide this appointment from the warnings list. The appointment itself stays on the schedule."
+                          type="button"
+                        >
+                          Clear
+                        </button>
+                        {patientId ? (
+                          <Link
+                            className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--brand-primary)]"
+                            href={`/patients/${patientId}`}
+                          >
+                            Open
+                          </Link>
+                        ) : (
+                          <span
+                            className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs font-semibold text-[var(--text-muted)]"
+                            title="Can't find a matching patient record for this appointment"
+                          >
+                            Open
+                          </span>
+                        )}
+                        {row.hasClosedDate && (
+                          <button
+                            className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
+                            onClick={() => handleDeleteAppointment(row.appointment)}
+                            title="Delete this appointment globally (schedule, patient file, dashboard, billing)"
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
               {warningRows.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={6}>
+                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={7}>
                     No appointments currently fall on key dates.
                   </td>
                 </tr>
@@ -414,6 +497,52 @@ export default function KeyDatesPage() {
             </tbody>
           </table>
         </div>
+
+        {dismissedRows.length > 0 && (
+          <div className="mt-4">
+            <button
+              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
+              onClick={() => setShowDismissed((v) => !v)}
+              type="button"
+            >
+              {showDismissed ? "Hide" : "Show"} {dismissedRows.length} cleared warning{dismissedRows.length === 1 ? "" : "s"}
+            </button>
+            {showDismissed && (
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-[720px] w-full text-xs">
+                  <thead className="bg-[var(--bg-soft)] text-left text-[var(--text-muted)]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Date</th>
+                      <th className="px-3 py-2 font-semibold">Time</th>
+                      <th className="px-3 py-2 font-semibold">Patient</th>
+                      <th className="px-3 py-2 font-semibold">Appointment</th>
+                      <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dismissedRows.map((row) => (
+                      <tr key={`cleared-${row.appointment.id}`} className="border-t border-[var(--line-soft)] text-[var(--text-muted)]">
+                        <td className="px-3 py-2">{formatUsDateFromIso(row.appointment.date)}</td>
+                        <td className="px-3 py-2">{formatTimeLabel(row.appointment.startTime)}</td>
+                        <td className="px-3 py-2">{row.appointment.patientName}</td>
+                        <td className="px-3 py-2">{row.appointment.appointmentType}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                            onClick={() => restoreAppointment(row.appointment.id)}
+                            type="button"
+                          >
+                            Un-clear
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );
