@@ -306,16 +306,33 @@ export function buildFollowUpItems(
     const matrix = patient.matrix ?? {};
     const caseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
 
-    const xraySentRaw = matrix.xraySent ?? "";
-    const xrayDoneRaw = matrix.xrayDone ?? "";
-    const xrayReceivedRaw = matrix.xrayReceived ?? "";
-    const xrayReviewedRaw = matrix.xrayReviewed ?? "";
+    // Stale-matrix heal: if the user deleted every X-Ray (or MRI)
+    // entry from the patient file, the referrals array is an empty
+    // list even though the matrix still carries the last-sent dates
+    // from the deleted entry. Treat the matrix as empty in that case
+    // so Case Flow doesn't report "Sent, waiting for done date" on a
+    // patient whose X-Ray list is visibly empty. `undefined` means
+    // the user never touched imaging, so we keep trusting the matrix
+    // (back-compat for legacy records).
+    const xrayReferralsList = Array.isArray(patient.xrayReferrals)
+      ? patient.xrayReferrals
+      : null;
+    const mriReferralsList = Array.isArray(patient.mriReferrals)
+      ? patient.mriReferrals
+      : null;
+    const xrayMatrixStale = xrayReferralsList !== null && xrayReferralsList.length === 0;
+    const mriMatrixStale = mriReferralsList !== null && mriReferralsList.length === 0;
 
-    const mriSentRaw = matrix.mriSent ?? "";
-    const mriScheduledRaw = matrix.mriScheduled ?? "";
-    const mriDoneRaw = matrix.mriDone ?? "";
-    const mriReceivedRaw = matrix.mriReceived ?? "";
-    const mriReviewedRaw = matrix.mriReviewed ?? "";
+    const xraySentRaw = xrayMatrixStale ? "" : (matrix.xraySent ?? "");
+    const xrayDoneRaw = xrayMatrixStale ? "" : (matrix.xrayDone ?? "");
+    const xrayReceivedRaw = xrayMatrixStale ? "" : (matrix.xrayReceived ?? "");
+    const xrayReviewedRaw = xrayMatrixStale ? "" : (matrix.xrayReviewed ?? "");
+
+    const mriSentRaw = mriMatrixStale ? "" : (matrix.mriSent ?? "");
+    const mriScheduledRaw = mriMatrixStale ? "" : (matrix.mriScheduled ?? "");
+    const mriDoneRaw = mriMatrixStale ? "" : (matrix.mriDone ?? "");
+    const mriReceivedRaw = mriMatrixStale ? "" : (matrix.mriReceived ?? "");
+    const mriReviewedRaw = mriMatrixStale ? "" : (matrix.mriReviewed ?? "");
 
     const specialistSentRaw = matrix.specialistSent ?? "";
     const specialistScheduledRaw = matrix.specialistScheduled ?? "";

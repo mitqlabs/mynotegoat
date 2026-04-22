@@ -2456,11 +2456,47 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     // Update React state
     setReferrals(nextReferrals);
 
-    // Persist immediately to localStorage
+    // Persist immediately to localStorage.
+    //
+    // Also recompute the matrix.{mode}Sent/Done/Received/Reviewed
+    // fields from the REMAINING referrals. Without this, the matrix
+    // kept the deleted entry's dates and Case Flow (which reads
+    // matrix.xraySent / mriSent directly) kept reporting "Sent,
+    // waiting for done date" on a patient whose X-Ray / MRI list was
+    // visibly empty. If any referrals remain we mirror the most
+    // recently-sent one (matches the "overwrite on add/edit"
+    // behaviour); if none remain we clear the matrix fields.
     const key = mode === "xray" ? "xrayReferrals" : "mriReferrals";
+    const primary = [...nextReferrals].sort((a, b) => {
+      const aIso = toIsoDateFromUsDate(a.sentDate) || "";
+      const bIso = toIsoDateFromUsDate(b.sentDate) || "";
+      return bIso.localeCompare(aIso);
+    })[0];
+    const sentDateIso = primary ? toIsoDateFromUsDate(primary.sentDate) : "";
+    const scheduledDateIso = primary ? toIsoDateFromUsDate(primary.scheduledDate ?? "") : "";
+    const doneDateIso = primary ? toIsoDateFromUsDate(primary.doneDate ?? "") : "";
+    const receivedDateIso = primary ? toIsoDateFromUsDate(primary.reportReceivedDate ?? "") : "";
+    const reviewedDateIso = primary ? toIsoDateFromUsDate(primary.reportReviewedDate ?? "") : "";
+    const matrixFields =
+      mode === "xray"
+        ? {
+            xraySent: sentDateIso,
+            xrayDone: doneDateIso,
+            xrayReceived: receivedDateIso,
+            xrayReviewed: reviewedDateIso,
+          }
+        : {
+            mriSent: sentDateIso,
+            mriScheduled: scheduledDateIso,
+            mriDone: doneDateIso,
+            mriReceived: receivedDateIso,
+            mriReviewed: reviewedDateIso,
+          };
+
     updatePatientRecordById(patient.id, {
       lastUpdate: new Date().toISOString().slice(0, 10),
       [key]: nextReferrals,
+      matrix: matrixFields,
     } as UpdatePatientRecordPatch);
 
     if (editingId === referralId) {
