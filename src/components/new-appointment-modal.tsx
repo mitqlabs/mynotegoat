@@ -1695,25 +1695,41 @@ function DayScheduleHint({
   scheduleAppointments: ScheduleAppointmentRecord[];
   excludeAppointmentId: string | null;
 }) {
-  // Group by start time and count — user doesn't need patient names
-  // or types for conflict-avoidance, just "which slots already have
-  // people scheduled". Less visual noise in the modal too.
+  // Group by start time, tracking per-slot type counts so the hint
+  // shows both how full the slot is AND what's in it. Makes it easy
+  // to see at a glance if a slot already has (say) a New Patient
+  // booked vs just two quick follow-ups.
   const slotGroups = useMemo(() => {
     if (!dateIso) return [];
-    const counts = new Map<string, number>();
+    const bySlot = new Map<string, Map<string, number>>();
     for (const appt of scheduleAppointments) {
       if (appt.date !== dateIso) continue;
       if (appt.id === excludeAppointmentId) continue;
       if (appt.status === "Canceled") continue;
-      counts.set(appt.startTime, (counts.get(appt.startTime) ?? 0) + 1);
+      const typeName = appt.appointmentType || "Appointment";
+      const slotMap = bySlot.get(appt.startTime) ?? new Map<string, number>();
+      slotMap.set(typeName, (slotMap.get(typeName) ?? 0) + 1);
+      bySlot.set(appt.startTime, slotMap);
     }
-    return Array.from(counts.entries())
+    return Array.from(bySlot.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([startTime, count]) => ({ startTime, count }));
+      .map(([startTime, typeCounts]) => {
+        let total = 0;
+        for (const count of typeCounts.values()) total += count;
+        // Sort types by count desc then name so "2× Office Visit"
+        // shows before a single "New Patient" when both are present.
+        const types = Array.from(typeCounts.entries())
+          .sort(([aName, aCount], [bName, bCount]) => {
+            if (bCount !== aCount) return bCount - aCount;
+            return aName.localeCompare(bName);
+          })
+          .map(([name, count]) => (count > 1 ? `${count}× ${name}` : name));
+        return { startTime, total, typeSummary: types.join(", ") };
+      });
   }, [dateIso, scheduleAppointments, excludeAppointmentId]);
 
   const totalCount = useMemo(
-    () => slotGroups.reduce((sum, group) => sum + group.count, 0),
+    () => slotGroups.reduce((sum, group) => sum + group.total, 0),
     [slotGroups],
   );
 
@@ -1734,12 +1750,15 @@ function DayScheduleHint({
       </p>
       <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pr-1">
         {slotGroups.map((group) => (
-          <li className="flex items-center justify-between gap-2" key={group.startTime}>
+          <li
+            className="flex items-baseline justify-between gap-2"
+            key={group.startTime}
+          >
             <span className="font-mono tabular-nums">
               {formatTimeLabelLocal(group.startTime)}
             </span>
-            <span className="text-[var(--text-muted)]">
-              {group.count} appointment{group.count === 1 ? "" : "s"}
+            <span className="flex-1 truncate text-right text-[var(--text-muted)]">
+              {group.total} — {group.typeSummary}
             </span>
           </li>
         ))}
