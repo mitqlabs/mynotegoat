@@ -770,6 +770,16 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(initialEncounterId ?? null);
   const [encounterSearch, setEncounterSearch] = useState(initialEncounterSearchValue);
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
+  // The patient explicitly picked from the autocomplete dropdown (or
+  // via Enter). The encounter list ONLY populates when this is set —
+  // typing "smith" used to auto-load Smith's encounters just because
+  // the filter text matched; the user now has to click the dropdown
+  // row (or press Enter to pick the top result) so patients with
+  // multiple cases (two DOLs, same name) don't get the wrong one
+  // silently selected.
+  const [selectedPatientIdForList, setSelectedPatientIdForList] = useState<string | null>(
+    initialPatientId ?? null,
+  );
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "closed">("all");
   const [message, setMessage] = useState("");
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
@@ -829,56 +839,25 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   }, [encounterSearch]);
 
   const filteredEncounterList = useMemo(() => {
-    const rawQuery = encounterSearch.trim().toLowerCase();
-    if (!rawQuery) {
-      return [];
-    }
-    // Match the word-split logic used by the autocomplete dropdown so
-    // "smith john" and "john smith" both resolve to stored "Smith, John".
-    const queryWords = rawQuery
-      .replace(/[,.:;]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean);
-    if (queryWords.length === 0) {
-      return [];
-    }
-    const scopedEntries = encountersByNewest
+    // Only populate the list once a SPECIFIC patient has been picked
+    // from the autocomplete (click or Enter). Typing a name fragment
+    // no longer auto-loads any patient's encounters — the user has to
+    // commit to one. Disambiguates patients who share a name but have
+    // different case files / dates of injury.
+    if (!selectedPatientIdForList) return [];
+    return encountersByNewest
+      .filter((entry) => entry.patientId === selectedPatientIdForList)
       .filter((entry) => {
-        if (statusFilter === "open") {
-          return !entry.signed;
-        }
-        if (statusFilter === "closed") {
-          return entry.signed;
-        }
+        if (statusFilter === "open") return !entry.signed;
+        if (statusFilter === "closed") return entry.signed;
         return true;
       })
-      .filter((entry) => {
-        const haystack = entry.patientName.toLowerCase().replace(/[,.:;]/g, " ");
-        return queryWords.every((word) => haystack.includes(word));
-      });
-    if (!scopedEntries.length) {
-      return [];
-    }
-
-    const activePatientId =
-      selectedEncounterPatientId &&
-      scopedEntries.some((entry) => entry.patientId === selectedEncounterPatientId)
-        ? selectedEncounterPatientId
-        : scopedEntries[0]?.patientId ?? null;
-    if (!activePatientId) {
-      return [];
-    }
-
-    return scopedEntries
-      .filter((entry) => entry.patientId === activePatientId)
       .sort((left, right) => {
         const byDate = toSortStamp(right.encounterDate) - toSortStamp(left.encounterDate);
-        if (byDate !== 0) {
-          return byDate;
-        }
+        if (byDate !== 0) return byDate;
         return right.updatedAt.localeCompare(left.updatedAt);
       });
-  }, [encounterSearch, encountersByNewest, selectedEncounterPatientId, statusFilter]);
+  }, [encountersByNewest, selectedPatientIdForList, statusFilter]);
 
   const initialPatientEncounterId = useMemo(() => {
     if (!initialPatientId) {
@@ -1838,7 +1817,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
-        <h2 className="text-2xl font-semibold">Encounter / Daily Visit Notes</h2>
+        <h2 className="text-2xl font-semibold">Encounters</h2>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
           SOAP charting with carry-forward copy tools and treatment charges. Create new encounters from Schedule or Patient File.
         </p>
@@ -1903,11 +1882,41 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     window.setTimeout(() => setShowPatientSuggestions(false), 150);
                   }}
                   onChange={(event) => {
-                    setEncounterSearch(event.target.value);
+                    const nextValue = event.target.value;
+                    setEncounterSearch(nextValue);
                     setShowPatientSuggestions(true);
+                    // Editing the text clears the "committed" patient
+                    // selection — otherwise the encounter list would
+                    // stick to the previously picked patient while
+                    // the user retyped a different name.
+                    if (selectedPatientIdForList) {
+                      const lockedName =
+                        patients.find((p) => p.id === selectedPatientIdForList)?.fullName ?? "";
+                      if (nextValue.trim().toLowerCase() !== lockedName.trim().toLowerCase()) {
+                        setSelectedPatientIdForList(null);
+                        setSelectedEncounterId(null);
+                      }
+                    }
                   }}
                   onFocus={() => setShowPatientSuggestions(true)}
-                  placeholder="Type patient name..."
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    // Enter commits the top match (if any). If the
+                    // search field already exactly matches a patient's
+                    // fullName, commit that one directly.
+                    const typed = encounterSearch.trim().toLowerCase();
+                    const exact = patients.find(
+                      (p) => !p.deleted && p.fullName.toLowerCase() === typed,
+                    );
+                    const target = exact ?? patientSearchMatches[0] ?? null;
+                    if (!target) return;
+                    setEncounterSearch(target.fullName);
+                    setSelectedPatientIdForList(target.id);
+                    setSelectedEncounterId(null);
+                    setShowPatientSuggestions(false);
+                  }}
+                  placeholder="Type patient name, then click or press Enter..."
                   value={encounterSearch}
                 />
                 {showPatientSuggestions && patientSearchMatches.length > 0 && (
@@ -1919,6 +1928,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
                             setEncounterSearch(candidate.fullName);
+                            setSelectedPatientIdForList(candidate.id);
                             setSelectedEncounterId(null);
                             setShowPatientSuggestions(false);
                           }}
@@ -1952,6 +1962,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
 
             {!normalizeLookupText(encounterSearch) ? (
               <p className="mt-3 text-sm text-[var(--text-muted)]">Type a patient name to load encounters.</p>
+            ) : !selectedPatientIdForList ? (
+              <p className="mt-3 text-sm text-[var(--text-muted)]">
+                Click a patient from the dropdown (or press Enter) to load their encounters.
+              </p>
             ) : filteredEncounterList.length === 0 && allPatientAppointments.length === 0 ? (
               <p className="mt-3 text-sm text-[var(--text-muted)]">No encounters or appointments found.</p>
             ) : (
