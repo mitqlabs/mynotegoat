@@ -306,22 +306,24 @@ export function buildFollowUpItems(
     const matrix = patient.matrix ?? {};
     const caseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
 
-    // Stale-matrix heal: if the user deleted every X-Ray (or MRI)
-    // entry from the patient file, the referrals array is an empty
-    // list even though the matrix still carries the last-sent dates
-    // from the deleted entry. Treat the matrix as empty in that case
-    // so Case Flow doesn't report "Sent, waiting for done date" on a
-    // patient whose X-Ray list is visibly empty. `undefined` means
-    // the user never touched imaging, so we keep trusting the matrix
-    // (back-compat for legacy records).
-    const xrayReferralsList = Array.isArray(patient.xrayReferrals)
-      ? patient.xrayReferrals
-      : null;
-    const mriReferralsList = Array.isArray(patient.mriReferrals)
-      ? patient.mriReferrals
-      : null;
-    const xrayMatrixStale = xrayReferralsList !== null && xrayReferralsList.length === 0;
-    const mriMatrixStale = mriReferralsList !== null && mriReferralsList.length === 0;
+    // Stale-matrix heal: if the user has no X-Ray (or MRI) entries
+    // in the patient file, the matrix still carries the last-sent
+    // dates from a deleted entry, a legacy import, or a cloud sync
+    // that lost the referrals array. Treat the matrix as empty in
+    // that case so Case Flow doesn't report "Sent, waiting for done
+    // date" on a patient whose imaging list is visibly empty.
+    //
+    // We treat empty array AND undefined the same way: if the patient
+    // page shows zero entries but the matrix says "sent on date X",
+    // the matrix is the stale one and the page is the truth. Earlier
+    // versions of this guard kept undefined trusting the matrix for
+    // legacy back-compat — but that left the case flow contradicting
+    // the patient page, which is more confusing than missing the
+    // legacy stage.
+    const xrayHasEntries = Array.isArray(patient.xrayReferrals) && patient.xrayReferrals.length > 0;
+    const mriHasEntries = Array.isArray(patient.mriReferrals) && patient.mriReferrals.length > 0;
+    const xrayMatrixStale = !xrayHasEntries;
+    const mriMatrixStale = !mriHasEntries;
 
     const xraySentRaw = xrayMatrixStale ? "" : (matrix.xraySent ?? "");
     const xrayDoneRaw = xrayMatrixStale ? "" : (matrix.xrayDone ?? "");

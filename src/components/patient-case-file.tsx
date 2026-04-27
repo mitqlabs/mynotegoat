@@ -6423,7 +6423,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       {editingSpecialist && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
           <div className="relative h-full w-full">
-            <form className="panel-card p-4" style={getAnchoredModalStyle(specialistEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveSpecialistEditor(); }}>
+            <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(specialistEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveSpecialistEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Edit Specialist Referral</h3>
               <button
@@ -6585,7 +6585,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       {editingImagingReferral && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
           <div className="relative h-full w-full">
-            <form className="panel-card p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
+            <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">
                 Edit {editingImagingReferral.modalityLabel} Referral
