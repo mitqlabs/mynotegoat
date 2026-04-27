@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { ScrollLock } from "@/components/scroll-lock";
+import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -3850,9 +3851,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
-                className="flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                 inputMode="numeric"
                 maxLength={12}
                 onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
@@ -3873,6 +3874,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   phone={patientPhone}
                 />
               )}
+              <button
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
+                onClick={() =>
+                  downloadVCard({
+                    firstName,
+                    lastName,
+                    phone: patientPhone,
+                    email: patientEmail,
+                    dob: patientDob,
+                    address: patientAddress,
+                    note: caseNumber ? `Case #: ${caseNumber}` : undefined,
+                  })
+                }
+                title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
+                type="button"
+              >
+                Add to Contacts
+              </button>
             </div>
           </label>
 
