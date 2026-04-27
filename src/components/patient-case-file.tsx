@@ -6815,13 +6815,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Findings</span>
                 <textarea
-                  className="min-h-[160px] w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  className="min-h-[160px] w-full resize-y rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                   onChange={(event) =>
                     setEditingImagingReferral((current) =>
                       current ? { ...current, findings: event.target.value } : current,
                     )
                   }
                   placeholder={`Enter ${editingImagingReferral.modalityLabel} findings...`}
+                  // Cap the drag-resize at 40vh so the textarea can't be
+                  // pulled beyond the modal's bounds (the modal scrolls
+                  // its own overflow, but the textarea was free to grow
+                  // taller than the visible form, hiding Save under the
+                  // viewport edge).
+                  style={{ maxHeight: "40vh" }}
                   value={editingImagingReferral.findings}
                 />
               </label>

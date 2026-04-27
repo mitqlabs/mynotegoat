@@ -121,7 +121,11 @@ textarea:focus {
 textarea {
   line-height: 1.55;
   letter-spacing: 0.002em;
-  resize: both;
+  /* Vertical only — horizontal resize is almost never useful and
+   * regularly breaks modal layouts when the textarea drags wider
+   * than its parent. Pages that genuinely need a both-axis textarea
+   * can still opt in with Tailwind's resize utility. */
+  resize: vertical;
   overflow: auto;
 }
 
