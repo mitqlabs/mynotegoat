@@ -964,7 +964,7 @@ export default function AppointmentsPage() {
         (!scheduleSettings.allowOverride || !sanitizedDraft.overrideOfficeHours)
       ) {
         setNewAppointmentError(
-          `Outside office hours on ${outsideOfficeHoursDate}. Enable override or adjust office hours.`,
+          `Outside office hours on ${formatUsDateFromIso(outsideOfficeHoursDate)}. Enable override or adjust office hours.`,
         );
         return;
       }

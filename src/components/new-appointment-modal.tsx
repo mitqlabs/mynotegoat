@@ -874,7 +874,7 @@ export function NewAppointmentModal({
       ) {
         const t = resolveTimeForDate(sanitizedDraft, outsideOfficeHoursDate);
         setError(
-          `Outside office hours on ${outsideOfficeHoursDate} @ ${formatTimeLabel(t)}. Enable override or adjust office hours.`,
+          `Outside office hours on ${formatUsDateFromIso(outsideOfficeHoursDate)} @ ${formatTimeLabel(t)}. Enable override or adjust office hours.`,
         );
         return;
       }
