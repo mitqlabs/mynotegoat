@@ -18,6 +18,7 @@ import {
   isAppointmentWithinOfficeHours,
   isStartTimeAlignedToInterval,
 } from "@/lib/schedule-settings";
+import { ScrollLock } from "@/components/scroll-lock";
 
 function parseIso(dateIso: string): Date | null {
   const parts = dateIso.split("-");
@@ -246,6 +247,7 @@ export function RescheduleAppointmentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+      <ScrollLock />
       <section className="w-full max-w-xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
           <div>

@@ -20,6 +20,7 @@ import {
   type MacroQuestion,
   type MacroSection,
 } from "@/lib/macro-templates";
+import { ScrollLock } from "@/components/scroll-lock";
 
 type MacroTestContext = {
   id: string;
@@ -1179,6 +1180,7 @@ export function MacroSettingsPanel() {
 
       {runOpen && selectedMacro && (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+          <ScrollLock />
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xl font-semibold">Run Macro: {selectedMacro.buttonName}</h4>

@@ -22,6 +22,7 @@ import { createPatientRecord, patients, type PatientMatrixField, type PatientRec
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { UsDateInput } from "@/components/us-date-input";
+import { ScrollLock } from "@/components/scroll-lock";
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
   const trimmed = fullName.trim();
@@ -1706,6 +1707,7 @@ export default function PatientsPage() {
 
       {showNewPatientModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+          <ScrollLock />
           <form className="panel-card mx-auto w-full max-w-6xl p-4 md:p-5" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>

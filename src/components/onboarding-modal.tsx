@@ -9,6 +9,7 @@ import { useOnboarding } from "@/hooks/use-onboarding";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { hasMacroInEverySection, starterMacroPack } from "@/lib/onboarding";
 import type { AppointmentTypePatientTypes } from "@/lib/schedule-appointment-types";
+import { ScrollLock } from "@/components/scroll-lock";
 
 type StepId = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -116,6 +117,7 @@ export function OnboardingModal() {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-8">
+      <ScrollLock />
       <div className="panel-card w-full max-w-3xl p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>

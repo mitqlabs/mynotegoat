@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { ScrollLock } from "@/components/scroll-lock";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -5785,6 +5786,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showNarrativePromptModal && narrativePromptTemplate && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+            <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-3xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
@@ -5894,6 +5896,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showNarrativePreviewModal && narrativePreview && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+            <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-5xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
@@ -6040,6 +6043,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {activeRegionModal && (
         <div className="fixed inset-0 z-40 bg-black/40 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <div
               className="panel-card overflow-auto p-4"
@@ -6201,6 +6205,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showQuickTaskModal && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <form className="panel-card p-4" style={getAnchoredModalStyle(quickTaskAnchor, 680, 60)} onSubmit={(e) => { e.preventDefault(); saveQuickTask(); }}>
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -6282,6 +6287,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showAddAttorneyPrompt && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <div className="panel-card p-4" style={getAnchoredModalStyle(attorneyPromptAnchor, 560, 50)}>
             <h3 className="text-xl font-semibold">Add New Attorney?</h3>
@@ -6311,6 +6317,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showAddAttorneyForm && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(attorneyFormAnchor, 960, 85)} onSubmit={(e) => { e.preventDefault(); saveAttorneyContact(); }}>
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -6422,6 +6429,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {editingSpecialist && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(specialistEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveSpecialistEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
@@ -6584,6 +6592,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {editingImagingReferral && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
@@ -6858,6 +6867,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {relatedCaseNavigateTarget && (
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
           <div className="relative h-full w-full">
             <div className="panel-card p-4" style={getAnchoredModalStyle(relatedCaseNavigateAnchor, 560, 50)}>
               <h3 className="text-xl font-semibold">Navigate to patient file?</h3>
@@ -6942,6 +6952,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+          <ScrollLock />
           <div className="panel-card mx-auto w-full max-w-md p-5">
             <h3 className="text-xl font-semibold text-red-600">Delete Patient</h3>
             <p className="mt-2 text-sm text-[var(--text-muted)]">

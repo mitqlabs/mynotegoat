@@ -21,6 +21,7 @@ import { loadEmailSettings, renderEmailTemplate, type EmailRenderContext } from 
 import { loadCaseStatuses } from "@/lib/case-statuses";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { patients as patientRecords } from "@/lib/mock-data";
+import { ScrollLock } from "@/components/scroll-lock";
 
 // ---------------------------------------------------------------------------
 // View mode
@@ -1247,6 +1248,7 @@ export default function MyFilesPage() {
       {/* Preview Modal */}
       {previewFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <ScrollLock />
           <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-4 py-3">

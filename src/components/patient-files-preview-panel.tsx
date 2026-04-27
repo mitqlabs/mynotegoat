@@ -24,6 +24,7 @@ import {
 import { formatFileSize, getSignedUrl } from "@/lib/file-storage";
 import { useFileManager } from "@/hooks/use-file-manager";
 import { patients } from "@/lib/mock-data";
+import { ScrollLock } from "@/components/scroll-lock";
 
 type PreviewTarget = { file: FileRecord } | null;
 
@@ -212,6 +213,7 @@ function FilePreviewModal({
       onClick={onClose}
       role="dialog"
     >
+      <ScrollLock />
       <div
         className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}

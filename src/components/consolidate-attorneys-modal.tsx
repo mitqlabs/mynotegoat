@@ -23,6 +23,7 @@
 import { useMemo, useState } from "react";
 import { patients as patientRecords, updatePatientRecordById, type ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { ScrollLock } from "@/components/scroll-lock";
 
 // ---------- Fuzzy matching helpers ---------------------------------------
 
@@ -402,6 +403,7 @@ export function ConsolidateAttorneysModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.5)] px-4 py-8">
+      <ScrollLock />
       <section className="w-full max-w-4xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>

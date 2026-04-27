@@ -28,6 +28,7 @@ import {
   type PatientRecord,
 } from "@/lib/mock-data";
 import { autoMergeRecord, mergePatients } from "@/lib/patient-merge";
+import { ScrollLock } from "@/components/scroll-lock";
 
 type PatientSnap = {
   id: string;
@@ -149,6 +150,7 @@ export function MergePatientsModal({
   if (patients.length < 2) {
     return (
       <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.5)] px-4 py-8">
+        <ScrollLock />
         <section className="w-full max-w-md rounded-2xl border border-[var(--line-soft)] bg-white p-5">
           <h3 className="text-lg font-semibold">Cannot merge</h3>
           <p className="mt-2 text-sm text-[var(--text-muted)]">
@@ -313,6 +315,7 @@ export function MergePatientsModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.5)] px-4 py-8">
+      <ScrollLock />
       <section className="w-full max-w-4xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>

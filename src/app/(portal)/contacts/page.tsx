@@ -7,6 +7,7 @@ import type { ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ConsolidateAttorneysModal } from "@/components/consolidate-attorneys-modal";
 import { AddressFieldGroup } from "@/components/address-field-group";
+import { ScrollLock } from "@/components/scroll-lock";
 
 type ContactFormState = {
   name: string;
@@ -404,6 +405,7 @@ export default function ContactsPage() {
 
       {showAddContactModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+          <ScrollLock />
           <form className="panel-card max-h-[85vh] w-full max-w-2xl overflow-auto p-4" onSubmit={(e) => { e.preventDefault(); saveNewContact(); }}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">Add Contact</h3>
