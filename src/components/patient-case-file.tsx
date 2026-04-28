@@ -5079,11 +5079,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <section className="panel-card p-4">
         <button
-          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+          // Bar turns red when no diagnoses are on file — visible
+          // warning that the patient is missing dx codes (which break
+          // billing claims and narrative reports if left empty). Once
+          // even one is added, the bar reverts to the regular teal so
+          // the warning quiets down.
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${
+            patientDiagnoses.length === 0 ? "bg-[#c93b1d]" : "bg-[#72bdcf]"
+          }`}
           onClick={() => toggleSectionPanel("diagnosis")}
           type="button"
         >
-          <span>Diagnosis Codes</span>
+          <span className="flex items-center gap-2">
+            <span>Diagnosis Codes</span>
+            {patientDiagnoses.length === 0 && (
+              <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide">
+                None added
+              </span>
+            )}
+          </span>
           <span className="text-xl">{sectionPanelsOpen.diagnosis ? "−" : "+"}</span>
         </button>
         {sectionPanelsOpen.diagnosis && (
