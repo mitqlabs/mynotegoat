@@ -320,8 +320,20 @@ export function buildFollowUpItems(
     // legacy back-compat — but that left the case flow contradicting
     // the patient page, which is more confusing than missing the
     // legacy stage.
-    const xrayHasEntries = Array.isArray(patient.xrayReferrals) && patient.xrayReferrals.length > 0;
-    const mriHasEntries = Array.isArray(patient.mriReferrals) && patient.mriReferrals.length > 0;
+    // Per-referral "patientRefused" flag — set in the Edit Imaging /
+    // Edit Specialist modals when a patient was sent but never went.
+    // The case flow needs to treat refused referrals as closed so it
+    // stops asking the user to chase a Done date that's never coming.
+    const isRefused = (entry: unknown) =>
+      Boolean((entry as { patientRefused?: boolean })?.patientRefused);
+    const xrayAllEntries = Array.isArray(patient.xrayReferrals) ? patient.xrayReferrals : [];
+    const mriAllEntries = Array.isArray(patient.mriReferrals) ? patient.mriReferrals : [];
+    const xrayOpenEntries = xrayAllEntries.filter((entry) => !isRefused(entry));
+    const mriOpenEntries = mriAllEntries.filter((entry) => !isRefused(entry));
+    const xrayHasEntries = xrayOpenEntries.length > 0;
+    const mriHasEntries = mriOpenEntries.length > 0;
+    const xrayAllRefused = xrayAllEntries.length > 0 && xrayOpenEntries.length === 0;
+    const mriAllRefused = mriAllEntries.length > 0 && mriOpenEntries.length === 0;
     const xrayMatrixStale = !xrayHasEntries;
     const mriMatrixStale = !mriHasEntries;
 
@@ -346,7 +358,10 @@ export function buildFollowUpItems(
 
     // --- X-Ray ---
     if (includeXray && !xrayClearedByStatus) {
-      const xrayCleared = isXrayCleared(xrayClearedBySet, patientOverrides?.xray, hasMatrixValue(xrayReviewedRaw));
+      const xrayCleared =
+        isXrayCleared(xrayClearedBySet, patientOverrides?.xray, hasMatrixValue(xrayReviewedRaw)) ||
+        // Every referral on file is patient-refused — nothing to chase.
+        xrayAllRefused;
 
       if (!xrayCleared) {
         const hasSent = hasMatrixValue(xraySentRaw);
@@ -441,7 +456,10 @@ export function buildFollowUpItems(
 
     // --- MRI / CT ---
     if (includeMriCt && !mriCtClearedByStatus) {
-      const mriCleared = isMriCtCleared(mriCtClearedBySet, patientOverrides?.mriCt, hasMatrixValue(mriReviewedRaw));
+      const mriCleared =
+        isMriCtCleared(mriCtClearedBySet, patientOverrides?.mriCt, hasMatrixValue(mriReviewedRaw)) ||
+        // Every MRI/CT referral on file is patient-refused — leave it alone.
+        mriAllRefused;
 
       if (!mriCleared) {
         const hasSent = hasMatrixValue(mriSentRaw);
@@ -582,7 +600,20 @@ export function buildFollowUpItems(
 
     // --- Specialist ---
     if (includeSpecialist && !specialistClearedByStatus) {
-      const specCleared = isSpecialistCleared(specialistClearedBySet, patientOverrides?.specialist, hasMatrixValue(specialistReportRaw));
+      const specialistAllEntries = Array.isArray(patient.specialistReferrals)
+        ? patient.specialistReferrals
+        : [];
+      const specialistOpenEntries = specialistAllEntries.filter((entry) => !isRefused(entry));
+      const specialistAllRefused =
+        specialistAllEntries.length > 0 && specialistOpenEntries.length === 0;
+      const specCleared =
+        isSpecialistCleared(
+          specialistClearedBySet,
+          patientOverrides?.specialist,
+          hasMatrixValue(specialistReportRaw),
+        ) ||
+        // Every specialist referral on file is patient-refused.
+        specialistAllRefused;
 
       if (!specCleared) {
         const hasSent = hasMatrixValue(specialistSentRaw);

@@ -119,6 +119,12 @@ type ImagingFormState = {
   reportReceivedDate: string;
   reportReviewedDate: string;
   findings: string;
+  /** Per-referral outcome flag. Set when the patient was sent for
+   *  imaging but never went — refused at home, no-showed, etc. The
+   *  Case Flow stops chasing a Done date for this entry, and the
+   *  patient's imaging list shows a "Patient Refused" badge. Default
+   *  undefined / false = open referral, follow up normally. */
+  patientRefused?: boolean;
 };
 
 type ImagingReferral = ImagingFormState & {
@@ -135,6 +141,10 @@ type SpecialistReferral = {
   reportReceivedDate: string;
   reportReviewedDate: string;
   recommendations: string;
+  /** Per-referral outcome flag — patient was referred but never
+   *  attended the consult. Stops Case Flow from chasing a completion
+   *  date and shows a "Patient Refused" badge in the patient file. */
+  patientRefused?: boolean;
 };
 
 type RelatedCaseEntry = {
@@ -1381,6 +1391,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       reportReceivedDate: typeof raw.reportReceivedDate === "string" ? raw.reportReceivedDate : "",
       reportReviewedDate: typeof raw.reportReviewedDate === "string" ? raw.reportReviewedDate : "",
       recommendations: typeof raw.recommendations === "string" ? raw.recommendations : "",
+      patientRefused: raw.patientRefused === true,
     }));
   });
   const [specialistMessage, setSpecialistMessage] = useState("");
@@ -4219,10 +4230,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </p>
               )}
               {xrayReferrals.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-[var(--line-soft)] p-2">
-                  <p className="font-semibold">
-                    {entry.modalityLabel} — {entry.center || "No Center"}
-                  </p>
+                <div
+                  key={entry.id}
+                  className={`rounded-lg border p-2 ${
+                    entry.patientRefused
+                      ? "border-amber-300 bg-amber-50/60"
+                      : "border-[var(--line-soft)]"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold">
+                      {entry.modalityLabel} — {entry.center || "No Center"}
+                    </p>
+                    {entry.patientRefused && (
+                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                        Patient Refused
+                      </span>
+                    )}
+                  </div>
                   <p>Regions: {formatImagingRegionsSummary(entry, "xray")}</p>
                   <p>
                     Sent: {entry.sentDate || "-"}
@@ -4417,10 +4442,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </p>
               )}
               {mriReferrals.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-[var(--line-soft)] p-2">
-                  <p className="font-semibold">
-                    {entry.modalityLabel} — {entry.center || "No Center"}
-                  </p>
+                <div
+                  key={entry.id}
+                  className={`rounded-lg border p-2 ${
+                    entry.patientRefused
+                      ? "border-amber-300 bg-amber-50/60"
+                      : "border-[var(--line-soft)]"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold">
+                      {entry.modalityLabel} — {entry.center || "No Center"}
+                    </p>
+                    {entry.patientRefused && (
+                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                        Patient Refused
+                      </span>
+                    )}
+                  </div>
                   <p>Regions: {formatImagingRegionsSummary(entry, "mri")}</p>
                   <p>
                     Sent: {entry.sentDate || "-"}
@@ -4560,8 +4599,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </p>
               )}
               {specialistReferrals.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-[var(--line-soft)] p-2">
-                  <p className="font-semibold">{entry.specialist}</p>
+                <div
+                  key={entry.id}
+                  className={`rounded-lg border p-2 ${
+                    entry.patientRefused
+                      ? "border-amber-300 bg-amber-50/60"
+                      : "border-[var(--line-soft)]"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold">{entry.specialist}</p>
+                    {entry.patientRefused && (
+                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                        Patient Refused
+                      </span>
+                    )}
+                  </div>
                   <p>Sent: {entry.sentDate || "-"} | Completed: {entry.completedDate || "-"}</p>
                   {entry.recommendations.trim() && (
                     <p className="mt-1 text-[var(--text-muted)]">{entry.recommendations}</p>
@@ -6686,15 +6739,35 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Recommendations</span>
                 <textarea
-                  className="min-h-[140px] w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  className="min-h-[140px] w-full resize-y rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                   onChange={(event) =>
                     setEditingSpecialist((current) =>
                       current ? { ...current, recommendations: event.target.value } : current,
                     )
                   }
                   placeholder="Enter specialist recommendations..."
+                  style={{ maxHeight: "40vh" }}
                   value={editingSpecialist.recommendations}
                 />
+              </label>
+
+              <label className="flex items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm font-semibold">
+                <input
+                  checked={editingSpecialist.patientRefused === true}
+                  className="accent-[var(--brand-primary)]"
+                  onChange={(event) =>
+                    setEditingSpecialist((current) =>
+                      current
+                        ? { ...current, patientRefused: event.target.checked }
+                        : current,
+                    )
+                  }
+                  type="checkbox"
+                />
+                <span>Patient Refused</span>
+                <span className="text-xs font-normal text-[var(--text-muted)]">
+                  Closes this referral without a Completed date.
+                </span>
               </label>
             </div>
 
@@ -6839,6 +6912,29 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   />
                 </label>
               </div>
+
+              {/* Patient Refused — flips this specific referral closed
+                  without a Done date. Case Flow stops chasing and the
+                  referral row in the patient file shows a refused
+                  badge so it's obvious why this one never completed. */}
+              <label className="flex items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm font-semibold">
+                <input
+                  checked={editingImagingReferral.patientRefused === true}
+                  className="accent-[var(--brand-primary)]"
+                  onChange={(event) =>
+                    setEditingImagingReferral((current) =>
+                      current
+                        ? { ...current, patientRefused: event.target.checked }
+                        : current,
+                    )
+                  }
+                  type="checkbox"
+                />
+                <span>Patient Refused</span>
+                <span className="text-xs font-normal text-[var(--text-muted)]">
+                  Closes this referral without a Done date.
+                </span>
+              </label>
 
               <div className="grid gap-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
