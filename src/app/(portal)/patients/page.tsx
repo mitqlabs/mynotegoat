@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
@@ -305,6 +305,28 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"]) {
 
 export default function PatientsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // When a patient page navigates here via Save & Close, it appends
+  // ?saved=<patient name>. Pull the value once and clear it from the
+  // URL so a refresh doesn't replay the banner.
+  const savedFromQuery = searchParams.get("saved");
+  const [savedBanner, setSavedBanner] = useState<string | null>(null);
+  useEffect(() => {
+    if (!savedFromQuery) return;
+    setSavedBanner(savedFromQuery);
+    // Strip the query param so a refresh / navigation doesn't re-show
+    // the banner. window.history.replaceState avoids the re-render
+    // that router.replace would trigger.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("saved");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // Auto-fade after 5 seconds — the message did its job.
+    const timeoutId = window.setTimeout(() => setSavedBanner(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [savedFromQuery]);
+
   const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
   const { contacts, addContact } = useContactDirectory();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
@@ -1062,6 +1084,18 @@ export default function PatientsPage() {
 
   return (
     <div className="space-y-5">
+      {savedBanner && (
+        <div
+          className="flex items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-sm"
+          role="status"
+        >
+          <span className="text-lg">✓</span>
+          <span>
+            Saved &amp; synced to cloud:{" "}
+            <span className="font-bold">{savedBanner}</span>
+          </span>
+        </div>
+      )}
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-semibold">All Patients Workspace</h3>

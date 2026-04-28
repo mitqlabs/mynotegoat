@@ -1502,6 +1502,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [quickTypeEditId, setQuickTypeEditId] = useState<string | null>(null);
   const [editAppointmentId, setEditAppointmentId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
+  // Discrete save lifecycle so the UI can render the right pill
+  // colour. "idle" = nothing recent. "saving" = sync in flight.
+  // "saved" = success (auto-fades to idle after a few seconds, but
+  // the lastSavedAt timestamp stays visible permanently). "error" =
+  // failure that the user MUST notice.
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<string>("");
 
   // Delete patient state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -3547,21 +3554,54 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     });
 
     if (savedPatient) {
-      setSaveMessage("Updated — syncing to cloud...");
-      void forceSyncNow().then(() => setSaveMessage("Saved & synced to cloud.")).catch(() => setSaveMessage("Saved locally — cloud sync failed, will retry."));
+      setSaveStatus("saving");
+      setSaveMessage("Saving — pushing to cloud...");
+      void forceSyncNow()
+        .then(() => {
+          setSaveStatus("saved");
+          setSaveMessage(`Saved & synced to cloud · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+          setLastSavedAt(new Date().toISOString());
+          // Auto-fade after 6s so the green doesn't hang around forever,
+          // but keep the lastSavedAt timestamp visible permanently as a
+          // separate quiet "Last saved at …" line.
+          window.setTimeout(() => {
+            setSaveStatus((current) => (current === "saved" ? "idle" : current));
+          }, 6000);
+        })
+        .catch(() => {
+          setSaveStatus("error");
+          setSaveMessage("Saved locally — cloud sync FAILED. Don't close this tab. Retry now or check connection.");
+        });
     } else {
-      setSaveMessage("Could not save patient record.");
+      setSaveStatus("error");
+      setSaveMessage("Could not save patient record. Try Update again or refresh.");
     }
   };
 
   const saveAndClosePatientFile = async () => {
     savePatientFile();
+    setSaveStatus("saving");
+    setSaveMessage("Saving — pushing to cloud...");
     try {
       await forceSyncNow();
+      setSaveStatus("saved");
+      setSaveMessage("Saved & synced. Returning to patient list...");
+      setLastSavedAt(new Date().toISOString());
+      // Hold the green confirmation for a beat so the user can see
+      // it BEFORE we navigate away. Without this delay the message
+      // existed for one render frame and then the page unmounted —
+      // which is exactly why the Save & Close button felt silent.
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      router.push(`/patients?saved=${encodeURIComponent(patient.fullName)}`);
     } catch {
-      // best-effort — local is saved regardless
+      setSaveStatus("error");
+      setSaveMessage(
+        "Cloud sync FAILED. Local copy is safe — stay on this page and click Update again to retry. Do NOT close.",
+      );
+      // Don't navigate on failure — the user needs to see the error
+      // and either retry or report. Closing now risks the local copy
+      // being lost on the next page load if cloud catches up first.
     }
-    router.push("/patients");
   };
 
   const handleDeletePatient = () => {
@@ -5948,22 +5988,51 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           >
             Delete Patient
           </button>
-          {saveMessage && <p className="text-sm font-semibold text-[var(--brand-primary)]">{saveMessage}</p>}
+          {/* Save status — bright, can't-miss-it pill. Replaces the
+              tiny blue "Updated…" line that was way too easy to miss
+              and led to "did the save actually work?" anxiety. */}
+          {saveStatus !== "idle" && saveMessage && (
+            <span
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold shadow-sm ${
+                saveStatus === "saving"
+                  ? "border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)] text-[var(--brand-primary)]"
+                  : saveStatus === "saved"
+                    ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-2 border-red-400 bg-red-50 text-red-800"
+              }`}
+              role={saveStatus === "error" ? "alert" : undefined}
+            >
+              {saveStatus === "saving" && "⟳"}
+              {saveStatus === "saved" && "✓"}
+              {saveStatus === "error" && "⚠"}
+              <span>{saveMessage}</span>
+            </span>
+          )}
+          {/* Always-visible last-saved timestamp so the user has a
+              permanent marker of "this is what's currently on file"
+              rather than guessing whether their last edit took. */}
+          {lastSavedAt && (
+            <span className="text-xs text-[var(--text-muted)]">
+              Last saved at {new Date(lastSavedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-6 py-2 font-semibold"
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-6 py-2 font-semibold disabled:opacity-50"
+            disabled={saveStatus === "saving"}
             onClick={savePatientFile}
             type="button"
           >
-            Update
+            {saveStatus === "saving" ? "Saving…" : "Update"}
           </button>
           <button
-            className="rounded-xl bg-[#de3a31] px-6 py-2 font-semibold text-white"
+            className="rounded-xl bg-[#de3a31] px-6 py-2 font-semibold text-white disabled:opacity-50"
+            disabled={saveStatus === "saving"}
             onClick={saveAndClosePatientFile}
             type="button"
           >
-            Save &amp; Close
+            {saveStatus === "saving" ? "Saving…" : "Save & Close"}
           </button>
         </div>
       </div>
