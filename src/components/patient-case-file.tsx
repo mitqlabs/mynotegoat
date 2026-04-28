@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { ScrollLock } from "@/components/scroll-lock";
 import { downloadVCard } from "@/lib/vcard";
@@ -1855,6 +1855,36 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         ),
     [encountersByNewest, patient.id],
   );
+
+  // Auto-fill the Discharge date when the case moves to a closed
+  // status (Discharged / Settled / Reduced / etc.) and the user
+  // hasn't already entered one. The most-recent encounter date is the
+  // sensible default — that's the actual last visit on file.
+  //
+  // Once we auto-fill (or detect a manual value at close-time), we
+  // flip a ref and never auto-fill again on this mount, so a manual
+  // clear / edit from the user always wins. Reloading the patient
+  // file resets the ref and we re-evaluate.
+  const dischargeAutoFilledRef = useRef(false);
+  useEffect(() => {
+    if (dischargeAutoFilledRef.current) return;
+    if (!caseStatus.trim()) return;
+    const closedConfig = caseStatuses.find(
+      (s) =>
+        s.name.toLowerCase() === caseStatus.toLowerCase() && s.isCaseClosed,
+    );
+    if (!closedConfig) return;
+    // If the user already typed a discharge date, respect it — but
+    // mark as handled so a later state churn doesn't try to clobber.
+    if (dischargeDate.trim()) {
+      dischargeAutoFilledRef.current = true;
+      return;
+    }
+    const mostRecentEncounterDate = patientEncounterRecords[0]?.encounterDate;
+    if (!mostRecentEncounterDate) return;
+    setDischargeDate(mostRecentEncounterDate);
+    dischargeAutoFilledRef.current = true;
+  }, [caseStatus, caseStatuses, dischargeDate, patientEncounterRecords]);
   const openPatientEncounterRecords = useMemo(
     () =>
       patientEncounterRecords.filter((entry) => !entry.signed).sort(
