@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { ScrollLock } from "@/components/scroll-lock";
+import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { draftKeyFor } from "@/lib/draft-recovery";
@@ -2016,6 +2017,30 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                               const [y, m, d] = apt.date.split("-");
                               return `${m}/${d}/${y}`;
                             })();
+                            // Weekday label under the date — uses Date in
+                            // local time. Constructed from numeric parts to
+                            // avoid the UTC parse drift that can shift the
+                            // displayed weekday by one day in early-morning
+                            // timezones.
+                            const weekdayLabel = (() => {
+                              const [y, m, d] = apt.date.split("-").map(Number);
+                              if (!y || !m || !d) return "";
+                              const dt = new Date(y, m - 1, d);
+                              return Number.isNaN(dt.getTime())
+                                ? ""
+                                : dt.toLocaleDateString("en-US", { weekday: "short" });
+                            })();
+                            // Status badge color follows the appointment
+                            // type so a Re-Exam Checked In looks visually
+                            // different from an Office Visit Checked In.
+                            // Falls back to a neutral grey if the type
+                            // isn't in the library.
+                            const aptTypeConfig = appointmentTypes.find(
+                              (t) => t.name.toLowerCase() === apt.appointmentType.toLowerCase(),
+                            );
+                            const aptTypeColor = aptTypeConfig?.color ?? "#94a6b8";
+                            const statusFgColor = getContrastTextColor(aptTypeColor);
+                            const statusBgColor = withAlpha(aptTypeColor, 0.85);
                             // Match encounter by patient + date + type first; fall back
                             // to date-only if this is the only appointment on that day.
                             const linkedByType = encountersByNewest.find(
@@ -2060,14 +2085,28 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                     />
                                   )}
                                 </td>
-                                <td className="px-2 py-1.5 text-xs tabular-nums">{dateUs}</td>
+                                <td className="px-2 py-1.5 text-xs leading-tight tabular-nums">
+                                  <div>{dateUs}</div>
+                                  {weekdayLabel && (
+                                    <div className="text-[10px] font-normal text-[var(--text-muted)]">
+                                      {weekdayLabel}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="px-2 py-1.5 text-xs leading-tight">
                                   {typeLine2 ? (
                                     <>{typeLine1}<br />{typeLine2}</>
                                   ) : typeLine1}
                                 </td>
                                 <td className="px-2 py-1.5">
-                                  <span className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(apt.status)}`}>
+                                  <span
+                                    className="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                                    style={{
+                                      backgroundColor: statusBgColor,
+                                      color: statusFgColor,
+                                    }}
+                                    title={`${apt.appointmentType} · ${formatAppointmentStatusLabel(apt.status)}`}
+                                  >
                                     {formatAppointmentStatusLabel(apt.status)}
                                   </span>
                                 </td>
