@@ -1526,11 +1526,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [saveMessage, setSaveMessage] = useState("");
   // Discrete save lifecycle so the UI can render the right pill
   // colour. "idle" = nothing recent. "saving" = sync in flight.
-  // "saved" = success (auto-fades to idle after a few seconds, but
-  // the lastSavedAt timestamp stays visible permanently). "error" =
-  // failure that the user MUST notice.
+  // "saved" = success (auto-fades to idle after a few seconds).
+  // "error" = failure that the user MUST notice (sticky).
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [lastSavedAt, setLastSavedAt] = useState<string>("");
 
   // Delete patient state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -3607,9 +3605,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     try {
       await forceSyncNow();
       setSaveStatus("saved");
-      const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-      setSaveMessage(opts.silent ? `Auto-saved · ${time}` : `Saved & synced to cloud · ${time}`);
-      setLastSavedAt(new Date().toISOString());
+      setSaveMessage(opts.silent ? "Auto-saved" : "Saved & synced to cloud");
       window.setTimeout(() => {
         setSaveStatus((current) => (current === "saved" ? "idle" : current));
       }, opts.silent ? 2500 : 6000);
@@ -3655,10 +3651,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           : setNotNeededAsync;
     try {
       await setter(patient.id, category, enabled);
-      const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       setSaveStatus("saved");
-      setSaveMessage(`Saved ${label}${enabled ? " ON" : " OFF"} · ${time}`);
-      setLastSavedAt(new Date().toISOString());
+      setSaveMessage(`Saved ${label}${enabled ? " ON" : " OFF"}`);
       window.setTimeout(() => {
         setSaveStatus((current) => (current === "saved" ? "idle" : current));
       }, 2500);
@@ -6086,14 +6080,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {saveStatus === "saved" && "✓"}
               {saveStatus === "error" && "⚠"}
               <span>{saveMessage}</span>
-            </span>
-          )}
-          {/* Always-visible last-saved timestamp so the user has a
-              permanent marker of "this is what's currently on file"
-              rather than guessing whether their last edit took. */}
-          {lastSavedAt && (
-            <span className="text-xs text-[var(--text-muted)]">
-              Last saved at {new Date(lastSavedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
           )}
         </div>
