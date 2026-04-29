@@ -18,44 +18,88 @@ export function stripHtmlIndentation(html: string): string {
 }
 
 /**
- * Rewrite `<p>Label:  value</p>` paragraphs as `<div class="kv">` rows
- * with a fixed-width label column, then re-tag subsequent orphan `<p>`
- * paragraphs as `<div class="kv-cont">` continuation rows so multi-line
- * values (like an Imaging Center's phone + address) all sit in the
- * value column instead of wrapping back to the left margin.
+ * Rewrite `<p>Label:  value</p>` (or `<div>...</div>`) paragraphs as
+ * `<div class="kv">` rows with a fixed-width label column, then re-tag
+ * subsequent orphan paragraphs as `<div class="kv-cont">` continuation
+ * rows so multi-line values (Imaging Center → phone → address) all sit
+ * in the value column instead of wrapping back to the left margin.
+ *
+ * Handles BOTH `<p>` and `<div>` blocks because contenteditable rich-text
+ * editors emit either depending on the browser, and merges any existing
+ * `class="..."` attribute on the original block so we don't end up with
+ * duplicate `class` attributes that some browsers resolve by dropping
+ * our `kv-cont` and breaking the continuation indent silently.
  */
 export function applyLabelValueHangingIndent(html: string): string {
   const labelPatternSource = "[A-Z][A-Za-z0-9 ()&/\\-]*?:";
+  // Match either <p ...> ... </p> or <div ...> ... </div> as a "block".
+  // Case-insensitive so contenteditable's mix of <P> / <DIV> works too.
+  const blockOpen = "<(?:p|div)";
+  const blockClose = "<\\/(?:p|div)>";
 
   // Defensive cleanup: strip soft-hyphens and zero-width spaces that
   // sometimes survive copy/paste from PDFs. These characters allow
-  // mid-word line breaks (e.g. "s&shy;econdary" → "s | econdary")
-  // — the "derangements econdary" artifact we kept seeing.
-  let next = html.replace(/[\u00AD\u200B\u200C\u200D\uFEFF]/g, "");
+  // mid-word line breaks (e.g. "s&shy;econdary" -> "s | econdary")
+  // -- the "derangements econdary" artifact we kept seeing.
+  let next = html.replace(/[­​‌‍﻿]/g, "");
 
-  // Phase 1: turn "Label:  value" rows into .kv rows.
+  // Helper: take an attrs string from the original block and merge our
+  // own class into any existing class="..." so we don't emit duplicate
+  // class attributes (which browsers may resolve by keeping the LATER
+  // class and dropping ours, breaking the kv-cont layout silently).
+  const mergeClassAttr = (attrs: string, ourClass: string): string => {
+    const trimmed = attrs.trim();
+    if (!trimmed) return ` class="${ourClass}"`;
+    const classRe = /\bclass\s*=\s*("([^"]*)"|'([^']*)')/i;
+    const m = trimmed.match(classRe);
+    if (!m) return ` class="${ourClass}" ${trimmed}`;
+    const existing = (m[2] ?? m[3] ?? "").trim();
+    const merged = existing ? `${ourClass} ${existing}` : ourClass;
+    const replaced = trimmed.replace(classRe, `class="${merged}"`);
+    return ` ${replaced}`;
+  };
+
+  // Phase 1: turn "Label:  value" rows into .kv rows. Handles both
+  // <p> and <div> as the wrapping block.
   next = next.replace(
     new RegExp(
-      `<p([^>]*)>\\s*(${labelPatternSource})(?:&nbsp;|\\s)+([\\s\\S]*?)<\\/p>`,
-      "g",
+      `${blockOpen}([^>]*)>\\s*(${labelPatternSource})(?:&nbsp;|\\s)+([\\s\\S]*?)${blockClose}`,
+      "gi",
     ),
-    (_match, attrs, label, rest) => {
-      return `<div class="kv"${attrs}><span class="kv-label">${label}</span><span class="kv-value">${rest.trim()}</span></div>`;
+    (_match, attrs: string, label: string, rest: string) => {
+      const mergedAttrs = mergeClassAttr(attrs, "kv");
+      return `<div${mergedAttrs}><span class="kv-label">${label}</span><span class="kv-value">${rest.trim()}</span></div>`;
     },
   );
 
-  // Phase 2: tag every <p> that immediately follows a .kv row or a
+  // Phase 2: tag every block that immediately follows a .kv row or a
   // previous .kv-cont AND doesn't start with a new label as a
   // continuation. Emits <div class="kv-cont"> so the universal
-  // paragraph rules don't interfere.
+  // paragraph rules don't interfere. Iterates so chains of 3+
+  // continuation lines (Imaging Center -> phone -> address) all flip.
+  //
+  // The negative lookahead at the start of the right-side attrs
+  // excludes blocks that ALREADY have a kv / kv-cont class — without
+  // it, each iteration re-matches the just-converted kv-cont div as a
+  // fresh `<div>` to "continue" and stamps the class on itself again
+  // (we'd loop forever stacking duplicate classes and never advance to
+  // the actual orphan block).
   const continuationRe = new RegExp(
-    `(<div class="kv(?:-cont)?"[^>]*>[\\s\\S]*?<\\/div>)\\s*<p([^>]*)>(?!\\s*${labelPatternSource}(?:&nbsp;|\\s))([\\s\\S]*?)<\\/p>`,
-    "g",
+    `(<div\\s[^>]*class="(?:[^"]*\\s)?kv(?:-cont)?(?:\\s[^"]*)?"[^>]*>[\\s\\S]*?<\\/div>)` +
+      `\\s*` +
+      `${blockOpen}` +
+      `(?![^>]*\\bclass\\s*=\\s*["'][^"']*\\bkv(?:-cont)?\\b)` +
+      `([^>]*)>` +
+      `(?!\\s*${labelPatternSource}(?:&nbsp;|\\s))` +
+      `([\\s\\S]*?)` +
+      `${blockClose}`,
+    "gi",
   );
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     const before = next;
-    next = next.replace(continuationRe, (_match, prev, attrs, cont) => {
-      return `${prev}<div class="kv-cont"${attrs}>${cont.trim()}</div>`;
+    next = next.replace(continuationRe, (_match, prev: string, attrs: string, cont: string) => {
+      const mergedAttrs = mergeClassAttr(attrs, "kv-cont");
+      return `${prev}<div${mergedAttrs}>${cont.trim()}</div>`;
     });
     if (before === next) break;
   }
