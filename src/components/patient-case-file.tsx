@@ -359,6 +359,7 @@ function getAnchoredModalStyle(
   anchor: PopupAnchor | null,
   maxWidthPx: number,
   maxHeightVh: number,
+  options: { resizable?: boolean } = {},
 ): CSSProperties {
   if (typeof window === "undefined") {
     return {};
@@ -375,6 +376,22 @@ function getAnchoredModalStyle(
   const centerY = anchor?.y ?? viewportHeight / 2;
   const left = clamp(centerX - width / 2, margin, viewportWidth - width - margin);
   const top = clamp(centerY - 48, margin, viewportHeight - maxHeight - margin);
+
+  // For resizable modals (Imaging Findings / Specialist Recommendations
+  // editors) we use minWidth instead of width so the user-applied inline
+  // width from the bottom-right resize handle isn't clobbered on every
+  // React re-render. Same for height: minHeight instead of maxHeight.
+  if (options.resizable) {
+    return {
+      position: "absolute",
+      left,
+      top,
+      minWidth: width,
+      minHeight: Math.min(maxHeight, 480),
+      maxHeight: "calc(100vh - 32px)",
+      maxWidth: viewportWidth - margin * 2,
+    };
+  }
 
   return {
     position: "absolute",
@@ -6691,7 +6708,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
           <ScrollLock />
           <div className="relative h-full w-full">
-            <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(specialistEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveSpecialistEditor(); }}>
+            <form className="panel-card overflow-auto resize p-4" style={getAnchoredModalStyle(specialistEditorAnchor, 1000, 75, { resizable: true })} onSubmit={(e) => { e.preventDefault(); saveSpecialistEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Edit Specialist Referral</h3>
               <button
@@ -6878,7 +6895,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         <div className="fixed inset-0 z-50 bg-black/45 p-4">
           <ScrollLock />
           <div className="relative h-full w-full">
-            <form className="panel-card overflow-auto p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 760, 75)} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
+            <form className="panel-card overflow-auto resize p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 1000, 75, { resizable: true })} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">
                 Edit {editingImagingReferral.modalityLabel} Referral
