@@ -43,6 +43,38 @@ export function applyLabelValueHangingIndent(html: string): string {
   // -- the "derangements econdary" artifact we kept seeing.
   let next = html.replace(/[­​‌‍﻿]/g, "");
 
+  // Pre-process: split <p|div>A<br>B<br>C</p|div> into three separate
+  // blocks so each line can be analysed independently. Some templates
+  // pack the patient header (Name / DOB / DOI / Phone) into a single
+  // block separated by <br>, which then becomes one giant kv-row with
+  // every "Date of Birth: ..." line glued to the value column instead
+  // of being its own kv-row at the left margin.
+  next = next.replace(
+    new RegExp(`${blockOpen}([^>]*)>([\\s\\S]*?)${blockClose}`, "gi"),
+    (match, attrs: string, inner: string) => {
+      // Only split if the inner content contains a <br>. Otherwise leave
+      // the block alone so we don't perturb structure unnecessarily.
+      if (!/<br\s*\/?>/i.test(inner)) return match;
+      const parts = inner.split(/<br\s*\/?>/i);
+      // Drop trailing empty parts that come from a terminal <br>.
+      while (parts.length > 1 && parts[parts.length - 1].trim() === "") parts.pop();
+      return parts.map((part) => `<p${attrs}>${part}</p>`).join("");
+    },
+  );
+
+  // Helper: is this a "blank spacer" block — i.e. nothing but
+  // whitespace, &nbsp; and / or <br>? Used to BREAK the kv-cont chain
+  // so the section AFTER a blank line (Attorney Information, doctor
+  // signature, etc.) doesn't keep getting indented under the previous
+  // value column.
+  const isBlankInner = (inner: string): boolean => {
+    const stripped = inner
+      .replace(/<br\s*\/?>/gi, "")
+      .replace(/&nbsp;/gi, "")
+      .replace(/\s+/g, "");
+    return stripped.length === 0;
+  };
+
   // Helper: take an attrs string from the original block and merge our
   // own class into any existing class="..." so we don't emit duplicate
   // class attributes (which browsers may resolve by keeping the LATER
@@ -97,7 +129,14 @@ export function applyLabelValueHangingIndent(html: string): string {
   );
   for (let i = 0; i < 20; i++) {
     const before = next;
-    next = next.replace(continuationRe, (_match, prev: string, attrs: string, cont: string) => {
+    next = next.replace(continuationRe, (match, prev: string, attrs: string, cont: string) => {
+      // Blank spacer block — leave it as-is so the chain naturally
+      // breaks here. Without this guard, a `<p><br></p>` between two
+      // sections (imaging block -> blank line -> attorney info) gets
+      // tagged kv-cont and every section after it inherits the value-
+      // column indent, pushing the entire bottom of the document to
+      // the right.
+      if (isBlankInner(cont)) return match;
       const mergedAttrs = mergeClassAttr(attrs, "kv-cont");
       return `${prev}<div${mergedAttrs}>${cont.trim()}</div>`;
     });
