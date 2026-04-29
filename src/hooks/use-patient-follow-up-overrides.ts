@@ -130,26 +130,35 @@ export function usePatientFollowUpOverrides() {
   );
 
   // Fire-and-forget variants for callers that don't need confirmation.
-  // We swallow the rejection here so an offline / failed cloud write
-  // doesn't surface as an unhandled-rejection log; callers that NEED to
-  // detect failure should use the *Async variants below.
+  // We log the rejection (rather than silently swallowing) so a failed
+  // cloud write still leaves a trail in the console — callers that
+  // NEED to act on the failure should use the *Async variants below.
+  const logOverrideSaveError = (where: string, error: unknown) => {
+    console.error(`[patient-follow-up-overrides] ${where} cloud-write failed:`, error);
+  };
   const setPatientRefused = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { patientRefused: enabled }).catch(() => {});
+      setCategoryFlags(patientId, category, { patientRefused: enabled }).catch((error) =>
+        logOverrideSaveError("setPatientRefused", error),
+      );
     },
     [setCategoryFlags],
   );
 
   const setCompletedPriorCare = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { completedPriorCare: enabled }).catch(() => {});
+      setCategoryFlags(patientId, category, { completedPriorCare: enabled }).catch((error) =>
+        logOverrideSaveError("setCompletedPriorCare", error),
+      );
     },
     [setCategoryFlags],
   );
 
   const setNotNeeded = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { notNeeded: enabled }).catch(() => {});
+      setCategoryFlags(patientId, category, { notNeeded: enabled }).catch((error) =>
+        logOverrideSaveError("setNotNeeded", error),
+      );
     },
     [setCategoryFlags],
   );
@@ -191,7 +200,7 @@ export function usePatientFollowUpOverrides() {
         const next = { ...current };
         delete next[normalizedPatientId];
         return next;
-      }).catch(() => {});
+      }).catch((error) => logOverrideSaveError("clearPatientOverrides", error));
     },
     [updateMap],
   );

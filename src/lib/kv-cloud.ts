@@ -71,8 +71,8 @@ export async function fetchAllKvValues(): Promise<Map<string, unknown> | null> {
 /**
  * Upsert a single key-value pair. Throws on hard failure so callers that
  * await the returned promise can react (show error UI, retry, block
- * navigation). Fire-and-forget callers should `void` the call AND wrap in
- * a `.catch(() => {})` if they want the prior swallow-error behavior.
+ * navigation). Fire-and-forget callers should `void` the call AND attach
+ * a logging .catch handler if they want the prior swallow-error behavior.
  *
  * Hard failure = supabase responded with an error. Soft conditions (no
  * supabase client, no workspace) still resolve silently — there's no

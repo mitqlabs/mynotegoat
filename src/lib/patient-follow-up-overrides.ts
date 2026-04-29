@@ -123,6 +123,6 @@ export function savePatientFollowUpOverridesMap(value: PatientFollowUpOverrideMa
   // Use the throwing variant — callers that await must be able to detect
   // failure so the patient page can show an explicit "Save FAILED" pill
   // instead of silently losing the toggle on the next bootstrap. Fire-
-  // and-forget callers can `.catch(() => {})` themselves.
+  // and-forget callers should attach a logging catch handler themselves.
   return import("@/lib/kv-cloud").then((m) => m.dualWriteKvOrThrow(STORAGE_KEY, "billing", value));
 }
