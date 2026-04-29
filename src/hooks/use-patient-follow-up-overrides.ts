@@ -27,6 +27,16 @@ export function usePatientFollowUpOverrides() {
   );
 
   const selfWriteCountRef = useRef(0);
+  // Mirror of the latest committed map so updateMap can compute `next`
+  // synchronously (outside React's batched setState updater). Without
+  // this, the cloud-write promise was created INSIDE the setState
+  // updater — which runs asynchronously — but the awaitable setters
+  // resolved against a stale ref captured BEFORE the updater fired.
+  // Result: the patient page's "Saved ✓" pill flipped green before the
+  // cloud write actually started, the user trusted the green, and a
+  // refresh-with-failed-cloud-write wiped every toggle. This ref makes
+  // the save synchronous so the returned promise is the real one.
+  const recordsRef = useRef(recordsByPatientId);
 
   // Listen for changes made by other hook instances on this page
   useEffect(() => {
@@ -35,29 +45,36 @@ export function usePatientFollowUpOverrides() {
         selfWriteCountRef.current--;
         return;
       }
-      setRecordsByPatientId(loadPatientFollowUpOverridesMap());
+      const fresh = loadPatientFollowUpOverridesMap();
+      recordsRef.current = fresh;
+      setRecordsByPatientId(fresh);
     });
   }, []);
 
-  // Holds the in-flight cloud write so callers can await confirmation
-  // for a single setter call. setState's updater runs synchronously
-  // inside React's batch — we capture the promise via this ref instead
-  // of returning it, so the existing fire-and-forget setters stay
-  // backwards compatible.
-  const lastCloudWriteRef = useRef<Promise<void>>(Promise.resolve());
-
-  const updateMap = useCallback((updater: (current: PatientFollowUpOverrideMap) => PatientFollowUpOverrideMap) => {
-    setRecordsByPatientId((current) => {
+  // Performs the save synchronously and returns the actual cloud-write
+  // promise. The caller (setPatientRefusedAsync, etc.) awaits THIS
+  // promise — not a stale ref captured before React's batch fires.
+  const updateMap = useCallback(
+    (updater: (current: PatientFollowUpOverrideMap) => PatientFollowUpOverrideMap): Promise<void> => {
+      const current = recordsRef.current;
       const next = updater(current);
-      // Capture the cloud-write promise so the awaitable variants
-      // (setPatientRefusedAsync, etc.) can confirm the write landed
-      // before the caller flips a "Saved" indicator.
-      lastCloudWriteRef.current = savePatientFollowUpOverridesMap(next);
+      // Update ref first so any subsequent rapid call (user clicking 2
+      // checkboxes back-to-back) sees the just-committed value.
+      recordsRef.current = next;
+      // localStorage write + cloud dual-write happen here, OUTSIDE the
+      // React batch. The returned promise IS the cloud-write; the
+      // patient-page await on it is meaningful now.
+      const cloudWrite = savePatientFollowUpOverridesMap(next);
+      // Now schedule the React re-render so the UI reflects the new
+      // map. selfWriteCountRef tells the local-sync listener to skip
+      // its own re-load (we already have the truth).
       selfWriteCountRef.current++;
+      setRecordsByPatientId(next);
       notifyChange(SYNC_KEY);
-      return next;
-    });
-  }, []);
+      return cloudWrite;
+    },
+    [],
+  );
 
   const getRecord = useCallback(
     (patientId: string): PatientFollowUpOverrideRecord => {
@@ -71,12 +88,12 @@ export function usePatientFollowUpOverrides() {
   );
 
   const setCategoryFlags = useCallback(
-    (patientId: string, category: FollowUpOverrideCategory, patch: FollowUpOverrideCategoryPatch) => {
+    (patientId: string, category: FollowUpOverrideCategory, patch: FollowUpOverrideCategoryPatch): Promise<void> => {
       const normalizedPatientId = patientId.trim();
       if (!normalizedPatientId) {
-        return;
+        return Promise.resolve();
       }
-      updateMap((current) => {
+      return updateMap((current) => {
         const base = current[normalizedPatientId] ?? createPatientFollowUpOverrideRecord(normalizedPatientId);
         const nextCategory: FollowUpCategoryOverrideFlags = {
           patientRefused:
@@ -112,54 +129,52 @@ export function usePatientFollowUpOverrides() {
     [updateMap],
   );
 
+  // Fire-and-forget variants for callers that don't need confirmation.
+  // We swallow the rejection here so an offline / failed cloud write
+  // doesn't surface as an unhandled-rejection log; callers that NEED to
+  // detect failure should use the *Async variants below.
   const setPatientRefused = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { patientRefused: enabled });
+      setCategoryFlags(patientId, category, { patientRefused: enabled }).catch(() => {});
     },
     [setCategoryFlags],
   );
 
   const setCompletedPriorCare = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { completedPriorCare: enabled });
+      setCategoryFlags(patientId, category, { completedPriorCare: enabled }).catch(() => {});
     },
     [setCategoryFlags],
   );
 
   const setNotNeeded = useCallback(
     (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { notNeeded: enabled });
+      setCategoryFlags(patientId, category, { notNeeded: enabled }).catch(() => {});
     },
     [setCategoryFlags],
   );
 
-  // Awaitable variants — perform the same setter then resolve only after
-  // the cloud write confirms. Use these from UI flows that want to flip a
-  // "Saving → Saved" pill so a silent cloud failure doesn't leave the
-  // user thinking their toggle stuck when the next bootstrap will wipe
-  // it. The non-async variants above remain for code paths that don't
-  // need confirmation.
+  // Awaitable variants — same setter, but the returned promise IS the
+  // actual cloud write (not a stale ref). The patient page awaits this
+  // before flipping the "Saved ✓" pill so the green is only ever shown
+  // when the cloud has actually accepted the write. If supabase rejects
+  // (RLS, network, anything), this rejects and the page shows a sticky
+  // red "did NOT save to cloud" pill instead.
   const setPatientRefusedAsync = useCallback(
-    async (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { patientRefused: enabled });
-      await lastCloudWriteRef.current;
-    },
+    (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) =>
+      setCategoryFlags(patientId, category, { patientRefused: enabled }),
     [setCategoryFlags],
   );
 
   const setCompletedPriorCareAsync = useCallback(
-    async (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { completedPriorCare: enabled });
-      await lastCloudWriteRef.current;
-    },
+    (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) =>
+      setCategoryFlags(patientId, category, { completedPriorCare: enabled }),
     [setCategoryFlags],
   );
 
   const setNotNeededAsync = useCallback(
-    async (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) => {
-      setCategoryFlags(patientId, category, { notNeeded: enabled });
-      await lastCloudWriteRef.current;
-    },
+    (patientId: string, category: FollowUpOverrideCategory, enabled: boolean) =>
+      setCategoryFlags(patientId, category, { notNeeded: enabled }),
     [setCategoryFlags],
   );
 
@@ -176,7 +191,7 @@ export function usePatientFollowUpOverrides() {
         const next = { ...current };
         delete next[normalizedPatientId];
         return next;
-      });
+      }).catch(() => {});
     },
     [updateMap],
   );
