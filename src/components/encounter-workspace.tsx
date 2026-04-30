@@ -169,7 +169,7 @@ function getPronouns(sex?: string) {
   return { heShe: "they", himHer: "them", hisHer: "their" };
 }
 
-function getHonorifics(sex?: string, maritalStatus?: string, lastName?: string) {
+function getHonorifics(sex?: string, maritalStatus?: string, lastName?: string, firstName?: string) {
   const normalizedSex = (sex ?? "").toLowerCase();
   const normalizedMarital = (maritalStatus ?? "").toLowerCase();
   let formal = "Mx.";
@@ -182,11 +182,15 @@ function getHonorifics(sex?: string, maritalStatus?: string, lastName?: string) 
     neutral = "Ms.";
   }
   const safeLastName = (lastName ?? "").trim();
+  const safeFirstName = (firstName ?? "").trim();
+  const fullNameWithoutTitle = [safeFirstName, safeLastName].filter(Boolean).join(" ");
   return {
     mrMrsMs: formal,
     mrMs: neutral,
     mrMrsMsLastName: safeLastName ? `${formal} ${safeLastName}` : formal,
     mrMsLastName: safeLastName ? `${neutral} ${safeLastName}` : neutral,
+    mrMrsMsFullName: fullNameWithoutTitle ? `${formal} ${fullNameWithoutTitle}` : formal,
+    mrMsFullName: fullNameWithoutTitle ? `${neutral} ${fullNameWithoutTitle}` : neutral,
   };
 }
 
@@ -1202,7 +1206,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     const patient = patients.find((entry) => entry.id === patientId);
     const names = getNames(patient?.fullName ?? "");
     const pronouns = getPronouns(patient?.sex);
-    const honorifics = getHonorifics(patient?.sex, patient?.maritalStatus, names.lastName);
+    const honorifics = getHonorifics(patient?.sex, patient?.maritalStatus, names.lastName, names.firstName);
     return {
       FIRST_NAME: names.firstName,
       LAST_NAME: names.lastName,
@@ -1216,6 +1220,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       HIM_HER: pronouns.himHer,
       HIS_HER: pronouns.hisHer,
       MR_MRS_MS_LAST_NAME: honorifics.mrMrsMsLastName,
+      MR_MRS_MS_FULL_NAME: honorifics.mrMrsMsFullName,
     };
   };
 

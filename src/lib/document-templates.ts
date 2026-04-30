@@ -68,50 +68,91 @@ export function getDocumentTemplateScopeLabel(scope: DocumentTemplateScope) {
   );
 }
 
-export const documentTemplateFields: DocumentTemplateField[] = [
-  { token: "TODAY_DATE", label: "Today Date" },
-  { token: "OFFICE_NAME", label: "Office Name" },
-  { token: "OFFICE_ADDRESS", label: "Office Address" },
-  { token: "OFFICE_PHONE", label: "Office Phone" },
-  { token: "OFFICE_FAX", label: "Office Fax" },
-  { token: "OFFICE_EMAIL", label: "Office Email" },
-  { token: "DOCTOR_NAME", label: "Doctor Name" },
-  { token: "PATIENT_FULL_NAME", label: "Patient Full Name" },
-  { token: "PATIENT_FIRST_NAME", label: "Patient First Name" },
-  { token: "PATIENT_LAST_NAME", label: "Patient Last Name" },
-  { token: "PATIENT_DOB", label: "Patient DOB" },
-  { token: "DATE_OF_INJURY", label: "Date Of Injury" },
-  { token: "PATIENT_PHONE", label: "Patient Phone" },
-  { token: "PATIENT_EMAIL", label: "Patient Email" },
-  { token: "CASE_NUMBER", label: "Case #" },
-  { token: "ATTORNEY_NAME", label: "Attorney Name" },
-  { token: "ATTORNEY_PHONE", label: "Attorney Phone" },
-  { token: "ATTORNEY_FAX", label: "Attorney Fax" },
-  { token: "ATTORNEY_EMAIL", label: "Attorney Email" },
-  { token: "ATTORNEY_ADDRESS", label: "Attorney Address" },
-  { token: "SPECIALIST_NAME", label: "Specialist Name" },
-  { token: "SPECIALIST_PHONE", label: "Specialist Phone" },
-  { token: "SPECIALIST_FAX", label: "Specialist Fax" },
-  { token: "SPECIALIST_EMAIL", label: "Specialist Email" },
-  { token: "SPECIALIST_ADDRESS", label: "Specialist Address" },
-  { token: "SENT_DATE", label: "Sent Date" },
-  { token: "REFERRAL_SENT_DATE", label: "Referral Sent Date" },
-  { token: "REFERRAL_SCHEDULED_DATE", label: "Referral Scheduled Date" },
-  { token: "IMAGING_TYPE", label: "Imaging Type" },
-  { token: "IMAGING_CENTER", label: "Imaging Center" },
-  { token: "IMAGING_PHONE", label: "Imaging Center Phone" },
-  { token: "IMAGING_FAX", label: "Imaging Center Fax" },
-  { token: "IMAGING_EMAIL", label: "Imaging Center Email" },
-  { token: "IMAGING_ADDRESS", label: "Imaging Center Address" },
-  { token: "IMAGING_REGIONS", label: "Imaging Regions" },
-  { token: "IMAGING_SENT_DATE", label: "Imaging Sent Date" },
-  { token: "IMAGING_DONE_DATE", label: "Imaging Done Date" },
-  { token: "IMAGING_REPORT_RECEIVED_DATE", label: "Imaging Report Received Date" },
-  { token: "IMAGING_REPORT_REVIEWED_DATE", label: "Imaging Report Reviewed Date" },
-  { token: "XRAY_FINDINGS", label: "X-Ray Findings" },
-  { token: "MRI_CT_FINDINGS", label: "MRI / CT Findings" },
-  { token: "SPECIALIST_RECOMMENDATIONS", label: "Specialist Recommendations" },
+export type DocumentTemplateFieldGroup = {
+  label: string;
+  fields: DocumentTemplateField[];
+};
+
+export const documentTemplateFieldGroups: DocumentTemplateFieldGroup[] = [
+  {
+    label: "Office",
+    fields: [
+      { token: "TODAY_DATE", label: "Today Date" },
+      { token: "OFFICE_NAME", label: "Office Name" },
+      { token: "OFFICE_ADDRESS", label: "Office Address" },
+      { token: "OFFICE_PHONE", label: "Office Phone" },
+      { token: "OFFICE_FAX", label: "Office Fax" },
+      { token: "OFFICE_EMAIL", label: "Office Email" },
+      { token: "DOCTOR_NAME", label: "Doctor Name" },
+    ],
+  },
+  {
+    label: "Patient",
+    fields: [
+      { token: "PATIENT_FULL_NAME", label: "Patient Full Name" },
+      { token: "PATIENT_FIRST_NAME", label: "Patient First Name" },
+      { token: "PATIENT_LAST_NAME", label: "Patient Last Name" },
+      { token: "MR_MRS_MS_LAST_NAME", label: "Mr./Mrs./Ms. Last Name" },
+      { token: "MR_MRS_MS_FULL_NAME", label: "Mr./Mrs./Ms. Full Name" },
+      { token: "PATIENT_DOB", label: "Patient DOB" },
+      { token: "PATIENT_PHONE", label: "Patient Phone" },
+      { token: "PATIENT_EMAIL", label: "Patient Email" },
+    ],
+  },
+  {
+    label: "Case",
+    fields: [
+      { token: "DATE_OF_INJURY", label: "Date Of Injury" },
+      { token: "CASE_NUMBER", label: "Case #" },
+    ],
+  },
+  {
+    label: "Attorney",
+    fields: [
+      { token: "ATTORNEY_NAME", label: "Attorney Name" },
+      { token: "ATTORNEY_PHONE", label: "Attorney Phone" },
+      { token: "ATTORNEY_FAX", label: "Attorney Fax" },
+      { token: "ATTORNEY_EMAIL", label: "Attorney Email" },
+      { token: "ATTORNEY_ADDRESS", label: "Attorney Address" },
+    ],
+  },
+  {
+    label: "Specialist",
+    fields: [
+      { token: "SPECIALIST_NAME", label: "Specialist Name" },
+      { token: "SPECIALIST_PHONE", label: "Specialist Phone" },
+      { token: "SPECIALIST_FAX", label: "Specialist Fax" },
+      { token: "SPECIALIST_EMAIL", label: "Specialist Email" },
+      { token: "SPECIALIST_ADDRESS", label: "Specialist Address" },
+      { token: "SPECIALIST_RECOMMENDATIONS", label: "Specialist Recommendations" },
+      { token: "REFERRAL_SENT_DATE", label: "Referral Sent Date" },
+      { token: "REFERRAL_SCHEDULED_DATE", label: "Referral Scheduled Date" },
+    ],
+  },
+  {
+    label: "Imaging",
+    fields: [
+      { token: "IMAGING_TYPE", label: "Imaging Type" },
+      { token: "IMAGING_CENTER", label: "Imaging Center" },
+      { token: "IMAGING_PHONE", label: "Imaging Center Phone" },
+      { token: "IMAGING_FAX", label: "Imaging Center Fax" },
+      { token: "IMAGING_EMAIL", label: "Imaging Center Email" },
+      { token: "IMAGING_ADDRESS", label: "Imaging Center Address" },
+      { token: "IMAGING_REGIONS", label: "Imaging Regions" },
+      { token: "IMAGING_SENT_DATE", label: "Imaging Sent Date" },
+      { token: "IMAGING_DONE_DATE", label: "Imaging Done Date" },
+      { token: "IMAGING_REPORT_RECEIVED_DATE", label: "Imaging Report Received Date" },
+      { token: "IMAGING_REPORT_REVIEWED_DATE", label: "Imaging Report Reviewed Date" },
+      { token: "XRAY_FINDINGS", label: "X-Ray Findings" },
+      { token: "MRI_CT_FINDINGS", label: "MRI / CT Findings" },
+    ],
+  },
 ];
+
+// Flat list — kept for callers that just want every token (e.g. token
+// substitution). The grouped form (above) drives the editor UI.
+export const documentTemplateFields: DocumentTemplateField[] =
+  documentTemplateFieldGroups.flatMap((group) => group.fields);
 
 const defaultSpecialistReferralBody = `Specialist Referral
 

@@ -2247,6 +2247,20 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const getCommonDocumentContext = (): Record<string, string> => {
     const patientFullName = `${firstName} ${lastName}`.trim();
+    // Compute the formal-title prefix for {{MR_MRS_MS_*}} tokens.
+    // Mirrors getHonorifics in encounter-workspace so both the macro
+    // pipeline and the document templates resolve the same way for the
+    // same patient.
+    const sex = (patientSex ?? "").toLowerCase();
+    const marital = (maritalStatus ?? "").toLowerCase();
+    const formalTitle =
+      sex === "male"
+        ? "Mr."
+        : sex === "female"
+          ? marital === "married" ? "Mrs." : "Ms."
+          : "Mx.";
+    const titleLast = lastName.trim() ? `${formalTitle} ${lastName.trim()}` : formalTitle;
+    const titleFull = patientFullName ? `${formalTitle} ${patientFullName}` : formalTitle;
     return {
       TODAY_DATE: getTodayUsDate(),
       OFFICE_NAME: officeSettings.officeName,
@@ -2258,6 +2272,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       PATIENT_FULL_NAME: patientFullName,
       PATIENT_FIRST_NAME: firstName,
       PATIENT_LAST_NAME: lastName,
+      MR_MRS_MS_LAST_NAME: titleLast,
+      MR_MRS_MS_FULL_NAME: titleFull,
       PATIENT_DOB: toUsDate(patientDob),
       DATE_OF_INJURY: toUsDate(dateOfLoss),
       PATIENT_PHONE: patientPhone,
@@ -2273,10 +2289,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       SPECIALIST_FAX: "",
       SPECIALIST_EMAIL: "",
       SPECIALIST_ADDRESS: "",
-      // Generic "Sent Date" — overridden per-PDF generator with the
-      // actual referral / imaging sent date so a single template can
-      // use {{SENT_DATE}} regardless of context (specialist vs imaging).
-      SENT_DATE: "",
       REFERRAL_SENT_DATE: "",
       REFERRAL_SCHEDULED_DATE: "",
       IMAGING_TYPE: "",
@@ -2685,7 +2697,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       SPECIALIST_FAX: specialistContact?.fax ?? "",
       SPECIALIST_EMAIL: specialistContact?.email ?? "",
       SPECIALIST_ADDRESS: specialistContact?.address ?? "",
-      SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SCHEDULED_DATE: toUsDate(entry.scheduledDate),
       REFERRAL_COMPLETED_DATE: toUsDate(entry.completedDate ?? ""),
@@ -2750,7 +2761,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       IMAGING_DONE_DATE: toUsDate(entry.doneDate),
       IMAGING_REPORT_RECEIVED_DATE: toUsDate(entry.reportReceivedDate),
       IMAGING_REPORT_REVIEWED_DATE: toUsDate(entry.reportReviewedDate),
-      SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SENT_DATE: toUsDate(entry.sentDate),
     };
 
@@ -2862,6 +2872,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           if (sex === "male") prefix = "Mr.";
           else if (sex === "female") prefix = marital === "married" ? "Mrs." : "Ms.";
           return lastName ? `${prefix} ${lastName}` : prefix;
+        })(),
+        mrMrsMsFullName: (() => {
+          const sex = patientSex.toLowerCase();
+          const marital = maritalStatus.toLowerCase();
+          let prefix = "Mx.";
+          if (sex === "male") prefix = "Mr.";
+          else if (sex === "female") prefix = marital === "married" ? "Mrs." : "Ms.";
+          const fullName = `${firstName} ${lastName}`.trim();
+          return fullName ? `${prefix} ${fullName}` : prefix;
         })(),
         heShe: patientSex.toLowerCase() === "male" ? "He" : patientSex.toLowerCase() === "female" ? "She" : "They",
         hisHer: patientSex.toLowerCase() === "male" ? "His" : patientSex.toLowerCase() === "female" ? "Her" : "Their",

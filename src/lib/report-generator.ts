@@ -33,6 +33,7 @@ type NarrativePatientContext = {
   mriCtFindings: string;
   specialistRecommendations: string;
   mrMrsMsLastName: string;
+  mrMrsMsFullName: string;
   heShe: string;
   hisHer: string;
 };
@@ -547,6 +548,7 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     MRI_CT_FINDINGS: input.patient.mriCtFindings,
     SPECIALIST_RECOMMENDATIONS: input.patient.specialistRecommendations,
     MR_MRS_MS_LAST_NAME: input.patient.mrMrsMsLastName,
+    MR_MRS_MS_FULL_NAME: input.patient.mrMrsMsFullName,
     HE_SHE: input.patient.heShe,
     HIS_HER: input.patient.hisHer,
 

@@ -9,6 +9,7 @@ import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import {
   documentFontOptions,
   documentTemplateFields,
+  documentTemplateFieldGroups,
   renderDocumentTemplate,
   type DocumentTemplate,
   type DocumentTemplateScope,
@@ -458,32 +459,41 @@ export function DocumentTemplateSettingsPanel({
 
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Choose Your Auto Fields</p>
-                  <p className="text-xs text-[var(--text-muted)]">Selected: {usedFieldTokens.length}</p>
+                  <p className="text-sm font-semibold">Insert Auto Fields</p>
+                  <p className="text-xs text-[var(--text-muted)]">Used in this template: {usedFieldTokens.length}</p>
                 </div>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   Click any field to insert it at the current cursor position.
                 </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {documentTemplateFields.map((field) => {
-                    const selected = usedFieldTokens.includes(field.token);
-                    return (
-                      <button
-                        key={`template-auto-field-${field.token}`}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
-                          selected
-                            ? "border-[var(--brand-primary)] bg-[#e9f4fb] text-[var(--brand-primary)]"
-                            : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
-                        }`}
-                        onClick={() => insertTemplateFieldToken(field.token)}
-                        title={field.label}
-                        type="button"
-                      >
-                        {selected ? "✓ " : ""}
-                        {field.token}
-                      </button>
-                    );
-                  })}
+                <div className="mt-3 space-y-3">
+                  {documentTemplateFieldGroups.map((group) => (
+                    <div key={`template-auto-group-${group.label}`}>
+                      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
+                        {group.label}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {group.fields.map((field) => {
+                          const selected = usedFieldTokens.includes(field.token);
+                          return (
+                            <button
+                              key={`template-auto-field-${field.token}`}
+                              className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
+                                selected
+                                  ? "border-[var(--brand-primary)] bg-[#e9f4fb] text-[var(--brand-primary)]"
+                                  : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                              }`}
+                              onClick={() => insertTemplateFieldToken(field.token)}
+                              title={field.label}
+                              type="button"
+                            >
+                              {selected ? "✓ " : ""}
+                              {field.token}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

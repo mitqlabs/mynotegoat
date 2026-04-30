@@ -341,6 +341,8 @@ export default function MyFilesPage() {
           else if (sex === "Female") prefix = married ? "Mrs." : "Ms.";
           else prefix = "Mr./Ms.";
           ctx.MR_MRS_MS_LAST_NAME = `${prefix} ${lastName}`;
+          const fullNameTrimmed = `${firstName} ${lastName}`.trim();
+          ctx.MR_MRS_MS_FULL_NAME = fullNameTrimmed ? `${prefix} ${fullNameTrimmed}` : prefix;
 
           if (patient.dob) {
             const [y, m, d] = patient.dob.split("-");

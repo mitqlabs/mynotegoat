@@ -114,6 +114,7 @@ export const macroAutoFieldLabels = {
   HIM_HER: "him/her",
   HIS_HER: "his/her",
   MR_MRS_MS_LAST_NAME: "Mr./Mrs./Ms. Last name",
+  MR_MRS_MS_FULL_NAME: "Mr./Mrs./Ms. Full name",
   SPECIALIST_REFERRED: "Specialist (pick from contacts)",
 } as const;
 

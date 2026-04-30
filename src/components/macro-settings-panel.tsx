@@ -78,7 +78,6 @@ export function MacroSettingsPanel() {
     setSetName,
     setSaltOnCreateDefault,
     toggleSaltSectionDefault,
-    toggleAutoField,
     addMacro,
     updateMacro,
     deleteMacro,
@@ -215,11 +214,11 @@ export function MacroSettingsPanel() {
     return questionIdsInBody.filter((questionId) => !knownIds.has(questionId));
   }, [questionIdsInBody, selectedMacro]);
 
-  const enabledAutoFields = useMemo(
-    () =>
-      macroLibrary.enabledAutoFields.length > 0 ? macroLibrary.enabledAutoFields : [...macroAutoFields],
-    [macroLibrary.enabledAutoFields],
-  );
+  // Note: macroLibrary.enabledAutoFields is no longer consumed by the
+  // UI — every macroAutoField is offered as an "Insert" button so the
+  // user doesn't have to opt-in twice. The persisted field is left as
+  // a no-op for back-compat with older saves; useMacroTemplates still
+  // exposes toggleAutoField for any external callers.
 
   const appendToBody = (snippet: string) => {
     if (!selectedMacro) {
@@ -657,37 +656,12 @@ export function MacroSettingsPanel() {
               </div>
 
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Choose Your Auto Fields</p>
-                  <p className="text-xs text-[var(--text-muted)]">Selected: {enabledAutoFields.length}</p>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {macroAutoFields.map((field) => {
-                    const selected = enabledAutoFields.includes(field);
-                    return (
-                      <button
-                        key={`enable-${field}`}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
-                          selected
-                            ? "border-[var(--brand-primary)] bg-[#e9f4fb] text-[var(--brand-primary)]"
-                            : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
-                        }`}
-                        onClick={() => toggleAutoField(field)}
-                        title={macroAutoFieldLabels[field]}
-                        type="button"
-                      >
-                        {selected ? "✓ " : ""}
-                        {field}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <p className="text-sm font-semibold">Insert Auto Fields</p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Click any field to insert it into the macro body.
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {enabledAutoFields.map((field) => (
+                  {macroAutoFields.map((field) => (
                     <button
                       key={field}
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"

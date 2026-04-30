@@ -13,6 +13,7 @@ export const emailAutoFieldLabels = {
   LAST_NAME: "Patient last name",
   FULL_NAME: "Patient full name",
   MR_MRS_MS_LAST_NAME: "Mr./Mrs./Ms. Last name",
+  MR_MRS_MS_FULL_NAME: "Mr./Mrs./Ms. Full name",
   DOB: "Date of birth",
   INJURY_DATE: "Date of injury",
   OFFICE_NAME: "Office name",
