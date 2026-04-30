@@ -2042,6 +2042,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => patientAppointmentRecords.filter((entry) => entry.status === "Canceled").length,
     [patientAppointmentRecords],
   );
+  const scheduledCount = useMemo(
+    () => patientAppointmentRecords.filter((entry) => entry.status === "Scheduled").length,
+    [patientAppointmentRecords],
+  );
   const closedEncounterCount = useMemo(
     () => patientEncounterRecords.filter((entry) => entry.signed).length,
     [patientEncounterRecords],
@@ -4998,11 +5002,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <section className="panel-card p-4">
         <button
-          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+          className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
           type="button"
         >
-          <span>Appointments / Encounters</span>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-left">
+            <span>Appointments / Encounters</span>
+            {/* Per-status counts so the user can see at a glance how
+                many are scheduled vs already in / out / canceled
+                without expanding the panel. */}
+            <span className="text-sm font-medium text-white/85">
+              {scheduledCount} Scheduled · {checkedInCount} Checked In · {checkedOutCount} Checked Out · {canceledCount} Canceled
+            </span>
+          </span>
           <span className="text-xl">{sectionPanelsOpen.appointments ? "−" : "+"}</span>
         </button>
         {sectionPanelsOpen.appointments && (

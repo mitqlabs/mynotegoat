@@ -616,13 +616,52 @@ async function bootstrapTableBackedEntities() {
             console.error("[Cloud Sync] Appointment migration failed:", result.error);
           }
         } else if (apptsRows.length > 0) {
-          pauseSync();
-          try {
-            replaceAppointmentsFromCloud(apptsRows);
-          } finally {
-            resumeSync();
+          // SAFETY: Before clobbering local appointments with cloud data,
+          // sanity-check the counts and the per-id status diff. If local
+          // has MORE appointments than cloud, treat that as "cloud is
+          // stale" (a dual-write may have failed, or another session
+          // wrote earlier). Don't wipe; preserve local and warn loudly.
+          //
+          // This is the same defensive pattern we added for
+          // patient-follow-up-overrides after the data-loss report.
+          // Without it, the user toggling check-in / cancel / reschedule
+          // and then refreshing-with-stale-cloud silently snaps every
+          // appointment back to whatever the cloud had — which feels
+          // exactly like "the schedule is doing random shit by itself".
+          const cloudById = new Map(apptsRows.map((a) => [a.id, a]));
+          const statusDiffs = localAppts
+            .filter((local) => {
+              const cloud = cloudById.get(local.id);
+              return cloud && cloud.status !== local.status;
+            })
+            .map((local) => {
+              const cloud = cloudById.get(local.id);
+              return `${local.id} local="${local.status}" cloud="${cloud?.status ?? "?"}"`;
+            });
+          if (statusDiffs.length > 0 || localAppts.length !== apptsRows.length) {
+            console.warn(
+              `[Cloud Sync] Appointment cloud/local diff — local=${localAppts.length} cloud=${apptsRows.length}` +
+                (statusDiffs.length > 0
+                  ? `, ${statusDiffs.length} status mismatch(es): ${statusDiffs.slice(0, 5).join("; ")}` +
+                    (statusDiffs.length > 5 ? `; ...and ${statusDiffs.length - 5} more` : "")
+                  : ""),
+            );
           }
-          console.info(`[Cloud Sync] Loaded ${apptsRows.length} appointment(s) from table.`);
+          if (localAppts.length > apptsRows.length) {
+            console.warn(
+              `[Cloud Sync] SKIPPING appointment overwrite — local has ${localAppts.length}, ` +
+                `cloud has only ${apptsRows.length}. Cloud may be stale (failed dual-write?). ` +
+                `Keeping local. Will re-sync on next save.`,
+            );
+          } else {
+            pauseSync();
+            try {
+              replaceAppointmentsFromCloud(apptsRows);
+            } finally {
+              resumeSync();
+            }
+            console.info(`[Cloud Sync] Loaded ${apptsRows.length} appointment(s) from table.`);
+          }
         }
       }
     }
