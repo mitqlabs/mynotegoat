@@ -2273,6 +2273,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       SPECIALIST_FAX: "",
       SPECIALIST_EMAIL: "",
       SPECIALIST_ADDRESS: "",
+      // Generic "Sent Date" — overridden per-PDF generator with the
+      // actual referral / imaging sent date so a single template can
+      // use {{SENT_DATE}} regardless of context (specialist vs imaging).
+      SENT_DATE: "",
       REFERRAL_SENT_DATE: "",
       REFERRAL_SCHEDULED_DATE: "",
       IMAGING_TYPE: "",
@@ -2681,6 +2685,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       SPECIALIST_FAX: specialistContact?.fax ?? "",
       SPECIALIST_EMAIL: specialistContact?.email ?? "",
       SPECIALIST_ADDRESS: specialistContact?.address ?? "",
+      SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SCHEDULED_DATE: toUsDate(entry.scheduledDate),
       REFERRAL_COMPLETED_DATE: toUsDate(entry.completedDate ?? ""),
@@ -2745,6 +2750,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       IMAGING_DONE_DATE: toUsDate(entry.doneDate),
       IMAGING_REPORT_RECEIVED_DATE: toUsDate(entry.reportReceivedDate),
       IMAGING_REPORT_REVIEWED_DATE: toUsDate(entry.reportReviewedDate),
+      SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SENT_DATE: toUsDate(entry.sentDate),
     };
 

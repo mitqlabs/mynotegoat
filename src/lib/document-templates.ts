@@ -94,6 +94,7 @@ export const documentTemplateFields: DocumentTemplateField[] = [
   { token: "SPECIALIST_FAX", label: "Specialist Fax" },
   { token: "SPECIALIST_EMAIL", label: "Specialist Email" },
   { token: "SPECIALIST_ADDRESS", label: "Specialist Address" },
+  { token: "SENT_DATE", label: "Sent Date" },
   { token: "REFERRAL_SENT_DATE", label: "Referral Sent Date" },
   { token: "REFERRAL_SCHEDULED_DATE", label: "Referral Scheduled Date" },
   { token: "IMAGING_TYPE", label: "Imaging Type" },
