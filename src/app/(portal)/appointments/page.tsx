@@ -557,17 +557,22 @@ export default function AppointmentsPage() {
     return grouped;
   }, [todaysAppointmentsForView]);
 
+  // Provider / Location dropdowns read from Office Settings only — the
+  // single canonical source. The previous logic also scanned every past
+  // appointment for unique provider / location strings, which meant any
+  // historical typo ("Galstyan, Mike (Dr. Mike)" alongside "Dr. Mike
+  // Galstyan", or "Prime Spine Glendale" alongside "Prime Spine &
+  // Wellness") stuck around in the dropdown forever with no UI to remove
+  // it. Office Settings is editable from Settings → Office.
   const providers = useMemo(() => {
-    const values = new Set<string>([defaultScheduleProvider]);
-    scheduleAppointments.forEach((appointment) => values.add(appointment.provider));
-    return Array.from(values);
-  }, [scheduleAppointments]);
+    const canonical = officeSettings.doctorName.trim();
+    return canonical ? [canonical] : [];
+  }, [officeSettings.doctorName]);
 
   const locations = useMemo(() => {
-    const values = new Set<string>([defaultScheduleLocation]);
-    scheduleAppointments.forEach((appointment) => values.add(appointment.location));
-    return Array.from(values);
-  }, [scheduleAppointments]);
+    const canonical = officeSettings.officeName.trim();
+    return canonical ? [canonical] : [];
+  }, [officeSettings.officeName]);
 
   const configuredRooms = useMemo(
     () =>

@@ -5,6 +5,7 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import {
   findClosedKeyDateForDate,
@@ -44,6 +45,7 @@ export function EditAppointmentModal({
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleRooms } = useScheduleRooms();
   const { scheduleSettings } = useScheduleSettings();
+  const { officeSettings } = useOfficeSettings();
   const { keyDates } = useKeyDates();
 
   const [date, setDate] = useState("");
@@ -107,23 +109,28 @@ export function EditAppointmentModal({
     return Array.from(values).sort((left, right) => left.localeCompare(right));
   }, [configuredRooms, scheduleAppointments]);
 
+  // Provider / Location dropdowns read from Office Settings as the single
+  // canonical source. We still include the CURRENT appointment's stored
+  // value if it differs (so editing a legacy appointment whose provider
+  // string predates the canonical name shows it in the list rather than
+  // dropping silently). Past-appointment scanning (which used to dump
+  // every historical typo into the dropdown) is gone — Office Settings
+  // is editable from Settings → Office.
   const providerOptions = useMemo(() => {
     const values = new Set<string>();
-    scheduleAppointments.forEach((entry) => values.add(entry.provider));
-    if (appointment) {
-      values.add(appointment.provider);
-    }
+    const canonical = officeSettings.doctorName.trim();
+    if (canonical) values.add(canonical);
+    if (appointment?.provider) values.add(appointment.provider);
     return Array.from(values);
-  }, [scheduleAppointments, appointment]);
+  }, [officeSettings.doctorName, appointment]);
 
   const locationOptions = useMemo(() => {
     const values = new Set<string>();
-    scheduleAppointments.forEach((entry) => values.add(entry.location));
-    if (appointment) {
-      values.add(appointment.location);
-    }
+    const canonical = officeSettings.officeName.trim();
+    if (canonical) values.add(canonical);
+    if (appointment?.location) values.add(appointment.location);
     return Array.from(values);
-  }, [scheduleAppointments, appointment]);
+  }, [officeSettings.officeName, appointment]);
 
   if (!open || !appointment) {
     return null;
