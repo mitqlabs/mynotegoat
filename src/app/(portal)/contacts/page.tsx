@@ -51,7 +51,7 @@ function normalizeLookupValue(value: string) {
 
 export default function ContactsPage() {
   const { categories, subCategories } = useContactCategories();
-  const { contacts, addContact, updateContact } = useContactDirectory();
+  const { contacts, addContact, updateContact, removeContact } = useContactDirectory();
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
   const defaultCategory = useMemo<ContactRecord["category"]>(() => "Attorney", []);
@@ -133,6 +133,23 @@ export default function ContactsPage() {
     setEditingContactId(null);
     setEditContactError("");
     setEditContactForm(createBlankContactForm(defaultCategory));
+  };
+
+  const handleDeleteContact = (contact: ContactRecord) => {
+    const confirmed = window.confirm(
+      `Delete contact "${contact.name}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    const result = removeContact(contact.id);
+    if (!result.removed) {
+      window.alert(result.reason);
+      return;
+    }
+    if (editingContactId === contact.id) {
+      setEditingContactId(null);
+      setEditContactError("");
+      setEditContactForm(createBlankContactForm(defaultCategory));
+    }
   };
 
   const openAddModal = () => {
@@ -247,13 +264,22 @@ export default function ContactsPage() {
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-lg font-semibold">{contact.name}</h4>
                 {!isEditing && (
-                  <button
-                    className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
-                    onClick={() => startEditing(contact)}
-                    type="button"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                      onClick={() => startEditing(contact)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="rounded-lg border border-[#b43b34] px-3 py-1 text-sm font-semibold text-[#b43b34] hover:bg-[#b43b34] hover:text-white"
+                      onClick={() => handleDeleteContact(contact)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
 

@@ -29,6 +29,10 @@ type UpdateContactResult =
   | { updated: true; contact: ContactRecord }
   | { updated: false; reason: string; contact?: ContactRecord };
 
+type RemoveContactResult =
+  | { removed: true; contact: ContactRecord }
+  | { removed: false; reason: string };
+
 function normalizeCategory(category: string) {
   return sanitizeContactCategory(category);
 }
@@ -160,6 +164,18 @@ export function useContactDirectory() {
     [],
   );
 
+  const removeContact = useCallback((id: string): RemoveContactResult => {
+    const current = loadContactDirectory();
+    const target = current.find((entry) => entry.id === id);
+    if (!target) {
+      return { removed: false, reason: "Contact not found." };
+    }
+    const updated = current.filter((entry) => entry.id !== id);
+    saveContactDirectory(updated);
+    setContacts(updated);
+    return { removed: true, contact: target };
+  }, []);
+
   const resetToDefaults = useCallback(() => {
     const defaults = getDefaultContactDirectory();
     setContacts(defaults);
@@ -170,6 +186,7 @@ export function useContactDirectory() {
     contacts,
     addContact,
     updateContact,
+    removeContact,
     resetToDefaults,
   };
 }
