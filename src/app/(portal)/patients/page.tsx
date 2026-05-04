@@ -46,6 +46,8 @@ const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLos
 const CF_COLUMN_ORDER_KEY = "casemate.cf-column-order.v1";
 const CF_SORT_COLUMN_KEY = "casemate.cf-sort-column.v1";
 const CF_SORT_ASC_KEY = "casemate.cf-sort-asc.v1";
+const CF_SECONDARY_SORT_COLUMN_KEY = "casemate.cf-secondary-sort-column.v1";
+const CF_SECONDARY_SORT_ASC_KEY = "casemate.cf-secondary-sort-asc.v1";
 type CfColumnId = "patient" | "caseNumber" | "attorney" | "category" | "followUp" | "anchorDate" | "age" | "caseStatus";
 const defaultCfColumnOrder: CfColumnId[] = ["patient", "caseNumber", "attorney", "category", "followUp", "anchorDate", "age", "caseStatus"];
 const cfColumnLabels: Record<CfColumnId, string> = {
@@ -383,6 +385,18 @@ export default function PatientsPage() {
     if (typeof window === "undefined") return false;
     const saved = window.localStorage.getItem(CF_SORT_ASC_KEY);
     return saved === null ? false : saved === "true";
+  });
+  // Optional second-level sort. "" = no secondary sort.
+  const [cfSecondarySortColumn, setCfSecondarySortColumn] = useState<CfColumnId | "">(() => {
+    if (typeof window === "undefined") return "";
+    const saved = window.localStorage.getItem(CF_SECONDARY_SORT_COLUMN_KEY);
+    if (!saved) return "";
+    return defaultCfColumnOrder.includes(saved as CfColumnId) ? (saved as CfColumnId) : "";
+  });
+  const [cfSecondarySortAsc, setCfSecondarySortAsc] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const saved = window.localStorage.getItem(CF_SECONDARY_SORT_ASC_KEY);
+    return saved === null ? true : saved === "true";
   });
   const [cfColumnOrder, setCfColumnOrder] = useState<CfColumnId[]>(() => loadCfColumnOrder());
   const [cfDragColumnId, setCfDragColumnId] = useState<CfColumnId | null>(null);
@@ -876,30 +890,34 @@ export default function PatientsPage() {
   );
 
   const sortedFollowUpItems = useMemo(() => {
+    const compareBy = (
+      a: (typeof followUpItems)[number],
+      b: (typeof followUpItems)[number],
+      column: CfColumnId,
+    ) => {
+      if (column === "patient") return a.patientName.localeCompare(b.patientName);
+      if (column === "caseNumber") return (a.caseNumber || "").localeCompare(b.caseNumber || "");
+      if (column === "attorney") return (a.attorney || "").localeCompare(b.attorney || "");
+      if (column === "category") return a.category.localeCompare(b.category);
+      if (column === "followUp") return a.stage.localeCompare(b.stage);
+      if (column === "anchorDate") return (a.anchorDate || "").localeCompare(b.anchorDate || "");
+      if (column === "age") return (a.daysFromAnchor ?? -99999) - (b.daysFromAnchor ?? -99999);
+      if (column === "caseStatus") return a.caseStatus.localeCompare(b.caseStatus);
+      return 0;
+    };
     const items = [...followUpItems];
     items.sort((a, b) => {
-      let cmp = 0;
-      if (cfSortColumn === "patient") {
-        cmp = a.patientName.localeCompare(b.patientName);
-      } else if (cfSortColumn === "caseNumber") {
-        cmp = (a.caseNumber || "").localeCompare(b.caseNumber || "");
-      } else if (cfSortColumn === "attorney") {
-        cmp = (a.attorney || "").localeCompare(b.attorney || "");
-      } else if (cfSortColumn === "category") {
-        cmp = a.category.localeCompare(b.category);
-      } else if (cfSortColumn === "followUp") {
-        cmp = a.stage.localeCompare(b.stage);
-      } else if (cfSortColumn === "anchorDate") {
-        cmp = (a.anchorDate || "").localeCompare(b.anchorDate || "");
-      } else if (cfSortColumn === "age") {
-        cmp = (a.daysFromAnchor ?? -99999) - (b.daysFromAnchor ?? -99999);
-      } else if (cfSortColumn === "caseStatus") {
-        cmp = a.caseStatus.localeCompare(b.caseStatus);
+      const primary = compareBy(a, b, cfSortColumn);
+      const directed = cfSortAsc ? primary : -primary;
+      if (directed !== 0) return directed;
+      if (cfSecondarySortColumn && cfSecondarySortColumn !== cfSortColumn) {
+        const secondary = compareBy(a, b, cfSecondarySortColumn);
+        return cfSecondarySortAsc ? secondary : -secondary;
       }
-      return cfSortAsc ? cmp : -cmp;
+      return 0;
     });
     return items;
-  }, [followUpItems, cfSortColumn, cfSortAsc]);
+  }, [followUpItems, cfSortColumn, cfSortAsc, cfSecondarySortColumn, cfSecondarySortAsc]);
 
   // --- To Do helpers ---
   const filteredTasks = useMemo(() => {
@@ -1388,6 +1406,46 @@ export default function PatientsPage() {
                 </p>
               </div>
             </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+              <span className="font-semibold">Then sort by:</span>
+              <select
+                className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                value={cfSecondarySortColumn}
+                onChange={(e) => {
+                  const value = e.target.value as CfColumnId | "";
+                  setCfSecondarySortColumn(value);
+                  if (value) {
+                    window.localStorage.setItem(CF_SECONDARY_SORT_COLUMN_KEY, value);
+                  } else {
+                    window.localStorage.removeItem(CF_SECONDARY_SORT_COLUMN_KEY);
+                  }
+                }}
+              >
+                <option value="">— None —</option>
+                {defaultCfColumnOrder.map((colId) => (
+                  <option key={colId} value={colId}>
+                    {cfColumnLabels[colId]}
+                  </option>
+                ))}
+              </select>
+              {cfSecondarySortColumn && (
+                <button
+                  type="button"
+                  className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                  onClick={() => {
+                    setCfSecondarySortAsc((prev) => {
+                      const next = !prev;
+                      window.localStorage.setItem(CF_SECONDARY_SORT_ASC_KEY, String(next));
+                      return next;
+                    });
+                  }}
+                  title="Toggle secondary sort direction"
+                >
+                  {cfSecondarySortAsc ? "▲ Asc" : "▼ Desc"}
+                </button>
+              )}
+              <span className="text-[var(--text-muted)]">Click any column header to set the primary sort.</span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1408,6 +1466,11 @@ export default function PatientsPage() {
                         {cfColumnLabels[colId]}
                         {cfSortColumn === colId && (
                           <span className="text-[10px]">{cfSortAsc ? "▲" : "▼"}</span>
+                        )}
+                        {cfSecondarySortColumn === colId && cfSortColumn !== colId && (
+                          <span className="text-[10px] text-[var(--text-muted)]">
+                            2°{cfSecondarySortAsc ? "▲" : "▼"}
+                          </span>
                         )}
                       </span>
                     </th>

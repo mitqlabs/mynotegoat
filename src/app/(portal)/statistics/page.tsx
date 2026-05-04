@@ -4,6 +4,50 @@ import { useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 
+const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
+const ATTORNEY_SORT_ASC_KEY = "casemate.attorney-perf-sort-asc.v1";
+
+type AttorneyStatColumn =
+  | "attorney"
+  | "received"
+  | "active"
+  | "discharged"
+  | "readyToSubmit"
+  | "submitted"
+  | "dropped"
+  | "paid"
+  | "avgTimeToRb"
+  | "avgTimeToPaid"
+  | "percentPaid";
+
+const attorneyStatColumns: AttorneyStatColumn[] = [
+  "attorney",
+  "received",
+  "active",
+  "discharged",
+  "readyToSubmit",
+  "submitted",
+  "dropped",
+  "paid",
+  "avgTimeToRb",
+  "avgTimeToPaid",
+  "percentPaid",
+];
+
+const attorneyStatLabels: Record<AttorneyStatColumn, string> = {
+  attorney: "Attorney",
+  received: "Received",
+  active: "Active",
+  discharged: "Discharged",
+  readyToSubmit: "Ready To Submit",
+  submitted: "Submitted",
+  dropped: "Dropped",
+  paid: "Paid",
+  avgTimeToRb: "Avg. Time To R&B",
+  avgTimeToPaid: "Avg. Time To Paid",
+  percentPaid: "% Paid",
+};
+
 const monthOrder = [
   "January",
   "February",
@@ -149,6 +193,36 @@ export default function StatisticsPage() {
   // the page first opens — click to reveal.
   const [showBilling, setShowBilling] = useState(false);
 
+  const [attorneySortColumn, setAttorneySortColumn] = useState<AttorneyStatColumn>(() => {
+    if (typeof window === "undefined") return "received";
+    const saved = window.localStorage.getItem(ATTORNEY_SORT_COLUMN_KEY);
+    return saved && attorneyStatColumns.includes(saved as AttorneyStatColumn)
+      ? (saved as AttorneyStatColumn)
+      : "received";
+  });
+  const [attorneySortAsc, setAttorneySortAsc] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const saved = window.localStorage.getItem(ATTORNEY_SORT_ASC_KEY);
+    return saved === null ? false : saved === "true";
+  });
+
+  const toggleAttorneySort = (col: AttorneyStatColumn) => {
+    if (attorneySortColumn === col) {
+      setAttorneySortAsc((prev) => {
+        const next = !prev;
+        window.localStorage.setItem(ATTORNEY_SORT_ASC_KEY, String(next));
+        return next;
+      });
+    } else {
+      setAttorneySortColumn(col);
+      // Numeric columns default to descending (highest first), text to ascending.
+      const defaultAsc = col === "attorney";
+      setAttorneySortAsc(defaultAsc);
+      window.localStorage.setItem(ATTORNEY_SORT_COLUMN_KEY, col);
+      window.localStorage.setItem(ATTORNEY_SORT_ASC_KEY, String(defaultAsc));
+    }
+  };
+
   const years = useMemo(
     () => {
       const collected = new Set<string>();
@@ -174,7 +248,16 @@ export default function StatisticsPage() {
         deduped.set(key, cleanName);
       }
     });
-    return ["ALL", ...Array.from(deduped.values())];
+    // Sort case-insensitively so "ymPK" sits next to "YMPK" and "Ace Law"
+    // appears at the top instead of buried mid-list. Patients page already
+    // does this; statistics page was missing the sort and ended up with
+    // attorneys ordered by first-seen-in-patient-list which read random.
+    return [
+      "ALL",
+      ...Array.from(deduped.values()).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" }),
+      ),
+    ];
   }, []);
 
   const statusFilterOptions = useMemo(
@@ -443,20 +526,42 @@ export default function StatisticsPage() {
       if (rtp !== null) row.timeToPaidValues.push(rtp);
     });
 
-    return Object.values(grouped)
-      .map((row) => {
-        const avgTimeToRb = average(row.timeToRbValues);
-        const avgTimeToPaid = average(row.timeToPaidValues);
-        const percentPaid = row.billed ? (row.collected / row.billed) * 100 : 0;
-        return {
-          ...row,
-          avgTimeToRb,
-          avgTimeToPaid,
-          percentPaid,
-        };
-      })
-      .sort((a, b) => b.received - a.received);
+    return Object.values(grouped).map((row) => {
+      const avgTimeToRb = average(row.timeToRbValues);
+      const avgTimeToPaid = average(row.timeToPaidValues);
+      const percentPaid = row.billed ? (row.collected / row.billed) * 100 : 0;
+      return {
+        ...row,
+        avgTimeToRb,
+        avgTimeToPaid,
+        percentPaid,
+      };
+    });
   }, [filteredPatients]);
+
+  const sortedAttorneyStats = useMemo(() => {
+    const items = [...attorneyStats];
+    items.sort((a, b) => {
+      let cmp = 0;
+      if (attorneySortColumn === "attorney") {
+        cmp = a.attorney.localeCompare(b.attorney);
+      } else if (attorneySortColumn === "avgTimeToRb" || attorneySortColumn === "avgTimeToPaid") {
+        // Rows with no timing data (value === 0, displayed as "N/A") always
+        // sort to the bottom regardless of direction.
+        const av = a[attorneySortColumn];
+        const bv = b[attorneySortColumn];
+        if (!av && !bv) cmp = 0;
+        else if (!av) return 1;
+        else if (!bv) return -1;
+        else cmp = av - bv;
+      } else {
+        cmp = (a[attorneySortColumn] as number) - (b[attorneySortColumn] as number);
+      }
+      if (cmp === 0) cmp = a.attorney.localeCompare(b.attorney);
+      return attorneySortAsc ? cmp : -cmp;
+    });
+    return items;
+  }, [attorneyStats, attorneySortColumn, attorneySortAsc]);
 
   return (
     <div className="space-y-5">
@@ -725,21 +830,24 @@ export default function StatisticsPage() {
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                  <th className="px-4 py-3">Attorney</th>
-                  <th className="px-4 py-3">Received</th>
-                  <th className="px-4 py-3">Active</th>
-                  <th className="px-4 py-3">Discharged</th>
-                  <th className="px-4 py-3">Ready To Submit</th>
-                  <th className="px-4 py-3">Submitted</th>
-                  <th className="px-4 py-3">Dropped</th>
-                  <th className="px-4 py-3">Paid</th>
-                  <th className="px-4 py-3">Avg. Time To R&amp;B</th>
-                  <th className="px-4 py-3">Avg. Time To Paid</th>
-                  <th className="px-4 py-3">% Paid</th>
+                  {attorneyStatColumns.map((colId) => (
+                    <th
+                      key={colId}
+                      className="cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)]"
+                      onClick={() => toggleAttorneySort(colId)}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {attorneyStatLabels[colId]}
+                        {attorneySortColumn === colId && (
+                          <span className="text-[10px]">{attorneySortAsc ? "▲" : "▼"}</span>
+                        )}
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {attorneyStats.map((row) => (
+                {sortedAttorneyStats.map((row) => (
                   <tr key={row.attorney} className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-3 font-semibold">{row.attorney}</td>
                     <td className="px-4 py-3">{row.received}</td>
@@ -754,7 +862,7 @@ export default function StatisticsPage() {
                     <td className="px-4 py-3">{row.percentPaid.toFixed(2)}%</td>
                   </tr>
                 ))}
-                {attorneyStats.length === 0 && (
+                {sortedAttorneyStats.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={11}>
                       No attorney stats for selected filters.
