@@ -108,12 +108,17 @@ export interface EncounterRecord {
  *  contact must be exactly one of these. Users can attach an optional
  *  subCategory (e.g. "Pain Management" under "Specialist") which they
  *  manage in Settings → Contact Categories. */
-export type ContactCategory = "Attorney" | "Imaging Center" | "Specialist";
+export type ContactCategory =
+  | "Attorney"
+  | "Imaging Center"
+  | "Specialist"
+  | "Acute Care";
 
 export const CONTACT_CATEGORIES: ContactCategory[] = [
   "Attorney",
   "Imaging Center",
   "Specialist",
+  "Acute Care",
 ];
 
 export interface ContactRecord {

@@ -2582,7 +2582,7 @@ export default function SettingsPage() {
   // Per-top-level sub-category input drafts
   const [subCategoryDrafts, setSubCategoryDrafts] = useState<
     Record<ContactCategory, string>
-  >({ Attorney: "", "Imaging Center": "", Specialist: "" });
+  >({ Attorney: "", "Imaging Center": "", Specialist: "", "Acute Care": "" });
   const [contactCategoryError, setContactCategoryError] = useState("");
   const [officeSettingsMessage, setOfficeSettingsMessage] = useState("");
   const [deletePasswordDraft, setDeletePasswordDraft] = useState("");
@@ -3303,6 +3303,8 @@ export default function SettingsPage() {
                     "X-Ray, MRI, CT facilities. Sub-categories are optional (e.g. by modality)."}
                   {category === "Specialist" &&
                     "Physicians and clinicians you refer out to. Use sub-categories for specialty (Pain Management, Orthopedic, Neurologist, Mental Health, etc.)."}
+                  {category === "Acute Care" &&
+                    "Hospitals, emergency rooms, and urgent care centers. Use sub-categories to distinguish facility type."}
                 </p>
 
                 <div className="flex flex-wrap items-end gap-2">
@@ -3327,7 +3329,9 @@ export default function SettingsPage() {
                       placeholder={
                         category === "Specialist"
                           ? "e.g. Pain Management"
-                          : "Optional label"
+                          : category === "Acute Care"
+                            ? "e.g. Hospital"
+                            : "Optional label"
                       }
                       value={subCategoryDrafts[category]}
                     />

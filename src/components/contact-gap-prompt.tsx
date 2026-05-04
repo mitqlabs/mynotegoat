@@ -148,7 +148,9 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
               placeholder={
                 category === "Specialist"
                   ? "e.g. Pain Management, Orthopedic, Neurologist…"
-                  : "Optional — type or pick"
+                  : category === "Acute Care"
+                    ? "e.g. Hospital, Emergency Room, Urgent Care"
+                    : "Optional — type or pick"
               }
               value={subCategory}
             />

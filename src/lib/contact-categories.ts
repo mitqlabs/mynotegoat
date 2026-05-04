@@ -16,6 +16,7 @@ const DEFAULT_SUBCATEGORIES: ContactSubCategoryMap = {
   Attorney: [],
   "Imaging Center": [],
   Specialist: ["Pain Management", "Orthopedic", "Neurologist", "Mental Health"],
+  "Acute Care": ["Hospital", "Emergency Room", "Urgent Care"],
 };
 
 function normalizeText(value: unknown): string {
@@ -57,9 +58,33 @@ export function migrateLegacyCategory(
 
   if (normalized === "specialist") return { category: "Specialist" };
 
+  if (
+    normalized === "acute care" ||
+    normalized === "hospital" ||
+    normalized === "hospitals" ||
+    normalized === "er" ||
+    normalized === "emergency" ||
+    normalized === "emergency room" ||
+    normalized === "emergency department" ||
+    normalized === "ed" ||
+    normalized === "urgent care" ||
+    normalized === "uc" ||
+    normalized === "hospital/er" ||
+    normalized === "hospital / er"
+  ) {
+    if (normalized === "acute care") return { category: "Acute Care" };
+    if (normalized === "hospital" || normalized === "hospitals") {
+      return { category: "Acute Care", subCategory: "Hospital" };
+    }
+    if (normalized === "urgent care" || normalized === "uc") {
+      return { category: "Acute Care", subCategory: "Urgent Care" };
+    }
+    return { category: "Acute Care", subCategory: "Emergency Room" };
+  }
+
   // Everything else goes under Specialist with the original label as
   // sub-category. Covers "Pain Management", "Orthopedic", "Neurologist",
-  // "Hospital/ER", "Mental Health", etc.
+  // "Mental Health", etc.
   const pretty = normalizeText(raw);
   return { category: "Specialist", subCategory: pretty || undefined };
 }
@@ -69,6 +94,7 @@ export function getDefaultContactSubCategories(): ContactSubCategoryMap {
     Attorney: [...DEFAULT_SUBCATEGORIES.Attorney],
     "Imaging Center": [...DEFAULT_SUBCATEGORIES["Imaging Center"]],
     Specialist: [...DEFAULT_SUBCATEGORIES.Specialist],
+    "Acute Care": [...DEFAULT_SUBCATEGORIES["Acute Care"]],
   };
 }
 

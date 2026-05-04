@@ -325,7 +325,9 @@ export default function ContactsPage() {
                     placeholder={
                       editContactForm.category === "Specialist"
                         ? "Sub-category (Pain Management, Orthopedic, …)"
-                        : "Sub-category (optional)"
+                        : editContactForm.category === "Acute Care"
+                          ? "Sub-category (Hospital, Emergency Room, Urgent Care)"
+                          : "Sub-category (optional)"
                     }
                     value={editContactForm.subCategory}
                   />
@@ -467,7 +469,9 @@ export default function ContactsPage() {
                   placeholder={
                     addContactForm.category === "Specialist"
                       ? "Pain Management, Orthopedic, Neurologist…"
-                      : "Optional"
+                      : addContactForm.category === "Acute Care"
+                        ? "Hospital, Emergency Room, Urgent Care"
+                        : "Optional"
                   }
                   value={addContactForm.subCategory}
                 />
