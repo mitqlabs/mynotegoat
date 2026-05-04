@@ -13,10 +13,10 @@ import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
+import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import {
   createEncounterMacroRunId,
   encounterSections,
-  normalizeEncounterDateInput,
   type EncounterMacroRunRecord,
   type EncounterSection,
 } from "@/lib/encounter-notes";
@@ -797,6 +797,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
 
   const [runMacroId, setRunMacroId] = useState<string | null>(null);
   const [editingMacroRunId, setEditingMacroRunId] = useState<string | null>(null);
+  // Inline appointment-type editor in the left appointments table —
+  // matches the patient page's quick-type-edit pattern (click the type
+  // label, get a select, blur or pick to commit). Holds the appointment
+  // id currently in edit mode, or null when nothing is being edited.
+  const [aptTypeEditId, setAptTypeEditId] = useState<string | null>(null);
   const [runMacroAnswers, setRunMacroAnswers] = useState<MacroAnswerMap>({});
   // When set, the macro picker dialog is editing a single prompt only — used
   // when the user taps an inline prompt span in the SOAP editor and wants to
@@ -966,13 +971,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       })
       .sort((a, b) => dir * a.date.localeCompare(b.date) || dir * a.startTime.localeCompare(b.startTime));
   }, [allPatientAppointments, aptDateSort, hideCompleted, encountersByNewest]);
-  const appointmentTypeOptions = useMemo(() => {
-    const names = appointmentTypes.map((entry) => entry.name);
-    if (selectedEncounter && !names.includes(selectedEncounter.appointmentType)) {
-      return [selectedEncounter.appointmentType, ...names];
-    }
-    return names;
-  }, [appointmentTypes, selectedEncounter]);
   const linkedAppointmentsForEncounter = useMemo(() => {
     if (!selectedEncounter) {
       return [];
@@ -997,7 +995,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       null
     );
   }, [linkedAppointmentsForEncounter, selectedEncounter]);
-  const scheduleStatusValue: AppointmentStatus = linkedAppointmentForStatus?.status ?? "Scheduled";
   const selectedSoapPrintEncounterIds = useMemo(() => {
     if (!filteredEncounterPatientId) {
       return [];
@@ -1801,26 +1798,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     setMessage("SOAP print view opened in oldest-to-newest order. Use Save as PDF in the print dialog.");
   };
 
-  const handleEncounterScheduleStatusChange = (nextStatus: AppointmentStatus) => {
-    if (!selectedEncounter) {
-      return;
-    }
-    if (!linkedAppointmentForStatus) {
-      setMessage("No linked appointment found on this encounter date.");
-      return;
-    }
-    if (!isAppointmentStatusSelectable(nextStatus, linkedAppointmentForStatus.status)) {
-      setMessage(`Cannot mark ${nextStatus} — patient must be Checked In first.`);
-      return;
-    }
-    if (!confirmStatusChangeIfNeeded(linkedAppointmentForStatus.status, nextStatus)) return;
-    updateAppointment(linkedAppointmentForStatus.id, (current) => ({
-      ...current,
-      status: nextStatus,
-    }));
-    setMessage(`Schedule status updated to ${nextStatus}.`);
-  };
-
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
@@ -2099,9 +2076,84 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                   )}
                                 </td>
                                 <td className="px-2 py-1.5 text-xs leading-tight">
-                                  {typeLine2 ? (
-                                    <>{typeLine1}<br />{typeLine2}</>
-                                  ) : typeLine1}
+                                  {aptTypeEditId === apt.id ? (
+                                    (() => {
+                                      // Look up the patient on this row so the
+                                      // type list filters out cash-only / PI-
+                                      // only types appropriately. Falls back to
+                                      // showing all types if we can't find a
+                                      // matching record (defensive — shouldn't
+                                      // happen since the row came from this
+                                      // patient's appointments).
+                                      const rowPatient = patients.find((p) => p.id === apt.patientId);
+                                      const filtered = filterAppointmentTypesForPatient(
+                                        appointmentTypes,
+                                        Boolean(rowPatient?.isCashPatient),
+                                      );
+                                      const hasCurrent = filtered.some(
+                                        (t) => t.name.toLowerCase() === apt.appointmentType.toLowerCase(),
+                                      );
+                                      return (
+                                        <select
+                                          autoFocus
+                                          className="rounded-md border border-[var(--line-soft)] bg-white px-1 py-0.5 text-xs"
+                                          onBlur={() => setAptTypeEditId(null)}
+                                          onChange={(event) => {
+                                            const nextType = event.target.value;
+                                            if (nextType && nextType !== apt.appointmentType) {
+                                              const matched = appointmentTypes.find(
+                                                (t) => t.name.toLowerCase() === nextType.toLowerCase(),
+                                              );
+                                              updateAppointment(apt.id, (current) => ({
+                                                ...current,
+                                                appointmentType: nextType,
+                                                durationMin: matched?.durationMin ?? current.durationMin,
+                                              }));
+                                              // Also propagate to a linked
+                                              // encounter on the same date so
+                                              // the encounter editor's stored
+                                              // type doesn't drift from the
+                                              // appointment's.
+                                              const linkedEnc = encountersByNewest.find(
+                                                (e) =>
+                                                  e.patientId === apt.patientId &&
+                                                  e.encounterDate === dateUs &&
+                                                  e.appointmentType.toLowerCase() === apt.appointmentType.toLowerCase(),
+                                              );
+                                              if (linkedEnc) {
+                                                updateEncounter(linkedEnc.id, { appointmentType: nextType });
+                                              }
+                                            }
+                                            setAptTypeEditId(null);
+                                          }}
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Escape") setAptTypeEditId(null);
+                                          }}
+                                          value={apt.appointmentType}
+                                        >
+                                          {!hasCurrent && (
+                                            <option value={apt.appointmentType}>{apt.appointmentType}</option>
+                                          )}
+                                          {filtered.map((type) => (
+                                            <option key={`enc-quick-type-${type.id}`} value={type.name}>
+                                              {type.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })()
+                                  ) : (
+                                    <button
+                                      className="rounded-md border border-transparent px-1 py-0.5 text-left hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
+                                      onClick={() => setAptTypeEditId(apt.id)}
+                                      title="Click to change appointment type"
+                                      type="button"
+                                    >
+                                      {typeLine2 ? (
+                                        <>{typeLine1}<br />{typeLine2}</>
+                                      ) : typeLine1}
+                                    </button>
+                                  )}
                                 </td>
                                 <td className="px-2 py-1.5">
                                   <span
@@ -2418,101 +2470,16 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                   </div>
                 </div>
 
-                {/* Compact info boxes grid */}
-                <div className="mt-2.5 grid grid-cols-2 gap-2 lg:grid-cols-4">
-                  <label className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Provider</span>
-                    <input
-                      className="mt-0.5 block w-full border-0 bg-transparent p-0 text-sm focus:outline-none"
-                      disabled={selectedEncounter.signed}
-                      onChange={(event) =>
-                        updateEncounter(selectedEncounter.id, { provider: event.target.value })
-                      }
-                      value={selectedEncounter.provider}
-                    />
-                  </label>
-                  <label className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Type</span>
-                    <select
-                      className="mt-0.5 block w-full border-0 bg-transparent p-0 text-sm focus:outline-none"
-                      disabled={selectedEncounter.signed}
-                      onChange={(event) => {
-                        const nextType = event.target.value;
-                        // Update the encounter's type AND propagate to the
-                        // linked schedule appointment (matched by patient
-                        // + date + OLD type) so the schedule view, the
-                        // patient page, and the "copy from" lookups all
-                        // stay in sync. Without this propagation the
-                        // encounter quietly diverges from its appointment
-                        // and the user sees the old type everywhere
-                        // outside the encounter editor itself.
-                        updateEncounter(selectedEncounter.id, { appointmentType: nextType });
-                        if (linkedAppointmentForStatus) {
-                          updateAppointment(linkedAppointmentForStatus.id, (current) => ({
-                            ...current,
-                            appointmentType: nextType,
-                          }));
-                        }
-                      }}
-                      value={selectedEncounter.appointmentType}
-                    >
-                      {appointmentTypeOptions.map((option) => (
-                        <option key={`encounter-appointment-type-${option}`} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Date</span>
-                    <input
-                      className="mt-0.5 block w-full border-0 bg-transparent p-0 text-sm focus:outline-none"
-                      disabled={selectedEncounter.signed}
-                      inputMode="numeric"
-                      maxLength={10}
-                      onChange={(event) =>
-                        updateEncounter(selectedEncounter.id, {
-                          encounterDate: normalizeEncounterDateInput(event.target.value),
-                        })
-                      }
-                      value={selectedEncounter.encounterDate}
-                    />
-                  </label>
-                  <label className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Status
-                      {linkedAppointmentForStatus && (
-                        <span className="ml-1 font-normal normal-case text-[var(--text-muted)]">
-                          ({formatTimeLabel(linkedAppointmentForStatus.startTime)})
-                        </span>
-                      )}
-                    </span>
-                    <select
-                      className="mt-0.5 block w-full border-0 bg-transparent p-0 text-sm focus:outline-none"
-                      disabled={!linkedAppointmentForStatus}
-                      onChange={(event) =>
-                        handleEncounterScheduleStatusChange(event.target.value as AppointmentStatus)
-                      }
-                      value={scheduleStatusValue}
-                    >
-                      {appointmentStatusOptions.map((option) => {
-                        const disabled = !isAppointmentStatusSelectable(
-                          option,
-                          (linkedAppointmentForStatus?.status ?? scheduleStatusValue) as AppointmentStatus,
-                        );
-                        return (
-                          <option
-                            key={`encounter-schedule-status-${option}`}
-                            disabled={disabled}
-                            value={option}
-                          >
-                            {formatAppointmentStatusLabel(option)}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                </div>
+                {/* The Provider / Type / Date / Status grid that used to
+                    sit here was redundant once the left-hand appointments
+                    table grew up. Date is fixed at encounter creation
+                    (no clinical reason to retro-edit it). Provider is
+                    the office's doctor name (Settings → Office). Type is
+                    now editable inline in the appointments table on the
+                    left. Status flips automatically via Close + Check
+                    Out / Reopen. Keeping the editor focused on charting
+                    and copy-SOAP — the rest is one click away on the
+                    left rail. */}
 
                 {/* Compare / Copy — compact row */}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-2">
