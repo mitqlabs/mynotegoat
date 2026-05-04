@@ -85,6 +85,16 @@ export interface NarrativeReportBuildInput {
   xrayReferrals: NarrativeImagingEntry[];
   mriReferrals: NarrativeImagingEntry[];
   specialistReferrals: NarrativeSpecialistEntry[];
+  /** Per-category patient-refused override flags. When the user has
+   *  marked the patient as refusing imaging (no entries on file) the
+   *  narrative summary swaps the bare "-" placeholder for an
+   *  explanatory sentence so the report doesn't read like data is
+   *  missing. */
+  followUpOverrides?: {
+    xrayPatientRefused?: boolean;
+    mriPatientRefused?: boolean;
+    specialistPatientRefused?: boolean;
+  };
   promptValues?: Record<string, string>;
 }
 
@@ -228,8 +238,27 @@ function formatImagingRegions(entry: NarrativeImagingEntry) {
     .join(", ");
 }
 
-function formatImagingSummary(entries: NarrativeImagingEntry[], fallbackLabel: string) {
+type ImagingRefusalKind = "xray" | "mri";
+
+function imagingRefusalText(kind: ImagingRefusalKind): string {
+  return kind === "xray"
+    ? "Patient refused radiological imaging due to radiation concerns."
+    : "Patient refused MRI's and wanted to continue with conservative chiropractic care.";
+}
+
+function formatImagingSummary(
+  entries: NarrativeImagingEntry[],
+  fallbackLabel: string,
+  options: { patientRefused?: boolean; refusalKind?: ImagingRefusalKind } = {},
+) {
   if (!entries.length) {
+    // When the user has explicitly marked the patient as refusing this
+    // imaging category, replace the bare "-" with the office's stock
+    // refusal sentence so the report reads like a deliberate clinical
+    // decision rather than missing data.
+    if (options.patientRefused && options.refusalKind) {
+      return imagingRefusalText(options.refusalKind);
+    }
     return "-";
   }
   return entries
@@ -246,6 +275,24 @@ function formatImagingSummary(entries: NarrativeImagingEntry[], fallbackLabel: s
     .join("\n");
 }
 
+// Split a free-text recommendations block into individual items so they
+// can be sub-numbered under a parent specialist (1 → 1a, 1b, 1c). Splits
+// on hard line breaks and on common bullet markers (•, –, "1.", "1)")
+// at the start of a line so the user's preferred input style — typed
+// dashes, pasted bulleted lists, hand-numbered lines — all collapse to
+// a single canonical numbering scheme in the report.
+function splitRecommendationItems(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const lines = trimmed
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    // Strip leading bullets / hand-numbers so we don't double-prefix.
+    .map((line) => line.replace(/^([•\-–*]+|\d+[.)]|[a-z][.)])\s*/i, "").trim())
+    .filter((line) => line.length > 0);
+  return lines;
+}
+
 function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
   if (!entries.length) {
     return "-";
@@ -254,12 +301,23 @@ function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
     .map((entry, index) => {
       // Sent / Completed dates were dropped per the office's preferred
       // narrative format — the specialist's name and their actual
-      // recommendations are what carries weight in the report. Dates
-      // still surface in the patient page Imaging & Specialist card,
-      // so the info isn't lost; it's just kept out of the narrative.
-      const line = `${index + 1}. ${entry.specialist || "-"}`;
-      const recs = entry.recommendations?.trim();
-      return recs ? `${line}\n   Recommendations:\n${recs}` : line;
+      // recommendations are what carries weight in the report.
+      const parentNumber = index + 1;
+      const headerLine = `${parentNumber}. ${entry.specialist || "-"}`;
+      const recItems = splitRecommendationItems(entry.recommendations ?? "");
+      if (recItems.length === 0) {
+        return headerLine;
+      }
+      // Sub-number recommendations as 1a / 1b / 1c... so each item gets a
+      // stable handle the doctor can refer to in correspondence ("per
+      // item 1b of the consult..."). Capped at 26 sub-items per
+      // specialist — way past anything realistic in clinical practice.
+      const lines = recItems.slice(0, 26).map((item, subIdx) => {
+        const letter = String.fromCharCode("a".charCodeAt(0) + subIdx);
+        return `   ${parentNumber}${letter}. ${item}`;
+      });
+      const overflow = recItems.length > 26 ? [`   …(${recItems.length - 26} additional items)`] : [];
+      return [headerLine, "   Recommendations:", ...lines, ...overflow].join("\n");
     })
     .join("\n");
 }
@@ -590,21 +648,33 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     CHARGE_LEDGER: chargeLedger,
     TOTAL_CHARGE_AMOUNT: formatCurrency(totalChargeAmount),
 
-    XRAY_SUMMARY: formatImagingSummary(input.xrayReferrals, "X-Ray"),
+    XRAY_SUMMARY: formatImagingSummary(input.xrayReferrals, "X-Ray", {
+      patientRefused: input.followUpOverrides?.xrayPatientRefused,
+      refusalKind: "xray",
+    }),
     XRAY_SENT_DATE: toUsDate(input.xrayReferrals[0]?.sentDate || "-"),
     XRAY_COMPLETED_DATE: toUsDate(input.xrayReferrals[0]?.doneDate || "-"),
     XRAY_REVIEWED_DATE: toUsDate(input.xrayReferrals[0]?.reportReviewedDate || "-"),
-    MRI_CT_SUMMARY: formatImagingSummary(input.mriReferrals, "MRI/CT"),
+    MRI_CT_SUMMARY: formatImagingSummary(input.mriReferrals, "MRI/CT", {
+      patientRefused: input.followUpOverrides?.mriPatientRefused,
+      refusalKind: "mri",
+    }),
     MRI_SENT_DATE: toUsDate(input.mriReferrals[0]?.sentDate || "-"),
     MRI_SCHEDULED_DATE: toUsDate(input.mriReferrals[0]?.scheduledDate || "-"),
     MRI_COMPLETED_DATE: toUsDate(input.mriReferrals[0]?.doneDate || "-"),
     MRI_REVIEWED_DATE: toUsDate(input.mriReferrals[0]?.reportReviewedDate || "-"),
     IMAGING_SUMMARY: [
       "X-Ray:",
-      formatImagingSummary(input.xrayReferrals, "X-Ray"),
+      formatImagingSummary(input.xrayReferrals, "X-Ray", {
+        patientRefused: input.followUpOverrides?.xrayPatientRefused,
+        refusalKind: "xray",
+      }),
       "",
       "MRI/CT:",
-      formatImagingSummary(input.mriReferrals, "MRI/CT"),
+      formatImagingSummary(input.mriReferrals, "MRI/CT", {
+        patientRefused: input.followUpOverrides?.mriPatientRefused,
+        refusalKind: "mri",
+      }),
     ].join("\n"),
     SPECIALIST_SUMMARY: formatSpecialistSummary(input.specialistReferrals),
     SPECIALIST_NAME: (() => {

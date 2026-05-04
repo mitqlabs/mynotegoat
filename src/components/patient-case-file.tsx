@@ -2932,6 +2932,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         reportReviewedDate: entry.reportReviewedDate,
         recommendations: entry.recommendations,
       })),
+      // Patient-refused overrides per category — when set AND the
+      // category has no entries on file, the narrative prints the
+      // office's stock refusal sentence instead of a bare "-".
+      followUpOverrides: {
+        xrayPatientRefused: xrayFollowUpOverride.patientRefused,
+        mriPatientRefused: mriCtFollowUpOverride.patientRefused,
+        specialistPatientRefused: specialistFollowUpOverride.patientRefused,
+      },
       promptValues,
     });
 

@@ -2436,9 +2436,24 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     <select
                       className="mt-0.5 block w-full border-0 bg-transparent p-0 text-sm focus:outline-none"
                       disabled={selectedEncounter.signed}
-                      onChange={(event) =>
-                        updateEncounter(selectedEncounter.id, { appointmentType: event.target.value })
-                      }
+                      onChange={(event) => {
+                        const nextType = event.target.value;
+                        // Update the encounter's type AND propagate to the
+                        // linked schedule appointment (matched by patient
+                        // + date + OLD type) so the schedule view, the
+                        // patient page, and the "copy from" lookups all
+                        // stay in sync. Without this propagation the
+                        // encounter quietly diverges from its appointment
+                        // and the user sees the old type everywhere
+                        // outside the encounter editor itself.
+                        updateEncounter(selectedEncounter.id, { appointmentType: nextType });
+                        if (linkedAppointmentForStatus) {
+                          updateAppointment(linkedAppointmentForStatus.id, (current) => ({
+                            ...current,
+                            appointmentType: nextType,
+                          }));
+                        }
+                      }}
                       value={selectedEncounter.appointmentType}
                     >
                       {appointmentTypeOptions.map((option) => (
@@ -3328,10 +3343,40 @@ function readStringField(entry: ImagingSummaryEntry, ...keys: string[]): string 
   return "";
 }
 
+// Region labels (set in patient-case-file). These mirror the
+// `lateralityEnabledRegions` set used on the patient page so this
+// function and the patient-page summary stay in sync without a
+// shared module dependency.
+const LATERALIZABLE_REGIONS = new Set([
+  "shoulder", "elbow", "wrist", "hand",
+  "hip", "knee", "ankle", "foot",
+]);
+const FLEX_EXT_REGIONS = new Set(["cervical", "thoracic", "lumbar"]);
+
 function readRegionsList(entry: ImagingSummaryEntry): string {
   const regions = entry.regions;
   if (!Array.isArray(regions) || regions.length === 0) return "";
-  return regions.filter((r) => typeof r === "string" && r.trim()).join(", ");
+  // Pull the laterality + flex/ext maps off the entry so labels like
+  // "Knee" become "Knee (L)" / "Knee (R)" / "Knee (BL)" — the user
+  // needs to know WHICH knee was imaged when reading the encounter
+  // sidebar, not just that some knee was.
+  const lateralityByRegion = (entry.lateralityByRegion ?? {}) as Record<string, string>;
+  const flexExtRaw = entry.flexExtRegions;
+  const flexExtSet = new Set(
+    Array.isArray(flexExtRaw) ? flexExtRaw.filter((r): r is string => typeof r === "string") : [],
+  );
+  return regions
+    .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+    .map((region) => {
+      const key = region.trim().toLowerCase();
+      const lat = LATERALIZABLE_REGIONS.has(key) ? lateralityByRegion[region] : undefined;
+      const flexExt = FLEX_EXT_REGIONS.has(key) && flexExtSet.has(region);
+      let label = region;
+      if (lat) label += ` (${lat})`;
+      if (flexExt) label += " (Flex/Ext)";
+      return label;
+    })
+    .join(", ");
 }
 
 /**
