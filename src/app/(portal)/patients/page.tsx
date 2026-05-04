@@ -44,10 +44,16 @@ const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLos
 
 // Case Flow columns
 const CF_COLUMN_ORDER_KEY = "casemate.cf-column-order.v1";
+// Legacy single-level sort keys, preserved only for migration to v2.
 const CF_SORT_COLUMN_KEY = "casemate.cf-sort-column.v1";
 const CF_SORT_ASC_KEY = "casemate.cf-sort-asc.v1";
 const CF_SECONDARY_SORT_COLUMN_KEY = "casemate.cf-secondary-sort-column.v1";
 const CF_SECONDARY_SORT_ASC_KEY = "casemate.cf-secondary-sort-asc.v1";
+// New multi-level sort: array of {column, asc} stored as JSON, max 3 levels.
+const CF_SORT_LEVELS_KEY = "casemate.cf-sort-levels.v1";
+const CF_MAX_SORT_LEVELS = 3;
+type CfSortLevel = { column: CfColumnId; asc: boolean };
+const defaultCfSortLevels: CfSortLevel[] = [{ column: "age", asc: false }];
 type CfColumnId = "patient" | "caseNumber" | "attorney" | "category" | "followUp" | "anchorDate" | "age" | "caseStatus";
 const defaultCfColumnOrder: CfColumnId[] = ["patient", "caseNumber", "attorney", "category", "followUp", "anchorDate", "age", "caseStatus"];
 const cfColumnLabels: Record<CfColumnId, string> = {
@@ -89,6 +95,55 @@ function loadCfColumnOrder(): CfColumnId[] {
     const valid = parsed.every((id) => defaultCfColumnOrder.includes(id as CfColumnId));
     return valid ? (parsed as CfColumnId[]) : defaultCfColumnOrder;
   } catch { return defaultCfColumnOrder; }
+}
+
+function isCfColumnId(value: unknown): value is CfColumnId {
+  return typeof value === "string" && defaultCfColumnOrder.includes(value as CfColumnId);
+}
+
+function loadCfSortLevels(): CfSortLevel[] {
+  if (typeof window === "undefined") return defaultCfSortLevels;
+  try {
+    const raw = window.localStorage.getItem(CF_SORT_LEVELS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned: CfSortLevel[] = [];
+        const seen = new Set<CfColumnId>();
+        for (const entry of parsed) {
+          if (!entry || typeof entry !== "object") continue;
+          const col = (entry as { column?: unknown }).column;
+          const asc = (entry as { asc?: unknown }).asc;
+          if (!isCfColumnId(col) || typeof asc !== "boolean") continue;
+          if (seen.has(col)) continue;
+          seen.add(col);
+          cleaned.push({ column: col, asc });
+          if (cleaned.length >= CF_MAX_SORT_LEVELS) break;
+        }
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+    // One-time migration from the old single-key + secondary-key pair.
+    const oldCol = window.localStorage.getItem(CF_SORT_COLUMN_KEY);
+    const oldAsc = window.localStorage.getItem(CF_SORT_ASC_KEY);
+    const secCol = window.localStorage.getItem(CF_SECONDARY_SORT_COLUMN_KEY);
+    const secAsc = window.localStorage.getItem(CF_SECONDARY_SORT_ASC_KEY);
+    const migrated: CfSortLevel[] = [];
+    if (isCfColumnId(oldCol)) {
+      migrated.push({ column: oldCol, asc: oldAsc === "true" });
+    }
+    if (isCfColumnId(secCol) && (!migrated[0] || migrated[0].column !== secCol)) {
+      migrated.push({ column: secCol, asc: secAsc === null ? true : secAsc === "true" });
+    }
+    return migrated.length > 0 ? migrated : defaultCfSortLevels;
+  } catch {
+    return defaultCfSortLevels;
+  }
+}
+
+function saveCfSortLevels(levels: CfSortLevel[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CF_SORT_LEVELS_KEY, JSON.stringify(levels));
 }
 
 function saveCfColumnOrder(order: CfColumnId[]) {
@@ -375,29 +430,14 @@ export default function PatientsPage() {
     return saved === null ? true : saved === "true";
   });
 
-  // Case Flow sort state (persisted)
-  const [cfSortColumn, setCfSortColumn] = useState<CfColumnId>(() => {
-    if (typeof window === "undefined") return "age";
-    const saved = window.localStorage.getItem(CF_SORT_COLUMN_KEY);
-    return saved && defaultCfColumnOrder.includes(saved as CfColumnId) ? (saved as CfColumnId) : "age";
-  });
-  const [cfSortAsc, setCfSortAsc] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const saved = window.localStorage.getItem(CF_SORT_ASC_KEY);
-    return saved === null ? false : saved === "true";
-  });
-  // Optional second-level sort. "" = no secondary sort.
-  const [cfSecondarySortColumn, setCfSecondarySortColumn] = useState<CfColumnId | "">(() => {
-    if (typeof window === "undefined") return "";
-    const saved = window.localStorage.getItem(CF_SECONDARY_SORT_COLUMN_KEY);
-    if (!saved) return "";
-    return defaultCfColumnOrder.includes(saved as CfColumnId) ? (saved as CfColumnId) : "";
-  });
-  const [cfSecondarySortAsc, setCfSecondarySortAsc] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const saved = window.localStorage.getItem(CF_SECONDARY_SORT_ASC_KEY);
-    return saved === null ? true : saved === "true";
-  });
+  // Case Flow sort: ordered list of {column, asc} levels (max 3). Each
+  // level breaks ties from the level above. The legacy primary/secondary
+  // keys still feed in via loadCfSortLevels' migration path.
+  const [cfSortLevels, setCfSortLevels] = useState<CfSortLevel[]>(() => loadCfSortLevels());
+  const persistCfSortLevels = (next: CfSortLevel[]) => {
+    setCfSortLevels(next);
+    saveCfSortLevels(next);
+  };
   const [cfColumnOrder, setCfColumnOrder] = useState<CfColumnId[]>(() => loadCfColumnOrder());
   const [cfDragColumnId, setCfDragColumnId] = useState<CfColumnId | null>(null);
 
@@ -800,21 +840,22 @@ export default function PatientsPage() {
     setDragColumnId(null);
   };
 
-  // Case Flow sort & drag
-  const toggleCfSort = (col: CfColumnId) => {
-    if (cfSortColumn === col) {
-      setCfSortAsc((prev) => {
-        const next = !prev;
-        window.localStorage.setItem(CF_SORT_ASC_KEY, String(next));
-        return next;
-      });
-    } else {
-      setCfSortColumn(col);
-      setCfSortAsc(true);
-      window.localStorage.setItem(CF_SORT_COLUMN_KEY, col);
-      window.localStorage.setItem(CF_SORT_ASC_KEY, "true");
-    }
+  const updateCfSortLevel = (index: number, patch: Partial<CfSortLevel>) => {
+    const next = cfSortLevels.map((level, i) => (i === index ? { ...level, ...patch } : level));
+    persistCfSortLevels(next);
   };
+  const removeCfSortLevel = (index: number) => {
+    if (cfSortLevels.length <= 1) return;
+    persistCfSortLevels(cfSortLevels.filter((_, i) => i !== index));
+  };
+  const addCfSortLevel = () => {
+    if (cfSortLevels.length >= CF_MAX_SORT_LEVELS) return;
+    const used = new Set(cfSortLevels.map((l) => l.column));
+    const nextCol = defaultCfColumnOrder.find((c) => !used.has(c)) ?? defaultCfColumnOrder[0];
+    persistCfSortLevels([...cfSortLevels, { column: nextCol, asc: true }]);
+  };
+
+  // Case Flow column drag handlers
   const handleCfDragStart = (col: CfColumnId) => setCfDragColumnId(col);
   const handleCfDragOver = (e: React.DragEvent, col: CfColumnId) => {
     e.preventDefault();
@@ -907,17 +948,15 @@ export default function PatientsPage() {
     };
     const items = [...followUpItems];
     items.sort((a, b) => {
-      const primary = compareBy(a, b, cfSortColumn);
-      const directed = cfSortAsc ? primary : -primary;
-      if (directed !== 0) return directed;
-      if (cfSecondarySortColumn && cfSecondarySortColumn !== cfSortColumn) {
-        const secondary = compareBy(a, b, cfSecondarySortColumn);
-        return cfSecondarySortAsc ? secondary : -secondary;
+      for (const level of cfSortLevels) {
+        const cmp = compareBy(a, b, level.column);
+        const directed = level.asc ? cmp : -cmp;
+        if (directed !== 0) return directed;
       }
       return 0;
     });
     return items;
-  }, [followUpItems, cfSortColumn, cfSortAsc, cfSecondarySortColumn, cfSecondarySortAsc]);
+  }, [followUpItems, cfSortLevels]);
 
   // --- To Do helpers ---
   const filteredTasks = useMemo(() => {
@@ -1406,45 +1445,55 @@ export default function PatientsPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-              <span className="font-semibold">Then sort by:</span>
-              <select
-                className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                value={cfSecondarySortColumn}
-                onChange={(e) => {
-                  const value = e.target.value as CfColumnId | "";
-                  setCfSecondarySortColumn(value);
-                  if (value) {
-                    window.localStorage.setItem(CF_SECONDARY_SORT_COLUMN_KEY, value);
-                  } else {
-                    window.localStorage.removeItem(CF_SECONDARY_SORT_COLUMN_KEY);
-                  }
-                }}
-              >
-                <option value="">— None —</option>
-                {defaultCfColumnOrder.map((colId) => (
-                  <option key={colId} value={colId}>
-                    {cfColumnLabels[colId]}
-                  </option>
-                ))}
-              </select>
-              {cfSecondarySortColumn && (
-                <button
-                  type="button"
-                  className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
-                  onClick={() => {
-                    setCfSecondarySortAsc((prev) => {
-                      const next = !prev;
-                      window.localStorage.setItem(CF_SECONDARY_SORT_ASC_KEY, String(next));
-                      return next;
-                    });
-                  }}
-                  title="Toggle secondary sort direction"
-                >
-                  {cfSecondarySortAsc ? "▲ Asc" : "▼ Desc"}
-                </button>
+            <div className="mt-3 flex flex-col gap-1.5 text-xs">
+              {cfSortLevels.map((level, index) => (
+                <div key={index} className="flex flex-wrap items-center gap-2">
+                  <span className="w-24 font-semibold text-[var(--text-muted)]">
+                    {index === 0 ? "Sort by:" : "+ Then by:"}
+                  </span>
+                  <select
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    value={level.column}
+                    onChange={(e) => updateCfSortLevel(index, { column: e.target.value as CfColumnId })}
+                  >
+                    {defaultCfColumnOrder.map((colId) => (
+                      <option key={colId} value={colId}>
+                        {cfColumnLabels[colId]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                    onClick={() => updateCfSortLevel(index, { asc: !level.asc })}
+                    title="Toggle direction"
+                  >
+                    {level.asc ? "▲ Asc" : "▼ Desc"}
+                  </button>
+                  {cfSortLevels.length > 1 && (
+                    <button
+                      type="button"
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[rgba(180,59,52,0.08)] hover:text-[#b43b34]"
+                      onClick={() => removeCfSortLevel(index)}
+                      title="Remove this sort level"
+                      aria-label="Remove sort level"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {cfSortLevels.length < CF_MAX_SORT_LEVELS && (
+                <div className="ml-24">
+                  <button
+                    type="button"
+                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                    onClick={addCfSortLevel}
+                  >
+                    + Add sort level
+                  </button>
+                </div>
               )}
-              <span className="text-[var(--text-muted)]">Click any column header to set the primary sort.</span>
             </div>
           </div>
 
@@ -1452,29 +1501,31 @@ export default function PatientsPage() {
             <table className="min-w-[1080px] w-full border-collapse">
               <thead>
                 <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                  {cfColumnOrder.map((colId) => (
-                    <th
-                      key={colId}
-                      className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)] ${cfDragColumnId === colId ? "opacity-50" : ""}`}
-                      draggable
-                      onClick={() => toggleCfSort(colId)}
-                      onDragEnd={handleCfDragEnd}
-                      onDragOver={(e) => handleCfDragOver(e, colId)}
-                      onDragStart={() => handleCfDragStart(colId)}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {cfColumnLabels[colId]}
-                        {cfSortColumn === colId && (
-                          <span className="text-[10px]">{cfSortAsc ? "▲" : "▼"}</span>
-                        )}
-                        {cfSecondarySortColumn === colId && cfSortColumn !== colId && (
-                          <span className="text-[10px] text-[var(--text-muted)]">
-                            2°{cfSecondarySortAsc ? "▲" : "▼"}
-                          </span>
-                        )}
-                      </span>
-                    </th>
-                  ))}
+                  {cfColumnOrder.map((colId) => {
+                    const sortIndex = cfSortLevels.findIndex((l) => l.column === colId);
+                    const sortLevel = sortIndex >= 0 ? cfSortLevels[sortIndex] : null;
+                    return (
+                      <th
+                        key={colId}
+                        className={`cursor-grab select-none px-4 py-3 transition-colors ${cfDragColumnId === colId ? "opacity-50" : ""}`}
+                        draggable
+                        onDragEnd={handleCfDragEnd}
+                        onDragOver={(e) => handleCfDragOver(e, colId)}
+                        onDragStart={() => handleCfDragStart(colId)}
+                        title="Drag to reorder columns"
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {cfColumnLabels[colId]}
+                          {sortLevel && (
+                            <span className={`text-[10px] ${sortIndex === 0 ? "" : "text-[var(--text-muted)]"}`}>
+                              {sortIndex === 0 ? "" : `${sortIndex + 1}°`}
+                              {sortLevel.asc ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>

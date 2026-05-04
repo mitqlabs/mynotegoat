@@ -4,8 +4,12 @@ import { useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 
+// Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
 const ATTORNEY_SORT_ASC_KEY = "casemate.attorney-perf-sort-asc.v1";
+// New multi-level sort: array of {column, asc} stored as JSON, max 3 levels.
+const ATTORNEY_SORT_LEVELS_KEY = "casemate.attorney-perf-sort-levels.v1";
+const ATTORNEY_MAX_SORT_LEVELS = 3;
 
 type AttorneyStatColumn =
   | "attorney"
@@ -47,6 +51,52 @@ const attorneyStatLabels: Record<AttorneyStatColumn, string> = {
   avgTimeToPaid: "Avg. Time To Paid",
   percentPaid: "% Paid",
 };
+
+type AttorneySortLevel = { column: AttorneyStatColumn; asc: boolean };
+const defaultAttorneySortLevels: AttorneySortLevel[] = [{ column: "received", asc: false }];
+
+function isAttorneyStatColumn(value: unknown): value is AttorneyStatColumn {
+  return typeof value === "string" && attorneyStatColumns.includes(value as AttorneyStatColumn);
+}
+
+function loadAttorneySortLevels(): AttorneySortLevel[] {
+  if (typeof window === "undefined") return defaultAttorneySortLevels;
+  try {
+    const raw = window.localStorage.getItem(ATTORNEY_SORT_LEVELS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned: AttorneySortLevel[] = [];
+        const seen = new Set<AttorneyStatColumn>();
+        for (const entry of parsed) {
+          if (!entry || typeof entry !== "object") continue;
+          const col = (entry as { column?: unknown }).column;
+          const asc = (entry as { asc?: unknown }).asc;
+          if (!isAttorneyStatColumn(col) || typeof asc !== "boolean") continue;
+          if (seen.has(col)) continue;
+          seen.add(col);
+          cleaned.push({ column: col, asc });
+          if (cleaned.length >= ATTORNEY_MAX_SORT_LEVELS) break;
+        }
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+    // One-time migration from the old single-key pair.
+    const oldCol = window.localStorage.getItem(ATTORNEY_SORT_COLUMN_KEY);
+    const oldAsc = window.localStorage.getItem(ATTORNEY_SORT_ASC_KEY);
+    if (isAttorneyStatColumn(oldCol)) {
+      return [{ column: oldCol, asc: oldAsc === "true" }];
+    }
+    return defaultAttorneySortLevels;
+  } catch {
+    return defaultAttorneySortLevels;
+  }
+}
+
+function saveAttorneySortLevels(levels: AttorneySortLevel[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ATTORNEY_SORT_LEVELS_KEY, JSON.stringify(levels));
+}
 
 const monthOrder = [
   "January",
@@ -193,34 +243,30 @@ export default function StatisticsPage() {
   // the page first opens — click to reveal.
   const [showBilling, setShowBilling] = useState(false);
 
-  const [attorneySortColumn, setAttorneySortColumn] = useState<AttorneyStatColumn>(() => {
-    if (typeof window === "undefined") return "received";
-    const saved = window.localStorage.getItem(ATTORNEY_SORT_COLUMN_KEY);
-    return saved && attorneyStatColumns.includes(saved as AttorneyStatColumn)
-      ? (saved as AttorneyStatColumn)
-      : "received";
-  });
-  const [attorneySortAsc, setAttorneySortAsc] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    const saved = window.localStorage.getItem(ATTORNEY_SORT_ASC_KEY);
-    return saved === null ? false : saved === "true";
-  });
-
-  const toggleAttorneySort = (col: AttorneyStatColumn) => {
-    if (attorneySortColumn === col) {
-      setAttorneySortAsc((prev) => {
-        const next = !prev;
-        window.localStorage.setItem(ATTORNEY_SORT_ASC_KEY, String(next));
-        return next;
-      });
-    } else {
-      setAttorneySortColumn(col);
-      // Numeric columns default to descending (highest first), text to ascending.
-      const defaultAsc = col === "attorney";
-      setAttorneySortAsc(defaultAsc);
-      window.localStorage.setItem(ATTORNEY_SORT_COLUMN_KEY, col);
-      window.localStorage.setItem(ATTORNEY_SORT_ASC_KEY, String(defaultAsc));
-    }
+  const [attorneySortLevels, setAttorneySortLevels] = useState<AttorneySortLevel[]>(
+    () => loadAttorneySortLevels(),
+  );
+  const persistAttorneySortLevels = (next: AttorneySortLevel[]) => {
+    setAttorneySortLevels(next);
+    saveAttorneySortLevels(next);
+  };
+  const updateAttorneySortLevel = (index: number, patch: Partial<AttorneySortLevel>) => {
+    const next = attorneySortLevels.map((level, i) => (i === index ? { ...level, ...patch } : level));
+    persistAttorneySortLevels(next);
+  };
+  const removeAttorneySortLevel = (index: number) => {
+    if (attorneySortLevels.length <= 1) return;
+    persistAttorneySortLevels(attorneySortLevels.filter((_, i) => i !== index));
+  };
+  const addAttorneySortLevel = () => {
+    if (attorneySortLevels.length >= ATTORNEY_MAX_SORT_LEVELS) return;
+    const used = new Set(attorneySortLevels.map((l) => l.column));
+    const nextCol = attorneyStatColumns.find((c) => !used.has(c)) ?? attorneyStatColumns[0];
+    // Numeric columns default to descending; text (Attorney) to ascending.
+    persistAttorneySortLevels([
+      ...attorneySortLevels,
+      { column: nextCol, asc: nextCol === "attorney" },
+    ]);
   };
 
   const years = useMemo(
@@ -540,28 +586,40 @@ export default function StatisticsPage() {
   }, [filteredPatients]);
 
   const sortedAttorneyStats = useMemo(() => {
-    const items = [...attorneyStats];
-    items.sort((a, b) => {
-      let cmp = 0;
-      if (attorneySortColumn === "attorney") {
+    const compareBy = (
+      a: (typeof attorneyStats)[number],
+      b: (typeof attorneyStats)[number],
+      column: AttorneyStatColumn,
+      asc: boolean,
+    ) => {
+      let cmp: number;
+      if (column === "attorney") {
         cmp = a.attorney.localeCompare(b.attorney);
-      } else if (attorneySortColumn === "avgTimeToRb" || attorneySortColumn === "avgTimeToPaid") {
+      } else if (column === "avgTimeToRb" || column === "avgTimeToPaid") {
         // Rows with no timing data (value === 0, displayed as "N/A") always
         // sort to the bottom regardless of direction.
-        const av = a[attorneySortColumn];
-        const bv = b[attorneySortColumn];
+        const av = a[column];
+        const bv = b[column];
         if (!av && !bv) cmp = 0;
         else if (!av) return 1;
         else if (!bv) return -1;
         else cmp = av - bv;
       } else {
-        cmp = (a[attorneySortColumn] as number) - (b[attorneySortColumn] as number);
+        cmp = (a[column] as number) - (b[column] as number);
       }
-      if (cmp === 0) cmp = a.attorney.localeCompare(b.attorney);
-      return attorneySortAsc ? cmp : -cmp;
+      return asc ? cmp : -cmp;
+    };
+    const items = [...attorneyStats];
+    items.sort((a, b) => {
+      for (const level of attorneySortLevels) {
+        const c = compareBy(a, b, level.column, level.asc);
+        if (c !== 0) return c;
+      }
+      // Final tiebreaker so the order is stable when all sort levels match.
+      return a.attorney.localeCompare(b.attorney);
     });
     return items;
-  }, [attorneyStats, attorneySortColumn, attorneySortAsc]);
+  }, [attorneyStats, attorneySortLevels]);
 
   return (
     <div className="space-y-5">
@@ -825,25 +883,80 @@ export default function StatisticsPage() {
         <section className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Attorney Performance</h4>
+            <div className="mt-3 flex flex-col gap-1.5 text-xs">
+              {attorneySortLevels.map((level, index) => (
+                <div key={index} className="flex flex-wrap items-center gap-2">
+                  <span className="w-24 font-semibold text-[var(--text-muted)]">
+                    {index === 0 ? "Sort by:" : "+ Then by:"}
+                  </span>
+                  <select
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                    value={level.column}
+                    onChange={(e) =>
+                      updateAttorneySortLevel(index, { column: e.target.value as AttorneyStatColumn })
+                    }
+                  >
+                    {attorneyStatColumns.map((colId) => (
+                      <option key={colId} value={colId}>
+                        {attorneyStatLabels[colId]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                    onClick={() => updateAttorneySortLevel(index, { asc: !level.asc })}
+                    title="Toggle direction"
+                  >
+                    {level.asc ? "▲ Asc" : "▼ Desc"}
+                  </button>
+                  {attorneySortLevels.length > 1 && (
+                    <button
+                      type="button"
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[rgba(180,59,52,0.08)] hover:text-[#b43b34]"
+                      onClick={() => removeAttorneySortLevel(index)}
+                      title="Remove this sort level"
+                      aria-label="Remove sort level"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {attorneySortLevels.length < ATTORNEY_MAX_SORT_LEVELS && (
+                <div className="ml-24">
+                  <button
+                    type="button"
+                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                    onClick={addAttorneySortLevel}
+                  >
+                    + Add sort level
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                  {attorneyStatColumns.map((colId) => (
-                    <th
-                      key={colId}
-                      className="cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)]"
-                      onClick={() => toggleAttorneySort(colId)}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {attorneyStatLabels[colId]}
-                        {attorneySortColumn === colId && (
-                          <span className="text-[10px]">{attorneySortAsc ? "▲" : "▼"}</span>
-                        )}
-                      </span>
-                    </th>
-                  ))}
+                  {attorneyStatColumns.map((colId) => {
+                    const sortIndex = attorneySortLevels.findIndex((l) => l.column === colId);
+                    const sortLevel = sortIndex >= 0 ? attorneySortLevels[sortIndex] : null;
+                    return (
+                      <th key={colId} className="select-none px-4 py-3">
+                        <span className="inline-flex items-center gap-1">
+                          {attorneyStatLabels[colId]}
+                          {sortLevel && (
+                            <span className={`text-[10px] ${sortIndex === 0 ? "" : "text-[var(--text-muted)]"}`}>
+                              {sortIndex === 0 ? "" : `${sortIndex + 1}°`}
+                              {sortLevel.asc ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
