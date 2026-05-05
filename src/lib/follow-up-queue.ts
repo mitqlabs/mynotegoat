@@ -246,13 +246,20 @@ export function buildFollowUpItems(
   const mriAppearDays = options.mriAppearDays ?? 21;
   const specialistAppearWhen = options.specialistAppearWhen ?? "auto";
 
-  const xrayNoReportDays = options.xrayNoReportWarningDays ?? 14;
-  const mriNoReportDays = options.mriNoReportWarningDays ?? 14;
+  // mriNoScheduleDays + specialistNoScheduleDays still drive a grace
+  // window before the "Appt Not Scheduled" row pops up — keeps the row
+  // from firing the second a referral leaves the office.
+  //
+  // The other warning settings (xrayNoReportWarningDays,
+  // mriNoReportWarningDays, specialistNoReportWarningDays) are
+  // intentionally NOT read here anymore: the case-flow stages are now
+  // a strict 2- or 3-step progression (X-Ray: Needs Referral → Waiting
+  // for Report; MRI/Specialist: Needs Referral → Appt Not Scheduled →
+  // Report Not Received). The Age column on the Case Flow row tells
+  // the user how long they've been waiting; we don't need a duplicate
+  // "(N days since sent)" suffix-row on top of it. Settings are left
+  // in dashboard-workspace-settings so persisted prefs still load.
   const mriNoScheduleDays = options.mriNoScheduleWarningDays ?? 3;
-  // specialistNoReportWarningDays is intentionally unused: Stage 3
-  // ("Report Not Received") now fires the day the scheduled visit
-  // passes, not after a grace period. The setting still exists in
-  // dashboard-workspace-settings for back-compat with persisted data.
   const specialistNoScheduleDays = options.specialistNoScheduleWarningDays ?? 3;
 
   const xrayClearedBySet = new Set<string>(options.xrayClearedBy ?? ["patientRefused", "completedPriorCare", "reviewed", "noXray"]);
@@ -368,11 +375,17 @@ export function buildFollowUpItems(
 
       if (!xrayCleared) {
         const hasSent = hasMatrixValue(xraySentRaw);
-        const hasDone = hasMatrixValue(xrayDoneRaw);
         const hasReceived = hasMatrixValue(xrayReceivedRaw);
 
+        // Two-stage X-Ray flow, mutually exclusive. The intermediate
+        // "Done, waiting for report" / "Report received, waiting for
+        // review" rows are gone — once the report is received, the row
+        // disappears entirely (review is tracked elsewhere, not here).
+        // The duplicate "no report received (X days)" warning row is
+        // also gone; if the user wants a chase reminder, leave the row
+        // visible — its age in the Age column tells the same story.
         if (xrayAppearAuto && !hasSent) {
-          // Auto-appear: X-Ray not started yet
+          // Stage 1: Needs Referral.
           const anchorDate = toUsDateCanonical(patient.dateOfLoss);
           rows.push({
             id: `${patient.id}-xray-needs-sent`,
@@ -382,28 +395,14 @@ export function buildFollowUpItems(
             attorney: cleanAttorneyLabel(patient.attorney),
             caseStatus: patient.caseStatus,
             category: "X-Ray",
-            stage: "Needs to be sent",
+            stage: "Needs Referral",
             anchorDate,
             daysFromAnchor: getDaysFromToday(anchorDate),
             note: "",
           });
-        } else if (hasSent && !hasDone) {
+        } else if (hasSent && !hasReceived) {
+          // Stage 2: Waiting for Report.
           const sentDate = extractLeadingDatePart(xraySentRaw);
-          rows.push({
-            id: `${patient.id}-xray-done`,
-            patientId: patient.id,
-            patientName: patient.fullName,
-            caseNumber,
-            attorney: cleanAttorneyLabel(patient.attorney),
-            caseStatus: patient.caseStatus,
-            category: "X-Ray",
-            stage: "Sent, waiting for done date",
-            anchorDate: sentDate,
-            daysFromAnchor: getDaysFromToday(sentDate),
-            note: stripLeadingDatePart(xraySentRaw),
-          });
-        } else if (hasDone && !hasReceived) {
-          const doneDate = extractLeadingDatePart(xrayDoneRaw);
           rows.push({
             id: `${patient.id}-xray-report-received`,
             patientId: patient.id,
@@ -412,47 +411,11 @@ export function buildFollowUpItems(
             attorney: cleanAttorneyLabel(patient.attorney),
             caseStatus: patient.caseStatus,
             category: "X-Ray",
-            stage: "Done, waiting for report received",
-            anchorDate: doneDate,
-            daysFromAnchor: getDaysFromToday(doneDate),
-            note: "",
+            stage: "Waiting for Report",
+            anchorDate: sentDate,
+            daysFromAnchor: getDaysFromToday(sentDate),
+            note: stripLeadingDatePart(xraySentRaw),
           });
-        } else if (hasReceived && !hasMatrixValue(xrayReviewedRaw)) {
-          const receivedDate = extractLeadingDatePart(xrayReceivedRaw);
-          rows.push({
-            id: `${patient.id}-xray-review`,
-            patientId: patient.id,
-            patientName: patient.fullName,
-            caseNumber,
-            attorney: cleanAttorneyLabel(patient.attorney),
-            caseStatus: patient.caseStatus,
-            category: "X-Ray",
-            stage: "Report received, waiting for review",
-            anchorDate: receivedDate,
-            daysFromAnchor: getDaysFromToday(receivedDate),
-            note: "",
-          });
-        }
-
-        // No report received warning
-        if (xrayNoReportDays > 0 && hasSent && !hasReceived) {
-          const sentDate = extractLeadingDatePart(xraySentRaw);
-          const daysSinceSent = getDaysFromToday(sentDate);
-          if (daysSinceSent !== null && daysSinceSent >= xrayNoReportDays) {
-            rows.push({
-              id: `${patient.id}-xray-no-report`,
-              patientId: patient.id,
-              patientName: patient.fullName,
-              caseNumber,
-              attorney: cleanAttorneyLabel(patient.attorney),
-              caseStatus: patient.caseStatus,
-              category: "X-Ray",
-              stage: `No report received (${daysSinceSent} days since sent)`,
-              anchorDate: sentDate,
-              daysFromAnchor: daysSinceSent,
-              note: "",
-            });
-          }
         }
       }
     }
@@ -466,14 +429,16 @@ export function buildFollowUpItems(
 
       if (!mriCleared) {
         const hasSent = hasMatrixValue(mriSentRaw);
-        const hasDone = hasMatrixValue(mriDoneRaw);
+        const hasScheduled = hasMatrixValue(mriScheduledRaw);
         const hasReceived = hasMatrixValue(mriReceivedRaw);
 
-        // Check appear rule
-        let shouldAppear = hasSent; // always show if process started
+        // Stage-1 appear rule. "auto" surfaces the row immediately on
+        // case creation; "days_from_initial" waits N days from the
+        // initial exam so chiros who only refer for MRI after a course
+        // of conservative care don't get pinged on day one.
+        let shouldAppear = hasSent;
         if (!hasSent) {
           if (mriAppearMode === "auto") {
-            // Auto: appear immediately like X-Ray (on case creation)
             shouldAppear = true;
           } else if (mriAppearMode === "days_from_initial") {
             const initialDate = extractLeadingDatePart(initialExamRaw);
@@ -486,7 +451,14 @@ export function buildFollowUpItems(
           }
         }
 
+        // Three-stage MRI flow, mutually exclusive. The old
+        // "Done waiting for received" / "Report received waiting for
+        // review" stages and the duplicated "no report received (X
+        // days)" / "appt not scheduled (X days)" warning rows are gone;
+        // a single patient can only sit at one stage now, gated by the
+        // next required date being filled.
         if (shouldAppear && !hasSent) {
+          // Stage 1: Needs Referral.
           const anchorDate = extractLeadingDatePart(initialExamRaw) || toUsDateCanonical(patient.dateOfLoss);
           rows.push({
             id: `${patient.id}-mri-needs-sent`,
@@ -496,93 +468,22 @@ export function buildFollowUpItems(
             attorney: cleanAttorneyLabel(patient.attorney),
             caseStatus: patient.caseStatus,
             category: "MRI / CT",
-            stage: "MRI due — needs to be sent",
+            stage: "Needs Referral",
             anchorDate,
             daysFromAnchor: getDaysFromToday(anchorDate),
             note: "",
           });
-        } else if (hasSent && !hasDone) {
-          const scheduledDate = extractLeadingDatePart(mriScheduledRaw);
-          const sentDate = extractLeadingDatePart(mriSentRaw);
-          // Anchor on the SENT date (the original referral) so the
-          // "days waiting" count tracks how long the office has been
-          // chasing the report, not just how recently the patient
-          // happened to be put on the calendar. The scheduled date is
-          // still surfaced in the stage label for context.
-          rows.push({
-            id: `${patient.id}-mri-done`,
-            patientId: patient.id,
-            patientName: patient.fullName,
-            caseNumber,
-            attorney: cleanAttorneyLabel(patient.attorney),
-            caseStatus: patient.caseStatus,
-            category: "MRI / CT",
-            stage: scheduledDate
-              ? `Scheduled ${formatUsDateDisplay(scheduledDate)}, waiting for done date`
-              : "Sent, waiting for done date",
-            anchorDate: sentDate,
-            daysFromAnchor: getDaysFromToday(sentDate),
-            note: stripLeadingDatePart(mriSentRaw),
-          });
-        } else if (hasDone && !hasReceived) {
-          const doneDate = extractLeadingDatePart(mriDoneRaw);
-          rows.push({
-            id: `${patient.id}-mri-report-received`,
-            patientId: patient.id,
-            patientName: patient.fullName,
-            caseNumber,
-            attorney: cleanAttorneyLabel(patient.attorney),
-            caseStatus: patient.caseStatus,
-            category: "MRI / CT",
-            stage: "Done, waiting for report received",
-            anchorDate: doneDate,
-            daysFromAnchor: getDaysFromToday(doneDate),
-            note: "",
-          });
-        } else if (hasReceived && !hasMatrixValue(mriReviewedRaw)) {
-          const receivedDate = extractLeadingDatePart(mriReceivedRaw);
-          rows.push({
-            id: `${patient.id}-mri-review`,
-            patientId: patient.id,
-            patientName: patient.fullName,
-            caseNumber,
-            attorney: cleanAttorneyLabel(patient.attorney),
-            caseStatus: patient.caseStatus,
-            category: "MRI / CT",
-            stage: "Report received, waiting for review",
-            anchorDate: receivedDate,
-            daysFromAnchor: getDaysFromToday(receivedDate),
-            note: "",
-          });
-        }
-
-        // No report received warning
-        if (mriNoReportDays > 0 && hasSent && !hasReceived) {
+        } else if (hasSent && !hasScheduled) {
+          // Stage 2: Appt Not Scheduled. Honors the existing
+          // mriNoScheduleWarningDays grace (default 3) so the row
+          // doesn't pop up the moment the referral leaves the office.
           const sentDate = extractLeadingDatePart(mriSentRaw);
           const daysSinceSent = getDaysFromToday(sentDate);
-          if (daysSinceSent !== null && daysSinceSent >= mriNoReportDays) {
-            rows.push({
-              id: `${patient.id}-mri-no-report`,
-              patientId: patient.id,
-              patientName: patient.fullName,
-              caseNumber,
-              attorney: cleanAttorneyLabel(patient.attorney),
-              caseStatus: patient.caseStatus,
-              category: "MRI / CT",
-              stage: `No report received (${daysSinceSent} days since sent)`,
-              anchorDate: sentDate,
-              daysFromAnchor: daysSinceSent,
-              note: "",
-            });
-          }
-        }
-
-        // No schedule date warning
-        const hasScheduled = hasMatrixValue(mriScheduledRaw);
-        if (mriNoScheduleDays > 0 && hasSent && !hasScheduled && !hasDone) {
-          const sentDate = extractLeadingDatePart(mriSentRaw);
-          const daysSinceSent = getDaysFromToday(sentDate);
-          if (daysSinceSent !== null && daysSinceSent >= mriNoScheduleDays) {
+          const passedGrace =
+            daysSinceSent === null
+              ? true
+              : daysSinceSent >= mriNoScheduleDays;
+          if (passedGrace) {
             rows.push({
               id: `${patient.id}-mri-no-schedule`,
               patientId: patient.id,
@@ -591,9 +492,33 @@ export function buildFollowUpItems(
               attorney: cleanAttorneyLabel(patient.attorney),
               caseStatus: patient.caseStatus,
               category: "MRI / CT",
-              stage: `Appt not scheduled (${daysSinceSent} days since sent)`,
+              stage: "Appt Not Scheduled",
               anchorDate: sentDate,
               daysFromAnchor: daysSinceSent,
+              note: stripLeadingDatePart(mriSentRaw),
+            });
+          }
+        } else if (hasScheduled && !hasReceived) {
+          // Stage 3: Report Not Received. Fires the day AFTER the
+          // scheduled MRI date — the report rarely lands the same day
+          // as the scan, and showing the row on the visit day itself
+          // generates noise for cases that are still on track.
+          const scheduledDate = extractLeadingDatePart(mriScheduledRaw);
+          const daysSinceScheduled = getDaysFromToday(scheduledDate);
+          const visitHasPassed =
+            daysSinceScheduled === null ? true : daysSinceScheduled >= 1;
+          if (visitHasPassed) {
+            rows.push({
+              id: `${patient.id}-mri-report-received`,
+              patientId: patient.id,
+              patientName: patient.fullName,
+              caseNumber,
+              attorney: cleanAttorneyLabel(patient.attorney),
+              caseStatus: patient.caseStatus,
+              category: "MRI / CT",
+              stage: "Report Not Received",
+              anchorDate: scheduledDate,
+              daysFromAnchor: daysSinceScheduled,
               note: "",
             });
           }
@@ -688,14 +613,15 @@ export function buildFollowUpItems(
             });
           }
         } else if (hasScheduled && !hasMatrixValue(specialistReportRaw)) {
-          // Stage 3: Report Not Received. Only fires once the scheduled
-          // appointment date has passed — if the visit is in the future,
-          // there's nothing to chase. Unparseable scheduled date falls
-          // back to showing the row so the user notices.
+          // Stage 3: Report Not Received. Fires the day AFTER the
+          // scheduled appointment — the report rarely lands the same
+          // day as the visit, and showing the row on the visit day
+          // itself generates noise for cases that are still on track.
+          // Unparseable scheduled date falls back to showing the row.
           const scheduledDate = extractLeadingDatePart(specialistScheduledRaw);
           const daysSinceScheduled = getDaysFromToday(scheduledDate);
           const visitHasPassed =
-            daysSinceScheduled === null ? true : daysSinceScheduled >= 0;
+            daysSinceScheduled === null ? true : daysSinceScheduled >= 1;
           if (visitHasPassed) {
             rows.push({
               id: `${patient.id}-specialist-report`,

@@ -3968,7 +3968,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-bold">X-Ray</p>
                 </div>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1">
+                  <div className="grid gap-1 sm:col-span-2">
                     <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appear</span>
                     <label className="inline-flex items-center gap-2 text-sm font-medium">
                       <input
@@ -3979,8 +3979,8 @@ export default function SettingsPage() {
                       Auto (on case creation)
                     </label>
                   </div>
-                  <div className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when</span>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {([
                         ["patientRefused", "Patient Refused"],
@@ -3997,25 +3997,6 @@ export default function SettingsPage() {
                           {label}
                         </label>
                       ))}
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">No Report Received Warning</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <input
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(event) => setXrayNoReportWarningDays(Number(event.target.value) || 0)}
-                        type="number"
-                        value={dashboardWorkspaceSettings.patientFollowUp.xrayNoReportWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date (0 = off)</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when case status is</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {caseStatuses.map((status) => (
                         <label key={`xray-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
                           <input
@@ -4034,7 +4015,7 @@ export default function SettingsPage() {
                       ))}
                     </div>
                     <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients in any of the checked statuses won&apos;t show X-Ray reminders. Leave blank to fall back to the &quot;Case Closed&quot; list.
+                      Patients matching any of these conditions won&apos;t show X-Ray reminders.
                     </span>
                   </div>
                 </div>
@@ -4083,8 +4064,22 @@ export default function SettingsPage() {
                       <span className="text-sm text-[var(--text-muted)]">days from initial</span>
                     </div>
                   </div>
-                  <div className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when</span>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">Warn after</span>
+                      <input
+                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                        min={0}
+                        onChange={(event) => setMriNoScheduleWarningDays(Number(event.target.value) || 0)}
+                        type="number"
+                        value={dashboardWorkspaceSettings.patientFollowUp.mriNoScheduleWarningDays}
+                      />
+                      <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {([
                         ["patientRefused", "Patient Refused"],
@@ -4101,39 +4096,6 @@ export default function SettingsPage() {
                           {label}
                         </label>
                       ))}
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">No Report Received Warning</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <input
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(event) => setMriNoReportWarningDays(Number(event.target.value) || 0)}
-                        type="number"
-                        value={dashboardWorkspaceSettings.patientFollowUp.mriNoReportWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date (0 = off)</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">No Schedule Date Warning</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <input
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(event) => setMriNoScheduleWarningDays(Number(event.target.value) || 0)}
-                        type="number"
-                        value={dashboardWorkspaceSettings.patientFollowUp.mriNoScheduleWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date (0 = off)</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when case status is</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {caseStatuses.map((status) => (
                         <label key={`mri-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
                           <input
@@ -4152,7 +4114,7 @@ export default function SettingsPage() {
                       ))}
                     </div>
                     <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients in any of the checked statuses won&apos;t show MRI / CT reminders. Leave blank to fall back to the &quot;Case Closed&quot; list.
+                      Patients matching any of these conditions won&apos;t show MRI / CT reminders.
                     </span>
                   </div>
                 </div>
@@ -4199,8 +4161,22 @@ export default function SettingsPage() {
                       Once MRI Reviewed
                     </label>
                   </div>
-                  <div className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when</span>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">Warn after</span>
+                      <input
+                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                        min={0}
+                        onChange={(event) => setSpecialistNoScheduleWarningDays(Number(event.target.value) || 0)}
+                        type="number"
+                        value={dashboardWorkspaceSettings.patientFollowUp.specialistNoScheduleWarningDays}
+                      />
+                      <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {([
                         ["patientRefused", "Patient Refused"],
@@ -4217,39 +4193,6 @@ export default function SettingsPage() {
                           {label}
                         </label>
                       ))}
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">No Report Received Warning</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <input
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(event) => setSpecialistNoReportWarningDays(Number(event.target.value) || 0)}
-                        type="number"
-                        value={dashboardWorkspaceSettings.patientFollowUp.specialistNoReportWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date (0 = off)</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">No Schedule Date Warning</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <input
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(event) => setSpecialistNoScheduleWarningDays(Number(event.target.value) || 0)}
-                        type="number"
-                        value={dashboardWorkspaceSettings.patientFollowUp.specialistNoScheduleWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date (0 = off)</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when case status is</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {caseStatuses.map((status) => (
                         <label key={`spec-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
                           <input
@@ -4268,7 +4211,7 @@ export default function SettingsPage() {
                       ))}
                     </div>
                     <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients in any of the checked statuses won&apos;t show Specialist reminders. Leave blank to fall back to the &quot;Case Closed&quot; list.
+                      Patients matching any of these conditions won&apos;t show Specialist reminders.
                     </span>
                   </div>
                 </div>
