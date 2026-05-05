@@ -169,20 +169,15 @@ a {
   margin-bottom: 0;
 }
 
-/* Collapse truly empty paragraphs (just a placeholder <br>) down to a
- * small visual gap instead of a full line-height + margin. Multiple
- * Enter-presses after a macro used to stack into a tall blank zone
- * that made it feel like the editor was shoving the caret far down
- * the page. With this, even a run of 2–3 placeholder <p><br></p>s
- * stays modest. */
-.rich-text-editor p:has(> br:only-child) {
-  line-height: 0.6;
-  margin: 0 0 0.15em;
-}
+/* Empty paragraphs (an Enter press, rendered as <p><br></p> or <p></p>)
+ * render at the same line-height as a content paragraph so what the user
+ * types in the editor matches what shows up in the Previous Plan / SOAP
+ * print export. min-height keeps a truly-empty <p> visible at all even
+ * if the browser drops the trailing <br>. */
+.rich-text-editor p:has(> br:only-child),
 .rich-text-editor p:empty {
-  line-height: 0.6;
-  margin: 0 0 0.15em;
-  min-height: 0.6em;
+  margin: 0 0 0.35em;
+  min-height: 1em;
 }
 
 .rich-text-editor ul,
