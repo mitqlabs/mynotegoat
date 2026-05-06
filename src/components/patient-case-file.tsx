@@ -23,6 +23,7 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { getFormalTitle } from "@/lib/honorifics";
 import { renderDocumentTemplate, type DocumentTemplateScope } from "@/lib/document-templates";
 import {
   applyLabelValueHangingIndent,
@@ -2247,18 +2248,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const getCommonDocumentContext = (): Record<string, string> => {
     const patientFullName = `${firstName} ${lastName}`.trim();
-    // Compute the formal-title prefix for {{MR_MRS_MS_*}} tokens.
-    // Mirrors getHonorifics in encounter-workspace so both the macro
-    // pipeline and the document templates resolve the same way for the
-    // same patient.
-    const sex = (patientSex ?? "").toLowerCase();
-    const marital = (maritalStatus ?? "").toLowerCase();
-    const formalTitle =
-      sex === "male"
-        ? "Mr."
-        : sex === "female"
-          ? marital === "married" ? "Mrs." : "Ms."
-          : "Mx.";
+    // {{MR_MRS_MS_*}} tokens. getFormalTitle is the single source of
+    // truth — see src/lib/honorifics.ts for the rule table.
+    const formalTitle = getFormalTitle(patientSex, maritalStatus);
     const titleLast = lastName.trim() ? `${formalTitle} ${lastName.trim()}` : formalTitle;
     const titleFull = patientFullName ? `${formalTitle} ${patientFullName}` : formalTitle;
     return {
@@ -2866,19 +2858,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         mriCtFindings: mriCtFindingsForTemplates,
         specialistRecommendations: specialistRecommendationsForTemplates,
         mrMrsMsLastName: (() => {
-          const sex = patientSex.toLowerCase();
-          const marital = maritalStatus.toLowerCase();
-          let prefix = "Mx.";
-          if (sex === "male") prefix = "Mr.";
-          else if (sex === "female") prefix = marital === "married" ? "Mrs." : "Ms.";
+          const prefix = getFormalTitle(patientSex, maritalStatus);
           return lastName ? `${prefix} ${lastName}` : prefix;
         })(),
         mrMrsMsFullName: (() => {
-          const sex = patientSex.toLowerCase();
-          const marital = maritalStatus.toLowerCase();
-          let prefix = "Mx.";
-          if (sex === "male") prefix = "Mr.";
-          else if (sex === "female") prefix = marital === "married" ? "Mrs." : "Ms.";
+          const prefix = getFormalTitle(patientSex, maritalStatus);
           const fullName = `${firstName} ${lastName}`.trim();
           return fullName ? `${prefix} ${fullName}` : prefix;
         })(),

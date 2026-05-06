@@ -6,6 +6,7 @@ import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-pan
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { ScrollLock } from "@/components/scroll-lock";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { draftKeyFor } from "@/lib/draft-recovery";
@@ -170,17 +171,11 @@ function getPronouns(sex?: string) {
 }
 
 function getHonorifics(sex?: string, maritalStatus?: string, lastName?: string, firstName?: string) {
-  const normalizedSex = (sex ?? "").toLowerCase();
-  const normalizedMarital = (maritalStatus ?? "").toLowerCase();
-  let formal = "Mx.";
-  let neutral = "Mx.";
-  if (normalizedSex === "male") {
-    formal = "Mr.";
-    neutral = "Mr.";
-  } else if (normalizedSex === "female") {
-    formal = normalizedMarital === "married" ? "Mrs." : "Ms.";
-    neutral = "Ms.";
-  }
+  // Formal = marital-aware (Mr./Mrs./Ms.). Neutral = marital-blind
+  // (Mr./Ms.) for tokens where the user wants the same string for
+  // single + married women.
+  const formal = getFormalTitle(sex, maritalStatus);
+  const neutral = getFormalTitle(sex, "");
   const safeLastName = (lastName ?? "").trim();
   const safeFirstName = (firstName ?? "").trim();
   const fullNameWithoutTitle = [safeFirstName, safeLastName].filter(Boolean).join(" ");

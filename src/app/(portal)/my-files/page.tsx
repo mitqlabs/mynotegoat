@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useFileManager } from "@/hooks/use-file-manager";
+import { getFormalTitle } from "@/lib/honorifics";
 import {
   type FileFolder,
   type FileRecord,
@@ -333,13 +334,8 @@ export default function MyFilesPage() {
           ctx.LAST_NAME = lastName;
           ctx.FULL_NAME = `${firstName} ${lastName}`.trim();
 
-          // Mr./Mrs./Ms. logic
-          const sex = patient.sex;
-          const married = patient.maritalStatus === "Married";
-          let prefix = "";
-          if (sex === "Male") prefix = "Mr.";
-          else if (sex === "Female") prefix = married ? "Mrs." : "Ms.";
-          else prefix = "Mr./Ms.";
+          // Mr./Mrs./Ms. logic — see src/lib/honorifics.ts for the rule.
+          const prefix = getFormalTitle(patient.sex, patient.maritalStatus);
           ctx.MR_MRS_MS_LAST_NAME = `${prefix} ${lastName}`;
           const fullNameTrimmed = `${firstName} ${lastName}`.trim();
           ctx.MR_MRS_MS_FULL_NAME = fullNameTrimmed ? `${prefix} ${fullNameTrimmed}` : prefix;
