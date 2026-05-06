@@ -470,13 +470,11 @@ export default function AppointmentsPage() {
   const [checkInRoomDraft, setCheckInRoomDraft] = useState("");
   const [rescheduleAppointmentId, setRescheduleAppointmentId] = useState<string | null>(null);
 
-  const patientById = useMemo(() => {
-    const map = new Map<string, (typeof patients)[number]>();
-    patients.forEach((patient) => {
-      map.set(patient.id, patient);
-    });
-    return map;
-  }, []);
+  // See identical comment in new-appointment-modal.tsx: no memoization
+  // here because `patients` is module-mutable and a useMemo([]) cache
+  // hides quick-created patients from the submit-time lookup.
+  const findPatientById = (id: string) =>
+    patients.find((patient) => patient.id === id) ?? null;
 
   const defaultAppointmentType = useMemo(
     () => appointmentTypes.find((entry) => entry.isDefault) ?? appointmentTypes[0] ?? null,
@@ -827,7 +825,7 @@ export default function AppointmentsPage() {
 
   const openOrCreateEncounterForAppointment = (appointment: ScheduleAppointmentRecord) => {
     const resolvedPatient =
-      patientById.get(appointment.patientId) ??
+      findPatientById(appointment.patientId) ??
       patients.find((entry) => entry.fullName.toLowerCase() === appointment.patientName.toLowerCase()) ??
       null;
     if (!resolvedPatient) {
@@ -874,7 +872,7 @@ export default function AppointmentsPage() {
 
   const handleSubmitNewAppointment = () => {
     const draft = newAppointmentDraft;
-    const selectedPatient = patientById.get(draft.patientId);
+    const selectedPatient = findPatientById(draft.patientId);
     if (!selectedPatient) {
       setNewAppointmentError("Select a patient.");
       return;

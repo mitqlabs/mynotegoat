@@ -561,13 +561,15 @@ export function NewAppointmentModal({
     officeSettings.officeName,
   ]);
 
-  const patientById = useMemo(() => {
-    const map = new Map<string, (typeof patients)[number]>();
-    patients.forEach((patient) => {
-      map.set(patient.id, patient);
-    });
-    return map;
-  }, []);
+  // No memoization here on purpose. `patients` is a module-mutable
+  // array and useMemo([]) used to cache a snapshot taken at mount,
+  // which meant a patient created via the quick-create flow inside
+  // this modal wasn't visible to the lookup at submit time and the
+  // user got a "Select a patient." error on a row they had just
+  // created. Using a callback that walks the live array is cheap
+  // (patient counts top out in the hundreds) and always current.
+  const findPatientById = (id: string) =>
+    patients.find((patient) => patient.id === id) ?? null;
 
   const selectedDraftType =
     appointmentTypeByName.get(draft.appointmentType.toLowerCase()) ?? null;
@@ -722,7 +724,7 @@ export function NewAppointmentModal({
   };
 
   const handleSubmit = () => {
-    const selectedPatient = patientById.get(draft.patientId);
+    const selectedPatient = findPatientById(draft.patientId);
     if (!selectedPatient) {
       setError("Select a patient.");
       return;
