@@ -6889,7 +6889,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     )
                   }
                   placeholder="Enter specialist recommendations..."
-                  style={{ maxHeight: "40vh" }}
+                  style={{ maxHeight: "60vh" }}
                   value={editingSpecialist.recommendations}
                 />
               </label>
@@ -6914,7 +6914,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </label>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
+            {/* Sticky footer — see comment in the imaging editor below for
+                rationale. Same pattern: pin Save/Cancel to the form's
+                scroll viewport so dragging the textarea taller never
+                hides them. */}
+            <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                 onClick={() => {
@@ -7208,18 +7212,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     )
                   }
                   placeholder={`Enter ${editingImagingReferral.modalityLabel} findings...`}
-                  // Cap the drag-resize at 40vh so the textarea can't be
-                  // pulled beyond the modal's bounds (the modal scrolls
-                  // its own overflow, but the textarea was free to grow
-                  // taller than the visible form, hiding Save under the
-                  // viewport edge).
-                  style={{ maxHeight: "40vh" }}
+                  // Cap the drag-resize at 60vh so a long radiology report
+                  // has plenty of room. Save/Cancel below are sticky to
+                  // the form's scroll viewport, so even if the textarea
+                  // hits this cap the user can always reach them without
+                  // scrolling — the previous 40vh cap combined with a
+                  // non-sticky footer was what made the user feel like
+                  // they had to Close to escape.
+                  style={{ maxHeight: "60vh" }}
                   value={editingImagingReferral.findings}
                 />
               </label>
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
+            {/* Sticky footer — buttons stay pinned to the bottom of the
+                form's scroll viewport so dragging the textarea taller
+                never hides them. Negative margins extend the bg/border
+                to the form's padding edges; bg-white covers content
+                that scrolls underneath. */}
+            <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                 onClick={() => {
