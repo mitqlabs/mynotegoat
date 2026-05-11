@@ -39,6 +39,7 @@ import {
   formatTimeLabel,
   getStatusBadgeClass,
   isAppointmentStatusSelectable,
+  parseTimeFlexible,
   confirmStatusChangeIfNeeded,
   type AppointmentStatus,
   type ScheduleAppointmentRecord,
@@ -3357,17 +3358,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const commitQuickTimeEdit = (appointment: ScheduleAppointmentRecord) => {
-    const nextTime = quickTimeDraft.trim();
-    if (!nextTime || nextTime === appointment.startTime) {
+    // Run the user's draft through the flexible parser so input like
+    // "4:45pm", "445p", or "16:45" all land as the same canonical
+    // 24h "HH:MM" we store. Invalid drafts just dismiss the editor
+    // without overwriting the existing time.
+    const parsed = parseTimeFlexible(quickTimeDraft);
+    if (!parsed || parsed === appointment.startTime) {
       cancelQuickTimeEdit();
       return;
     }
     updateAppointment(appointment.id, (current) => ({
       ...current,
-      startTime: nextTime,
+      startTime: parsed,
     }));
     setEncounterMessage(
-      `Time updated to ${formatTimeLabel(nextTime)} on ${toUsDate(appointment.date)}.`,
+      `Time updated to ${formatTimeLabel(parsed)} on ${toUsDate(appointment.date)}.`,
     );
     cancelQuickTimeEdit();
   };
@@ -5165,18 +5170,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     <input
                                       autoFocus
                                       className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                      inputMode="numeric"
-                                      maxLength={5}
-                                      onChange={(event) => {
-                                        const digits = event.target.value
-                                          .replace(/\D/g, "")
-                                          .slice(0, 4);
-                                        const formatted =
-                                          digits.length <= 2
-                                            ? digits
-                                            : `${digits.slice(0, 2)}:${digits.slice(2)}`;
-                                        setQuickTimeDraft(formatted);
-                                      }}
+                                      // No numeric inputMode + no digit
+                                      // filter on the value: the user types
+                                      // "4:45pm" / "445p" / "16:45" and the
+                                      // parser handles it on commit. The
+                                      // old digit-only filter forced the
+                                      // user to translate 4:45 PM into
+                                      // 16:45 in their head every time.
+                                      maxLength={8}
+                                      onChange={(event) => setQuickTimeDraft(event.target.value)}
                                       onKeyDown={(event) => {
                                         if (event.key === "Enter") {
                                           commitQuickTimeEdit(appointment);
@@ -5184,7 +5186,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                           cancelQuickTimeEdit();
                                         }
                                       }}
-                                      placeholder="HH:MM"
+                                      placeholder="4:45pm or 16:45"
                                       value={quickTimeDraft}
                                     />
                                     <button

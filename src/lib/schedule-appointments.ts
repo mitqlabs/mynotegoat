@@ -421,3 +421,84 @@ export function formatTimeLabel(value: string) {
   const hour12 = rawHours % 12 === 0 ? 12 : rawHours % 12;
   return `${String(hour12).padStart(2, "0")}:${minutes} ${meridiem}`;
 }
+
+/**
+ * Permissive time-string parser for quick-edit inputs. Accepts the
+ * shapes a user actually types when reading "4:45 PM" off a calendar:
+ *
+ *   "4:45pm"  → "16:45"   "4:45 PM"  → "16:45"
+ *   "4:45p"   → "16:45"   "4:45a"    → "04:45"
+ *   "445p"    → "16:45"   "445pm"    → "16:45"
+ *   "4p"      → "16:00"   "4pm"      → "16:00"
+ *   "12p"     → "12:00"   "12am"     → "00:00"
+ *   "16:45"   → "16:45"   "1645"     → "16:45"
+ *
+ * With no AM/PM suffix the input is treated as 24-hour ("4:45" →
+ * "04:45"); office software conventions vary on how to disambiguate
+ * a bare "4:45", and choosing a side silently is the kind of "smart"
+ * that bites someone every couple of months. The fix: require the
+ * "p" / "pm" suffix to mean PM. The shorthand "4p" still works, so
+ * total keystrokes are nearly the same as the old 16:45 routine.
+ *
+ * Returns null for unparseable input — callers should leave the
+ * existing value in place rather than guess.
+ */
+export function parseTimeFlexible(input: string): string | null {
+  const raw = input.trim().toLowerCase();
+  if (!raw) return null;
+
+  // Detect and strip a trailing am/pm marker (with or without a space).
+  let meridiem: "am" | "pm" | null = null;
+  let body = raw;
+  const ampmMatch = body.match(/\s*(a|am|p|pm)$/);
+  if (ampmMatch) {
+    const marker = ampmMatch[1];
+    meridiem = marker.startsWith("p") ? "pm" : "am";
+    body = body.slice(0, ampmMatch.index ?? body.length).trim();
+  }
+
+  let hours: number;
+  let minutes: number;
+
+  if (body.includes(":")) {
+    const m = body.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (!m) return null;
+    hours = Number(m[1]);
+    minutes = Number(m[2]);
+  } else {
+    const digits = body.replace(/\D/g, "");
+    if (digits.length === 0) return null;
+    if (digits.length <= 2) {
+      hours = Number(digits);
+      minutes = 0;
+    } else if (digits.length === 3) {
+      // "445" → 4:45 — single-digit hour shorthand.
+      hours = Number(digits.slice(0, 1));
+      minutes = Number(digits.slice(1));
+    } else if (digits.length === 4) {
+      hours = Number(digits.slice(0, 2));
+      minutes = Number(digits.slice(2));
+    } else {
+      return null;
+    }
+  }
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (minutes < 0 || minutes >= 60) return null;
+  if (hours < 0 || hours > 23) return null;
+
+  if (meridiem === "am") {
+    if (hours === 12) hours = 0;
+    else if (hours > 12) return null; // "13am" is nonsense
+  } else if (meridiem === "pm") {
+    if (hours === 12) {
+      // noon — 12:xx PM stays at 12
+    } else if (hours < 12) {
+      hours += 12;
+    } else {
+      return null; // "13pm" is nonsense
+    }
+  }
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
