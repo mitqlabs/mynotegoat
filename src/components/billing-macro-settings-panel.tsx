@@ -72,6 +72,13 @@ export function BillingMacroSettingsPanel() {
   const [diagnosisFolderDraft, setDiagnosisFolderDraft] = useState("");
   const [bundleNameDraft, setBundleNameDraft] = useState("");
   const [bundleDiagnosisDraft, setBundleDiagnosisDraft] = useState<string[]>([]);
+  // Per-bundle folder filter for the dx picker checkbox list. Without
+  // this, building a Cervical bundle forced you to scroll through
+  // every code in every folder. "" = show all.
+  const [bundleFilterFolderId, setBundleFilterFolderId] = useState<Record<string, string>>({});
+  // Drag state for reordering selected diagnosis chips inside a bundle.
+  // Keyed by bundle id + chip index so two bundles can't cross-drag.
+  const [dragBundleChip, setDragBundleChip] = useState<{ bundleId: string; index: number } | null>(null);
   const [error, setError] = useState("");
   const [treatmentOpen, setTreatmentOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
@@ -723,19 +730,47 @@ export function BillingMacroSettingsPanel() {
                   </button>
                 </div>
 
+                {/* Selected dx chips. Drag a chip onto a sibling to
+                    reorder; the order is the saved diagnosisIds order,
+                    which downstream code (patient page bundle apply,
+                    document templates) reads in sequence. */}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {bundle.diagnosisIds.length === 0 && (
                     <p className="text-xs text-[var(--text-muted)]">No diagnosis codes selected.</p>
                   )}
-                  {bundle.diagnosisIds.map((diagnosisId) => {
+                  {bundle.diagnosisIds.map((diagnosisId, chipIndex) => {
                     const diagnosis = diagnosisById.get(diagnosisId);
                     if (!diagnosis) {
                       return null;
                     }
+                    const isDragging =
+                      dragBundleChip?.bundleId === bundle.id &&
+                      dragBundleChip?.index === chipIndex;
                     return (
                       <span
                         key={`${bundle.id}-${diagnosisId}`}
-                        className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs font-semibold"
+                        className={`cursor-grab rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs font-semibold transition-opacity ${
+                          isDragging ? "opacity-50" : ""
+                        }`}
+                        draggable
+                        onDragEnd={() => setDragBundleChip(null)}
+                        onDragOver={(e) => {
+                          if (!dragBundleChip || dragBundleChip.bundleId !== bundle.id) return;
+                          if (dragBundleChip.index === chipIndex) return;
+                          e.preventDefault();
+                        }}
+                        onDragStart={() => setDragBundleChip({ bundleId: bundle.id, index: chipIndex })}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (!dragBundleChip || dragBundleChip.bundleId !== bundle.id) return;
+                          if (dragBundleChip.index === chipIndex) return;
+                          const next = [...bundle.diagnosisIds];
+                          const [moved] = next.splice(dragBundleChip.index, 1);
+                          next.splice(chipIndex, 0, moved);
+                          updateBundle(bundle.id, { diagnosisIds: next });
+                          setDragBundleChip(null);
+                        }}
+                        title="Drag to reorder"
                       >
                         {diagnosis.code}
                       </span>
@@ -743,23 +778,60 @@ export function BillingMacroSettingsPanel() {
                   })}
                 </div>
 
+                {/* Folder filter — narrows the dx checkbox list so building
+                    a regional bundle isn't a 100-row scroll. Default ""
+                    (all folders) preserves the legacy behavior. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-[var(--text-muted)]">Folder:</span>
+                  <select
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1"
+                    onChange={(event) =>
+                      setBundleFilterFolderId((current) => ({
+                        ...current,
+                        [bundle.id]: event.target.value,
+                      }))
+                    }
+                    value={bundleFilterFolderId[bundle.id] ?? ""}
+                  >
+                    <option value="">All folders</option>
+                    {billingMacros.diagnosisFolders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="mt-2 max-h-36 space-y-1 overflow-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
-                  {billingMacros.diagnoses.map((diagnosis) => (
-                    <label key={`${bundle.id}-dx-${diagnosis.id}`} className="inline-flex items-center gap-2 text-xs">
-                      <input
-                        checked={bundle.diagnosisIds.includes(diagnosis.id)}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          const nextIds = checked
-                            ? Array.from(new Set([...bundle.diagnosisIds, diagnosis.id]))
-                            : bundle.diagnosisIds.filter((id) => id !== diagnosis.id);
-                          updateBundle(bundle.id, { diagnosisIds: nextIds });
-                        }}
-                        type="checkbox"
-                      />
-                      {diagnosis.code} - {diagnosis.description}
-                    </label>
-                  ))}
+                  {(() => {
+                    const selectedFolderId = bundleFilterFolderId[bundle.id] ?? "";
+                    const visible = selectedFolderId
+                      ? billingMacros.diagnoses.filter((d) => d.folderId === selectedFolderId)
+                      : billingMacros.diagnoses;
+                    if (visible.length === 0) {
+                      return (
+                        <p className="text-xs text-[var(--text-muted)]">
+                          No diagnosis codes in this folder yet.
+                        </p>
+                      );
+                    }
+                    return visible.map((diagnosis) => (
+                      <label key={`${bundle.id}-dx-${diagnosis.id}`} className="inline-flex items-center gap-2 text-xs">
+                        <input
+                          checked={bundle.diagnosisIds.includes(diagnosis.id)}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            const nextIds = checked
+                              ? Array.from(new Set([...bundle.diagnosisIds, diagnosis.id]))
+                              : bundle.diagnosisIds.filter((id) => id !== diagnosis.id);
+                            updateBundle(bundle.id, { diagnosisIds: nextIds });
+                          }}
+                          type="checkbox"
+                        />
+                        {diagnosis.code} - {diagnosis.description}
+                      </label>
+                    ));
+                  })()}
                 </div>
               </div>
             ))}
