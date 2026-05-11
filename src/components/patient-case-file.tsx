@@ -1938,14 +1938,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setDischargeDate(mostRecentEncounterDate);
     dischargeAutoFilledRef.current = true;
   }, [caseStatus, caseStatuses, dischargeDate, patientEncounterRecords]);
-  const openPatientEncounterRecords = useMemo(
-    () =>
-      patientEncounterRecords.filter((entry) => !entry.signed).sort(
-        (left, right) =>
-          toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
-      ),
-    [patientEncounterRecords],
-  );
+  // openPatientEncounterRecords memo used to live here for the
+  // "Open Encounters" sidebar inside Appointments / Encounters. The
+  // sidebar was removed per user request — open encounters surface in
+  // the table's Encounter column anyway via linkedEncounter, so the
+  // dedicated panel was redundant.
+
   const patientAppointmentRecords = useMemo(() => {
     const patientNameLookup = buildPatientNameLookupSet(patient.fullName, firstName, lastName);
     return scheduleAppointments
@@ -4982,7 +4980,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {encounterMessage && <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{encounterMessage}</p>}
 
-            <div className="mt-3 grid items-start gap-4 xl:grid-cols-[1.8fr_1fr]">
+            {/* Single column now that the Open Encounters sidebar is
+                gone — the table takes the full panel width, which is
+                especially useful inside the new 2-col patient-page
+                layout where this section is already half-width. */}
+            <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
                 <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
@@ -5267,38 +5269,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </div>
               </article>
 
-              <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-base font-semibold">Open Encounters</h4>
-                  <Link
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                    href={`/encounters?patientId=${patient.id}`}
-                  >
-                    Open Workspace
-                  </Link>
-                </div>
-                <div className="mt-2 max-h-72 space-y-2 overflow-auto">
-                  {openPatientEncounterRecords.map((encounter) => (
-                    <div
-                      key={`open-encounter-${encounter.id}`}
-                      className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2"
-                    >
-                      <p className="text-sm font-semibold">{encounter.encounterDate}</p>
-                      <p className="text-xs text-[var(--text-muted)]">{encounter.appointmentType}</p>
-                      <button
-                        className="mt-2 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                        onClick={() => openEncounterEditor(encounter.id)}
-                        type="button"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  ))}
-                  {openPatientEncounterRecords.length === 0 && (
-                    <p className="text-sm text-[var(--text-muted)]">No open encounters for this patient.</p>
-                  )}
-                </div>
-              </article>
             </div>
           </>
         )}
