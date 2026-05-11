@@ -16,6 +16,8 @@ import { useFileManager } from "@/hooks/use-file-manager";
 import {
   getDeletedPatients,
   permanentlyDeletePatientRecord,
+  renameLienOnAllPatients,
+  renameReviewOnAllPatients,
   restorePatientRecord,
 } from "@/lib/mock-data";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -265,6 +267,102 @@ type ParsedImportPayload = {
 
 function isSettingsSectionKey(value: string): value is SettingsSectionKey {
   return Object.prototype.hasOwnProperty.call(defaultExpandedSections, value);
+}
+
+/**
+ * Single lien-option row. Owns its own input draft so typing a multi-
+ * letter rename doesn't fire updateLienOption per-keystroke — that
+ * cascaded through the parent's render path and re-keyed the input
+ * on every letter, blowing away focus mid-word. The rename is now
+ * committed once on blur (or Enter), at which point the parent runs
+ * the patient-record cascade in a single pass.
+ */
+function LienOptionRow({
+  index,
+  option,
+  onRename,
+  onRemove,
+  moveUp,
+  moveDown,
+  moveUpDisabled,
+  moveDownDisabled,
+  canRemove,
+}: {
+  index: number;
+  option: string;
+  onRename: (nextName: string) => void;
+  onRemove: () => void;
+  moveUp: () => void;
+  moveDown: () => void;
+  moveUpDisabled: boolean;
+  moveDownDisabled: boolean;
+  canRemove: boolean;
+}) {
+  const [draft, setDraft] = useState(option);
+  // Sync the local draft when the upstream option changes (e.g. another
+  // tab edited it, or this row got reordered by a sibling's move). Skip
+  // when it matches what we already have so the user's in-progress edit
+  // isn't clobbered by an unrelated parent re-render.
+  useEffect(() => {
+    setDraft(option);
+  }, [option]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (!next) {
+      // Blank rename rejected — restore the old value visually.
+      setDraft(option);
+      return;
+    }
+    if (next === option) {
+      return;
+    }
+    onRename(next);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white p-2">
+      <input
+        className="min-w-[220px] grow rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5"
+        onBlur={commit}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(option);
+            event.currentTarget.blur();
+          }
+        }}
+        value={draft}
+      />
+      <button
+        className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
+        disabled={moveUpDisabled}
+        onClick={moveUp}
+        type="button"
+      >
+        ↑
+      </button>
+      <button
+        className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
+        disabled={moveDownDisabled}
+        onClick={moveDown}
+        type="button"
+      >
+        ↓
+      </button>
+      <button
+        className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
+        disabled={!canRemove}
+        onClick={onRemove}
+        type="button"
+      >
+        Remove
+      </button>
+    </div>
+  );
 }
 
 function parseDocumentTemplateScope(value: string | null): DocumentTemplateScope | null {
@@ -2478,6 +2576,7 @@ export default function SettingsPage() {
     caseStatuses,
     lienLabel,
     lienOptions,
+    reviewOptions,
     addStatus,
     removeStatus,
     toggleDashboardVisibility,
@@ -2490,6 +2589,11 @@ export default function SettingsPage() {
     moveLienOption,
     removeLienOption,
     resetLienOptionsToDefaults,
+    addReviewOption,
+    updateReviewOption,
+    moveReviewOption,
+    removeReviewOption,
+    resetReviewOptionsToDefaults,
     resetToDefaults: resetCaseStatusesToDefaults,
   } = useCaseStatuses();
   const {
@@ -2571,6 +2675,7 @@ export default function SettingsPage() {
   const [statusColorDraft, setStatusColorDraft] = useState("#0d79bf");
   const [statusCaseClosedDraft, setStatusCaseClosedDraft] = useState(false);
   const [lienOptionDraft, setLienOptionDraft] = useState("");
+  const [reviewOptionDraft, setReviewOptionDraft] = useState("");
   const [appointmentTypeNameDraft, setAppointmentTypeNameDraft] = useState("");
   const [appointmentTypeColorDraft, setAppointmentTypeColorDraft] = useState("#0d79bf");
   const [appointmentTypeDurationDraft, setAppointmentTypeDurationDraft] = useState(30);
@@ -2723,6 +2828,15 @@ export default function SettingsPage() {
     }
     addLienOption(nextName);
     setLienOptionDraft("");
+  };
+
+  const handleAddReviewOption = () => {
+    const nextName = reviewOptionDraft.trim();
+    if (!nextName) {
+      return;
+    }
+    addReviewOption(nextName);
+    setReviewOptionDraft("");
   };
 
   const handleAddAppointmentType = () => {
@@ -4589,42 +4703,130 @@ export default function SettingsPage() {
 
               <div className="mt-3 grid gap-2">
                 {lienOptions.map((option, index) => (
-                  <div
-                    className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white p-2"
-                    key={`${option}-${index}`}
-                  >
-                    <input
-                      className="min-w-[220px] grow rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5"
-                      onChange={(event) => updateLienOption(index, event.target.value)}
-                      value={option}
-                    />
-                    <button
-                      className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
-                      disabled={index === 0}
-                      onClick={() => moveLienOption(index, "up")}
-                      type="button"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
-                      disabled={index === lienOptions.length - 1}
-                      onClick={() => moveLienOption(index, "down")}
-                      type="button"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
-                      disabled={lienOptions.length <= 1}
-                      onClick={() => { if (window.confirm(`Remove lien option "${lienOptions[index]}"?`)) removeLienOption(index); }}
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  <LienOptionRow
+                    canRemove={lienOptions.length > 1}
+                    index={index}
+                    key={`lien-${index}`}
+                    moveDown={() => moveLienOption(index, "down")}
+                    moveDownDisabled={index === lienOptions.length - 1}
+                    moveUp={() => moveLienOption(index, "up")}
+                    moveUpDisabled={index === 0}
+                    onRemove={() => {
+                      if (window.confirm(`Remove lien option "${option}"?`)) {
+                        removeLienOption(index);
+                      }
+                    }}
+                    onRename={(nextName) => {
+                      const oldName = option;
+                      updateLienOption(index, nextName);
+                      // Cascade: also update every patient whose
+                      // matrix.lien matches the old name. Fixes the
+                      // "I renamed it but existing patients still show
+                      // the old value" surprise.
+                      const touched = renameLienOnAllPatients(oldName, nextName);
+                      if (touched > 0) {
+                        // Light feedback so the user knows the cascade
+                        // ran. Avoiding a full toast system here — the
+                        // count appears in the page-level message slot
+                        // alongside other settings feedback.
+                        console.info(
+                          `[settings] Renamed lien option "${oldName}" → "${nextName}". Updated ${touched} patient${touched === 1 ? "" : "s"}.`,
+                        );
+                      }
+                    }}
+                    option={option}
+                  />
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Review? options — same UX as Lien Options. The patient page
+            renders this list as a dropdown above billing; users want a
+            customizable list so they can later filter "patients I
+            haven't asked for review yet". */}
+        <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h4 className="text-lg font-semibold">Review? Options</h4>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Choices shown in the &quot;Review?&quot; dropdown on the patient page.
+                Rename a label and every existing patient on that label
+                updates with you.
+              </p>
+            </div>
+            <button
+              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Reset Review options to defaults? Patient records keep their current values.",
+                  )
+                ) {
+                  resetReviewOptionsToDefaults();
+                }
+              }}
+              type="button"
+            >
+              Reset to defaults
+            </button>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Add Review Option</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  className="min-w-[240px] grow rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(event) => setReviewOptionDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleAddReviewOption();
+                    }
+                  }}
+                  placeholder="Example: Sent to attorney"
+                  value={reviewOptionDraft}
+                />
+                <button
+                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  onClick={handleAddReviewOption}
+                  type="button"
+                >
+                  Add Option
+                </button>
+              </div>
+            </label>
+
+            <div className="mt-3 grid gap-2">
+              {reviewOptions.map((option, index) => (
+                <LienOptionRow
+                  canRemove={reviewOptions.length > 1}
+                  index={index}
+                  key={`review-${index}`}
+                  moveDown={() => moveReviewOption(index, "down")}
+                  moveDownDisabled={index === reviewOptions.length - 1}
+                  moveUp={() => moveReviewOption(index, "up")}
+                  moveUpDisabled={index === 0}
+                  onRemove={() => {
+                    if (window.confirm(`Remove review option "${option}"?`)) {
+                      removeReviewOption(index);
+                    }
+                  }}
+                  onRename={(nextName) => {
+                    const oldName = option;
+                    updateReviewOption(index, nextName);
+                    const touched = renameReviewOnAllPatients(oldName, nextName);
+                    if (touched > 0) {
+                      console.info(
+                        `[settings] Renamed review option "${oldName}" → "${nextName}". Updated ${touched} patient${touched === 1 ? "" : "s"}.`,
+                      );
+                    }
+                  }}
+                  option={option}
+                />
+              ))}
             </div>
           </div>
         </div>

@@ -694,6 +694,70 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
   return nextPatient;
 }
 
+/**
+ * Bulk rename of a lien option across every patient record. Used by
+ * Settings → Lien Options when the user renames an option (e.g.
+ * "Not Sent" → "Pending"); without this the option list updates but
+ * existing patient rows still show the old label until the user
+ * manually re-picks it from the dropdown for each patient.
+ *
+ * Match is case-insensitive on the trimmed lien field. Returns the
+ * count of patients touched so the caller can surface a toast like
+ * "Renamed 47 patient lien values".
+ */
+export function renameLienOnAllPatients(oldName: string, newName: string): number {
+  const oldNorm = oldName.trim().toLowerCase();
+  const newClean = newName.trim();
+  if (!oldNorm || !newClean || oldNorm === newClean.toLowerCase()) {
+    return 0;
+  }
+  let touched = 0;
+  const nextPatients = patients.map((entry) => {
+    const currentLien = (entry.matrix?.lien ?? "").trim();
+    if (!currentLien || currentLien.toLowerCase() !== oldNorm) {
+      return entry;
+    }
+    touched += 1;
+    return {
+      ...entry,
+      matrix: { ...(entry.matrix ?? {}), lien: newClean },
+    };
+  });
+  if (touched > 0) {
+    persistPatients(nextPatients);
+  }
+  return touched;
+}
+
+/**
+ * Same shape as renameLienOnAllPatients but for the "Review?" field.
+ * Touches matrix.review when a Review option is renamed in Settings,
+ * so historical patients carry the new label instead of going stale.
+ */
+export function renameReviewOnAllPatients(oldName: string, newName: string): number {
+  const oldNorm = oldName.trim().toLowerCase();
+  const newClean = newName.trim();
+  if (!oldNorm || !newClean || oldNorm === newClean.toLowerCase()) {
+    return 0;
+  }
+  let touched = 0;
+  const nextPatients = patients.map((entry) => {
+    const currentReview = (entry.matrix?.review ?? "").trim();
+    if (!currentReview || currentReview.toLowerCase() !== oldNorm) {
+      return entry;
+    }
+    touched += 1;
+    return {
+      ...entry,
+      matrix: { ...(entry.matrix ?? {}), review: newClean },
+    };
+  });
+  if (touched > 0) {
+    persistPatients(nextPatients);
+  }
+  return touched;
+}
+
 export function deletePatientRecord(patientId: string): boolean {
   const normalizedPatientId = cleanString(patientId);
   if (!normalizedPatientId) {

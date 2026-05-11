@@ -194,7 +194,9 @@ const lateralityEnabledRegions = new Set([
 ]);
 const xrayFlexExtEnabledRegions = new Set(["cervical", "thoracic", "lumbar"]);
 
-const reviewOptions = ["Not Requested", "Requested", "Received"];
+// reviewOptions used to be a hardcoded module-level constant. Now
+// pulled from useCaseStatuses so the user can manage their own list
+// in Settings → Case Statuses (parallel to lienOptions).
 
 function getNames(fullName: string) {
   const [lastName = "", firstName = ""] = fullName.split(",").map((value) => value.trim());
@@ -1233,7 +1235,7 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const router = useRouter();
   const { officeSettings } = useOfficeSettings();
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
@@ -1810,6 +1812,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return [resolvedLienStatus, ...lienOptions];
   }, [lienOptions, resolvedLienStatus]);
+
+  // Orphan-value preserver for the Review? dropdown. If the current
+  // patient.matrix.review string doesn't match any reviewOption (could
+  // happen after a rename if the user had an old value, or for an
+  // imported legacy patient), prepend it so the select still shows
+  // the right thing instead of silently defaulting to the first option.
+  const reviewSelectOptions = useMemo(() => {
+    const fallback = reviewOptions[0] ?? "Not Requested";
+    const current = reviewStatus.trim() || fallback;
+    const normalized = current.toLowerCase();
+    const hasCurrent = reviewOptions.some(
+      (option) => option.trim().toLowerCase() === normalized,
+    );
+    return hasCurrent ? reviewOptions : [current, ...reviewOptions];
+  }, [reviewOptions, reviewStatus]);
 
   const activeImaging = activeRegionModal === "xray" ? xray : mri;
   const setActiveImaging = activeRegionModal === "xray" ? setXray : setMri;
@@ -5967,14 +5984,58 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
 
       <section className="panel-card p-4">
-        <button
-          className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
-          onClick={() => toggleSectionPanel("additionalDetails")}
-          type="button"
-        >
-          <span>Additional Details</span>
-          <span className="text-xl">{sectionPanelsOpen.additionalDetails ? "−" : "+"}</span>
-        </button>
+        {(() => {
+          // Color the Additional Details bar by completeness so the
+          // user gets at-a-glance visibility into which billing step
+          // is still pending. Same pattern as the Diagnosis Codes bar
+          // (which goes red when no dx codes are on file).
+          //
+          //   Red    → still missing one of: Discharge / R&B Sent /
+          //            $ Billed (the pre-bill / billing milestones)
+          //   Yellow → billing milestones complete, but Paid Date or
+          //            $ Paid Amount are still empty (collections
+          //            milestones)
+          //   Teal   → everything filled, nothing to chase
+          //
+          // currentBillTotal already accounts for the auto-sync from
+          // encounter charges, so the "$ Billed" check follows that.
+          const billingTotalNumeric = currentBillTotal;
+          const paidNumeric = Number.parseFloat(paidAmount) || 0;
+          const dischargeFilled = dischargeDate.trim().length > 0;
+          const rbSentFilled = rbSentDate.trim().length > 0;
+          const billedFilled = billingTotalNumeric > 0;
+          const paidDateFilled = paidDate.trim().length > 0;
+          const paidAmountFilled = paidNumeric > 0;
+          const billingMissing = !dischargeFilled || !rbSentFilled || !billedFilled;
+          const paidMissing = !paidDateFilled || !paidAmountFilled;
+          const headerColor = billingMissing
+            ? "bg-[#c93b1d]" // red — billing not yet complete
+            : paidMissing
+              ? "bg-[#d4a017]" // amber/yellow — billed but unpaid
+              : "bg-[#6db5c8]"; // teal — fully closed out
+          const statusBadge = billingMissing
+            ? "Needs billing"
+            : paidMissing
+              ? "Awaiting payment"
+              : null;
+          return (
+            <button
+              className={`flex w-full items-center justify-between rounded-2xl px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white ${headerColor}`}
+              onClick={() => toggleSectionPanel("additionalDetails")}
+              type="button"
+            >
+              <span className="flex items-center gap-2">
+                <span>Additional Details</span>
+                {statusBadge && (
+                  <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide">
+                    {statusBadge}
+                  </span>
+                )}
+              </span>
+              <span className="text-xl">{sectionPanelsOpen.additionalDetails ? "−" : "+"}</span>
+            </button>
+          );
+        })()}
         {sectionPanelsOpen.additionalDetails && (
           <>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -6069,7 +6130,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   onChange={(event) => setReviewStatus(event.target.value)}
                   value={reviewStatus}
                 >
-                  {reviewOptions.map((option) => (
+                  {reviewSelectOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>

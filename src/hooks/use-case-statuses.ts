@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import {
   getDefaultCaseStatusSettings,
   getDefaultLienOptions,
+  getDefaultReviewOptions,
   loadCaseStatusSettings,
   saveCaseStatusSettings,
   type CaseStatusConfig,
@@ -222,6 +223,87 @@ export function useCaseStatuses() {
     }));
   }, [updateSettings]);
 
+  const addReviewOption = useCallback(
+    (name: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) return;
+      updateSettings((current) => {
+        const exists = current.reviewOptions.some(
+          (option) => option.toLowerCase() === normalizedName.toLowerCase(),
+        );
+        if (exists) return current;
+        return { ...current, reviewOptions: [...current.reviewOptions, normalizedName] };
+      });
+    },
+    [updateSettings],
+  );
+
+  const updateReviewOption = useCallback(
+    (index: number, name: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) return;
+      updateSettings((current) => {
+        if (index < 0 || index >= current.reviewOptions.length) return current;
+        const isDuplicate = current.reviewOptions.some((option, i) => {
+          if (i === index) return false;
+          return option.toLowerCase() === normalizedName.toLowerCase();
+        });
+        if (isDuplicate) return current;
+        const next = [...current.reviewOptions];
+        next[index] = normalizedName;
+        return { ...current, reviewOptions: next };
+      });
+    },
+    [updateSettings],
+  );
+
+  const removeReviewOption = useCallback(
+    (index: number) => {
+      updateSettings((current) => {
+        if (
+          current.reviewOptions.length <= 1 ||
+          index < 0 ||
+          index >= current.reviewOptions.length
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          reviewOptions: current.reviewOptions.filter((_, i) => i !== index),
+        };
+      });
+    },
+    [updateSettings],
+  );
+
+  const moveReviewOption = useCallback(
+    (index: number, direction: "up" | "down") => {
+      updateSettings((current) => {
+        const targetIndex = direction === "up" ? index - 1 : index + 1;
+        if (
+          index < 0 ||
+          index >= current.reviewOptions.length ||
+          targetIndex < 0 ||
+          targetIndex >= current.reviewOptions.length
+        ) {
+          return current;
+        }
+        const next = [...current.reviewOptions];
+        const [moved] = next.splice(index, 1);
+        next.splice(targetIndex, 0, moved);
+        return { ...current, reviewOptions: next };
+      });
+    },
+    [updateSettings],
+  );
+
+  const resetReviewOptionsToDefaults = useCallback(() => {
+    updateSettings((current) => ({
+      ...current,
+      reviewOptions: getDefaultReviewOptions(),
+    }));
+  }, [updateSettings]);
+
   const resetToDefaults = useCallback(() => {
     const defaults = getDefaultCaseStatusSettings();
     setSettings(defaults);
@@ -232,6 +314,7 @@ export function useCaseStatuses() {
     caseStatuses: settings.statuses,
     lienLabel: settings.lienLabel,
     lienOptions: settings.lienOptions,
+    reviewOptions: settings.reviewOptions,
     addStatus,
     removeStatus,
     toggleDashboardVisibility,
@@ -244,6 +327,11 @@ export function useCaseStatuses() {
     moveLienOption,
     removeLienOption,
     resetLienOptionsToDefaults,
+    addReviewOption,
+    updateReviewOption,
+    moveReviewOption,
+    removeReviewOption,
+    resetReviewOptionsToDefaults,
     resetToDefaults,
   };
 }

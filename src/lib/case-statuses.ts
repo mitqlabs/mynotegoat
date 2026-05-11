@@ -15,6 +15,11 @@ export interface CaseStatusSettings {
   statuses: CaseStatusConfig[];
   lienLabel: LienLabel;
   lienOptions: string[];
+  /** User-managed list of "Review?" choices on the patient page.
+   *  Same UX pattern as lienOptions — a small ordered list of labels
+   *  that the patient page renders as a dropdown. Used so the office
+   *  can later filter "patients I haven't asked for review yet". */
+  reviewOptions: string[];
 }
 
 const STORAGE_KEY = "casemate.case-statuses.v1";
@@ -39,6 +44,7 @@ const defaultStatusColorByName: Record<string, string> = {
 const defaultClosedStatusNames = new Set(["dropped", "paid"]);
 const defaultLienLabel: LienLabel = "Lien";
 const defaultLienOptions = ["Not Set", "Not Sent", "Requested", "Received"];
+const defaultReviewOptions = ["Not Requested", "Requested", "Received"];
 
 function normalizeStatusName(value: unknown) {
   if (typeof value !== "string") {
@@ -73,6 +79,25 @@ function normalizeLienOptions(value: unknown): string[] {
     });
 
   return options.length ? options : [...defaultLienOptions];
+}
+
+function normalizeReviewOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [...defaultReviewOptions];
+  }
+  const seen = new Set<string>();
+  const options = value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .filter((entry) => {
+      const key = entry.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  return options.length ? options : [...defaultReviewOptions];
 }
 
 function normalizeColor(value: unknown, fallback: string) {
@@ -110,11 +135,16 @@ export function getDefaultLienOptions() {
   return [...defaultLienOptions];
 }
 
+export function getDefaultReviewOptions() {
+  return [...defaultReviewOptions];
+}
+
 export function getDefaultCaseStatusSettings(): CaseStatusSettings {
   return {
     statuses: getDefaultCaseStatuses(),
     lienLabel: defaultLienLabel,
     lienOptions: getDefaultLienOptions(),
+    reviewOptions: getDefaultReviewOptions(),
   };
 }
 
@@ -183,6 +213,7 @@ export function normalizeCaseStatusSettings(value: unknown): CaseStatusSettings 
     lienLabel?: unknown;
     lienOptions?: unknown;
     lien?: unknown;
+    reviewOptions?: unknown;
   };
 
   const nestedLien = payload.lien && typeof payload.lien === "object"
@@ -198,6 +229,7 @@ export function normalizeCaseStatusSettings(value: unknown): CaseStatusSettings 
     statuses: normalizedStatuses,
     lienLabel: normalizeLienLabel(payload.lienLabel ?? nestedLien?.label),
     lienOptions: normalizeLienOptions(payload.lienOptions ?? nestedLien?.options),
+    reviewOptions: normalizeReviewOptions(payload.reviewOptions),
   };
 }
 
