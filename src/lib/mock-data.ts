@@ -810,26 +810,55 @@ export function getDeletedPatients(): PatientRecord[] {
  * When patient A links to B and C, this ensures B also links to A+C, and C links to A+B.
  */
 export function syncRelatedCasesGroup(sourcePatientId: string, relatedIds: string[]) {
-  // Build the full group: source + all related
-  const groupIds = new Set([sourcePatientId, ...relatedIds]);
+  // Source's list becomes exactly `relatedIds` (handles add + reorder
+  // from the source's perspective). Every patient on that list gets
+  // the source added to THEIR list if they don't already have it.
+  //
+  // Crucially: we never overwrite another patient's existing related
+  // list — we only ever ADD the source link. The old "rebuild
+  // everyone's list from groupIds" approach nuked any prior
+  // relationship the linked patients had to someone outside the group
+  // (Jane had Mike, John adds Jane, Mike got dropped from Jane).
+  // Simple bidirectional ↔ link, transitive grouping is out.
+  const source = patients.find((p) => p.id === sourcePatientId);
+  if (!source) return;
+
   const patientMap = new Map(patients.map((p) => [p.id, p]));
 
   const nextPatients = patients.map((p) => {
-    if (!groupIds.has(p.id)) {
-      return p;
+    if (p.id === sourcePatientId) {
+      // Source: replace list with the new full set.
+      const related = relatedIds
+        .map((id) => {
+          const other = patientMap.get(id);
+          return other
+            ? { patientId: other.id, fullName: other.fullName, dateOfLoss: other.dateOfLoss }
+            : null;
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      return { ...p, relatedCases: related.length > 0 ? related : undefined };
     }
-    // This patient's related list = everyone in the group except themselves
-    const related = Array.from(groupIds)
-      .filter((id) => id !== p.id)
-      .map((id) => {
-        const other = patientMap.get(id);
-        return other
-          ? { patientId: other.id, fullName: other.fullName, dateOfLoss: other.dateOfLoss }
-          : null;
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-    return { ...p, relatedCases: related.length > 0 ? related : undefined };
+    // Anyone the source links to: make sure source is on their list.
+    if (relatedIds.includes(p.id)) {
+      const existing = p.relatedCases ?? [];
+      if (existing.some((e) => e.patientId === sourcePatientId)) {
+        return p;
+      }
+      return {
+        ...p,
+        relatedCases: [
+          ...existing,
+          {
+            patientId: source.id,
+            fullName: source.fullName,
+            dateOfLoss: source.dateOfLoss,
+          },
+        ],
+      };
+    }
+
+    return p;
   });
 
   persistPatients(nextPatients);
@@ -840,43 +869,84 @@ export function syncRelatedCasesGroup(sourcePatientId: string, relatedIds: strin
  * Removes the link in both directions and updates the remaining group.
  */
 export function removeFromRelatedCasesGroup(sourcePatientId: string, removePatientId: string) {
-  const sourcePatient = patients.find((p) => p.id === sourcePatientId);
-  if (!sourcePatient) return;
-
-  // Get current group from source (excluding the one being removed)
-  const remainingRelated = (sourcePatient.relatedCases ?? [])
-    .filter((entry) => entry.patientId !== removePatientId)
-    .map((entry) => entry.patientId);
-
-  // Full remaining group including source
-  const remainingGroupIds = new Set([sourcePatientId, ...remainingRelated]);
-
-  const patientMap = new Map(patients.map((p) => [p.id, p]));
-
+  // Just remove the source ↔ target link in both directions. We
+  // intentionally don't touch other patients' lists anymore — the
+  // old "rebuild every remaining group member" path could clobber
+  // unrelated relationships if the group had been built up over time.
   const nextPatients = patients.map((p) => {
-    // The removed patient: strip source from their list
-    if (p.id === removePatientId) {
-      const updated = (p.relatedCases ?? []).filter((entry) => entry.patientId !== sourcePatientId);
+    if (p.id === sourcePatientId) {
+      const updated = (p.relatedCases ?? []).filter(
+        (entry) => entry.patientId !== removePatientId,
+      );
       return { ...p, relatedCases: updated.length > 0 ? updated : undefined };
     }
-
-    // Members of the remaining group: rebuild their list
-    if (remainingGroupIds.has(p.id)) {
-      const related = Array.from(remainingGroupIds)
-        .filter((id) => id !== p.id)
-        .map((id) => {
-          const other = patientMap.get(id);
-          return other
-            ? { patientId: other.id, fullName: other.fullName, dateOfLoss: other.dateOfLoss }
-            : null;
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-      return { ...p, relatedCases: related.length > 0 ? related : undefined };
+    if (p.id === removePatientId) {
+      const updated = (p.relatedCases ?? []).filter(
+        (entry) => entry.patientId !== sourcePatientId,
+      );
+      return { ...p, relatedCases: updated.length > 0 ? updated : undefined };
     }
-
     return p;
   });
 
   persistPatients(nextPatients);
+}
+
+/**
+ * One-time data heal: walk every patient and, for every related-case
+ * link they have to a patient B, ensure B also has a reverse link
+ * back to A. Idempotent — running it twice in a row is a no-op the
+ * second time. Returns the number of patients whose list was modified
+ * so a caller can decide whether to surface a "fixed N records" toast.
+ *
+ * Used to fix legacy data where related-case links were stored
+ * one-way (Jane → John but not John → Jane). Triggered on patient
+ * page mount so the heal happens silently in the background.
+ */
+export function healRelatedCaseLinks(): number {
+  if (patients.length === 0) return 0;
+  const patientMap = new Map(patients.map((p) => [p.id, p]));
+  // For each patient, build the set of who CURRENTLY claims them as
+  // related. Then make sure each of those reverse links is present
+  // on the patient's own list.
+  const expectedReverseLinks = new Map<string, Set<string>>();
+  for (const a of patients) {
+    for (const link of a.relatedCases ?? []) {
+      if (!patientMap.has(link.patientId)) continue; // dangling, skip
+      const reverseSet = expectedReverseLinks.get(link.patientId) ?? new Set<string>();
+      reverseSet.add(a.id);
+      expectedReverseLinks.set(link.patientId, reverseSet);
+    }
+  }
+
+  const updates = new Map<string, NonNullable<PatientRecord["relatedCases"]>>();
+  for (const [targetId, expectedSet] of expectedReverseLinks) {
+    const target = patientMap.get(targetId);
+    if (!target) continue;
+    const existingList = target.relatedCases ?? [];
+    const existingIds = new Set(existingList.map((e) => e.patientId));
+    const missing: typeof existingList = [];
+    for (const sourceId of expectedSet) {
+      if (existingIds.has(sourceId)) continue;
+      const source = patientMap.get(sourceId);
+      if (!source) continue;
+      missing.push({
+        patientId: source.id,
+        fullName: source.fullName,
+        dateOfLoss: source.dateOfLoss,
+      });
+    }
+    if (missing.length > 0) {
+      updates.set(targetId, [...existingList, ...missing]);
+    }
+  }
+
+  if (updates.size === 0) return 0;
+
+  const nextPatients = patients.map((p) => {
+    const next = updates.get(p.id);
+    return next ? { ...p, relatedCases: next } : p;
+  });
+  persistPatients(nextPatients);
+  return updates.size;
 }

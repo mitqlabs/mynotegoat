@@ -61,6 +61,7 @@ import {
   deletePatientRecord,
   syncRelatedCasesGroup,
   removeFromRelatedCasesGroup,
+  healRelatedCaseLinks,
 } from "@/lib/mock-data";
 import {
   type FileManagerState,
@@ -1470,6 +1471,31 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [showRelatedCaseSuggestions, setShowRelatedCaseSuggestions] = useState(false);
   const [relatedCaseNavigateTarget, setRelatedCaseNavigateTarget] = useState<RelatedCaseEntry | null>(null);
   const [relatedCaseNavigateAnchor, setRelatedCaseNavigateAnchor] = useState<PopupAnchor | null>(null);
+
+  // Heal one-way related-case links on patient page mount. Legacy
+  // data from before bidirectional sync landed could have John linked
+  // to Jane without Jane linked back; healRelatedCaseLinks walks every
+  // patient and adds the missing reverse link wherever one is found.
+  // Idempotent, so the second mount through this effect on the same
+  // session is a near-instant no-op. After heal, refresh this
+  // patient's local relatedCases state from the now-correct global
+  // store so the new reverse links show up in the UI immediately.
+  useEffect(() => {
+    const healed = healRelatedCaseLinks();
+    if (healed === 0) return;
+    const refreshed = allPatients.find((p) => p.id === patient.id);
+    if (!refreshed?.relatedCases) return;
+    setRelatedCases(
+      refreshed.relatedCases.map((entry) => ({
+        patientId: entry.patientId,
+        fullName: entry.fullName,
+        dateOfLoss: entry.dateOfLoss,
+      })),
+    );
+    // patient.id is intentionally the only dep — re-running heal on
+    // every render would be wasted work even with the idempotency
+    // guard. eslint-disable-next-line is for the setRelatedCases ref.
+  }, [patient.id]);
 
   const [dischargeDate, setDischargeDate] = useState(toUsDate(patient.matrix?.discharge ?? ""));
   const [rbSentDate, setRbSentDate] = useState(toUsDate(patient.matrix?.rbSent ?? ""));
