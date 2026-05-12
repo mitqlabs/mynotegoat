@@ -58,6 +58,12 @@ type SettingsSectionKey =
   | "reports"
   | "smsTemplates"
   | "emailSettings"
+  // "admin" is the outer wrapper that nests the five admin-y subsections
+  // (diagnostics, backup, recovery, security, subscription). Those child
+  // keys still exist so each subsection's own expanded state, ?section=
+  // deep links, and reset buttons keep working exactly as before — the
+  // refactor is purely a visual / scroll-length improvement.
+  | "admin"
   | "subscription"
   | "backup"
   | "recovery"
@@ -79,6 +85,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   reports: false,
   smsTemplates: false,
   emailSettings: false,
+  admin: false,
   subscription: false,
   backup: false,
   recovery: false,
@@ -2734,6 +2741,18 @@ export default function SettingsPage() {
     const resolvedSection = section === "reports" ? "documents" : section;
     if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
       next[resolvedSection] = true;
+      // The five admin subsections live inside the Admin wrapper now —
+      // a deep link to a child needs to expand the parent too so the
+      // child is actually visible.
+      if (
+        resolvedSection === "diagnostics" ||
+        resolvedSection === "backup" ||
+        resolvedSection === "recovery" ||
+        resolvedSection === "security" ||
+        resolvedSection === "subscription"
+      ) {
+        next.admin = true;
+      }
     }
     return next;
   });
@@ -4992,11 +5011,23 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      {/* ── Diagnostics group ────────────────────────────────────────
-          Diagnostics sits FIRST in this tail group, followed by
-          Backup & Restore, Data Recovery, and Security Baseline. All
-          four are admin / troubleshooting tools — keeping them
-          physically adjacent makes them discoverable together. */}
+      {/* ── Admin group ──────────────────────────────────────────────
+          Diagnostics, Backup & Restore, Data Recovery, Security
+          Baseline, and Subscription used to each sit as separate
+          top-level sections. They're all admin / troubleshooting /
+          account-level tools, so they're nested inside a single
+          "Admin" CollapsibleSection now — one entry on the main
+          Settings list when collapsed, all five visible inside when
+          expanded. Each child keeps its own expanded state + deep
+          link so existing bookmarks and onboarding links still
+          land in the right place. */}
+      <CollapsibleSection
+        description="Diagnostics, backups, data recovery, security, and subscription."
+        isOpen={expandedSections.admin}
+        onToggle={() => toggleSection("admin")}
+        title="Admin"
+      >
+        <div className="space-y-3">
       <CollapsibleSection
         isOpen={expandedSections.diagnostics}
         onToggle={() => toggleSection("diagnostics")}
@@ -5274,13 +5305,11 @@ export default function SettingsPage() {
       >
         <SubscriptionSection />
       </CollapsibleSection>
+        </div>
+      </CollapsibleSection>
 
       {/* (Change Password UI has been merged into Office / Account
           Settings above. The standalone section was removed 2026-04-17.) */}
-
-      {/* (Security Baseline + Diagnostics got moved up into the
-          Diagnostics group at the bottom of the Settings list —
-          Diagnostics → Backup → Data Recovery → Security Baseline. */}
     </div>
   );
 }
