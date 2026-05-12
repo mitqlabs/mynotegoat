@@ -1135,12 +1135,17 @@ export default function PatientsPage() {
     const todayDate = today.getDate();
     const todayDay = today.getDay(); // 0=Sun
 
-    // Compute start of the week (Sunday) and end (Saturday)
+    // Window: today through end of the current week (Saturday).
+    // Previously the window opened on Sunday, which surfaced birthdays
+    // that had already passed earlier in the week ("Joe's birthday was
+    // Monday" on Friday is just noise — there's nothing to act on).
+    // Shifting the start to today keeps the panel focused on
+    // birthdays we can still reach this week. End-of-week stays at
+    // Saturday so the "this week" framing is preserved.
     const weekStart = new Date(today);
-    weekStart.setDate(todayDate - todayDay);
     weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(todayDate + (6 - todayDay));
     weekEnd.setHours(23, 59, 59, 999);
 
     const wsMonth = weekStart.getMonth();
@@ -1201,15 +1206,16 @@ export default function PatientsPage() {
   }, []);
 
   const birthdayWeekLabel = useMemo(() => {
+    // Label mirrors birthdayEntries' window: today through Saturday,
+    // not Sunday through Saturday, so the user sees the same range
+    // they're scrolling through.
     const today = new Date();
     const todayDay = today.getDay();
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - todayDay);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(today.getDate() + (6 - todayDay));
     const fmt = (d: Date) =>
       d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    return `${fmt(weekStart)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
+    return `${fmt(today)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
   }, []);
 
   return (
@@ -1267,13 +1273,24 @@ export default function PatientsPage() {
             Case Flow
           </button>
           <button
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
               view === "toDo" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
             }`}
             onClick={() => setView("toDo")}
             type="button"
           >
-            To Do
+            <span>To Do</span>
+            {taskOpenCount > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                  view === "toDo"
+                    ? "bg-white/25 text-white"
+                    : "bg-[var(--brand-primary)] text-white"
+                }`}
+              >
+                {taskOpenCount}
+              </span>
+            )}
           </button>
           <button
             className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
