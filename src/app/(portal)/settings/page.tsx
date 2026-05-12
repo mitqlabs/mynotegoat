@@ -4265,6 +4265,16 @@ export default function SettingsPage() {
                     </label>
                     <label className="inline-flex items-center gap-2 text-sm font-medium">
                       <input
+                        checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "mri_completed"}
+                        name="specialist-appear-mode"
+                        onChange={() => setSpecialistAppearWhen("mri_completed")}
+                        type="radio"
+                      />
+                      After MRI Completed
+                      <span className="text-xs font-normal text-[var(--text-muted)]">(recommended)</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm font-medium">
+                      <input
                         checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "mri_reviewed"}
                         name="specialist-appear-mode"
                         onChange={() => setSpecialistAppearWhen("mri_reviewed")}
@@ -4272,6 +4282,14 @@ export default function SettingsPage() {
                       />
                       Once MRI Reviewed
                     </label>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      &quot;Needs Referral&quot; also re-fires once MRI is
+                      Completed if no specialist has been sent on or
+                      after the MRI Completed date — so a pre-MRI
+                      referral (e.g., hand specialist for trauma)
+                      doesn&apos;t hide the post-MRI need (e.g., Pain
+                      Management).
+                    </p>
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
                     <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>

@@ -553,34 +553,79 @@ export function buildFollowUpItems(
       if (!specCleared) {
         const hasSent = hasMatrixValue(specialistSentRaw);
         const hasScheduled = hasMatrixValue(specialistScheduledRaw);
+        const hasMriDone = hasMatrixValue(mriDoneRaw);
 
-        // Specialist appear rule
-        let specialistShouldAppear = hasSent; // always show if referral started
-        if (!hasSent) {
-          if (specialistAppearWhen === "auto") {
-            // Auto: appear immediately like X-Ray (on case creation)
-            specialistShouldAppear = true;
-          } else if (specialistAppearWhen === "mri_sent" && hasMatrixValue(mriSentRaw)) {
-            specialistShouldAppear = true;
-          } else if (specialistAppearWhen === "mri_reviewed" && hasMatrixValue(mriReviewedRaw)) {
-            specialistShouldAppear = true;
+        // "Appear gate" — when should the Needs Referral row become
+        // eligible to fire? Setting-driven so practices that don't
+        // gate on MRI can still ask for the row earlier in the flow.
+        let appearGateMet = false;
+        if (specialistAppearWhen === "auto") {
+          appearGateMet = true;
+        } else if (specialistAppearWhen === "mri_sent" && hasMatrixValue(mriSentRaw)) {
+          appearGateMet = true;
+        } else if (specialistAppearWhen === "mri_completed" && hasMriDone) {
+          appearGateMet = true;
+        } else if (specialistAppearWhen === "mri_reviewed" && hasMatrixValue(mriReviewedRaw)) {
+          appearGateMet = true;
+        }
+
+        // Has any specialist been sent ON OR AFTER the MRI completion
+        // date? If yes, the post-MRI referral has already happened and
+        // Needs Referral stays quiet. If no, the row fires even when
+        // there's an earlier pre-MRI specialist still in flight —
+        // user workflow: "I send for therapy after the trauma, then
+        // a month later MRI comes back and that's when I send for
+        // Pain Management." The earlier therapy referral keeps
+        // tracking through Stage 2 / 3 independently.
+        let postMriSpecialistSent = false;
+        const mriDoneStamp = hasMriDone
+          ? toDateStampFromUs(extractLeadingDatePart(mriDoneRaw))
+          : 0;
+        if (mriDoneStamp > 0) {
+          const matrixStamp = toDateStampFromUs(extractLeadingDatePart(specialistSentRaw));
+          if (matrixStamp >= mriDoneStamp) {
+            postMriSpecialistSent = true;
+          }
+          if (!postMriSpecialistSent) {
+            for (const entry of specialistOpenEntries) {
+              const sentRaw =
+                typeof (entry as { sentDate?: unknown }).sentDate === "string"
+                  ? (entry as { sentDate: string }).sentDate
+                  : "";
+              const stamp = toDateStampFromUs(extractLeadingDatePart(sentRaw));
+              if (stamp > 0 && stamp >= mriDoneStamp) {
+                postMriSpecialistSent = true;
+                break;
+              }
+            }
           }
         }
 
-        // Three-stage progression, mutually exclusive — each stage gates
-        // on the previous date being filled, so a patient can only ever
-        // appear at one stage at a time. Previously the queue piled on
-        // separate "warning" rows whose preconditions overlapped (e.g.
-        // "Appt not scheduled" and "No report received" both fired off
-        // hasSent), so a single patient could show both rows even though
-        // no appointment had been scheduled. The user feedback that
-        // surfaced this: "Smith, John → Appt Not Scheduled" + "Smith,
-        // John → Report Not Received" appearing simultaneously.
-        if (specialistShouldAppear && !hasSent) {
-          // Stage 1: Needs Referral. Anchor falls back to MRI sent date,
-          // then DOL, so the row's age reflects how long we've been
-          // waiting to act on the referral.
-          const anchorDate = extractLeadingDatePart(mriSentRaw) || toUsDateCanonical(patient.dateOfLoss);
+        // Stage 1 decision:
+        //  - Before MRI is done: legacy behavior — fire only if no
+        //    specialist has been sent yet. (For "auto" / "mri_sent" /
+        //    "mri_reviewed" gates that don't require mriDone.)
+        //  - After MRI is done: fire if no specialist has been sent
+        //    post-MRI, even if there's an earlier specialist in flight.
+        const stage1NeedsReferral = (() => {
+          if (!appearGateMet) return false;
+          if (hasMriDone) return !postMriSpecialistSent;
+          return !hasSent;
+        })();
+
+        // Stage 1 + (Stage 2 OR Stage 3) can fire together when an
+        // earlier pre-MRI specialist is still being tracked AND a new
+        // post-MRI specialist hasn't been sent yet. Two rows = two
+        // distinct specialist activities; that's intentional and
+        // matches the user's mental model ("I have a hand specialist
+        // mid-flight AND I still need to send for Pain Management").
+        if (stage1NeedsReferral) {
+          // Anchor prefers MRI Completed (the trigger that revealed
+          // the need), falling back to MRI Sent, then DOL.
+          const anchorDate =
+            extractLeadingDatePart(mriDoneRaw) ||
+            extractLeadingDatePart(mriSentRaw) ||
+            toUsDateCanonical(patient.dateOfLoss);
           rows.push({
             id: `${patient.id}-specialist-needs-sent`,
             patientId: patient.id,
@@ -594,7 +639,9 @@ export function buildFollowUpItems(
             daysFromAnchor: getDaysFromToday(anchorDate),
             note: "",
           });
-        } else if (hasSent && !hasScheduled && !hasMatrixValue(specialistReportRaw)) {
+        }
+
+        if (hasSent && !hasScheduled && !hasMatrixValue(specialistReportRaw)) {
           // Stage 2: Appt Not Scheduled. Honors the existing
           // specialistNoScheduleWarningDays grace (default 3) so the row
           // doesn't pop up the second the referral leaves the office.

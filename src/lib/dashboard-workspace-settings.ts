@@ -2,7 +2,11 @@ export type XrayClearCondition = "patientRefused" | "completedPriorCare" | "revi
 export type MriCtClearCondition = "patientRefused" | "completedPriorCare" | "reviewed" | "noMri";
 export type SpecialistClearCondition = "patientRefused" | "completedPriorCare" | "report" | "noPm";
 export type MriAppearMode = "auto" | "days_from_initial";
-export type SpecialistAppearWhen = "auto" | "mri_sent" | "mri_reviewed";
+export type SpecialistAppearWhen =
+  | "auto"
+  | "mri_sent"
+  | "mri_completed"
+  | "mri_reviewed";
 
 export const XRAY_CLEAR_OPTIONS: { value: XrayClearCondition; label: string }[] = [
   { value: "patientRefused", label: "Patient Refused" },
@@ -84,7 +88,12 @@ export function getDefaultDashboardWorkspaceSettings(): DashboardWorkspaceSettin
       xrayAppearAuto: true,
       mriAppearMode: "auto",
       mriAppearDays: 21,
-      specialistAppearWhen: "auto",
+      // Default updated per user workflow: "Needs Referral" should
+      // surface once the MRI is actually completed (the scan was
+      // done), not on case creation. Surfacing earlier was generating
+      // false alerts for patients whose treatment plan was still
+      // pre-imaging.
+      specialistAppearWhen: "mri_completed",
       xrayNoReportWarningDays: 14,
       mriNoReportWarningDays: 14,
       mriNoScheduleWarningDays: 3,
@@ -119,7 +128,12 @@ function normalizeMriAppearMode(value: unknown, fallback: MriAppearMode): MriApp
 }
 
 function normalizeSpecialistAppearWhen(value: unknown, fallback: SpecialistAppearWhen): SpecialistAppearWhen {
-  return value === "auto" || value === "mri_sent" || value === "mri_reviewed" ? value : fallback;
+  return value === "auto" ||
+    value === "mri_sent" ||
+    value === "mri_completed" ||
+    value === "mri_reviewed"
+    ? value
+    : fallback;
 }
 
 function normalizeClearArray<T extends string>(value: unknown, validSet: Set<string>, fallback: T[]): T[] {
