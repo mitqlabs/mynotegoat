@@ -51,6 +51,10 @@ type SettingsSectionKey =
   | "soapMacros"
   | "billingMacros"
   | "packageBuilder"
+  // "templates" is the outer wrapper for the three template-y subsections
+  // (Document Templates, SMS Templates, Email Settings). Same pattern
+  // as "admin" — child keys keep their own state + deep links.
+  | "templates"
   | "documents"
   | "reports"
   | "smsTemplates"
@@ -77,6 +81,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   soapMacros: false,
   billingMacros: false,
   packageBuilder: false,
+  templates: false,
   documents: false,
   reports: false,
   smsTemplates: false,
@@ -2743,6 +2748,14 @@ export default function SettingsPage() {
       ) {
         next.admin = true;
       }
+      // Same idea for the Templates wrapper.
+      if (
+        resolvedSection === "documents" ||
+        resolvedSection === "smsTemplates" ||
+        resolvedSection === "emailSettings"
+      ) {
+        next.templates = true;
+      }
     }
     return next;
   });
@@ -4840,6 +4853,21 @@ export default function SettingsPage() {
         <PackageBuilderSettingsPanel />
       </CollapsibleSection>
 
+      {/* ── Templates group ──────────────────────────────────────────
+          Document Templates, SMS / Text Templates, and Email Settings
+          all share the same job: configure the merged output the app
+          generates when communicating about a patient. Nesting them
+          under one "Templates" wrapper trims the top-level Settings
+          scroll. Each child keeps its own expanded state + deep
+          link, so existing bookmarks (?section=documents, etc.) still
+          work. */}
+      <CollapsibleSection
+        description="Letters, referrals, imaging requests, narrative reports, SMS, and email."
+        isOpen={expandedSections.templates}
+        onToggle={() => toggleSection("templates")}
+        title="Templates"
+      >
+        <div className="space-y-3">
       <CollapsibleSection
         description="Letters, specialist referrals, imaging requests, and narrative reports — all the printable documents Note Goat can produce for a patient."
         isOpen={expandedSections.documents}
@@ -4952,6 +4980,9 @@ export default function SettingsPage() {
               return examples[key] ?? "";
             })}</p>
           </div>
+        </div>
+      </CollapsibleSection>
+
         </div>
       </CollapsibleSection>
 
