@@ -30,7 +30,6 @@ import {
 } from "@/lib/document-html-layout";
 import { createEncounterMacroRunId, encounterSections } from "@/lib/encounter-notes";
 import { formatUsPhoneInput } from "@/lib/phone-format";
-import { type QuickStatOptionKey } from "@/lib/quick-stats-settings";
 import { buildNarrativeReportContext, renderNarrativeReportBody } from "@/lib/report-generator";
 import {
   appointmentStatusOptions,

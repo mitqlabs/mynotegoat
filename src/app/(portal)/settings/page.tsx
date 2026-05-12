@@ -21,7 +21,6 @@ import {
   restorePatientRecord,
 } from "@/lib/mock-data";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
-import { useQuickStatsSettings } from "@/hooks/use-quick-stats-settings";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
@@ -29,7 +28,6 @@ import { usePriorityCaseRules } from "@/hooks/use-priority-case-rules";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
 import { useEmailSettings } from "@/hooks/use-email-settings";
 import { getDefaultEmailSettings, emailAutoFields, emailAutoFieldLabels, type EmailAutoField } from "@/lib/email-settings";
-import { quickStatOptions } from "@/lib/quick-stats-settings";
 import { appointmentStatusOptions, formatAppointmentStatusLabel } from "@/lib/schedule-appointments";
 import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
 import { appointmentIntervalOptions, weekdayLabels } from "@/lib/schedule-settings";
@@ -49,7 +47,6 @@ type SettingsSectionKey =
   | "contactCategories"
   | "schedule"
   | "dashboard"
-  | "quickStats"
   | "caseStatuses"
   | "soapMacros"
   | "billingMacros"
@@ -58,6 +55,12 @@ type SettingsSectionKey =
   | "reports"
   | "smsTemplates"
   | "emailSettings"
+  // "admin" is the outer wrapper that nests the five admin-y subsections
+  // (diagnostics, backup, recovery, security, subscription). Those child
+  // keys still exist so each subsection's own expanded state, ?section=
+  // deep links, and reset buttons keep working exactly as before — the
+  // refactor is purely a visual / scroll-length improvement.
+  | "admin"
   | "subscription"
   | "backup"
   | "recovery"
@@ -70,7 +73,6 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   contactCategories: false,
   schedule: false,
   dashboard: false,
-  quickStats: false,
   caseStatuses: false,
   soapMacros: false,
   billingMacros: false,
@@ -79,6 +81,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   reports: false,
   smsTemplates: false,
   emailSettings: false,
+  admin: false,
   subscription: false,
   backup: false,
   recovery: false,
@@ -2638,12 +2641,6 @@ export default function SettingsPage() {
     resetToDefaults: resetDashboardWorkspaceSettingsToDefaults,
   } = useDashboardWorkspaceSettings();
   const {
-    quickStatsSettings,
-    setStatVisibility,
-    setAllStatsVisible,
-    resetToDefaults: resetQuickStatsToDefaults,
-  } = useQuickStatsSettings();
-  const {
     scheduleSettings,
     setEnforceOfficeHours,
     setAllowOverride,
@@ -2734,6 +2731,18 @@ export default function SettingsPage() {
     const resolvedSection = section === "reports" ? "documents" : section;
     if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
       next[resolvedSection] = true;
+      // The five admin subsections live inside the Admin wrapper now —
+      // a deep link to a child needs to expand the parent too so the
+      // child is actually visible.
+      if (
+        resolvedSection === "diagnostics" ||
+        resolvedSection === "backup" ||
+        resolvedSection === "recovery" ||
+        resolvedSection === "security" ||
+        resolvedSection === "subscription"
+      ) {
+        next.admin = true;
+      }
     }
     return next;
   });
@@ -4471,57 +4480,11 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => setAllStatsVisible(true)}
-              type="button"
-            >
-              Select All
-            </button>
-            <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => setAllStatsVisible(false)}
-              type="button"
-            >
-              Clear All
-            </button>
-            <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetQuickStatsToDefaults(); }}
-              type="button"
-            >
-              Reset Quick Stats Defaults
-            </button>
-          </div>
-        }
-        description="Choose which quick patient stats are shown in Patient File next to Re-Exam and Related Cases."
-        isOpen={expandedSections.quickStats}
-        onToggle={() => toggleSection("quickStats")}
-        title="Quick Stats"
-      >
-        <div className="grid gap-2 sm:grid-cols-2">
-          {quickStatOptions.map((option) => (
-            <label
-              className="flex items-start gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              key={`quick-stat-option-${option.key}`}
-            >
-              <input
-                checked={quickStatsSettings.visibleStats[option.key]}
-                className="mt-1"
-                onChange={(event) => setStatVisibility(option.key, event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                <span className="block text-sm font-semibold">{option.label}</span>
-                <span className="text-xs text-[var(--text-muted)]">{option.description}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </CollapsibleSection>
+      {/* Quick Stats settings panel removed — the patient-page Quick
+          Stats box was retired previously, so this UI had nothing left
+          to drive. The underlying storage key + backup module entry
+          stay in place so existing user data isn't dropped if we ever
+          want to re-introduce a similar feature. */}
 
       <CollapsibleSection
         actions={
@@ -4992,11 +4955,23 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      {/* ── Diagnostics group ────────────────────────────────────────
-          Diagnostics sits FIRST in this tail group, followed by
-          Backup & Restore, Data Recovery, and Security Baseline. All
-          four are admin / troubleshooting tools — keeping them
-          physically adjacent makes them discoverable together. */}
+      {/* ── Admin group ──────────────────────────────────────────────
+          Diagnostics, Backup & Restore, Data Recovery, Security
+          Baseline, and Subscription used to each sit as separate
+          top-level sections. They're all admin / troubleshooting /
+          account-level tools, so they're nested inside a single
+          "Admin" CollapsibleSection now — one entry on the main
+          Settings list when collapsed, all five visible inside when
+          expanded. Each child keeps its own expanded state + deep
+          link so existing bookmarks and onboarding links still
+          land in the right place. */}
+      <CollapsibleSection
+        description="Diagnostics, backups, data recovery, security, and subscription."
+        isOpen={expandedSections.admin}
+        onToggle={() => toggleSection("admin")}
+        title="Admin"
+      >
+        <div className="space-y-3">
       <CollapsibleSection
         isOpen={expandedSections.diagnostics}
         onToggle={() => toggleSection("diagnostics")}
@@ -5274,13 +5249,11 @@ export default function SettingsPage() {
       >
         <SubscriptionSection />
       </CollapsibleSection>
+        </div>
+      </CollapsibleSection>
 
       {/* (Change Password UI has been merged into Office / Account
           Settings above. The standalone section was removed 2026-04-17.) */}
-
-      {/* (Security Baseline + Diagnostics got moved up into the
-          Diagnostics group at the bottom of the Settings list —
-          Diagnostics → Backup → Data Recovery → Security Baseline. */}
     </div>
   );
 }
