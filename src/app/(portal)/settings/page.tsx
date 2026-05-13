@@ -48,6 +48,9 @@ type SettingsSectionKey =
   | "schedule"
   | "dashboard"
   | "caseStatuses"
+  // "macros" is the outer wrapper for SOAP Macros, Billing Macros,
+  // and Package Builder. Each child keeps its own state + deep link.
+  | "macros"
   | "soapMacros"
   | "billingMacros"
   | "packageBuilder"
@@ -78,6 +81,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   schedule: false,
   dashboard: false,
   caseStatuses: false,
+  macros: false,
   soapMacros: false,
   billingMacros: false,
   packageBuilder: false,
@@ -2760,6 +2764,16 @@ export default function SettingsPage() {
       ) {
         next.templates = true;
       }
+      // And the Macros wrapper (SOAP Macros, Billing Macros, Package
+      // Builder). Onboarding + setup-checklist deep-link into the
+      // children, so the parent has to expand to surface them.
+      if (
+        resolvedSection === "soapMacros" ||
+        resolvedSection === "billingMacros" ||
+        resolvedSection === "packageBuilder"
+      ) {
+        next.macros = true;
+      }
     }
     return next;
   });
@@ -4529,6 +4543,21 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
+      {/* ── Macros group ─────────────────────────────────────────────
+          SOAP Macros, Billing Macros, and Package Builder are all
+          configuration for the "things the doctor builds once and
+          uses every visit." Nesting them under one "Macros" wrapper
+          trims the top-level Settings scroll the same way Admin and
+          Templates did. Each child keeps its own state + deep link;
+          existing onboarding bookmarks (?section=soapMacros etc.)
+          still work. */}
+      <CollapsibleSection
+        description="SOAP macros, billing macros (treatments, diagnoses, bundles), and cash package builder."
+        isOpen={expandedSections.macros}
+        onToggle={() => toggleSection("macros")}
+        title="Macros"
+      >
+        <div className="space-y-3">
       <CollapsibleSection
         description="Configure Subjective, Objective, Assessment, and Plan macro templates."
         isOpen={expandedSections.soapMacros}
@@ -4554,6 +4583,8 @@ export default function SettingsPage() {
         title="Package Builder"
       >
         <PackageBuilderSettingsPanel />
+      </CollapsibleSection>
+        </div>
       </CollapsibleSection>
 
       {/* ── Templates group ──────────────────────────────────────────
