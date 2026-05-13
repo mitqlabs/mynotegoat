@@ -23,6 +23,7 @@ import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-typ
 import { useTasks } from "@/hooks/use-tasks";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
+import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { renderDocumentTemplate, type DocumentTemplateScope } from "@/lib/document-templates";
 import {
   applyLabelValueHangingIndent,
@@ -1425,16 +1426,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     mri: false,
     specialist: false,
   });
-  const [sectionPanelsOpen, setSectionPanelsOpen] = useState<Record<SectionPanelKey, boolean>>({
-    notes: false,
-    reExam: false,
-    relatedCases: false,
-    appointments: false,
-    diagnosis: false,
-    letters: false,
-    narrative: false,
-    patientFiles: false,
-    additionalDetails: false,
+  // Initial open state is sourced from Settings → Patient Page →
+  // Default Open Sections. The user picks once (e.g. "Notes always
+  // open") and every patient file honors it. Local toggles after
+  // mount still work normally — the preference only seeds the
+  // starting state, not subsequent expand/collapse.
+  const [sectionPanelsOpen, setSectionPanelsOpen] = useState<Record<SectionPanelKey, boolean>>(() => {
+    const prefs = loadPatientPagePrefs().defaultOpen;
+    return {
+      notes: Boolean(prefs.notes),
+      reExam: Boolean(prefs.reExam),
+      relatedCases: Boolean(prefs.relatedCases),
+      appointments: Boolean(prefs.appointments),
+      diagnosis: Boolean(prefs.diagnosis),
+      letters: Boolean(prefs.letters),
+      narrative: Boolean(prefs.narrative),
+      patientFiles: Boolean(prefs.patientFiles),
+      additionalDetails: Boolean(prefs.additionalDetails),
+    };
   });
   const quickTaskButtonRef = useRef<HTMLButtonElement | null>(null);
   const attorneyInputRef = useRef<HTMLInputElement | null>(null);
