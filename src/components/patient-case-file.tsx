@@ -4023,16 +4023,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {isCashPatient && (
-            <label className="grid gap-1 md:col-span-2 flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
+            // Cash-Patient badge only — the old "Convert to PI" button
+            // sat here too, but it fired immediately with no confirm
+            // dialog, which made an accidental click a real data
+            // hazard. Removed per user request; cash↔PI conversions
+            // should happen deliberately, not as a single misclick.
+            <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">Cash Patient</span>
-              <button
-                className="ml-auto rounded-lg border border-amber-400 bg-white px-2 py-1 text-xs font-semibold text-amber-800"
-                onClick={() => setIsCashPatient(false)}
-                type="button"
-              >
-                Convert to PI
-              </button>
-            </label>
+            </div>
           )}
 
           <label className="grid gap-1">
