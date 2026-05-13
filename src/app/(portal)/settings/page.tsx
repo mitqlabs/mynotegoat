@@ -75,6 +75,241 @@ type SettingsSectionKey =
   | "account"
   | "diagnostics";
 
+/**
+ * Smart-search catalog for the Settings page. Each entry tells the
+ * search input how to find a section by title, description, or a list
+ * of aliases (the words a user would type that don't appear in the
+ * visible label — "fax" / "logo" → Office, "lien" → Case Status, etc.).
+ *
+ * `parent` is the key of the wrapper section a child lives inside
+ * (Admin / Templates / Macros). When a child matches, its parent is
+ * auto-included in the visible set so the wrapper itself doesn't get
+ * filtered out.
+ *
+ * To extend: add aliases here as feature requests come in. New
+ * sections need their own entry plus matching `parent` value if they
+ * live inside a wrapper.
+ */
+const settingsSearchCatalog: Array<{
+  key: SettingsSectionKey;
+  title: string;
+  description?: string;
+  aliases?: string[];
+  parent?: SettingsSectionKey;
+}> = [
+  // Top-level groups
+  {
+    key: "schedule",
+    title: "Schedule Settings",
+    description: "appointment statuses, office hours, intervals",
+    aliases: ["appointment", "appointments", "office hours", "interval", "weekday", "slot", "room"],
+  },
+  {
+    key: "dashboard",
+    title: "Reminder Settings",
+    description: "Case Flow rules, To Do preferences, follow-up rules",
+    aliases: [
+      "case flow",
+      "todo",
+      "to do",
+      "reminder",
+      "reminders",
+      "follow up",
+      "follow-up",
+      "priority",
+      "mri due",
+      "x-ray",
+      "xray",
+      "specialist appear",
+      "warn",
+      "grace period",
+      "cleared from case flow",
+    ],
+  },
+  {
+    key: "caseStatuses",
+    title: "Case Status Categories",
+    aliases: [
+      "status",
+      "case status",
+      "lien",
+      "lop",
+      "review",
+      "review options",
+      "case closed",
+      "active",
+      "discharged",
+      "submitted",
+      "paid",
+      "dropped",
+      "auto folder",
+    ],
+  },
+  // Macros wrapper + children
+  { key: "macros", title: "Macros" },
+  {
+    key: "soapMacros",
+    title: "SOAP Macro Settings",
+    aliases: ["subjective", "objective", "assessment", "plan", "macro", "soap", "prompt", "salt"],
+    parent: "macros",
+  },
+  {
+    key: "billingMacros",
+    title: "Billing Macro Settings",
+    aliases: [
+      "treatment",
+      "treatments",
+      "diagnosis",
+      "diagnoses",
+      "dx",
+      "bundle",
+      "bundles",
+      "cpt",
+      "icd",
+      "billing macros",
+      "folder",
+    ],
+    parent: "macros",
+  },
+  {
+    key: "packageBuilder",
+    title: "Package Builder",
+    aliases: ["cash", "package", "packages", "visits", "discount"],
+    parent: "macros",
+  },
+  // Templates wrapper + children
+  { key: "templates", title: "Templates" },
+  {
+    key: "contactCategories",
+    title: "Contact Categories",
+    aliases: [
+      "attorney",
+      "attorneys",
+      "imaging center",
+      "specialist",
+      "acute care",
+      "hospital",
+      "urgent care",
+      "sub-category",
+      "sub-categories",
+      "subcategory",
+      "subcategories",
+      "contact",
+      "contacts",
+    ],
+    parent: "templates",
+  },
+  {
+    key: "documents",
+    title: "Document Templates",
+    description: "letters, referrals, imaging requests, narrative reports",
+    aliases: [
+      "letter",
+      "letters",
+      "referral",
+      "referrals",
+      "imaging request",
+      "narrative",
+      "narrative report",
+      "report template",
+      "report templates",
+      "pdf",
+      "print",
+    ],
+    parent: "templates",
+  },
+  {
+    key: "smsTemplates",
+    title: "SMS / Text Templates",
+    aliases: ["sms", "text", "text message", "messages", "imessage"],
+    parent: "templates",
+  },
+  {
+    key: "emailSettings",
+    title: "Email Settings",
+    aliases: ["email", "send", "subject", "token", "outlook", "gmail"],
+    parent: "templates",
+  },
+  // Admin wrapper + children
+  { key: "admin", title: "Admin" },
+  {
+    key: "office",
+    title: "Office / Account Settings",
+    aliases: [
+      "logo",
+      "fax",
+      "phone",
+      "email",
+      "address",
+      "delete password",
+      "change password",
+      "doctor",
+      "doctor name",
+      "office",
+      "office name",
+      "account",
+      "password",
+    ],
+    parent: "admin",
+  },
+  {
+    key: "diagnostics",
+    title: "Diagnostics",
+    aliases: ["cloud", "row count", "local storage", "debug", "diagnostic"],
+    parent: "admin",
+  },
+  {
+    key: "backup",
+    title: "Backup & Restore",
+    aliases: ["backup", "export", "import"],
+    parent: "admin",
+  },
+  {
+    key: "recovery",
+    title: "Data Recovery",
+    aliases: ["recover", "snapshot", "restore"],
+    parent: "admin",
+  },
+  {
+    key: "security",
+    title: "Security Baseline",
+    aliases: ["security", "checklist", "hipaa", "phi"],
+    parent: "admin",
+  },
+  {
+    key: "subscription",
+    title: "Subscription",
+    aliases: ["plan", "billing", "stripe", "payment", "subscribe", "credit card"],
+    parent: "admin",
+  },
+];
+
+/** Build the visible-section set for the current search query.
+ *  Returns null when search is inactive (caller should show everything). */
+function computeSearchMatchKeys(query: string): Set<SettingsSectionKey> | null {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return null;
+  const terms = trimmed.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return null;
+  const matches = new Set<SettingsSectionKey>();
+  for (const entry of settingsSearchCatalog) {
+    const haystack = [
+      entry.title,
+      entry.description ?? "",
+      ...(entry.aliases ?? []),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const everyTermHits = terms.every((term) => haystack.includes(term));
+    if (!everyTermHits) continue;
+    matches.add(entry.key);
+    // Bring the parent wrapper into the visible set so the child is
+    // actually reachable (and not hidden behind a collapsed wrapper).
+    if (entry.parent) matches.add(entry.parent);
+  }
+  return matches;
+}
+
 const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   office: false,
   contactCategories: false,
@@ -900,6 +1135,10 @@ type CollapsibleSectionProps = {
   onToggle: () => void;
   actions?: ReactNode;
   children: ReactNode;
+  /** When true, the section is skipped entirely (returns null). Used
+   *  by the Settings smart-search filter — a non-matching section is
+   *  hidden rather than rendered in a collapsed state. */
+  hidden?: boolean;
 };
 
 function CollapsibleSection({
@@ -909,7 +1148,9 @@ function CollapsibleSection({
   onToggle,
   actions,
   children,
+  hidden,
 }: CollapsibleSectionProps) {
+  if (hidden) return null;
   return (
     <section className="panel-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2778,6 +3019,30 @@ export default function SettingsPage() {
     return next;
   });
 
+  // Smart search across all Settings sections. Filters the visible
+  // section list as the user types; matches against section title,
+  // description, and a per-section alias list defined in
+  // settingsSearchCatalog. When a child matches, its parent wrapper
+  // (Admin / Templates / Macros) is also included so the child is
+  // reachable. When the box is empty, filtering is off and the page
+  // looks the same as it always has.
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchMatchKeys = useMemo(
+    () => computeSearchMatchKeys(searchQuery),
+    [searchQuery],
+  );
+  const showSection = (key: SettingsSectionKey): boolean => {
+    if (!searchMatchKeys) return true;
+    return searchMatchKeys.has(key);
+  };
+  // When filtering, auto-expand every visible section so the user
+  // doesn't have to click through wrappers to see what they searched
+  // for. When search is empty, defer to the user's manual state.
+  const sectionIsOpen = (key: SettingsSectionKey): boolean => {
+    if (searchMatchKeys) return true;
+    return Boolean(expandedSections[key]);
+  };
+
   useEffect(() => {
     setBackupInfo(hasSafetyBackup());
   }, []);
@@ -3228,6 +3493,39 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Smart Search — keyword filter across every section (title,
+          description, and a curated alias list per section). Matches
+          auto-expand and non-matches collapse out so the user doesn't
+          have to scroll. Empty input = no filter, page renders normally. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--line-soft)] bg-white px-4 py-3">
+        <span aria-hidden className="text-lg">🔎</span>
+        <input
+          aria-label="Search settings"
+          className="min-w-[260px] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder='Search settings — try "logo", "lien", "billing macros", "backup"…'
+          type="search"
+          value={searchQuery}
+        />
+        {searchQuery && (
+          <button
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold"
+            onClick={() => setSearchQuery("")}
+            type="button"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      {/* Empty-results helper. Only shows when the user has typed a
+          query that matches nothing in the catalog — keeps the page
+          from looking broken when filtering nukes every section. */}
+      {searchMatchKeys && searchMatchKeys.size === 0 && (
+        <p className="rounded-2xl border border-dashed border-[var(--line-soft)] bg-white px-4 py-6 text-center text-sm text-[var(--text-muted)]">
+          No settings match &quot;{searchQuery}&quot;. Try a different keyword or clear the search.
+        </p>
+      )}
+
       {/* Office / Account Settings moved into the Admin wrapper below. */}
       {/* Contact Categories moved into the Templates wrapper below. */}
 
@@ -3242,7 +3540,8 @@ export default function SettingsPage() {
           </button>
         }
         description="Configure appointment statuses and office hours used by the Schedule page."
-        isOpen={expandedSections.schedule}
+        hidden={!showSection("schedule")}
+        isOpen={sectionIsOpen("schedule")}
         onToggle={() => toggleSection("schedule")}
         title="Schedule Settings"
       >
@@ -3772,7 +4071,8 @@ export default function SettingsPage() {
           </div>
         }
         description="Configure Case Flow rules, To Do preferences, and case status display."
-        isOpen={expandedSections.dashboard}
+        hidden={!showSection("dashboard")}
+        isOpen={sectionIsOpen("dashboard")}
         onToggle={() => toggleSection("dashboard")}
         title="Reminder Settings"
       >
@@ -4236,7 +4536,8 @@ export default function SettingsPage() {
           </div>
         }
         description="Create and maintain case status names and colors."
-        isOpen={expandedSections.caseStatuses}
+        hidden={!showSection("caseStatuses")}
+        isOpen={sectionIsOpen("caseStatuses")}
         onToggle={() => toggleSection("caseStatuses")}
         title="Case Status Categories"
       >
@@ -4553,14 +4854,16 @@ export default function SettingsPage() {
           still work. */}
       <CollapsibleSection
         description="SOAP macros, billing macros (treatments, diagnoses, bundles), and cash package builder."
-        isOpen={expandedSections.macros}
+        hidden={!showSection("macros")}
+        isOpen={sectionIsOpen("macros")}
         onToggle={() => toggleSection("macros")}
         title="Macros"
       >
         <div className="space-y-3">
       <CollapsibleSection
         description="Configure Subjective, Objective, Assessment, and Plan macro templates."
-        isOpen={expandedSections.soapMacros}
+        hidden={!showSection("soapMacros")}
+        isOpen={sectionIsOpen("soapMacros")}
         onToggle={() => toggleSection("soapMacros")}
         title="SOAP Macro Settings"
       >
@@ -4569,7 +4872,8 @@ export default function SettingsPage() {
 
       <CollapsibleSection
         description="Manage treatment macros, diagnosis codes, and one-click diagnosis bundles."
-        isOpen={expandedSections.billingMacros}
+        hidden={!showSection("billingMacros")}
+        isOpen={sectionIsOpen("billingMacros")}
         onToggle={() => toggleSection("billingMacros")}
         title="Billing Macro Settings"
       >
@@ -4578,7 +4882,8 @@ export default function SettingsPage() {
 
       <CollapsibleSection
         description="Create office cash packages (visits, included CPTs, discounted price, and auto discount %)."
-        isOpen={expandedSections.packageBuilder}
+        hidden={!showSection("packageBuilder")}
+        isOpen={sectionIsOpen("packageBuilder")}
         onToggle={() => toggleSection("packageBuilder")}
         title="Package Builder"
       >
@@ -4597,7 +4902,8 @@ export default function SettingsPage() {
           work. */}
       <CollapsibleSection
         description="Contact categories, letters, referrals, imaging requests, narrative reports, SMS, and email."
-        isOpen={expandedSections.templates}
+        hidden={!showSection("templates")}
+        isOpen={sectionIsOpen("templates")}
         onToggle={() => toggleSection("templates")}
         title="Templates"
       >
@@ -4613,7 +4919,8 @@ export default function SettingsPage() {
           </button>
         }
         description="Top-level categories are fixed (Attorney, Imaging Center, Specialist). Manage sub-categories under each one."
-        isOpen={expandedSections.contactCategories}
+        hidden={!showSection("contactCategories")}
+        isOpen={sectionIsOpen("contactCategories")}
         onToggle={() => toggleSection("contactCategories")}
         title="Contact Categories"
       >
@@ -4718,7 +5025,8 @@ export default function SettingsPage() {
 
       <CollapsibleSection
         description="Letters, specialist referrals, imaging requests, and narrative reports — all the printable documents Note Goat can produce for a patient."
-        isOpen={expandedSections.documents}
+        hidden={!showSection("documents")}
+        isOpen={sectionIsOpen("documents")}
         onToggle={() => toggleSection("documents")}
         title="Document Templates"
       >
@@ -4751,7 +5059,8 @@ export default function SettingsPage() {
 
       <CollapsibleSection
         description="Patient text message templates. Texts are sent manually through your Mac's Messages app — click a phone in the app, pick a template, hit send."
-        isOpen={expandedSections.smsTemplates}
+        hidden={!showSection("smsTemplates")}
+        isOpen={sectionIsOpen("smsTemplates")}
         onToggle={() => toggleSection("smsTemplates")}
         title="SMS / Text Templates"
       >
@@ -4771,7 +5080,8 @@ export default function SettingsPage() {
           </button>
         }
         description="Customize the subject line and body message used when emailing files from My Files."
-        isOpen={expandedSections.emailSettings}
+        hidden={!showSection("emailSettings")}
+        isOpen={sectionIsOpen("emailSettings")}
         onToggle={() => toggleSection("emailSettings")}
         title="Email Settings"
       >
@@ -4846,7 +5156,8 @@ export default function SettingsPage() {
           land in the right place. */}
       <CollapsibleSection
         description="Office settings, diagnostics, backups, data recovery, security, and subscription."
-        isOpen={expandedSections.admin}
+        hidden={!showSection("admin")}
+        isOpen={sectionIsOpen("admin")}
         onToggle={() => toggleSection("admin")}
         title="Admin"
       >
@@ -4861,7 +5172,8 @@ export default function SettingsPage() {
             Reset Office Defaults
           </button>
         }
-        isOpen={expandedSections.office}
+        hidden={!showSection("office")}
+        isOpen={sectionIsOpen("office")}
         onToggle={() => toggleSection("office")}
         title="Office / Account Settings"
       >
@@ -5042,7 +5354,8 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.diagnostics}
+        hidden={!showSection("diagnostics")}
+        isOpen={sectionIsOpen("diagnostics")}
         onToggle={() => toggleSection("diagnostics")}
         title="Diagnostics"
         description="Live view of your account, workspace, cloud row counts, and local storage — useful when data looks wrong."
@@ -5052,7 +5365,8 @@ export default function SettingsPage() {
 
       <CollapsibleSection
         description="Export selected settings/data into a backup file, then import into another office setup."
-        isOpen={expandedSections.backup}
+        hidden={!showSection("backup")}
+        isOpen={sectionIsOpen("backup")}
         onToggle={() => toggleSection("backup")}
         title="Backup & Restore"
       >
@@ -5175,7 +5489,8 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.recovery}
+        hidden={!showSection("recovery")}
+        isOpen={sectionIsOpen("recovery")}
         onToggle={() => toggleSection("recovery")}
         title="Data Recovery"
         description="Recover lost data from cloud backup or local safety snapshot."
@@ -5297,7 +5612,8 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.security}
+        hidden={!showSection("security")}
+        isOpen={sectionIsOpen("security")}
         onToggle={() => toggleSection("security")}
         title="Security Baseline (Pre-PHI Checklist)"
       >
@@ -5311,7 +5627,8 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        isOpen={expandedSections.subscription}
+        hidden={!showSection("subscription")}
+        isOpen={sectionIsOpen("subscription")}
         onToggle={() => toggleSection("subscription")}
         title="Subscription"
         description="Manage your plan and billing details through Stripe."
