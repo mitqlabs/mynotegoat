@@ -127,15 +127,29 @@ export function CashPaymentsSection({ patientId }: Props) {
     return stored;
   };
 
-  /** Update the per-row draft buffer as the user types. */
+  /** Update the per-row draft buffer as the user types. The draft is
+   *  initialized from the stored entry's current values (or blanks
+   *  when no entry exists yet) so editing one field doesn't quietly
+   *  reset the others to 0 on commit. Previously the buffer started
+   *  with every field as "", which meant typing in Paid would write
+   *  "Discount = 0" alongside it and erase any previously-saved
+   *  discount on the same row. */
   const setCell = (encounterId: string, field: keyof RowDraft, value: string) => {
-    setRowDrafts((current) => ({
-      ...current,
-      [encounterId]: {
-        ...(current[encounterId] ?? { amount: "", discount: "", note: "" }),
-        [field]: value,
-      },
-    }));
+    setRowDrafts((current) => {
+      let base = current[encounterId];
+      if (!base) {
+        const stored = entries.find((e) => e.encounterId === encounterId);
+        base = {
+          amount: stored && stored.amount > 0 ? String(stored.amount) : "",
+          discount: stored?.discount && stored.discount > 0 ? String(stored.discount) : "",
+          note: stored?.note ?? "",
+        };
+      }
+      return {
+        ...current,
+        [encounterId]: { ...base, [field]: value },
+      };
+    });
   };
 
   /** Commit the draft to storage. Creates the entry if it's the first
