@@ -3950,6 +3950,32 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       </section>
 
+      {/* Notes sits at the top of the patient-page content so it's
+          impossible to miss. Default open state is configurable in
+          Settings → Patient Page Sections; the panel itself toggles
+          like any other section. */}
+      <section className="panel-card p-4">
+        <button
+          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+          onClick={() => toggleSectionPanel("notes")}
+          type="button"
+        >
+          <span>Notes</span>
+          <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
+        </button>
+        {sectionPanelsOpen.notes && (
+          <label className="mt-3 grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
+            <textarea
+              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setPatientNotes(event.target.value)}
+              placeholder="Enter any free-form case notes..."
+              value={patientNotes}
+            />
+          </label>
+        )}
+      </section>
+
       <section className="panel-card overflow-hidden">
         <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
           <label className="grid gap-1">
@@ -4776,27 +4802,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       </section>
 
-      <section className="panel-card p-4">
-        <button
-          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
-          onClick={() => toggleSectionPanel("notes")}
-          type="button"
-        >
-          <span>Notes</span>
-          <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
-        </button>
-        {sectionPanelsOpen.notes && (
-          <label className="mt-3 grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-            <textarea
-              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientNotes(event.target.value)}
-              placeholder="Enter any free-form case notes..."
-              value={patientNotes}
-            />
-          </label>
-        )}
-      </section>
+      {/* Notes moved above the imaging panels per user request — it
+          used to sit below them, which meant the doctor sometimes
+          missed important free-form case notes during a visit.
+          Pairs nicely with the Default Open Sections setting where
+          Notes is on by default. */}
 
       {/* 2-col on xl since Quick Stats was removed — Case Flow & To-Do
           and Related Cases share the row. */}

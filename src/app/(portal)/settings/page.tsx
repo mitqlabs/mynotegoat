@@ -48,6 +48,11 @@ import { MergePatientsModal } from "@/components/merge-patients-modal";
 import type { DocumentTemplateScope } from "@/lib/document-templates";
 
 type SettingsSectionKey =
+  // "officeSettings" is the new top-level wrapper that nests Office
+  // Information, Schedule, Reminders, Case Status Categories, and
+  // Patient Page Sections. Same wrapper pattern as Admin / Templates
+  // / Macros. Children keep their own state + ?section= keys.
+  | "officeSettings"
   | "office"
   | "contactCategories"
   | "schedule"
@@ -105,16 +110,23 @@ const settingsSearchCatalog: Array<{
   aliases?: string[];
   parent?: SettingsSectionKey;
 }> = [
+  // Office Settings wrapper + children
+  {
+    key: "officeSettings",
+    title: "Office Settings",
+    description: "Office info, schedule, reminders, case status, patient page",
+  },
   // Top-level groups
   {
     key: "schedule",
-    title: "Schedule Settings",
+    title: "Schedule",
     description: "appointment statuses, office hours, intervals",
-    aliases: ["appointment", "appointments", "office hours", "interval", "weekday", "slot", "room"],
+    aliases: ["appointment", "appointments", "office hours", "interval", "weekday", "slot", "room", "schedule settings"],
+    parent: "officeSettings",
   },
   {
     key: "dashboard",
-    title: "Reminder Settings",
+    title: "Reminders",
     description: "Case Flow rules, To Do preferences, follow-up rules",
     aliases: [
       "case flow",
@@ -122,6 +134,7 @@ const settingsSearchCatalog: Array<{
       "to do",
       "reminder",
       "reminders",
+      "reminder settings",
       "follow up",
       "follow-up",
       "priority",
@@ -133,6 +146,7 @@ const settingsSearchCatalog: Array<{
       "grace period",
       "cleared from case flow",
     ],
+    parent: "officeSettings",
   },
   {
     key: "caseStatuses",
@@ -152,10 +166,11 @@ const settingsSearchCatalog: Array<{
       "dropped",
       "auto folder",
     ],
+    parent: "officeSettings",
   },
   {
     key: "patientPage",
-    title: "Patient Page",
+    title: "Patient Page Sections",
     description: "Which sections start open when you visit a patient file",
     aliases: [
       "default open",
@@ -171,6 +186,7 @@ const settingsSearchCatalog: Array<{
       "patient file",
       "section",
     ],
+    parent: "officeSettings",
   },
   // Macros wrapper + children
   { key: "macros", title: "Macros" },
@@ -261,7 +277,7 @@ const settingsSearchCatalog: Array<{
   { key: "admin", title: "Admin" },
   {
     key: "office",
-    title: "Office / Account Settings",
+    title: "Office Information",
     aliases: [
       "logo",
       "fax",
@@ -276,8 +292,9 @@ const settingsSearchCatalog: Array<{
       "office name",
       "account",
       "password",
+      "office account settings",
     ],
-    parent: "admin",
+    parent: "officeSettings",
   },
   {
     key: "diagnostics",
@@ -338,6 +355,7 @@ function computeSearchMatchKeys(query: string): Set<SettingsSectionKey> | null {
 }
 
 const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
+  officeSettings: false,
   office: false,
   contactCategories: false,
   schedule: false,
@@ -2983,6 +3001,11 @@ export default function SettingsPage() {
   const [deletePasswordError, setDeletePasswordError] = useState("");
   const [deletePasswordSuccess, setDeletePasswordSuccess] = useState("");
   const [deletePasswordSaving, setDeletePasswordSaving] = useState(false);
+  // Change-Account-Password card is collapsed by default per user
+  // request — the form was always visible before, which was visual
+  // clutter on the Office Information panel. Click the card header
+  // to reveal the form inline.
+  const [changePasswordExpanded, setChangePasswordExpanded] = useState(false);
 
   // Force save state
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -3021,12 +3044,9 @@ export default function SettingsPage() {
     const resolvedSection = section === "reports" ? "documents" : section;
     if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
       next[resolvedSection] = true;
-      // The admin subsections live inside the Admin wrapper — a deep
-      // link to a child needs to expand the parent so the child is
-      // actually visible. Office / Account Settings was just moved
-      // inside the Admin wrapper as well.
+      // Admin children — Office moved out of here and into the new
+      // Office Settings wrapper below, so it's no longer in this list.
       if (
-        resolvedSection === "office" ||
         resolvedSection === "diagnostics" ||
         resolvedSection === "backup" ||
         resolvedSection === "recovery" ||
@@ -3034,6 +3054,18 @@ export default function SettingsPage() {
         resolvedSection === "subscription"
       ) {
         next.admin = true;
+      }
+      // New Office Settings wrapper hosts Office Information,
+      // Schedule, Reminders, Case Status Categories, Patient Page
+      // Sections. Deep links to any child also expand the wrapper.
+      if (
+        resolvedSection === "office" ||
+        resolvedSection === "schedule" ||
+        resolvedSection === "dashboard" ||
+        resolvedSection === "caseStatuses" ||
+        resolvedSection === "patientPage"
+      ) {
+        next.officeSettings = true;
       }
       // Same idea for the Templates wrapper. Contact Categories was
       // just moved inside Templates too.
@@ -3566,8 +3598,247 @@ export default function SettingsPage() {
         </p>
       )}
 
-      {/* Office / Account Settings moved into the Admin wrapper below. */}
       {/* Contact Categories moved into the Templates wrapper below. */}
+
+      {/* ── Office Settings group ───────────────────────────────────
+          Office Information, Schedule, Reminders, Case Status
+          Categories, and Patient Page Sections all configure the
+          office itself / how the app behaves day-to-day. Nesting them
+          under one "Office Settings" wrapper trims the top-level
+          Settings scroll. Office Information was previously inside
+          Admin — it now lives here at the top of the wrapper since
+          it's not really an admin-y tool. */}
+      <CollapsibleSection
+        description="Office information, schedule, reminders, case statuses, and patient page defaults."
+        hidden={!showSection("officeSettings")}
+        isOpen={sectionIsOpen("officeSettings")}
+        onToggle={() => toggleSection("officeSettings")}
+        title="Office Settings"
+      >
+        <div className="space-y-3">
+
+      {/* Office Information — was inside Admin, lives here now.
+          Logo Preview, Delete Password, and Change Account Password
+          share a single 3-column row per user request. Change Account
+          Password is collapsed by default; click its card to expand
+          the verify form inline. */}
+      <CollapsibleSection
+        actions={
+          <button
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetOfficeSettingsToDefaults(); }}
+            type="button"
+          >
+            Reset Office Defaults
+          </button>
+        }
+        hidden={!showSection("office")}
+        isOpen={sectionIsOpen("office")}
+        onToggle={() => toggleSection("office")}
+        title="Office Information"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Office Name</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => updateOfficeSettings({ officeName: event.target.value })}
+              placeholder="Your practice name"
+              value={officeSettings.officeName}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Doctor Name</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => updateOfficeSettings({ doctorName: event.target.value })}
+              placeholder="Dr. Last, First"
+              value={officeSettings.doctorName}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Phone</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              inputMode="numeric"
+              maxLength={12}
+              onChange={(event) => updateOfficeSettings({ phone: formatUsPhoneInput(event.target.value) })}
+              placeholder="(555) 555-5555"
+              value={officeSettings.phone}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Fax</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              inputMode="numeric"
+              maxLength={12}
+              onChange={(event) => updateOfficeSettings({ fax: formatUsPhoneInput(event.target.value) })}
+              placeholder="(555) 555-5555"
+              value={officeSettings.fax}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Email</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => updateOfficeSettings({ email: event.target.value })}
+              placeholder="contact@yourpractice.com"
+              value={officeSettings.email}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Office Logo</span>
+            <input
+              accept="image/*"
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+              onChange={(event) => handleOfficeLogoUpload(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+          </label>
+          <div className="grid gap-1 sm:col-span-2">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Address</span>
+            <AddressFieldGroup
+              onChange={(nextAddress) => updateOfficeSettings({ address: nextAddress })}
+              value={officeSettings.address}
+            />
+          </div>
+
+          {/* 3-up row: Logo Preview / Delete Password / Change Account
+              Password. They stack to 1-col on small screens and to
+              3-col on md+. Change Account Password is collapsed by
+              default to keep the office panel visually clean. */}
+          <div className="sm:col-span-2 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-sm font-semibold text-[var(--text-muted)]">Logo Preview</p>
+              {officeSettings.logoDataUrl ? (
+                <div className="mt-2 flex flex-col items-start gap-2">
+                  <img
+                    alt="Office logo preview"
+                    className="max-h-24 rounded border border-[var(--line-soft)] bg-white p-1"
+                    src={officeSettings.logoDataUrl}
+                  />
+                  <button
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
+                    onClick={() => updateOfficeSettings({ logoDataUrl: "" })}
+                    type="button"
+                  >
+                    Remove Logo
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">
+                  No logo uploaded yet. Use the Office Logo field above to add one — it
+                  shows up on your printed SOAPs, letters, and narrative reports.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 space-y-2">
+              <div>
+                <h5 className="text-sm font-semibold text-[var(--text-main)]">Delete Password</h5>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {officeSettings.deletePassword
+                    ? "A delete password is set. To change it, verify identity below."
+                    : "Set a delete password to unlock patient deletion."}
+                </p>
+              </div>
+              <label className="grid gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  {officeSettings.deletePassword ? "New" : "Create"} Delete Password
+                </span>
+                <input
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(e) => setDeletePasswordDraft(e.target.value)}
+                  placeholder={officeSettings.deletePassword ? "New password" : "Choose password"}
+                  type="password"
+                  value={deletePasswordDraft}
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Login Email (verify)
+                </span>
+                <input
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(e) => setDeletePasswordLoginEmail(e.target.value)}
+                  placeholder="you@clinic.com"
+                  type="email"
+                  value={deletePasswordLoginEmail}
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Login Password (verify)
+                </span>
+                <input
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(e) => setDeletePasswordLoginPassword(e.target.value)}
+                  placeholder="Your account password"
+                  type="password"
+                  value={deletePasswordLoginPassword}
+                />
+              </label>
+              {deletePasswordError && (
+                <p className="text-xs font-semibold text-red-600">{deletePasswordError}</p>
+              )}
+              {deletePasswordSuccess && (
+                <p className="text-xs font-semibold text-emerald-700">{deletePasswordSuccess}</p>
+              )}
+              <button
+                className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                disabled={deletePasswordSaving}
+                onClick={handleSetDeletePassword}
+                type="button"
+              >
+                {deletePasswordSaving
+                  ? "Verifying..."
+                  : officeSettings.deletePassword
+                    ? "Update Delete Password"
+                    : "Set Delete Password"}
+              </button>
+            </div>
+
+            {/* Change Account Password — collapsed by default. Click
+                the header to reveal the form inline. */}
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 space-y-2">
+              <button
+                aria-expanded={changePasswordExpanded}
+                className="flex w-full items-center justify-between gap-2 text-left"
+                onClick={() => setChangePasswordExpanded((v) => !v)}
+                type="button"
+              >
+                <div>
+                  <h5 className="text-sm font-semibold text-[var(--text-main)]">
+                    Change Account Password
+                  </h5>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {changePasswordExpanded
+                      ? "Hide form."
+                      : "Click to update your login password."}
+                  </p>
+                </div>
+                <span
+                  aria-hidden
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--line-soft)] bg-white text-sm transition-transform ${
+                    changePasswordExpanded ? "rotate-180" : ""
+                  }`}
+                >
+                  ⌄
+                </span>
+              </button>
+              {changePasswordExpanded && (
+                <div className="border-t border-[var(--line-soft)] pt-2">
+                  <ChangePasswordSection />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        {officeSettingsMessage && (
+          <p className="mt-2 text-sm font-semibold text-[var(--text-muted)]">{officeSettingsMessage}</p>
+        )}
+      </CollapsibleSection>
 
       <CollapsibleSection
         actions={
@@ -3583,7 +3854,7 @@ export default function SettingsPage() {
         hidden={!showSection("schedule")}
         isOpen={sectionIsOpen("schedule")}
         onToggle={() => toggleSection("schedule")}
-        title="Schedule Settings"
+        title="Schedule"
       >
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
           <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
@@ -4114,7 +4385,7 @@ export default function SettingsPage() {
         hidden={!showSection("dashboard")}
         isOpen={sectionIsOpen("dashboard")}
         onToggle={() => toggleSection("dashboard")}
-        title="Reminder Settings"
+        title="Reminders"
       >
         <div className="grid gap-4 xl:grid-cols-3">
           <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
@@ -4910,7 +5181,7 @@ export default function SettingsPage() {
         hidden={!showSection("patientPage")}
         isOpen={sectionIsOpen("patientPage")}
         onToggle={() => toggleSection("patientPage")}
-        title="Patient Page"
+        title="Patient Page Sections"
       >
         <div className="space-y-3">
           <p className="text-sm text-[var(--text-muted)]">
@@ -4938,6 +5209,9 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
+        </div>
+      </CollapsibleSection>
+
         </div>
       </CollapsibleSection>
 
@@ -5252,203 +5526,15 @@ export default function SettingsPage() {
           link so existing bookmarks and onboarding links still
           land in the right place. */}
       <CollapsibleSection
-        description="Office settings, diagnostics, backups, data recovery, security, and subscription."
+        description="Diagnostics, backups, data recovery, security, and subscription."
         hidden={!showSection("admin")}
         isOpen={sectionIsOpen("admin")}
         onToggle={() => toggleSection("admin")}
         title="Admin"
       >
         <div className="space-y-3">
-      <CollapsibleSection
-        actions={
-          <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetOfficeSettingsToDefaults(); }}
-            type="button"
-          >
-            Reset Office Defaults
-          </button>
-        }
-        hidden={!showSection("office")}
-        isOpen={sectionIsOpen("office")}
-        onToggle={() => toggleSection("office")}
-        title="Office / Account Settings"
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Office Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => updateOfficeSettings({ officeName: event.target.value })}
-              placeholder="Your practice name"
-              value={officeSettings.officeName}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Doctor Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => updateOfficeSettings({ doctorName: event.target.value })}
-              placeholder="Dr. Last, First"
-              value={officeSettings.doctorName}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Phone</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={12}
-              onChange={(event) => updateOfficeSettings({ phone: formatUsPhoneInput(event.target.value) })}
-              placeholder="(555) 555-5555"
-              value={officeSettings.phone}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Fax</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={12}
-              onChange={(event) => updateOfficeSettings({ fax: formatUsPhoneInput(event.target.value) })}
-              placeholder="(555) 555-5555"
-              value={officeSettings.fax}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Email</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => updateOfficeSettings({ email: event.target.value })}
-              placeholder="contact@yourpractice.com"
-              value={officeSettings.email}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Office Logo</span>
-            <input
-              accept="image/*"
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              onChange={(event) => handleOfficeLogoUpload(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </label>
-          <div className="grid gap-1 sm:col-span-2">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Address</span>
-            <AddressFieldGroup
-              onChange={(nextAddress) => updateOfficeSettings({ address: nextAddress })}
-              value={officeSettings.address}
-            />
-          </div>
-
-          {/* Logo preview + delete password now live side-by-side as two
-              equal-size squares so the section doesn't scroll forever.
-              Both are compact cards; they stack only on small screens. */}
-          <div className="sm:col-span-2 grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-sm font-semibold text-[var(--text-muted)]">Logo Preview</p>
-              {officeSettings.logoDataUrl ? (
-                <div className="mt-2 flex flex-col items-start gap-2">
-                  <img
-                    alt="Office logo preview"
-                    className="max-h-24 rounded border border-[var(--line-soft)] bg-white p-1"
-                    src={officeSettings.logoDataUrl}
-                  />
-                  <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
-                    onClick={() => updateOfficeSettings({ logoDataUrl: "" })}
-                    type="button"
-                  >
-                    Remove Logo
-                  </button>
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  No logo uploaded yet. Use the Office Logo field above to add one — it
-                  shows up on your printed SOAPs, letters, and narrative reports.
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 space-y-2">
-              <div>
-                <h5 className="text-sm font-semibold text-[var(--text-main)]">Delete Password</h5>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {officeSettings.deletePassword
-                    ? "A delete password is set. To change it, verify identity below."
-                    : "Set a delete password to unlock patient deletion."}
-                </p>
-              </div>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  {officeSettings.deletePassword ? "New" : "Create"} Delete Password
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordDraft(e.target.value)}
-                  placeholder={officeSettings.deletePassword ? "New password" : "Choose password"}
-                  type="password"
-                  value={deletePasswordDraft}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Login Email (verify)
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordLoginEmail(e.target.value)}
-                  placeholder="you@clinic.com"
-                  type="email"
-                  value={deletePasswordLoginEmail}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Login Password (verify)
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordLoginPassword(e.target.value)}
-                  placeholder="Your account password"
-                  type="password"
-                  value={deletePasswordLoginPassword}
-                />
-              </label>
-              {deletePasswordError && (
-                <p className="text-xs font-semibold text-red-600">{deletePasswordError}</p>
-              )}
-              {deletePasswordSuccess && (
-                <p className="text-xs font-semibold text-emerald-700">{deletePasswordSuccess}</p>
-              )}
-              <button
-                className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                disabled={deletePasswordSaving}
-                onClick={handleSetDeletePassword}
-                type="button"
-              >
-                {deletePasswordSaving
-                  ? "Verifying..."
-                  : officeSettings.deletePassword
-                    ? "Update Delete Password"
-                    : "Set Delete Password"}
-              </button>
-            </div>
-          </div>
-
-          {/* Change Account Password — merged here from its own section so
-              office / account settings live together. */}
-          <div className="sm:col-span-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-            <h5 className="mb-2 text-sm font-semibold text-[var(--text-main)]">
-              Change Account Password
-            </h5>
-            <ChangePasswordSection />
-          </div>
-        </div>
-        {officeSettingsMessage && (
-          <p className="mt-2 text-sm font-semibold text-[var(--text-muted)]">{officeSettingsMessage}</p>
-        )}
-      </CollapsibleSection>
+      {/* Office Information moved out of Admin and into the new
+          Office Settings wrapper above. */}
 
       <CollapsibleSection
         hidden={!showSection("diagnostics")}
