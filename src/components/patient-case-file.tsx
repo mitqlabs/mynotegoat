@@ -3950,32 +3950,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       </section>
 
-      {/* Notes sits at the top of the patient-page content so it's
-          impossible to miss. Default open state is configurable in
-          Settings → Patient Page Sections; the panel itself toggles
-          like any other section. */}
-      <section className="panel-card p-4">
-        <button
-          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
-          onClick={() => toggleSectionPanel("notes")}
-          type="button"
-        >
-          <span>Notes</span>
-          <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
-        </button>
-        {sectionPanelsOpen.notes && (
-          <label className="mt-3 grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-            <textarea
-              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientNotes(event.target.value)}
-              placeholder="Enter any free-form case notes..."
-              value={patientNotes}
-            />
-          </label>
-        )}
-      </section>
-
       <section className="panel-card overflow-hidden">
         <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
           <label className="grid gap-1">
@@ -4230,8 +4204,41 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <CashPaymentsSection patientId={patient.id} />
           </div>
         )}
+      </section>
 
-        <div className="grid items-start gap-5 p-4 xl:grid-cols-3">
+      {/* Notes panel — sits between the patient info card above and
+          the imaging triple below. Default open state is in
+          Settings → Patient Page Sections; Notes ships on by default
+          so a free-form note left by the front desk never gets
+          missed during a visit. */}
+      <section className="panel-card p-4">
+        <button
+          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+          onClick={() => toggleSectionPanel("notes")}
+          type="button"
+        >
+          <span>Notes</span>
+          <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
+        </button>
+        {sectionPanelsOpen.notes && (
+          <label className="mt-3 grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
+            <textarea
+              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setPatientNotes(event.target.value)}
+              placeholder="Enter any free-form case notes..."
+              value={patientNotes}
+            />
+          </label>
+        )}
+      </section>
+
+      {/* X-Ray / MRI / Specialist now live in their own top-level
+          floating section instead of being nested inside the patient
+          info card. They share a 3-column grid on xl screens and
+          stack on smaller widths. Each panel keeps its own toggle
+          state via imagingPanelsOpen.* */}
+      <section className="grid items-start gap-5 xl:grid-cols-3">
           <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <button
               className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
@@ -4797,14 +4804,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               ))}
             </div>
           </article>
-        </div>
       </section>
-
-      {/* Notes moved above the imaging panels per user request — it
-          used to sit below them, which meant the doctor sometimes
-          missed important free-form case notes during a visit.
-          Pairs nicely with the Default Open Sections setting where
-          Notes is on by default. */}
 
       {/* 2-col on xl since Quick Stats was removed — Case Flow & To-Do
           and Related Cases share the row. */}
