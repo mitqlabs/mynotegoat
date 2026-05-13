@@ -278,8 +278,8 @@ export function CashPaymentsSection({ patientId }: Props) {
                 <th className="px-3 py-2 text-left">Visit Date</th>
                 <th className="px-3 py-2 text-right">Owed</th>
                 <th className="px-3 py-2 text-right">Discount</th>
-                <th className="px-3 py-2 text-right">Paid</th>
                 <th className="px-3 py-2 text-right">Balance</th>
+                <th className="px-3 py-2 text-right">Paid</th>
                 <th className="px-3 py-2 text-left">Payment</th>
                 <th className="px-3 py-2 text-left">Note</th>
                 <th className="px-3 py-2"></th>
@@ -319,6 +319,13 @@ export function CashPaymentsSection({ patientId }: Props) {
                         value={draftDiscount}
                       />
                     </td>
+                    <td
+                      className={`px-3 py-2 text-right font-semibold ${
+                        balance === 0 ? "text-emerald-700" : "text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {row.owed > 0 ? formatCashAmount(balance) : "—"}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       <input
                         className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-right text-sm font-semibold"
@@ -331,13 +338,6 @@ export function CashPaymentsSection({ patientId }: Props) {
                         placeholder="0.00"
                         value={draftAmount}
                       />
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right font-semibold ${
-                        balance === 0 ? "text-emerald-700" : "text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {row.owed > 0 ? formatCashAmount(balance) : "—"}
                     </td>
                     <td className="px-3 py-2">
                       <select
@@ -392,12 +392,12 @@ export function CashPaymentsSection({ patientId }: Props) {
                   {totalDiscount > 0 ? formatCashAmount(totalDiscount) : "—"}
                 </td>
                 <td className="px-3 py-2 text-right font-bold">
-                  {formatCashAmount(totalAmount)}
-                </td>
-                <td className="px-3 py-2 text-right font-bold">
                   {totalOwed > 0
                     ? formatCashAmount(Math.max(0, totalOwed - totalDiscount - totalAmount))
                     : "—"}
+                </td>
+                <td className="px-3 py-2 text-right font-bold">
+                  {formatCashAmount(totalAmount)}
                 </td>
                 <td colSpan={3}></td>
               </tr>
