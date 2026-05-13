@@ -720,6 +720,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.key-dates.v1",
           "casemate.dashboard-priority-rules.v1",
           "casemate.files.v1",
+          "casemate.patient-page-prefs.v1",
         ],
       };
 

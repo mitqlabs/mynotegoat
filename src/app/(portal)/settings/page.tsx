@@ -11,6 +11,11 @@ import { ReportTemplateSettingsPanel } from "@/components/report-template-settin
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { usePatientPagePrefs } from "@/hooks/use-patient-page-prefs";
+import {
+  patientPagePanelKeys,
+  patientPagePanelLabels,
+} from "@/lib/patient-page-prefs";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useFileManager } from "@/hooks/use-file-manager";
 import {
@@ -48,6 +53,9 @@ type SettingsSectionKey =
   | "schedule"
   | "dashboard"
   | "caseStatuses"
+  // "patientPage" hosts patient-page UI prefs — currently just the
+  // "Default Open Sections" checkboxes.
+  | "patientPage"
   // "macros" is the outer wrapper for SOAP Macros, Billing Macros,
   // and Package Builder. Each child keeps its own state + deep link.
   | "macros"
@@ -143,6 +151,25 @@ const settingsSearchCatalog: Array<{
       "paid",
       "dropped",
       "auto folder",
+    ],
+  },
+  {
+    key: "patientPage",
+    title: "Patient Page",
+    description: "Which sections start open when you visit a patient file",
+    aliases: [
+      "default open",
+      "start open",
+      "auto open",
+      "always open",
+      "notes",
+      "notes always open",
+      "panel",
+      "expand",
+      "collapse",
+      "patient page",
+      "patient file",
+      "section",
     ],
   },
   // Macros wrapper + children
@@ -316,6 +343,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   schedule: false,
   dashboard: false,
   caseStatuses: false,
+  patientPage: false,
   macros: false,
   soapMacros: false,
   billingMacros: false,
@@ -341,6 +369,7 @@ type BackupModuleId =
   | "patients"
   | "caseStatuses"
   | "dashboardRules"
+  | "patientPagePrefs"
   | "quickStats"
   | "scheduleSettings"
   | "roomSettings"
@@ -405,6 +434,12 @@ const backupModules: BackupModuleDefinition[] = [
       "casemate.dashboard-workspace-settings.v1",
       "casemate.patient-follow-up-overrides.v1",
     ],
+  },
+  {
+    id: "patientPagePrefs",
+    label: "Patient Page Defaults",
+    description: "Which sections start open on every patient file",
+    keys: ["casemate.patient-page-prefs.v1"],
   },
   {
     id: "quickStats",
@@ -2850,6 +2885,11 @@ export default function SettingsPage() {
     resetToDefaults: resetCaseStatusesToDefaults,
   } = useCaseStatuses();
   const {
+    patientPagePrefs,
+    setPatientPageDefaultOpen,
+    resetPatientPagePrefs,
+  } = usePatientPagePrefs();
+  const {
     priorityRules,
     setIncludeMriDue,
     setMriDueDaysFromInitial,
@@ -4840,6 +4880,63 @@ export default function SettingsPage() {
                 />
               ))}
             </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* ── Patient Page UI prefs ────────────────────────────────────
+          Currently holds the "Default Open Sections" checkboxes. Each
+          panel on the patient case file can be flagged here to start
+          expanded on page mount — applied globally across all patient
+          files (e.g. Notes always open so the user never misses a
+          note). Sits at the top level intentionally so it's easy to
+          find; the Quick Stats section that used to live nearby was
+          retired previously, so net section count is unchanged. */}
+      <CollapsibleSection
+        actions={
+          <button
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            onClick={() => {
+              if (window.confirm("Reset patient-page defaults? Notes stays default-open; everything else closes.")) {
+                resetPatientPagePrefs();
+              }
+            }}
+            type="button"
+          >
+            Reset Patient Page Defaults
+          </button>
+        }
+        description="Pick which sections start expanded on every patient page."
+        hidden={!showSection("patientPage")}
+        isOpen={sectionIsOpen("patientPage")}
+        onToggle={() => toggleSection("patientPage")}
+        title="Patient Page"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-muted)]">
+            Toggle the sections you want already open when you click into any
+            patient. Sections still expand and collapse manually like before —
+            this just controls the starting state.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {patientPagePanelKeys.map((panelKey) => (
+              <label
+                className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                key={`patient-panel-default-${panelKey}`}
+              >
+                <input
+                  checked={patientPagePrefs.defaultOpen[panelKey]}
+                  className="mt-0.5"
+                  onChange={(event) =>
+                    setPatientPageDefaultOpen(panelKey, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-sm font-semibold">
+                  {patientPagePanelLabels[panelKey]}
+                </span>
+              </label>
+            ))}
           </div>
         </div>
       </CollapsibleSection>
