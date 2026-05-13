@@ -52,11 +52,13 @@ function normalizeEntry(value: unknown): CashPaymentEntry | null {
   const date = normalizeText(row.date).trim();
   if (!id || !date) return null;
   const discount = normalizeAmount(row.discount);
+  const encounterId = normalizeText(row.encounterId).trim();
   return {
     id,
     date,
     amount: normalizeAmount(row.amount),
     discount: discount > 0 ? discount : undefined,
+    encounterId: encounterId || undefined,
     paymentType: normalizePaymentType(row.paymentType),
     note: normalizeText(row.note) || undefined,
     createdAt: normalizeText(row.createdAt) || nowIso(),
@@ -101,6 +103,7 @@ export function createCashPayment(input: {
   date: string;
   amount: number;
   discount?: number;
+  encounterId?: string;
   paymentType: CashPaymentEntry["paymentType"];
   note?: string;
 }): CashPaymentEntry {
@@ -110,6 +113,7 @@ export function createCashPayment(input: {
     date: input.date,
     amount: normalizeAmount(input.amount),
     discount: normalizedDiscount > 0 ? normalizedDiscount : undefined,
+    encounterId: input.encounterId?.trim() || undefined,
     paymentType: input.paymentType,
     note: input.note?.trim() || undefined,
     createdAt: nowIso(),

@@ -80,6 +80,13 @@ export interface CashPaymentEntry {
    *  instead of having to back-calculate. Defaults to 0 / undefined
    *  for existing rows that pre-date the field. */
   discount?: number;
+  /** Optional link back to the encounter this payment was applied to.
+   *  When set, the cash-payments table auto-renders the row beside
+   *  the encounter's owed total (sum of unitPrice × units) so the
+   *  user can see what was billed vs. paid for that visit at a glance.
+   *  Manually-added payments (e.g. a credit on account) leave this
+   *  empty and render as their own row. */
+  encounterId?: string;
   paymentType: "Cash" | "Venmo" | "Zelle" | "Cash App" | "Credit Card" | "Check" | "Other";
   note?: string;
   createdAt: string;
