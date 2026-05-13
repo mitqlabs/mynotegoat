@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
-import { ScrollLock } from "@/components/scroll-lock";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -2994,8 +2993,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       </section>
 
       {runMacro && (
+        // No ScrollLock on this modal on purpose. The background page
+        // is dim but readable through bg-black/40, and the user often
+        // needs to glance back at MRI / X-Ray completed dates (or
+        // other patient-info fields below the modal) while filling
+        // out macro prompts. Letting the body scroll behind the
+        // fixed-position modal makes that possible without closing
+        // and re-opening the macro run.
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
-          <ScrollLock />
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xl font-semibold">
