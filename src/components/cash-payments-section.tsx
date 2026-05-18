@@ -111,8 +111,29 @@ export function CashPaymentsSection({ patientId }: Props) {
     [entries],
   );
 
-  const totalAmount = sumCashPayments(entries);
-  const totalDiscount = sumCashDiscounts(entries);
+  // Filter entries to exclude ORPHANS — entries whose encounterId
+  // points to an encounter that no longer exists for this patient
+  // (i.e., the encounter was deleted but the cash payment row wasn't
+  // cascaded out). Orphans are invisible in the table (no matching
+  // encounter row, but not manual either since they have an
+  // encounterId), and prior to this fix they were silently inflating
+  // the Discount / Paid totals at the top.
+  const validEncounterIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const enc of encounters) {
+      if (enc.patientId === patientId) ids.add(enc.id);
+    }
+    return ids;
+  }, [encounters, patientId]);
+  const liveEntries = useMemo(
+    () =>
+      entries.filter(
+        (e) => !e.encounterId || validEncounterIds.has(e.encounterId),
+      ),
+    [entries, validEncounterIds],
+  );
+  const totalAmount = sumCashPayments(liveEntries);
+  const totalDiscount = sumCashDiscounts(liveEntries);
   // Sum owed across encounters that have charges (every encounter row
   // counts exactly once — no double-counting if two payment entries
   // were ever linked to the same encounter).
@@ -207,44 +228,70 @@ export function CashPaymentsSection({ patientId }: Props) {
     });
   };
 
-  // One-time dedup pass for any duplicate entries already in storage
-  // (created before the race fix above). For each encounterId, keep
-  // exactly one entry — the one with the highest non-zero amount, or
-  // the most-recently-created if amounts tie. Runs once per patient
-  // load; the dedupedRef guards against re-running on every render.
+  // Cleanup pass:
+  //   1. Dedup entries that share an encounterId (race-condition
+  //      leftovers from before the atomic-commit fix).
+  //   2. Remove orphan entries — encounterId pointing to an encounter
+  //      that no longer exists for this patient (the encounter got
+  //      deleted, the cash payment row didn't).
+  //
+  // The dedup half runs once per patient (guarded by dedupedRef).
+  // The orphan half only runs once we've SEEN at least one encounter
+  // for this patient at some point — that guard prevents an empty
+  // initial render (before encounters load from cloud) from nuking
+  // valid linked entries. Once we've seen encounters, the orphan
+  // pass is safe to re-run on every render; if there are no orphans
+  // it's a cheap no-op.
   const dedupedRef = useRef<Set<string>>(new Set());
+  const hasSeenEncountersForPatientRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (dedupedRef.current.has(patientId)) return;
-    const byEncounter = new Map<string, CashPaymentEntry[]>();
-    for (const entry of entries) {
-      if (!entry.encounterId) continue;
-      const list = byEncounter.get(entry.encounterId) ?? [];
-      list.push(entry);
-      byEncounter.set(entry.encounterId, list);
+    if (encounters.some((e) => e.patientId === patientId)) {
+      hasSeenEncountersForPatientRef.current.add(patientId);
     }
-    const duplicateIdsToRemove: string[] = [];
-    for (const [, list] of byEncounter) {
-      if (list.length < 2) continue;
-      // Pick the keeper: highest amount, then highest discount, then
-      // latest createdAt. The losers go in the remove list.
-      const sorted = [...list].sort((a, b) => {
-        if (b.amount !== a.amount) return b.amount - a.amount;
-        const ad = a.discount ?? 0;
-        const bd = b.discount ?? 0;
-        if (bd !== ad) return bd - ad;
-        return (b.createdAt || "").localeCompare(a.createdAt || "");
-      });
-      for (const loser of sorted.slice(1)) {
-        duplicateIdsToRemove.push(loser.id);
+  }, [encounters, patientId]);
+  useEffect(() => {
+    const removeIds: string[] = [];
+
+    // Dedup (one-time per patient).
+    if (!dedupedRef.current.has(patientId)) {
+      const byEncounter = new Map<string, CashPaymentEntry[]>();
+      for (const entry of entries) {
+        if (!entry.encounterId) continue;
+        const list = byEncounter.get(entry.encounterId) ?? [];
+        list.push(entry);
+        byEncounter.set(entry.encounterId, list);
+      }
+      for (const [, list] of byEncounter) {
+        if (list.length < 2) continue;
+        const sorted = [...list].sort((a, b) => {
+          if (b.amount !== a.amount) return b.amount - a.amount;
+          const ad = a.discount ?? 0;
+          const bd = b.discount ?? 0;
+          if (bd !== ad) return bd - ad;
+          return (b.createdAt || "").localeCompare(a.createdAt || "");
+        });
+        for (const loser of sorted.slice(1)) removeIds.push(loser.id);
+      }
+      dedupedRef.current.add(patientId);
+    }
+
+    // Orphan cleanup — only when we've confirmed encounters loaded
+    // for this patient (so we don't delete valid entries during the
+    // initial empty-encounters render).
+    if (hasSeenEncountersForPatientRef.current.has(patientId)) {
+      for (const entry of entries) {
+        if (!entry.encounterId) continue;
+        if (validEncounterIds.has(entry.encounterId)) continue;
+        removeIds.push(entry.id);
       }
     }
-    dedupedRef.current.add(patientId);
-    if (duplicateIdsToRemove.length === 0) return;
-    const toRemove = new Set(duplicateIdsToRemove);
+
+    if (removeIds.length === 0) return;
+    const toRemove = new Set(removeIds);
     updatePatientPayments(patientId, (current) =>
       current.filter((e) => !toRemove.has(e.id)),
     );
-  }, [entries, patientId, updatePatientPayments]);
+  }, [entries, patientId, updatePatientPayments, validEncounterIds]);
 
   const handleSetRowPaymentType = (encounterId: string, paymentType: CashPaymentEntry["paymentType"]) => {
     const existing = entries.find((e) => e.encounterId === encounterId);

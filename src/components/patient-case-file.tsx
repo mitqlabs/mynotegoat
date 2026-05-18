@@ -49,6 +49,7 @@ import { EditAppointmentModal } from "@/components/edit-appointment-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
+import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { forceSyncNow } from "@/lib/storage-sync-interceptor";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
@@ -1255,6 +1256,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [tasks, patient.id],
   );
   const { encountersByNewest, createEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  // Pulled in so encounter deletes cascade to the linked cash payment
+  // entries — otherwise the entry orphans (encounterId pointing to a
+  // deleted encounter) and silently inflates Cash Payments totals.
+  const { updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
   const { macroLibrary } = useMacroTemplates();
   const { entries: patientDiagnoses, addDiagnosis, addBulkDiagnoses, removeDiagnosis, reorderDiagnoses } = usePatientDiagnoses(patient.id);
   const {
@@ -3307,6 +3312,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         return;
       }
       deleteEncounter(linkedEncounter.id);
+      // Cascade: drop any cash payment entries linked to this
+      // encounter so we don't leak orphans into the Cash Payments
+      // totals (orphans don't render anywhere visible but were
+      // inflating the Discount / Paid sums).
+      cascadeCashPaymentsOnEncounterDelete(patient.id, (current) =>
+        current.filter((e) => e.encounterId !== linkedEncounter.id),
+      );
       removeAppointment(appointment.id);
       setEncounterMessage(
         `Appointment on ${dateLabel} at ${timeLabel} and its encounter${
@@ -5321,6 +5333,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     );
                                     if (!proceed) return;
                                     deleteEncounter(linkedEncounter.id);
+                                    // Same cascade as the appointment-
+                                    // delete path: drop linked cash
+                                    // payment entries so we don't
+                                    // leave orphans behind.
+                                    cascadeCashPaymentsOnEncounterDelete(
+                                      patient.id,
+                                      (current) =>
+                                        current.filter(
+                                          (e) => e.encounterId !== linkedEncounter.id,
+                                        ),
+                                    );
                                     setEncounterMessage(
                                       `Encounter on ${linkedEncounter.encounterDate} deleted.`,
                                     );
