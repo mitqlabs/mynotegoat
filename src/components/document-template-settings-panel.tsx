@@ -136,6 +136,12 @@ export function DocumentTemplateSettingsPanel({
   });
   const [templateNameDraft, setTemplateNameDraft] = useState("School Note");
   const [error, setError] = useState("");
+  // Draft for the runtime-prompt insert helper. The user types a
+  // human label (e.g. "Work Order Number"), clicks Insert Prompt,
+  // and the panel slugs it to a [[token_id]] inserted at the cursor.
+  // Same render-time behavior as the typed-by-hand syntax — the body
+  // gets scanned at PDF time and pops the prompt modal.
+  const [promptLabelDraft, setPromptLabelDraft] = useState("");
 
   const selectedTemplate = useMemo(() => {
     if (selectedTemplateId) {
@@ -251,6 +257,33 @@ export function DocumentTemplateSettingsPanel({
       return;
     }
     updateTemplate(selectedTemplate.id, { body: `${selectedTemplate.body}${token}` });
+  };
+
+  /** Turn a free-text label like "Work Order Number" into a token id
+   *  the renderer can pick up: lowercase, underscores between words,
+   *  no punctuation. Empty / pure-symbol input → empty string. */
+  const slugifyPromptLabel = (label: string): string => {
+    return label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  };
+
+  const insertPromptToken = () => {
+    const id = slugifyPromptLabel(promptLabelDraft);
+    if (!id) {
+      setError("Type a label for the prompt (e.g. \"Work Order Number\").");
+      return;
+    }
+    setError("");
+    const token = `[[${id}]]`;
+    if (bodyEditorRef.current) {
+      bodyEditorRef.current.insertText(token);
+    } else if (selectedTemplate) {
+      updateTemplate(selectedTemplate.id, { body: `${selectedTemplate.body}${token}` });
+    }
+    setPromptLabelDraft("");
   };
 
   return (
@@ -465,19 +498,42 @@ export function DocumentTemplateSettingsPanel({
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   Click any field to insert it at the current cursor position.
                 </p>
-                {/* Help text for runtime prompt tokens. The user can
-                    type [[token_id]] anywhere in the body; on PDF
-                    generation a modal pops up asking for a value for
-                    each unique token. Token id becomes a humanized
-                    label (work_order_number → "Work Order Number"). */}
-                <p className="mt-2 rounded-lg border border-dashed border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs text-[var(--text-muted)]">
-                  <strong>Tip:</strong> need a value you fill in each
-                  time? Type <code className="font-mono text-[var(--text-main)]">[[work_order_number]]</code> or{" "}
-                  <code className="font-mono text-[var(--text-main)]">[[days_off]]</code> directly into the body. When
-                  you generate the document a small modal asks for
-                  each value, then drops it into the letter. Use
-                  underscores instead of spaces.
-                </p>
+                {/* Runtime-prompt insert helper. Click + Insert
+                    Prompt with a label, and the panel snake-cases it
+                    into a [[token]] dropped at the cursor. On PDF
+                    generation the body is scanned for [[...]] and a
+                    small modal pops up asking for each value. Same
+                    behavior as typing the [[token]] by hand, just
+                    discoverable for non-power users. */}
+                <div className="mt-3 rounded-lg border border-dashed border-[var(--line-soft)] bg-white p-2">
+                  <p className="text-xs font-semibold text-[var(--text-main)]">
+                    Fill-in-the-Blank Prompt
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                    Insert a placeholder that pops a question when you generate the PDF — e.g. &quot;Work Order Number&quot; on a subpoena invoice or &quot;Days Off&quot; on a school note.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      className="min-w-[200px] flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(event) => setPromptLabelDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          insertPromptToken();
+                        }
+                      }}
+                      placeholder="e.g. Work Order Number"
+                      value={promptLabelDraft}
+                    />
+                    <button
+                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white"
+                      onClick={insertPromptToken}
+                      type="button"
+                    >
+                      + Insert Prompt
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-3 space-y-3">
                   {documentTemplateFieldGroups.map((group) => (
                     <div key={`template-auto-group-${group.label}`}>
