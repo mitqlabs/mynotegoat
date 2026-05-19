@@ -39,7 +39,6 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 import { buildNarrativeReportContext, renderNarrativeReportBody } from "@/lib/report-generator";
 import {
   appointmentStatusOptions,
-  createAppointmentId,
   formatAppointmentStatusLabel,
   formatTimeLabel,
   getStatusBadgeClass,
@@ -1253,7 +1252,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { documentTemplates } = useDocumentTemplates();
   const { reportTemplates } = useReportTemplates();
   const { getRecord: getPatientBillingRecord, setCoreFields: setPatientBillingCoreFields } = usePatientBilling();
-  const { scheduleAppointments, addAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
+  const { scheduleAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { tasks, addTask, toggleTaskDone } = useTasks();
   // patientFlowItems moved below usePatientFollowUpOverrides so overrides are available
@@ -1261,7 +1260,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
   // deleted encounter) and silently inflates Cash Payments totals.
@@ -3407,6 +3406,36 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
 
     if (linkedEncounter) {
+      // DUPLICATE-APPOINTMENT GUARD.
+      //
+      // Count how many OTHER appointments on this patient match the
+      // same encounter by date + type. If there are duplicates (e.g.
+      // from a runaway Restore Appt loop), deleting any single one
+      // must NOT cascade-delete the encounter — the other duplicates
+      // still reference it, and the user almost certainly wants to
+      // prune the extra rows while keeping the chart note intact.
+      const normalizedApptType = normalizeLookupValue(appointment.appointmentType);
+      const normalizedEncType = normalizeLookupValue(linkedEncounter.appointmentType);
+      const siblingAppointments = patientAppointmentRecords.filter(
+        (entry) =>
+          entry.id !== appointment.id &&
+          toUsDate(entry.date) === dateLabel &&
+          normalizeLookupValue(entry.appointmentType) === normalizedEncType,
+      );
+      if (siblingAppointments.length > 0 && normalizedApptType === normalizedEncType) {
+        const proceed = window.confirm(
+          `There are ${siblingAppointments.length + 1} appointments on ${dateLabel} for "${appointment.appointmentType}" that all link to the same encounter.\n\n` +
+            `Click OK to delete ONLY this one appointment — the encounter and its charges stay intact and the other ${siblingAppointments.length} appointment${siblingAppointments.length === 1 ? "" : "s"} keep linking to it.\n\n` +
+            `Click Cancel to keep everything.`,
+        );
+        if (!proceed) return;
+        removeAppointment(appointment.id);
+        setEncounterMessage(
+          `Duplicate appointment on ${dateLabel} at ${timeLabel} deleted. Encounter preserved.`,
+        );
+        return;
+      }
+
       const chargeCount = linkedEncounter.charges.length;
       const proceed = window.confirm(
         `This appointment has an attached encounter${
@@ -3495,85 +3524,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // the new appointment's id back onto the encounter so the durable
   // join lights up immediately. Status defaults to "Check Out" because
   // an encounter wouldn't exist if the patient hadn't been seen.
-  // Guards against double-clicks / fast re-clicks creating multiple
-  // restored appointments for the same encounter. The encounter ↔
-  // appointment update goes through a 250ms debounce, so a second
-  // click within that window would re-fire because the row still
-  // looks orphaned. The ref short-circuits any re-entrance.
-  const restoringEncounterIdsRef = useRef<Set<string>>(new Set());
-  const restoreAppointmentForEncounter = (
-    encounter: (typeof patientEncounterRecords)[number],
-  ) => {
-    if (restoringEncounterIdsRef.current.has(encounter.id)) {
-      return;
-    }
-    const isoDate = toIsoDateFromUsDate(encounter.encounterDate);
-    if (!isoDate) {
-      setEncounterMessage(
-        `Cannot restore appointment — encounter date "${encounter.encounterDate}" is unreadable.`,
-      );
-      return;
-    }
-    // Safety check: if there's ALREADY a patient appointment for this
-    // exact date + type, link the encounter to it instead of creating
-    // a duplicate. This is the common case after the user clicked
-    // Restore once already — the appointment exists but the encounter's
-    // appointmentId link wasn't persisted yet (debounce in flight) so
-    // the row still looks orphaned to the table.
-    const existingMatch = scheduleAppointments.find(
-      (entry) =>
-        entry.patientId === patient.id &&
-        entry.date === isoDate &&
-        entry.appointmentType.toLowerCase() === encounter.appointmentType.toLowerCase(),
-    );
-    if (existingMatch) {
-      restoringEncounterIdsRef.current.add(encounter.id);
-      updateEncounter(encounter.id, { appointmentId: existingMatch.id });
-      setEncounterMessage(
-        `Linked encounter to existing ${encounter.encounterDate} appointment.`,
-      );
-      // Release the guard after the debounce window so a legitimate
-      // future re-restore (e.g. appointment deleted again) still works.
-      window.setTimeout(() => {
-        restoringEncounterIdsRef.current.delete(encounter.id);
-      }, 1000);
-      return;
-    }
-    const proceed = window.confirm(
-      `Restore the missing appointment for the ${encounter.encounterDate} encounter?\n\n` +
-        "This creates a single new appointment (time defaults to 9:00 AM — quick-edit after if needed).",
-    );
-    if (!proceed) return;
-    restoringEncounterIdsRef.current.add(encounter.id);
-    const patientDisplayName = `${lastName.trim()}, ${firstName.trim()}`
-      .replace(/^,\s*|,\s*$/g, "")
-      .trim();
-    const newAppointmentId = createAppointmentId();
-    const newAppointment: ScheduleAppointmentRecord = {
-      id: newAppointmentId,
-      patientId: patient.id,
-      patientName: patientDisplayName || patient.fullName,
-      provider: encounter.provider || officeSettings.doctorName || "Provider",
-      location: officeSettings.officeName || "",
-      appointmentType: encounter.appointmentType || "Personal Injury Office Visit",
-      caseLabel: "",
-      room: "",
-      date: isoDate,
-      startTime: "09:00",
-      durationMin: 30,
-      status: "Check Out",
-      note: "Auto-restored from orphaned encounter",
-      overrideOfficeHours: false,
-    };
-    addAppointments([newAppointment]);
-    updateEncounter(encounter.id, { appointmentId: newAppointmentId });
-    setEncounterMessage(
-      `Appointment restored for ${encounter.encounterDate}.`,
-    );
-    window.setTimeout(() => {
-      restoringEncounterIdsRef.current.delete(encounter.id);
-    }, 1000);
-  };
+  // restoreAppointmentForEncounter was removed — it had a debounce
+  // race that minted duplicate appointments on fast re-clicks, and
+  // combined with the date+type-based encounter join that made
+  // cleanup of those duplicates dangerous. The safer recovery path
+  // is the normal schedule "+ Appointment" → "Check In" → "+ Encounter"
+  // flow, which can't introduce duplicates the same way.
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
     const appointmentDate = toUsDate(appointment.date);
@@ -5514,63 +5470,53 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 </button>
                               ) : linkedEncounter ? (
                                 // Encounter-only rows (no parent
-                                // appointment) — happens when an
-                                // encounter exists but the appointment
-                                // it was created from was deleted or
-                                // a sync race dropped it. Two actions:
-                                //   • Restore — rebuilds a minimal
-                                //     appointment from the encounter
-                                //     and links them so the row stops
-                                //     showing "(Encounter Only)".
-                                //   • Trash — deletes the encounter
-                                //     after a confirm that mentions
-                                //     any attached charges. Previously
-                                //     the row had no delete button at
-                                //     all, leaving orphans stuck.
-                                <span className="inline-flex items-center gap-1">
-                                  <button
-                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
-                                    onClick={() => restoreAppointmentForEncounter(linkedEncounter)}
-                                    title="Recreate the missing appointment for this encounter"
-                                    type="button"
-                                  >
-                                    Restore Appt
-                                  </button>
-                                  <button
-                                    className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
-                                    onClick={() => {
-                                      const chargeCount = linkedEncounter.charges.length;
-                                      const status = linkedEncounter.signed ? " (CLOSED)" : "";
-                                      const proceed = window.confirm(
-                                        `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
-                                          chargeCount > 0
-                                            ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
-                                            : ""
-                                        }?\n\nThis cannot be undone.`,
-                                      );
-                                      if (!proceed) return;
-                                      deleteEncounter(linkedEncounter.id);
-                                      // Same cascade as the appointment-
-                                      // delete path: drop linked cash
-                                      // payment entries so we don't
-                                      // leave orphans behind.
-                                      cascadeCashPaymentsOnEncounterDelete(
-                                        patient.id,
-                                        (current) =>
-                                          current.filter(
-                                            (e) => e.encounterId !== linkedEncounter.id,
-                                          ),
-                                      );
-                                      setEncounterMessage(
-                                        `Encounter on ${linkedEncounter.encounterDate} deleted.`,
-                                      );
-                                    }}
-                                    title="Delete encounter"
-                                    type="button"
-                                  >
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m19 7-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" /></svg>
-                                  </button>
-                                </span>
+                                // appointment) — encounter exists but
+                                // the appointment it was created from
+                                // is gone. The "Restore Appt" button
+                                // that used to live here is REMOVED:
+                                // it had a debounce race that created
+                                // duplicate appointments on fast
+                                // re-clicks, and the cascade math in
+                                // handleDeleteAppointment treated all
+                                // the duplicates as siblings of one
+                                // encounter, which meant cleaning up
+                                // duplicates could destroy the chart.
+                                // If the user needs to re-link an
+                                // orphan encounter to a fresh
+                                // appointment, the safer path is the
+                                // normal "+ Appointment" flow on the
+                                // schedule + "+ Encounter" on the
+                                // check-in row.
+                                <button
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  onClick={() => {
+                                    const chargeCount = linkedEncounter.charges.length;
+                                    const status = linkedEncounter.signed ? " (CLOSED)" : "";
+                                    const proceed = window.confirm(
+                                      `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
+                                        chargeCount > 0
+                                          ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
+                                          : ""
+                                      }?\n\nThis cannot be undone.`,
+                                    );
+                                    if (!proceed) return;
+                                    deleteEncounter(linkedEncounter.id);
+                                    cascadeCashPaymentsOnEncounterDelete(
+                                      patient.id,
+                                      (current) =>
+                                        current.filter(
+                                          (e) => e.encounterId !== linkedEncounter.id,
+                                        ),
+                                    );
+                                    setEncounterMessage(
+                                      `Encounter on ${linkedEncounter.encounterDate} deleted.`,
+                                    );
+                                  }}
+                                  title="Delete encounter"
+                                  type="button"
+                                >
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m19 7-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" /></svg>
+                                </button>
                               ) : null}
                             </td>
                           </tr>
