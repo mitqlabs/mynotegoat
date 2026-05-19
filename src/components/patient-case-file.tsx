@@ -3495,9 +3495,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // the new appointment's id back onto the encounter so the durable
   // join lights up immediately. Status defaults to "Check Out" because
   // an encounter wouldn't exist if the patient hadn't been seen.
+  // Guards against double-clicks / fast re-clicks creating multiple
+  // restored appointments for the same encounter. The encounter ↔
+  // appointment update goes through a 250ms debounce, so a second
+  // click within that window would re-fire because the row still
+  // looks orphaned. The ref short-circuits any re-entrance.
+  const restoringEncounterIdsRef = useRef<Set<string>>(new Set());
   const restoreAppointmentForEncounter = (
     encounter: (typeof patientEncounterRecords)[number],
   ) => {
+    if (restoringEncounterIdsRef.current.has(encounter.id)) {
+      return;
+    }
     const isoDate = toIsoDateFromUsDate(encounter.encounterDate);
     if (!isoDate) {
       setEncounterMessage(
@@ -3505,6 +3514,37 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       );
       return;
     }
+    // Safety check: if there's ALREADY a patient appointment for this
+    // exact date + type, link the encounter to it instead of creating
+    // a duplicate. This is the common case after the user clicked
+    // Restore once already — the appointment exists but the encounter's
+    // appointmentId link wasn't persisted yet (debounce in flight) so
+    // the row still looks orphaned to the table.
+    const existingMatch = scheduleAppointments.find(
+      (entry) =>
+        entry.patientId === patient.id &&
+        entry.date === isoDate &&
+        entry.appointmentType.toLowerCase() === encounter.appointmentType.toLowerCase(),
+    );
+    if (existingMatch) {
+      restoringEncounterIdsRef.current.add(encounter.id);
+      updateEncounter(encounter.id, { appointmentId: existingMatch.id });
+      setEncounterMessage(
+        `Linked encounter to existing ${encounter.encounterDate} appointment.`,
+      );
+      // Release the guard after the debounce window so a legitimate
+      // future re-restore (e.g. appointment deleted again) still works.
+      window.setTimeout(() => {
+        restoringEncounterIdsRef.current.delete(encounter.id);
+      }, 1000);
+      return;
+    }
+    const proceed = window.confirm(
+      `Restore the missing appointment for the ${encounter.encounterDate} encounter?\n\n` +
+        "This creates a single new appointment (time defaults to 9:00 AM — quick-edit after if needed).",
+    );
+    if (!proceed) return;
+    restoringEncounterIdsRef.current.add(encounter.id);
     const patientDisplayName = `${lastName.trim()}, ${firstName.trim()}`
       .replace(/^,\s*|,\s*$/g, "")
       .trim();
@@ -3519,9 +3559,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       caseLabel: "",
       room: "",
       date: isoDate,
-      // The original start time is gone — pick a sane placeholder so
-      // the row sorts and renders. The user can quick-edit the time in
-      // the table if they care about the exact value.
       startTime: "09:00",
       durationMin: 30,
       status: "Check Out",
@@ -3529,12 +3566,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       overrideOfficeHours: false,
     };
     addAppointments([newAppointment]);
-    // Link the encounter to the freshly-created appointment so the
-    // table joins them immediately on the next render.
     updateEncounter(encounter.id, { appointmentId: newAppointmentId });
     setEncounterMessage(
-      `Appointment restored for ${encounter.encounterDate}. Time defaulted to 9:00 AM — quick-edit if needed.`,
+      `Appointment restored for ${encounter.encounterDate}.`,
     );
+    window.setTimeout(() => {
+      restoringEncounterIdsRef.current.delete(encounter.id);
+    }, 1000);
   };
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {

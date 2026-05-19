@@ -307,50 +307,8 @@ export function useEncounterNotes() {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      // CRITICAL: create is the one operation where we BYPASS the
-      // 250ms debounce. The "+ Encounter" flow immediately navigates
-      // to /encounters via router.push, and if the user types or
-      // navigates again inside that debounce window the encounter
-      // can vanish before it's persisted. That race produces orphaned
-      // drafts — the per-keystroke draft-recovery key points at an
-      // encounter id that doesn't exist anywhere on the next page
-      // load, so the recovery banner can't find a parent record and
-      // silently drops the user's typed text on "Restore all".
-      //
-      // We sidestep that by reading the canonical record list from
-      // localStorage right here and writing the new encounter back
-      // synchronously, then mirroring the same list into React state.
-      // setEncounters' updater function is NOT guaranteed to run
-      // synchronously under React 18's batching, so we cannot rely on
-      // pendingRecordsRef being populated before flushPendingNow.
-      const baseRecords = loadEncounterNoteRecords();
-      const dupeInLocal = baseRecords.find(
-        (e) =>
-          e.patientId === patientId &&
-          e.encounterDate === encounterDate &&
-          e.appointmentType.toLowerCase() === appointmentType.toLowerCase(),
-      );
-      if (dupeInLocal) {
-        existingId = dupeInLocal.id;
-      }
-      let nextRecords: EncounterNoteRecord[] | null = null;
-      if (!existingId) {
-        nextRecords = [newRecord, ...baseRecords];
-        saveEncounterNoteRecords(nextRecords);
-        // Clear any pending debounced write so we don't immediately
-        // overwrite the durable list with a stale one.
-        if (commitTimerRef.current) {
-          clearTimeout(commitTimerRef.current);
-          commitTimerRef.current = null;
-        }
-        pendingRecordsRef.current = null;
-        selfWriteCountRef.current++;
-        notifyChange(SYNC_KEY);
-      }
-      // Now mirror into React state so the current tree renders the
-      // new record. We use a functional setState in case other state
-      // changes (debounced typing) landed since baseRecords was read.
-      setEncounters((current) => {
+      updateRecords((current) => {
+        // Double-check inside updater (fresh state) to prevent race conditions
         const alreadyExists = current.find(
           (e) =>
             e.patientId === patientId &&
@@ -359,13 +317,25 @@ export function useEncounterNotes() {
         );
         if (alreadyExists) {
           existingId = alreadyExists.id;
-          return current;
+          return current; // no mutation
         }
-        return nextRecords ?? [newRecord, ...current];
+        return [newRecord, ...current];
       });
+      // Force the debounced commit to run NOW so the encounter is
+      // durable in localStorage before the caller navigates / writes
+      // drafts. We previously tried to bypass updateRecords entirely
+      // and read straight from localStorage, but that read returned
+      // the pruned 90-day subset — encounters that were only in
+      // React state (loaded from the cloud table) were missing from
+      // it, and saving the truncated list back made the cloud diff
+      // mark them as deletes. That WIPED real encounters from the
+      // cloud table. Reverting that path and instead just flushing
+      // the pending debounce keeps React state as the source of
+      // truth (which always includes the cloud-loaded ones).
+      flushPendingNow();
       return existingId ?? newId;
     },
-    [],
+    [updateRecords, flushPendingNow],
   );
 
   const updateEncounter = useCallback(
