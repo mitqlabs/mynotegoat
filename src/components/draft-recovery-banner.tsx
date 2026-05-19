@@ -82,67 +82,41 @@ export function DraftRecoveryBanner() {
   useEffect(() => {
     const drafts = scanDrafts();
     if (drafts.length === 0) return;
-    // Cross-reference with the committed encounter records. A draft
-    // only gets surfaced if its content DIFFERS from the committed
-    // copy — otherwise it's already saved and we shouldn't alarm the
-    // user unnecessarily.
+    // The banner is now strictly for ORPHAN drafts — drafts whose
+    // parent encounter is no longer present in the local cache. The
+    // old behavior surfaced every uncommitted draft (anything whose
+    // html differed from the committed soap section), which fired on
+    // every normal mid-typing navigation since the 250ms debounce
+    // hadn't run yet. That noise drowned out the case the user
+    // actually cares about: the encounter went missing and the typed
+    // text is the only copy left.
+    //
+    // Non-orphan drafts are still useful as a last-ditch crash
+    // recovery layer (handled at the encounter editor level), but
+    // they shouldn't bug the user on every page load — the standard
+    // save path will pick them up.
     const encounters = loadEncounterNoteRecords();
     const byId = new Map(encounters.map((e) => [e.id, e]));
     const pend: PendingDraft[] = [];
     for (const draft of drafts) {
       const encounter = byId.get(draft.encounterId);
-      // If the encounter isn't in the local cache, it was either
-      // deleted or pruned out (cache holds only the most recent 100 /
-      // 90 days). In either case the cloud has the committed version.
-      // Show the draft with an ID-derived label so the user has
-      // context; if the draft content is empty, silently drop it
-      // because there's nothing to recover.
-      if (!encounter) {
-        if (!draft.html.trim()) {
-          clearDraft(draft.key);
-          continue;
-        }
-        pend.push({
-          ...draft,
-          encounterLabel: formatIdFallbackLabel(draft.encounterId),
-          committedHtml: "",
-        });
+      if (encounter) {
+        // Encounter still exists — not an orphan. Don't surface in the
+        // banner. The normal save path keeps these in sync.
         continue;
       }
-      const committed =
-        typeof encounter.soap === "object" && draft.section in encounter.soap
-          ? (encounter.soap as Record<string, string>)[draft.section]
-          : "";
-      // Content matches committed → already saved, clear the draft.
-      if (committed === draft.html) {
-        clearDraft(draft.key);
-        continue;
-      }
-      // Encounter was saved AFTER this draft was written → the commit
-      // supersedes the draft. Happens when a user types, the editor
-      // flushes a committed save, THEN the user closes the tab before
-      // the "clear drafts on save" path in encounter-notes.ts can
-      // remove them (sanitizer / reconciler differences, last-
-      // millisecond writeDrafts that didn't have time to round-trip,
-      // etc). If the cloud-truth committed version is newer than the
-      // draft, the draft is stale — drop it silently.
-      const encounterUpdatedMs = Date.parse(encounter.updatedAt);
-      if (
-        !Number.isNaN(encounterUpdatedMs) &&
-        encounterUpdatedMs >= draft.at
-      ) {
-        clearDraft(draft.key);
-        continue;
-      }
-      // Empty drafts with no committed content are noise.
-      if (!draft.html.trim() && !committed.trim()) {
+      // Encounter is missing from the local cache. Could be: deleted,
+      // pruned out, or never persisted due to a race. Show it so the
+      // user can recover.
+      if (!draft.html.trim()) {
+        // Empty draft body — nothing to recover, just GC.
         clearDraft(draft.key);
         continue;
       }
       pend.push({
         ...draft,
-        encounterLabel: `${encounter.patientName} — ${encounter.encounterDate}`,
-        committedHtml: committed,
+        encounterLabel: formatIdFallbackLabel(draft.encounterId),
+        committedHtml: "",
       });
     }
     setPending(pend);
