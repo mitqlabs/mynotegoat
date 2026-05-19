@@ -56,6 +56,13 @@ export interface EncounterNoteRecord {
   appointmentType: string;
   encounterDate: string;
   startTime: string;
+  /** Stable id of the appointment this encounter was created from
+   *  (when applicable). The patient page used to join encounters to
+   *  appointments purely by date + type, which orphaned the link any
+   *  time the appointment date drifted or got rebuilt. With this set,
+   *  the join can match by id first and only fall back to date+type
+   *  for legacy encounters (created before this field existed). */
+  appointmentId?: string;
   soap: Record<EncounterSection, string>;
   macroRuns: EncounterMacroRunRecord[];
   diagnoses: EncounterDiagnosisEntry[];
@@ -265,6 +272,8 @@ function normalizeRecord(value: unknown): EncounterNoteRecord | null {
     return null;
   }
 
+  const appointmentId =
+    typeof row.appointmentId === "string" ? row.appointmentId.trim() : "";
   return {
     id,
     patientId,
@@ -273,6 +282,7 @@ function normalizeRecord(value: unknown): EncounterNoteRecord | null {
     appointmentType,
     encounterDate,
     startTime: "",
+    appointmentId: appointmentId || undefined,
     soap: normalizeSoap(row.soap),
     macroRuns: Array.isArray(row.macroRuns)
       ? row.macroRuns.map(normalizeMacroRun).filter((entry): entry is EncounterMacroRunRecord => Boolean(entry))

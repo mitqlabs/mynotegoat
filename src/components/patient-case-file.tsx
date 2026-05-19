@@ -39,6 +39,7 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 import { buildNarrativeReportContext, renderNarrativeReportBody } from "@/lib/report-generator";
 import {
   appointmentStatusOptions,
+  createAppointmentId,
   formatAppointmentStatusLabel,
   formatTimeLabel,
   getStatusBadgeClass,
@@ -1252,7 +1253,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { documentTemplates } = useDocumentTemplates();
   const { reportTemplates } = useReportTemplates();
   const { getRecord: getPatientBillingRecord, setCoreFields: setPatientBillingCoreFields } = usePatientBilling();
-  const { scheduleAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
+  const { scheduleAppointments, addAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { tasks, addTask, toggleTaskDone } = useTasks();
   // patientFlowItems moved below usePatientFollowUpOverrides so overrides are available
@@ -1260,7 +1261,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, createEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
   // deleted encounter) and silently inflates Cash Payments totals.
@@ -2039,8 +2040,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       };
       const rows: AppointmentEncounterRow[] = [];
       const matchedEncounterIds = new Set<string>();
+      // Index encounters two ways so the join can prefer the durable
+      // appointmentId match (set on creation) and only fall back to
+      // date+type for legacy encounters that pre-date that field.
+      const encounterByAppointmentId = new Map<string, (typeof patientEncounterRecords)[number]>();
       const encounterByDateType = new Map<string, (typeof patientEncounterRecords)[number]>();
       patientEncounterRecords.forEach((encounter) => {
+        if (encounter.appointmentId && !encounterByAppointmentId.has(encounter.appointmentId)) {
+          encounterByAppointmentId.set(encounter.appointmentId, encounter);
+        }
         const key = `${encounter.encounterDate}|${normalizeLookupValue(encounter.appointmentType)}`;
         if (!encounterByDateType.has(key)) {
           encounterByDateType.set(key, encounter);
@@ -2049,10 +2057,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       patientAppointmentRecords.forEach((appointment) => {
         const appointmentDate = toUsDate(appointment.date);
+        // Priority order: appointmentId → date+type → date-only.
+        // The id match means the link survives type / date edits and
+        // any cloud-sync race where the appointment momentarily
+        // disappears and reappears (the encounter doesn't orphan as
+        // long as the appointment id is the same when it comes back).
+        const idMatch = encounterByAppointmentId.get(appointment.id) ?? null;
         const exactTypeMatch =
+          idMatch ??
           encounterByDateType.get(
             `${appointmentDate}|${normalizeLookupValue(appointment.appointmentType)}`,
-          ) ?? null;
+          ) ??
+          null;
         const sameDateMatch =
           exactTypeMatch ??
           patientEncounterRecords.find((entry) => entry.encounterDate === appointmentDate) ??
@@ -3465,6 +3481,62 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [editAppointmentId, scheduleAppointments],
   );
 
+  // ── Restore Appointment for an orphaned encounter ──
+  //
+  // When the patient-page table shows a row as "Open (Encounter Only)" or
+  // "Closed (Encounter Only)", the encounter exists but its parent
+  // appointment is gone — usually because the appointment was deleted or
+  // a sync race dropped it. The encounter is still in the table because
+  // we don't want to silently lose chart data, but the user previously
+  // had no way to recover the link short of recreating the visit by hand.
+  //
+  // This handler rebuilds a minimal appointment record from the
+  // encounter's stored fields (date, type, provider, patient) and writes
+  // the new appointment's id back onto the encounter so the durable
+  // join lights up immediately. Status defaults to "Check Out" because
+  // an encounter wouldn't exist if the patient hadn't been seen.
+  const restoreAppointmentForEncounter = (
+    encounter: (typeof patientEncounterRecords)[number],
+  ) => {
+    const isoDate = toIsoDateFromUsDate(encounter.encounterDate);
+    if (!isoDate) {
+      setEncounterMessage(
+        `Cannot restore appointment — encounter date "${encounter.encounterDate}" is unreadable.`,
+      );
+      return;
+    }
+    const patientDisplayName = `${lastName.trim()}, ${firstName.trim()}`
+      .replace(/^,\s*|,\s*$/g, "")
+      .trim();
+    const newAppointmentId = createAppointmentId();
+    const newAppointment: ScheduleAppointmentRecord = {
+      id: newAppointmentId,
+      patientId: patient.id,
+      patientName: patientDisplayName || patient.fullName,
+      provider: encounter.provider || officeSettings.doctorName || "Provider",
+      location: officeSettings.officeName || "",
+      appointmentType: encounter.appointmentType || "Personal Injury Office Visit",
+      caseLabel: "",
+      room: "",
+      date: isoDate,
+      // The original start time is gone — pick a sane placeholder so
+      // the row sorts and renders. The user can quick-edit the time in
+      // the table if they care about the exact value.
+      startTime: "09:00",
+      durationMin: 30,
+      status: "Check Out",
+      note: "Auto-restored from orphaned encounter",
+      overrideOfficeHours: false,
+    };
+    addAppointments([newAppointment]);
+    // Link the encounter to the freshly-created appointment so the
+    // table joins them immediately on the next render.
+    updateEncounter(encounter.id, { appointmentId: newAppointmentId });
+    setEncounterMessage(
+      `Appointment restored for ${encounter.encounterDate}. Time defaulted to 9:00 AM — quick-edit if needed.`,
+    );
+  };
+
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
     const appointmentDate = toUsDate(appointment.date);
     // Check for existing encounter matching this appointment (by date + type first, then date only)
@@ -3527,6 +3599,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       provider: appointment.provider || officeSettings.doctorName || "Provider",
       appointmentType: appointment.appointmentType || "Personal Injury Office Visit",
       encounterDate: appointmentDate,
+      // Durable link — if the appointment date / type later drifts,
+      // the patient-page table still finds this encounter by id
+      // instead of orphaning it as "Encounter Only".
+      appointmentId: appointment.id,
     });
 
     if (!newEncounterId) {
@@ -5403,47 +5479,60 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 // appointment) — happens when an
                                 // encounter exists but the appointment
                                 // it was created from was deleted or
-                                // never existed. The row used to have
-                                // NO delete button, leaving the user
-                                // stuck with an orphan they couldn't
-                                // remove. Now the trash icon deletes
-                                // the encounter directly after a
-                                // confirm that mentions any attached
-                                // charges so it's never silent.
-                                <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
-                                  onClick={() => {
-                                    const chargeCount = linkedEncounter.charges.length;
-                                    const status = linkedEncounter.signed ? " (CLOSED)" : "";
-                                    const proceed = window.confirm(
-                                      `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
-                                        chargeCount > 0
-                                          ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
-                                          : ""
-                                      }?\n\nThis cannot be undone.`,
-                                    );
-                                    if (!proceed) return;
-                                    deleteEncounter(linkedEncounter.id);
-                                    // Same cascade as the appointment-
-                                    // delete path: drop linked cash
-                                    // payment entries so we don't
-                                    // leave orphans behind.
-                                    cascadeCashPaymentsOnEncounterDelete(
-                                      patient.id,
-                                      (current) =>
-                                        current.filter(
-                                          (e) => e.encounterId !== linkedEncounter.id,
-                                        ),
-                                    );
-                                    setEncounterMessage(
-                                      `Encounter on ${linkedEncounter.encounterDate} deleted.`,
-                                    );
-                                  }}
-                                  title="Delete encounter"
-                                  type="button"
-                                >
-                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m19 7-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" /></svg>
-                                </button>
+                                // a sync race dropped it. Two actions:
+                                //   • Restore — rebuilds a minimal
+                                //     appointment from the encounter
+                                //     and links them so the row stops
+                                //     showing "(Encounter Only)".
+                                //   • Trash — deletes the encounter
+                                //     after a confirm that mentions
+                                //     any attached charges. Previously
+                                //     the row had no delete button at
+                                //     all, leaving orphans stuck.
+                                <span className="inline-flex items-center gap-1">
+                                  <button
+                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+                                    onClick={() => restoreAppointmentForEncounter(linkedEncounter)}
+                                    title="Recreate the missing appointment for this encounter"
+                                    type="button"
+                                  >
+                                    Restore Appt
+                                  </button>
+                                  <button
+                                    className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                    onClick={() => {
+                                      const chargeCount = linkedEncounter.charges.length;
+                                      const status = linkedEncounter.signed ? " (CLOSED)" : "";
+                                      const proceed = window.confirm(
+                                        `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
+                                          chargeCount > 0
+                                            ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
+                                            : ""
+                                        }?\n\nThis cannot be undone.`,
+                                      );
+                                      if (!proceed) return;
+                                      deleteEncounter(linkedEncounter.id);
+                                      // Same cascade as the appointment-
+                                      // delete path: drop linked cash
+                                      // payment entries so we don't
+                                      // leave orphans behind.
+                                      cascadeCashPaymentsOnEncounterDelete(
+                                        patient.id,
+                                        (current) =>
+                                          current.filter(
+                                            (e) => e.encounterId !== linkedEncounter.id,
+                                          ),
+                                      );
+                                      setEncounterMessage(
+                                        `Encounter on ${linkedEncounter.encounterDate} deleted.`,
+                                      );
+                                    }}
+                                    title="Delete encounter"
+                                    type="button"
+                                  >
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m19 7-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                </span>
                               ) : null}
                             </td>
                           </tr>

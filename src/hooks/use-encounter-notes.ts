@@ -34,10 +34,18 @@ type NewEncounterDraft = {
   provider: string;
   appointmentType: string;
   encounterDate?: string;
+  /** Optional id of the appointment this encounter is being created
+   *  from. Stored on the record so the patient-page table can keep
+   *  the appointment ↔ encounter link intact even if the appointment
+   *  date / type later drifts. */
+  appointmentId?: string;
 };
 
 type UpdateEncounterPatch = Partial<
-  Pick<EncounterNoteRecord, "provider" | "appointmentType" | "encounterDate" | "patientName">
+  Pick<
+    EncounterNoteRecord,
+    "provider" | "appointmentType" | "encounterDate" | "patientName" | "appointmentId"
+  >
 >;
 
 function nowIso() {
@@ -284,6 +292,7 @@ export function useEncounterNotes() {
         appointmentType,
         encounterDate,
         startTime: "",
+        appointmentId: draft.appointmentId?.trim() || undefined,
         soap: {
           subjective: "",
           objective: "",
