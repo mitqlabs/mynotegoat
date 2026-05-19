@@ -159,27 +159,61 @@ export function DraftRecoveryBanner() {
     // saveEncounterNoteRecords so the cloud dual-write fires too.
     const encounters = loadEncounterNoteRecords();
     const byId = new Map(encounters.map((e) => [e.id, { ...e, soap: { ...e.soap } }]));
+    // Track which drafts had a home — only those get cleared after
+    // restore. Orphan drafts (no matching encounter) stay in place so
+    // a later page load (e.g. after cloud sync catches up) can still
+    // recover them. Silently clearing them used to lose the user's
+    // typed text the moment they clicked Restore on a stale banner.
+    const restoredDrafts: typeof pending = [];
+    const orphanDrafts: typeof pending = [];
     for (const draft of pending) {
       const target = byId.get(draft.encounterId);
-      if (!target) continue;
+      if (!target) {
+        orphanDrafts.push(draft);
+        continue;
+      }
       (target.soap as Record<string, string>)[draft.section] = draft.html;
       target.updatedAt = new Date().toISOString();
+      restoredDrafts.push(draft);
     }
     const next = Array.from(byId.values());
     saveEncounterNoteRecords(next);
-    // Drafts are cleared by saveEncounterNoteRecords's commit-sync,
-    // but belt-and-suspenders here too.
-    for (const draft of pending) clearDraft(draft.key);
+    // Drafts that matched a real encounter get cleared. Orphans stay.
+    for (const draft of restoredDrafts) clearDraft(draft.key);
+    if (orphanDrafts.length > 0) {
+      window.alert(
+        `Restored ${restoredDrafts.length} draft${restoredDrafts.length === 1 ? "" : "s"}.\n\n` +
+          `${orphanDrafts.length} draft${orphanDrafts.length === 1 ? "" : "s"} could not be restored ` +
+          "because the encounter they belong to wasn't in the local cache " +
+          "(it may still be loading from the cloud). These drafts are kept " +
+          "in place — open the encounter or reload the page to try again. " +
+          "Use Delete all drafts only when you're sure you don't need them.",
+      );
+    }
     setDismissed(true);
     // Reload so every open React tree picks up the restored state.
     router.refresh();
   };
 
   const handleDismissAll = () => {
+    // Count orphans separately so the warning is sharper — the user
+    // can decide whether to throw away typed text that has nowhere
+    // to land (vs. drafts that were just stale duplicates of saved
+    // content).
+    const encounters = loadEncounterNoteRecords();
+    const byId = new Map(encounters.map((e) => [e.id, e]));
+    const orphanCount = pending.filter((d) => !byId.has(d.encounterId)).length;
+    const extra =
+      orphanCount > 0
+        ? `\n\nWARNING: ${orphanCount} of these draft${orphanCount === 1 ? "" : "s"} ` +
+          "had no matching encounter on this device — their text exists ONLY in the draft. " +
+          "Deleting will lose that text permanently."
+        : "";
     const confirmed = window.confirm(
       `You have ${pending.length} unsaved draft(s) from a prior session.\n\n` +
-        "Dismissing will PERMANENTLY delete these drafts without restoring them.\n\n" +
-        "Are you absolutely sure?",
+        "Dismissing will PERMANENTLY delete these drafts without restoring them." +
+        extra +
+        "\n\nAre you absolutely sure?",
     );
     if (!confirmed) return;
     for (const draft of pending) clearDraft(draft.key);
