@@ -5939,6 +5939,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
       </section>
 
+      {/* 2-col pair: Patient Files (left) + Additional Details
+          (right). Same xl:grid-cols-2 pattern as Case Flow ↔ Related
+          Cases and Letters ↔ Reports — pairs related content on the
+          same row instead of stacking two full-width bars. */}
+      <section className="grid gap-4 xl:grid-cols-2">
       {/* ── Patient Files ──────────────────────────────────────────────── */}
       <section className="panel-card p-4">
         <button
@@ -6295,6 +6300,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
           </>
         )}
+      </section>
       </section>
 
       <div className="panel-card flex flex-wrap items-center justify-between gap-2 p-4">
