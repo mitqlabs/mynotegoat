@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
+import { usePatientBilling } from "@/hooks/use-patient-billing";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -232,6 +233,14 @@ function getDefaultYear(): string {
 
 export default function StatisticsPage() {
   const { caseStatuses } = useCaseStatuses();
+  // Live patient-billing records. The patient page writes paid amount
+  // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
+  // mirror). The matrix mirror can drift — SQL-migrated patients may
+  // never have had it populated, and certain save paths can clobber it
+  // back to "0" before the user re-enters a value. Reading from the
+  // billing store first means the Billing Snapshot always reflects the
+  // same Paid value the user sees in Additional Details → $ Paid Amount.
+  const { getRecord: getPatientBillingRecord } = usePatientBilling();
   // Live filters — every dropdown/search update applies immediately, no
   // Go button. Previously we had a draft/applied split gated behind GO;
   // that friction wasn't worth the re-render cost on a mock-data page.
@@ -332,7 +341,15 @@ export default function StatisticsPage() {
     });
   }, [attorney, search, status, year]);
 
-  // Billing data from patient matrix (Additional Details → $ Billed, $ Paid Amount)
+  // Billing data from Additional Details → $ Billed, $ Paid Amount.
+  // Prefer the live patient-billing record (canonical post-rollout
+  // store, written every save) and fall back to the legacy matrix
+  // mirror for any patient that doesn't have a billing record yet
+  // (e.g. SQL-imported patients that haven't been opened in the new
+  // patient page since the rollout). This matches what the user sees
+  // in the $ Paid Amount field on the patient page — previously the
+  // snapshot read the legacy mirror only, which could be stale or
+  // "0" while the live billing record had the real value.
   const billingData = useMemo(() => {
     let billedTotal = 0;
     let paidTotal = 0;
@@ -340,8 +357,13 @@ export default function StatisticsPage() {
     let paidPaidCases = 0;
 
     filteredPatients.forEach((patient) => {
-      const billed = parseDollar(patient.matrix?.billed);
-      const paid = parseDollar(patient.matrix?.paidAmount);
+      const billing = getPatientBillingRecord(patient.id);
+      const billed = billing && billing.billedAmount > 0
+        ? billing.billedAmount
+        : parseDollar(patient.matrix?.billed);
+      const paid = billing && billing.paidAmount > 0
+        ? billing.paidAmount
+        : parseDollar(patient.matrix?.paidAmount);
       billedTotal += billed;
       paidTotal += paid;
 
@@ -356,7 +378,7 @@ export default function StatisticsPage() {
     const avgPaid = filteredPatients.length ? paidTotal / filteredPatients.length : 0;
 
     return { billedTotal, paidTotal, paidRate, avgBilled, avgPaid };
-  }, [filteredPatients]);
+  }, [filteredPatients, getPatientBillingRecord]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -561,9 +583,17 @@ export default function StatisticsPage() {
       row.dropped += patient.caseStatus === "Dropped" ? 1 : 0;
       row.paid += patient.caseStatus === "Paid" ? 1 : 0;
 
-      // Billing from patient matrix
-      row.billed += parseDollar(patient.matrix?.billed);
-      row.collected += parseDollar(patient.matrix?.paidAmount);
+      // Billing — prefer live patient-billing record (canonical), fall
+      // back to legacy matrix mirror only when no record exists. Same
+      // reasoning as the Billing Snapshot above: the matrix mirror can
+      // be stale while the billing record holds the user-entered value.
+      const billing = getPatientBillingRecord(patient.id);
+      row.billed += billing && billing.billedAmount > 0
+        ? billing.billedAmount
+        : parseDollar(patient.matrix?.billed);
+      row.collected += billing && billing.paidAmount > 0
+        ? billing.paidAmount
+        : parseDollar(patient.matrix?.paidAmount);
 
       // Timeline from patient matrix
       const dtr = parseDaysFromMatrix(patient.matrix?.dischargeToRb);
@@ -583,7 +613,7 @@ export default function StatisticsPage() {
         percentPaid,
       };
     });
-  }, [filteredPatients]);
+  }, [filteredPatients, getPatientBillingRecord]);
 
   const sortedAttorneyStats = useMemo(() => {
     const compareBy = (
