@@ -142,6 +142,13 @@ export function DocumentTemplateSettingsPanel({
   // Same render-time behavior as the typed-by-hand syntax — the body
   // gets scanned at PDF time and pops the prompt modal.
   const [promptLabelDraft, setPromptLabelDraft] = useState("");
+  // Conditional-wrap mode. When ON, clicking an auto-field button
+  // wraps the editor's current selection in {{#if FIELD}}...{{/if}}
+  // instead of inserting the {{FIELD}} token at the cursor. Use case:
+  // a Discharge Summary paragraph that mentions a "second
+  // re-evaluation" only when that date field actually has a value.
+  // Patients without the date get the paragraph silently dropped.
+  const [conditionalWrapMode, setConditionalWrapMode] = useState(false);
 
   const selectedTemplate = useMemo(() => {
     if (selectedTemplateId) {
@@ -248,6 +255,34 @@ export function DocumentTemplateSettingsPanel({
   const canRemoveSelectedTemplate = selectedTemplate?.scope === "generalLetter";
 
   const insertTemplateFieldToken = (fieldToken: string) => {
+    // CONDITIONAL WRAP MODE.
+    // Toggle is at the top of the Insert Auto Fields panel. When on,
+    // the user is expected to have selected some text in the editor
+    // first — we wrap that selection in {{#if FIELD}}...{{/if}} using
+    // the chosen field as the gate. If no text is selected, we fall
+    // back to inserting an empty conditional block at the cursor that
+    // the user can type into. Both behaviors flow through the
+    // editor's execCommand("insertText"), which replaces the active
+    // selection (or inserts at caret when collapsed).
+    if (conditionalWrapMode) {
+      const upperToken = fieldToken.toUpperCase();
+      let selectedText = "";
+      if (typeof window !== "undefined") {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+          selectedText = sel.toString();
+        }
+      }
+      const wrapped = `{{#if ${upperToken}}}${selectedText}{{/if}}`;
+      if (bodyEditorRef.current) {
+        bodyEditorRef.current.insertText(wrapped);
+        return;
+      }
+      if (!selectedTemplate) return;
+      updateTemplate(selectedTemplate.id, { body: `${selectedTemplate.body}${wrapped}` });
+      return;
+    }
+
     const token = insertionTokenForField(fieldToken);
     if (bodyEditorRef.current) {
       bodyEditorRef.current.insertText(token);
@@ -498,6 +533,28 @@ export function DocumentTemplateSettingsPanel({
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   Click any field to insert it at the current cursor position.
                 </p>
+                {/* Conditional wrap toggle. When on, the auto-field
+                    buttons stop inserting plain {{TOKEN}} text and
+                    start wrapping the editor's current selection in
+                    {{#if TOKEN}}...{{/if}} instead. The renderer
+                    drops conditional blocks entirely when the field
+                    has no value, so a paragraph like "A second
+                    re-evaluation was performed on..." can be tied to
+                    the second re-exam date — patients without that
+                    date never see the paragraph in their PDF. */}
+                <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-2">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
+                    <input
+                      checked={conditionalWrapMode}
+                      onChange={(event) => setConditionalWrapMode(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Conditional wrap mode</span>
+                  </label>
+                  <p className="mt-1 text-[11px] text-amber-900">
+                    When ON, clicking a field below wraps your selected text in <code className="font-mono">{`{{#if FIELD}}...{{/if}}`}</code> instead of inserting the token. The paragraph will only appear in the generated PDF when that field has a value. Useful for "second re-exam" sentences that should drop when the patient never had one.
+                  </p>
+                </div>
                 {/* Runtime-prompt insert helper. Click + Insert
                     Prompt with a label, and the panel snake-cases it
                     into a [[token]] dropped at the cursor. On PDF

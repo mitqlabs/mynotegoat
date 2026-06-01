@@ -444,12 +444,43 @@ export function renderDocumentTemplate(
    *  contain literal "[[token_id]]" strings. */
   promptAnswers?: Record<string, string>,
 ) {
-  let result = body.replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/g, (_match, tokenRaw: string) => {
+  // PASS 1: Conditional blocks.
+  //
+  // Syntax: {{#if TOKEN}}...content...{{/if}}
+  //
+  // If the named auto-field token has a non-empty value in the
+  // context, the block is replaced with its CONTENT (so any inner
+  // {{TOKEN}} references still resolve in pass 2). If the value is
+  // missing or empty, the entire block is dropped — including the
+  // marker tags, so the rendered document doesn't contain literal
+  // {{#if ...}} text. Use case: a Discharge Summary template that
+  // mentions a "second re-evaluation" only when
+  // {{PERSONAL_INJURY_RE_EXAM_2_DATE}} actually has a value;
+  // patients without that date get the paragraph silently dropped.
+  //
+  // Non-greedy ([\s\S]*?) so multiple separate blocks don't merge
+  // into one giant match. Nested {{#if}} inside {{#if}} is NOT
+  // supported (keeping the regex simple is more important than
+  // covering an edge case the template editor doesn't surface).
+  let result = body.replace(
+    /\{\{#if\s+([A-Z0-9_]+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
+    (_match, tokenRaw: string, content: string) => {
+      const token = tokenRaw.toUpperCase();
+      const value = context[token];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return content;
+      }
+      return "";
+    },
+  );
+  // PASS 2: Plain auto-field tokens.
+  result = result.replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/g, (_match, tokenRaw: string) => {
     const token = tokenRaw.toUpperCase();
     const value = context[token];
     if (typeof value !== "string") return "";
     return rawHtmlTokens?.has(token) ? value : escapeHtml(value);
   });
+  // PASS 3: Runtime prompt tokens.
   result = result.replace(/\[\[\s*([a-zA-Z0-9_]+)\s*\]\]/g, (_match, idRaw: string) => {
     const id = idRaw.trim();
     const value = promptAnswers?.[id];
