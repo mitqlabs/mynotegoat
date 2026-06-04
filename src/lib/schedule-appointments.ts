@@ -348,7 +348,6 @@ async function dualWriteAppointmentsToCloud(
     ]);
   if (!isCloudEntityEnabled("scheduleAppointments")) return;
 
-  const nextById = new Map(nextRecords.map((a) => [a.id, a]));
   const ops: Promise<unknown>[] = [];
 
   for (const appt of nextRecords) {
@@ -357,11 +356,28 @@ async function dualWriteAppointmentsToCloud(
       ops.push(upsertAppointmentToTable(appt));
     }
   }
-  for (const prevId of prevById.keys()) {
-    if (!nextById.has(prevId)) {
-      ops.push(deleteAppointmentFromTable(prevId));
-    }
-  }
+  // ── Auto-delete REMOVED ──
+  // The diff used to issue DELETE for any prevById key not present in
+  // nextRecords. That assumed `nextRecords` was always the canonical
+  // full list. It isn't:
+  //  - On a slow / cold app load (Supabase warming up, network blip),
+  //    the React hook initializes from localStorage SYNCHRONOUSLY but
+  //    the cloud bootstrap that populates `previousAppointmentsById`
+  //    runs AFTER. If the hook's state is empty (e.g. tablet's local
+  //    cache hadn't been seeded yet) and bootstrap then loads the
+  //    full cloud list into prevById, the very next save will diff
+  //    [empty] against [50 cloud appts] and queue 50 DELETEs.
+  //  - That is exactly the failure mode that wiped a patient's
+  //    appointments on 2026-06-04 after the Supabase project came
+  //    back from being paused. Encounters survived because their
+  //    own dual-write had this same auto-delete removed previously
+  //    (see src/lib/encounter-notes.ts lines 612-625 for the
+  //    identical reasoning).
+  // Real deletions go through removeAppointment → its own explicit
+  // deleteAppointmentFromTable call path, NOT this diff. Leaving
+  // stale rows in cloud is a far smaller harm than ever auto-
+  // deleting one that the user didn't ask to delete.
+  // ──────────────────────────
   if (ops.length === 0) return;
 
   const results = await Promise.allSettled(ops);

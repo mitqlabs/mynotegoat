@@ -83,6 +83,21 @@ export function useScheduleAppointments() {
       updateScheduleAppointments((current) =>
         current.filter((entry) => entry.id !== appointmentId),
       );
+      // The auto-delete diff inside dualWriteAppointmentsToCloud was
+      // removed because it was wiping appointments that were merely
+      // absent from a slow / cold React-state initialization (see the
+      // long comment in src/lib/schedule-appointments.ts). User-
+      // initiated deletes now go through this explicit cloud-delete
+      // path instead, mirroring the encounter-notes hook.
+      void import("@/lib/appointments-cloud").then(
+        ({ deleteAppointmentFromTable }) =>
+          deleteAppointmentFromTable(appointmentId).catch((err) => {
+            console.error(
+              `[use-schedule-appointments] cloud delete(${appointmentId}) failed:`,
+              err,
+            );
+          }),
+      );
     },
     [updateScheduleAppointments],
   );
