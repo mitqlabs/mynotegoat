@@ -9,6 +9,7 @@ import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { draftKeyFor } from "@/lib/draft-recovery";
+import { normalizeEditorBlocks } from "@/lib/soap-html-normalize";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -2739,9 +2740,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                           className="rich-text-editor min-h-64 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                           // Prior encounter notes are stored as HTML so they can
                           // contain bold/underline/macro pills. Render the markup
-                          // instead of showing the raw tags.
+                          // instead of showing the raw tags. The raw saved HTML
+                          // goes through normalizeEditorBlocks first so the
+                          // spacing matches the live editor — without it, older
+                          // encounters that saved stray top-level inline content
+                          // (e.g. <strong>Cervical</strong> not wrapped in <p>)
+                          // render with section headers glued onto the end of the
+                          // previous region's line. The normalizer wraps those
+                          // strays in their own <p> and collapses runs of empty
+                          // blocks to a single canonical <p><br></p> separator,
+                          // so the Previous view stays visually identical to
+                          // what's in the editor on the left.
                           dangerouslySetInnerHTML={{
-                            __html: saltSourceEncounter.soap[activeSection],
+                            __html: normalizeEditorBlocks(saltSourceEncounter.soap[activeSection]),
                           }}
                         />
                       ) : (
