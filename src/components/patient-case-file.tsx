@@ -1809,13 +1809,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return imagingRegions.filter((entry) => entry.modalities.includes(activeRegionModal));
   }, [activeRegionModal]);
+  // FINDINGS tokens are intended to be just the radiologist's prose
+  // for the letter body — no dates, no regions, no modality prefix.
+  // Letters that need the dated context already have XRAY_SUMMARY /
+  // MRI_CT_SUMMARY (see report-generator.ts), which include the
+  // completed date plus modality + regions. The FINDINGS tokens used
+  // to prepend "X-Ray (SENT_DATE) — regions" to each block, which
+  // both polluted letter text with metadata the user didn't want AND
+  // displayed the wrong date (sent, not completed). For multi-
+  // referral cases we just join the findings with a blank line so
+  // the radiologist's text from each one stays separated, but no
+  // header is generated. The user can switch to the SUMMARY tokens
+  // if they want the dated breakdown back.
   const xrayFindingsForTemplates = useMemo(() => {
     const perReferral = xrayReferrals
       .filter((r) => r.findings?.trim())
-      .map((r) => {
-        const regionLabel = formatImagingRegionsSummary(r, "xray");
-        return `${r.modalityLabel} (${r.sentDate}) — ${regionLabel}\n${r.findings!.trim()}`;
-      })
+      .map((r) => r.findings!.trim())
       .join("\n\n");
     if (perReferral) return perReferral;
     // Fallback to old global field if it has content
@@ -1826,10 +1835,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const mriCtFindingsForTemplates = useMemo(() => {
     const perReferral = mriReferrals
       .filter((r) => r.findings?.trim())
-      .map((r) => {
-        const regionLabel = formatImagingRegionsSummary(r, "mri");
-        return `${r.modalityLabel} (${r.sentDate}) — ${regionLabel}\n${r.findings!.trim()}`;
-      })
+      .map((r) => r.findings!.trim())
       .join("\n\n");
     if (perReferral) return perReferral;
     const legacy = mriCtFindings.trim();
