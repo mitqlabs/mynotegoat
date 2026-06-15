@@ -155,6 +155,86 @@ export function useEncounterNotes() {
     });
   }, []);
 
+  // ── Realtime subscription on encounter_notes table ──
+  //
+  // This is what makes "edit on tablet, see on laptop without
+  // refreshing" actually work. Without this, the only way cross-
+  // device updates propagated was a full app reload. The
+  // pre-existing loadEncounterNotesFromCloud merge above runs ONCE
+  // on mount — fine for the initial state, useless once the page
+  // has been open for a while and another device makes changes.
+  //
+  // On any INSERT / UPDATE / DELETE in the encounter_notes table
+  // for this workspace, we re-pull from cloud and merge by newer
+  // updatedAt. Unsaved local edits with a newer updatedAt are
+  // preserved (the merge prefers the newer side); cloud-only
+  // records (e.g. an encounter saved on another device that this
+  // device has never seen) get added.
+  //
+  // Requires Supabase Realtime to be enabled on this table — see
+  // supabase/workspace_kv_realtime.sql for the one-time setup.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
+    const setupChannel = async () => {
+      const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) return;
+      const { data: userData } = await supabase.auth.getUser();
+      const workspaceId = userData.user?.id;
+      if (!workspaceId || cancelled) return;
+      const channel = supabase
+        .channel(`encounter-notes-realtime:${workspaceId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "encounter_notes",
+          },
+          async () => {
+            if (cancelled) return;
+            const cloud = await loadEncounterNotesFromCloud();
+            if (!cloud || cancelled) return;
+            setEncounters((local) => {
+              const byId = new Map(local.map((n) => [n.id, n]));
+              let changed = false;
+              for (const c of cloud) {
+                const existing = byId.get(c.id);
+                if (!existing) {
+                  byId.set(c.id, c);
+                  changed = true;
+                } else {
+                  const localTime = Date.parse(existing.updatedAt) || 0;
+                  const cloudTime = Date.parse(c.updatedAt) || 0;
+                  if (cloudTime > localTime) {
+                    byId.set(c.id, c);
+                    changed = true;
+                  }
+                }
+              }
+              // Also detect deletes: ids in local that aren't in cloud
+              // anymore (only when cloud explicitly removed them). We
+              // DON'T do this here because the realtime DELETE event
+              // would arrive separately, and treating "absent from
+              // cloud snapshot" as deletion is dangerous — could wipe
+              // local edits if cloud is stale or paginated.
+              return changed ? Array.from(byId.values()) : local;
+            });
+          },
+        )
+        .subscribe();
+      cleanup = () => {
+        void channel.unsubscribe();
+      };
+    };
+    void setupChannel();
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
   // Debounced persistence. Before this change, every keystroke in a SOAP
   // editor triggered saveEncounterNoteRecords, which:
   //   - JSON.stringify'd the full encounter-notes blob (up to 1.25 MB)
