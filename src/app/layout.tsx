@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppQueryClientProvider } from "@/lib/query-client-provider";
 
 export const metadata: Metadata = {
   title: "My Note Goat",
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased" suppressHydrationWarning>
-        {children}
+        <AppQueryClientProvider>{children}</AppQueryClientProvider>
       </body>
     </html>
   );

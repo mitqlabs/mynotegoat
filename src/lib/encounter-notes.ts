@@ -410,9 +410,62 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
     return false;
   }
 
+  // ── DATA-LOSS GUARD: refuse to wipe non-empty SOAP with empty SOAP ──
+  //
+  // This is the exact failure mode that destroyed Rafik's 04/02
+  // encounter on 2026-06-15. The encounter had charted content;
+  // a save fired with stale empty React state; the dual-write
+  // upserted empty SOAP over the real chart note, and we had no
+  // history table to undo it. There's no legitimate code path
+  // that should turn a fully-charted encounter into a 100% empty
+  // shell — if the user actually deletes the content, they do it
+  // by typing/cutting in the editor (which leaves SOMETHING behind
+  // even mid-edit) or by clicking Delete on the whole encounter
+  // (which goes through deleteEncounter, not this path).
+  //
+  // For each record being saved, check the prior cloud snapshot
+  // (previousNotesById). If the prior had ANY non-empty SOAP
+  // section but the new record has ALL four sections empty, drop
+  // that record from this save batch — keep the existing cloud
+  // content intact. Log it so we can see it happen.
+  //
+  // Side note: this is a defensive backstop. The proper fix is
+  // never to call saveEncounterNoteRecords with stale React state
+  // in the first place. But until the full cloud-first migration
+  // is done, this guard prevents the worst-case outcome.
+  const safeRecords = records.filter((rec) => {
+    const prior = previousNotesById.get(rec.id);
+    if (!prior) return true; // brand new encounter or no prior — keep
+    const priorHasContent =
+      prior.soap.subjective.trim().length > 0 ||
+      prior.soap.objective.trim().length > 0 ||
+      prior.soap.assessment.trim().length > 0 ||
+      prior.soap.plan.trim().length > 0;
+    const nextIsAllEmpty =
+      rec.soap.subjective.trim().length === 0 &&
+      rec.soap.objective.trim().length === 0 &&
+      rec.soap.assessment.trim().length === 0 &&
+      rec.soap.plan.trim().length === 0;
+    if (priorHasContent && nextIsAllEmpty) {
+      console.warn(
+        `[encounter-notes] BLOCKED save that would wipe non-empty SOAP for encounter ${rec.id} ` +
+          `(patient=${rec.patientName}, date=${rec.encounterDate}). Existing cloud content preserved. ` +
+          `If this was intentional, delete the encounter or edit each section explicitly.`,
+      );
+      return false;
+    }
+    return true;
+  });
+
+  // If the guard removed everything, abort entirely — no localStorage
+  // write, no cloud push. Don't churn the disk for nothing.
+  if (safeRecords.length === 0 && records.length > 0) {
+    return false;
+  }
+
   // Only cache recent encounters in localStorage to stay under 5 MB.
   // ALL records still go to the cloud via dual-write below.
-  const localSubset = pruneForLocalStorage(records);
+  const localSubset = pruneForLocalStorage(safeRecords);
 
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localSubset));
@@ -438,7 +491,7 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // calls inline against the same prefix shape that draft-recovery
   // uses so there's no cross-module ordering race.
   try {
-    for (const record of records) {
+    for (const record of safeRecords) {
       for (const section of encounterSections) {
         // Matches draftKeyFor(record.id, section) — keep in sync with
         // src/lib/draft-recovery.ts DRAFT_KEY_PREFIX.
@@ -458,7 +511,9 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // that somehow ESCAPED dualWrite's own error reporting (e.g. the
   // dynamic import throwing before dualWrite runs) into the same
   // reportCloudWriteError pipeline so the user sees the red pill.
-  dualWriteEncounterNotesToCloud(records, previousNotesById).catch((err) => {
+  // Pass `safeRecords` (post-guard) so the cloud write also skips
+  // any record we refused to wipe.
+  dualWriteEncounterNotesToCloud(safeRecords, previousNotesById).catch((err) => {
     // Lazy-import to avoid a circular dep between encounter-notes and
     // storage-sync-interceptor. The reportCloudWriteError helper flips
     // the sync-status indicator to "error" and logs the message.
@@ -466,7 +521,10 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
       reportCloudWriteError("encounter-notes dual-write (pre-run)", err);
     });
   });
-  previousNotesById = new Map(records.map((n) => [n.id, n]));
+  // Update the snapshot baseline from safeRecords — so the next
+  // call's "did the prior have content?" check compares against
+  // what we actually persisted, not what was rejected.
+  previousNotesById = new Map(safeRecords.map((n) => [n.id, n]));
   return true;
 }
 

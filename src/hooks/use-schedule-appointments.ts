@@ -34,6 +34,56 @@ export function useScheduleAppointments() {
     });
   }, []);
 
+  // ── Realtime subscription on schedule_appointments table ──
+  //
+  // Cross-device sync without a refresh. Identical pattern to the
+  // one in use-encounter-notes.ts (see that file's comment for full
+  // rationale). When any device upserts or deletes an appointment
+  // row for this workspace, we refetch from cloud and update React
+  // state. Hard requirement: Supabase Realtime must be enabled on
+  // this table — see supabase/workspace_kv_realtime.sql.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
+    const setupChannel = async () => {
+      const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) return;
+      const { data: userData } = await supabase.auth.getUser();
+      const workspaceId = userData.user?.id;
+      if (!workspaceId || cancelled) return;
+      const channel = supabase
+        .channel(`appointments-realtime:${workspaceId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "schedule_appointments",
+          },
+          async () => {
+            if (cancelled) return;
+            const { fetchAllAppointmentsFromTable } = await import("@/lib/appointments-cloud");
+            const cloud = await fetchAllAppointmentsFromTable();
+            if (!cloud || cancelled) return;
+            // Replace whole list from cloud — appointments are
+            // ID-stable and small enough that a full refresh is
+            // cheaper than a per-row merge. The cloud IS truth.
+            setScheduleAppointments([...cloud].sort(compareAppointments));
+          },
+        )
+        .subscribe();
+      cleanup = () => {
+        void channel.unsubscribe();
+      };
+    };
+    void setupChannel();
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
   const updateScheduleAppointments = useCallback(
     (updater: (current: ScheduleAppointmentRecord[]) => ScheduleAppointmentRecord[]) => {
       setScheduleAppointments((current) => {

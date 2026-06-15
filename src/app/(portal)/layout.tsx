@@ -43,6 +43,20 @@ const OnboardingModal = dynamic(
     })),
   { ssr: false },
 );
+const GlobalKvRealtime = dynamic(
+  () =>
+    import("@/components/global-kv-realtime").then((m) => ({
+      default: m.GlobalKvRealtime,
+    })),
+  { ssr: false },
+);
+const GlobalRecordRealtime = dynamic(
+  () =>
+    import("@/components/global-record-realtime").then((m) => ({
+      default: m.GlobalRecordRealtime,
+    })),
+  { ssr: false },
+);
 
 export default function PortalLayout({
   children,
@@ -483,6 +497,14 @@ export default function PortalLayout({
         <GlobalTimerAlerts />
         <DraftRecoveryBanner />
         <OnboardingModal />
+        {/* Realtime listeners — propagate cross-device changes from
+            Supabase to local React hooks within seconds. KV one
+            covers every workspace_kv-backed entity (cash payments,
+            settings, macros, templates, overrides, etc). Record one
+            covers patients (encounters and appointments have their
+            own per-hook realtime listeners). */}
+        <GlobalKvRealtime />
+        <GlobalRecordRealtime />
         {children}
       </AppShell>
     </PlanTierProvider>
