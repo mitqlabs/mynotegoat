@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useKeyDateDismissals } from "@/hooks/use-key-date-dismissals";
-import { useKeyDates } from "@/hooks/use-key-dates";
+import { useCloudKeyDates } from "@/hooks/use-cloud-key-dates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { patients } from "@/lib/mock-data";
 import {
@@ -80,7 +80,7 @@ function compareConflictRows(left: ConflictRow, right: ConflictRow) {
 }
 
 export default function KeyDatesPage() {
-  const { keyDates, addKeyDate, updateKeyDate, removeKeyDate } = useKeyDates();
+  const { keyDates, addKeyDate, updateKeyDate, removeKeyDate, isLoading } = useCloudKeyDates();
   const { scheduleAppointments, removeAppointment } = useScheduleAppointments();
   const { dismissals, dismissAppointment, restoreAppointment } = useKeyDateDismissals();
   const [showDismissed, setShowDismissed] = useState(false);
@@ -173,7 +173,7 @@ export default function KeyDatesPage() {
     setDraft(createDraft());
   };
 
-  const submitForm = () => {
+  const submitForm = async () => {
     const startDate = toIsoFromUsDate(draft.startDate);
     if (!startDate) {
       setFormError("Enter Date as MM/DD/YYYY.");
@@ -194,22 +194,30 @@ export default function KeyDatesPage() {
       reason: draft.reason,
     } as const;
 
-    if (!editingId) {
-      const result = addKeyDate(payload);
-      if (!result.added) {
-        setFormError(result.reason ?? "Could not add key date.");
+    try {
+      if (!editingId) {
+        const result = await addKeyDate(payload);
+        if (!result.added) {
+          setFormError(result.reason ?? "Could not add key date.");
+          return;
+        }
+        resetForm();
+        return;
+      }
+
+      const result = await updateKeyDate(editingId, payload);
+      if (!result.updated) {
+        setFormError(result.reason ?? "Could not update key date.");
         return;
       }
       resetForm();
-      return;
+    } catch (err) {
+      // Cloud write failed (network, RLS, etc.). Surface explicitly
+      // so the user can retry — never silently drop a save.
+      setFormError(
+        `Cloud save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
-
-    const result = updateKeyDate(editingId, payload);
-    if (!result.updated) {
-      setFormError(result.reason ?? "Could not update key date.");
-      return;
-    }
-    resetForm();
   };
 
   return (
@@ -233,7 +241,7 @@ export default function KeyDatesPage() {
         </div>
       </section>
 
-      <form className="panel-card p-4" onSubmit={(e) => { e.preventDefault(); submitForm(); }}>
+      <form className="panel-card p-4" onSubmit={(e) => { e.preventDefault(); void submitForm(); }}>
         <h4 className="text-lg font-semibold">{editingId ? "Edit Key Date" : "Add Key Date"}</h4>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <label className="grid gap-1">
@@ -365,7 +373,7 @@ export default function KeyDatesPage() {
                           <button
                             className="rounded-lg bg-[#b43b34] px-3 py-1 font-semibold text-white"
                             onClick={() => {
-                              removeKeyDate(row.id);
+                              void removeKeyDate(row.id);
                               setPendingDeleteId(null);
                             }}
                             type="button"
@@ -396,7 +404,7 @@ export default function KeyDatesPage() {
               {keyDates.length === 0 && (
                 <tr>
                   <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={4}>
-                    No key dates yet.
+                    {isLoading ? "Loading key dates from cloud..." : "No key dates yet."}
                   </td>
                 </tr>
               )}
