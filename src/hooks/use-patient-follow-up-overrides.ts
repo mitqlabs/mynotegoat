@@ -12,6 +12,7 @@ import {
   type PatientFollowUpOverrideRecord,
 } from "@/lib/patient-follow-up-overrides";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { useWorkspaceKvRealtime } from "@/lib/cloud-realtime";
 
 const SYNC_KEY = "casemate.patient-follow-up-overrides.v1";
 
@@ -50,6 +51,58 @@ export function usePatientFollowUpOverrides() {
       setRecordsByPatientId(fresh);
     });
   }, []);
+
+  // ── Cross-device realtime subscription ──
+  //
+  // When ANOTHER device toggles "No X-Ray / No MRI / No Specialist"
+  // for a patient, this device's open patient page picks up the
+  // change within seconds — no refresh needed. Same exact symptom
+  // the user kept hitting: "I checked the No MRI box on the laptop,
+  // came back to the tablet, still showed up in follow-up." With
+  // realtime, the toggle propagates immediately.
+  //
+  // The KV value blob is normalized inline because the realtime
+  // payload bypasses the normal SELECT path (no RLS shaping, raw
+  // JSON straight from the row). Same defensive normalization as
+  // loadPatientFollowUpOverridesMap.
+  useWorkspaceKvRealtime(SYNC_KEY, (newValue) => {
+    if (!newValue || typeof newValue !== "object") {
+      recordsRef.current = {};
+      setRecordsByPatientId({});
+      return;
+    }
+    const next: PatientFollowUpOverrideMap = {};
+    Object.entries(newValue as Record<string, unknown>).forEach(
+      ([patientId, raw]) => {
+        if (!raw || typeof raw !== "object") return;
+        const row = raw as Partial<PatientFollowUpOverrideRecord>;
+        const id = typeof row.patientId === "string" ? row.patientId.trim() : "";
+        if (!id) return;
+        next[patientId] = {
+          patientId: id,
+          xray: {
+            patientRefused: Boolean(row.xray?.patientRefused),
+            completedPriorCare: Boolean(row.xray?.completedPriorCare),
+            notNeeded: Boolean(row.xray?.notNeeded),
+          },
+          mriCt: {
+            patientRefused: Boolean(row.mriCt?.patientRefused),
+            completedPriorCare: Boolean(row.mriCt?.completedPriorCare),
+            notNeeded: Boolean(row.mriCt?.notNeeded),
+          },
+          specialist: {
+            patientRefused: Boolean(row.specialist?.patientRefused),
+            completedPriorCare: Boolean(row.specialist?.completedPriorCare),
+            notNeeded: Boolean(row.specialist?.notNeeded),
+          },
+          createdAt: typeof row.createdAt === "string" ? row.createdAt : nowIso(),
+          updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : nowIso(),
+        };
+      },
+    );
+    recordsRef.current = next;
+    setRecordsByPatientId(next);
+  });
 
   // Performs the save synchronously and returns the actual cloud-write
   // promise. The caller (setPatientRefusedAsync, etc.) awaits THIS
