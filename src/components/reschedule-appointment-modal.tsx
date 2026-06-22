@@ -184,7 +184,11 @@ export function RescheduleAppointmentModal({
       return;
     }
 
-    // Slot capacity (exclude the original appointment from the count)
+    // Slot capacity (exclude the original appointment from the count).
+    // Bypassed when override is in effect — single checkbox covers
+    // both office-hours and capacity.
+    const overrideActive =
+      scheduleSettings.allowOverride && overrideOfficeHours;
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const occupants = scheduleAppointments.filter(
       (entry) =>
@@ -192,9 +196,9 @@ export function RescheduleAppointmentModal({
         entry.date === newDate &&
         entry.startTime === newTime,
     ).length;
-    if (occupants >= slotCapacity) {
+    if (!overrideActive && occupants >= slotCapacity) {
       setError(
-        `Time slot ${formatTimeLabel(newTime)} on ${formatUsDateFromIso(newDate)} is full (max ${slotCapacity}).`,
+        `Time slot ${formatTimeLabel(newTime)} on ${formatUsDateFromIso(newDate)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
       return;
     }

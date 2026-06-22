@@ -803,14 +803,28 @@ export function NewAppointmentModal({
       return;
     }
 
+    // Slot capacity check. Skipped when the user has ticked
+    // "Override Office Hours" — the override checkbox is a single
+    // "I know what I'm doing, let me through all the schedule
+    // limits" switch rather than a series of fine-grained toggles.
+    // Without this skip the override is misleading: it would let
+    // you book outside office hours but still hard-stop on a full
+    // time slot, which is exactly the scenario the user runs into
+    // when squeezing in an unscheduled walk-in. The condition
+    // matches the office-hours override below: respected only when
+    // the setting allows it AND the user has ticked the box.
+    const overrideActive =
+      scheduleSettings.allowOverride && sanitizedDraft.overrideOfficeHours;
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
-    const overbookedDates = scheduleDates.filter((dateIso) => {
-      const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
-      const countAtSlot = scheduleAppointments.filter(
-        (entry) => entry.date === dateIso && entry.startTime === startTimeForDate,
-      ).length;
-      return countAtSlot >= slotCapacity;
-    });
+    const overbookedDates = overrideActive
+      ? []
+      : scheduleDates.filter((dateIso) => {
+          const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
+          const countAtSlot = scheduleAppointments.filter(
+            (entry) => entry.date === dateIso && entry.startTime === startTimeForDate,
+          ).length;
+          return countAtSlot >= slotCapacity;
+        });
     if (overbookedDates.length) {
       const detail = overbookedDates
         .slice(0, 5)
@@ -822,7 +836,7 @@ export function NewAppointmentModal({
       setError(
         `Time slot full (max ${slotCapacity}) on: ${detail}${
           overbookedDates.length > 5 ? "..." : ""
-        }`,
+        }. Tick "Override Office Hours" if you need to add anyway.`,
       );
       return;
     }

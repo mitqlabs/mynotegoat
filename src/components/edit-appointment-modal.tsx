@@ -180,14 +180,20 @@ export function EditAppointmentModal({
       return;
     }
 
+    // Slot capacity check is bypassed when override is in effect —
+    // the single Override checkbox is "let me through all schedule
+    // limits," not "let me bend office hours but still hit the
+    // capacity wall."
+    const overrideActive =
+      scheduleSettings.allowOverride && overrideOfficeHours;
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const occupants = scheduleAppointments.filter(
       (entry) =>
         entry.id !== appointment.id && entry.date === date && entry.startTime === startTime,
     ).length;
-    if (occupants >= slotCapacity) {
+    if (!overrideActive && occupants >= slotCapacity) {
       setError(
-        `Time slot ${formatTimeLabel(startTime)} on ${formatUsDateFromIso(date)} is full (max ${slotCapacity}).`,
+        `Time slot ${formatTimeLabel(startTime)} on ${formatUsDateFromIso(date)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
       return;
     }
