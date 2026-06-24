@@ -1364,30 +1364,49 @@ export default function AppointmentsPage() {
                   );
                 }
                 // "type-time": group by appointment-type CATEGORY in
-                // the clinical order the user reads them in (New
-                // Patient → Visit → Re-Exam → Cervical Decomp → Lumbar
-                // Decomp → Other), then chronologically inside each
-                // group. The raw appointmentType strings vary by
-                // configuration ("Cervical Spinal Decompression" vs
-                // "Spinal Decompression - C/S" vs custom names), so
-                // we bucket by substring instead of exact match.
+                // the clinical order the user reads them in, then
+                // chronologically inside each group. The raw
+                // appointmentType strings vary by configuration
+                // ("Cervical Spinal Decompression" vs "Spinal
+                // Decompression - C/S" vs custom names), so we bucket
+                // by substring instead of exact match.
+                //
+                // Order (rank 0 → 8):
+                //   0  New Patient   — Personal Injury New Patient
+                //   1  Office Visit  — Personal Injury Office Visit
+                //   2  Re-Exam       — Personal Injury Re-Exam
+                //   3  Discharge     — Personal Injury Discharge Visit
+                //   4  Cervical      — Cervical / C/S decompression
+                //   5  Lumbar        — Lumbar / L/S decompression
+                //   6  Cash New      — Cash New Patient
+                //   7  Cash Visit    — Cash Office Visit
+                //   8  Other
+                //
+                // IMPORTANT ordering inside the categorizer: Cash
+                // checks run BEFORE the corresponding PI checks
+                // because "Cash New Patient" also matches "new
+                // patient", and "Cash Office Visit" also matches
+                // "visit". Decompression checks also run before
+                // the generic Visit/New Patient checks so
+                // hypothetical "Spinal Decompression Visit" would
+                // land in Cervical/Lumbar, not Office Visit.
                 const categoryRank = (type: string): number => {
                   const t = type.toLowerCase();
+                  // Cash variants first.
+                  if (t.includes("cash") && t.includes("new")) return 6;
+                  if (t.includes("cash") && t.includes("visit")) return 7;
+                  // Decompression buckets (Cervical / Lumbar).
+                  if (t.includes("cervical") && t.includes("decompression")) return 4;
+                  if (t.includes("decompression") && t.includes("c/s")) return 4;
+                  if (t.includes("lumbar") && t.includes("decompression")) return 5;
+                  if (t.includes("decompression") && t.includes("l/s")) return 5;
+                  // PI category buckets.
                   if (t.includes("new patient")) return 0;
                   if (t.includes("re-exam") || t.includes("reexam")) return 2;
-                  // Cervical decompression (C/S = cervical spine).
-                  if (t.includes("cervical") && t.includes("decompression")) return 3;
-                  if (t.includes("decompression") && t.includes("c/s")) return 3;
-                  // Lumbar decompression (L/S = lumbar spine).
-                  if (t.includes("lumbar") && t.includes("decompression")) return 4;
-                  if (t.includes("decompression") && t.includes("l/s")) return 4;
-                  // Any other "visit" / "discharge visit" / "office
-                  // visit" lands in the VISIT bucket. Checked AFTER
-                  // re-exam and decomp checks so those win when their
-                  // type name also happens to include "visit".
-                  if (t.includes("visit")) return 1;
+                  if (t.includes("discharge")) return 3;
+                  if (t.includes("visit")) return 1; // generic "office visit" / etc.
                   // Everything else lands at the bottom.
-                  return 5;
+                  return 8;
                 };
                 return [...raw].sort((left, right) => {
                   const byCategory = categoryRank(left.appointmentType) - categoryRank(right.appointmentType);
