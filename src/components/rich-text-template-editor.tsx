@@ -161,21 +161,68 @@ export const RichTextTemplateEditor = forwardRef<
     syncEditorWithValue();
   }, [value]);
 
+  // Debounced crash-safe draft. Previously writeDraft fired on
+  // EVERY keystroke — at 80 WPM that's ~6-8 localStorage.setItem
+  // calls per second, each preceded by a JSON.stringify of the
+  // full editor HTML. Pure overhead with no real safety benefit
+  // over a 1-second debounce: even if the tab crashes
+  // mid-debounce-window, the user loses at most ~1 second of
+  // typing, and the flush handlers below (blur / pagehide /
+  // beforeunload / visibilitychange) commit the pending draft
+  // synchronously before any unload event, so a clean tab close
+  // still preserves everything.
+  const pendingDraftHtmlRef = useRef<string | null>(null);
+  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushDraftNow = () => {
+    if (draftDebounceRef.current) {
+      clearTimeout(draftDebounceRef.current);
+      draftDebounceRef.current = null;
+    }
+    const pending = pendingDraftHtmlRef.current;
+    if (pending === null) return;
+    pendingDraftHtmlRef.current = null;
+    const key = draftKeyRef.current;
+    if (key) writeDraft(key, pending);
+  };
+  // Stable ref so the unmount + window listener effects below can
+  // depend on `[]` without restarting on every render.
+  const flushDraftRef = useRef(flushDraftNow);
+  flushDraftRef.current = flushDraftNow;
+  useEffect(() => {
+    const flush = () => flushDraftRef.current();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      // Final flush on unmount catches the SPA-navigation case
+      // where the editor unmounts without any unload event.
+      flush();
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
   const emitChange = () => {
     const editor = editorRef.current;
     if (!editor) {
       return;
     }
-    // Crash-safe draft: write the RAW editor HTML to localStorage
-    // BEFORE doing any React state work. This is the belt-and-
-    // suspenders that survives any crash between "user typed" and
-    // "React re-rendered and flushed saveEncounterNoteRecords". If
-    // the tab OOMs, freezes, or is force-closed, the draft is safe.
+    // Crash-safe draft, debounced. The CURRENT html is captured
+    // immediately so the pending flush always has the latest value.
     const raw = editor.innerHTML;
-    const currentDraftKey = draftKeyRef.current;
-    if (currentDraftKey) {
-      writeDraft(currentDraftKey, raw);
+    pendingDraftHtmlRef.current = raw;
+    if (draftDebounceRef.current) {
+      clearTimeout(draftDebounceRef.current);
     }
+    draftDebounceRef.current = setTimeout(() => {
+      draftDebounceRef.current = null;
+      flushDraftNow();
+    }, 1000);
+
     const next = normalizeOutgoingValue(raw);
     if (next === lastAppliedRef.current) {
       return;
