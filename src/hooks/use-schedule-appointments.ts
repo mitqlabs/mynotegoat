@@ -36,12 +36,25 @@ export function useScheduleAppointments() {
 
   // ── Realtime subscription on schedule_appointments table ──
   //
-  // Cross-device sync without a refresh. Identical pattern to the
-  // one in use-encounter-notes.ts (see that file's comment for full
-  // rationale). When any device upserts or deletes an appointment
-  // row for this workspace, we refetch from cloud and update React
-  // state. Hard requirement: Supabase Realtime must be enabled on
-  // this table — see supabase/workspace_kv_realtime.sql.
+  // PAYLOAD-BASED UPDATES. The previous handler refetched the full
+  // appointment list from cloud on every realtime event, which had
+  // two problems:
+  //   1. Refetches consumed Supabase Disk IO on a budget that's
+  //      already tight, cascading into "Failed to fetch" errors.
+  //   2. Rapid local changes (e.g. checking in 5 patients back-to-
+  //      back) raced with the refetch — the fetched snapshot might
+  //      have one of the recent saves still pending in cloud, and
+  //      the full-replace `setScheduleAppointments([...cloud])`
+  //      would clobber the in-flight local Check In, making the
+  //      row visibly revert to Scheduled.
+  //
+  // Both gone with payload-based merging: use payload.new directly,
+  // patch one record in state, no Supabase round-trip per event.
+  // Self-write echoes are idempotent (we'd just patch state with
+  // the same value we just set).
+  //
+  // Requires Supabase Realtime enabled on the table — see
+  // supabase/workspace_kv_realtime.sql.
   useEffect(() => {
     let cancelled = false;
     let cleanup: (() => void) | null = null;
@@ -61,15 +74,39 @@ export function useScheduleAppointments() {
             schema: "public",
             table: "schedule_appointments",
           },
-          async () => {
+          (payload) => {
             if (cancelled) return;
-            const { fetchAllAppointmentsFromTable } = await import("@/lib/appointments-cloud");
-            const cloud = await fetchAllAppointmentsFromTable();
-            if (!cloud || cancelled) return;
-            // Replace whole list from cloud — appointments are
-            // ID-stable and small enough that a full refresh is
-            // cheaper than a per-row merge. The cloud IS truth.
-            setScheduleAppointments([...cloud].sort(compareAppointments));
+            if (payload.eventType === "DELETE") {
+              const oldId = (payload.old as { id?: string } | undefined)?.id;
+              if (!oldId) return;
+              setScheduleAppointments((current) => {
+                const idx = current.findIndex((a) => a.id === oldId);
+                if (idx < 0) return current;
+                const next = [...current];
+                next.splice(idx, 1);
+                return next;
+              });
+              return;
+            }
+            void import("@/lib/appointments-cloud").then(
+              ({ realtimePayloadToAppointment }) => {
+                if (cancelled) return;
+                const incoming = realtimePayloadToAppointment(payload.new);
+                if (!incoming) return;
+                setScheduleAppointments((current) => {
+                  const idx = current.findIndex((a) => a.id === incoming.id);
+                  if (idx < 0) {
+                    return [...current, incoming].sort(compareAppointments);
+                  }
+                  // Replace the matching row; no merge-by-updatedAt
+                  // because appointments don't track updatedAt and
+                  // are typically small atomic updates.
+                  const next = [...current];
+                  next[idx] = incoming;
+                  return next.sort(compareAppointments);
+                });
+              },
+            );
           },
         )
         .subscribe();

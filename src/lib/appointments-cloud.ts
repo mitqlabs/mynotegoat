@@ -76,6 +76,20 @@ function rowToAppointment(row: AppointmentRow): ScheduleAppointmentRecord {
   };
 }
 
+/**
+ * Public wrapper used by useScheduleAppointments' realtime
+ * subscription. Supabase Realtime delivers `payload.new` as the
+ * raw row with snake_case columns; we shape it the same way a
+ * SELECT does so the React-side type matches what the rest of the
+ * hook expects. Returns null on unrecognised payloads.
+ */
+export function realtimePayloadToAppointment(payload: unknown): ScheduleAppointmentRecord | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Partial<AppointmentRow>;
+  if (typeof row.id !== "string" || row.id.length === 0) return null;
+  return rowToAppointment(row as AppointmentRow);
+}
+
 function getActiveWorkspaceOrNull(): string | null {
   const id = getActiveWorkspaceIdSync();
   return id || null;

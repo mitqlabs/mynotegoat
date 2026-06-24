@@ -3401,6 +3401,60 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     cancelQuickTypeEdit();
   };
 
+  /**
+   * Case-status change handler. When the user marks the patient as
+   * "Dropped" — the case is over, the patient is not coming back —
+   * any future appointments still on the schedule are stale. We
+   * prompt to delete them in the same click instead of forcing the
+   * user to find and clean up each row manually on the schedule.
+   *
+   * Only future Scheduled rows are candidates. Past appointments
+   * are clinical history (don't touch). Check In / Check Out /
+   * Canceled / Reschedule are also left alone — they reflect
+   * what actually happened and shouldn't disappear from the record.
+   */
+  const handleCaseStatusChange = (nextStatus: string) => {
+    // Always commit the status change first — that's the user's
+    // primary intent. The appointment cleanup is a secondary
+    // convenience prompt.
+    setCaseStatus(nextStatus);
+
+    if (nextStatus !== "Dropped") return;
+
+    const todayIso = (() => {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    })();
+
+    const futureScheduled = patientAppointmentRecords.filter(
+      (entry) => entry.status === "Scheduled" && entry.date >= todayIso,
+    );
+
+    if (futureScheduled.length === 0) {
+      return;
+    }
+
+    const proceed = window.confirm(
+      `Patient marked as Dropped. Delete ${futureScheduled.length} future Scheduled appointment${
+        futureScheduled.length === 1 ? "" : "s"
+      } as well?\n\n` +
+        `(Past, Checked In/Out, Canceled, and Rescheduled appointments are kept as case history.)`,
+    );
+    if (!proceed) return;
+
+    futureScheduled.forEach((appt) => {
+      removeAppointment(appt.id);
+    });
+    setEncounterMessage(
+      `Patient marked Dropped — removed ${futureScheduled.length} future appointment${
+        futureScheduled.length === 1 ? "" : "s"
+      }.`,
+    );
+  };
+
   const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = toUsDate(appointment.date);
     const timeLabel = formatTimeLabel(appointment.startTime);
@@ -4366,7 +4420,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setCaseStatus(event.target.value)}
+              onChange={(event) => handleCaseStatusChange(event.target.value)}
               value={caseStatus}
             >
               {caseStatuses.map((statusConfigEntry) => (

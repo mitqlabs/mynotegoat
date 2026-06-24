@@ -157,19 +157,27 @@ export function useEncounterNotes() {
 
   // ── Realtime subscription on encounter_notes table ──
   //
-  // This is what makes "edit on tablet, see on laptop without
-  // refreshing" actually work. Without this, the only way cross-
-  // device updates propagated was a full app reload. The
-  // pre-existing loadEncounterNotesFromCloud merge above runs ONCE
-  // on mount — fine for the initial state, useless once the page
-  // has been open for a while and another device makes changes.
+  // PAYLOAD-BASED UPDATES. Earlier today the handler did a full
+  // refetch of every encounter from cloud on every event. With
+  // 1000+ encounters at ~5KB each, that's a 5MB pull per save —
+  // multiplied by debounced typing it added up to Chrome OOM
+  // tab crashes ("Aw Snap!") and Supabase Disk IO exhaustion
+  // (auth.getUser → "Failed to fetch" pills cascade).
   //
-  // On any INSERT / UPDATE / DELETE in the encounter_notes table
-  // for this workspace, we re-pull from cloud and merge by newer
-  // updatedAt. Unsaved local edits with a newer updatedAt are
-  // preserved (the merge prefers the newer side); cloud-only
-  // records (e.g. an encounter saved on another device that this
-  // device has never seen) get added.
+  // Now we use the row data Supabase already includes in the
+  // realtime payload (`payload.new` for INSERT/UPDATE,
+  // `payload.old` for DELETE). Zero refetches. Per event we
+  // mutate one record in React state.
+  //
+  // Edge cases handled:
+  //   - Self-write echo: realtime broadcasts our own updates back
+  //     to us. The merge-by-updatedAt logic preserves local edits
+  //     when we already have a newer copy than what came back.
+  //   - DELETE events: remove the matching id from state, but
+  //     gracefully skip if the row wasn't in state to begin with.
+  //   - Missing payload: if Supabase ever delivers an event with
+  //     neither old nor new (shouldn't happen but be defensive),
+  //     we just ignore it instead of refetching everything.
   //
   // Requires Supabase Realtime to be enabled on this table — see
   // supabase/workspace_kv_realtime.sql for the one-time setup.
@@ -192,35 +200,46 @@ export function useEncounterNotes() {
             schema: "public",
             table: "encounter_notes",
           },
-          async () => {
+          (payload) => {
             if (cancelled) return;
-            const cloud = await loadEncounterNotesFromCloud();
-            if (!cloud || cancelled) return;
-            setEncounters((local) => {
-              const byId = new Map(local.map((n) => [n.id, n]));
-              let changed = false;
-              for (const c of cloud) {
-                const existing = byId.get(c.id);
-                if (!existing) {
-                  byId.set(c.id, c);
-                  changed = true;
-                } else {
-                  const localTime = Date.parse(existing.updatedAt) || 0;
-                  const cloudTime = Date.parse(c.updatedAt) || 0;
-                  if (cloudTime > localTime) {
-                    byId.set(c.id, c);
-                    changed = true;
+            // DELETE: drop the id from local state.
+            if (payload.eventType === "DELETE") {
+              const oldId = (payload.old as { id?: string } | undefined)?.id;
+              if (!oldId) return;
+              setEncounters((local) => {
+                const idx = local.findIndex((n) => n.id === oldId);
+                if (idx < 0) return local;
+                const next = [...local];
+                next.splice(idx, 1);
+                return next;
+              });
+              return;
+            }
+            // INSERT / UPDATE: use the row data Supabase already
+            // included. Normalize it through the same shaping that
+            // a SELECT goes through so the field types match.
+            void import("@/lib/encounter-notes-cloud").then(
+              ({ realtimePayloadToNote }) => {
+                if (cancelled) return;
+                const incoming = realtimePayloadToNote(payload.new);
+                if (!incoming) return;
+                setEncounters((local) => {
+                  const idx = local.findIndex((n) => n.id === incoming.id);
+                  if (idx < 0) {
+                    // Net-new encounter (created on another device).
+                    return [...local, incoming];
                   }
-                }
-              }
-              // Also detect deletes: ids in local that aren't in cloud
-              // anymore (only when cloud explicitly removed them). We
-              // DON'T do this here because the realtime DELETE event
-              // would arrive separately, and treating "absent from
-              // cloud snapshot" as deletion is dangerous — could wipe
-              // local edits if cloud is stale or paginated.
-              return changed ? Array.from(byId.values()) : local;
-            });
+                  // Merge by newer updatedAt — if our local copy is
+                  // newer (mid-edit), keep local. Otherwise apply.
+                  const localTime = Date.parse(local[idx].updatedAt) || 0;
+                  const incomingTime = Date.parse(incoming.updatedAt) || 0;
+                  if (incomingTime <= localTime) return local;
+                  const next = [...local];
+                  next[idx] = incoming;
+                  return next;
+                });
+              },
+            );
           },
         )
         .subscribe();

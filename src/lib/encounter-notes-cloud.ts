@@ -82,6 +82,24 @@ function rowToNote(row: EncounterNoteRow): EncounterNoteRecord {
   };
 }
 
+/**
+ * Public wrapper used by useEncounterNotes' realtime subscription.
+ * Supabase Realtime delivers `payload.new` as the raw row (same
+ * shape as a SELECT, with snake_case columns). Run it through the
+ * shared rowToNote so the React-side type matches what the SELECT
+ * path produces — avoids the subscriber holding a slightly-
+ * different object shape than the rest of the hook expects.
+ *
+ * Returns null when the payload isn't a recognisable row (e.g. an
+ * empty event, a row without an `id`). The caller skips on null.
+ */
+export function realtimePayloadToNote(payload: unknown): EncounterNoteRecord | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Partial<EncounterNoteRow>;
+  if (typeof row.id !== "string" || row.id.length === 0) return null;
+  return rowToNote(row as EncounterNoteRow);
+}
+
 function getActiveWorkspaceOrNull(): string | null {
   const id = getActiveWorkspaceIdSync();
   return id || null;
