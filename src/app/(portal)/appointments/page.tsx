@@ -423,6 +423,11 @@ export default function AppointmentsPage() {
   const { keyDates } = useKeyDates();
   const [mode, setMode] = useState<AppointmentMode>("schedule");
   const [selectedDate, setSelectedDate] = useState(() => getTodayIsoDate());
+  // Patient Flow column sort. "time" = chronological (existing
+  // behavior). "type-time" = group by appointment type first, then
+  // chronological within each type, so the user can scan all the
+  // Lumbar Spinal Decompression visits together, etc.
+  const [patientFlowSort, setPatientFlowSort] = useState<"time" | "type-time">("time");
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false);
   const { contacts } = useContactDirectory();
   const [showQuickNewPatient, setShowQuickNewPatient] = useState(false);
@@ -1350,16 +1355,53 @@ export default function AppointmentsPage() {
         <div className="space-y-5">
           <section className="grid gap-5 xl:grid-cols-3">
             {flowSections.map((section) => {
-              const cards =
-                appointmentsByStatusForSelectedDate
-                  .get(section.status)
-                  ?.sort((left, right) => left.startTime.localeCompare(right.startTime)) ?? [];
+              const cards = (() => {
+                const raw = appointmentsByStatusForSelectedDate.get(section.status) ?? [];
+                if (patientFlowSort === "time") {
+                  // Chronological — existing behavior.
+                  return [...raw].sort((left, right) =>
+                    left.startTime.localeCompare(right.startTime),
+                  );
+                }
+                // "type-time": group by appointment type, then sort by
+                // time within each group. Sort is stable on the
+                // primary type axis so all Lumbar visits land
+                // together, all Cervical visits together, etc.
+                return [...raw].sort((left, right) => {
+                  const byType = left.appointmentType.localeCompare(right.appointmentType);
+                  if (byType !== 0) return byType;
+                  return left.startTime.localeCompare(right.startTime);
+                });
+              })();
 
               return (
                 <div key={`flow-${section.status}`} className="panel-card p-4">
-                  <h4 className="text-lg font-semibold">
-                    {section.title} ({cards.length})
-                  </h4>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-lg font-semibold">
+                      {section.title} ({cards.length})
+                    </h4>
+                    {/* Sort selector — shown on every column but bound
+                        to the same patientFlowSort state, so changing
+                        it on one column changes all three together.
+                        Lives on each header for discoverability (user
+                        asked specifically next to "Scheduled" but
+                        applying a single sort across all three
+                        columns reads cleaner than each column having
+                        its own independent sort). */}
+                    <label className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                      Sort:
+                      <select
+                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs font-semibold text-[var(--text-main)]"
+                        onChange={(event) =>
+                          setPatientFlowSort(event.target.value as "time" | "type-time")
+                        }
+                        value={patientFlowSort}
+                      >
+                        <option value="time">Time</option>
+                        <option value="type-time">Type, then Time</option>
+                      </select>
+                    </label>
+                  </div>
                   <div className="mt-3 space-y-2">
                     {cards.map((appointment) => (
                       <article
