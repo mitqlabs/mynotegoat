@@ -54,6 +54,7 @@ import { EditAppointmentModal } from "@/components/edit-appointment-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
+import { PatientPackagesSection } from "@/components/patient-packages-section";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { forceSyncNow } from "@/lib/storage-sync-interceptor";
@@ -4435,6 +4436,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {isCashPatient && (
           <div className="p-4">
             <CashPaymentsSection patientId={patient.id} />
+          </div>
+        )}
+
+        {/* Treatment Packages — cash-patient only. Lets the user
+            assign templates (defined in Settings → Billing Macros)
+            to this patient, track visits used vs total with a
+            progress bar, and mark refunds. Snapshot pattern means
+            template edits don't retroactively change this
+            patient's contract. */}
+        {isCashPatient && (
+          <div className="p-4 pt-0">
+            <PatientPackagesSection patientId={patient.id} />
           </div>
         )}
       </section>
