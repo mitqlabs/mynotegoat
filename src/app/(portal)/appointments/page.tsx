@@ -1363,13 +1363,35 @@ export default function AppointmentsPage() {
                     left.startTime.localeCompare(right.startTime),
                   );
                 }
-                // "type-time": group by appointment type, then sort by
-                // time within each group. Sort is stable on the
-                // primary type axis so all Lumbar visits land
-                // together, all Cervical visits together, etc.
+                // "type-time": group by appointment-type CATEGORY in
+                // the clinical order the user reads them in (New
+                // Patient → Visit → Re-Exam → Cervical Decomp → Lumbar
+                // Decomp → Other), then chronologically inside each
+                // group. The raw appointmentType strings vary by
+                // configuration ("Cervical Spinal Decompression" vs
+                // "Spinal Decompression - C/S" vs custom names), so
+                // we bucket by substring instead of exact match.
+                const categoryRank = (type: string): number => {
+                  const t = type.toLowerCase();
+                  if (t.includes("new patient")) return 0;
+                  if (t.includes("re-exam") || t.includes("reexam")) return 2;
+                  // Cervical decompression (C/S = cervical spine).
+                  if (t.includes("cervical") && t.includes("decompression")) return 3;
+                  if (t.includes("decompression") && t.includes("c/s")) return 3;
+                  // Lumbar decompression (L/S = lumbar spine).
+                  if (t.includes("lumbar") && t.includes("decompression")) return 4;
+                  if (t.includes("decompression") && t.includes("l/s")) return 4;
+                  // Any other "visit" / "discharge visit" / "office
+                  // visit" lands in the VISIT bucket. Checked AFTER
+                  // re-exam and decomp checks so those win when their
+                  // type name also happens to include "visit".
+                  if (t.includes("visit")) return 1;
+                  // Everything else lands at the bottom.
+                  return 5;
+                };
                 return [...raw].sort((left, right) => {
-                  const byType = left.appointmentType.localeCompare(right.appointmentType);
-                  if (byType !== 0) return byType;
+                  const byCategory = categoryRank(left.appointmentType) - categoryRank(right.appointmentType);
+                  if (byCategory !== 0) return byCategory;
                   return left.startTime.localeCompare(right.startTime);
                 });
               })();
