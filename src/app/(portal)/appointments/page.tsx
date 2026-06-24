@@ -517,19 +517,13 @@ export default function AppointmentsPage() {
     );
   }, [schedulePatientSearchQuery, selectedDayAppointments]);
 
-  const todayIso = getTodayIsoDate();
-  const todaysAppointments = useMemo(
-    () => scheduleAppointments.filter((appointment) => appointment.date === todayIso),
-    [scheduleAppointments, todayIso],
-  );
-  const todaysAppointmentsForView = useMemo(() => {
-    if (!schedulePatientSearchQuery) {
-      return todaysAppointments;
-    }
-    return todaysAppointments.filter((appointment) =>
-      appointment.patientName.toLowerCase().includes(schedulePatientSearchQuery),
-    );
-  }, [schedulePatientSearchQuery, todaysAppointments]);
+  // Patient Flow used to be hardcoded to "today" via a separate
+  // todaysAppointments memo. That was wrong: when the user changed
+  // the Date picker, Schedule View updated but Patient Flow kept
+  // showing today's columns. Both views now share
+  // selectedDayAppointmentsForView so they stay in sync.
+  // The "Today" button in the header sets selectedDate back to
+  // today's ISO date for the user to snap back to current day.
 
   const searchedPatientAppointments = useMemo(() => {
     if (!schedulePatientSearchQuery) {
@@ -546,14 +540,14 @@ export default function AppointmentsPage() {
       });
   }, [scheduleAppointments, schedulePatientSearchQuery]);
 
-  const appointmentsByStatusForToday = useMemo(() => {
+  const appointmentsByStatusForSelectedDate = useMemo(() => {
     const grouped = new Map<AppointmentStatus, ScheduleAppointmentRecord[]>();
     appointmentStatusOptions.forEach((status) => grouped.set(status, []));
-    todaysAppointmentsForView.forEach((appointment) => {
+    selectedDayAppointmentsForView.forEach((appointment) => {
       grouped.get(appointment.status)?.push(appointment);
     });
     return grouped;
-  }, [todaysAppointmentsForView]);
+  }, [selectedDayAppointmentsForView]);
 
   // Provider / Location dropdowns read from Office Settings only — the
   // single canonical source. The previous logic also scanned every past
@@ -1089,7 +1083,7 @@ export default function AppointmentsPage() {
   };
 
   const getStatusCount = (status: AppointmentStatus) =>
-    appointmentsByStatusForToday.get(status)?.length ?? 0;
+    appointmentsByStatusForSelectedDate.get(status)?.length ?? 0;
 
   return (
     <div className="space-y-5">
@@ -1111,8 +1105,13 @@ export default function AppointmentsPage() {
                 value={selectedDate}
               />
             </label>
-            <button className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner" type="button">
-              Day
+            <button
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              onClick={() => setSelectedDate(getTodayIsoDate())}
+              title="Jump back to today's schedule"
+              type="button"
+            >
+              Today
             </button>
             <button
               className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
@@ -1352,7 +1351,7 @@ export default function AppointmentsPage() {
           <section className="grid gap-5 xl:grid-cols-3">
             {flowSections.map((section) => {
               const cards =
-                appointmentsByStatusForToday
+                appointmentsByStatusForSelectedDate
                   .get(section.status)
                   ?.sort((left, right) => left.startTime.localeCompare(right.startTime)) ?? [];
 
@@ -1403,7 +1402,7 @@ export default function AppointmentsPage() {
           <section className="panel-card p-4">
             <div className="grid gap-3 text-center md:grid-cols-3 xl:grid-cols-7">
               <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <p className="text-3xl font-semibold">{todaysAppointmentsForView.length}</p>
+                <p className="text-3xl font-semibold">{selectedDayAppointmentsForView.length}</p>
                 <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">Total Appointments</p>
               </div>
               <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
