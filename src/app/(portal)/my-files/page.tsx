@@ -125,11 +125,22 @@ export default function MyFilesPage() {
   // clicked we capture which item is being moved (and its kind so
   // we use the correct lib op on confirm). The picker modal shows
   // the folder tree, the user clicks a destination, we move.
+  //
+  // The "bulk" kind is used when the user has multi-selected files
+  // and clicks the bulk-move button — same picker, but on confirm
+  // we iterate all selected file ids and call moveFile on each.
   const [moveTarget, setMoveTarget] = useState<
     | { kind: "file"; id: string; name: string; currentFolderId: string }
     | { kind: "folder"; id: string; name: string; currentParentId: string | null }
+    | { kind: "bulk"; fileIds: string[]; currentFolderId: string | null }
     | null
   >(null);
+
+  // Multi-select state for the file table in the current folder.
+  // The "clear on folder change" useEffect is registered further
+  // down — AFTER currentFolderId is declared — to avoid a
+  // block-scoped use-before-declaration error.
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set());
 
   const [showTrash, setShowTrash] = useState(false);
   const trashCount = deletedFiles.length + deletedFolders.length;
@@ -139,6 +150,13 @@ export default function MyFilesPage() {
     const folderParam = searchParams.get("folder");
     return folderParam || null;
   });
+
+  // Clear multi-select when the user navigates between folders so
+  // a stale selection can't accidentally apply to files in a
+  // different folder the user can't currently see.
+  useEffect(() => {
+    setSelectedFileIds(new Set());
+  }, [currentFolderId]);
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
@@ -928,13 +946,79 @@ export default function MyFilesPage() {
         {/* Files list */}
         {(currentFolderId || isSearching) && filesInFolder.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">
-              Files
-            </p>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                Files
+              </p>
+              {/* Bulk-action toolbar — appears when 1+ files
+                  selected via the row checkboxes. Lets the user
+                  move many files at once with one trip through
+                  the picker modal instead of clicking Move on
+                  every row. */}
+              {selectedFileIds.size > 0 && (
+                <div className="inline-flex items-center gap-2 rounded-lg border border-[var(--brand-primary)] bg-blue-50 px-3 py-1 text-xs">
+                  <span className="font-semibold text-[var(--brand-primary)]">
+                    {selectedFileIds.size} selected
+                  </span>
+                  <button
+                    className="rounded-md bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white"
+                    onClick={() => {
+                      const ids = Array.from(selectedFileIds);
+                      // Capture currentFolderId now so even if the
+                      // user navigates inside the modal somehow the
+                      // "current" hint stays right.
+                      setMoveTarget({
+                        kind: "bulk",
+                        fileIds: ids,
+                        currentFolderId,
+                      });
+                    }}
+                    type="button"
+                  >
+                    Move {selectedFileIds.size}
+                  </button>
+                  <button
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                    onClick={() => setSelectedFileIds(new Set())}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="overflow-hidden rounded-xl border border-[var(--line-soft)]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--line-soft)] bg-[var(--bg-soft)]">
+                    <th className="px-3 py-2 text-left font-semibold text-[var(--text-muted)] w-8">
+                      {/* Select-all checkbox. Indeterminate when
+                          some-but-not-all are selected. */}
+                      <input
+                        aria-label="Select all files"
+                        checked={
+                          filesInFolder.length > 0 &&
+                          filesInFolder.every((f) => selectedFileIds.has(f.id))
+                        }
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedFileIds(new Set(filesInFolder.map((f) => f.id)));
+                          } else {
+                            setSelectedFileIds(new Set());
+                          }
+                        }}
+                        ref={(el) => {
+                          if (el) {
+                            const selectedHere = filesInFolder.filter((f) =>
+                              selectedFileIds.has(f.id),
+                            ).length;
+                            el.indeterminate =
+                              selectedHere > 0 && selectedHere < filesInFolder.length;
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                    </th>
                     <th className="px-3 py-2 text-left font-semibold text-[var(--text-muted)]">
                       <button className="inline-flex items-center hover:text-[var(--text-heading)]" onClick={() => setFileSort((s) => toggleSort(s, "name"))} type="button">
                         Name<SortArrow column="name" sort={fileSort} />
@@ -953,8 +1037,28 @@ export default function MyFilesPage() {
                   {filesInFolder.map((file) => (
                     <tr
                       key={file.id}
-                      className="border-b border-[var(--line-soft)] last:border-b-0 hover:bg-[var(--bg-soft)]"
+                      className={`border-b border-[var(--line-soft)] last:border-b-0 hover:bg-[var(--bg-soft)] ${
+                        selectedFileIds.has(file.id) ? "bg-blue-50/40" : ""
+                      }`}
                     >
+                      <td className="px-3 py-2 w-8">
+                        <input
+                          aria-label={`Select ${file.name}`}
+                          checked={selectedFileIds.has(file.id)}
+                          onChange={(event) => {
+                            setSelectedFileIds((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) {
+                                next.add(file.id);
+                              } else {
+                                next.delete(file.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          type="checkbox"
+                        />
+                      </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span>{getFileIcon(file.mimeType)}</span>
@@ -1403,7 +1507,9 @@ export default function MyFilesPage() {
         const currentId =
           moveTarget.kind === "file"
             ? moveTarget.currentFolderId
-            : moveTarget.currentParentId ?? "";
+            : moveTarget.kind === "folder"
+              ? moveTarget.currentParentId ?? ""
+              : moveTarget.currentFolderId ?? "";
         // Render with depth-based indentation. Walk the tree from
         // each root and emit rows in pre-order.
         type Row = { folder: FileFolder; depth: number };
@@ -1420,21 +1526,40 @@ export default function MyFilesPage() {
         walk(null, 0);
         const doMove = (destinationId: string | null) => {
           if (moveTarget.kind === "file") {
-            if (!destinationId) {
-              // Files always live inside a folder; root-level files
-              // aren't supported in this app. Reject silently.
-              return;
-            }
+            if (!destinationId) return;
             const result = moveFile(moveTarget.id, destinationId);
             if (!result.ok) {
               alert(result.error ?? "Could not move file.");
               return;
             }
-          } else {
+          } else if (moveTarget.kind === "folder") {
             const result = moveFolder(moveTarget.id, destinationId);
             if (!result.ok) {
               alert(result.error ?? "Could not move folder.");
               return;
+            }
+          } else {
+            // bulk file move — apply moveFile to each id, collect
+            // failures, show a summary if anything failed.
+            if (!destinationId) return;
+            const failures: string[] = [];
+            for (const fileId of moveTarget.fileIds) {
+              const result = moveFile(fileId, destinationId);
+              if (!result.ok) {
+                failures.push(`${fileId}: ${result.error ?? "unknown error"}`);
+              }
+            }
+            // Clear the selection after the bulk op so the user
+            // isn't left with a stale 12-selected pill that no
+            // longer corresponds to the visible files.
+            setSelectedFileIds(new Set());
+            if (failures.length > 0) {
+              alert(
+                `Moved ${moveTarget.fileIds.length - failures.length} of ${
+                  moveTarget.fileIds.length
+                } files. ${failures.length} failed:\n\n` +
+                  failures.join("\n"),
+              );
             }
           }
           setMoveTarget(null);
@@ -1449,10 +1574,22 @@ export default function MyFilesPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-lg font-semibold">
-                Move{" "}
-                <span className="text-[var(--text-muted)]">
-                  &ldquo;{moveTarget.name}&rdquo;
-                </span>
+                {moveTarget.kind === "bulk" ? (
+                  <>
+                    Move{" "}
+                    <span className="text-[var(--text-muted)]">
+                      {moveTarget.fileIds.length} file
+                      {moveTarget.fileIds.length === 1 ? "" : "s"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Move{" "}
+                    <span className="text-[var(--text-muted)]">
+                      &ldquo;{moveTarget.name}&rdquo;
+                    </span>
+                  </>
+                )}
               </h3>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 Pick a destination folder. Current location is greyed out.
