@@ -1685,6 +1685,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   }, [fileManagerState.folders, patient.id]);
 
   // Collect all files in the patient folder + any subfolders
+  // Sort state for the Patient Files table. Default is date-desc
+  // (newest first) which matches the historical behavior. Click a
+  // column header to switch — clicking the active column flips
+  // the direction, clicking a different column resets to that
+  // column's natural default (name = asc, date = desc).
+  const [patientFilesSort, setPatientFilesSort] = useState<{
+    column: "name" | "date";
+    asc: boolean;
+  }>({ column: "date", asc: false });
+
   const patientFiles = useMemo(() => {
     const collectFiles = (folderId: string): FileRecord[] => {
       const files = getFilesInFolder(fileManagerState, folderId);
@@ -1694,10 +1704,34 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }
       return files;
     };
-    return collectFiles(patientFolderId).sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt),
-    );
-  }, [fileManagerState, patientFolderId]);
+    const all = collectFiles(patientFolderId);
+    const direction = patientFilesSort.asc ? 1 : -1;
+    return all.sort((a, b) => {
+      let primary = 0;
+      if (patientFilesSort.column === "name") {
+        primary = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      } else {
+        primary = a.createdAt.localeCompare(b.createdAt);
+      }
+      if (primary !== 0) return direction * primary;
+      // Tiebreaker — name asc — so within the same date or same
+      // name the order is stable and predictable.
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  }, [fileManagerState, patientFolderId, patientFilesSort]);
+
+  /** Click handler for sortable table headers — flips direction
+   *  on the active column, switches column otherwise. */
+  const togglePatientFilesSort = useCallback((column: "name" | "date") => {
+    setPatientFilesSort((current) => {
+      if (current.column === column) {
+        return { column, asc: !current.asc };
+      }
+      // Natural default per column: names alphabetical, dates
+      // newest-first.
+      return { column, asc: column === "name" };
+    });
+  }, []);
 
   const narrativeEditableRef = useRef<HTMLDivElement | null>(null);
   const narrativePrintingRef = useRef(false);
@@ -6126,9 +6160,35 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-[var(--line-soft)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      <th className="pb-2 pr-3">Name</th>
+                      <th className="pb-2 pr-3">
+                        <button
+                          className="inline-flex items-center gap-1 hover:text-[var(--text-main)]"
+                          onClick={() => togglePatientFilesSort("name")}
+                          type="button"
+                        >
+                          Name
+                          {patientFilesSort.column === "name" && (
+                            <span aria-hidden className="text-[10px]">
+                              {patientFilesSort.asc ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </button>
+                      </th>
                       <th className="pb-2 pr-3">Size</th>
-                      <th className="pb-2 pr-3">Uploaded</th>
+                      <th className="pb-2 pr-3">
+                        <button
+                          className="inline-flex items-center gap-1 hover:text-[var(--text-main)]"
+                          onClick={() => togglePatientFilesSort("date")}
+                          type="button"
+                        >
+                          Uploaded
+                          {patientFilesSort.column === "date" && (
+                            <span aria-hidden className="text-[10px]">
+                              {patientFilesSort.asc ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </button>
+                      </th>
                       <th className="pb-2 text-right">Actions</th>
                     </tr>
                   </thead>
