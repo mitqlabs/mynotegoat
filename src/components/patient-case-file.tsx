@@ -153,6 +153,14 @@ type SpecialistReferral = {
    *  attended the consult. Stops Case Flow from chasing a completion
    *  date and shows a "Patient Refused" badge in the patient file. */
   patientRefused?: boolean;
+  /** When true, generating this specialist's referral PDF feeds the
+   *  current X-ray + MRI/CT findings into the template context. When
+   *  false (default), XRAY_FINDINGS / MRI_CT_FINDINGS resolve to
+   *  empty so the template author can {{#if}} those sections out
+   *  cleanly. Per-referral toggle so a primary-care follow-up
+   *  letter doesn't have to include the spine imaging, while an
+   *  orthopedic referral can. */
+  includeImagingFindings?: boolean;
 };
 
 type RelatedCaseEntry = {
@@ -1462,6 +1470,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       reportReviewedDate: typeof raw.reportReviewedDate === "string" ? raw.reportReviewedDate : "",
       recommendations: typeof raw.recommendations === "string" ? raw.recommendations : "",
       patientRefused: raw.patientRefused === true,
+      includeImagingFindings: raw.includeImagingFindings === true,
     }));
   });
   const [specialistMessage, setSpecialistMessage] = useState("");
@@ -1880,38 +1889,59 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     return imagingRegions.filter((entry) => entry.modalities.includes(activeRegionModal));
   }, [activeRegionModal]);
   // FINDINGS tokens are intended to be just the radiologist's prose
-  // for the letter body — no dates, no regions, no modality prefix.
-  // Letters that need the dated context already have XRAY_SUMMARY /
-  // MRI_CT_SUMMARY (see report-generator.ts), which include the
-  // completed date plus modality + regions. The FINDINGS tokens used
-  // to prepend "X-Ray (SENT_DATE) — regions" to each block, which
-  // both polluted letter text with metadata the user didn't want AND
-  // displayed the wrong date (sent, not completed). For multi-
-  // referral cases we just join the findings with a blank line so
-  // the radiologist's text from each one stays separated, but no
-  // header is generated. The user can switch to the SUMMARY tokens
-  // if they want the dated breakdown back.
+  // for the letter body — no dates, no modality prefix. Letters that
+  // need the dated context already have XRAY_SUMMARY / MRI_CT_SUMMARY
+  // (see report-generator.ts), which include the completed date plus
+  // modality + regions.
+  //
+  // Per-referral disposition: a referral can be in three states:
+  //   - Has findings text → use the text directly (no header so the
+  //     simple single-referral case reads cleanly).
+  //   - Marked Patient Refused → show "[Region(s)]: Patient refused"
+  //     so the letter explicitly conveys WHY there's no report,
+  //     instead of the previous silent fallback to "-".
+  //   - Neither → skip (no info to convey).
+  //
+  // For multi-referral cases blocks are separated by blank lines so
+  // each entry stays readable. Falls back to the legacy global
+  // findings field, then "-" if truly empty.
+  const buildFindingsString = useCallback(
+    (referrals: ImagingReferral[], mode: ImagingMode) => {
+      const blocks: string[] = [];
+      for (const referral of referrals) {
+        const text = referral.findings?.trim();
+        if (text) {
+          blocks.push(text);
+          continue;
+        }
+        if (referral.patientRefused) {
+          const regions =
+            referral.regions.length > 0
+              ? referral.regions
+                  .map((region) => formatRegionLabel(region, referral.lateralityByRegion))
+                  .join(", ")
+              : referral.modalityLabel;
+          blocks.push(`${regions}: Patient refused`);
+        }
+      }
+      return blocks.join("\n\n");
+    },
+    [],
+  );
   const xrayFindingsForTemplates = useMemo(() => {
-    const perReferral = xrayReferrals
-      .filter((r) => r.findings?.trim())
-      .map((r) => r.findings!.trim())
-      .join("\n\n");
-    if (perReferral) return perReferral;
-    // Fallback to old global field if it has content
+    const built = buildFindingsString(xrayReferrals, "xray");
+    if (built) return built;
     const legacy = xrayFindings.trim();
     if (legacy) return legacy;
     return "-";
-  }, [xrayReferrals, xrayFindings]);
+  }, [xrayReferrals, xrayFindings, buildFindingsString]);
   const mriCtFindingsForTemplates = useMemo(() => {
-    const perReferral = mriReferrals
-      .filter((r) => r.findings?.trim())
-      .map((r) => r.findings!.trim())
-      .join("\n\n");
-    if (perReferral) return perReferral;
+    const built = buildFindingsString(mriReferrals, "mri");
+    if (built) return built;
     const legacy = mriCtFindings.trim();
     if (legacy) return legacy;
     return "-";
-  }, [mriReferrals, mriCtFindings]);
+  }, [mriReferrals, mriCtFindings, buildFindingsString]);
   const specialistRecommendationsForTemplates = useMemo(() => {
     const perSpec = specialistReferrals
       .filter((s) => s.recommendations?.trim())
@@ -2819,6 +2849,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       REFERRAL_RECEIVED_DATE: toUsDate(entry.reportReceivedDate),
       REFERRAL_REVIEWED_DATE: toUsDate(entry.reportReviewedDate ?? ""),
     };
+
+    // Per-referral imaging override. The common document context
+    // sets XRAY_FINDINGS / MRI_CT_FINDINGS based on the patient's
+    // imaging referrals. For specialists, we let the user opt out
+    // (checkbox on the row) so a PCP follow-up doesn't auto-include
+    // spine imaging that's not relevant. When opted out, both
+    // tokens resolve to empty so {{#if XRAY_FINDINGS}} sections
+    // collapse cleanly.
+    if (!entry.includeImagingFindings) {
+      context.XRAY_FINDINGS = "";
+      context.MRI_CT_FINDINGS = "";
+    }
 
     const renderedHeader = documentTemplates.header.active
       ? renderDocumentTemplate(documentTemplates.header.body, context, undefined, promptAnswers)
@@ -5092,6 +5134,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   {entry.recommendations.trim() && (
                     <p className="mt-1 text-[var(--text-muted)]">{entry.recommendations}</p>
                   )}
+                  {/* Include-imaging toggle. When checked, the
+                      generated PDF gets the current X-ray + MRI/CT
+                      findings injected into the template context.
+                      Off by default — the user opts in per referral
+                      so PCP follow-ups don't automatically carry
+                      spine imaging the PCP didn't ask for. */}
+                  <label className="mt-2 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                    <input
+                      checked={Boolean(entry.includeImagingFindings)}
+                      onChange={(event) => {
+                        const nextSpecialists = specialistReferrals.map((existing) =>
+                          existing.id === entry.id
+                            ? { ...existing, includeImagingFindings: event.target.checked }
+                            : existing,
+                        );
+                        setSpecialistReferrals(nextSpecialists);
+                        autoSavePatientFile({ specialistReferrals: nextSpecialists });
+                      }}
+                      type="checkbox"
+                    />
+                    <span>
+                      Include X-Ray / MRI findings in PDF
+                    </span>
+                  </label>
                   <div className="mt-2 flex gap-2">
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
