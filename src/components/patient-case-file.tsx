@@ -290,6 +290,41 @@ function emptyImagingFormState(mode: ImagingMode): ImagingFormState {
   };
 }
 
+/**
+ * Convert a region + laterality into a friendly header line for the
+ * findings textarea template: "Left Knee" / "Right Shoulder" /
+ * "Bilateral Hip" / "Cervical" (no laterality on non-lateralizable
+ * regions). Distinct from formatRegionLabel which formats the
+ * compact "Knee (L)" style used in chips and summary text.
+ */
+function formatRegionHeaderForFindings(
+  region: string,
+  lateralityByRegion: Record<string, ImagingLaterality>,
+): string {
+  if (!supportsRegionLaterality(region)) return region;
+  const laterality = lateralityByRegion[region];
+  if (!laterality) return region;
+  if (laterality === "L") return `Left ${region}`;
+  if (laterality === "R") return `Right ${region}`;
+  if (laterality === "BL") return `Bilateral ${region}`;
+  return region;
+}
+
+/**
+ * Build a blank findings template, one labeled section per region.
+ * Two blank lines between sections so the user has room to paste
+ * the radiologist's prose under each header.
+ */
+function buildFindingsTemplate(
+  regions: string[],
+  lateralityByRegion: Record<string, ImagingLaterality>,
+): string {
+  if (regions.length === 0) return "";
+  return regions
+    .map((region) => `${formatRegionHeaderForFindings(region, lateralityByRegion)}:\n\n`)
+    .join("\n");
+}
+
 function formatImagingRegionsSummary(entry: ImagingReferral, mode: ImagingMode) {
   if (!entry.regions.length) {
     return "No regions selected";
@@ -7457,7 +7492,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     Regions:{" "}
                     <span className="font-normal text-[var(--text-main)]">
                       {editingImagingReferral.regions.length > 0
-                        ? editingImagingReferral.regions.join(", ")
+                        ? editingImagingReferral.regions
+                            .map((region) =>
+                              formatRegionLabel(region, editingImagingReferral.lateralityByRegion),
+                            )
+                            .join(", ")
                         : "None"}
                     </span>
                   </span>
@@ -7564,7 +7603,45 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </div>
 
               <label className="grid gap-1 min-w-0">
-                <span className="text-sm font-semibold text-[var(--text-muted)]">Findings</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Findings</span>
+                  {/* Quick scaffold from the selected regions — drops a
+                      labeled "Region:\n\n" block per region into the
+                      textarea so the user can paste the radiologist's
+                      prose under each header instead of typing the
+                      headers by hand. Confirms before overwriting any
+                      content the user already entered. */}
+                  <button
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--brand-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
+                    disabled={editingImagingReferral.regions.length === 0}
+                    onClick={() => {
+                      const template = buildFindingsTemplate(
+                        editingImagingReferral.regions,
+                        editingImagingReferral.lateralityByRegion,
+                      );
+                      if (!template) return;
+                      const existing = editingImagingReferral.findings ?? "";
+                      if (existing.trim().length > 0) {
+                        const proceed = window.confirm(
+                          "Replace the existing findings text with the region template? " +
+                            "Anything you've typed will be lost.",
+                        );
+                        if (!proceed) return;
+                      }
+                      setEditingImagingReferral((current) =>
+                        current ? { ...current, findings: template } : current,
+                      );
+                    }}
+                    title={
+                      editingImagingReferral.regions.length === 0
+                        ? "Pick at least one region first"
+                        : "Fill the findings area with one labeled section per region"
+                    }
+                    type="button"
+                  >
+                    ⤵ Insert Region Template
+                  </button>
+                </div>
                 <textarea
                   // resize: both — drag the corner handle to grow wider
                   // AND taller. min-w-full keeps it full-width by default
