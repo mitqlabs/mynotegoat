@@ -123,6 +123,95 @@ export function renameFolder(
   };
 }
 
+/**
+ * Move a file to a different folder.
+ *
+ * Returns `{ ok: false, error }` for invalid moves:
+ *   - file id doesn't exist
+ *   - target folder id doesn't exist (other than null = root, which
+ *     is allowed for files moved to the top level if the caller
+ *     wants that — though the UI currently always targets a folder)
+ *   - file is already in the target folder (no-op, returns ok)
+ */
+export function moveFile(
+  state: FileManagerState,
+  fileId: string,
+  newFolderId: string,
+): { ok: true; state: FileManagerState } | { ok: false; error: string } {
+  const file = state.files.find((f) => f.id === fileId);
+  if (!file) return { ok: false, error: "File not found." };
+  if (file.folderId === newFolderId) {
+    // No-op move; tell the caller it's fine without churning state.
+    return { ok: true, state };
+  }
+  const targetFolder = state.folders.find((f) => f.id === newFolderId);
+  if (!targetFolder) return { ok: false, error: "Target folder not found." };
+  const nextState: FileManagerState = {
+    ...state,
+    files: state.files.map((f) =>
+      f.id === fileId
+        ? { ...f, folderId: newFolderId, updatedAt: new Date().toISOString() }
+        : f,
+    ),
+  };
+  return { ok: true, state: nextState };
+}
+
+/**
+ * Move a folder under a new parent.
+ *
+ * Returns `{ ok: false, error }` for invalid moves:
+ *   - folder id doesn't exist
+ *   - folder is a system folder (those have fixed hierarchy)
+ *   - target parent doesn't exist (other than null = root)
+ *   - target parent is the folder itself (would orphan it)
+ *   - target parent is a descendant of the folder (would create a
+ *     cycle — A → B → A loops the tree)
+ *   - already in that parent (no-op, returns ok)
+ */
+export function moveFolder(
+  state: FileManagerState,
+  folderId: string,
+  newParentId: string | null,
+): { ok: true; state: FileManagerState } | { ok: false; error: string } {
+  const folder = state.folders.find((f) => f.id === folderId);
+  if (!folder) return { ok: false, error: "Folder not found." };
+  if (folder.isSystemFolder) {
+    return { ok: false, error: "System folders cannot be moved." };
+  }
+  if (folder.parentId === newParentId) {
+    return { ok: true, state };
+  }
+  if (newParentId === folderId) {
+    return { ok: false, error: "A folder cannot be moved into itself." };
+  }
+  if (newParentId !== null) {
+    const targetParent = state.folders.find((f) => f.id === newParentId);
+    if (!targetParent) {
+      return { ok: false, error: "Target parent folder not found." };
+    }
+    // Cycle check: target can't be a descendant of the folder
+    // we're moving. Walk up from the target — if we hit our own
+    // id before hitting root, it's a cycle.
+    const descendants = collectDescendantFolderIds(state.folders, folderId);
+    if (descendants.has(newParentId)) {
+      return {
+        ok: false,
+        error: "Cannot move a folder into one of its own subfolders.",
+      };
+    }
+  }
+  const nextState: FileManagerState = {
+    ...state,
+    folders: state.folders.map((f) =>
+      f.id === folderId
+        ? { ...f, parentId: newParentId, updatedAt: new Date().toISOString() }
+        : f,
+    ),
+  };
+  return { ok: true, state: nextState };
+}
+
 function collectDescendantFolderIds(folders: FileFolder[], parentId: string): Set<string> {
   const ids = new Set<string>();
   const queue = [parentId];

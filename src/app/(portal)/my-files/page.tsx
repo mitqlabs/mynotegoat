@@ -111,6 +111,8 @@ export default function MyFilesPage() {
     uploadFile,
     renameFile,
     deleteFile,
+    moveFile,
+    moveFolder,
     restoreFile,
     restoreFolder,
     permanentlyDeleteFile,
@@ -118,6 +120,16 @@ export default function MyFilesPage() {
     deletedFiles,
     deletedFolders,
   } = useFileManager(patients, caseStatuses);
+
+  // "Move to..." picker state. When a file/folder's Move button is
+  // clicked we capture which item is being moved (and its kind so
+  // we use the correct lib op on confirm). The picker modal shows
+  // the folder tree, the user clicks a destination, we move.
+  const [moveTarget, setMoveTarget] = useState<
+    | { kind: "file"; id: string; name: string; currentFolderId: string }
+    | { kind: "folder"; id: string; name: string; currentParentId: string | null }
+    | null
+  >(null);
 
   const [showTrash, setShowTrash] = useState(false);
   const trashCount = deletedFiles.length + deletedFolders.length;
@@ -876,6 +888,20 @@ export default function MyFilesPage() {
                                 Rename
                               </button>
                               <button
+                                className="rounded-lg px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                onClick={() =>
+                                  setMoveTarget({
+                                    kind: "folder",
+                                    id: folder.id,
+                                    name: folder.name,
+                                    currentParentId: folder.parentId,
+                                  })
+                                }
+                                type="button"
+                              >
+                                Move
+                              </button>
+                              <button
                                 className="rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                                 disabled={deletingFolderId === folder.id}
                                 onClick={() => {
@@ -993,6 +1019,22 @@ export default function MyFilesPage() {
                             type="button"
                           >
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          </button>
+                          {/* Move — folder-with-arrow */}
+                          <button
+                            className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-50 transition-colors"
+                            onClick={() =>
+                              setMoveTarget({
+                                kind: "file",
+                                id: file.id,
+                                name: file.name,
+                                currentFolderId: file.folderId,
+                              })
+                            }
+                            title="Move to another folder"
+                            type="button"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h3l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6M12 10l3 3-3 3" /></svg>
                           </button>
                           {/* Download — arrow-down-tray */}
                           <button
@@ -1335,6 +1377,156 @@ export default function MyFilesPage() {
           </div>
         </div>
       )}
+
+      {/* Move-to picker modal. Shown when the user clicks a Move
+          button on a file or folder row. Lists every folder in the
+          tree, indented by depth, filtering out invalid destinations
+          (the folder itself + its descendants if we're moving a
+          folder). Click a row to move there. */}
+      {moveTarget && (() => {
+        const allFolders = state.folders.filter((f) => !f.deleted);
+        const invalidIds = new Set<string>();
+        if (moveTarget.kind === "folder") {
+          invalidIds.add(moveTarget.id);
+          // Build descendants by walking children.
+          const queue = [moveTarget.id];
+          while (queue.length > 0) {
+            const current = queue.pop()!;
+            for (const f of allFolders) {
+              if (f.parentId === current && !invalidIds.has(f.id)) {
+                invalidIds.add(f.id);
+                queue.push(f.id);
+              }
+            }
+          }
+        }
+        const currentId =
+          moveTarget.kind === "file"
+            ? moveTarget.currentFolderId
+            : moveTarget.currentParentId ?? "";
+        // Render with depth-based indentation. Walk the tree from
+        // each root and emit rows in pre-order.
+        type Row = { folder: FileFolder; depth: number };
+        const rows: Row[] = [];
+        const walk = (parentId: string | null, depth: number) => {
+          const children = allFolders
+            .filter((f) => f.parentId === parentId)
+            .sort((a, b) => a.name.localeCompare(b.name));
+          for (const child of children) {
+            rows.push({ folder: child, depth });
+            walk(child.id, depth + 1);
+          }
+        };
+        walk(null, 0);
+        const doMove = (destinationId: string | null) => {
+          if (moveTarget.kind === "file") {
+            if (!destinationId) {
+              // Files always live inside a folder; root-level files
+              // aren't supported in this app. Reject silently.
+              return;
+            }
+            const result = moveFile(moveTarget.id, destinationId);
+            if (!result.ok) {
+              alert(result.error ?? "Could not move file.");
+              return;
+            }
+          } else {
+            const result = moveFolder(moveTarget.id, destinationId);
+            if (!result.ok) {
+              alert(result.error ?? "Could not move folder.");
+              return;
+            }
+          }
+          setMoveTarget(null);
+        };
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setMoveTarget(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold">
+                Move{" "}
+                <span className="text-[var(--text-muted)]">
+                  &ldquo;{moveTarget.name}&rdquo;
+                </span>
+              </h3>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Pick a destination folder. Current location is greyed out.
+                {moveTarget.kind === "folder" &&
+                  " A folder cannot be moved into itself or its own subfolders."}
+              </p>
+              <div className="mt-3 max-h-[50vh] overflow-y-auto rounded-xl border border-[var(--line-soft)]">
+                {moveTarget.kind === "folder" && (
+                  <button
+                    className="block w-full border-b border-[var(--line-soft)] px-3 py-2 text-left text-sm hover:bg-blue-50"
+                    onClick={() => doMove(null)}
+                    type="button"
+                  >
+                    <span className="text-[var(--text-muted)]">↑</span>{" "}
+                    <span className="font-semibold">Root</span>{" "}
+                    <span className="text-xs text-[var(--text-muted)]">
+                      (top level)
+                    </span>
+                  </button>
+                )}
+                {rows.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-[var(--text-muted)]">
+                    No folders to pick from. Create one first.
+                  </p>
+                ) : (
+                  rows.map(({ folder, depth }) => {
+                    const isInvalid = invalidIds.has(folder.id);
+                    const isCurrent = folder.id === currentId;
+                    const disabled = isInvalid || isCurrent;
+                    return (
+                      <button
+                        className={`block w-full border-b border-[var(--line-soft)] px-3 py-2 text-left text-sm last:border-b-0 ${
+                          disabled
+                            ? "cursor-not-allowed bg-[var(--bg-soft)] text-[var(--text-muted)]"
+                            : "hover:bg-blue-50"
+                        }`}
+                        disabled={disabled}
+                        key={folder.id}
+                        onClick={() => doMove(folder.id)}
+                        style={{ paddingLeft: `${12 + depth * 16}px` }}
+                        type="button"
+                      >
+                        <span className="mr-2">
+                          {folder.isSystemFolder ? "📂" : "📁"}
+                        </span>
+                        <span className="font-medium">{folder.name}</span>
+                        {isCurrent && (
+                          <span className="ml-2 text-xs italic text-[var(--text-muted)]">
+                            (current)
+                          </span>
+                        )}
+                        {isInvalid && !isCurrent && (
+                          <span className="ml-2 text-xs italic text-[var(--text-muted)]">
+                            (own subfolder)
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  onClick={() => setMoveTarget(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

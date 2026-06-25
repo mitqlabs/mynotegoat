@@ -9,6 +9,8 @@ import {
   addFolder,
   renameFolder,
   deleteFolder as deleteFolderOp,
+  moveFile as moveFileOp,
+  moveFolder as moveFolderOp,
   addFileRecord,
   removeFileRecord,
   renameFileRecord,
@@ -172,6 +174,53 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     [],
   );
 
+  /**
+   * Move a single file into a different folder. Returns a result
+   * the caller can inspect — if the underlying lib op rejects
+   * (file not found, target folder missing), state is left
+   * unchanged and the caller can surface the error to the user.
+   */
+  const moveFile = useCallback(
+    (fileId: string, newFolderId: string): { ok: boolean; error?: string } => {
+      let outcome: { ok: boolean; error?: string } = { ok: true };
+      setState((current) => {
+        const result = moveFileOp(current, fileId, newFolderId);
+        if (!result.ok) {
+          outcome = { ok: false, error: result.error };
+          return current;
+        }
+        outcome = { ok: true };
+        saveFileManagerState(result.state);
+        return result.state;
+      });
+      return outcome;
+    },
+    [],
+  );
+
+  /**
+   * Move a folder under a new parent (or to root when newParentId
+   * is null). Validation against cycles + system folders lives in
+   * the lib op.
+   */
+  const moveFolder = useCallback(
+    (folderId: string, newParentId: string | null): { ok: boolean; error?: string } => {
+      let outcome: { ok: boolean; error?: string } = { ok: true };
+      setState((current) => {
+        const result = moveFolderOp(current, folderId, newParentId);
+        if (!result.ok) {
+          outcome = { ok: false, error: result.error };
+          return current;
+        }
+        outcome = { ok: true };
+        saveFileManagerState(result.state);
+        return result.state;
+      });
+      return outcome;
+    },
+    [],
+  );
+
   const deleteFile = useCallback(
     async (fileId: string) => {
       setState((current) => {
@@ -263,6 +312,8 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     uploadFile,
     renameFile,
     deleteFile,
+    moveFile,
+    moveFolder,
     restoreFile,
     restoreFolder,
     permanentlyDeleteFile,
