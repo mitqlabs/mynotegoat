@@ -145,6 +145,14 @@ export const documentTemplateFieldGroups: DocumentTemplateFieldGroup[] = [
       { token: "IMAGING_REPORT_REVIEWED_DATE", label: "Imaging Report Reviewed Date" },
       { token: "XRAY_FINDINGS", label: "X-Ray Findings" },
       { token: "MRI_CT_FINDINGS", label: "MRI / CT Findings" },
+      // Flag, not a value. Resolves to "yes" when the specialist
+      // referral's "Include X-Ray / MRI findings in PDF" checkbox
+      // is on, "" when off. Intended use: wrap the WHOLE imaging
+      // block (outer header + inner labels + tokens) with
+      // {{#if INCLUDE_IMAGING_FINDINGS}}...{{/if}} so the whole
+      // section toggles together. Use Conditional Wrap Mode in
+      // the editor to wrap a selection with one click.
+      { token: "INCLUDE_IMAGING_FINDINGS", label: "Include Imaging Findings (flag)" },
     ],
   },
 ];

@@ -2850,13 +2850,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       REFERRAL_REVIEWED_DATE: toUsDate(entry.reportReviewedDate ?? ""),
     };
 
-    // Per-referral imaging override. The common document context
-    // sets XRAY_FINDINGS / MRI_CT_FINDINGS based on the patient's
-    // imaging referrals. For specialists, we let the user opt out
-    // (checkbox on the row) so a PCP follow-up doesn't auto-include
-    // spine imaging that's not relevant. When opted out, both
-    // tokens resolve to empty so {{#if XRAY_FINDINGS}} sections
-    // collapse cleanly.
+    // Per-referral imaging toggle. Two context fields drive the
+    // template's imaging section visibility:
+    //
+    //   - INCLUDE_IMAGING_FINDINGS: "yes" when the checkbox is on,
+    //     "" when off. This is the SINGLE flag the template author
+    //     should wrap their ENTIRE imaging block in — outer header,
+    //     inner labels, tokens, everything — with
+    //     {{#if INCLUDE_IMAGING_FINDINGS}}...{{/if}}. One toggle =
+    //     one wrapper = the whole section appears or disappears.
+    //   - XRAY_FINDINGS / MRI_CT_FINDINGS: forced to "" when the
+    //     checkbox is off so even if the template author hasn't
+    //     wrapped them yet, the values are at least empty (rather
+    //     than the patient's actual findings leaking through).
+    //
+    // Either approach works on its own — wrapping with
+    // {{#if INCLUDE_IMAGING_FINDINGS}} gives the cleanest result
+    // (the headers disappear too), but the inner-token approach
+    // is the safe default if a template was written before this
+    // flag existed.
+    context.INCLUDE_IMAGING_FINDINGS = entry.includeImagingFindings ? "yes" : "";
     if (!entry.includeImagingFindings) {
       context.XRAY_FINDINGS = "";
       context.MRI_CT_FINDINGS = "";
