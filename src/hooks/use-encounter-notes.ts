@@ -66,6 +66,21 @@ function nowIso() {
 const macroRunPruneGrace = new Map<string, number>();
 const MACRO_RUN_PRUNE_GRACE_MS = 5000;
 
+/**
+ * Per-encounter recheck timer. setSoapSection's grace logic only
+ * re-evaluates when the user types again. If the user select-alls
+ * the Plan section, hits delete, and walks away, runs stay marked
+ * as "missing within grace" forever — never pruned, charges never
+ * dropped. This timer fires a no-op upsertEncounter after the
+ * grace window expires so the prune logic re-runs against the
+ * current state without requiring another keystroke.
+ *
+ * Keyed by encounterId. A subsequent edit that re-marks runs as
+ * missing resets the timer (clearTimeout + new setTimeout) so a
+ * burst of edits doesn't fire N stale rechecks.
+ */
+const macroRunPruneRecheckTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 // Block-cleanup helpers moved to src/lib/soap-html-normalize.ts so the
 // normalizer can be reused at READ time too — Previous Subjective
 // preview, SOAP print export, narrative report — not just at write
@@ -447,6 +462,55 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
+  /**
+   * Apply the macro-prune grace check to a given encounter state for
+   * a specific section and the HTML value of that section. Pure-ish
+   * helper: returns the next encounter state with runs/charges
+   * pruned and tracks newly-missing runs in the module-level grace
+   * map. Used both by setSoapSection (on every typing event) AND by
+   * the delayed recheck timer (to fire the prune even when the
+   * user has stopped typing).
+   *
+   * Returns whether ANY run for this section is currently marked as
+   * "newly missing" so the caller can schedule a recheck.
+   */
+  const applyMacroPruneCheck = useCallback(
+    (current: EncounterNoteRecord, section: EncounterSection, sectionHtml: string) => {
+      const nowMs = Date.now();
+      let anyMissing = false;
+      const nextRuns = current.macroRuns.filter((run) => {
+        if (run.section !== section) return true;
+        const key = `${current.id}:${run.id}`;
+        const present = sectionHtml.includes(`data-macro-run-id="${run.id}"`);
+        if (present) {
+          macroRunPruneGrace.delete(key);
+          return true;
+        }
+        const firstMissingAt = macroRunPruneGrace.get(key);
+        if (firstMissingAt === undefined) {
+          macroRunPruneGrace.set(key, nowMs);
+          anyMissing = true;
+          return true;
+        }
+        if (nowMs - firstMissingAt < MACRO_RUN_PRUNE_GRACE_MS) {
+          anyMissing = true;
+          return true;
+        }
+        macroRunPruneGrace.delete(key);
+        return false;
+      });
+      let nextCharges = current.charges;
+      if (nextRuns.length !== current.macroRuns.length) {
+        const liveRunIds = new Set(nextRuns.map((r) => r.id));
+        nextCharges = current.charges.filter((charge) =>
+          charge.linkedMacroRunId ? liveRunIds.has(charge.linkedMacroRunId) : true,
+        );
+      }
+      return { nextRuns, nextCharges, anyMissing };
+    },
+    [],
+  );
+
   const setSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, value: string) => {
       upsertEncounter(encounterId, (current) => {
@@ -468,40 +532,45 @@ export function useEncounterNotes() {
         // it when the id reappears, or commits the prune once the
         // window elapses. The timestamp lives in a module-level Map
         // so it survives individual setSoapSection invocations.
-        const nowMs = Date.now();
-        const nextRuns = current.macroRuns.filter((run) => {
-          if (run.section !== section) return true;
-          const key = `${current.id}:${run.id}`;
-          const present = value.includes(`data-macro-run-id="${run.id}"`);
-          if (present) {
-            macroRunPruneGrace.delete(key);
-            return true;
-          }
-          const firstMissingAt = macroRunPruneGrace.get(key);
-          if (firstMissingAt === undefined) {
-            // Just went missing — mark and keep for the grace period.
-            macroRunPruneGrace.set(key, nowMs);
-            return true;
-          }
-          if (nowMs - firstMissingAt < MACRO_RUN_PRUNE_GRACE_MS) {
-            return true; // still inside the grace window
-          }
-          // Grace expired — commit the prune.
-          macroRunPruneGrace.delete(key);
-          return false;
-        });
-        // If any run was actually pruned (grace expired), drop every
-        // charge whose linkedMacroRunId now points to a missing run.
-        // User-owned manual charges (no linkedMacroRunId) are left
-        // alone. Charges whose run is still in its grace window are
-        // also preserved so a quick cut+paste doesn't orphan them.
-        let nextCharges = current.charges;
-        if (nextRuns.length !== current.macroRuns.length) {
-          const liveRunIds = new Set(nextRuns.map((r) => r.id));
-          nextCharges = current.charges.filter((charge) =>
-            charge.linkedMacroRunId ? liveRunIds.has(charge.linkedMacroRunId) : true,
-          );
+        const { nextRuns, nextCharges, anyMissing } = applyMacroPruneCheck(
+          current,
+          section,
+          value,
+        );
+
+        // Schedule a delayed recheck when any run is currently inside
+        // its grace window. Without this, "select all + delete and
+        // walk away" never gets re-evaluated — the user comes back
+        // hours later and the charges are still there because no
+        // subsequent typing triggered the prune. The recheck fires
+        // shortly after grace expires, re-runs the same prune logic
+        // against the CURRENT state, and drops the runs/charges.
+        if (anyMissing) {
+          const existingTimer = macroRunPruneRecheckTimers.get(current.id);
+          if (existingTimer) clearTimeout(existingTimer);
+          const encounterId = current.id;
+          const timer = setTimeout(() => {
+            macroRunPruneRecheckTimers.delete(encounterId);
+            upsertEncounter(encounterId, (latest) => {
+              const sectionHtml = latest.soap[section] ?? "";
+              const recheck = applyMacroPruneCheck(latest, section, sectionHtml);
+              if (
+                recheck.nextRuns.length === latest.macroRuns.length &&
+                recheck.nextCharges.length === latest.charges.length
+              ) {
+                // No-op recheck — nothing to prune, don't churn state.
+                return latest;
+              }
+              return {
+                ...latest,
+                macroRuns: recheck.nextRuns,
+                charges: recheck.nextCharges,
+              };
+            });
+          }, MACRO_RUN_PRUNE_GRACE_MS + 250);
+          macroRunPruneRecheckTimers.set(current.id, timer);
         }
+
         return {
           ...current,
           soap: {
@@ -513,7 +582,7 @@ export function useEncounterNotes() {
         };
       });
     },
-    [upsertEncounter],
+    [upsertEncounter, applyMacroPruneCheck],
   );
 
   const addMacroRun = useCallback(
