@@ -452,7 +452,7 @@ export function renderDocumentTemplate(
    *  contain literal "[[token_id]]" strings. */
   promptAnswers?: Record<string, string>,
 ) {
-  // PASS 1: Conditional blocks.
+  // PASS 1: Conditional blocks (supports nesting).
   //
   // Syntax: {{#if TOKEN}}...content...{{/if}}
   //
@@ -461,26 +461,36 @@ export function renderDocumentTemplate(
   // {{TOKEN}} references still resolve in pass 2). If the value is
   // missing or empty, the entire block is dropped — including the
   // marker tags, so the rendered document doesn't contain literal
-  // {{#if ...}} text. Use case: a Discharge Summary template that
-  // mentions a "second re-evaluation" only when
-  // {{PERSONAL_INJURY_RE_EXAM_2_DATE}} actually has a value;
-  // patients without that date get the paragraph silently dropped.
+  // {{#if ...}} text.
   //
-  // Non-greedy ([\s\S]*?) so multiple separate blocks don't merge
-  // into one giant match. Nested {{#if}} inside {{#if}} is NOT
-  // supported (keeping the regex simple is more important than
-  // covering an edge case the template editor doesn't surface).
-  let result = body.replace(
-    /\{\{#if\s+([A-Z0-9_]+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
-    (_match, tokenRaw: string, content: string) => {
-      const token = tokenRaw.toUpperCase();
-      const value = context[token];
-      if (typeof value === "string" && value.trim().length > 0) {
-        return content;
-      }
-      return "";
-    },
-  );
+  // Nesting works via iterative innermost-first resolution: we
+  // repeatedly find an if/endif pair whose CONTENT contains no
+  // further {{#if}} marker, resolve it, and loop until no more
+  // {{#if}} tags remain. Each pass collapses one level of nesting.
+  // This is the simplest correct approach that doesn't require
+  // hand-rolling a parser, and avoids the "outermost-greedy
+  // matches wrong endif" bug that comes from naïve non-greedy
+  // regex on nested structures.
+  //
+  // The innermost regex uses a negative lookahead in the content
+  // group: `(?:(?!\{\{#if\s).)*?` — match anything that isn't the
+  // start of another {{#if}}. That guarantees the matched block
+  // contains no nested ifs, so its endif is the correct close.
+  let result = body;
+  const innermostIfPattern = /\{\{#if\s+([A-Z0-9_]+)\}\}((?:(?!\{\{#if\s)[\s\S])*?)\{\{\/if\}\}/;
+  // Hard cap on iterations as a runaway-loop guard — at 1000
+  // levels deep the template is broken regardless and we should
+  // bail rather than spin forever.
+  for (let iteration = 0; iteration < 1000; iteration++) {
+    const match = innermostIfPattern.exec(result);
+    if (!match) break;
+    const [fullMatch, tokenRaw, content] = match;
+    const token = tokenRaw.toUpperCase();
+    const value = context[token];
+    const replacement =
+      typeof value === "string" && value.trim().length > 0 ? content : "";
+    result = result.slice(0, match.index) + replacement + result.slice(match.index + fullMatch.length);
+  }
   // PASS 2: Plain auto-field tokens.
   result = result.replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/g, (_match, tokenRaw: string) => {
     const token = tokenRaw.toUpperCase();
