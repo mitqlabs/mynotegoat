@@ -542,6 +542,12 @@ export function syncPatientFolders(
     return statusFolderId;
   };
 
+  // Set of patient ids that still exist — used to recognise folders that are
+  // orphaned (attached to a patient id that no longer exists).
+  const livingPatientIds = new Set(
+    patients.filter((p) => !p.deleted).map((p) => p.id),
+  );
+
   // 3. For each patient, determine the correct parent folder
   for (const patient of patients) {
     // Skip soft-deleted patients — their folders stay intact for recovery
@@ -571,35 +577,47 @@ export function syncPatientFolders(
     const expectedName = buildPatientFolderName(patient);
     const expectedCaseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
 
-    // 3a. Look for existing folder by patientId metadata (handles rename/restore)
-    let patientFolder = folders.find(
-      (f) => f.patientId === patient.id && f.isSystemFolder && !f.deleted,
+    // 3a. Gather EVERY system folder that belongs to this patient. The April
+    //     re-import re-created many patients under brand-new ids while their
+    //     old-id folders lingered, so a single patient can end up owning several
+    //     duplicate system folders. Match by patientId metadata, plus any folder
+    //     whose FULL name equals this patient's expected folder name but is
+    //     attached to a dead/empty patientId (an orphaned old-id folder).
+    //     Matching the full name — case number AND formatted name — means we
+    //     never merge two different people who merely share initials and a DOL.
+    const canonicalId = `SYSTEM-PATIENT-${patient.id}`;
+    const belonging = folders.filter(
+      (f) =>
+        f.isSystemFolder &&
+        !f.deleted &&
+        f.id.startsWith("SYSTEM-PATIENT-") &&
+        (f.patientId === patient.id ||
+          (f.name === expectedName &&
+            (!f.patientId || !livingPatientIds.has(f.patientId)))),
     );
 
-    // 3b. If none, look for an orphan folder with the same case number (deleted or
-    //     attached to a no-longer-existing patient) — auto-merge it.
-    if (!patientFolder && expectedCaseNumber) {
-      const livingPatientIds = new Set(
-        patients.filter((p) => !p.deleted).map((p) => p.id),
-      );
-      const orphan = folders.find(
-        (f) =>
-          f.isSystemFolder &&
-          f.id.startsWith("SYSTEM-PATIENT-") &&
-          (f.deleted || (f.patientId && !livingPatientIds.has(f.patientId))) &&
-          f.name.startsWith(`${expectedCaseNumber} `),
-      );
+    // 3b. No live folder yet: restore a soft-deleted / orphaned folder with the
+    //     same case number (a re-created patient regaining its old files), or
+    //     create a fresh one.
+    if (belonging.length === 0) {
+      const orphan = expectedCaseNumber
+        ? folders.find(
+            (f) =>
+              f.isSystemFolder &&
+              f.id.startsWith("SYSTEM-PATIENT-") &&
+              (f.deleted || (f.patientId && !livingPatientIds.has(f.patientId))) &&
+              f.name.startsWith(`${expectedCaseNumber} `),
+          )
+        : undefined;
       if (orphan) {
         const oldFolderId = orphan.id;
-        const newFolderId = `SYSTEM-PATIENT-${patient.id}`;
-        // Restore the orphan folder + all its descendants and their files,
-        // and reattach to the new patient. Also migrate the folder ID so
-        // code that constructs SYSTEM-PATIENT-<id> can still find it.
+        // Restore the orphan + descendants and reattach to this patient,
+        // migrating the folder id so SYSTEM-PATIENT-<id> lookups resolve.
         folders = folders.map((f) => {
           if (f.id === oldFolderId) {
             return {
               ...f,
-              id: newFolderId,
+              id: canonicalId,
               deleted: undefined,
               deletedAt: undefined,
               patientId: patient.id,
@@ -608,13 +626,12 @@ export function syncPatientFolders(
               updatedAt: now,
             };
           }
-          // Reparent any direct children that pointed at the old ID
           if (f.parentId === oldFolderId) {
-            return { ...f, parentId: newFolderId };
+            return { ...f, parentId: canonicalId };
           }
           return f;
         });
-        const descendantIds = collectDescendantFolderIds(folders, newFolderId);
+        const descendantIds = collectDescendantFolderIds(folders, canonicalId);
         if (descendantIds.size > 0) {
           folders = folders.map((f) =>
             descendantIds.has(f.id) && f.deleted
@@ -622,13 +639,12 @@ export function syncPatientFolders(
               : f,
           );
         }
-        const restoredFolderIds = new Set<string>([newFolderId, ...descendantIds]);
-        // Update file references from old folder ID to new, and restore
+        const restoredFolderIds = new Set<string>([canonicalId, ...descendantIds]);
         files = files.map((f) => {
           if (f.folderId === oldFolderId) {
             return {
               ...f,
-              folderId: newFolderId,
+              folderId: canonicalId,
               ...(f.deleted ? { deleted: undefined, deletedAt: undefined } : {}),
             };
           }
@@ -637,33 +653,59 @@ export function syncPatientFolders(
           }
           return f;
         });
-        continue; // patient handled
+      } else {
+        folders.push({
+          id: canonicalId,
+          name: expectedName,
+          parentId: targetParentId,
+          isSystemFolder: true,
+          patientId: patient.id,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
+      continue; // patient handled
     }
 
-    // 3c. Create new folder if still none
-    if (!patientFolder) {
-      folders.push({
-        id: `SYSTEM-PATIENT-${patient.id}`,
-        name: expectedName,
-        parentId: targetParentId,
-        isSystemFolder: true,
-        patientId: patient.id,
-        createdAt: now,
-        updatedAt: now,
-      });
-    } else if (
-      patientFolder.name !== expectedName ||
-      patientFolder.parentId !== targetParentId
-    ) {
-      // 3d. Update name and/or move folder to new parent (status changed, etc.)
-      const targetId = patientFolder.id;
+    // 3c. Pick the surviving folder: prefer the one already keyed by the current
+    //     patient id, otherwise the oldest, so files settle on a stable folder.
+    const survivor =
+      belonging.find((f) => f.id === canonicalId) ??
+      [...belonging].sort((a, b) =>
+        (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
+      )[0];
+    const survivorId = survivor.id;
+
+    // 3d. Fold every duplicate into the survivor: move its files and any child
+    //     folders over, then drop the now-empty duplicate record. No real data
+    //     is lost — files are reattached; only the redundant folder disappears.
+    const duplicateIds = new Set(
+      belonging.filter((f) => f.id !== survivorId).map((f) => f.id),
+    );
+    if (duplicateIds.size > 0) {
+      files = files.map((f) =>
+        duplicateIds.has(f.folderId) ? { ...f, folderId: survivorId } : f,
+      );
       folders = folders.map((f) =>
-        f.id === targetId
-          ? { ...f, name: expectedName, parentId: targetParentId, updatedAt: now }
+        f.parentId && duplicateIds.has(f.parentId)
+          ? { ...f, parentId: survivorId }
           : f,
       );
+      folders = folders.filter((f) => !duplicateIds.has(f.id) || f.id === survivorId);
     }
+
+    // 3e. Normalise the survivor (correct patientId / name / parent).
+    folders = folders.map((f) =>
+      f.id === survivorId
+        ? {
+            ...f,
+            patientId: patient.id,
+            name: expectedName,
+            parentId: targetParentId,
+            updatedAt: now,
+          }
+        : f,
+    );
   }
 
   return { ...state, folders, files };
