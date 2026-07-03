@@ -772,6 +772,16 @@ async function bootstrapTableBackedEntities() {
           // wipe everything the user just did. This was the failure mode for
           // the "I marked 15 patients refused and went back to Case Flow and
           // they were all there" data-loss report.
+          // These keys store a single wrapper object (e.g.
+          // { templates: [...] }), so a top-level key count is a constant
+          // (1–2) regardless of how much text lives inside a template body.
+          // The entry-count guard below is blind to them, so cloud always
+          // wins and freshly typed template text vanishes on reload. For
+          // these keys, compare serialized SIZE instead (see below).
+          const CONTENT_SIZED_LIBRARY_KEYS = new Set([
+            "casemate.report-templates.v1",
+            "casemate.document-templates.v1",
+          ]);
           let replacedCount = 0;
           let skippedLocalIsBigger = 0;
           pauseSync();
@@ -784,16 +794,26 @@ async function bootstrapTableBackedEntities() {
                 let localCount = -1;
                 let cloudCount = -1;
                 try {
-                  const localParsed = JSON.parse(localRaw);
-                  if (localParsed && typeof localParsed === "object") {
-                    localCount = Array.isArray(localParsed)
-                      ? localParsed.length
-                      : Object.keys(localParsed).length;
-                  }
-                  if (value && typeof value === "object") {
-                    cloudCount = Array.isArray(value)
-                      ? (value as unknown[]).length
-                      : Object.keys(value as object).length;
+                  if (CONTENT_SIZED_LIBRARY_KEYS.has(key)) {
+                    // Wrapper-object libraries: compare serialized SIZE, not
+                    // entry count. When local holds more text than cloud (the
+                    // user just typed into a template body), treat cloud as
+                    // stale — a fire-and-forget dual-write that didn't land —
+                    // and keep local instead of wiping the fresh edit.
+                    localCount = localRaw.length;
+                    cloudCount = JSON.stringify(value).length;
+                  } else {
+                    const localParsed = JSON.parse(localRaw);
+                    if (localParsed && typeof localParsed === "object") {
+                      localCount = Array.isArray(localParsed)
+                        ? localParsed.length
+                        : Object.keys(localParsed).length;
+                    }
+                    if (value && typeof value === "object") {
+                      cloudCount = Array.isArray(value)
+                        ? (value as unknown[]).length
+                        : Object.keys(value as object).length;
+                    }
                   }
                 } catch {
                   // Unparseable local — fall through and overwrite.

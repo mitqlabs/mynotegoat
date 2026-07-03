@@ -40,17 +40,24 @@ function escape(value: string): string {
     .replace(/;/g, "\\;");
 }
 
-/** Convert MM/DD/YYYY → YYYY-MM-DD; pass-through if already ISO. */
+/** Convert MM/DD/YYYY → YYYY-MM-DD; pass-through if already ISO.
+ *  Returns "" for anything implausible — iOS Contacts silently rejects
+ *  the WHOLE save when BDAY is out of range (macOS just ignores it). */
 function normalizeBirthday(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
+  let y = "", m = "", d = "";
   const usMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (usMatch) {
-    const [, mm, dd, yyyy] = usMatch;
-    return `${yyyy}-${mm}-${dd}`;
+    [, m, d, y] = usMatch;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    [y, m, d] = trimmed.split("-");
+  } else {
+    return "";
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  return "";
+  const mo = Number(m), da = Number(d);
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return "";
+  return `${y}-${m}-${d}`;
 }
 
 export function buildVCard(input: VCardInput): string {
@@ -92,8 +99,9 @@ export function buildVCard(input: VCardInput): string {
     lines.push(`NOTE:${escape(input.note.trim())}`);
   }
   lines.push("END:VCARD");
-  // vCard spec mandates CRLF line endings.
-  return lines.join("\r\n");
+  // vCard spec mandates CRLF line endings, including a trailing CRLF
+  // after END:VCARD — strict parsers (iOS) can drop a vCard without it.
+  return lines.join("\r\n") + "\r\n";
 }
 
 /**
@@ -106,9 +114,6 @@ export function buildVCard(input: VCardInput): string {
 export function downloadVCard(input: VCardInput, filename?: string): void {
   if (typeof window === "undefined") return;
   const text = buildVCard(input);
-  const blob = new Blob([text], { type: "text/vcard;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
   const derived =
     [input.firstName, input.lastName]
       .filter(Boolean)
@@ -116,12 +121,34 @@ export function downloadVCard(input: VCardInput, filename?: string): void {
       .replace(/[^A-Za-z0-9_-]+/g, "")
       .toLowerCase() || "contact";
   const safeName = filename ?? derived;
+
+  // iOS Safari ignores the <a download> attribute and handles blob:
+  // object URLs for .vcf unreliably — the Contacts card opens but the
+  // "Add" tap frequently fails to commit (and the 1s revoke below can
+  // invalidate the blob mid-import). Navigating to an inline data: URI
+  // hands the payload straight to the iOS Contacts import flow, which
+  // commits correctly. Desktop keeps the blob download, which macOS
+  // opens cleanly in Contacts.app.
+  const ua = navigator.userAgent || "";
+  const isIOS =
+    /iP(hone|od|ad)/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  if (isIOS) {
+    window.location.href =
+      "data:text/vcard;charset=utf-8," + encodeURIComponent(text);
+    return;
+  }
+
+  const blob = new Blob([text], { type: "text/vcard;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${safeName}.vcf`;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
-  // Defer revocation slightly so Safari has time to start the
+  // Defer revocation slightly so the browser has time to start the
   // download before the URL becomes invalid.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
