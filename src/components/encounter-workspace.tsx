@@ -3397,15 +3397,18 @@ function ImagingSpecialistSummary({
     sent: string;
     completed: string;
     reviewed: string;
+    findings: string;
   };
   type SpecialistRow = {
     doctor: string;
     sent: string;
     completed: string;
+    recommendations: string;
   };
 
   const xrayRows: ImagingRow[] = orderRecentFirst(xrayEntries).map((entry) => ({
     regions: readRegionsList(entry),
+    findings: readStringField(entry, "findings"),
     sent: toUsDate(readStringField(entry, "sentDate", "sent") ?? ""),
     completed: toUsDate(readStringField(entry, "doneDate", "completedDate") ?? ""),
     reviewed: toUsDate(
@@ -3414,6 +3417,7 @@ function ImagingSpecialistSummary({
   }));
   const mriRows: ImagingRow[] = orderRecentFirst(mriEntries).map((entry) => ({
     regions: readRegionsList(entry),
+    findings: readStringField(entry, "findings"),
     sent: toUsDate(readStringField(entry, "sentDate", "sent") ?? ""),
     completed: toUsDate(readStringField(entry, "doneDate", "completedDate") ?? ""),
     reviewed: toUsDate(
@@ -3422,6 +3426,7 @@ function ImagingSpecialistSummary({
   }));
   const specRows: SpecialistRow[] = orderRecentFirst(specEntries).map((entry) => ({
     doctor: readStringField(entry, "specialist", "name") || "",
+    recommendations: readStringField(entry, "recommendations"),
     sent: toUsDate(readStringField(entry, "sentDate", "sent") ?? ""),
     completed: toUsDate(
       readStringField(entry, "completedDate", "reportReceivedDate", "reportDate") ?? "",
@@ -3468,6 +3473,11 @@ function ImagingSpecialistSummary({
                     <Date label="Completed" value={row.completed} />
                     <Date label="Reviewed" value={row.reviewed} />
                   </div>
+                  {row.findings && (
+                    <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
+                      <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {row.findings}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
@@ -3499,6 +3509,11 @@ function ImagingSpecialistSummary({
                     <Date label="Completed" value={row.completed} />
                     <Date label="Reviewed" value={row.reviewed} />
                   </div>
+                  {row.findings && (
+                    <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
+                      <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {row.findings}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
@@ -3529,6 +3544,11 @@ function ImagingSpecialistSummary({
                     <Date label="Sent" value={row.sent} />
                     <Date label="Completed" value={row.completed} />
                   </div>
+                  {row.recommendations && (
+                    <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
+                      <span className="font-semibold text-[var(--text-strong)]">Recommendations:</span> {row.recommendations}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
