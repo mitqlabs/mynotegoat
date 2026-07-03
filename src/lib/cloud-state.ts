@@ -722,6 +722,14 @@ async function bootstrapTableBackedEntities() {
           "casemate.dashboard-priority-rules.v1",
           "casemate.files.v1",
           "casemate.patient-page-prefs.v1",
+          // SMS templates were dual-written to workspace_kv (namespace
+          // "tasks") on save but never listed here, so they were never
+          // pulled BACK from the cloud on boot. A local reset (or the
+          // legacy app_snapshots pull) could wipe a created template with
+          // no way to restore it, even though the cloud backup still had
+          // it. Listing the key makes SMS templates cloud-as-truth like
+          // every other synced key.
+          "casemate.sms-templates.v1",
         ],
       };
 
