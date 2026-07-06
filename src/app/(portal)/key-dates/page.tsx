@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useKeyDateDismissals } from "@/hooks/use-key-date-dismissals";
 import { useCloudKeyDates } from "@/hooks/use-cloud-key-dates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { useCashPayments } from "@/hooks/use-cash-payments";
 import { patients } from "@/lib/mock-data";
 import {
   findKeyDatesForDate,
@@ -81,7 +83,9 @@ function compareConflictRows(left: ConflictRow, right: ConflictRow) {
 
 export default function KeyDatesPage() {
   const { keyDates, addKeyDate, updateKeyDate, removeKeyDate, isLoading } = useCloudKeyDates();
-  const { scheduleAppointments, removeAppointment } = useScheduleAppointments();
+  const { scheduleAppointments, removeAppointment, updateAppointment } = useScheduleAppointments();
+  const { encountersByNewest, deleteEncounter } = useEncounterNotes();
+  const { updatePatientPayments } = useCashPayments();
   const { dismissals, dismissAppointment, restoreAppointment } = useKeyDateDismissals();
   const [showDismissed, setShowDismissed] = useState(false);
 
@@ -140,6 +144,38 @@ export default function KeyDatesPage() {
   const resolvePatientId = (appointment: ScheduleAppointmentRecord): string | null => {
     if (appointment.patientId) return appointment.patientId;
     return patientIdByName.get(appointment.patientName.toLowerCase()) ?? null;
+  };
+
+  // Cancel an appointment that collides with a Closed/Covered key date, and
+  // (optionally) delete any encounter charted for that day so a closed day is
+  // left with no visit note. The appointment stays on record as "Canceled"
+  // (not deleted). Encounter removal reuses the same delete + cash-payment
+  // cascade the patient file uses, and is always gated behind a confirm.
+  const handleCancelAppointment = (appointment: ScheduleAppointmentRecord) => {
+    const dateLabel = formatUsDateFromIso(appointment.date);
+    updateAppointment(appointment.id, (current) => ({ ...current, status: "Canceled" }));
+    restoreAppointment(appointment.id);
+    const patientId = resolvePatientId(appointment);
+    const linkedEncounter = encountersByNewest.find(
+      (entry) => entry.patientId === patientId && entry.encounterDate === dateLabel,
+    );
+    if (linkedEncounter) {
+      const chargeCount = linkedEncounter.charges.length;
+      const removeEncounter = window.confirm(
+        `${appointment.patientName}'s appointment on ${dateLabel} is now Canceled.\n\n` +
+          `An encounter${linkedEncounter.signed ? " (CLOSED)" : ""} also exists for that day${
+            chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""
+          }.\n\n` +
+          `Click OK to DELETE that encounter (and any charges) too.\n` +
+          `Click Cancel to keep the encounter.`,
+      );
+      if (removeEncounter) {
+        deleteEncounter(linkedEncounter.id);
+        updatePatientPayments(linkedEncounter.patientId ?? patientId ?? "", (current) =>
+          current.filter((entry) => entry.encounterId !== linkedEncounter.id),
+        );
+      }
+    }
   };
 
   const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
@@ -489,6 +525,14 @@ export default function KeyDatesPage() {
                             Open
                           </span>
                         )}
+                        <button
+                          className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"
+                          onClick={() => handleCancelAppointment(row.appointment)}
+                          title="Mark this appointment Canceled. If an encounter exists for that day, you'll be asked whether to delete it too."
+                          type="button"
+                        >
+                          Cancel
+                        </button>
                         {row.hasClosedDate && (
                           <button
                             className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"

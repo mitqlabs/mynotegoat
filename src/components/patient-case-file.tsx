@@ -18,6 +18,8 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useKeyDates } from "@/hooks/use-key-dates";
+import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
@@ -1298,6 +1300,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { getRecord: getPatientBillingRecord, setCoreFields: setPatientBillingCoreFields } = usePatientBilling();
   const { scheduleAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
+  const { keyDates } = useKeyDates();
   const { tasks, addTask, toggleTaskDone } = useTasks();
   // patientFlowItems moved below usePatientFollowUpOverrides so overrides are available
   const patientTasks = useMemo(
@@ -3445,6 +3448,20 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         `Cannot mark ${nextStatus} — patient must be Checked In first.`,
       );
       return;
+    }
+    // Warn (but allow override) when checking a patient in on a day the
+    // office is marked Closed on the Key Dates calendar. Check-in
+    // previously ignored closed days entirely.
+    if (target && nextStatus === "Check In") {
+      const closedKeyDate = findClosedKeyDateForDate(keyDates, target.date);
+      if (
+        closedKeyDate &&
+        !window.confirm(
+          `${toUsDate(target.date)} is marked CLOSED (${closedKeyDate.reason}). Check in anyway?`,
+        )
+      ) {
+        return;
+      }
     }
     if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
     updateAppointment(appointmentId, (current) => ({
