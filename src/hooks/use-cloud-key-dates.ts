@@ -35,6 +35,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
 import {
   createKeyDateId,
   normalizeKeyDates,
@@ -68,7 +69,13 @@ async function getActiveWorkspaceId(): Promise<string | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
+  const userId = data.user?.id;
+  if (!userId) return null;
+  // Must match the workspace_id the rest of the app uses:
+  // `${userId}:${officeId}` (e.g. "…:main-office"). Returning the BARE
+  // user id read/wrote a DIFFERENT workspace_kv row, so every key date
+  // saved through the legacy (correct-id) path was invisible here.
+  return buildWorkspaceIdForUser(userId);
 }
 
 async function fetchKeyDatesFromCloud(): Promise<KeyDateRecord[]> {
