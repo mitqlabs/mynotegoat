@@ -121,12 +121,29 @@ textarea:focus {
 textarea {
   line-height: 1.55;
   letter-spacing: 0.002em;
-  /* Vertical only — horizontal resize is almost never useful and
-   * regularly breaks modal layouts when the textarea drags wider
-   * than its parent. Pages that genuinely need a both-axis textarea
-   * can still opt in with Tailwind's resize utility. */
+  /* Vertical only by default — horizontal resize regularly breaks modal
+   * layouts when the textarea drags wider than its parent. Pages that
+   * genuinely need a both-axis textarea opt in with Tailwind's resize
+   * utility (see override below). */
   resize: vertical;
   overflow: auto;
+}
+
+/* Opt-in overrides. This base rule is UNLAYERED, so it outranks
+ * Tailwind's resize utilities (which live in @layer utilities) no matter
+ * their specificity — meaning `class="resize"` on a textarea silently
+ * lost to `resize: vertical` above. Re-assert the opt-ins here, at the
+ * same (unlayered) level, so they actually take effect. */
+textarea.resize {
+  resize: both;
+}
+
+textarea.resize-x {
+  resize: horizontal;
+}
+
+textarea.resize-none {
+  resize: none;
 }
 
 select {
