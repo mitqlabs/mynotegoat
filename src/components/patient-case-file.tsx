@@ -3621,6 +3621,65 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
+  const handlePrintAppointments = () => {
+    const scheduled = patientAppointmentRecords
+      .filter((entry) => entry.status === "Scheduled")
+      .slice()
+      .sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
+    if (scheduled.length === 0) {
+      setEncounterMessage("No scheduled appointments to print for this patient.");
+      return;
+    }
+    const weekday = (iso: string) => {
+      const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return "";
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return Number.isNaN(d.getTime())
+        ? ""
+        : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+    };
+    const rowsHtml = scheduled
+      .map(
+        (a) =>
+          `<tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(toUsDate(a.date))}</td>` +
+          `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(weekday(a.date))}</td>` +
+          `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(formatTimeLabel(a.startTime))}</td>` +
+          `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(a.appointmentType)}</td></tr>`,
+      )
+      .join("");
+    const bodyHtml =
+      `<h2 style="text-align:center;margin-bottom:2px;">Scheduled Appointments</h2>` +
+      `<p style="text-align:center;margin-bottom:12px;"><strong>${escapeHtml(patient.fullName)}</strong>${caseNumber ? ` &nbsp;&middot;&nbsp; Case #: ${escapeHtml(caseNumber)}` : ""}</p>` +
+      `<table style="width:100%;border-collapse:collapse;">` +
+      `<thead><tr>` +
+      `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #13293d;">Date</th>` +
+      `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #13293d;">Day</th>` +
+      `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #13293d;">Time</th>` +
+      `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #13293d;">Type</th>` +
+      `</tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    const context = getCommonDocumentContext();
+    const renderedHeader = documentTemplates.header.active
+      ? renderDocumentTemplate(documentTemplates.header.body, context, undefined, {})
+      : "";
+    const printableHtml = buildPrintableDocumentHtml({
+      title: `Appointments - ${patient.fullName}`,
+      headerHtml: renderedHeader,
+      bodyHtml,
+      headerFontFamily: documentTemplates.header.fontFamily,
+      fontFamily: documentTemplates.header.fontFamily || "Georgia, 'Times New Roman', serif",
+      includeLogo: documentTemplates.header.active ? documentTemplates.header.showOfficeLogo : false,
+      logoDataUrl: officeSettings.logoDataUrl,
+    });
+    const started = printHtmlWithIframeFallback(printableHtml);
+    if (!started) {
+      setEncounterMessage("Could not open print preview. Check popup/print settings and try again.");
+      return;
+    }
+    setEncounterMessage(
+      `Printing ${scheduled.length} scheduled appointment${scheduled.length === 1 ? "" : "s"}. Use Save as PDF in the print dialog if you'd like a file.`,
+    );
+  };
+
   const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = toUsDate(appointment.date);
     const timeLabel = formatTimeLabel(appointment.startTime);
@@ -5244,7 +5303,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 layout where this section is already half-width. */}
             <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <h4 className="text-base font-semibold">Scheduled Appointments</h4>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-base font-semibold">Scheduled Appointments</h4>
+                  <button
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold hover:bg-[var(--bg-soft)]"
+                    onClick={handlePrintAppointments}
+                    title="Print this patient's scheduled appointments"
+                    type="button"
+                  >
+                    🖨 Print Appointments
+                  </button>
+                </div>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
