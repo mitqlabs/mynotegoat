@@ -2892,11 +2892,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const includeXray = imagingMode === "both" || imagingMode === "xray";
     const includeMri = imagingMode === "both" || imagingMode === "mri";
     context.INCLUDE_IMAGING_FINDINGS = imagingMode === "none" ? "" : "yes";
-    // Per-modality flags so a template can {{#if}} each sub-block, and
-    // so an excluded modality (e.g. no X-ray) doesn't emit an empty
-    // "X-Ray Findings: -" section.
-    context.INCLUDE_XRAY_FINDINGS = includeXray ? "yes" : "";
-    context.INCLUDE_MRI_CT_FINDINGS = includeMri ? "yes" : "";
+    // Blank the excluded modality so it doesn't emit an empty
+    // "X-Ray Findings: -" section in older templates.
     if (!includeXray) context.XRAY_FINDINGS = "";
     if (!includeMri) context.MRI_CT_FINDINGS = "";
     // One-token section: "Imaging Findings:" header + ONLY the selected

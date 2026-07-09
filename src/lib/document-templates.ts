@@ -153,12 +153,6 @@ export const documentTemplateFieldGroups: DocumentTemplateFieldGroup[] = [
       // section toggles together. Use Conditional Wrap Mode in
       // the editor to wrap a selection with one click.
       { token: "INCLUDE_IMAGING_FINDINGS", label: "Include Imaging Findings (flag)" },
-      // Per-modality flags. Resolve to "yes"/"" based on the referral's
-      // XR/MR · MR · XR selector, so a template can wrap each imaging
-      // sub-block separately — e.g. {{#if INCLUDE_XRAY_FINDINGS}}...{{/if}}
-      // — and a patient without an X-ray drops that section cleanly.
-      { token: "INCLUDE_XRAY_FINDINGS", label: "Include X-Ray Findings (flag)" },
-      { token: "INCLUDE_MRI_CT_FINDINGS", label: "Include MRI / CT Findings (flag)" },
       // Composed one-token section: "Imaging Findings:" header plus ONLY
       // the modalities picked in the referral's XR/MR · MR · XR selector,
       // or "" when none. Drop this single token in place of a hand-built

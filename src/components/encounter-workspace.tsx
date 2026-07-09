@@ -2722,6 +2722,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                       <RichTextTemplateEditor
                         ref={soapEditorRef}
                         value={selectedEncounter.soap[activeSection]}
+                        readOnly={selectedEncounter.signed}
                         onChange={(nextValue) =>
                           setSoapSection(selectedEncounter.id, activeSection, nextValue)
                         }
@@ -2770,6 +2771,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     <RichTextTemplateEditor
                       ref={soapEditorRef}
                       value={selectedEncounter.soap[activeSection]}
+                      readOnly={selectedEncounter.signed}
                       onChange={(nextValue) =>
                         setSoapSection(selectedEncounter.id, activeSection, nextValue)
                       }

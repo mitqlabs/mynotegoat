@@ -17,6 +17,11 @@ type RichTextTemplateEditorProps = {
   className?: string;
   placeholder?: string;
   onElementClick?: (target: HTMLElement) => void;
+  /** When true the editor is fully locked: the content is not editable
+   *  and the formatting toolbar is hidden. Used for signed/closed
+   *  encounters so a finished note can't be accidentally typed into or
+   *  deleted. Text stays selectable/copyable. */
+  readOnly?: boolean;
   /** Optional crash-safe draft key. When set, every input event
    *  synchronously writes the current editor HTML to localStorage
    *  under this key BEFORE any React state update runs. See
@@ -91,6 +96,7 @@ export const RichTextTemplateEditor = forwardRef<
     className = "",
     placeholder = "Start writing...",
     onElementClick,
+    readOnly = false,
     draftKey,
   },
   ref,
@@ -286,7 +292,7 @@ export const RichTextTemplateEditor = forwardRef<
 
   return (
     <div className={`rounded-xl border border-[var(--line-soft)] bg-white ${className}`}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+      <div className={`flex flex-wrap items-center gap-2 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] p-2 ${readOnly ? "hidden" : ""}`}>
         <span className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
           Editor
         </span>
@@ -458,8 +464,8 @@ export const RichTextTemplateEditor = forwardRef<
       <div
         ref={editorRef}
         aria-label="Rich text editor"
-        className={`rich-text-editor ${minHeightClassName} w-full overflow-auto bg-white px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:outline-none`}
-        contentEditable
+        className={`rich-text-editor ${minHeightClassName} w-full overflow-auto px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:outline-none ${readOnly ? "bg-[var(--bg-soft)] cursor-not-allowed" : "bg-white"}`}
+        contentEditable={!readOnly}
         data-placeholder={placeholder}
         onFocus={() => { isFocusedRef.current = true; }}
         onBlur={() => {
