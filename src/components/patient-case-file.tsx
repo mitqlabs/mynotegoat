@@ -163,6 +163,12 @@ type SpecialistReferral = {
    *  letter doesn't have to include the spine imaging, while an
    *  orthopedic referral can. */
   includeImagingFindings?: boolean;
+  /** Which imaging findings to feed into this referral's PDF:
+   *  "both" (XR/MR), "mri" (MR only), "xray" (XR only), or "none"
+   *  (default). Supersedes the legacy includeImagingFindings boolean,
+   *  which maps to "both" when true / "none" when false. Lets a referral
+   *  include only the imaging the patient actually has. */
+  imagingFindingsMode?: "none" | "both" | "mri" | "xray";
 };
 
 type RelatedCaseEntry = {
@@ -1474,6 +1480,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       recommendations: typeof raw.recommendations === "string" ? raw.recommendations : "",
       patientRefused: raw.patientRefused === true,
       includeImagingFindings: raw.includeImagingFindings === true,
+      imagingFindingsMode:
+        raw.imagingFindingsMode === "both" ||
+        raw.imagingFindingsMode === "mri" ||
+        raw.imagingFindingsMode === "xray"
+          ? raw.imagingFindingsMode
+          : raw.includeImagingFindings === true
+            ? "both"
+            : "none",
     }));
   });
   const [specialistMessage, setSpecialistMessage] = useState("");
@@ -2872,11 +2886,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     // (the headers disappear too), but the inner-token approach
     // is the safe default if a template was written before this
     // flag existed.
-    context.INCLUDE_IMAGING_FINDINGS = entry.includeImagingFindings ? "yes" : "";
-    if (!entry.includeImagingFindings) {
-      context.XRAY_FINDINGS = "";
-      context.MRI_CT_FINDINGS = "";
-    }
+    const imagingMode =
+      entry.imagingFindingsMode ??
+      (entry.includeImagingFindings ? "both" : "none");
+    const includeXray = imagingMode === "both" || imagingMode === "xray";
+    const includeMri = imagingMode === "both" || imagingMode === "mri";
+    context.INCLUDE_IMAGING_FINDINGS = imagingMode === "none" ? "" : "yes";
+    // Per-modality flags so a template can {{#if}} each sub-block, and
+    // so an excluded modality (e.g. no X-ray) doesn't emit an empty
+    // "X-Ray Findings: -" section.
+    context.INCLUDE_XRAY_FINDINGS = includeXray ? "yes" : "";
+    context.INCLUDE_MRI_CT_FINDINGS = includeMri ? "yes" : "";
+    if (!includeXray) context.XRAY_FINDINGS = "";
+    if (!includeMri) context.MRI_CT_FINDINGS = "";
 
     const renderedHeader = documentTemplates.header.active
       ? renderDocumentTemplate(documentTemplates.header.body, context, undefined, promptAnswers)
@@ -5164,30 +5186,59 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   {entry.recommendations.trim() && (
                     <p className="mt-1 text-[var(--text-muted)]">{entry.recommendations}</p>
                   )}
-                  {/* Include-imaging toggle. When checked, the
-                      generated PDF gets the current X-ray + MRI/CT
-                      findings injected into the template context.
-                      Off by default — the user opts in per referral
-                      so PCP follow-ups don't automatically carry
-                      spine imaging the PCP didn't ask for. */}
-                  <label className="mt-2 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                    <input
-                      checked={Boolean(entry.includeImagingFindings)}
-                      onChange={(event) => {
-                        const nextSpecialists = specialistReferrals.map((existing) =>
-                          existing.id === entry.id
-                            ? { ...existing, includeImagingFindings: event.target.checked }
-                            : existing,
-                        );
-                        setSpecialistReferrals(nextSpecialists);
-                        autoSavePatientFile({ specialistReferrals: nextSpecialists });
-                      }}
-                      type="checkbox"
-                    />
-                    <span>
-                      Include X-Ray / MRI findings in PDF
-                    </span>
-                  </label>
+                  {/* Which imaging findings to inject into the generated
+                      referral PDF: XR/MR (both), MR (MRI only), XR (X-ray
+                      only). Pick one, or click the active one again to
+                      include none (the default) — so a patient without an
+                      X-ray never emits an empty X-ray section. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-[var(--text-muted)]">Include imaging in PDF:</span>
+                    {([
+                      { value: "both", label: "XR/MR" },
+                      { value: "mri", label: "MR" },
+                      { value: "xray", label: "XR" },
+                    ] as const).map((opt) => {
+                      const currentMode =
+                        entry.imagingFindingsMode ??
+                        (entry.includeImagingFindings ? "both" : "none");
+                      const active = currentMode === opt.value;
+                      return (
+                        <button
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            active
+                              ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+                          }`}
+                          key={opt.value}
+                          onClick={() => {
+                            const nextMode: SpecialistReferral["imagingFindingsMode"] =
+                              active ? "none" : opt.value;
+                            const nextSpecialists = specialistReferrals.map((existing) =>
+                              existing.id === entry.id
+                                ? {
+                                    ...existing,
+                                    imagingFindingsMode: nextMode,
+                                    includeImagingFindings: nextMode !== "none",
+                                  }
+                                : existing,
+                            );
+                            setSpecialistReferrals(nextSpecialists);
+                            autoSavePatientFile({ specialistReferrals: nextSpecialists });
+                          }}
+                          title={
+                            opt.value === "both"
+                              ? "Include both X-ray and MRI findings"
+                              : opt.value === "mri"
+                                ? "Include MRI findings only"
+                                : "Include X-ray findings only"
+                          }
+                          type="button"
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div className="mt-2 flex gap-2">
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
