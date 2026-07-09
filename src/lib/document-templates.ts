@@ -159,6 +159,11 @@ export const documentTemplateFieldGroups: DocumentTemplateFieldGroup[] = [
       // — and a patient without an X-ray drops that section cleanly.
       { token: "INCLUDE_XRAY_FINDINGS", label: "Include X-Ray Findings (flag)" },
       { token: "INCLUDE_MRI_CT_FINDINGS", label: "Include MRI / CT Findings (flag)" },
+      // Composed one-token section: "Imaging Findings:" header plus ONLY
+      // the modalities picked in the referral's XR/MR · MR · XR selector,
+      // or "" when none. Drop this single token in place of a hand-built
+      // {{#if}} imaging block.
+      { token: "IMAGING_FINDINGS", label: "Imaging Findings (whole section)" },
     ],
   },
 ];

@@ -2899,6 +2899,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     context.INCLUDE_MRI_CT_FINDINGS = includeMri ? "yes" : "";
     if (!includeXray) context.XRAY_FINDINGS = "";
     if (!includeMri) context.MRI_CT_FINDINGS = "";
+    // One-token section: "Imaging Findings:" header + ONLY the selected
+    // modalities, or "" when none. Lets a template replace the whole
+    // hand-wrapped {{#if}} imaging block with a single {{IMAGING_FINDINGS}}
+    // token — no stray "Xray:" label when only MRI is selected.
+    const imagingParts: string[] = [];
+    if (includeXray) imagingParts.push(`Xray:\n${xrayFindingsForTemplates}`);
+    if (includeMri) imagingParts.push(`MRI:\n${mriCtFindingsForTemplates}`);
+    context.IMAGING_FINDINGS = imagingParts.length
+      ? `Imaging Findings:\n${imagingParts.join("\n\n")}`
+      : "";
 
     const renderedHeader = documentTemplates.header.active
       ? renderDocumentTemplate(documentTemplates.header.body, context, undefined, promptAnswers)
