@@ -5194,11 +5194,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </article>
       </section>
 
-      {/* Compact 3-column card grid — row 1: Appointments · Case Flow/To-Do ·
-          Related Cases; row 2: Letters · Diagnosis · Reports; row 3:
-          Patient Files · Additional Details. */}
+      {/* Compact 3-column card grid (placement via `order-*`) — row 1:
+          Case Flow/To-Do · Related Cases · Letters; row 2: Appointments
+          (spans 2 cols) · Patient Files; row 3: Diagnosis · Reports ·
+          Additional Details. */}
       <section className="grid gap-4 xl:grid-cols-3 items-start">
-        <section className="panel-card p-4">
+        <section className="panel-card p-4 order-4 xl:col-span-2">
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
@@ -5574,7 +5575,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-        <article className="panel-card p-4">
+        <article className="panel-card p-4 order-1">
           <button
             className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("reExam")}
@@ -5650,7 +5651,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           )}
         </article>
-        <article className="panel-card p-4">
+        <article className="panel-card p-4 order-2">
           <button
             className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("relatedCases")}
@@ -5746,7 +5747,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </>
           )}
         </article>
-        <section className="panel-card p-4">
+        <section className="panel-card p-4 order-3">
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("letters")}
@@ -5811,7 +5812,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className="panel-card p-4">
+      <section className="panel-card p-4 order-6">
         <button
           // Bar turns red when no diagnoses are on file — visible
           // warning that the patient is missing dx codes (which break
@@ -6052,7 +6053,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className="panel-card p-4">
+      <section className="panel-card p-4 order-7">
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("narrative")}
@@ -6118,7 +6119,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         )}
       </section>
       {/* ── Patient Files ──────────────────────────────────────────────── */}
-      <section className="panel-card p-4">
+      <section className="panel-card p-4 order-5">
         <button
           className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
           onClick={() => toggleSectionPanel("patientFiles")}
@@ -6340,7 +6341,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         )}
       </section>
-      <section className="panel-card p-4">
+      <section className="panel-card p-4 order-8">
         {(() => {
           // Color the Additional Details bar by completeness so the
           // user gets at-a-glance visibility into which billing step
