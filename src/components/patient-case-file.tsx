@@ -1591,6 +1591,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return (patient.matrix?.paidAmount ?? "").toString().replace(/[^0-9.]/g, "");
   });
+  // Show the money fields as currency ($5,000.00) when not being edited,
+  // and raw digits while focused so typing stays simple. State stays raw
+  // (parseable) either way.
+  const [billedFocused, setBilledFocused] = useState(false);
+  const [paidFocused, setPaidFocused] = useState(false);
   const [reviewStatus, setReviewStatus] = useState(patient.matrix?.review || "Not Requested");
   const [diagnosisMacroIdDraft, setDiagnosisMacroIdDraft] = useState("");
   const [diagnosisBundleIdDraft, setDiagnosisBundleIdDraft] = useState("");
@@ -6396,7 +6401,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         })()}
         {sectionPanelsOpen.additionalDetails && (
           <>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Discharge</span>
                 <input
@@ -6429,9 +6434,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 tabular-nums"
                   inputMode="decimal"
+                  onBlur={() => setBilledFocused(false)}
                   onChange={(event) => setBilledAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+                  onFocus={() => setBilledFocused(true)}
                   placeholder="0.00"
-                  value={billedAmount}
+                  value={billedFocused ? billedAmount : billedAmount.trim() ? formatUsdCurrency(Number.parseFloat(billedAmount) || 0) : ""}
                 />
               </label>
               <label className="grid gap-1">
@@ -6448,16 +6455,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">$ Paid Amount</span>
                 <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setPaidAmount(event.target.value)}
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 tabular-nums"
+                  inputMode="decimal"
+                  onBlur={() => setPaidFocused(false)}
+                  onChange={(event) => setPaidAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+                  onFocus={() => setPaidFocused(true)}
                   placeholder="0.00"
-                  type="number"
-                  value={paidAmount}
+                  value={paidFocused ? paidAmount : paidAmount.trim() ? formatUsdCurrency(Number.parseFloat(paidAmount) || 0) : ""}
                 />
               </label>
             </div>
 
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1.8fr_1fr]">
+            <div className="mt-4 grid gap-4 md:grid-cols-[1.8fr_1fr] xl:grid-cols-1">
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3">
                 <dl className="space-y-2 text-sm sm:text-base">
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
