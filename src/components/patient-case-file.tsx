@@ -1296,9 +1296,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
   const {
     billingMacros,
-    addDiagnosis: addLibraryDiagnosis,
-    addBundle: addLibraryBundle,
-    updateBundle: updateLibraryBundle,
   } = useBillingMacros();
   const { contacts, addContact } = useContactDirectory();
   const { documentTemplates } = useDocumentTemplates();
@@ -1601,13 +1598,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // Modal state for "+ Add Custom Code" — adds the dx to the master
   // library AND attaches it to the current patient + any selected
   // bundles in one shot.
-  const [showAddCustomDxModal, setShowAddCustomDxModal] = useState(false);
-  const [customDxCode, setCustomDxCode] = useState("");
-  const [customDxDescription, setCustomDxDescription] = useState("");
-  const [customDxFolderId, setCustomDxFolderId] = useState("");
-  const [customDxBundleIds, setCustomDxBundleIds] = useState<Set<string>>(new Set());
-  const [customDxNewBundleName, setCustomDxNewBundleName] = useState("");
-  const [customDxError, setCustomDxError] = useState("");
   const [letterTemplateIdDraft, setLetterTemplateIdDraft] = useState("");
   const [letterMessage, setLetterMessage] = useState("");
   // Runtime prompts for document templates. When a letter / referral
@@ -4157,77 +4147,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
-  const openAddCustomDxModal = () => {
-    setCustomDxCode("");
-    setCustomDxDescription("");
-    setCustomDxFolderId(billingMacros.diagnosisFolders[0]?.id ?? "");
-    setCustomDxBundleIds(new Set());
-    setCustomDxNewBundleName("");
-    setCustomDxError("");
-    setShowAddCustomDxModal(true);
-  };
-
-  const closeAddCustomDxModal = () => {
-    setShowAddCustomDxModal(false);
-    setCustomDxError("");
-  };
-
-  const toggleCustomDxBundle = (bundleId: string) => {
-    setCustomDxBundleIds((current) => {
-      const next = new Set(current);
-      if (next.has(bundleId)) next.delete(bundleId);
-      else next.add(bundleId);
-      return next;
-    });
-  };
-
-  const handleSaveCustomDx = () => {
-    const codeTrim = customDxCode.trim();
-    const descTrim = customDxDescription.trim();
-    if (!codeTrim || !descTrim) {
-      setCustomDxError("Code and description are required.");
-      return;
-    }
-    // 1) Add (or look up) the diagnosis in the master library.
-    const { id: libraryDxId, added: wasAddedToLibrary } = addLibraryDiagnosis({
-      code: codeTrim,
-      description: descTrim,
-      folderId: customDxFolderId || undefined,
-    });
-    if (!libraryDxId) {
-      setCustomDxError("Could not add diagnosis. Check the code and description.");
-      return;
-    }
-    // 2) Attach to every selected existing bundle. Read the bundle's
-    //    current diagnosis list and append the new id; updateBundle
-    //    re-validates against the library so a stale id is ignored.
-    for (const bundleId of customDxBundleIds) {
-      const bundle = billingMacros.bundles.find((b) => b.id === bundleId);
-      if (!bundle) continue;
-      if (bundle.diagnosisIds.includes(libraryDxId)) continue;
-      updateLibraryBundle(bundleId, {
-        diagnosisIds: [...bundle.diagnosisIds, libraryDxId],
-      });
-    }
-    // 3) Optionally spawn a brand-new bundle that contains just this dx.
-    const newBundleNameTrim = customDxNewBundleName.trim();
-    if (newBundleNameTrim) {
-      addLibraryBundle(newBundleNameTrim, [libraryDxId]);
-    }
-    // 4) Add to the current patient's file.
-    addDiagnosis(codeTrim, descTrim, "Manual");
-    // Compose a friendly status message.
-    const parts: string[] = [];
-    parts.push(wasAddedToLibrary ? "added to library" : "already in library");
-    const bundleCount = customDxBundleIds.size + (newBundleNameTrim ? 1 : 0);
-    if (bundleCount > 0) {
-      parts.push(`${bundleCount} bundle${bundleCount === 1 ? "" : "s"} updated`);
-    }
-    parts.push("added to this patient");
-    setDiagnosisMessage(`${codeTrim}: ${parts.join(", ")}.`);
-    setShowAddCustomDxModal(false);
-  };
-
   const initialExamDateValue = parseUsDate(initialExam);
   const dischargeDateValue = parseUsDate(dischargeDate);
   const rbSentDateValue = parseUsDate(rbSentDate);
@@ -5275,189 +5194,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </article>
       </section>
 
-      {/* 2-col on xl since Quick Stats was removed — Case Flow & To-Do
-          and Related Cases share the row. */}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <article className="panel-card p-4">
-          <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
-            onClick={() => toggleSectionPanel("reExam")}
-            type="button"
-          >
-            <span>Case Flow &amp; To-Do</span>
-            <span className="text-xl">{sectionPanelsOpen.reExam ? "−" : "+"}</span>
-          </button>
-          {sectionPanelsOpen.reExam && (
-            <div className="mt-3 grid gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Case Flow
-                </div>
-                {patientFlowItems.length === 0 ? (
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">No open flow items.</p>
-                ) : (
-                  <ul className="mt-1 grid gap-2">
-                    {patientFlowItems.map((item) => (
-                      <li
-                        key={item.id}
-                        className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold">{item.category}</span>
-                          {item.daysFromAnchor !== null && (
-                            <span className="text-xs text-[var(--text-muted)]">
-                              {item.daysFromAnchor}d
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[var(--text-muted)]">{item.stage}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  To-Do
-                </div>
-                {patientTasks.length === 0 ? (
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
-                ) : (
-                  <ul className="mt-1 grid gap-2">
-                    {patientTasks.map((task) => (
-                      <li
-                        key={task.id}
-                        className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      >
-                        <input
-                          checked={task.done}
-                          className="mt-1"
-                          onChange={() => toggleTaskDone(task.id)}
-                          type="checkbox"
-                        />
-                        <div className="flex-1">
-                          <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>
-                            {task.title}
-                          </div>
-                          {(task.dueDate || task.priority) && (
-                            <div className="text-xs text-[var(--text-muted)]">
-                              {task.priority}
-                              {task.dueDate ? ` • Due ${task.dueDate}` : ""}
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-        </article>
-
-        <article className="panel-card p-4">
-          <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
-            onClick={() => toggleSectionPanel("relatedCases")}
-            type="button"
-          >
-            <span>Related Cases</span>
-            <span className="text-xl">{sectionPanelsOpen.relatedCases ? "−" : "+"}</span>
-          </button>
-          {sectionPanelsOpen.relatedCases && (
-            <>
-              <div className="mt-3 flex gap-2">
-                <div className="relative w-full">
-                  <input
-                    className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onBlur={() => {
-                      setTimeout(() => setShowRelatedCaseSuggestions(false), 120);
-                    }}
-                    onChange={(event) => {
-                      setRelatedCaseDraft(event.target.value);
-                      setSelectedRelatedPatientId(null);
-                      setRelatedCaseMessage("");
-                      setShowRelatedCaseSuggestions(true);
-                    }}
-                    onFocus={() => setShowRelatedCaseSuggestions(true)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        addRelatedCase();
-                      }
-                    }}
-                    placeholder="Search patient..."
-                    value={relatedCaseDraft}
-                  />
-                  {showRelatedCaseSuggestions && (
-                    <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-[0_10px_28px_rgba(20,35,52,0.12)]">
-                      {relatedCaseSuggestions.map((entry) => (
-                        <button
-                          key={`related-suggestion-${entry.id}`}
-                          className="block w-full border-b border-[var(--line-soft)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--bg-soft)]"
-                          onClick={() => {
-                            setSelectedRelatedPatientId(entry.id);
-                            setRelatedCaseDraft(entry.fullName);
-                            setShowRelatedCaseSuggestions(false);
-                          }}
-                          type="button"
-                        >
-                          <span className="font-semibold">{entry.fullName}</span>{" "}
-                          <span className="text-[var(--text-muted)]">DOI {toUsDate(entry.dateOfLoss)}</span>
-                        </button>
-                      ))}
-                      {relatedCaseSuggestions.length === 0 && (
-                        <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No matching patients.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-                  onClick={addRelatedCase}
-                  type="button"
-                >
-                  Add
-                </button>
-              </div>
-              {relatedCaseMessage && (
-                <p className="mt-2 text-xs font-semibold text-[#b43b34]">{relatedCaseMessage}</p>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {relatedCases.map((entry) => (
-                  <div
-                    key={entry.patientId}
-                    className="inline-flex items-center gap-2 rounded-full border border-[var(--line-soft)] bg-white px-3 py-1 text-sm"
-                  >
-                    <button
-                      className="inline-flex items-center gap-2 rounded-full px-1 text-left hover:text-[var(--brand-primary)]"
-                      onClick={(event) => openRelatedCaseNavigatePrompt(entry, event)}
-                      type="button"
-                    >
-                      <span className="font-semibold">{entry.fullName}</span>
-                      <span className="text-[var(--text-muted)]">DOI {toUsDate(entry.dateOfLoss)}</span>
-                    </button>
-                    <button
-                      className="rounded-full border border-[var(--line-soft)] px-2 text-xs font-semibold"
-                      onClick={() => { if (window.confirm("Remove this related case?")) removeRelatedCase(entry.patientId); }}
-                      type="button"
-                    >
-                      x
-                    </button>
-                  </div>
-                ))}
-                {relatedCases.length === 0 && <p className="text-sm text-[var(--text-muted)]">No related cases linked.</p>}
-              </div>
-            </>
-          )}
-        </article>
-
-      </section>
-
-      {/* 2-col pair on xl: Appointments / Encounters + Diagnosis Codes
-          sit side by side so the user can see scheduling at a glance
-          while building / verifying dx codes. */}
-      <section className="grid gap-4 xl:grid-cols-2">
+      {/* Compact 3-column card grid — row 1: Appointments · Case Flow/To-Do ·
+          Related Cases; row 2: Letters · Diagnosis · Reports; row 3:
+          Patient Files · Additional Details. */}
+      <section className="grid gap-4 xl:grid-cols-3 items-start">
         <section className="panel-card p-4">
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
@@ -5834,7 +5574,243 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
+        <article className="panel-card p-4">
+          <button
+            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            onClick={() => toggleSectionPanel("reExam")}
+            type="button"
+          >
+            <span>Case Flow/To-Do</span>
+            <span className="text-xl">{sectionPanelsOpen.reExam ? "−" : "+"}</span>
+          </button>
+          {sectionPanelsOpen.reExam && (
+            <div className="mt-3 grid gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Case Flow
+                </div>
+                {patientFlowItems.length === 0 ? (
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">No open flow items.</p>
+                ) : (
+                  <ul className="mt-1 grid gap-2">
+                    {patientFlowItems.map((item) => (
+                      <li
+                        key={item.id}
+                        className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{item.category}</span>
+                          {item.daysFromAnchor !== null && (
+                            <span className="text-xs text-[var(--text-muted)]">
+                              {item.daysFromAnchor}d
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[var(--text-muted)]">{item.stage}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  To-Do
+                </div>
+                {patientTasks.length === 0 ? (
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
+                ) : (
+                  <ul className="mt-1 grid gap-2">
+                    {patientTasks.map((task) => (
+                      <li
+                        key={task.id}
+                        className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                      >
+                        <input
+                          checked={task.done}
+                          className="mt-1"
+                          onChange={() => toggleTaskDone(task.id)}
+                          type="checkbox"
+                        />
+                        <div className="flex-1">
+                          <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>
+                            {task.title}
+                          </div>
+                          {(task.dueDate || task.priority) && (
+                            <div className="text-xs text-[var(--text-muted)]">
+                              {task.priority}
+                              {task.dueDate ? ` • Due ${task.dueDate}` : ""}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </article>
+        <article className="panel-card p-4">
+          <button
+            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            onClick={() => toggleSectionPanel("relatedCases")}
+            type="button"
+          >
+            <span>Related Cases</span>
+            <span className="text-xl">{sectionPanelsOpen.relatedCases ? "−" : "+"}</span>
+          </button>
+          {sectionPanelsOpen.relatedCases && (
+            <>
+              <div className="mt-3 flex gap-2">
+                <div className="relative w-full">
+                  <input
+                    className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onBlur={() => {
+                      setTimeout(() => setShowRelatedCaseSuggestions(false), 120);
+                    }}
+                    onChange={(event) => {
+                      setRelatedCaseDraft(event.target.value);
+                      setSelectedRelatedPatientId(null);
+                      setRelatedCaseMessage("");
+                      setShowRelatedCaseSuggestions(true);
+                    }}
+                    onFocus={() => setShowRelatedCaseSuggestions(true)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addRelatedCase();
+                      }
+                    }}
+                    placeholder="Search patient..."
+                    value={relatedCaseDraft}
+                  />
+                  {showRelatedCaseSuggestions && (
+                    <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-[0_10px_28px_rgba(20,35,52,0.12)]">
+                      {relatedCaseSuggestions.map((entry) => (
+                        <button
+                          key={`related-suggestion-${entry.id}`}
+                          className="block w-full border-b border-[var(--line-soft)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--bg-soft)]"
+                          onClick={() => {
+                            setSelectedRelatedPatientId(entry.id);
+                            setRelatedCaseDraft(entry.fullName);
+                            setShowRelatedCaseSuggestions(false);
+                          }}
+                          type="button"
+                        >
+                          <span className="font-semibold">{entry.fullName}</span>{" "}
+                          <span className="text-[var(--text-muted)]">DOI {toUsDate(entry.dateOfLoss)}</span>
+                        </button>
+                      ))}
+                      {relatedCaseSuggestions.length === 0 && (
+                        <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No matching patients.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  onClick={addRelatedCase}
+                  type="button"
+                >
+                  Add
+                </button>
+              </div>
+              {relatedCaseMessage && (
+                <p className="mt-2 text-xs font-semibold text-[#b43b34]">{relatedCaseMessage}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {relatedCases.map((entry) => (
+                  <div
+                    key={entry.patientId}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--line-soft)] bg-white px-3 py-1 text-sm"
+                  >
+                    <button
+                      className="inline-flex items-center gap-2 rounded-full px-1 text-left hover:text-[var(--brand-primary)]"
+                      onClick={(event) => openRelatedCaseNavigatePrompt(entry, event)}
+                      type="button"
+                    >
+                      <span className="font-semibold">{entry.fullName}</span>
+                      <span className="text-[var(--text-muted)]">DOI {toUsDate(entry.dateOfLoss)}</span>
+                    </button>
+                    <button
+                      className="rounded-full border border-[var(--line-soft)] px-2 text-xs font-semibold"
+                      onClick={() => { if (window.confirm("Remove this related case?")) removeRelatedCase(entry.patientId); }}
+                      type="button"
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+                {relatedCases.length === 0 && <p className="text-sm text-[var(--text-muted)]">No related cases linked.</p>}
+              </div>
+            </>
+          )}
+        </article>
+        <section className="panel-card p-4">
+        <button
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
+          onClick={() => isCompletePlan && toggleSectionPanel("letters")}
+          type="button"
+        >
+          <span>Letters{!isCompletePlan ? " — Complete Plan" : ""}</span>
+          {isCompletePlan ? (
+            <span className="text-xl">{sectionPanelsOpen.letters ? "−" : "+"}</span>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" /></svg>
+          )}
+        </button>
+        {isCompletePlan && sectionPanelsOpen.letters && (
+          <>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              Generate school notes, work notes, gym notes, and other custom letters from saved templates.
+            </p>
 
+            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Letter Template</span>
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(event) => {
+                    setLetterTemplateIdDraft(event.target.value);
+                    setLetterMessage("");
+                  }}
+                  value={selectedLetterTemplate?.id ?? ""}
+                >
+                  {availableLetterTemplates.length === 0 ? (
+                    <option value="">No letter templates available</option>
+                  ) : (
+                    availableLetterTemplates.map((template) => (
+                      <option key={`patient-letter-template-${template.id}`} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <button
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                onClick={() => generateLetterPdf()}
+                type="button"
+              >
+                Generate PDF
+              </button>
+
+              <button
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                onClick={() => openTemplateSettings("generalLetter")}
+                type="button"
+              >
+                Manage Templates
+              </button>
+            </div>
+
+            {letterMessage && (
+              <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{letterMessage}</p>
+            )}
+          </>
+        )}
+      </section>
       <section className="panel-card p-4">
         <button
           // Bar turns red when no diagnoses are on file — visible
@@ -5861,10 +5837,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {sectionPanelsOpen.diagnosis && (
           <>
             <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Add one code, add a preset bundle, or enter custom diagnosis codes for this patient file.
+              Add one code or a preset bundle for this patient file.
             </p>
 
-            <div className="mt-3 grid gap-4 xl:grid-cols-3">
+            <div className="mt-3 grid gap-4 xl:grid-cols-2">
               <div className="space-y-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <p className="text-sm font-semibold">Add Diagnosis Macro</p>
                 <div className="relative">
@@ -5966,24 +5942,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   type="button"
                 >
                   Add Bundle
-                </button>
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                <p className="text-sm font-semibold">Add Custom Diagnosis</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Enter a brand-new ICD-10 code that isn&apos;t in the
-                  library yet. The modal lets you place it in a folder
-                  and attach it to one or more bundles in the same step
-                  — so the next patient who needs it can pick it from
-                  the regular dropdown.
-                </p>
-                <button
-                  className="w-full rounded-xl bg-[var(--brand-primary)] px-3 py-2 font-semibold text-white"
-                  onClick={openAddCustomDxModal}
-                  type="button"
-                >
-                  + Add Custom Code
                 </button>
               </div>
             </div>
@@ -6094,80 +6052,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      </section>
-
-      {/* 2-col pair: Letters + Reports (formerly "Full Narrative
-          Report"). Side-by-side so the user can decide which output
-          path they want — single template letter vs. full multi-
-          section narrative — without scrolling between two full-width
-          panels. */}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <section className="panel-card p-4">
-        <button
-          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
-          onClick={() => isCompletePlan && toggleSectionPanel("letters")}
-          type="button"
-        >
-          <span>Letters{!isCompletePlan ? " — Complete Plan" : ""}</span>
-          {isCompletePlan ? (
-            <span className="text-xl">{sectionPanelsOpen.letters ? "−" : "+"}</span>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" /></svg>
-          )}
-        </button>
-        {isCompletePlan && sectionPanelsOpen.letters && (
-          <>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Generate school notes, work notes, gym notes, and other custom letters from saved templates.
-            </p>
-
-            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold text-[var(--text-muted)]">Letter Template</span>
-                <select
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => {
-                    setLetterTemplateIdDraft(event.target.value);
-                    setLetterMessage("");
-                  }}
-                  value={selectedLetterTemplate?.id ?? ""}
-                >
-                  {availableLetterTemplates.length === 0 ? (
-                    <option value="">No letter templates available</option>
-                  ) : (
-                    availableLetterTemplates.map((template) => (
-                      <option key={`patient-letter-template-${template.id}`} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-
-              <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-                onClick={() => generateLetterPdf()}
-                type="button"
-              >
-                Generate PDF
-              </button>
-
-              <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-                onClick={() => openTemplateSettings("generalLetter")}
-                type="button"
-              >
-                Manage Templates
-              </button>
-            </div>
-
-            {letterMessage && (
-              <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{letterMessage}</p>
-            )}
-          </>
-        )}
-      </section>
-
       <section className="panel-card p-4">
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
@@ -6233,13 +6117,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      </section>
-
-      {/* 2-col pair: Patient Files (left) + Additional Details
-          (right). Same xl:grid-cols-2 pattern as Case Flow ↔ Related
-          Cases and Letters ↔ Reports — pairs related content on the
-          same row instead of stacking two full-width bars. */}
-      <section className="grid gap-4 xl:grid-cols-2">
       {/* ── Patient Files ──────────────────────────────────────────────── */}
       <section className="panel-card p-4">
         <button
@@ -6463,7 +6340,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         )}
       </section>
-
       <section className="panel-card p-4">
         {(() => {
           // Color the Additional Details bar by completeness so the
@@ -7997,137 +7873,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         open={scannerOpen}
       />
 
-      {showAddCustomDxModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
-          <ScrollLock />
-          <form
-            className="panel-card mx-auto w-full max-w-xl p-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSaveCustomDx();
-            }}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-xl font-semibold">Add Custom Diagnosis Code</h3>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">
-                  Adds the code to the master library, attaches it to any
-                  bundles you select, and adds it to this patient&apos;s file.
-                </p>
-              </div>
-              <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
-                onClick={closeAddCustomDxModal}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  ICD-10 Code *
-                </span>
-                <input
-                  autoFocus
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(e) => setCustomDxCode(e.target.value)}
-                  placeholder="e.g. M54.16"
-                  value={customDxCode}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Description *
-                </span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(e) => setCustomDxDescription(e.target.value)}
-                  placeholder="e.g. Radiculopathy, lumbar region"
-                  value={customDxDescription}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Folder
-                </span>
-                <select
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(e) => setCustomDxFolderId(e.target.value)}
-                  value={customDxFolderId}
-                >
-                  {billingMacros.diagnosisFolders.map((folder) => (
-                    <option key={`custom-dx-folder-${folder.id}`} value={folder.id}>
-                      {folder.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <fieldset className="grid gap-1">
-                <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Bundles (optional)
-                </legend>
-                {billingMacros.bundles.length === 0 ? (
-                  <p className="text-xs text-[var(--text-muted)]">
-                    No bundles in the library yet. Use the field below to
-                    create a brand-new bundle that contains this code.
-                  </p>
-                ) : (
-                  <div className="grid max-h-40 gap-1 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white p-2">
-                    {billingMacros.bundles.map((bundle) => (
-                      <label
-                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 hover:bg-[var(--bg-soft)]"
-                        key={`custom-dx-bundle-${bundle.id}`}
-                      >
-                        <input
-                          checked={customDxBundleIds.has(bundle.id)}
-                          className="accent-[var(--brand-primary)]"
-                          onChange={() => toggleCustomDxBundle(bundle.id)}
-                          type="checkbox"
-                        />
-                        <span className="text-sm">{bundle.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                <label className="mt-2 grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                    Or create a new bundle
-                  </span>
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(e) => setCustomDxNewBundleName(e.target.value)}
-                    placeholder="New bundle name (optional)"
-                    value={customDxNewBundleName}
-                  />
-                </label>
-              </fieldset>
-
-              {customDxError && (
-                <p className="text-sm font-semibold text-[#b43b34]">{customDxError}</p>
-              )}
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
-                onClick={closeAddCustomDxModal}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Save Code
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
