@@ -5286,13 +5286,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <p className="text-sm text-[var(--text-muted)]">
                 View all scheduled appointments for this patient and launch encounters quickly.
               </p>
-              <button
-                className="shrink-0 rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-                onClick={openScheduleModal}
-                type="button"
-              >
-                + Schedule Appointment
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  onClick={openScheduleModal}
+                  title="Schedule a new appointment"
+                  type="button"
+                >
+                  📅 Appt.
+                </button>
+                <button
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+                  onClick={handlePrintAppointments}
+                  title="Print this patient's scheduled appointments"
+                  type="button"
+                >
+                  🖨️ Appt.
+                </button>
+              </div>
             </div>
 
             {encounterMessage && <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{encounterMessage}</p>}
@@ -5303,17 +5314,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 layout where this section is already half-width. */}
             <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-base font-semibold">📅 Appt.</h4>
-                  <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold hover:bg-[var(--bg-soft)]"
-                    onClick={handlePrintAppointments}
-                    title="Print this patient's scheduled appointments"
-                    type="button"
-                  >
-                    🖨️ Appt.
-                  </button>
-                </div>
+                <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
