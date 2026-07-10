@@ -5303,15 +5303,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 layout where this section is already half-width. */}
             <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-base font-semibold">Scheduled Appointments</h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-base font-semibold">📅 Appt.</h4>
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold hover:bg-[var(--bg-soft)]"
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold hover:bg-[var(--bg-soft)]"
                     onClick={handlePrintAppointments}
                     title="Print this patient's scheduled appointments"
                     type="button"
                   >
-                    🖨 Print Appointments
+                    🖨️ Appt.
                   </button>
                 </div>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
