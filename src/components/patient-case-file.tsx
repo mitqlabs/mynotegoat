@@ -1297,6 +1297,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
+    updateBundle: updateLibraryBundle,
   } = useBillingMacros();
   const { contacts, addContact } = useContactDirectory();
   const { documentTemplates } = useDocumentTemplates();
@@ -1605,6 +1606,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [dxCode, setDxCode] = useState("");
   const [dxDescription, setDxDescription] = useState("");
   const [dxFolderId, setDxFolderId] = useState("");
+  const [dxBundleId, setDxBundleId] = useState("");
   const [dxError, setDxError] = useState("");
   const [diagnosisBundleIdDraft, setDiagnosisBundleIdDraft] = useState("");
   const [diagnosisMessage, setDiagnosisMessage] = useState("");
@@ -4179,6 +4181,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setDxCode("");
     setDxDescription("");
     setDxFolderId(billingMacros.diagnosisFolders[0]?.id ?? "");
+    setDxBundleId("");
     setDxError("");
     setShowAddDxModal(true);
   };
@@ -4201,10 +4204,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       setDxError("Could not add this code. Check the code and description.");
       return;
     }
+    // Optionally attach the new code to an existing bundle.
+    let bundleNote = "";
+    if (dxBundleId) {
+      const bundle = billingMacros.bundles.find((b) => b.id === dxBundleId);
+      if (bundle) {
+        if (!bundle.diagnosisIds.includes(id)) {
+          updateLibraryBundle(dxBundleId, {
+            diagnosisIds: [...bundle.diagnosisIds, id],
+          });
+        }
+        bundleNote = `, added to bundle "${bundle.name}"`;
+      }
+    }
     // Also drop it on the current patient's file.
     addDiagnosis(code, description, "Manual");
     setDiagnosisMessage(
-      `${code}: ${added ? "added to library" : "already in library"} and added to this patient.`,
+      `${code}: ${added ? "added to library" : "already in library"}${bundleNote} and added to this patient.`,
     );
     setShowAddDxModal(false);
   };
@@ -8018,6 +8034,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   {billingMacros.diagnosisFolders.map((folder) => (
                     <option key={folder.id} value={folder.id}>
                       {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">
+                  Bundle <span className="font-normal">(optional)</span>
+                </span>
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(e) => setDxBundleId(e.target.value)}
+                  value={dxBundleId}
+                >
+                  <option value="">None — one-off code</option>
+                  {billingMacros.bundles.map((bundle) => (
+                    <option key={bundle.id} value={bundle.id}>
+                      {bundle.name}
                     </option>
                   ))}
                 </select>
