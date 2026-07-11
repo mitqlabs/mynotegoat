@@ -8047,7 +8047,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   onChange={(e) => setDxBundleId(e.target.value)}
                   value={dxBundleId}
                 >
-                  <option value="">None — one-off code</option>
+                  <option value="">None</option>
                   {billingMacros.bundles.map((bundle) => (
                     <option key={bundle.id} value={bundle.id}>
                       {bundle.name}

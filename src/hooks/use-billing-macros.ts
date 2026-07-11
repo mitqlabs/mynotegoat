@@ -127,24 +127,25 @@ export function useBillingMacros() {
         return { id: null, added: false };
       }
 
-      let resultId: string | null = null;
-      let wasAdded = false;
+      // Resolve the id from the CURRENT snapshot so the caller gets it back
+      // synchronously. The updateLibrary updater below runs later (setState),
+      // so an id assigned inside it would still be null on return.
+      const existing = billingMacros.diagnoses.find(
+        (entry) => entry.code.toLowerCase() === code.toLowerCase(),
+      );
+      if (existing) {
+        return { id: existing.id, added: false };
+      }
+      const newId = createId("dx");
       updateLibrary((current) => {
-        const duplicate = current.diagnoses.find(
-          (entry) => entry.code.toLowerCase() === code.toLowerCase(),
-        );
-        if (duplicate) {
-          resultId = duplicate.id;
-          wasAdded = false;
+        // Re-check inside the updater to stay race-safe.
+        if (current.diagnoses.some((entry) => entry.code.toLowerCase() === code.toLowerCase())) {
           return current;
         }
         const allowedFolders = new Set(current.diagnosisFolders.map((entry) => entry.id));
         const folderId = allowedFolders.has(draft.folderId?.trim() ?? "")
           ? (draft.folderId?.trim() as string)
           : current.diagnosisFolders[0]?.id ?? GENERAL_DIAGNOSIS_FOLDER_ID;
-        const newId = createId("dx");
-        resultId = newId;
-        wasAdded = true;
         return {
           ...current,
           diagnoses: [
@@ -160,9 +161,9 @@ export function useBillingMacros() {
         };
       });
 
-      return { id: resultId, added: wasAdded };
+      return { id: newId, added: true };
     },
-    [updateLibrary],
+    [billingMacros, updateLibrary],
   );
 
   const updateDiagnosis = useCallback(
