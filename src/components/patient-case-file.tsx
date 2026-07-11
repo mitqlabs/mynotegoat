@@ -1296,6 +1296,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
   const {
     billingMacros,
+    addDiagnosis: addLibraryDiagnosis,
   } = useBillingMacros();
   const { contacts, addContact } = useContactDirectory();
   const { documentTemplates } = useDocumentTemplates();
@@ -1598,6 +1599,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [paidFocused, setPaidFocused] = useState(false);
   const [reviewStatus, setReviewStatus] = useState(patient.matrix?.review || "Not Requested");
   const [diagnosisMacroIdDraft, setDiagnosisMacroIdDraft] = useState("");
+  // "+ Dx Code" quick-add: creates a new ICD-10 code in the library
+  // (folder-placed, like Settings) and drops it on this patient.
+  const [showAddDxModal, setShowAddDxModal] = useState(false);
+  const [dxCode, setDxCode] = useState("");
+  const [dxDescription, setDxDescription] = useState("");
+  const [dxFolderId, setDxFolderId] = useState("");
+  const [dxError, setDxError] = useState("");
   const [diagnosisBundleIdDraft, setDiagnosisBundleIdDraft] = useState("");
   const [diagnosisMessage, setDiagnosisMessage] = useState("");
   // Modal state for "+ Add Custom Code" — adds the dx to the master
@@ -4167,6 +4175,40 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     router.push("/patients");
   };
 
+  const openAddDxModal = () => {
+    setDxCode("");
+    setDxDescription("");
+    setDxFolderId(billingMacros.diagnosisFolders[0]?.id ?? "");
+    setDxError("");
+    setShowAddDxModal(true);
+  };
+
+  const handleSaveDx = () => {
+    const code = dxCode.trim();
+    const description = dxDescription.trim();
+    if (!code || !description) {
+      setDxError("Code and description are required.");
+      return;
+    }
+    // Add to the master library (same as Settings), folder-placed so it's
+    // reusable from the dropdown for every patient.
+    const { id, added } = addLibraryDiagnosis({
+      code,
+      description,
+      folderId: dxFolderId || undefined,
+    });
+    if (!id) {
+      setDxError("Could not add this code. Check the code and description.");
+      return;
+    }
+    // Also drop it on the current patient's file.
+    addDiagnosis(code, description, "Manual");
+    setDiagnosisMessage(
+      `${code}: ${added ? "added to library" : "already in library"} and added to this patient.`,
+    );
+    setShowAddDxModal(false);
+  };
+
   const addDiagnosisFromMacro = () => {
     const targetId = diagnosisMacroIdDraft || activeDiagnosisMacros[0]?.id;
     if (!targetId) {
@@ -5912,9 +5954,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </button>
         {sectionPanelsOpen.diagnosis && (
           <>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Add one code or a preset bundle for this patient file.
-            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-[var(--text-muted)]">
+                Add one code or a preset bundle for this patient file.
+              </p>
+              <button
+                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                onClick={openAddDxModal}
+                type="button"
+              >
+                + Dx Code
+              </button>
+            </div>
 
             <div className="mt-3 grid gap-4 xl:grid-cols-2">
               <div className="space-y-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
@@ -7913,6 +7964,84 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <option key={name} value={name} />
         ))}
       </datalist>
+
+      {showAddDxModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+          <ScrollLock />
+          <form
+            className="panel-card mx-auto w-full max-w-md p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveDx();
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-semibold">Add Diagnosis Code</h3>
+              <button
+                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                onClick={() => setShowAddDxModal(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mb-3 text-sm text-[var(--text-muted)]">
+              Adds a new ICD-10 code to your library (same as Settings) and to this patient.
+            </p>
+            <div className="grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Code</span>
+                <input
+                  autoFocus
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(e) => setDxCode(e.target.value)}
+                  placeholder="e.g. M54.5"
+                  value={dxCode}
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Description</span>
+                <input
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(e) => setDxDescription(e.target.value)}
+                  placeholder="e.g. Low back pain"
+                  value={dxDescription}
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Folder</span>
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(e) => setDxFolderId(e.target.value)}
+                  value={dxFolderId}
+                >
+                  {billingMacros.diagnosisFolders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {dxError && <p className="mt-3 text-sm font-semibold text-red-600">{dxError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+                onClick={() => setShowAddDxModal(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white"
+                type="submit"
+              >
+                Add Code
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <NewAppointmentModal
         lockedPatientId={patient.id}
