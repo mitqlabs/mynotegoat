@@ -516,7 +516,7 @@ export function CashPaymentsSection({ patientId }: Props) {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           Add Payment (not tied to a visit)
         </p>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[140px_120px_120px_160px_1fr_auto]">
+        <div className="grid gap-2 sm:grid-cols-2">
           <label className="grid gap-1">
             <span className="text-xs font-semibold text-[var(--text-muted)]">Date</span>
             <UsDateInput

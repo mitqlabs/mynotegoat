@@ -27,6 +27,7 @@ import { useBillingMacros } from "@/hooks/use-billing-macros";
 import type { TreatmentPackage } from "@/lib/billing-macros";
 import type { PatientPackage } from "@/lib/patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
+import { formatUsDateInput } from "@/components/us-date-input";
 
 function formatMoney(amount: number): string {
   return `$${amount.toLocaleString(undefined, {
@@ -354,11 +355,12 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                         />
                         <input
                           className="w-40 rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                          inputMode="numeric"
                           maxLength={10}
                           onChange={(event) =>
                             setPaymentDraftsByPackageId((current) => ({
                               ...current,
-                              [pkg.id]: { ...draft, date: event.target.value },
+                              [pkg.id]: { ...draft, date: formatUsDateInput(event.target.value) },
                             }))
                           }
                           placeholder="MM/DD/YYYY (today if blank)"

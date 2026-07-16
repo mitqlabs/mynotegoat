@@ -7,7 +7,6 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
-import { sumCashPayments } from "@/lib/cash-payments";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -264,32 +263,59 @@ export default function StatisticsPage() {
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
   const { packagesByPatient } = usePatientPackages();
   const { paymentsByPatient } = useCashPayments();
+  // Live filters — every dropdown/search update applies immediately, no
+  // Go button. Previously we had a draft/applied split gated behind GO;
+  // that friction wasn't worth the re-render cost on a mock-data page.
+  const [search, setSearch] = useState("");
+  const [year, setYear] = useState<string>(getDefaultYear);
 
-  // Cash-patient revenue: package value sold, collected-so-far vs
-  // outstanding balance, and standalone (non-package) cash payments.
-  // Refunded packages are excluded from revenue.
+  // Cash-patient revenue, filtered by the selected Year (packages by
+  // purchase date, cash payments by payment date). Refunded packages
+  // excluded from revenue. Also builds a per-patient outstanding list.
   const cashStats = useMemo(() => {
+    const inYear = (dateStr: string | undefined) =>
+      year === "ALL" || parseFlexibleDate(dateStr)?.year.toString() === year;
+    const nameById = new Map(patients.map((p) => [p.id, p.fullName]));
+    const activePatientIds = new Set<string>();
+
     let cashCollected = 0;
-    for (const entries of Object.values(paymentsByPatient)) {
-      cashCollected += sumCashPayments(entries);
+    for (const [pid, entries] of Object.entries(paymentsByPatient)) {
+      for (const entry of entries) {
+        if (!inYear(entry.date)) continue;
+        cashCollected += entry.amount;
+        activePatientIds.add(pid);
+      }
     }
+
     let packagesSold = 0;
     let activePackages = 0;
     let packageValue = 0;
     let packagePaid = 0;
-    for (const pkgs of Object.values(packagesByPatient)) {
+    const outstandingByPatient = new Map<string, number>();
+    for (const [pid, pkgs] of Object.entries(packagesByPatient)) {
       for (const pkg of pkgs) {
         if (pkg.status === "refunded") continue;
+        if (!inYear(pkg.purchaseDate)) continue;
         packagesSold += 1;
         if (pkg.status === "active") activePackages += 1;
         packageValue += pkg.snapshot.discountedPrice;
-        packagePaid += sumPackagePayments(pkg);
+        const paid = sumPackagePayments(pkg);
+        packagePaid += paid;
+        activePatientIds.add(pid);
+        const bal = pkg.snapshot.discountedPrice - paid;
+        if (bal > 0) {
+          outstandingByPatient.set(pid, (outstandingByPatient.get(pid) ?? 0) + bal);
+        }
       }
     }
     const packageOutstanding = Math.max(0, packageValue - packagePaid);
-    const cashPatients = patients.filter((p) => !p.deleted && p.isCashPatient).length;
+    const outstandingList = Array.from(outstandingByPatient.entries())
+      .map(([pid, amount]) => ({ pid, name: nameById.get(pid) ?? "Unknown", amount }))
+      .sort((a, b) => b.amount - a.amount);
+    const totalCashRoster = patients.filter((p) => !p.deleted && p.isCashPatient).length;
+
     return {
-      cashPatients,
+      cashPatients: year === "ALL" ? totalCashRoster : activePatientIds.size,
       packagesSold,
       activePackages,
       packageValue,
@@ -297,13 +323,9 @@ export default function StatisticsPage() {
       packageOutstanding,
       cashCollected,
       totalCollected: cashCollected + packagePaid,
+      outstandingList,
     };
-  }, [packagesByPatient, paymentsByPatient]);
-  // Live filters — every dropdown/search update applies immediately, no
-  // Go button. Previously we had a draft/applied split gated behind GO;
-  // that friction wasn't worth the re-render cost on a mock-data page.
-  const [search, setSearch] = useState("");
-  const [year, setYear] = useState<string>(getDefaultYear);
+  }, [packagesByPatient, paymentsByPatient, year]);
   const [attorney, setAttorney] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   // Billing Snapshot starts hidden so nothing sensitive is visible when
@@ -904,37 +926,55 @@ export default function StatisticsPage() {
 
         <section className="panel-card p-4">
           <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Cash Patients</p>
-              <p className="text-xl font-bold tabular-nums">{cashStats.cashPatients}</p>
-            </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Active Packages</p>
-              <p className="text-xl font-bold tabular-nums">
-                {cashStats.activePackages}
-                <span className="text-sm font-medium text-[var(--text-muted)]"> / {cashStats.packagesSold} sold</span>
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
+            <div className="space-y-2 text-sm">
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Cash Patients</span>
+                <span className="font-bold tabular-nums">{cashStats.cashPatients}</span>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Active Packages</span>
+                <span className="font-bold tabular-nums">
+                  {cashStats.activePackages} / {cashStats.packagesSold} sold
+                </span>
+              </p>
+              <div className="my-2 border-t border-[var(--line-soft)]" />
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Package Value (sold)</span>
+                <span className="font-bold tabular-nums">{formatMoney(cashStats.packageValue)}</span>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Collected on Packages</span>
+                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.packagePaid)}</span>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Outstanding Balance</span>
+                <span className="font-bold tabular-nums text-[#c93b1d]">{formatMoney(cashStats.packageOutstanding)}</span>
+              </p>
+              <div className="my-2 border-t border-[var(--line-soft)]" />
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Cash Payments (non-package)</span>
+                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.cashCollected)}</span>
+              </p>
+              <p className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Total Cash Collected</span>
+                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</span>
               </p>
             </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Package Value (sold)</p>
-              <p className="text-xl font-bold tabular-nums">{formatMoney(cashStats.packageValue)}</p>
-            </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Balance Outstanding</p>
-              <p className="text-xl font-bold tabular-nums text-[#c93b1d]">{formatMoney(cashStats.packageOutstanding)}</p>
-            </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Collected on Packages</p>
-              <p className="text-xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.packagePaid)}</p>
-            </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-              <p className="text-xs text-[var(--text-muted)]">Cash Payments (non-package)</p>
-              <p className="text-xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.cashCollected)}</p>
-            </div>
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:col-span-2">
-              <p className="text-xs text-[var(--text-muted)]">Total Cash Collected</p>
-              <p className="text-2xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</p>
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-muted)]">Outstanding Balance by Patient</p>
+              {cashStats.outstandingList.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--text-muted)]">No outstanding package balances.</p>
+              ) : (
+                <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto pr-1 text-sm">
+                  {cashStats.outstandingList.map((row) => (
+                    <li key={row.pid} className="flex justify-between gap-2">
+                      <span className="truncate">{row.name}</span>
+                      <span className="font-semibold tabular-nums text-[#c93b1d]">{formatMoney(row.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </section>

@@ -4447,18 +4447,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {isCashPatient && (
-            // Cash-Patient badge only — the old "Convert to PI" button
-            // sat here too, but it fired immediately with no confirm
-            // dialog, which made an accidental click a real data
-            // hazard. Removed per user request; cash↔PI conversions
-            // should happen deliberately, not as a single misclick.
-            <div className="md:col-span-2">
-              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-700">
-                Cash Patient
-              </span>
-            </div>
-          )}
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
@@ -4471,6 +4459,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               value={patientDob}
             />
           </label>
+
+          {/* Cash-Patient badge — sits on line 1 next to DOB. Cash↔PI
+              conversions happen deliberately elsewhere, not here. */}
+          {isCashPatient && (
+            <div className="flex items-end pb-2">
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                Cash Patient
+              </span>
+            </div>
+          )}
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
@@ -4540,7 +4538,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          <label className="grid gap-1">
+          <label className="grid gap-1 xl:col-span-2">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -4652,20 +4650,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </label>
         </div>
 
+        {/* Cash Payments + Treatment Packages side by side (cash-patient
+            only). Packages snapshot the template so later edits don't
+            change a patient's existing contract. */}
         {isCashPatient && (
-          <div className="p-4">
+          <div className="grid gap-4 p-4 lg:grid-cols-2 lg:items-start">
             <CashPaymentsSection patientId={patient.id} />
-          </div>
-        )}
-
-        {/* Treatment Packages — cash-patient only. Lets the user
-            assign templates (defined in Settings → Billing Macros)
-            to this patient, track visits used vs total with a
-            progress bar, and mark refunds. Snapshot pattern means
-            template edits don't retroactively change this
-            patient's contract. */}
-        {isCashPatient && (
-          <div className="p-4 pt-0">
             <PatientPackagesSection patientId={patient.id} />
           </div>
         )}
