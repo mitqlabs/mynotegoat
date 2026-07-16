@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
@@ -331,6 +332,7 @@ export default function StatisticsPage() {
   // Billing Snapshot starts hidden so nothing sensitive is visible when
   // the page first opens — click to reveal.
   const [showBilling, setShowBilling] = useState(false);
+  const [showCash, setShowCash] = useState(false);
 
   const [attorneySortLevels, setAttorneySortLevels] = useState<AttorneySortLevel[]>(
     () => loadAttorneySortLevels(),
@@ -922,61 +924,89 @@ export default function StatisticsPage() {
               </div>
             </div>
           </article>
+
+          <article className="panel-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
+              <button
+                aria-label={showCash ? "Hide cash numbers" : "Show cash numbers"}
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
+                onClick={() => setShowCash((prev) => !prev)}
+                type="button"
+              >
+                {showCash ? "Hide" : "Show"}
+              </button>
+            </div>
+            <div className="relative mt-4">
+              <div
+                className={`space-y-2 text-sm transition-[filter] ${showCash ? "" : "pointer-events-none select-none blur-md"}`}
+                aria-hidden={!showCash}
+              >
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Cash Patients</span>
+                  <span className="font-bold tabular-nums">{cashStats.cashPatients}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Active Packages</span>
+                  <span className="font-bold tabular-nums">{cashStats.activePackages} / {cashStats.packagesSold}</span>
+                </p>
+                <div className="my-2 border-t border-[var(--line-soft)]" />
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Package Value</span>
+                  <span className="font-bold tabular-nums">{formatMoney(cashStats.packageValue)}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Collected</span>
+                  <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.packagePaid)}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Outstanding</span>
+                  <span className="font-bold tabular-nums text-[#c93b1d]">{formatMoney(cashStats.packageOutstanding)}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Cash Payments</span>
+                  <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.cashCollected)}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Total Collected</span>
+                  <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</span>
+                </p>
+              </div>
+              {!showCash && (
+                <button
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-white/60 text-sm font-semibold text-[var(--text-primary)] hover:bg-white/80"
+                  onClick={() => setShowCash(true)}
+                  type="button"
+                >
+                  Click to reveal
+                </button>
+              )}
+            </div>
+          </article>
         </section>
 
         <section className="panel-card p-4">
-          <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
-          <div className="mt-4 grid gap-6 md:grid-cols-2">
-            <div className="space-y-2 text-sm">
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Cash Patients</span>
-                <span className="font-bold tabular-nums">{cashStats.cashPatients}</span>
-              </p>
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Active Packages</span>
-                <span className="font-bold tabular-nums">
-                  {cashStats.activePackages} / {cashStats.packagesSold} sold
-                </span>
-              </p>
-              <div className="my-2 border-t border-[var(--line-soft)]" />
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Package Value (sold)</span>
-                <span className="font-bold tabular-nums">{formatMoney(cashStats.packageValue)}</span>
-              </p>
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Collected on Packages</span>
-                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.packagePaid)}</span>
-              </p>
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Outstanding Balance</span>
-                <span className="font-bold tabular-nums text-[#c93b1d]">{formatMoney(cashStats.packageOutstanding)}</span>
-              </p>
-              <div className="my-2 border-t border-[var(--line-soft)]" />
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Cash Payments (non-package)</span>
-                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.cashCollected)}</span>
-              </p>
-              <p className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Total Cash Collected</span>
-                <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</span>
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[var(--text-muted)]">Outstanding Balance by Patient</p>
-              {cashStats.outstandingList.length === 0 ? (
-                <p className="mt-2 text-sm text-[var(--text-muted)]">No outstanding package balances.</p>
-              ) : (
-                <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto pr-1 text-sm">
-                  {cashStats.outstandingList.map((row) => (
-                    <li key={row.pid} className="flex justify-between gap-2">
-                      <span className="truncate">{row.name}</span>
-                      <span className="font-semibold tabular-nums text-[#c93b1d]">{formatMoney(row.amount)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+          <h4 className="text-lg font-semibold">Outstanding Balance</h4>
+          {cashStats.outstandingList.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--text-muted)]">No outstanding package balances.</p>
+          ) : (
+            <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+              {cashStats.outstandingList.map((row) => (
+                <li
+                  key={row.pid}
+                  className="flex justify-between gap-2 border-b border-[var(--line-soft)] py-1"
+                >
+                  <Link
+                    className="truncate font-medium text-[var(--brand-primary)] hover:underline"
+                    href={`/patients/${row.pid}`}
+                  >
+                    {row.name}
+                  </Link>
+                  <span className="font-semibold tabular-nums text-[#c93b1d]">{formatMoney(row.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">

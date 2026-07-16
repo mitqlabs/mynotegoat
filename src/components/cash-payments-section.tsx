@@ -339,7 +339,7 @@ export function CashPaymentsSection({ patientId }: Props) {
   return (
     <section className="rounded-2xl border border-[#bfd2e0] bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xl font-semibold">Cash Payments</h3>
+        <h3 className="text-xl font-semibold">Payments</h3>
         <div className="flex flex-wrap items-center gap-2">
           {totalOwed > 0 && (
             <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800">

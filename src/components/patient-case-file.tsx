@@ -4321,6 +4321,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               Case profile only. SOAP charting is kept in the Encounters module.
             </p>
             <div className="flex flex-wrap items-center gap-2">
+              {isCashPatient && (
+                <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                  Cash Patient
+                </span>
+              )}
               <Link
                 className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
                 href={`/encounters?patientId=${patient.id}`}
@@ -4459,16 +4464,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               value={patientDob}
             />
           </label>
-
-          {/* Cash-Patient badge — sits on line 1 next to DOB. Cash↔PI
-              conversions happen deliberately elsewhere, not here. */}
-          {isCashPatient && (
-            <div className="flex items-end pb-2">
-              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
-                Cash Patient
-              </span>
-            </div>
-          )}
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
