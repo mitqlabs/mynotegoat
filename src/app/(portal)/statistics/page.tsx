@@ -176,10 +176,27 @@ function parseDollar(value: string | undefined): number {
   return Number.isFinite(num) ? num : 0;
 }
 
-function parseDaysFromMatrix(value: string | undefined): number | null {
+function parseMatrixDate(value: string | undefined): Date | null {
   if (!value) return null;
-  const num = parseFloat(value);
-  return Number.isFinite(num) ? num : null;
+  const s = value.trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // US MM/DD/YYYY
+  if (m) return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); // ISO YYYY-MM-DD
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Whole-day gap between two milestone dates. Returns null unless BOTH
+// dates are present and the interval is positive — so incomplete cases
+// (missing an endpoint) and zero/negative spans never enter an average
+// and skew it. This is the "completed items only" rule.
+function daysBetween(startValue: string | undefined, endValue: string | undefined): number | null {
+  const start = parseMatrixDate(startValue);
+  const end = parseMatrixDate(endValue);
+  if (!start || !end) return null;
+  const diff = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+  return diff > 0 ? diff : null;
 }
 
 function formatMoney(value: number) {
@@ -355,6 +372,8 @@ export default function StatisticsPage() {
     let paidTotal = 0;
     let billedPaidCases = 0;
     let paidPaidCases = 0;
+    let billedCaseCount = 0; // patients with billed > 0
+    let paidCaseCount = 0; // patients with paid > 0
 
     filteredPatients.forEach((patient) => {
       const billing = getPatientBillingRecord(patient.id);
@@ -366,6 +385,8 @@ export default function StatisticsPage() {
         : parseDollar(patient.matrix?.paidAmount);
       billedTotal += billed;
       paidTotal += paid;
+      if (billed > 0) billedCaseCount += 1;
+      if (paid > 0) paidCaseCount += 1;
 
       if (paid > 0 || patient.caseStatus === "Paid") {
         billedPaidCases += billed;
@@ -374,8 +395,8 @@ export default function StatisticsPage() {
     });
 
     const paidRate = billedPaidCases === 0 ? 0 : (paidPaidCases / billedPaidCases) * 100;
-    const avgBilled = filteredPatients.length ? billedTotal / filteredPatients.length : 0;
-    const avgPaid = filteredPatients.length ? paidTotal / filteredPatients.length : 0;
+    const avgBilled = billedCaseCount ? billedTotal / billedCaseCount : 0;
+    const avgPaid = paidCaseCount ? paidTotal / paidCaseCount : 0;
 
     return { billedTotal, paidTotal, paidRate, avgBilled, avgPaid };
   }, [filteredPatients, getPatientBillingRecord]);
@@ -427,9 +448,13 @@ export default function StatisticsPage() {
     const rbToPaidValues: number[] = [];
 
     filteredPatients.forEach((patient) => {
-      const itd = parseDaysFromMatrix(patient.matrix?.initialToDischarge);
-      const dtr = parseDaysFromMatrix(patient.matrix?.dischargeToRb);
-      const rtp = parseDaysFromMatrix(patient.matrix?.rbToPaid);
+      const m = patient.matrix;
+      // Compute from the actual saved milestone DATES (the precomputed
+      // matrix.initialToDischarge/dischargeToRb/rbToPaid fields are never
+      // written by the app, so they were empty/garbage).
+      const itd = daysBetween(m?.initialExam, m?.discharge);
+      const dtr = daysBetween(m?.discharge, m?.rbSent);
+      const rtp = daysBetween(m?.rbSent, m?.paidDate);
       if (itd !== null) initialToDischargeValues.push(itd);
       if (dtr !== null) dischargeToRbValues.push(dtr);
       if (rtp !== null) rbToPaidValues.push(rtp);
@@ -595,9 +620,9 @@ export default function StatisticsPage() {
         ? billing.paidAmount
         : parseDollar(patient.matrix?.paidAmount);
 
-      // Timeline from patient matrix
-      const dtr = parseDaysFromMatrix(patient.matrix?.dischargeToRb);
-      const rtp = parseDaysFromMatrix(patient.matrix?.rbToPaid);
+      // Timeline from the saved milestone dates (completed spans only).
+      const dtr = daysBetween(patient.matrix?.discharge, patient.matrix?.rbSent);
+      const rtp = daysBetween(patient.matrix?.rbSent, patient.matrix?.paidDate);
       if (dtr !== null) row.timeToRbValues.push(dtr);
       if (rtp !== null) row.timeToPaidValues.push(rtp);
     });
