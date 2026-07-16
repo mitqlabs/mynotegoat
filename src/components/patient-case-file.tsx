@@ -4709,7 +4709,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             {imagingPanelsOpen.xray && (
               <form className="mt-4 space-y-4" onSubmit={(e) => { e.preventDefault(); saveImagingReferral("xray"); }}>
                 {/* Row 1: Sent Date + Imaging Center */}
-                <div className="grid grid-cols-[140px_1fr] gap-3">
+                <div className="grid grid-cols-[140px_1fr] gap-3 xl:grid-cols-1">
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Sent Date</span>
                     <input
@@ -4928,7 +4928,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </label>
 
                 {/* Row 1: Sent Date + Imaging Center */}
-                <div className="grid grid-cols-[140px_1fr] gap-3">
+                <div className="grid grid-cols-[140px_1fr] gap-3 xl:grid-cols-1">
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Sent Date</span>
                     <input
@@ -5125,7 +5125,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </button>
 
             {imagingPanelsOpen.specialist && (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <label className="grid gap-1.5 sm:col-span-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Specialist</span>
                   <input
