@@ -4447,8 +4447,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             // dialog, which made an accidental click a real data
             // hazard. Removed per user request; cash↔PI conversions
             // should happen deliberately, not as a single misclick.
-            <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">Cash Patient</span>
+            <div className="md:col-span-2">
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                Cash Patient
+              </span>
             </div>
           )}
 
