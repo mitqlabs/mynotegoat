@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
+import { usePatientPackages } from "@/hooks/use-patient-packages";
+import { sumPackagePayments } from "@/lib/patient-packages";
+import { useCashPayments } from "@/hooks/use-cash-payments";
+import { sumCashPayments } from "@/lib/cash-payments";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -258,6 +262,43 @@ export default function StatisticsPage() {
   // billing store first means the Billing Snapshot always reflects the
   // same Paid value the user sees in Additional Details → $ Paid Amount.
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
+  const { packagesByPatient } = usePatientPackages();
+  const { paymentsByPatient } = useCashPayments();
+
+  // Cash-patient revenue: package value sold, collected-so-far vs
+  // outstanding balance, and standalone (non-package) cash payments.
+  // Refunded packages are excluded from revenue.
+  const cashStats = useMemo(() => {
+    let cashCollected = 0;
+    for (const entries of Object.values(paymentsByPatient)) {
+      cashCollected += sumCashPayments(entries);
+    }
+    let packagesSold = 0;
+    let activePackages = 0;
+    let packageValue = 0;
+    let packagePaid = 0;
+    for (const pkgs of Object.values(packagesByPatient)) {
+      for (const pkg of pkgs) {
+        if (pkg.status === "refunded") continue;
+        packagesSold += 1;
+        if (pkg.status === "active") activePackages += 1;
+        packageValue += pkg.snapshot.discountedPrice;
+        packagePaid += sumPackagePayments(pkg);
+      }
+    }
+    const packageOutstanding = Math.max(0, packageValue - packagePaid);
+    const cashPatients = patients.filter((p) => !p.deleted && p.isCashPatient).length;
+    return {
+      cashPatients,
+      packagesSold,
+      activePackages,
+      packageValue,
+      packagePaid,
+      packageOutstanding,
+      cashCollected,
+      totalCollected: cashCollected + packagePaid,
+    };
+  }, [packagesByPatient, paymentsByPatient]);
   // Live filters — every dropdown/search update applies immediately, no
   // Go button. Previously we had a draft/applied split gated behind GO;
   // that friction wasn't worth the re-render cost on a mock-data page.
@@ -859,6 +900,43 @@ export default function StatisticsPage() {
               </div>
             </div>
           </article>
+        </section>
+
+        <section className="panel-card p-4">
+          <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Cash Patients</p>
+              <p className="text-xl font-bold tabular-nums">{cashStats.cashPatients}</p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Active Packages</p>
+              <p className="text-xl font-bold tabular-nums">
+                {cashStats.activePackages}
+                <span className="text-sm font-medium text-[var(--text-muted)]"> / {cashStats.packagesSold} sold</span>
+              </p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Package Value (sold)</p>
+              <p className="text-xl font-bold tabular-nums">{formatMoney(cashStats.packageValue)}</p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Balance Outstanding</p>
+              <p className="text-xl font-bold tabular-nums text-[#c93b1d]">{formatMoney(cashStats.packageOutstanding)}</p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Collected on Packages</p>
+              <p className="text-xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.packagePaid)}</p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <p className="text-xs text-[var(--text-muted)]">Cash Payments (non-package)</p>
+              <p className="text-xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.cashCollected)}</p>
+            </div>
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:col-span-2">
+              <p className="text-xs text-[var(--text-muted)]">Total Cash Collected</p>
+              <p className="text-2xl font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</p>
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">
