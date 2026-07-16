@@ -27,10 +27,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createPatientPackageId,
+  createPackagePaymentId,
   deriveStatusFromVisits,
   loadPatientPackages,
   savePatientPackages,
   STORAGE_KEY_PATIENT_PACKAGES,
+  type PackagePayment,
   type PatientPackage,
   type PatientPackageStatus,
   type PatientPackagesByPatient,
@@ -119,6 +121,7 @@ export function usePatientPackages() {
         },
         purchaseDate,
         visitsUsed: 0,
+        payments: [],
         status: "active",
         note: input.note?.trim() || undefined,
         createdAt: timestamp,
@@ -215,6 +218,48 @@ export function usePatientPackages() {
     [updatePatientList],
   );
 
+  const addPayment = useCallback(
+    (
+      patientId: string,
+      packageId: string,
+      input: { amount: number; date: string; note?: string },
+    ) => {
+      const amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      const payment: PackagePayment = {
+        id: createPackagePaymentId(),
+        amount,
+        date: (input.date ?? "").trim() || formatUsDateNow(),
+        note: input.note?.trim() || undefined,
+      };
+      updatePatientList(patientId, (current) =>
+        current.map((entry) =>
+          entry.id === packageId
+            ? { ...entry, payments: [...(entry.payments ?? []), payment], updatedAt: nowIso() }
+            : entry,
+        ),
+      );
+    },
+    [updatePatientList],
+  );
+
+  const removePayment = useCallback(
+    (patientId: string, packageId: string, paymentId: string) => {
+      updatePatientList(patientId, (current) =>
+        current.map((entry) =>
+          entry.id === packageId
+            ? {
+                ...entry,
+                payments: (entry.payments ?? []).filter((p) => p.id !== paymentId),
+                updatedAt: nowIso(),
+              }
+            : entry,
+        ),
+      );
+    },
+    [updatePatientList],
+  );
+
   const getPackagesForPatient = useCallback(
     (patientId: string): PatientPackage[] => {
       const normalizedPatientId = patientId.trim();
@@ -233,5 +278,7 @@ export function usePatientPackages() {
     incrementVisits,
     decrementVisits,
     setStatus,
+    addPayment,
+    removePayment,
   };
 }

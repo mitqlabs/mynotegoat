@@ -23,6 +23,15 @@ import type { TreatmentPackageItem } from "@/lib/billing-macros";
 
 export type PatientPackageStatus = "active" | "completed" | "refunded";
 
+/** A partial payment toward a package's price. */
+export interface PackagePayment {
+  id: string;
+  amount: number;
+  /** US format MM/DD/YYYY. */
+  date: string;
+  note?: string;
+}
+
 export interface PatientPackage {
   id: string;
   patientId: string;
@@ -42,6 +51,8 @@ export interface PatientPackage {
   purchaseDate: string;
   /** How many visits have been used. Manual + / - on the row. */
   visitsUsed: number;
+  /** Partial payments toward snapshot.discountedPrice. Empty = unpaid. */
+  payments: PackagePayment[];
   status: PatientPackageStatus;
   note?: string;
   createdAt: string;
@@ -88,6 +99,25 @@ function normalizeSnapshotItems(value: unknown): TreatmentPackageItem[] {
   return result;
 }
 
+function normalizePayments(value: unknown): PackagePayment[] {
+  if (!Array.isArray(value)) return [];
+  const result: PackagePayment[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Partial<PackagePayment>;
+    const id = normalizeText(row.id).trim();
+    const amount = normalizeNumber(row.amount);
+    if (!id || amount <= 0) continue;
+    result.push({
+      id,
+      amount,
+      date: normalizeText(row.date).trim(),
+      note: normalizeText(row.note).trim() || undefined,
+    });
+  }
+  return result;
+}
+
 function normalizePackage(value: unknown): PatientPackage | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<PatientPackage> & { snapshot?: Partial<PatientPackage["snapshot"]> };
@@ -111,6 +141,7 @@ function normalizePackage(value: unknown): PatientPackage | null {
     snapshot,
     purchaseDate,
     visitsUsed: Math.max(0, Math.round(normalizeNumber(row.visitsUsed))),
+    payments: normalizePayments(row.payments),
     status: normalizeStatus(row.status),
     note: normalizeText(row.note).trim() || undefined,
     createdAt: normalizeText(row.createdAt) || nowIso(),
@@ -154,6 +185,20 @@ export function createPatientPackageId() {
   return `PKG-${Date.now()}-${Math.floor(Math.random() * 1000)
     .toString()
     .padStart(3, "0")}`;
+}
+
+export function createPackagePaymentId() {
+  return `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, "0")}`;
+}
+
+/** Total paid toward a package across all its partial payments. */
+export function sumPackagePayments(pkg: Pick<PatientPackage, "payments">): number {
+  return (pkg.payments ?? []).reduce(
+    (sum, payment) => sum + (Number.isFinite(payment.amount) ? payment.amount : 0),
+    0,
+  );
 }
 
 /** Auto-derive status from the visits used vs total. Caller can

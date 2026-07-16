@@ -26,6 +26,7 @@ import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import type { TreatmentPackage } from "@/lib/billing-macros";
 import type { PatientPackage } from "@/lib/patient-packages";
+import { sumPackagePayments } from "@/lib/patient-packages";
 
 function formatMoney(amount: number): string {
   return `$${amount.toLocaleString(undefined, {
@@ -62,6 +63,8 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
     decrementVisits,
     updatePackage,
     setStatus,
+    addPayment,
+    removePayment,
   } = usePatientPackages();
   const { billingMacros } = useBillingMacros();
 
@@ -92,6 +95,9 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
 
   const [pickerTemplateId, setPickerTemplateId] = useState<string>("");
   const [noteDraftsByPackageId, setNoteDraftsByPackageId] = useState<Record<string, string>>({});
+  const [paymentDraftsByPackageId, setPaymentDraftsByPackageId] = useState<
+    Record<string, { amount: string; date: string }>
+  >({});
   const [error, setError] = useState<string>("");
 
   const handleAssign = () => {
@@ -290,6 +296,95 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                     </button>
                   </div>
                 </div>
+
+                {/* Partial payments toward the package price */}
+                {(() => {
+                  const paid = sumPackagePayments(pkg);
+                  const balance = Math.max(0, pkg.snapshot.discountedPrice - paid);
+                  const draft = paymentDraftsByPackageId[pkg.id] ?? { amount: "", date: "" };
+                  return (
+                    <div className="mt-3 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+                      <div className="text-xs">
+                        <span className="text-[var(--text-muted)]">Paid </span>
+                        <span className="font-semibold text-emerald-700">{formatMoney(paid)}</span>
+                        <span className="text-[var(--text-muted)]"> · Balance </span>
+                        <span
+                          className={`font-semibold ${balance > 0 ? "text-[var(--text-main)]" : "text-emerald-700"}`}
+                        >
+                          {formatMoney(balance)}
+                        </span>
+                        <span className="text-[var(--text-muted)]">
+                          {" "}
+                          of {formatMoney(pkg.snapshot.discountedPrice)}
+                        </span>
+                      </div>
+                      {pkg.payments.length > 0 && (
+                        <ul className="mt-1.5 space-y-1">
+                          {pkg.payments.map((p) => (
+                            <li key={p.id} className="flex items-center justify-between text-xs">
+                              <span className="tabular-nums">
+                                {formatMoney(p.amount)}
+                                {p.date ? ` · ${p.date}` : ""}
+                                {p.note ? ` · ${p.note}` : ""}
+                              </span>
+                              <button
+                                className="rounded p-0.5 text-[11px] text-[#b43b34] hover:bg-red-50"
+                                onClick={() => removePayment(patientId, pkg.id, p.id)}
+                                title="Remove this payment"
+                                type="button"
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <input
+                          className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setPaymentDraftsByPackageId((current) => ({
+                              ...current,
+                              [pkg.id]: { ...draft, amount: event.target.value.replace(/[^0-9.]/g, "") },
+                            }))
+                          }
+                          placeholder="Amount"
+                          value={draft.amount}
+                        />
+                        <input
+                          className="w-40 rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                          maxLength={10}
+                          onChange={(event) =>
+                            setPaymentDraftsByPackageId((current) => ({
+                              ...current,
+                              [pkg.id]: { ...draft, date: event.target.value },
+                            }))
+                          }
+                          placeholder="MM/DD/YYYY (today if blank)"
+                          value={draft.date}
+                        />
+                        <button
+                          className="rounded-md bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={!(Number(draft.amount) > 0)}
+                          onClick={() => {
+                            addPayment(patientId, pkg.id, {
+                              amount: Number(draft.amount),
+                              date: draft.date,
+                            });
+                            setPaymentDraftsByPackageId((current) => ({
+                              ...current,
+                              [pkg.id]: { amount: "", date: "" },
+                            }));
+                          }}
+                          type="button"
+                        >
+                          + Payment
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="mt-2">
                   <input
