@@ -122,6 +122,7 @@ export function usePatientPackages() {
         purchaseDate,
         visitsUsed: 0,
         payments: [],
+        countedAppointmentIds: [],
         status: "active",
         note: input.note?.trim() || undefined,
         createdAt: timestamp,
@@ -260,6 +261,55 @@ export function usePatientPackages() {
     [updatePatientList],
   );
 
+  // Apply an appointment to a package: +1 visit used, remembering the
+  // appointment id so it can't be double-counted and can be undone. No-op
+  // if this appointment is already applied to any of the patient's packages.
+  const applyAppointmentToPackage = useCallback(
+    (patientId: string, packageId: string, appointmentId: string) => {
+      if (!appointmentId) return;
+      updatePatientList(patientId, (current) => {
+        if (current.some((p) => (p.countedAppointmentIds ?? []).includes(appointmentId))) {
+          return current;
+        }
+        return current.map((entry) => {
+          if (entry.id !== packageId) return entry;
+          const nextUsed = entry.visitsUsed + 1;
+          return {
+            ...entry,
+            countedAppointmentIds: [...(entry.countedAppointmentIds ?? []), appointmentId],
+            visitsUsed: nextUsed,
+            status: deriveStatusFromVisits(entry.status, nextUsed, entry.snapshot.totalVisits),
+            updatedAt: nowIso(),
+          };
+        });
+      });
+    },
+    [updatePatientList],
+  );
+
+  // Undo: remove the appointment from whichever package holds it, −1 visit.
+  const unapplyAppointmentFromPackage = useCallback(
+    (patientId: string, appointmentId: string) => {
+      if (!appointmentId) return;
+      updatePatientList(patientId, (current) =>
+        current.map((entry) => {
+          if (!(entry.countedAppointmentIds ?? []).includes(appointmentId)) return entry;
+          const nextUsed = Math.max(0, entry.visitsUsed - 1);
+          return {
+            ...entry,
+            countedAppointmentIds: (entry.countedAppointmentIds ?? []).filter(
+              (id) => id !== appointmentId,
+            ),
+            visitsUsed: nextUsed,
+            status: deriveStatusFromVisits(entry.status, nextUsed, entry.snapshot.totalVisits),
+            updatedAt: nowIso(),
+          };
+        }),
+      );
+    },
+    [updatePatientList],
+  );
+
   const getPackagesForPatient = useCallback(
     (patientId: string): PatientPackage[] => {
       const normalizedPatientId = patientId.trim();
@@ -280,5 +330,7 @@ export function usePatientPackages() {
     setStatus,
     addPayment,
     removePayment,
+    applyAppointmentToPackage,
+    unapplyAppointmentFromPackage,
   };
 }

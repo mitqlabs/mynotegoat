@@ -53,6 +53,10 @@ export interface PatientPackage {
   visitsUsed: number;
   /** Partial payments toward snapshot.discountedPrice. Empty = unpaid. */
   payments: PackagePayment[];
+  /** Appointment ids applied to this package (front-desk "apply
+   *  appointment to package"). Dedups so one appointment can't
+   *  decrement the same package twice. */
+  countedAppointmentIds: string[];
   status: PatientPackageStatus;
   note?: string;
   createdAt: string;
@@ -118,6 +122,13 @@ function normalizePayments(value: unknown): PackagePayment[] {
   return result;
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+}
+
 function normalizePackage(value: unknown): PatientPackage | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<PatientPackage> & { snapshot?: Partial<PatientPackage["snapshot"]> };
@@ -142,6 +153,7 @@ function normalizePackage(value: unknown): PatientPackage | null {
     purchaseDate,
     visitsUsed: Math.max(0, Math.round(normalizeNumber(row.visitsUsed))),
     payments: normalizePayments(row.payments),
+    countedAppointmentIds: normalizeStringArray(row.countedAppointmentIds),
     status: normalizeStatus(row.status),
     note: normalizeText(row.note).trim() || undefined,
     createdAt: normalizeText(row.createdAt) || nowIso(),

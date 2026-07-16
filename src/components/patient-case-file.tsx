@@ -57,6 +57,7 @@ import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
+import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { forceSyncNow } from "@/lib/storage-sync-interceptor";
@@ -1304,6 +1305,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { reportTemplates } = useReportTemplates();
   const { getRecord: getPatientBillingRecord, setCoreFields: setPatientBillingCoreFields } = usePatientBilling();
   const { scheduleAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
+  const {
+    getPackagesForPatient,
+    applyAppointmentToPackage,
+    unapplyAppointmentFromPackage,
+  } = usePatientPackages();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { keyDates } = useKeyDates();
   const { tasks, addTask, toggleTaskDone } = useTasks();
@@ -5576,6 +5582,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             </td>
                             <td className="px-2 py-2">
                               {appointment ? (
+                                <>
                                 <select
                                   className={`rounded-full border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(appointment.status)}`}
                                   onChange={(event) =>
@@ -5600,6 +5607,63 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     );
                                   })}
                                 </select>
+                                {/* Cash patients: apply this appointment to a package
+                                    (decrements that package's visits, undoable). */}
+                                {isCashPatient && (() => {
+                                  const patientPkgs = getPackagesForPatient(patient.id);
+                                  const appliedPkg = patientPkgs.find((p) =>
+                                    (p.countedAppointmentIds ?? []).includes(appointment.id),
+                                  );
+                                  const selectable = patientPkgs.filter(
+                                    (p) => p.status === "active" || p.id === appliedPkg?.id,
+                                  );
+                                  if (appliedPkg) {
+                                    return (
+                                      <span className="mt-1 flex items-center gap-1">
+                                        <span
+                                          className="max-w-[110px] truncate rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                          title={appliedPkg.snapshot.name}
+                                        >
+                                          {appliedPkg.snapshot.name}
+                                        </span>
+                                        <button
+                                          className="text-[11px] font-bold text-[#b43b34] hover:text-red-700"
+                                          onClick={() =>
+                                            unapplyAppointmentFromPackage(patient.id, appointment.id)
+                                          }
+                                          title="Remove this appointment from the package"
+                                          type="button"
+                                        >
+                                          ✕
+                                        </button>
+                                      </span>
+                                    );
+                                  }
+                                  if (selectable.length === 0) return null;
+                                  return (
+                                    <select
+                                      className="mt-1 w-full rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px]"
+                                      onChange={(event) => {
+                                        if (event.target.value) {
+                                          applyAppointmentToPackage(
+                                            patient.id,
+                                            event.target.value,
+                                            appointment.id,
+                                          );
+                                        }
+                                      }}
+                                      value=""
+                                    >
+                                      <option value="">Apply to package…</option>
+                                      {selectable.map((p) => (
+                                        <option key={p.id} value={p.id}>
+                                          {p.snapshot.name} ({p.visitsUsed}/{p.snapshot.totalVisits})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  );
+                                })()}
+                                </>
                               ) : (
                                 <span className="text-xs text-[var(--text-muted)]">{row.statusLabel}</span>
                               )}
