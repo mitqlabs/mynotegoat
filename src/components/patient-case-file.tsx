@@ -4323,7 +4323,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="flex flex-wrap items-center gap-2">
               {isCashPatient && (
                 <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
-                  Cash Patient
+                  Non-PI Patient
                 </span>
               )}
               <Link

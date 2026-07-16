@@ -4194,7 +4194,7 @@ export default function SettingsPage() {
                               }
                               type="checkbox"
                             />
-                            Cash
+                            Non-PI
                           </label>
                           <label className="inline-flex items-center gap-1.5">
                             <input

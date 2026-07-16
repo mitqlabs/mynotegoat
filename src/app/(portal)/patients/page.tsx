@@ -2040,7 +2040,7 @@ export default function PatientsPage() {
                   type="checkbox"
                 />
                 <span>
-                  <span className="block text-sm font-semibold">Cash Patient</span>
+                  <span className="block text-sm font-semibold">Non-PI Patient</span>
                   <span className="block text-xs text-[var(--text-muted)]">
                     No attorney, no injury date, no case-number workflow. Just the essentials.
                   </span>
