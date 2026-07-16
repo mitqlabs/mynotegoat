@@ -9,9 +9,9 @@ import {
   formatCashAmount,
   sumCashPayments,
 } from "@/lib/cash-payments";
-import { usePatientPackages } from "@/hooks/use-patient-packages";
-import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { sumPackagePayments } from "@/lib/patient-packages";
+import type { PatientPackage } from "@/lib/patient-packages";
+import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { CashPaymentEntry } from "@/lib/mock-data";
 
 /** ISO YYYY-MM-DD → US MM/DD/YYYY (to match encounterDate format). */
@@ -22,6 +22,12 @@ function isoToUs(iso: string): string {
 
 type Props = {
   patientId: string;
+  // Passed down from the patient file (the parent's live package +
+  // appointment state) rather than each cash sub-panel spinning up its
+  // own hook instance — that caused package payments not to appear here
+  // when a sibling panel added them (sync race between instances).
+  packages: PatientPackage[];
+  appointments: ScheduleAppointmentRecord[];
 };
 
 /** Parse a free-text decimal like "150" / "150.00" / "1,250" into a
@@ -44,18 +50,12 @@ function compareUsDateDesc(a: string, b: string): number {
   return parse(b) - parse(a);
 }
 
-export function CashPaymentsSection({ patientId }: Props) {
+export function CashPaymentsSection({ patientId, packages, appointments }: Props) {
   const { paymentsByPatient, updatePatientPayments } = useCashPayments();
   const { encounters } = useEncounterNotes();
-  const { getPackagesForPatient } = usePatientPackages();
-  const { scheduleAppointments } = useScheduleAppointments();
   const entries = useMemo(
     () => paymentsByPatient[patientId] ?? [],
     [paymentsByPatient, patientId],
-  );
-  const packages = useMemo(
-    () => getPackagesForPatient(patientId),
-    [getPackagesForPatient, patientId],
   );
 
   // Per-row in-progress edit buffer for the auto-encounter list, so
@@ -80,7 +80,7 @@ export function CashPaymentsSection({ patientId }: Props) {
         coveredByAppt.set(apptId, pkg.snapshot.name);
       }
     }
-    const patientAppts = scheduleAppointments.filter((a) => a.patientId === patientId);
+    const patientAppts = appointments;
     return encounters
       .filter((enc) => enc.patientId === patientId)
       .map((enc) => {
@@ -112,7 +112,7 @@ export function CashPaymentsSection({ patientId }: Props) {
         };
       })
       .sort((a, b) => compareUsDateDesc(a.date, b.date));
-  }, [encounters, entries, patientId, packages, scheduleAppointments]);
+  }, [encounters, entries, patientId, packages, appointments]);
 
   // Filter entries to exclude ORPHANS — entries whose encounterId
   // points to an encounter that no longer exists for this patient

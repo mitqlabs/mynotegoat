@@ -4393,15 +4393,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <p className="text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
             )}
           </div>
-          <span
-            className="status-pill"
-            style={{
-              backgroundColor: withAlpha(statusColor, 0.2),
-              color: getContrastTextColor(statusColor),
-            }}
-          >
-            {caseStatus}
-          </span>
+          {!isCashPatient && (
+            <span
+              className="status-pill"
+              style={{
+                backgroundColor: withAlpha(statusColor, 0.2),
+                color: getContrastTextColor(statusColor),
+              }}
+            >
+              {caseStatus}
+            </span>
+          )}
         </div>
 
         {/* Patient Alerts */}
@@ -4677,20 +4679,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
-            <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => handleCaseStatusChange(event.target.value)}
-              value={caseStatus}
-            >
-              {caseStatuses.map((statusConfigEntry) => (
-                <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
-                  {statusConfigEntry.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Non-PI (cash) patients don't run through an insurance case
+              lifecycle, so they have no Case Status. */}
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => handleCaseStatusChange(event.target.value)}
+                value={caseStatus}
+              >
+                {caseStatuses.map((statusConfigEntry) => (
+                  <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
+                    {statusConfigEntry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
         {/* Cash Payments + Treatment Packages side by side (cash-patient
@@ -4698,7 +4704,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             change a patient's existing contract. */}
         {isCashPatient && (
           <div className="grid gap-4 p-4 lg:grid-cols-2 lg:items-start">
-            <CashPaymentsSection patientId={patient.id} />
+            <CashPaymentsSection
+              patientId={patient.id}
+              packages={getPackagesForPatient(patient.id)}
+              appointments={patientAppointmentRecords}
+            />
             <PatientPackagesSection patientId={patient.id} />
           </div>
         )}
