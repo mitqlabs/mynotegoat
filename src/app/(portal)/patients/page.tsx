@@ -427,6 +427,14 @@ export default function PatientsPage() {
   const defaultCaseStatus = (caseStatuses[0]?.name ?? "Active") as PatientRecord["caseStatus"];
   const defaultLienOption = lienOptions[0] ?? "Not Set";
   const [view, setView] = useState<PatientView>("list");
+  // Top-level patient section. "pi" shows the List/Detail/Case Flow/To Do
+  // sub-tabs over non-cash patients; "nonpi" shows a list of cash/self-pay
+  // patients; "birthdays" shows everyone.
+  const [section, setSection] = useState<"pi" | "nonpi" | "birthdays">("pi");
+  // Effective view for the render gates: Non-PI is always a list, Birthdays
+  // is its own view, PI uses the selected sub-tab.
+  const activeView: PatientView =
+    section === "birthdays" ? "birthdays" : section === "nonpi" ? "list" : view;
 
   // To Do state
   const [taskQuickTitle, setTaskQuickTitle] = useState("");
@@ -753,6 +761,10 @@ export default function PatientsPage() {
     const filtered = patients.filter((patient) => {
       // Skip soft-deleted patients
       if (patient.deleted) return false;
+      // Section split: PI shows non-cash patients; Non-PI shows cash /
+      // self-pay patients. (Birthdays uses the raw list, not this one.)
+      if (section === "pi" && patient.isCashPatient) return false;
+      if (section === "nonpi" && !patient.isCashPatient) return false;
 
       const nameNorm = patient.fullName.toLowerCase().replace(/[,.:;]/g, " ");
       const attNorm = patient.attorney.toLowerCase().replace(/[,.:;]/g, " ");
@@ -856,7 +868,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, year, sortColumn, sortAsc]);
+  }, [attorney, searchDraft, status, year, sortColumn, sortAsc, section]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1244,64 +1256,90 @@ export default function PatientsPage() {
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              view === "list" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
-            }`}
-            onClick={() => setView("list")}
-            type="button"
-          >
-            List
-          </button>
-          <button
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              view === "detail" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
-            }`}
-            onClick={() => setView("detail")}
-            type="button"
-          >
-            Detail
-          </button>
-          <button
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              view === "caseFlow" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
-            }`}
-            onClick={() => setView("caseFlow")}
-            type="button"
-          >
-            Case Flow
-          </button>
-          <button
-            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
-              view === "toDo" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
-            }`}
-            onClick={() => setView("toDo")}
-            type="button"
-          >
-            <span>To Do</span>
-            {taskOpenCount > 0 && (
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
-                  view === "toDo"
-                    ? "bg-white/25 text-white"
-                    : "bg-[var(--brand-primary)] text-white"
+        <div className="mt-4 space-y-2">
+          {/* Top row: patient type */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                section === "pi" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+              }`}
+              onClick={() => setSection("pi")}
+              type="button"
+            >
+              Personal Injury
+            </button>
+            <button
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                section === "nonpi" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+              }`}
+              onClick={() => setSection("nonpi")}
+              type="button"
+            >
+              Non-PI
+            </button>
+            <button
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
+                section === "birthdays" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+              }`}
+              onClick={() => setSection("birthdays")}
+              type="button"
+            >
+              <span className="text-base leading-none">&#127874;</span>
+              Birthdays
+            </button>
+          </div>
+          {/* PI sub-tabs (only in the Personal Injury section) */}
+          {section === "pi" && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line-soft)] pt-2">
+              <button
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  view === "list" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
                 }`}
+                onClick={() => setView("list")}
+                type="button"
               >
-                {taskOpenCount}
-              </span>
-            )}
-          </button>
-          <button
-            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold ${
-              view === "birthdays" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
-            }`}
-            onClick={() => setView("birthdays")}
-            type="button"
-          >
-            <span className="text-base leading-none">&#127874;</span>
-            Birthdays
-          </button>
+                List
+              </button>
+              <button
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  view === "detail" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+                }`}
+                onClick={() => setView("detail")}
+                type="button"
+              >
+                Detail
+              </button>
+              <button
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  view === "caseFlow" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+                }`}
+                onClick={() => setView("caseFlow")}
+                type="button"
+              >
+                Case Flow
+              </button>
+              <button
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  view === "toDo" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+                }`}
+                onClick={() => setView("toDo")}
+                type="button"
+              >
+                <span>To Do</span>
+                {taskOpenCount > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                      view === "toDo"
+                        ? "bg-white/25 text-white"
+                        : "bg-[var(--brand-primary)] text-white"
+                    }`}
+                  >
+                    {taskOpenCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
@@ -1365,7 +1403,7 @@ export default function PatientsPage() {
         </div>
       </section>
 
-      {view === "list" && (
+      {activeView === "list" && (
         <section className="panel-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
@@ -1466,7 +1504,7 @@ export default function PatientsPage() {
         </section>
       )}
 
-      {view === "detail" && (
+      {activeView === "detail" && (
         <section className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Detail Matrix</h4>
@@ -1512,7 +1550,7 @@ export default function PatientsPage() {
         </section>
       )}
 
-      {view === "caseFlow" && (
+      {activeView === "caseFlow" && (
         <section className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1734,7 +1772,7 @@ export default function PatientsPage() {
         </section>
       )}
 
-      {view === "toDo" && (
+      {activeView === "toDo" && (
         <div className="space-y-4">
           <section className="panel-card p-4">
             <h4 className="text-lg font-semibold">Quick Add</h4>
@@ -1892,7 +1930,7 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {view === "birthdays" && (
+      {activeView === "birthdays" && (
         <div className="space-y-4">
           <section className="panel-card p-4">
             <div className="flex items-center gap-3">
