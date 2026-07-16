@@ -659,15 +659,12 @@ export function useEncounterNotes() {
       }
       upsertEncounter(encounterId, (current) => {
         const existing = normalizeEditorBlocks(current.soap[section]);
-        // Use exactly one blank-paragraph separator between existing content
-        // and the new snippet. Both sides are fully normalized first, and
-        // the composed result is normalized again so any run of empty
-        // blocks (from contentEditable quirks or macro bodies that end in
-        // their own trailing paragraph) collapses to a single canonical
-        // <p><br></p>.
-        const composed = existing
-          ? `${existing}<p><br></p>${trimmedSnippet}`
-          : trimmedSnippet;
+        // Append the snippet directly after existing content — NO blank
+        // separator paragraph. Both sides are normalized into block
+        // elements, so the block boundary already gives a single clean
+        // line break; adding <p><br></p> was inserting an unwanted empty
+        // "enter" paragraph before every stacked macro.
+        const composed = existing ? `${existing}${trimmedSnippet}` : trimmedSnippet;
         const nextText = normalizeEditorBlocks(composed);
         return {
           ...current,
