@@ -7,23 +7,22 @@ import {
   cashPaymentTypeOptions,
   createCashPayment,
   formatCashAmount,
-  sumCashDiscounts,
   sumCashPayments,
 } from "@/lib/cash-payments";
+import { usePatientPackages } from "@/hooks/use-patient-packages";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { sumPackagePayments } from "@/lib/patient-packages";
 import type { CashPaymentEntry } from "@/lib/mock-data";
-import { UsDateInput } from "@/components/us-date-input";
+
+/** ISO YYYY-MM-DD → US MM/DD/YYYY (to match encounterDate format). */
+function isoToUs(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : iso;
+}
 
 type Props = {
   patientId: string;
 };
-
-function getTodayUsDate(): string {
-  const now = new Date();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const y = String(now.getFullYear());
-  return `${m}/${d}/${y}`;
-}
 
 /** Parse a free-text decimal like "150" / "150.00" / "1,250" into a
  *  non-negative number. Empty or unparseable input returns 0. */
@@ -48,28 +47,16 @@ function compareUsDateDesc(a: string, b: string): number {
 export function CashPaymentsSection({ patientId }: Props) {
   const { paymentsByPatient, updatePatientPayments } = useCashPayments();
   const { encounters } = useEncounterNotes();
+  const { getPackagesForPatient } = usePatientPackages();
+  const { scheduleAppointments } = useScheduleAppointments();
   const entries = useMemo(
     () => paymentsByPatient[patientId] ?? [],
     [paymentsByPatient, patientId],
   );
-
-  // Manual-add form draft — only for off-encounter payments. Most rows
-  // come from the auto-encounter list below; the office uses this form
-  // when applying a credit on account or a payment not tied to a visit.
-  const [draft, setDraft] = useState<{
-    date: string;
-    amount: string;
-    discount: string;
-    paymentType: CashPaymentEntry["paymentType"];
-    note: string;
-  }>(() => ({
-    date: getTodayUsDate(),
-    amount: "",
-    discount: "",
-    paymentType: "Cash",
-    note: "",
-  }));
-  const [error, setError] = useState("");
+  const packages = useMemo(
+    () => getPackagesForPatient(patientId),
+    [getPackagesForPatient, patientId],
+  );
 
   // Per-row in-progress edit buffer for the auto-encounter list, so
   // typing into Amount / Discount doesn't fire a save on every keystroke
@@ -84,32 +71,48 @@ export function CashPaymentsSection({ patientId }: Props) {
     for (const entry of entries) {
       if (entry.encounterId) entryByEncounter.set(entry.encounterId, entry);
     }
+    // Appointment ids applied to a package → package name. A visit whose
+    // appointment is applied to a package is "covered" — $0 owed, since
+    // the patient pre-paid via the package.
+    const coveredByAppt = new Map<string, string>();
+    for (const pkg of packages) {
+      for (const apptId of pkg.countedAppointmentIds ?? []) {
+        coveredByAppt.set(apptId, pkg.snapshot.name);
+      }
+    }
+    const patientAppts = scheduleAppointments.filter((a) => a.patientId === patientId);
     return encounters
       .filter((enc) => enc.patientId === patientId)
       .map((enc) => {
-        const owed = enc.charges.reduce(
+        const rawOwed = enc.charges.reduce(
           (sum, c) => sum + (Number(c.unitPrice) || 0) * (Number(c.units) || 0),
           0,
         );
+        // Resolve this encounter's appointment id — the durable link when
+        // present, else match by date + type against the schedule.
+        let apptId = enc.appointmentId;
+        if (!apptId) {
+          const match = patientAppts.find(
+            (a) =>
+              isoToUs(a.date) === enc.encounterDate &&
+              a.appointmentType === enc.appointmentType,
+          );
+          apptId = match?.id;
+        }
+        const packageName = apptId ? coveredByAppt.get(apptId) ?? null : null;
+        const covered = Boolean(packageName);
         return {
           encounterId: enc.id,
           date: enc.encounterDate,
-          owed,
+          rawOwed,
+          owed: covered ? 0 : rawOwed,
+          covered,
+          packageName,
           entry: entryByEncounter.get(enc.id) ?? null,
         };
       })
       .sort((a, b) => compareUsDateDesc(a.date, b.date));
-  }, [encounters, entries, patientId]);
-
-  // Manual entries — payments NOT linked to any encounter.
-  const manualEntries = useMemo(
-    () =>
-      entries
-        .filter((e) => !e.encounterId)
-        .slice()
-        .sort((a, b) => compareUsDateDesc(a.date, b.date)),
-    [entries],
-  );
+  }, [encounters, entries, patientId, packages, scheduleAppointments]);
 
   // Filter entries to exclude ORPHANS — entries whose encounterId
   // points to an encounter that no longer exists for this patient
@@ -132,12 +135,37 @@ export function CashPaymentsSection({ patientId }: Props) {
       ),
     [entries, validEncounterIds],
   );
-  const totalAmount = sumCashPayments(liveEntries);
-  const totalDiscount = sumCashDiscounts(liveEntries);
-  // Sum owed across encounters that have charges (every encounter row
-  // counts exactly once — no double-counting if two payment entries
-  // were ever linked to the same encounter).
+  // Package partial payments show up here as read-only rows (note =
+  // package name) and count toward the patient's Paid total.
+  const packagePaid = useMemo(
+    () => packages.reduce((sum, pkg) => sum + sumPackagePayments(pkg), 0),
+    [packages],
+  );
+  const packagePaymentRows = useMemo(() => {
+    const rows: { id: string; date: string; amount: number; note: string }[] = [];
+    for (const pkg of packages) {
+      for (const p of pkg.payments ?? []) {
+        rows.push({
+          id: p.id,
+          date: p.date,
+          amount: p.amount,
+          note: `${pkg.snapshot.name} payment`,
+        });
+      }
+    }
+    return rows.sort((a, b) => compareUsDateDesc(a.date, b.date));
+  }, [packages]);
+
+  // Paid = per-visit payments + package payments.
+  const totalAmount = sumCashPayments(liveEntries) + packagePaid;
+  // Sum owed across encounters that have charges (covered visits are $0).
   const totalOwed = encounterRows.reduce((sum, row) => sum + row.owed, 0);
+  // Discount is entered per visit as a PERCENT of that visit's owed; the
+  // totals show the resulting dollar figure.
+  const totalDiscount = encounterRows.reduce(
+    (sum, row) => sum + row.owed * ((row.entry?.discount ?? 0) / 100),
+    0,
+  );
 
   /** Get the current display value for an editable cell on an
    *  encounter row — drafted value if the user is mid-edit, else
@@ -301,35 +329,6 @@ export function CashPaymentsSection({ patientId }: Props) {
     );
   };
 
-  const handleAddManual = () => {
-    setError("");
-    const amountNum = parseMoney(draft.amount);
-    if (amountNum <= 0) {
-      setError("Enter a positive amount.");
-      return;
-    }
-    if (!draft.date.trim()) {
-      setError("Enter a date.");
-      return;
-    }
-    const discountNum = parseMoney(draft.discount);
-    const entry = createCashPayment({
-      date: draft.date,
-      amount: amountNum,
-      discount: discountNum,
-      paymentType: draft.paymentType,
-      note: draft.note,
-    });
-    updatePatientPayments(patientId, (current) => [entry, ...current]);
-    setDraft({
-      date: getTodayUsDate(),
-      amount: "",
-      discount: "",
-      paymentType: "Cash",
-      note: "",
-    });
-  };
-
   const handleDelete = (id: string) => {
     const ok = window.confirm("Delete this payment? This cannot be undone.");
     if (!ok) return;
@@ -375,7 +374,7 @@ export function CashPaymentsSection({ patientId }: Props) {
               <tr>
                 <th className="px-3 py-2 text-left">Visit Date</th>
                 <th className="px-3 py-2 text-right">Owed</th>
-                <th className="px-3 py-2 text-right">Discount</th>
+                <th className="px-3 py-2 text-right">Disc %</th>
                 <th className="px-3 py-2 text-right">Balance</th>
                 <th className="px-3 py-2 text-right">Paid</th>
                 <th className="px-3 py-2 text-left">Payment</th>
@@ -395,45 +394,69 @@ export function CashPaymentsSection({ patientId }: Props) {
                 // Live balance shows the draft if user is mid-edit,
                 // committed value otherwise.
                 const liveAmount = parseMoney(draftAmount);
-                const liveDiscount = parseMoney(draftDiscount);
-                const balance = Math.max(0, row.owed - liveDiscount - liveAmount);
+                const liveDiscountPct = parseMoney(draftDiscount);
+                const liveDiscountDollars = row.owed * (liveDiscountPct / 100);
+                const balance = Math.max(0, row.owed - liveDiscountDollars - liveAmount);
 
                 return (
                   <tr className="border-t border-[var(--line-soft)]" key={row.encounterId}>
                     <td className="px-3 py-2 font-mono">{row.date}</td>
                     <td className="px-3 py-2 text-right font-semibold">
-                      {row.owed > 0 ? formatCashAmount(row.owed) : "—"}
+                      {row.covered ? (
+                        <span className="inline-flex flex-col items-end leading-tight">
+                          <span className="text-xs font-semibold text-emerald-700">Covered</span>
+                          <span className="text-[11px] font-normal text-[var(--text-muted)]">
+                            {row.packageName}
+                          </span>
+                        </span>
+                      ) : row.owed > 0 ? (
+                        formatCashAmount(row.owed)
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <input
-                        className="w-20 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-right text-sm"
-                        inputMode="decimal"
-                        onBlur={() => commitRow(row.encounterId, row.date)}
-                        onChange={(e) => setCell(row.encounterId, "discount", e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-                        }}
-                        placeholder="0"
-                        value={draftDiscount}
-                      />
+                      {row.covered ? (
+                        <span className="text-[var(--text-muted)]">—</span>
+                      ) : (
+                        <span className="inline-flex items-center justify-end gap-1">
+                          <input
+                            className="w-14 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-right text-sm"
+                            inputMode="decimal"
+                            onBlur={() => commitRow(row.encounterId, row.date)}
+                            onChange={(e) => setCell(row.encounterId, "discount", e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                            }}
+                            placeholder="0"
+                            value={draftDiscount}
+                          />
+                          <span className="text-xs text-[var(--text-muted)]">%</span>
+                        </span>
+                      )}
                     </td>
                     <td
                       className={`px-3 py-2 text-right font-semibold ${
-                        balance === 0 ? "text-emerald-700" : "text-[var(--text-muted)]"
+                        balance === 0 || row.covered ? "text-emerald-700" : "text-[var(--text-muted)]"
                       }`}
                     >
-                      {row.owed > 0 ? formatCashAmount(balance) : "—"}
+                      {row.covered
+                        ? formatCashAmount(0)
+                        : row.owed > 0
+                          ? formatCashAmount(balance)
+                          : "—"}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <input
-                        className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-right text-sm font-semibold"
+                        className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-right text-sm font-semibold disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        disabled={row.covered}
                         inputMode="decimal"
                         onBlur={() => commitRow(row.encounterId, row.date)}
                         onChange={(e) => setCell(row.encounterId, "amount", e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                         }}
-                        placeholder="0.00"
+                        placeholder={row.covered ? "—" : "0.00"}
                         value={draftAmount}
                       />
                     </td>
@@ -510,127 +533,28 @@ export function CashPaymentsSection({ patientId }: Props) {
         </p>
       )}
 
-      {/* Manual add form — for payments NOT tied to a specific
-          encounter (e.g. credit on account, deposit). */}
-      <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Add Payment (not tied to a visit)
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-[var(--text-muted)]">Date</span>
-            <UsDateInput
-              className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-              onChange={(formatted) =>
-                setDraft((current) => ({ ...current, date: formatted }))
-              }
-              value={draft.date}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-[var(--text-muted)]">Amount</span>
-            <input
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-              inputMode="decimal"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, amount: event.target.value }))
-              }
-              placeholder="0.00"
-              value={draft.amount}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-[var(--text-muted)]">Discount</span>
-            <input
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-              inputMode="decimal"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, discount: event.target.value }))
-              }
-              placeholder="0.00"
-              value={draft.discount}
-            />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-[var(--text-muted)]">Payment</span>
-            <select
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  paymentType: event.target.value as CashPaymentEntry["paymentType"],
-                }))
-              }
-              value={draft.paymentType}
-            >
-              {cashPaymentTypeOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-[var(--text-muted)]">Note</span>
-            <input
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, note: event.target.value }))
-              }
-              placeholder="e.g. Deposit"
-              value={draft.note}
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97]"
-              onClick={handleAddManual}
-              type="button"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-        {error && <p className="mt-2 text-sm font-semibold text-[#b43b34]">{error}</p>}
-      </div>
-
-      {/* Manual entries log — anything added via the form above. */}
-      {manualEntries.length > 0 && (
+      {/* Package payments — partial payments applied to this patient's
+          packages appear here (read-only), noted by package name, and
+          are already counted in the Paid total above. Add or remove them
+          in the Packages panel. */}
+      {packagePaymentRows.length > 0 && (
         <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--bg-soft)] text-xs uppercase tracking-wider text-[var(--text-muted)]">
               <tr>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-right">Amount</th>
-                <th className="px-3 py-2 text-right">Discount</th>
-                <th className="px-3 py-2 text-left">Payment</th>
                 <th className="px-3 py-2 text-left">Note</th>
-                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {manualEntries.map((entry) => (
-                <tr className="border-t border-[var(--line-soft)]" key={entry.id}>
-                  <td className="px-3 py-2 font-mono">{entry.date}</td>
-                  <td className="px-3 py-2 text-right font-semibold">
-                    {formatCashAmount(entry.amount)}
+              {packagePaymentRows.map((row) => (
+                <tr className="border-t border-[var(--line-soft)]" key={row.id}>
+                  <td className="px-3 py-2 font-mono">{row.date}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-emerald-700">
+                    {formatCashAmount(row.amount)}
                   </td>
-                  <td className="px-3 py-2 text-right text-[var(--text-muted)]">
-                    {entry.discount ? formatCashAmount(entry.discount) : "—"}
-                  </td>
-                  <td className="px-3 py-2">{entry.paymentType}</td>
-                  <td className="px-3 py-2 text-[var(--text-muted)]">
-                    {entry.note ?? ""}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
-                      onClick={() => handleDelete(entry.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </td>
+                  <td className="px-3 py-2 text-[var(--text-muted)]">{row.note}</td>
                 </tr>
               ))}
             </tbody>

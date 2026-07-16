@@ -2286,6 +2286,54 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setBilledAmount(encounterChargesTotal.toFixed(2));
   }
   const currentBillTotal = Number.parseFloat(billedAmount) || 0;
+
+  // Non-PI (cash) billing rollup for the Additional Details box. PI
+  // patients bill through insurance milestones (R&B, Paid Date, cycle
+  // timing); cash patients don't — they pay per visit or via packages,
+  // so this replaces those fields with a plain money/visits summary.
+  const nonPiBillingSummary = useMemo(() => {
+    const isoToUs = (iso: string) => {
+      const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[2]}/${m[3]}/${m[1]}` : iso;
+    };
+    const packages = getPackagesForPatient(patient.id);
+    let packageValue = 0;
+    let packagePaid = 0;
+    let visitsTotal = 0;
+    let visitsUsed = 0;
+    const coveredApptIds = new Set<string>();
+    for (const pkg of packages) {
+      packageValue += pkg.snapshot.discountedPrice;
+      packagePaid += (pkg.payments ?? []).reduce((s, p) => s + p.amount, 0);
+      visitsTotal += pkg.snapshot.totalVisits;
+      visitsUsed += pkg.visitsUsed;
+      for (const id of pkg.countedAppointmentIds ?? []) coveredApptIds.add(id);
+    }
+    // À la carte owed = encounter charges NOT covered by a package.
+    const apptByDateType = new Map<string, string>();
+    for (const a of patientAppointmentRecords) {
+      apptByDateType.set(`${isoToUs(a.date)}|${a.appointmentType}`, a.id);
+    }
+    let alaCarteOwed = 0;
+    for (const enc of patientEncounterRecords) {
+      let apptId = enc.appointmentId;
+      if (!apptId) apptId = apptByDateType.get(`${enc.encounterDate}|${enc.appointmentType}`);
+      if (apptId && coveredApptIds.has(apptId)) continue;
+      alaCarteOwed += enc.charges.reduce((s, c) => s + c.unitPrice * c.units, 0);
+    }
+    return {
+      hasPackages: packages.length > 0,
+      packageValue,
+      packagePaid,
+      packageOutstanding: Math.max(0, packageValue - packagePaid),
+      visitsTotal,
+      visitsUsed,
+      visitsRemaining: Math.max(0, visitsTotal - visitsUsed),
+      alaCarteOwed,
+      appointmentCount: patientAppointmentRecords.length,
+    };
+  }, [getPackagesForPatient, patient.id, patientAppointmentRecords, patientEncounterRecords]);
+
   // Quick Stats box used to live here — removed from the patient page
   // per user request. The corresponding Settings → Quick Stats panel
   // is left in place for other consumers (dashboard, etc.) but the
@@ -6536,6 +6584,20 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
       <section className="panel-card p-4 order-8 xl:col-span-2">
         {(() => {
+          // Non-PI (cash) patients have no insurance billing milestones,
+          // so their bar is a plain teal header with no status coloring.
+          if (isCashPatient) {
+            return (
+              <button
+                className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
+                onClick={() => toggleSectionPanel("additionalDetails")}
+                type="button"
+              >
+                <span>Additional Details</span>
+                <span className="text-xl">{sectionPanelsOpen.additionalDetails ? "−" : "+"}</span>
+              </button>
+            );
+          }
           // Color the Additional Details bar by completeness so the
           // user gets at-a-glance visibility into which billing step
           // is still pending. Same pattern as the Diagnosis Codes bar
@@ -6588,6 +6650,41 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           );
         })()}
         {sectionPanelsOpen.additionalDetails && (
+          isCashPatient ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ...(nonPiBillingSummary.hasPackages
+                  ? [
+                      { label: "Package Value", value: formatUsdCurrency(nonPiBillingSummary.packageValue) },
+                      { label: "Package Paid", value: formatUsdCurrency(nonPiBillingSummary.packagePaid) },
+                      { label: "Package Outstanding", value: formatUsdCurrency(nonPiBillingSummary.packageOutstanding) },
+                      { label: "Visits Used", value: `${nonPiBillingSummary.visitsUsed} / ${nonPiBillingSummary.visitsTotal}` },
+                      { label: "Visits Remaining", value: String(nonPiBillingSummary.visitsRemaining) },
+                    ]
+                  : []),
+                { label: "À La Carte Owed", value: formatUsdCurrency(nonPiBillingSummary.alaCarteOwed) },
+                { label: "# of Appointments", value: String(nonPiBillingSummary.appointmentCount) },
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3"
+                >
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    {stat.label}
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold tabular-nums text-[var(--text-main)]">
+                    {stat.value}
+                  </div>
+                </div>
+              ))}
+              {!nonPiBillingSummary.hasPackages && (
+                <p className="col-span-full text-sm text-[var(--text-muted)]">
+                  No packages on file — assign one in the Packages panel to track package
+                  value, visits, and payments here.
+                </p>
+              )}
+            </div>
+          ) : (
           <>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1">
@@ -6695,6 +6792,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
 
           </>
+          )
         )}
       </section>
       </section>
