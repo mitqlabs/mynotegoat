@@ -60,8 +60,6 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
     getPackagesForPatient,
     assignPackage,
     removePackage,
-    incrementVisits,
-    decrementVisits,
     updatePackage,
     setStatus,
     addPayment,
@@ -252,7 +250,7 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                <div className="mt-3">
                   <div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-[var(--text-muted)]">
@@ -276,25 +274,6 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                  </div>
-                  <div className="inline-flex items-center gap-1">
-                    <button
-                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={used === 0}
-                      onClick={() => decrementVisits(patientId, pkg.id)}
-                      title="Undo last visit"
-                      type="button"
-                    >
-                      −
-                    </button>
-                    <button
-                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                      onClick={() => incrementVisits(patientId, pkg.id)}
-                      title="Record a visit against this package"
-                      type="button"
-                    >
-                      +
-                    </button>
                   </div>
                 </div>
 
