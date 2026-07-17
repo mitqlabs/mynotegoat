@@ -282,7 +282,15 @@ export default function MarketingPage() {
                       </div>
                       <button
                         className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
-                        onClick={() => removeActivity(row.contact.id, a.id)}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Delete this activity — ${a.type} on ${a.date}? This cannot be undone.`,
+                            )
+                          ) {
+                            removeActivity(row.contact.id, a.id);
+                          }
+                        }}
                         type="button"
                       >
                         Delete
