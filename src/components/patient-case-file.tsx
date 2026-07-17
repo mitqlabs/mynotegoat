@@ -4706,6 +4706,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <div className="grid gap-4 p-4 lg:grid-cols-2 lg:items-start">
             <CashPaymentsSection
               patientId={patient.id}
+              patientName={patient.fullName || `${firstName} ${lastName}`.trim()}
               packages={getPackagesForPatient(patient.id)}
               appointments={patientAppointmentRecords}
             />

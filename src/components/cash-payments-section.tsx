@@ -13,6 +13,7 @@ import { sumPackagePayments } from "@/lib/patient-packages";
 import type { PatientPackage } from "@/lib/patient-packages";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { CashPaymentEntry } from "@/lib/mock-data";
+import { loadOfficeSettings } from "@/lib/office-settings";
 
 /** ISO YYYY-MM-DD → US MM/DD/YYYY (to match encounterDate format). */
 function isoToUs(iso: string): string {
@@ -22,6 +23,7 @@ function isoToUs(iso: string): string {
 
 type Props = {
   patientId: string;
+  patientName: string;
   // Passed down from the patient file (the parent's live package +
   // appointment state) rather than each cash sub-panel spinning up its
   // own hook instance — that caused package payments not to appear here
@@ -29,6 +31,24 @@ type Props = {
   packages: PatientPackage[];
   appointments: ScheduleAppointmentRecord[];
 };
+
+function getTodayUsDate(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const y = String(now.getFullYear());
+  return `${m}/${d}/${y}`;
+}
+
+/** Escape user text for safe interpolation into the printable HTML. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 /** Parse a free-text decimal like "150" / "150.00" / "1,250" into a
  *  non-negative number. Empty or unparseable input returns 0. */
@@ -50,7 +70,7 @@ function compareUsDateDesc(a: string, b: string): number {
   return parse(b) - parse(a);
 }
 
-export function CashPaymentsSection({ patientId, packages, appointments }: Props) {
+export function CashPaymentsSection({ patientId, patientName, packages, appointments }: Props) {
   const { paymentsByPatient, updatePatientPayments } = useCashPayments();
   const { encounters } = useEncounterNotes();
   const entries = useMemo(
@@ -335,6 +355,176 @@ export function CashPaymentsSection({ patientId, packages, appointments }: Props
     updatePatientPayments(patientId, (current) => current.filter((e) => e.id !== id));
   };
 
+  // Build + print a patient-facing statement: visit charges, discounts,
+  // payments, package balances, and the amount still due. Opens a clean
+  // print window (no app chrome) so it can be handed to the patient.
+  const handlePrintBill = () => {
+    const office = loadOfficeSettings();
+    const money = (n: number) => formatCashAmount(n);
+
+    // Charge descriptions per encounter, for the "Services" column.
+    const servicesByEncounter = new Map<string, string>();
+    for (const enc of encounters) {
+      if (enc.patientId !== patientId) continue;
+      const names = enc.charges
+        .map((c) => c.name?.trim())
+        .filter((s): s is string => Boolean(s));
+      servicesByEncounter.set(enc.id, names.join(", "));
+    }
+
+    const visitRowsHtml = encounterRows
+      .map((row) => {
+        const services = servicesByEncounter.get(row.encounterId) || "Visit";
+        if (row.covered) {
+          return `<tr>
+            <td>${escapeHtml(row.date)}</td>
+            <td>${escapeHtml(services)}</td>
+            <td class="num">${money(row.rawOwed)}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num covered">Covered · ${escapeHtml(row.packageName ?? "package")}</td>
+          </tr>`;
+        }
+        const pct = row.entry?.discount ?? 0;
+        const discountDollars = row.owed * (pct / 100);
+        const paid = row.entry?.amount ?? 0;
+        const balance = Math.max(0, row.owed - discountDollars - paid);
+        return `<tr>
+          <td>${escapeHtml(row.date)}</td>
+          <td>${escapeHtml(services)}</td>
+          <td class="num">${money(row.rawOwed)}</td>
+          <td class="num">${discountDollars > 0 ? `-${money(discountDollars)}` : "—"}</td>
+          <td class="num">${paid > 0 ? money(paid) : "—"}</td>
+          <td class="num">${money(balance)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const packageCharges = packages.reduce((s, p) => s + p.snapshot.discountedPrice, 0);
+    const packagesHtml = packages.length
+      ? `<section class="section">
+          <h3>Treatment Packages</h3>
+          <table>
+            <thead><tr><th>Package</th><th class="num">Price</th><th class="num">Paid</th><th class="num">Balance</th><th class="num">Visits</th></tr></thead>
+            <tbody>
+              ${packages
+                .map((p) => {
+                  const paid = sumPackagePayments(p);
+                  const bal = Math.max(0, p.snapshot.discountedPrice - paid);
+                  return `<tr>
+                    <td>${escapeHtml(p.snapshot.name)}</td>
+                    <td class="num">${money(p.snapshot.discountedPrice)}</td>
+                    <td class="num">${money(paid)}</td>
+                    <td class="num">${money(bal)}</td>
+                    <td class="num">${p.visitsUsed} / ${p.snapshot.totalVisits}</td>
+                  </tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </section>`
+      : "";
+
+    const paymentsHtml = packagePaymentRows.length
+      ? `<section class="section">
+          <h3>Package Payments</h3>
+          <table>
+            <thead><tr><th>Date</th><th>Note</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+              ${packagePaymentRows
+                .map(
+                  (r) =>
+                    `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.note)}</td><td class="num">${money(r.amount)}</td></tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </section>`
+      : "";
+
+    const totalBilled = totalOwed + packageCharges;
+    const balanceDue = Math.max(0, totalBilled - totalDiscount - totalAmount);
+    const today = getTodayUsDate();
+
+    const officeLine = [office.address, office.phone ? `T: ${office.phone}` : "", office.email]
+      .filter((s) => s && s.trim())
+      .map((s) => escapeHtml(s))
+      .join(" &nbsp;·&nbsp; ");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Statement — ${escapeHtml(patientName)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #1f2d3a; background: #fff; margin: 0; padding: 24px; }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0d79bf; padding-bottom: 10px; margin-bottom: 14px; }
+      .office-name { font-size: 20px; font-weight: 800; color: #0d79bf; margin: 0; }
+      .office-detail { font-size: 11px; color: #5a7a8f; margin: 4px 0 0; }
+      .doc { font-size: 11px; color: #5a7a8f; text-align: right; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      .meta { font-size: 12px; margin-bottom: 14px; }
+      .section { margin-bottom: 16px; }
+      h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #5a7a8f; margin: 0 0 6px; border-bottom: 1px solid #d0dfe9; padding-bottom: 3px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #d0dfe9; padding: 5px 8px; font-size: 11px; text-align: left; vertical-align: top; }
+      th { background: #f0f6fb; font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; color: #5a7a8f; font-weight: 700; }
+      td.num, th.num { text-align: right; white-space: nowrap; }
+      td.covered { color: #12805c; font-weight: 600; }
+      .totals { margin-top: 14px; margin-left: auto; width: 300px; font-size: 12px; }
+      .totals .row { display: flex; justify-content: space-between; padding: 4px 0; }
+      .totals .row.due { border-top: 2px solid #0d79bf; margin-top: 4px; padding-top: 8px; font-size: 15px; font-weight: 800; color: #0d79bf; }
+      .foot { margin-top: 26px; font-size: 10px; color: #90a4b3; text-align: center; }
+      @page { size: Letter; margin: 0.5in; }
+    </style></head><body><div class="wrap">
+      <div class="head">
+        <div>
+          <p class="office-name">${escapeHtml(office.officeName || "Patient Statement")}</p>
+          ${officeLine ? `<p class="office-detail">${officeLine}</p>` : ""}
+        </div>
+        ${office.doctorName ? `<div class="doc">${escapeHtml(office.doctorName)}</div>` : ""}
+      </div>
+      <h1>Patient Statement</h1>
+      <div class="meta"><strong>Patient:</strong> ${escapeHtml(patientName || "—")} &nbsp;&nbsp; <strong>Date:</strong> ${escapeHtml(today)}</div>
+
+      ${
+        encounterRows.length
+          ? `<section class="section">
+              <h3>Visits &amp; Charges</h3>
+              <table>
+                <thead><tr><th>Date</th><th>Service(s)</th><th class="num">Charge</th><th class="num">Discount</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+                <tbody>${visitRowsHtml}</tbody>
+              </table>
+            </section>`
+          : ""
+      }
+      ${packagesHtml}
+      ${paymentsHtml}
+
+      <div class="totals">
+        <div class="row"><span>Total Charges</span><span>${money(totalBilled)}</span></div>
+        <div class="row"><span>Discounts</span><span>${totalDiscount > 0 ? `-${money(totalDiscount)}` : money(0)}</span></div>
+        <div class="row"><span>Total Paid</span><span>${money(totalAmount)}</span></div>
+        <div class="row due"><span>Balance Due</span><span>${money(balanceDue)}</span></div>
+      </div>
+
+      <p class="foot">Generated ${escapeHtml(today)} — thank you for your business.</p>
+    </div></body></html>`;
+
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      window.alert("Please allow pop-ups to print the statement.");
+      return;
+    }
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+    const doPrint = () => {
+      popup.focus();
+      popup.print();
+    };
+    if (popup.document.readyState === "complete") setTimeout(doPrint, 120);
+    else popup.onload = () => setTimeout(doPrint, 120);
+  };
+
   return (
     <section className="rounded-2xl border border-[#bfd2e0] bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -358,6 +548,14 @@ export function CashPaymentsSection({ patientId, packages, appointments }: Props
               Balance: {formatCashAmount(Math.max(0, totalOwed - totalDiscount - totalAmount))}
             </span>
           )}
+          <button
+            className="rounded-full border border-[var(--brand-primary)] bg-white px-3 py-1 text-sm font-semibold text-[var(--brand-primary)] transition-all hover:bg-[var(--brand-primary)] hover:text-white active:scale-[0.97]"
+            onClick={handlePrintBill}
+            title="Print a patient statement"
+            type="button"
+          >
+            🖨 Print Bill
+          </button>
         </div>
       </div>
 
