@@ -97,12 +97,17 @@ export function normalizePlanTier(value: unknown): PlanTier {
   return fallbackPlan;
 }
 
-export function hasPortalFeature(planTier: PlanTier, feature: PortalFeature) {
-  return planFeatureMap[planTier].includes(feature);
+// NoteGoat is now a single all-access plan — every subscriber gets every
+// feature. The planTier plumbing is kept intact (Stripe, plan-context) so
+// billing is unaffected, but it no longer restricts which portal sections
+// are available. Per-USER access (front desk, office manager, etc.) is
+// handled separately by the team-permissions system, not by plan tier.
+export function hasPortalFeature(_planTier: PlanTier, _feature: PortalFeature) {
+  return true;
 }
 
-export function getVisiblePortalNavItems(planTier: PlanTier) {
-  return portalNavItems.filter((item) => hasPortalFeature(planTier, item.feature));
+export function getVisiblePortalNavItems(_planTier: PlanTier) {
+  return portalNavItems;
 }
 
 export function getDefaultPortalPath(planTier: PlanTier) {
