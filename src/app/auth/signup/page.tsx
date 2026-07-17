@@ -4,61 +4,49 @@ import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-type PlanOption = {
-  tier: "tracking" | "track_schedule" | "complete";
+type BillingPeriod = "monthly" | "annual";
+
+type PeriodOption = {
+  period: BillingPeriod;
   name: string;
   price: string;
-  period: string;
-  description: string;
-  features: string[];
+  cadence: string;
+  note?: string;
   highlight?: boolean;
 };
 
-const PLANS: PlanOption[] = [
+// One all-access plan, billed monthly or annually.
+const PERIOD_OPTIONS: PeriodOption[] = [
   {
-    tier: "tracking",
-    name: "Tracking",
-    price: "$69.99",
-    period: "/mo",
-    description: "Patient management essentials",
-    features: [
-      "Dashboard",
-      "Patient Records",
-      "Statistics",
-      "Tasks",
-      "Contacts",
-      "Key Dates",
-      "Settings",
-    ],
+    period: "monthly",
+    name: "Monthly",
+    price: "$199.99",
+    cadence: "/mo",
   },
   {
-    tier: "track_schedule",
-    name: "Track & Schedule",
-    price: "$99.99",
-    period: "/mo",
-    description: "Add scheduling to your workflow",
-    features: [
-      "Everything in Tracking",
-      "Appointment Scheduling",
-    ],
+    period: "annual",
+    name: "Annual",
+    price: "$1,999.99",
+    cadence: "/yr",
+    note: "2 months free",
     highlight: true,
-  },
-  {
-    tier: "complete",
-    name: "Complete",
-    price: "$149.99",
-    period: "/mo",
-    description: "Full practice management suite",
-    features: [
-      "Everything in Track & Schedule",
-      "Encounter Notes / SOAP",
-      "Billing",
-    ],
   },
 ];
 
+// Everything is included — one plan, full access.
+const PLAN_FEATURES = [
+  "Patient Records & Case Files",
+  "Appointment Scheduling",
+  "Encounter Notes / SOAP",
+  "Billing & Packages",
+  "Statistics & Reporting",
+  "Contacts, Key Dates & My Files",
+  "Marketing & Outreach Tracking",
+  "Team Members & Permissions",
+];
+
 export default function SignupPage() {
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<BillingPeriod | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -72,8 +60,8 @@ export default function SignupPage() {
     setError("");
     setMessage("");
 
-    if (!selectedPlan) {
-      setError("Please select a plan first.");
+    if (!selectedPeriod) {
+      setError("Please choose monthly or annual billing first.");
       return;
     }
 
@@ -93,7 +81,7 @@ export default function SignupPage() {
       options: {
         emailRedirectTo: redirectTo,
         data: {
-          selected_plan: selectedPlan,
+          selected_period: selectedPeriod,
         },
       },
     });
@@ -120,58 +108,62 @@ export default function SignupPage() {
         </p>
       </div>
 
-      {/* Plan Selection */}
+      {/* One all-access plan — choose billing period */}
       <div>
-        <span className="text-sm font-semibold text-[var(--text-main)]">Select Plan</span>
-        <div className="mt-2 grid gap-3">
-          {PLANS.map((plan) => {
-            const isSelected = selectedPlan === plan.tier;
-            return (
-              <button
-                key={plan.tier}
-                type="button"
-                onClick={() => setSelectedPlan(plan.tier)}
-                className={`relative rounded-[14px] border-2 px-4 py-4 text-left transition ${
-                  isSelected
-                    ? "border-[var(--brand-primary)] bg-[#ecf4fa]"
-                    : "border-[var(--line-strong)] bg-white hover:border-[#9ab8cc]"
-                } ${plan.highlight && !isSelected ? "border-[#9ab8cc]" : ""}`}
-              >
-                {isSelected && (
-                  <span className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                    </svg>
-                  </span>
-                )}
-                <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-[var(--text-main)]">Your plan</span>
+        <div className="mt-2 rounded-[14px] border-2 border-[var(--line-strong)] bg-white p-4">
+          <p className="text-lg font-bold text-[var(--text-main)]">Everything included</p>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+            One plan, full access to the whole app.
+          </p>
+          <ul className="mt-3 grid gap-1 sm:grid-cols-2">
+            {PLAN_FEATURES.map((feature) => (
+              <li key={feature} className="flex items-center gap-1.5 text-sm text-[var(--text-main)]">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-emerald-500">
+                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                </svg>
+                {feature}
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {PERIOD_OPTIONS.map((option) => {
+              const isSelected = selectedPeriod === option.period;
+              return (
+                <button
+                  key={option.period}
+                  type="button"
+                  onClick={() => setSelectedPeriod(option.period)}
+                  className={`relative rounded-[14px] border-2 px-4 py-3 text-left transition ${
+                    isSelected
+                      ? "border-[var(--brand-primary)] bg-[#ecf4fa]"
+                      : "border-[var(--line-strong)] bg-white hover:border-[#9ab8cc]"
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                      </svg>
+                    </span>
+                  )}
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-[var(--text-main)]">{plan.name}</span>
-                    {plan.highlight && (
-                      <span className="rounded-full bg-[var(--brand-primary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                        Popular
+                    <span className="text-base font-bold text-[var(--text-main)]">{option.name}</span>
+                    {option.note && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                        {option.note}
                       </span>
                     )}
                   </div>
-                  <div className="text-right">
-                    <span className="text-xl font-bold text-[var(--text-main)]">{plan.price}</span>
-                    <span className="text-sm text-[var(--text-muted)]">{plan.period}</span>
+                  <div className="mt-1">
+                    <span className="text-xl font-bold text-[var(--text-main)]">{option.price}</span>
+                    <span className="text-sm text-[var(--text-muted)]">{option.cadence}</span>
                   </div>
-                </div>
-                <p className="mt-0.5 text-sm text-[var(--text-muted)]">{plan.description}</p>
-                <ul className="mt-2 space-y-1">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-1.5 text-sm text-[var(--text-main)]">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-emerald-500">
-                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                      </svg>
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -221,7 +213,7 @@ export default function SignupPage() {
 
         <button
           type="submit"
-          disabled={loading || supabaseMissing || !selectedPlan}
+          disabled={loading || supabaseMissing || !selectedPeriod}
           className="rounded-[14px] bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-white disabled:opacity-50"
         >
           {loading ? "Creating account..." : "Create Account"}

@@ -1,28 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStripe, TIER_PRICE_MAP } from "@/lib/stripe-config";
+import { getStripe, priceIdForPeriod, SINGLE_PLAN_TIER, type BillingPeriod } from "@/lib/stripe-config";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tier, userId, email } = body as {
-      tier?: string;
+    const { period, userId, email } = body as {
+      period?: string;
       userId?: string;
       email?: string;
     };
 
-    if (!tier || !userId || !email) {
+    if (!period || !userId || !email) {
       return NextResponse.json(
-        { error: "Missing tier, userId, or email" },
+        { error: "Missing period, userId, or email" },
         { status: 400 },
       );
     }
 
-    const priceId = TIER_PRICE_MAP[tier];
+    if (period !== "monthly" && period !== "annual") {
+      return NextResponse.json({ error: "Invalid billing period" }, { status: 400 });
+    }
+
+    const priceId = priceIdForPeriod(period as BillingPeriod);
     if (!priceId) {
       return NextResponse.json(
-        { error: "Invalid plan tier" },
-        { status: 400 },
+        { error: "Pricing is not configured. Set STRIPE_PRICE_MONTHLY / STRIPE_PRICE_ANNUAL." },
+        { status: 500 },
       );
     }
 
@@ -64,9 +68,9 @@ export async function POST(request: NextRequest) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/auth/login?checkout=success`,
       cancel_url: `${origin}/auth/login?checkout=cancel`,
-      metadata: { supabase_user_id: userId, plan_tier: tier },
+      metadata: { supabase_user_id: userId, plan_tier: SINGLE_PLAN_TIER, billing_period: period },
       subscription_data: {
-        metadata: { supabase_user_id: userId, plan_tier: tier },
+        metadata: { supabase_user_id: userId, plan_tier: SINGLE_PLAN_TIER, billing_period: period },
       },
     });
 

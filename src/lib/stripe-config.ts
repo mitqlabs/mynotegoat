@@ -9,22 +9,26 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
-export const PLAN_PRICE_MAP: Record<string, { tier: string; label: string }> = {
-  price_1TGoGfQUcjwOa1XTAuVVYNQ9: { tier: "tracking", label: "Tracking" },
-  price_1TGoHRQUcjwOa1XT4tdRDBHM: { tier: "track_schedule", label: "Track & Schedule" },
-  price_1TGoJ2QUcjwOa1XT9zrcwLua: { tier: "complete", label: "Complete" },
-};
+// My Note Goat is a single all-access plan billed monthly or annually.
+// The Stripe Price IDs are NOT hardcoded here — they live in environment
+// variables so they can be rotated (archive + recreate in Stripe) without
+// a code change. Set these in Vercel → Environment Variables:
+//   STRIPE_PRICE_MONTHLY = price_...   ($199.99 / month)
+//   STRIPE_PRICE_ANNUAL  = price_...   ($1999.99 / year)
+export type BillingPeriod = "monthly" | "annual";
 
-export const TIER_PRICE_MAP: Record<string, string> = {
-  tracking: "price_1TGoGfQUcjwOa1XTAuVVYNQ9",
-  track_schedule: "price_1TGoHRQUcjwOa1XT4tdRDBHM",
-  complete: "price_1TGoJ2QUcjwOa1XT9zrcwLua",
-};
-
-export function tierFromPriceId(priceId: string): string {
-  return PLAN_PRICE_MAP[priceId]?.tier ?? "complete";
+export function priceIdForPeriod(period: BillingPeriod): string | null {
+  const monthly = process.env.STRIPE_PRICE_MONTHLY?.trim();
+  const annual = process.env.STRIPE_PRICE_ANNUAL?.trim();
+  const id = period === "annual" ? annual : monthly;
+  return id && id.length > 0 ? id : null;
 }
 
-export function labelFromPriceId(priceId: string): string {
-  return PLAN_PRICE_MAP[priceId]?.label ?? "Unknown";
+// One plan → every subscriber is on the full-access tier. (The plan_tier
+// column is kept for historical/compat reasons but no longer gates
+// features.)
+export const SINGLE_PLAN_TIER = "complete";
+
+export function tierFromPriceId(_priceId: string): string {
+  return SINGLE_PLAN_TIER;
 }
