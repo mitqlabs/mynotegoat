@@ -3,15 +3,11 @@
 import { useMemo, useState } from "react";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useMarketing } from "@/hooks/use-marketing";
+import { useMarketingSettings } from "@/hooks/use-marketing-settings";
 import {
-  MARKETING_ACTIVITY_TYPES,
-  daysSinceUsDate,
   latestActivity,
   sortActivitiesDesc,
-  temperatureFromDays,
   type MarketingActivity,
-  type MarketingActivityType,
-  type MarketingTemperature,
 } from "@/lib/marketing";
 import { UsDateInput, usDateToIso } from "@/components/us-date-input";
 import { patients } from "@/lib/mock-data";
@@ -29,25 +25,9 @@ function normalizeName(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-const TEMP_STYLES: Record<MarketingTemperature, { label: string; pill: string; dot: string }> = {
-  recent: {
-    label: "Recently visited",
-    pill: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dot: "bg-emerald-500",
-  },
-  due: {
-    label: "Due for a visit",
-    pill: "bg-amber-50 text-amber-700 border-amber-200",
-    dot: "bg-amber-500",
-  },
-  cold: {
-    label: "Needs a visit",
-    pill: "bg-red-50 text-red-700 border-red-200",
-    dot: "bg-red-500",
-  },
-};
-
-const TYPE_EMOJI: Record<MarketingActivityType, string> = {
+// Light emoji hints for the common default types; anything custom falls
+// back to a neutral dot.
+const TYPE_EMOJI: Record<string, string> = {
   Visit: "🚗",
   "Lunch Drop-off": "🥪",
   Call: "📞",
@@ -58,20 +38,25 @@ const TYPE_EMOJI: Record<MarketingActivityType, string> = {
   Other: "•",
 };
 
-type SortKey = "stalest" | "touches" | "alpha";
+function emojiFor(type: string): string {
+  return TYPE_EMOJI[type] ?? "•";
+}
+
+type SortKey = "alpha" | "cases";
 
 export default function MarketingPage() {
   const { contacts } = useContactDirectory();
   const { activitiesByContact, addActivity, removeActivity, totalActivities } = useMarketing();
+  const { settings } = useMarketingSettings();
 
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("stalest");
+  const [sortKey, setSortKey] = useState<SortKey>("alpha");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
 
-  // Referral counts: how many patients name this attorney/firm. This is
-  // what makes marketing worth it — visit your top referrers first.
-  const referralByName = useMemo(() => {
+  // How many cases (patients) we have with each firm — matched on the
+  // patient's attorney field. This is the number the office cares about.
+  const caseCountByName = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of patients) {
       const a = normalizeName(p.attorney || "");
@@ -90,39 +75,34 @@ export default function MarketingPage() {
     contact: ContactRecord;
     activities: MarketingActivity[];
     latest: MarketingActivity | null;
-    daysSince: number | null;
-    temperature: MarketingTemperature;
-    referrals: number;
+    caseCount: number;
   };
 
   const rows = useMemo<Row[]>(() => {
     const q = normalizeName(search);
     return attorneys
-      .map((contact) => {
-        const activities = activitiesByContact[contact.id] ?? [];
-        const latest = latestActivity(activities);
-        const daysSince = latest ? daysSinceUsDate(latest.date) : null;
-        return {
-          contact,
-          activities,
-          latest,
-          daysSince,
-          temperature: temperatureFromDays(daysSince),
-          referrals: referralByName.get(normalizeName(contact.name)) ?? 0,
-        };
-      })
+      .map((contact) => ({
+        contact,
+        activities: activitiesByContact[contact.id] ?? [],
+        latest: latestActivity(activitiesByContact[contact.id] ?? []),
+        caseCount: caseCountByName.get(normalizeName(contact.name)) ?? 0,
+      }))
       .filter((r) => !q || normalizeName(r.contact.name).includes(q))
       .sort((a, b) => {
-        if (sortKey === "alpha") return a.contact.name.localeCompare(b.contact.name);
-        if (sortKey === "touches") return b.activities.length - a.activities.length;
-        // stalest: never-visited first, then longest-since-visit first
-        const da = a.daysSince === null ? Number.POSITIVE_INFINITY : a.daysSince;
-        const db = b.daysSince === null ? Number.POSITIVE_INFINITY : b.daysSince;
-        return db - da;
+        if (sortKey === "cases") {
+          if (b.caseCount !== a.caseCount) return b.caseCount - a.caseCount;
+          return a.contact.name.localeCompare(b.contact.name);
+        }
+        return a.contact.name.localeCompare(b.contact.name);
       });
-  }, [attorneys, activitiesByContact, referralByName, search, sortKey]);
+  }, [attorneys, activitiesByContact, caseCountByName, search, sortKey]);
 
-  const touchesThisMonth = useMemo(() => {
+  const totalCases = useMemo(
+    () => rows.reduce((sum, r) => sum + r.caseCount, 0),
+    [rows],
+  );
+
+  const activitiesThisMonth = useMemo(() => {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     let count = 0;
@@ -134,26 +114,26 @@ export default function MarketingPage() {
     return count;
   }, [activitiesByContact]);
 
-  const needsVisit = rows.filter((r) => r.temperature === "cold").length;
+  const visitTypes = settings.visitTypes;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-4 lg:p-6">
       <header>
         <h1 className="text-2xl font-bold tracking-tight">Marketing</h1>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Track outreach to the attorneys who refer you cases — visits, lunches, calls, and
-          more. Firms auto-populate from your Attorney contacts.
+          Track your outreach to the attorneys you work with — visits, lunches, calls, and more.
+          Firms auto-populate from your Attorney contacts.
         </p>
       </header>
 
       {/* Dashboard tiles */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryTile label="Attorneys tracked" value={String(attorneys.length)} />
-        <SummaryTile label="Touches this month" value={String(touchesThisMonth)} accent="emerald" />
+        <SummaryTile label="Attorneys" value={String(attorneys.length)} />
+        <SummaryTile label="Total cases" value={String(totalCases)} accent="blue" />
         <SummaryTile
-          label="Need a visit"
-          value={String(needsVisit)}
-          accent={needsVisit > 0 ? "red" : "emerald"}
+          label="Activities this month"
+          value={String(activitiesThisMonth)}
+          accent="emerald"
         />
       </div>
 
@@ -170,9 +150,8 @@ export default function MarketingPage() {
           onChange={(e) => setSortKey(e.target.value as SortKey)}
           value={sortKey}
         >
-          <option value="stalest">Sort: Needs a visit first</option>
-          <option value="touches">Sort: Most touches</option>
           <option value="alpha">Sort: A–Z</option>
+          <option value="cases">Sort: Most cases</option>
         </select>
       </div>
 
@@ -190,7 +169,6 @@ export default function MarketingPage() {
 
       <div className="flex flex-col gap-3">
         {rows.map((row) => {
-          const temp = TEMP_STYLES[row.temperature];
           const isExpanded = expandedId === row.contact.id;
           const isLogging = loggingId === row.contact.id;
           return (
@@ -202,36 +180,25 @@ export default function MarketingPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-lg font-semibold">{row.contact.name}</h3>
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${temp.pill}`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${temp.dot}`} />
-                      {temp.label}
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                      {row.caseCount} case{row.caseCount === 1 ? "" : "s"}
                     </span>
-                    {row.referrals > 0 && (
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                        {row.referrals} referral{row.referrals === 1 ? "" : "s"}
-                      </span>
-                    )}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--text-muted)]">
-                    {row.contact.phone && <span>{row.contact.phone}</span>}
-                    {row.contact.address && <span>{row.contact.address}</span>}
+                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-[var(--text-muted)]">
+                    {row.contact.phone && <span>📞 {row.contact.phone}</span>}
+                    {row.contact.address && <span>📍 {row.contact.address}</span>}
                   </div>
                   <p className="mt-2 text-sm">
                     {row.latest ? (
                       <>
-                        <span className="text-[var(--text-muted)]">Last touch: </span>
+                        <span className="text-[var(--text-muted)]">Last activity: </span>
                         <span className="font-medium">
-                          {TYPE_EMOJI[row.latest.type]} {row.latest.type}
+                          {emojiFor(row.latest.type)} {row.latest.type}
                         </span>{" "}
-                        <span className="text-[var(--text-muted)]">
-                          on {row.latest.date}
-                          {row.daysSince !== null && ` · ${row.daysSince}d ago`}
-                        </span>
+                        <span className="text-[var(--text-muted)]">on {row.latest.date}</span>
                       </>
                     ) : (
-                      <span className="text-[var(--text-muted)]">No outreach logged yet.</span>
+                      <span className="text-[var(--text-muted)]">No activity logged yet.</span>
                     )}
                   </p>
                 </div>
@@ -247,9 +214,7 @@ export default function MarketingPage() {
                   )}
                   <button
                     className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-[0.97]"
-                    onClick={() => {
-                      setLoggingId(isLogging ? null : row.contact.id);
-                    }}
+                    onClick={() => setLoggingId(isLogging ? null : row.contact.id)}
                     type="button"
                   >
                     {isLogging ? "Cancel" : "+ Log Activity"}
@@ -259,6 +224,7 @@ export default function MarketingPage() {
 
               {isLogging && (
                 <LogActivityForm
+                  visitTypes={visitTypes}
                   onCancel={() => setLoggingId(null)}
                   onSave={(input) => {
                     addActivity(row.contact.id, input);
@@ -277,7 +243,7 @@ export default function MarketingPage() {
                     >
                       <div className="min-w-0 text-sm">
                         <span className="font-semibold">
-                          {TYPE_EMOJI[a.type]} {a.type}
+                          {emojiFor(a.type)} {a.type}
                         </span>
                         <span className="ml-2 text-xs text-[var(--text-muted)]">{a.date}</span>
                         {a.repName && (
@@ -305,7 +271,7 @@ export default function MarketingPage() {
 
       {totalActivities > 0 && (
         <p className="text-center text-xs text-[var(--text-muted)]">
-          {totalActivities} total outreach {totalActivities === 1 ? "touch" : "touches"} logged.
+          {totalActivities} total {totalActivities === 1 ? "activity" : "activities"} logged.
         </p>
       )}
     </div>
@@ -319,13 +285,13 @@ function SummaryTile({
 }: {
   label: string;
   value: string;
-  accent?: "emerald" | "red";
+  accent?: "emerald" | "blue";
 }) {
   const valueColor =
     accent === "emerald"
       ? "text-emerald-700"
-      : accent === "red"
-        ? "text-red-600"
+      : accent === "blue"
+        ? "text-blue-700"
         : "text-[var(--text-main)]";
   return (
     <div className="rounded-2xl border border-[var(--line-soft)] bg-white p-4">
@@ -338,19 +304,16 @@ function SummaryTile({
 }
 
 function LogActivityForm({
+  visitTypes,
   onSave,
   onCancel,
 }: {
-  onSave: (input: {
-    date: string;
-    type: MarketingActivityType;
-    repName?: string;
-    notes?: string;
-  }) => void;
+  visitTypes: string[];
+  onSave: (input: { date: string; type: string; repName?: string; notes?: string }) => void;
   onCancel: () => void;
 }) {
   const [date, setDate] = useState(getTodayUsDate());
-  const [type, setType] = useState<MarketingActivityType>("Visit");
+  const [type, setType] = useState(visitTypes[0] ?? "Visit");
   const [repName, setRepName] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -365,13 +328,13 @@ function LogActivityForm({
         />
       </label>
       <label className="grid gap-1">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">Type</span>
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Type of visit</span>
         <select
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-          onChange={(e) => setType(e.target.value as MarketingActivityType)}
+          onChange={(e) => setType(e.target.value)}
           value={type}
         >
-          {MARKETING_ACTIVITY_TYPES.map((t) => (
+          {visitTypes.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>

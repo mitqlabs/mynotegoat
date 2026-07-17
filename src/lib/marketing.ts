@@ -15,17 +15,11 @@
 
 import { usDateToIso } from "@/components/us-date-input";
 
-export type MarketingActivityType =
-  | "Visit"
-  | "Lunch Drop-off"
-  | "Call"
-  | "Email"
-  | "Gift"
-  | "Meeting"
-  | "Event"
-  | "Other";
+// Visit/activity type is a free string so the office can customize the
+// list in Settings → Admin → Marketing. These are the seed defaults.
+export type MarketingActivityType = string;
 
-export const MARKETING_ACTIVITY_TYPES: MarketingActivityType[] = [
+export const DEFAULT_MARKETING_VISIT_TYPES: string[] = [
   "Visit",
   "Lunch Drop-off",
   "Call",
@@ -60,10 +54,7 @@ function normalizeText(value: unknown): string {
 }
 
 function normalizeType(value: unknown): MarketingActivityType {
-  const t = normalizeText(value);
-  return (MARKETING_ACTIVITY_TYPES as string[]).includes(t)
-    ? (t as MarketingActivityType)
-    : "Visit";
+  return normalizeText(value) || "Visit";
 }
 
 function normalizeActivity(value: unknown, contactId: string): MarketingActivity | null {
@@ -138,30 +129,4 @@ export function sortActivitiesDesc(activities: MarketingActivity[]): MarketingAc
 /** The latest activity for a contact, or null. */
 export function latestActivity(activities: MarketingActivity[]): MarketingActivity | null {
   return sortActivitiesDesc(activities)[0] ?? null;
-}
-
-export type MarketingTemperature = "recent" | "due" | "cold";
-
-/**
- * Relationship temperature from days since the last touch:
- *   recent → within 30 days (green)
- *   due    → 31–90 days (amber)
- *   cold   → over 90 days, or never touched (red)
- */
-export function temperatureFromDays(daysSince: number | null): MarketingTemperature {
-  if (daysSince === null) return "cold";
-  if (daysSince <= 30) return "recent";
-  if (daysSince <= 90) return "due";
-  return "cold";
-}
-
-/** Whole days between a US date and today; null if unparseable. */
-export function daysSinceUsDate(usDate: string): number | null {
-  const iso = usDateToIso(usDate);
-  if (!iso) return null;
-  const then = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(then.getTime())) return null;
-  const now = new Date();
-  const ms = now.getTime() - then.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }

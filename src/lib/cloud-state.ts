@@ -713,6 +713,7 @@ async function bootstrapTableBackedEntities() {
           // Marketing / BD outreach touches, keyed by attorney contact id.
           // Dual-written to the "contacts" namespace, so it hydrates here.
           "casemate.marketing.v1",
+          "casemate.marketing-settings.v1",
         ],
         tasks: [
           "casemate.tasks.v1",
