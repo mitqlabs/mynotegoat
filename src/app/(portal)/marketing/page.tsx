@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useMarketing } from "@/hooks/use-marketing";
 import { useMarketingSettings } from "@/hooks/use-marketing-settings";
+import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { resolveCaseBucket } from "@/lib/marketing-settings";
 import {
   latestActivity,
   sortActivitiesDesc,
@@ -48,23 +50,31 @@ export default function MarketingPage() {
   const { contacts } = useContactDirectory();
   const { activitiesByContact, addActivity, removeActivity, totalActivities } = useMarketing();
   const { settings } = useMarketingSettings();
+  const { caseStatuses } = useCaseStatuses();
 
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("az");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
 
-  // How many cases (patients) we have with each firm — matched on the
-  // patient's attorney field. This is the number the office cares about.
-  const caseCountByName = useMemo(() => {
-    const counts = new Map<string, number>();
+  // Cases per firm, matched on the patient's attorney field, split into
+  // Active vs Total using each case status's marketing bucket (set in
+  // Settings → Admin → Marketing). active = live case (counts in both);
+  // total = active + completed (e.g. Paid); none (e.g. Dropped) excluded.
+  const casesByName = useMemo(() => {
+    const counts = new Map<string, { active: number; total: number }>();
     for (const p of patients) {
       const a = normalizeName(p.attorney || "");
       if (!a || a === "self") continue;
-      counts.set(a, (counts.get(a) ?? 0) + 1);
+      const bucket = resolveCaseBucket(p.caseStatus || "", settings, caseStatuses);
+      if (bucket === "none") continue;
+      const rec = counts.get(a) ?? { active: 0, total: 0 };
+      if (bucket === "active") rec.active += 1;
+      rec.total += 1;
+      counts.set(a, rec);
     }
     return counts;
-  }, []);
+  }, [settings, caseStatuses]);
 
   const attorneys = useMemo(
     () => contacts.filter((c) => c.category === "Attorney"),
@@ -75,18 +85,23 @@ export default function MarketingPage() {
     contact: ContactRecord;
     activities: MarketingActivity[];
     latest: MarketingActivity | null;
-    caseCount: number;
+    activeCases: number;
+    totalCases: number;
   };
 
   const rows = useMemo<Row[]>(() => {
     const q = normalizeName(search);
     return attorneys
-      .map((contact) => ({
-        contact,
-        activities: activitiesByContact[contact.id] ?? [],
-        latest: latestActivity(activitiesByContact[contact.id] ?? []),
-        caseCount: caseCountByName.get(normalizeName(contact.name)) ?? 0,
-      }))
+      .map((contact) => {
+        const counts = casesByName.get(normalizeName(contact.name)) ?? { active: 0, total: 0 };
+        return {
+          contact,
+          activities: activitiesByContact[contact.id] ?? [],
+          latest: latestActivity(activitiesByContact[contact.id] ?? []),
+          activeCases: counts.active,
+          totalCases: counts.total,
+        };
+      })
       .filter((r) => !q || normalizeName(r.contact.name).includes(q))
       .sort((a, b) => {
         const byName = a.contact.name.localeCompare(b.contact.name);
@@ -94,20 +109,18 @@ export default function MarketingPage() {
           case "za":
             return -byName;
           case "cases_desc":
-            return b.caseCount - a.caseCount || byName;
+            return b.totalCases - a.totalCases || byName;
           case "cases_asc":
-            return a.caseCount - b.caseCount || byName;
+            return a.totalCases - b.totalCases || byName;
           case "az":
           default:
             return byName;
         }
       });
-  }, [attorneys, activitiesByContact, caseCountByName, search, sortKey]);
+  }, [attorneys, activitiesByContact, casesByName, search, sortKey]);
 
-  const totalCases = useMemo(
-    () => rows.reduce((sum, r) => sum + r.caseCount, 0),
-    [rows],
-  );
+  const totalActiveCases = useMemo(() => rows.reduce((s, r) => s + r.activeCases, 0), [rows]);
+  const totalCases = useMemo(() => rows.reduce((s, r) => s + r.totalCases, 0), [rows]);
 
   const activitiesThisMonth = useMemo(() => {
     const now = new Date();
@@ -134,14 +147,11 @@ export default function MarketingPage() {
       </header>
 
       {/* Dashboard tiles */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryTile label="Attorneys" value={String(attorneys.length)} />
+        <SummaryTile label="Active cases" value={String(totalActiveCases)} accent="emerald" />
         <SummaryTile label="Total cases" value={String(totalCases)} accent="blue" />
-        <SummaryTile
-          label="Activities this month"
-          value={String(activitiesThisMonth)}
-          accent="emerald"
-        />
+        <SummaryTile label="Activities this month" value={String(activitiesThisMonth)} />
       </div>
 
       {/* Controls */}
@@ -189,8 +199,11 @@ export default function MarketingPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-lg font-semibold">{row.contact.name}</h3>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                      {row.activeCases} active
+                    </span>
                     <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                      {row.caseCount} case{row.caseCount === 1 ? "" : "s"}
+                      {row.totalCases} total
                     </span>
                   </div>
                   <div className="mt-1 flex flex-col gap-0.5 text-xs">

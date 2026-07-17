@@ -9,12 +9,45 @@
  */
 
 import { DEFAULT_MARKETING_VISIT_TYPES } from "@/lib/marketing";
+import type { CaseStatusConfig } from "@/lib/case-statuses";
 
 const STORAGE_KEY = "casemate.marketing-settings.v1";
 export const STORAGE_KEY_MARKETING_SETTINGS = STORAGE_KEY;
 
+// How a case status counts toward a firm's case totals on the Marketing
+// page:
+//   active → counts in BOTH the Active and Total figures (a live case)
+//   total  → counts in Total only (e.g. Paid — completed, not active)
+//   none   → excluded entirely (e.g. Dropped — a lost case)
+export type MarketingCaseBucket = "active" | "total" | "none";
+
 export interface MarketingSettings {
   visitTypes: string[];
+  /** Per-case-status override, keyed by lowercased status name. When a
+   *  status isn't listed here, its bucket is derived from defaults. */
+  caseBucketByStatus: Record<string, MarketingCaseBucket>;
+}
+
+/** Default bucket for a status when the user hasn't set an override. */
+export function defaultBucketForStatus(status: Pick<CaseStatusConfig, "name" | "isCaseClosed">): MarketingCaseBucket {
+  const name = status.name.toLowerCase();
+  if (name.includes("drop")) return "none";
+  return status.isCaseClosed ? "total" : "active";
+}
+
+/** Resolve a status name to its marketing bucket (override or default). */
+export function resolveCaseBucket(
+  statusName: string,
+  settings: Pick<MarketingSettings, "caseBucketByStatus">,
+  caseStatuses: CaseStatusConfig[],
+): MarketingCaseBucket {
+  const key = statusName.trim().toLowerCase();
+  if (!key) return "none";
+  const override = settings.caseBucketByStatus[key];
+  if (override) return override;
+  const cfg = caseStatuses.find((s) => s.name.toLowerCase() === key);
+  if (!cfg) return "active"; // unknown status → count as an active case
+  return defaultBucketForStatus(cfg);
 }
 
 function normalizeVisitTypes(value: unknown): string[] {
@@ -31,13 +64,29 @@ function normalizeVisitTypes(value: unknown): string[] {
   return out.length ? out : [...DEFAULT_MARKETING_VISIT_TYPES];
 }
 
+function normalizeCaseBuckets(value: unknown): Record<string, MarketingCaseBucket> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, MarketingCaseBucket> = {};
+  for (const [name, bucket] of Object.entries(value as Record<string, unknown>)) {
+    const key = name.trim().toLowerCase();
+    if (!key) continue;
+    if (bucket === "active" || bucket === "total" || bucket === "none") {
+      out[key] = bucket;
+    }
+  }
+  return out;
+}
+
 export function normalizeMarketingSettings(value: unknown): MarketingSettings {
   const row = (value && typeof value === "object" ? value : {}) as Partial<MarketingSettings>;
-  return { visitTypes: normalizeVisitTypes(row.visitTypes) };
+  return {
+    visitTypes: normalizeVisitTypes(row.visitTypes),
+    caseBucketByStatus: normalizeCaseBuckets(row.caseBucketByStatus),
+  };
 }
 
 export function getDefaultMarketingSettings(): MarketingSettings {
-  return { visitTypes: [...DEFAULT_MARKETING_VISIT_TYPES] };
+  return { visitTypes: [...DEFAULT_MARKETING_VISIT_TYPES], caseBucketByStatus: {} };
 }
 
 export function loadMarketingSettings(): MarketingSettings {
