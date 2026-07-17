@@ -1,8 +1,10 @@
 import { contacts as defaultContacts, type ContactRecord } from "@/lib/mock-data";
 import { migrateLegacyCategory } from "@/lib/contact-categories";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { notifyChange } from "@/lib/local-sync";
 
 const STORAGE_KEY = "casemate.contact-directory.v1";
+export const STORAGE_KEY_CONTACT_DIRECTORY = STORAGE_KEY;
 
 function normalizeText(value: unknown, fallback = "") {
   if (typeof value !== "string") {
@@ -85,6 +87,9 @@ export function saveContactDirectory(contacts: ContactRecord[]) {
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(contacts));
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "contacts", contacts));
+  // Notify other hook instances (e.g. the Marketing page) so a contact
+  // add/edit/remove is reflected everywhere without a reload.
+  notifyChange(STORAGE_KEY);
 }
 
 export function createContactId() {

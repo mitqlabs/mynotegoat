@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createContactId,
   getDefaultContactDirectory,
   loadContactDirectory,
   saveContactDirectory,
+  STORAGE_KEY_CONTACT_DIRECTORY,
 } from "@/lib/contact-directory";
 import { sanitizeContactCategory } from "@/lib/contact-categories";
 import type { ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { onLocalChange } from "@/lib/local-sync";
 
 type ContactDraft = {
   name: string;
@@ -39,6 +41,28 @@ function normalizeCategory(category: string) {
 
 export function useContactDirectory() {
   const [contacts, setContacts] = useState<ContactRecord[]>(() => loadContactDirectory());
+  const selfWriteCountRef = useRef(0);
+
+  // Stay in sync with edits from other hook instances (Contacts page,
+  // Marketing page, cross-device realtime). Our own writes bump the
+  // counter so we don't redundantly reload right after saving.
+  useEffect(() => {
+    return onLocalChange(STORAGE_KEY_CONTACT_DIRECTORY, () => {
+      if (selfWriteCountRef.current > 0) {
+        selfWriteCountRef.current--;
+        return;
+      }
+      setContacts(loadContactDirectory());
+    });
+  }, []);
+
+  // Persist + optimistically update local state. saveContactDirectory
+  // fires notifyChange; we pre-increment so our own listener skips it.
+  const persist = useCallback((updated: ContactRecord[]) => {
+    selfWriteCountRef.current++;
+    saveContactDirectory(updated);
+    setContacts(updated);
+  }, []);
 
   const addContact = useCallback(
     (draft: ContactDraft): AddContactResult => {
@@ -86,15 +110,14 @@ export function useContactDirectory() {
       };
 
       const updated = [...current, next];
-      saveContactDirectory(updated);
-      setContacts(updated);
+      persist(updated);
 
       return {
         added: true,
         contact: next,
       };
     },
-    [],
+    [persist],
   );
 
   const updateContact = useCallback(
@@ -153,15 +176,14 @@ export function useContactDirectory() {
       const updated = current.map((entry) =>
         entry.id === id ? updatedContact : entry,
       );
-      saveContactDirectory(updated);
-      setContacts(updated);
+      persist(updated);
 
       return {
         updated: true,
         contact: updatedContact,
       };
     },
-    [],
+    [persist],
   );
 
   const removeContact = useCallback((id: string): RemoveContactResult => {
@@ -171,16 +193,14 @@ export function useContactDirectory() {
       return { removed: false, reason: "Contact not found." };
     }
     const updated = current.filter((entry) => entry.id !== id);
-    saveContactDirectory(updated);
-    setContacts(updated);
+    persist(updated);
     return { removed: true, contact: target };
-  }, []);
+  }, [persist]);
 
   const resetToDefaults = useCallback(() => {
     const defaults = getDefaultContactDirectory();
-    setContacts(defaults);
-    saveContactDirectory(defaults);
-  }, []);
+    persist(defaults);
+  }, [persist]);
 
   return {
     contacts,

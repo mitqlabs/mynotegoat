@@ -42,7 +42,7 @@ function emojiFor(type: string): string {
   return TYPE_EMOJI[type] ?? "•";
 }
 
-type SortKey = "alpha" | "cases";
+type SortKey = "az" | "za" | "cases_desc" | "cases_asc";
 
 export default function MarketingPage() {
   const { contacts } = useContactDirectory();
@@ -50,7 +50,7 @@ export default function MarketingPage() {
   const { settings } = useMarketingSettings();
 
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("alpha");
+  const [sortKey, setSortKey] = useState<SortKey>("az");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
 
@@ -89,11 +89,18 @@ export default function MarketingPage() {
       }))
       .filter((r) => !q || normalizeName(r.contact.name).includes(q))
       .sort((a, b) => {
-        if (sortKey === "cases") {
-          if (b.caseCount !== a.caseCount) return b.caseCount - a.caseCount;
-          return a.contact.name.localeCompare(b.contact.name);
+        const byName = a.contact.name.localeCompare(b.contact.name);
+        switch (sortKey) {
+          case "za":
+            return -byName;
+          case "cases_desc":
+            return b.caseCount - a.caseCount || byName;
+          case "cases_asc":
+            return a.caseCount - b.caseCount || byName;
+          case "az":
+          default:
+            return byName;
         }
-        return a.contact.name.localeCompare(b.contact.name);
       });
   }, [attorneys, activitiesByContact, caseCountByName, search, sortKey]);
 
@@ -150,8 +157,10 @@ export default function MarketingPage() {
           onChange={(e) => setSortKey(e.target.value as SortKey)}
           value={sortKey}
         >
-          <option value="alpha">Sort: A–Z</option>
-          <option value="cases">Sort: Most cases</option>
+          <option value="az">Sort: A–Z</option>
+          <option value="za">Sort: Z–A</option>
+          <option value="cases_desc">Sort: Cases ↑ (most)</option>
+          <option value="cases_asc">Sort: Cases ↓ (least)</option>
         </select>
       </div>
 
@@ -184,9 +193,27 @@ export default function MarketingPage() {
                       {row.caseCount} case{row.caseCount === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-[var(--text-muted)]">
-                    {row.contact.phone && <span>📞 {row.contact.phone}</span>}
-                    {row.contact.address && <span>📍 {row.contact.address}</span>}
+                  <div className="mt-1 flex flex-col gap-0.5 text-xs">
+                    {row.contact.phone && (
+                      <a
+                        className="w-fit text-[var(--brand-primary)] hover:underline"
+                        href={`tel:${row.contact.phone.replace(/[^0-9+]/g, "")}`}
+                      >
+                        {row.contact.phone}
+                      </a>
+                    )}
+                    {row.contact.address && (
+                      <a
+                        className="w-fit text-[var(--brand-primary)] hover:underline"
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                          row.contact.address,
+                        )}`}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {row.contact.address}
+                      </a>
+                    )}
                   </div>
                   <p className="mt-2 text-sm">
                     {row.latest ? (
