@@ -1512,12 +1512,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // starting state, not subsequent expand/collapse.
   // Per-section display mode from Settings → Patient Page Sections,
   // read once at mount: "open" starts expanded, "show" collapsed, "hide"
-  // isn't rendered at all. hiddenClass() applies Tailwind's hidden so the
-  // panel drops out of the layout while its logic stays mounted (so
-  // background linkages keep working).
+  // isn't shown. hiddenStyle() drops a "hide" panel from layout while its
+  // logic stays mounted (so background linkages keep working).
   const sectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
-  const hiddenClass = useCallback(
-    (key: SectionPanelKey) => (sectionModes[key] === "hide" ? " hidden" : ""),
+  // Hide via inline style, NOT a conditional class — appending to the
+  // className with a template literal stops Tailwind's production build
+  // from extracting single-use utilities like xl:col-span-3, which
+  // silently breaks the panel grid. Keep classNames fully static.
+  const hiddenStyle = useCallback(
+    (key: SectionPanelKey): CSSProperties | undefined =>
+      sectionModes[key] === "hide" ? { display: "none" } : undefined,
     [sectionModes],
   );
   const [sectionPanelsOpen, setSectionPanelsOpen] = useState<Record<SectionPanelKey, boolean>>(() => {
@@ -4743,7 +4747,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           Settings → Patient Page Sections; Notes ships on by default
           so a free-form note left by the front desk never gets
           missed during a visit. */}
-      <section className={`panel-card p-4${hiddenClass("notes")}`}>
+      <section className="panel-card p-4" style={hiddenStyle("notes")}>
         <button
           className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("notes")}
@@ -5396,7 +5400,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           (spans 2 cols) · Patient Files; row 3: Diagnosis · Reports ·
           Additional Details. */}
       <section className="grid gap-4 xl:grid-cols-6 items-start">
-        <section className={`panel-card p-4 order-4 xl:col-span-3${hiddenClass("appointments")}`}>
+        <section className="panel-card p-4 order-4 xl:col-span-3" style={hiddenStyle("appointments")}>
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
@@ -5841,7 +5845,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-        <article className={`panel-card p-4 order-1 xl:col-span-2${hiddenClass("reExam")}`}>
+        <article className="panel-card p-4 order-1 xl:col-span-2" style={hiddenStyle("reExam")}>
           <button
             className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("reExam")}
@@ -5917,7 +5921,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           )}
         </article>
-        <article className={`panel-card p-4 order-2 xl:col-span-2${hiddenClass("relatedCases")}`}>
+        <article className="panel-card p-4 order-2 xl:col-span-2" style={hiddenStyle("relatedCases")}>
           <button
             className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("relatedCases")}
@@ -6013,7 +6017,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </>
           )}
         </article>
-        <section className={`panel-card p-4 order-3 xl:col-span-2${hiddenClass("letters")}`}>
+        <section className="panel-card p-4 order-3 xl:col-span-2" style={hiddenStyle("letters")}>
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("letters")}
@@ -6078,7 +6082,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className={`panel-card p-4 order-6 xl:col-span-2${hiddenClass("diagnosis")}`}>
+      <section className="panel-card p-4 order-6 xl:col-span-2" style={hiddenStyle("diagnosis")}>
         <button
           // Bar turns red when no diagnoses are on file — visible
           // warning that the patient is missing dx codes (which break
@@ -6328,7 +6332,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className={`panel-card p-4 order-7 xl:col-span-2${hiddenClass("narrative")}`}>
+      <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("narrative")}>
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("narrative")}
@@ -6394,7 +6398,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         )}
       </section>
       {/* ── Patient Files ──────────────────────────────────────────────── */}
-      <section className={`panel-card p-4 order-5 xl:col-span-3${hiddenClass("patientFiles")}`}>
+      <section className="panel-card p-4 order-5 xl:col-span-3" style={hiddenStyle("patientFiles")}>
         <button
           className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
           onClick={() => toggleSectionPanel("patientFiles")}
@@ -6616,7 +6620,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         )}
       </section>
-      <section className={`panel-card p-4 order-8 xl:col-span-2${hiddenClass("additionalDetails")}`}>
+      <section className="panel-card p-4 order-8 xl:col-span-2" style={hiddenStyle("additionalDetails")}>
         {(() => {
           // Non-PI (cash) patients have no insurance billing milestones,
           // so their bar is a plain teal header with no status coloring.
