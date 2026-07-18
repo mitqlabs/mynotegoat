@@ -7,6 +7,7 @@ import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-p
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
+import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
@@ -5515,6 +5516,8 @@ export default function SettingsPage() {
 
         </div>
       </CollapsibleSection>
+
+      <ModuleVisibilitySection />
 
       {/* ── Admin group ──────────────────────────────────────────────
           Diagnostics, Backup & Restore, Data Recovery, Security

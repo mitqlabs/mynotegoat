@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { wipeLocalWorkspaceForSignOut } from "@/lib/cloud-state";
 import { getVisiblePortalNavItems, type PlanTier } from "@/lib/plan-access";
+import { useModuleVisibility } from "@/hooks/use-module-visibility";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -92,7 +93,11 @@ export function AppShell({
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
   });
-  const navItems = useMemo(() => getVisiblePortalNavItems(planTier), [planTier]);
+  const { isFeatureEnabled } = useModuleVisibility();
+  const navItems = useMemo(
+    () => getVisiblePortalNavItems(planTier).filter((item) => isFeatureEnabled(item.feature)),
+    [planTier, isFeatureEnabled],
+  );
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
