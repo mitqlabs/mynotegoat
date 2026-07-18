@@ -7,21 +7,25 @@ import {
   savePatientPagePrefs,
   type PatientPagePanelKey,
   type PatientPagePrefs,
+  type PatientPageSectionMode,
 } from "@/lib/patient-page-prefs";
 
 export function usePatientPagePrefs() {
   const [prefs, setPrefs] = useState<PatientPagePrefs>(() => loadPatientPagePrefs());
 
-  const setDefaultOpen = useCallback((panel: PatientPagePanelKey, value: boolean) => {
-    setPrefs((current) => {
-      const next: PatientPagePrefs = {
-        ...current,
-        defaultOpen: { ...current.defaultOpen, [panel]: value },
-      };
-      savePatientPagePrefs(next);
-      return next;
-    });
-  }, []);
+  const setSectionMode = useCallback(
+    (panel: PatientPagePanelKey, value: PatientPageSectionMode) => {
+      setPrefs((current) => {
+        const next: PatientPagePrefs = {
+          ...current,
+          mode: { ...current.mode, [panel]: value },
+        };
+        savePatientPagePrefs(next);
+        return next;
+      });
+    },
+    [],
+  );
 
   const resetToDefaults = useCallback(() => {
     const defaults = getDefaultPatientPagePrefs();
@@ -31,7 +35,7 @@ export function usePatientPagePrefs() {
 
   return {
     patientPagePrefs: prefs,
-    setPatientPageDefaultOpen: setDefaultOpen,
+    setPatientPageSectionMode: setSectionMode,
     resetPatientPagePrefs: resetToDefaults,
   };
 }

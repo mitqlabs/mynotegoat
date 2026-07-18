@@ -46,42 +46,53 @@ export const patientPagePanelLabels: Record<PatientPagePanelKey, string> = {
   additionalDetails: "Additional Details",
 };
 
+/** Three-way per-section display mode:
+ *   open → visible and expanded on patient-page load
+ *   show → visible but collapsed
+ *   hide → not rendered at all */
+export type PatientPageSectionMode = "open" | "show" | "hide";
+
 export interface PatientPagePrefs {
-  /** Map from panel key → boolean (true = start expanded on patient page mount). */
-  defaultOpen: Record<PatientPagePanelKey, boolean>;
+  /** Map from panel key → display mode. */
+  mode: Record<PatientPagePanelKey, PatientPageSectionMode>;
 }
 
 const STORAGE_KEY = "casemate.patient-page-prefs.v1";
 
-/** Defaults the user explicitly asked for: Notes is the one panel
- *  the user wants always open so they don't miss patient notes. The
- *  rest stay closed (matches the patient-page behavior before this
- *  feature existed). */
+/** Defaults: Notes opens expanded (so notes are never missed); the rest
+ *  are visible but collapsed. Nothing is hidden by default. */
 export function getDefaultPatientPagePrefs(): PatientPagePrefs {
   return {
-    defaultOpen: {
-      notes: true,
-      reExam: false,
-      relatedCases: false,
-      appointments: false,
-      diagnosis: false,
-      letters: false,
-      narrative: false,
-      patientFiles: false,
-      additionalDetails: false,
+    mode: {
+      notes: "open",
+      reExam: "show",
+      relatedCases: "show",
+      appointments: "show",
+      diagnosis: "show",
+      letters: "show",
+      narrative: "show",
+      patientFiles: "show",
+      additionalDetails: "show",
     },
   };
 }
 
-function normalizeDefaultOpen(value: unknown): Record<PatientPagePanelKey, boolean> {
-  const defaults = getDefaultPatientPagePrefs().defaultOpen;
-  if (!value || typeof value !== "object") return defaults;
-  const record = value as Record<string, unknown>;
+function normalizeMode(value: unknown, legacyDefaultOpen: unknown): Record<PatientPagePanelKey, PatientPageSectionMode> {
+  const defaults = getDefaultPatientPagePrefs().mode;
   const next = { ...defaults };
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  // Legacy migration: old prefs stored defaultOpen booleans (true = open,
+  // false = collapsed-but-visible). Map those to the new modes.
+  const legacy =
+    legacyDefaultOpen && typeof legacyDefaultOpen === "object"
+      ? (legacyDefaultOpen as Record<string, unknown>)
+      : null;
   for (const key of patientPagePanelKeys) {
-    const incoming = record[key];
-    if (typeof incoming === "boolean") {
+    const incoming = record?.[key];
+    if (incoming === "open" || incoming === "show" || incoming === "hide") {
       next[key] = incoming;
+    } else if (legacy && typeof legacy[key] === "boolean") {
+      next[key] = legacy[key] ? "open" : "show";
     }
   }
   return next;
@@ -91,9 +102,9 @@ export function normalizePatientPagePrefs(value: unknown): PatientPagePrefs {
   if (!value || typeof value !== "object") {
     return getDefaultPatientPagePrefs();
   }
-  const payload = value as { defaultOpen?: unknown };
+  const payload = value as { mode?: unknown; defaultOpen?: unknown };
   return {
-    defaultOpen: normalizeDefaultOpen(payload.defaultOpen),
+    mode: normalizeMode(payload.mode, payload.defaultOpen),
   };
 }
 

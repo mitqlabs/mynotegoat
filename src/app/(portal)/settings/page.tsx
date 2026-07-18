@@ -17,6 +17,7 @@ import { usePatientPagePrefs } from "@/hooks/use-patient-page-prefs";
 import {
   patientPagePanelKeys,
   patientPagePanelLabels,
+  type PatientPageSectionMode,
 } from "@/lib/patient-page-prefs";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useFileManager } from "@/hooks/use-file-manager";
@@ -2906,7 +2907,7 @@ export default function SettingsPage() {
   } = useCaseStatuses();
   const {
     patientPagePrefs,
-    setPatientPageDefaultOpen,
+    setPatientPageSectionMode,
     resetPatientPagePrefs,
   } = usePatientPagePrefs();
   const {
@@ -5179,7 +5180,7 @@ export default function SettingsPage() {
             Reset Patient Page Defaults
           </button>
         }
-        description="Pick which sections start expanded on every patient page."
+        description="Choose how each section appears on every patient page."
         hidden={!showSection("patientPage")}
         isOpen={sectionIsOpen("patientPage")}
         onToggle={() => toggleSection("patientPage")}
@@ -5187,28 +5188,35 @@ export default function SettingsPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-[var(--text-muted)]">
-            Toggle the sections you want already open when you click into any
-            patient. Sections still expand and collapse manually like before —
-            this just controls the starting state.
+            For each section pick <strong>Open</strong> (starts expanded),{" "}
+            <strong>Show</strong> (visible but collapsed), or <strong>Hide</strong> (not shown
+            on the patient page). You can still expand/collapse manually — this sets the
+            starting state.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {patientPagePanelKeys.map((panelKey) => (
-              <label
-                className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                key={`patient-panel-default-${panelKey}`}
+              <div
+                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                key={`patient-panel-mode-${panelKey}`}
               >
-                <input
-                  checked={patientPagePrefs.defaultOpen[panelKey]}
-                  className="mt-0.5"
-                  onChange={(event) =>
-                    setPatientPageDefaultOpen(panelKey, event.target.checked)
-                  }
-                  type="checkbox"
-                />
                 <span className="text-sm font-semibold">
                   {patientPagePanelLabels[panelKey]}
                 </span>
-              </label>
+                <select
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(event) =>
+                    setPatientPageSectionMode(
+                      panelKey,
+                      event.target.value as PatientPageSectionMode,
+                    )
+                  }
+                  value={patientPagePrefs.mode[panelKey]}
+                >
+                  <option value="open">Open</option>
+                  <option value="show">Show</option>
+                  <option value="hide">Hide</option>
+                </select>
+              </div>
             ))}
           </div>
         </div>
