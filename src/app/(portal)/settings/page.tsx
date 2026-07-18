@@ -8,6 +8,7 @@ import { DocumentTemplateSettingsPanel } from "@/components/document-template-se
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
+import { TeamSettingsSection } from "@/components/team-settings-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
@@ -5526,6 +5527,8 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <ModuleVisibilitySection />
+
+      <TeamSettingsSection />
 
       {/* ── Admin group ──────────────────────────────────────────────
           Diagnostics, Backup & Restore, Data Recovery, Security

@@ -33,6 +33,9 @@ create table if not exists public.workspace_members (
   workspace_owner_id uuid not null,
   -- The staff member's auth uid.
   member_user_id uuid not null,
+  -- The member's email, denormalized so the owner's Team screen can show
+  -- who's who without querying auth.users.
+  email text,
   -- Free-form role label chosen by the owner ("Front Desk", "Office
   -- Manager", ...). Display only.
   label text not null default 'Team Member',
