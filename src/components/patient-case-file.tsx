@@ -11,6 +11,7 @@ import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
@@ -1319,6 +1320,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [tasks, patient.id],
   );
   const { encountersByNewest, createEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
   // deleted encounter) and silently inflates Cash Payments totals.
@@ -3516,6 +3518,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const openEncounterEditor = (encounterId: string) => {
+    if (!isFeatureEnabled("encounters")) {
+      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      return;
+    }
     router.push(`/encounters?patientId=${patient.id}&encounterId=${encounterId}`);
   };
 
@@ -3891,6 +3897,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // flow, which can't introduce duplicates the same way.
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
+    if (!isFeatureEnabled("encounters")) {
+      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      return;
+    }
     const appointmentDate = toUsDate(appointment.date);
     // Check for existing encounter matching this appointment (by date + type first, then date only)
     const existingByType =
@@ -4384,12 +4394,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   Non-PI Patient
                 </span>
               )}
-              <Link
-                className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
-                href={`/encounters?patientId=${patient.id}`}
-              >
-                Open Encounters For This Patient
-              </Link>
+              {isFeatureEnabled("encounters") && (
+                <Link
+                  className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                  href={`/encounters?patientId=${patient.id}`}
+                >
+                  Open Encounters For This Patient
+                </Link>
+              )}
               <button
                 className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
                 onClick={(event) => openQuickTaskModal(event)}
@@ -4711,8 +4723,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
         {/* Cash Payments + Treatment Packages side by side (cash-patient
             only). Packages snapshot the template so later edits don't
-            change a patient's existing contract. */}
-        {isCashPatient && (
+            change a patient's existing contract. Hidden when the Billing
+            feature is turned off. */}
+        {isCashPatient && isFeatureEnabled("billing") && (
           <div className="grid gap-4 p-4 lg:grid-cols-2 lg:items-start">
             <CashPaymentsSection
               patientId={patient.id}
