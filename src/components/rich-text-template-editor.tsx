@@ -257,13 +257,17 @@ export const RichTextTemplateEditor = forwardRef<
     }
     isFocusedRef.current = true;
 
+    // ALWAYS restore the caret we saved on blur. focus() drops a fresh
+    // collapsed selection at the START of the editor, so relying on
+    // "is the selection already inside" inserts at the top every time.
+    // restoreSelection() no-ops if we have no saved range (falls through
+    // to focus()'s position — fine for a first insert into an empty note).
     editor.focus();
-    // Try to restore the user's last caret position. If we can't, fall
-    // through to whatever selection focus() landed on (usually end).
-    if (!isSelectionInsideEditor(editor)) {
-      restoreSelection();
-    }
+    restoreSelection();
     document.execCommand("insertText", false, text);
+    // Save the NEW caret (now after the inserted text) so a follow-up
+    // insert chains after this one instead of stacking at the start.
+    captureSelection();
     emitChange();
   };
 
@@ -275,10 +279,9 @@ export const RichTextTemplateEditor = forwardRef<
     isFocusedRef.current = true;
 
     editor.focus();
-    if (!isSelectionInsideEditor(editor)) {
-      restoreSelection();
-    }
+    restoreSelection();
     document.execCommand("insertHTML", false, html);
+    captureSelection();
     emitChange();
   };
 
