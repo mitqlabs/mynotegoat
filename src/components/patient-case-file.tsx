@@ -2000,6 +2000,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     (statusConfigEntry) => statusConfigEntry.name.toLowerCase() === caseStatus.toLowerCase(),
   );
   const statusColor = statusConfig?.color ?? "#0d79bf";
+  // When the case is in a closed status (Submitted / Dropped / Paid, per
+  // Settings → Case Statuses), lock the Appointments/Encounters panel so
+  // a closed case isn't changed by accident — mirrors the signed-note
+  // lock. The user can Unlock to make an intentional change.
+  const caseIsClosed = statusConfig?.isCaseClosed ?? false;
+  const [appointmentsUnlocked, setAppointmentsUnlocked] = useState(false);
+  const appointmentsLocked = caseIsClosed && !appointmentsUnlocked;
   const patientFollowUpOverride = getPatientFollowUpOverride(patient.id);
   const xrayFollowUpOverride = patientFollowUpOverride.xray;
   const mriCtFollowUpOverride = patientFollowUpOverride.mriCt;
@@ -3546,6 +3553,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleAppointmentStatusChange = (appointmentId: string, nextStatus: AppointmentStatus) => {
+    if (appointmentsLocked) {
+      setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
+      return;
+    }
     if (nextStatus === "Reschedule") {
       setRescheduleAppointmentId(appointmentId);
       return;
@@ -3901,6 +3912,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // flow, which can't introduce duplicates the same way.
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
+    if (appointmentsLocked) {
+      setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
+      return;
+    }
     if (!isFeatureEnabled("encounters")) {
       window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
       return;
@@ -5408,6 +5423,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         >
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-left">
             <span>Appointments / Encounters</span>
+            {caseIsClosed && (
+              <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide">
+                {appointmentsLocked ? "🔒 Locked (case closed)" : "🔓 Unlocked"}
+              </span>
+            )}
             {/* Per-status counts so the user can see at a glance how
                 many are scheduled vs already in / out / canceled
                 without expanding the panel. */}
@@ -5424,8 +5444,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 View all scheduled appointments for this patient and launch encounters quickly.
               </p>
               <div className="flex shrink-0 items-center gap-2">
+                {caseIsClosed && (
+                  <button
+                    className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${
+                      appointmentsLocked
+                        ? "border border-amber-300 bg-amber-50 text-amber-800"
+                        : "border border-emerald-300 bg-emerald-50 text-emerald-800"
+                    }`}
+                    onClick={() => setAppointmentsUnlocked((v) => !v)}
+                    title={appointmentsLocked ? "Unlock to edit this closed case" : "Re-lock this closed case"}
+                    type="button"
+                  >
+                    {appointmentsLocked ? "🔒 Unlock" : "🔓 Lock"}
+                  </button>
+                )}
                 <button
-                  className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+                  disabled={appointmentsLocked}
                   onClick={openScheduleModal}
                   title="Schedule a new appointment"
                   type="button"
