@@ -2882,7 +2882,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
 
                     {openChargesPanel && (
                       <div className="mt-2 max-h-60 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2">
-                        <div className="grid gap-2 md:grid-cols-2">
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                           {filteredActiveTreatments.map((entry) => (
                             <button
                               key={entry.id}

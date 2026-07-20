@@ -2990,6 +2990,7 @@ export default function SettingsPage() {
   const [appointmentTypeDurationDraft, setAppointmentTypeDurationDraft] = useState(30);
   const [appointmentTypeDefaultDraft, setAppointmentTypeDefaultDraft] = useState(false);
   const [appointmentTypeError, setAppointmentTypeError] = useState("");
+  const [appointmentTypeSuccess, setAppointmentTypeSuccess] = useState("");
   const [roomNameDraft, setRoomNameDraft] = useState("");
   const [roomColorDraft, setRoomColorDraft] = useState("#0d79bf");
   const [roomError, setRoomError] = useState("");
@@ -3235,11 +3236,13 @@ export default function SettingsPage() {
     );
 
     if (!wasAdded) {
-      setAppointmentTypeError("An appointment type with this name already exists.");
+      setAppointmentTypeSuccess("");
+      setAppointmentTypeError(`"${typeName}" already exists as an appointment type.`);
       return;
     }
 
     setAppointmentTypeError("");
+    setAppointmentTypeSuccess(`"${typeName}" has been added.`);
     setAppointmentTypeNameDraft("");
     setAppointmentTypeColorDraft("#0d79bf");
     setAppointmentTypeDurationDraft(30);
@@ -4070,6 +4073,9 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          {appointmentTypeSuccess && (
+            <p className="mb-3 text-sm font-semibold text-emerald-700">{appointmentTypeSuccess}</p>
+          )}
           {appointmentTypeError && (
             <p className="mb-3 text-sm font-semibold text-[#b43b34]">{appointmentTypeError}</p>
           )}

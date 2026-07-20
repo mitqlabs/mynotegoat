@@ -80,6 +80,7 @@ export function BillingMacroSettingsPanel() {
   // Keyed by bundle id + chip index so two bundles can't cross-drag.
   const [dragBundleChip, setDragBundleChip] = useState<{ bundleId: string; index: number } | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [treatmentOpen, setTreatmentOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
 
@@ -127,19 +128,23 @@ export function BillingMacroSettingsPanel() {
   };
 
   const handleAddDiagnosis = () => {
+    const addedCode = diagnosisDraft.code.trim();
     const { id, added } = addDiagnosis({
       code: diagnosisDraft.code,
       description: diagnosisDraft.description,
       folderId: diagnosisDraft.folderId || billingMacros.diagnosisFolders[0]?.id,
     });
     if (!id) {
+      setSuccess("");
       setError("Could not add diagnosis code. Code or description is missing.");
       return;
     }
     if (!added) {
-      setError("Diagnosis code already exists in the library.");
+      setSuccess("");
+      setError(`${addedCode} is already in the library.`);
       return;
     }
+    setSuccess(`${addedCode} has been added to the library.`);
     // Attach the new dx to every bundle the user ticked. updateBundle
     // re-validates against the library so a stale id is dropped.
     for (const bundleId of diagnosisDraftBundleIds) {
@@ -201,6 +206,7 @@ export function BillingMacroSettingsPanel() {
       </div>
 
       {error && <p className="text-sm font-semibold text-[#b43b34]">{error}</p>}
+      {success && <p className="text-sm font-semibold text-emerald-700">{success}</p>}
 
       <article className="rounded-xl border border-[var(--line-soft)] bg-white">
         <button
