@@ -2287,6 +2287,27 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => patientAppointmentRecords.filter((entry) => entry.status === "Scheduled").length,
     [patientAppointmentRecords],
   );
+  // Count of appointments by their type (Cervical Decompression, Lumbar
+  // Decompression, New Patient, Discharge, …), most-frequent first.
+  const appointmentTypeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of patientAppointmentRecords) {
+      const t = (entry.appointmentType || "Other").trim() || "Other";
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [patientAppointmentRecords]);
+  // Still-scheduled appointments that fall on a date since marked CLOSED
+  // in Key Dates (e.g. a sick day added after the appt was booked). These
+  // need attention — the patient will show up to a closed office.
+  const blockedAppointments = useMemo(
+    () =>
+      patientAppointmentRecords
+        .filter((entry) => entry.status === "Scheduled")
+        .map((entry) => ({ appt: entry, closed: findClosedKeyDateForDate(keyDates, entry.date) }))
+        .filter((x) => Boolean(x.closed)),
+    [patientAppointmentRecords, keyDates],
+  );
   const closedEncounterCount = useMemo(
     () => patientEncounterRecords.filter((entry) => entry.signed).length,
     [patientEncounterRecords],
@@ -5439,6 +5460,33 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </button>
         {sectionPanelsOpen.appointments && (
           <>
+            {blockedAppointments.length > 0 && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <span className="font-semibold">
+                  ⚠ {blockedAppointments.length} scheduled appointment
+                  {blockedAppointments.length === 1 ? "" : "s"} on a now-CLOSED date:
+                </span>{" "}
+                {blockedAppointments
+                  .map(
+                    (b) =>
+                      `${toUsDate(b.appt.date)}${b.closed?.reason ? ` (${b.closed.reason})` : ""}`,
+                  )
+                  .join(", ")}{" "}
+                — reschedule so the patient doesn&apos;t arrive to a closed office.
+              </div>
+            )}
+            {appointmentTypeCounts.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {appointmentTypeCounts.map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="rounded-full bg-[var(--bg-soft)] px-2.5 py-1 text-xs text-[var(--text-main)]"
+                  >
+                    {type}: <span className="font-semibold">{count}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="mt-2 flex items-center justify-between">
               <p className="text-sm text-[var(--text-muted)]">
                 View all scheduled appointments for this patient and launch encounters quickly.
