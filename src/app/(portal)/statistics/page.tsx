@@ -341,6 +341,15 @@ export default function StatisticsPage() {
     setAttorneySortLevels(next);
     saveAttorneySortLevels(next);
   };
+  // Click a column header to sort by it. If it's already the sort column,
+  // clicking toggles the direction. Text (Attorney) defaults to A→Z, the
+  // numeric columns to highest-first.
+  const handleAttorneyColumnClick = (colId: AttorneyStatColumn) => {
+    const primary = attorneySortLevels[0];
+    const asc =
+      primary && primary.column === colId ? !primary.asc : colId === "attorney";
+    persistAttorneySortLevels([{ column: colId, asc }]);
+  };
   const updateAttorneySortLevel = (index: number, patch: Partial<AttorneySortLevel>) => {
     const next = attorneySortLevels.map((level, i) => (i === index ? { ...level, ...patch } : level));
     persistAttorneySortLevels(next);
@@ -1086,58 +1095,9 @@ export default function StatisticsPage() {
         <section className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Attorney Performance</h4>
-            <div className="mt-3 flex flex-col gap-1.5 text-xs">
-              {attorneySortLevels.map((level, index) => (
-                <div key={index} className="flex flex-wrap items-center gap-2">
-                  <span className="w-24 font-semibold text-[var(--text-muted)]">
-                    {index === 0 ? "Sort by:" : "+ Then by:"}
-                  </span>
-                  <select
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                    value={level.column}
-                    onChange={(e) =>
-                      updateAttorneySortLevel(index, { column: e.target.value as AttorneyStatColumn })
-                    }
-                  >
-                    {attorneyStatColumns.map((colId) => (
-                      <option key={colId} value={colId}>
-                        {attorneyStatLabels[colId]}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
-                    onClick={() => updateAttorneySortLevel(index, { asc: !level.asc })}
-                    title="Toggle direction"
-                  >
-                    {level.asc ? "▲ Asc" : "▼ Desc"}
-                  </button>
-                  {attorneySortLevels.length > 1 && (
-                    <button
-                      type="button"
-                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm text-[var(--text-muted)] hover:bg-[rgba(180,59,52,0.08)] hover:text-[#b43b34]"
-                      onClick={() => removeAttorneySortLevel(index)}
-                      title="Remove this sort level"
-                      aria-label="Remove sort level"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-              {attorneySortLevels.length < ATTORNEY_MAX_SORT_LEVELS && (
-                <div className="ml-24">
-                  <button
-                    type="button"
-                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
-                    onClick={addAttorneySortLevel}
-                  >
-                    + Add sort level
-                  </button>
-                </div>
-              )}
-            </div>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Click any column heading to sort by it; click again to reverse.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
@@ -1148,15 +1108,17 @@ export default function StatisticsPage() {
                     const sortLevel = sortIndex >= 0 ? attorneySortLevels[sortIndex] : null;
                     return (
                       <th key={colId} className="select-none px-4 py-3">
-                        <span className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 font-semibold hover:text-[var(--brand-primary)]"
+                          onClick={() => handleAttorneyColumnClick(colId)}
+                          title="Click to sort by this column"
+                        >
                           {attorneyStatLabels[colId]}
-                          {sortLevel && (
-                            <span className={`text-[10px] ${sortIndex === 0 ? "" : "text-[var(--text-muted)]"}`}>
-                              {sortIndex === 0 ? "" : `${sortIndex + 1}°`}
-                              {sortLevel.asc ? "▲" : "▼"}
-                            </span>
-                          )}
-                        </span>
+                          <span className="text-[10px] text-[var(--text-muted)]">
+                            {sortLevel ? (sortLevel.asc ? "▲" : "▼") : "↕"}
+                          </span>
+                        </button>
                       </th>
                     );
                   })}

@@ -8,6 +8,8 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { hasMacroInEverySection, starterMacroPack } from "@/lib/onboarding";
+import { AddressFieldGroup } from "@/components/address-field-group";
+import { formatUsPhoneInput } from "@/lib/phone-format";
 import type { AppointmentTypePatientTypes } from "@/lib/schedule-appointment-types";
 import { ScrollLock } from "@/components/scroll-lock";
 
@@ -223,7 +225,7 @@ function OfficeIdentity({
           <span className="text-sm font-semibold">Phone</span>
           <input
             className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            onChange={(e) => setForm({ ...form, phone: formatUsPhoneInput(e.target.value) })}
             value={form.phone}
           />
         </label>
@@ -235,14 +237,13 @@ function OfficeIdentity({
             value={form.email}
           />
         </label>
-        <label className="grid gap-1 md:col-span-2">
+        <div className="grid gap-1 md:col-span-2">
           <span className="text-sm font-semibold">Address</span>
-          <input
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
+          <AddressFieldGroup
+            onChange={(nextAddress) => setForm({ ...form, address: nextAddress })}
             value={form.address}
           />
-        </label>
+        </div>
       </div>
       <div className="mt-5 flex justify-end">
         <button
