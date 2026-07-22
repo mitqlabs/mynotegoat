@@ -102,7 +102,16 @@ export default function MarketingPage() {
           totalCases: counts.total,
         };
       })
-      .filter((r) => !q || normalizeName(r.contact.name).includes(q))
+      .filter((r) => {
+        if (!q) return true;
+        if (normalizeName(r.contact.name).includes(q)) return true;
+        // Also match who went and the notes on any logged activity.
+        return r.activities.some(
+          (a) =>
+            normalizeName(a.repName ?? "").includes(q) ||
+            normalizeName(a.notes ?? "").includes(q),
+        );
+      })
       .sort((a, b) => {
         const byName = a.contact.name.localeCompare(b.contact.name);
         switch (sortKey) {
@@ -159,7 +168,7 @@ export default function MarketingPage() {
         <input
           className="min-w-[200px] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search attorneys / firms…"
+          placeholder="Search…"
           value={search}
         />
         <select
@@ -390,7 +399,7 @@ function LogActivityForm({
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">Who went (optional)</span>
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Who Went (Optional)</span>
         <input
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
           onChange={(e) => setRepName(e.target.value)}
