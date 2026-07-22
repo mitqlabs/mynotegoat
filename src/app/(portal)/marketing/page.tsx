@@ -48,7 +48,8 @@ type SortKey = "az" | "za" | "cases_desc" | "cases_asc";
 
 export default function MarketingPage() {
   const { contacts } = useContactDirectory();
-  const { activitiesByContact, addActivity, removeActivity, totalActivities } = useMarketing();
+  const { activitiesByContact, addActivity, updateActivity, removeActivity, totalActivities } =
+    useMarketing();
   const { settings } = useMarketingSettings();
   const { caseStatuses } = useCaseStatuses();
 
@@ -56,6 +57,10 @@ export default function MarketingPage() {
   const [sortKey, setSortKey] = useState<SortKey>("az");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
+  // The activity currently being edited (from a firm's history).
+  const [editing, setEditing] = useState<{ contactId: string; activity: MarketingActivity } | null>(
+    null,
+  );
 
   // Cases per firm, matched on the patient's attorney field, split into
   // Active vs Total using each case status's marketing bucket (set in
@@ -263,10 +268,13 @@ export default function MarketingPage() {
                   )}
                   <button
                     className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-[0.97]"
-                    onClick={() => setLoggingId(isLogging ? null : row.contact.id)}
+                    onClick={() => {
+                      setEditing(null);
+                      setLoggingId(isLogging ? null : row.contact.id);
+                    }}
                     type="button"
                   >
-                    {isLogging ? "Cancel" : "+ Log Activity"}
+                    {isLogging ? "Cancel" : "+ Activity"}
                   </button>
                 </div>
               </div>
@@ -278,6 +286,20 @@ export default function MarketingPage() {
                   onSave={(input) => {
                     addActivity(row.contact.id, input);
                     setLoggingId(null);
+                    setExpandedId(row.contact.id);
+                  }}
+                />
+              )}
+
+              {editing?.contactId === row.contact.id && (
+                <LogActivityForm
+                  visitTypes={visitTypes}
+                  initial={editing.activity}
+                  saveLabel="Save Changes"
+                  onCancel={() => setEditing(null)}
+                  onSave={(input) => {
+                    updateActivity(row.contact.id, editing.activity.id, input);
+                    setEditing(null);
                     setExpandedId(row.contact.id);
                   }}
                 />
@@ -302,21 +324,34 @@ export default function MarketingPage() {
                         )}
                         {a.notes && <p className="mt-0.5 text-[var(--text-muted)]">{a.notes}</p>}
                       </div>
-                      <button
-                        className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Delete this activity — ${a.type} on ${a.date}? This cannot be undone.`,
-                            )
-                          ) {
-                            removeActivity(row.contact.id, a.id);
-                          }
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-soft)]"
+                          onClick={() => {
+                            setLoggingId(null);
+                            setEditing({ contactId: row.contact.id, activity: a });
+                            setExpandedId(row.contact.id);
+                          }}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete this activity — ${a.type} on ${a.date}? This cannot be undone.`,
+                              )
+                            ) {
+                              removeActivity(row.contact.id, a.id);
+                            }
+                          }}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -362,17 +397,21 @@ function SummaryTile({
 
 function LogActivityForm({
   visitTypes,
+  initial,
+  saveLabel = "Save Activity",
   onSave,
   onCancel,
 }: {
   visitTypes: string[];
+  initial?: { date: string; type: string; repName?: string; notes?: string };
+  saveLabel?: string;
   onSave: (input: { date: string; type: string; repName?: string; notes?: string }) => void;
   onCancel: () => void;
 }) {
-  const [date, setDate] = useState(getTodayUsDate());
-  const [type, setType] = useState(visitTypes[0] ?? "Visit");
-  const [repName, setRepName] = useState("");
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(initial?.date ?? getTodayUsDate());
+  const [type, setType] = useState(initial?.type ?? visitTypes[0] ?? "Visit");
+  const [repName, setRepName] = useState(initial?.repName ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
 
   return (
     <div className="mt-3 grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:grid-cols-2">
@@ -423,7 +462,7 @@ function LogActivityForm({
           onClick={() => onSave({ date, type, repName, notes })}
           type="button"
         >
-          Save Activity
+          {saveLabel}
         </button>
         <button
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-main)]"
