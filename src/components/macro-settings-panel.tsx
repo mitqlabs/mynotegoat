@@ -835,6 +835,22 @@ export function MacroSettingsPanel() {
                           />
                           Multi
                         </label>
+                        <label
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                          title="Answer this prompt with a MM/DD/YYYY date field"
+                        >
+                          <input
+                            checked={question.dateInput === true}
+                            onChange={(event) =>
+                              updateQuestion(selectedMacro.id, question.id, (current) => ({
+                                ...current,
+                                dateInput: event.target.checked,
+                              }))
+                            }
+                            type="checkbox"
+                          />
+                          Date
+                        </label>
                         {/* Opt-in: only questions marked "Links charges" show
                             the per-option $ picker below. Hides visual clutter
                             for the vast majority of questions that don't trigger

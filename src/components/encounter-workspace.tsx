@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
+import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -3273,10 +3274,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                       ) : (
                         <input
                           className="mt-2 w-full rounded-xl border border-[var(--line-soft)] px-3 py-2"
+                          inputMode={question.dateInput ? "numeric" : undefined}
+                          maxLength={question.dateInput ? 10 : undefined}
+                          placeholder={question.dateInput ? "MM/DD/YYYY" : undefined}
                           onChange={(event) =>
                             setRunMacroAnswers((current) => ({
                               ...current,
-                              [question.id]: event.target.value,
+                              [question.id]: question.dateInput
+                                ? formatUsDateInput(event.target.value)
+                                : event.target.value,
                             }))
                           }
                           value={freeTextValue}

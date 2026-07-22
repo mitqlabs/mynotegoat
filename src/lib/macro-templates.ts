@@ -13,6 +13,13 @@ export interface MacroQuestion {
   options: string[];
   multiSelect?: boolean;
   /**
+   * Opt-in: render the free-text answer as a date field that auto-formats
+   * to MM/DD/YYYY as the user types (e.g. "01262026" → "01/26/2026"),
+   * matching the date inputs everywhere else. For prompts like "What day
+   * was the MRI taken?". Default: false (plain free text).
+   */
+  dateInput?: boolean;
+  /**
    * Opt-in flag for showing the per-option encounter-charge picker on this
    * question in the macro-settings panel. Default: false.
    *
@@ -289,6 +296,9 @@ function normalizeQuestion(value: unknown): MacroQuestion | null {
     row.linksCharges === true ||
     (row.linksCharges === undefined && Object.keys(optionCharges).length > 0);
   const result: MacroQuestion = { id, label, options, multiSelect };
+  if (row.dateInput === true) {
+    result.dateInput = true;
+  }
   if (linksCharges) {
     result.linksCharges = true;
   }
