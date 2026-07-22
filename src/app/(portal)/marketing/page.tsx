@@ -438,7 +438,7 @@ function LogActivityForm({
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">Who Went (Optional)</span>
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Our Rep (Optional)</span>
         <input
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
           onChange={(e) => setRepName(e.target.value)}
