@@ -50,6 +50,14 @@ export function MarketingVisitTypesSection() {
     setVisitTypes(types.map((t, i) => (i === index ? value : t)));
   };
 
+  const moveType = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= types.length) return;
+    const next = [...types];
+    [next[index], next[target]] = [next[target], next[index]];
+    setVisitTypes(next);
+  };
+
   return (
     <section className="panel-card p-4">
       <button
@@ -87,6 +95,10 @@ export function MarketingVisitTypesSection() {
               <VisitTypeRow
                 key={index}
                 value={type}
+                isFirst={index === 0}
+                isLast={index === types.length - 1}
+                onMoveUp={() => moveType(index, -1)}
+                onMoveDown={() => moveType(index, 1)}
                 onRename={(next) => renameType(index, next)}
                 onRemove={() => removeType(index)}
               />
@@ -171,17 +183,45 @@ export function MarketingVisitTypesSection() {
 
 function VisitTypeRow({
   value,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
   onRename,
   onRemove,
 }: {
   value: string;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onRename: (next: string) => void;
   onRemove: () => void;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
+      <div className="flex flex-col">
+        <button
+          aria-label="Move up"
+          className="px-1 text-xs leading-none text-[var(--text-muted)] hover:text-[var(--brand-primary)] disabled:opacity-30"
+          disabled={isFirst}
+          onClick={onMoveUp}
+          type="button"
+        >
+          ▲
+        </button>
+        <button
+          aria-label="Move down"
+          className="px-1 text-xs leading-none text-[var(--text-muted)] hover:text-[var(--brand-primary)] disabled:opacity-30"
+          disabled={isLast}
+          onClick={onMoveDown}
+          type="button"
+        >
+          ▼
+        </button>
+      </div>
       <input
         className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
         onBlur={() => onRename(draft)}
