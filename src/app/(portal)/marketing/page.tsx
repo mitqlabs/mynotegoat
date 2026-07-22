@@ -216,22 +216,6 @@ export default function MarketingPage() {
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex overflow-hidden rounded-xl border border-[var(--line-soft)]">
-          {(["list", "timeline"] as const).map((v) => (
-            <button
-              key={v}
-              className={`px-3 py-2 text-sm font-semibold transition ${
-                view === v
-                  ? "bg-[var(--brand-primary)] text-white"
-                  : "bg-white text-[var(--text-main)] hover:bg-[var(--bg-soft)]"
-              }`}
-              onClick={() => setView(v)}
-              type="button"
-            >
-              {v === "list" ? "List" : "Timeline"}
-            </button>
-          ))}
-        </div>
         <input
           className="min-w-[200px] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
           onChange={(e) => setSearch(e.target.value)}
@@ -250,6 +234,22 @@ export default function MarketingPage() {
             <option value="cases_asc">Sort: Cases ↓ (least)</option>
           </select>
         )}
+        <div className="inline-flex overflow-hidden rounded-xl border border-[var(--line-soft)]">
+          {(["list", "timeline"] as const).map((v) => (
+            <button
+              key={v}
+              className={`px-3 py-2 text-sm font-semibold transition ${
+                view === v
+                  ? "bg-[var(--brand-primary)] text-white"
+                  : "bg-white text-[var(--text-main)] hover:bg-[var(--bg-soft)]"
+              }`}
+              onClick={() => setView(v)}
+              type="button"
+            >
+              {v === "list" ? "List" : "Timeline"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {attorneys.length === 0 && (
