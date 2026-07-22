@@ -65,7 +65,7 @@ export function useMarketing() {
   const addActivity = useCallback(
     (
       contactId: string,
-      input: { date: string; type: MarketingActivityType; repName?: string; notes?: string },
+      input: { date: string; types: string[]; repName?: string; notes?: string },
     ): MarketingActivity | null => {
       const key = contactId.trim();
       if (!key) return null;
@@ -74,7 +74,7 @@ export function useMarketing() {
         id: createMarketingActivityId(),
         contactId: key,
         date: (input.date ?? "").trim(),
-        type: input.type,
+        types: input.types.length ? input.types : ["Visit"],
         repName: input.repName?.trim() || undefined,
         notes: input.notes?.trim() || undefined,
         createdAt: ts,

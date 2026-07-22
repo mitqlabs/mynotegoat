@@ -69,7 +69,7 @@ export function MarketingVisitTypesSection() {
         <div>
           <h3 className="text-xl font-semibold">Marketing</h3>
           <p className="text-sm text-[var(--text-muted)]">
-            Customize the “Type of Visit” options used when logging marketing activity.
+            Customize the “Type of Contact” options used when logging marketing activity.
           </p>
         </div>
         <span
@@ -85,10 +85,10 @@ export function MarketingVisitTypesSection() {
       {open && (
         <div className="mt-3 grid gap-6 lg:grid-cols-2">
           <div>
-          <h4 className="text-sm font-semibold text-[var(--text-muted)]">Types of Visit</h4>
+          <h4 className="text-sm font-semibold text-[var(--text-muted)]">Types of Contact</h4>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
             Edit a name to rename it (Tab or Enter to save). These are the options in the
-            Marketing “Type of visit” dropdown.
+            Marketing “Type of Contact” picker.
           </p>
           <div className="mt-2 flex flex-col gap-2">
             {types.map((type, index) => (

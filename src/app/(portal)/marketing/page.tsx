@@ -44,6 +44,12 @@ function emojiFor(type: string): string {
   return TYPE_EMOJI[type] ?? "•";
 }
 
+/** "🚗 Visit, ✉️ Email" for one or more contact types. */
+function typesLabel(types: string[]): string {
+  if (!types.length) return "Contact";
+  return types.map((t) => `${emojiFor(t)} ${t}`).join(", ");
+}
+
 type SortKey = "az" | "za" | "cases_desc" | "cases_asc";
 
 export default function MarketingPage() {
@@ -247,7 +253,7 @@ export default function MarketingPage() {
                       <>
                         <span className="text-[var(--text-muted)]">Last activity: </span>
                         <span className="font-medium">
-                          {emojiFor(row.latest.type)} {row.latest.type}
+                          {typesLabel(row.latest.types)}
                         </span>{" "}
                         <span className="text-[var(--text-muted)]">on {row.latest.date}</span>
                       </>
@@ -314,7 +320,7 @@ export default function MarketingPage() {
                     >
                       <div className="min-w-0 text-sm">
                         <span className="font-semibold">
-                          {emojiFor(a.type)} {a.type}
+                          {typesLabel(a.types)}
                         </span>
                         <span className="ml-2 text-xs text-[var(--text-muted)]">{a.date}</span>
                         {a.repName && (
@@ -341,7 +347,7 @@ export default function MarketingPage() {
                           onClick={() => {
                             if (
                               window.confirm(
-                                `Delete this activity — ${a.type} on ${a.date}? This cannot be undone.`,
+                                `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
                               )
                             ) {
                               removeActivity(row.contact.id, a.id);
@@ -403,13 +409,17 @@ function LogActivityForm({
   onCancel,
 }: {
   visitTypes: string[];
-  initial?: { date: string; type: string; repName?: string; notes?: string };
+  initial?: { date: string; types: string[]; repName?: string; notes?: string };
   saveLabel?: string;
-  onSave: (input: { date: string; type: string; repName?: string; notes?: string }) => void;
+  onSave: (input: { date: string; types: string[]; repName?: string; notes?: string }) => void;
   onCancel: () => void;
 }) {
   const [date, setDate] = useState(initial?.date ?? getTodayUsDate());
-  const [type, setType] = useState(initial?.type ?? visitTypes[0] ?? "Visit");
+  const [types, setTypes] = useState<string[]>(
+    initial?.types ?? (visitTypes[0] ? [visitTypes[0]] : []),
+  );
+  const toggleType = (t: string) =>
+    setTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
   const [repName, setRepName] = useState(initial?.repName ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
@@ -423,20 +433,31 @@ function LogActivityForm({
           value={date}
         />
       </label>
-      <label className="grid gap-1">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">Type of visit</span>
-        <select
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-          onChange={(e) => setType(e.target.value)}
-          value={type}
-        >
-          {visitTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="grid gap-1 sm:col-span-2">
+        <span className="text-xs font-semibold text-[var(--text-muted)]">
+          Type of Contact <span className="font-normal">(pick one or more)</span>
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {visitTypes.map((t) => {
+            const on = types.includes(t);
+            return (
+              <button
+                key={t}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                  on
+                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                    : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                }`}
+                onClick={() => toggleType(t)}
+                type="button"
+              >
+                {on ? "✓ " : ""}
+                {emojiFor(t)} {t}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <label className="grid gap-1">
         <span className="text-xs font-semibold text-[var(--text-muted)]">Our Rep (Optional)</span>
         <input
@@ -458,8 +479,8 @@ function LogActivityForm({
       <div className="flex items-center gap-2 sm:col-span-2">
         <button
           className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
-          disabled={!date.trim()}
-          onClick={() => onSave({ date, type, repName, notes })}
+          disabled={!date.trim() || types.length === 0}
+          onClick={() => onSave({ date, types, repName, notes })}
           type="button"
         >
           {saveLabel}

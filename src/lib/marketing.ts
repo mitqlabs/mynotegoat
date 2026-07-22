@@ -36,7 +36,8 @@ export interface MarketingActivity {
   contactId: string;
   /** US format MM/DD/YYYY. */
   date: string;
-  type: MarketingActivityType;
+  /** One or more contact types (Visit, Call, Email, …). */
+  types: string[];
   /** Who from our office did it (optional). */
   repName?: string;
   notes?: string;
@@ -53,20 +54,31 @@ function normalizeText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeType(value: unknown): MarketingActivityType {
-  return normalizeText(value) || "Visit";
+/** Migrate legacy single `type` into the `types` array; dedupe + trim. */
+function normalizeTypes(value: unknown, legacyType: unknown): string[] {
+  const raw = Array.isArray(value) ? value : legacyType != null ? [legacyType] : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    const t = normalizeText(entry);
+    const key = t.toLowerCase();
+    if (!t || seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out.length ? out : ["Visit"];
 }
 
 function normalizeActivity(value: unknown, contactId: string): MarketingActivity | null {
   if (!value || typeof value !== "object") return null;
-  const row = value as Partial<MarketingActivity>;
+  const row = value as Partial<MarketingActivity> & { type?: unknown };
   const id = normalizeText(row.id);
   if (!id) return null;
   return {
     id,
     contactId: normalizeText(row.contactId) || contactId,
     date: normalizeText(row.date),
-    type: normalizeType(row.type),
+    types: normalizeTypes(row.types, row.type),
     repName: normalizeText(row.repName) || undefined,
     notes: normalizeText(row.notes) || undefined,
     createdAt: normalizeText(row.createdAt) || nowIso(),
