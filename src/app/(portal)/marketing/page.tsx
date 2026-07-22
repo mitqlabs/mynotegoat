@@ -50,6 +50,23 @@ function typesLabel(types: string[]): string {
   return types.map((t) => `${emojiFor(t)} ${t}`).join(", ");
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Sortable ISO key from a US date; empty/invalid sort last. */
+function isoKey(usDate: string): string {
+  return usDateToIso(usDate) || "0000-00-00";
+}
+
+/** "July 2026" from a US date, for timeline month dividers. */
+function monthLabel(usDate: string): string {
+  const m = isoKey(usDate).match(/^(\d{4})-(\d{2})/);
+  if (!m || m[1] === "0000") return "Undated";
+  return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 type SortKey = "az" | "za" | "cases_desc" | "cases_asc";
 
 export default function MarketingPage() {
@@ -61,6 +78,7 @@ export default function MarketingPage() {
 
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("az");
+  const [view, setView] = useState<"list" | "timeline">("list");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loggingId, setLoggingId] = useState<string | null>(null);
   // The activity currently being edited (from a firm's history).
@@ -154,6 +172,28 @@ export default function MarketingPage() {
     return count;
   }, [activitiesByContact]);
 
+  // Business-wide timeline: every activity across every firm, newest
+  // first, filtered by the same search box.
+  const timelineItems = useMemo(() => {
+    const nameById = new Map(contacts.map((c) => [c.id, c.name]));
+    const items: { activity: MarketingActivity; firmName: string }[] = [];
+    for (const [contactId, list] of Object.entries(activitiesByContact)) {
+      const firmName = nameById.get(contactId) ?? "Unknown firm";
+      for (const activity of list) items.push({ activity, firmName });
+    }
+    const q = normalizeName(search);
+    const filtered = q
+      ? items.filter(
+          ({ activity, firmName }) =>
+            normalizeName(firmName).includes(q) ||
+            normalizeName(activity.repName ?? "").includes(q) ||
+            normalizeName(activity.notes ?? "").includes(q) ||
+            activity.types.some((t) => normalizeName(t).includes(q)),
+        )
+      : items;
+    return filtered.sort((a, b) => isoKey(b.activity.date).localeCompare(isoKey(a.activity.date)));
+  }, [activitiesByContact, contacts, search]);
+
   const visitTypes = settings.visitTypes;
 
   return (
@@ -176,22 +216,40 @@ export default function MarketingPage() {
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex overflow-hidden rounded-xl border border-[var(--line-soft)]">
+          {(["list", "timeline"] as const).map((v) => (
+            <button
+              key={v}
+              className={`px-3 py-2 text-sm font-semibold transition ${
+                view === v
+                  ? "bg-[var(--brand-primary)] text-white"
+                  : "bg-white text-[var(--text-main)] hover:bg-[var(--bg-soft)]"
+              }`}
+              onClick={() => setView(v)}
+              type="button"
+            >
+              {v === "list" ? "List" : "Timeline"}
+            </button>
+          ))}
+        </div>
         <input
           className="min-w-[200px] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
           value={search}
         />
-        <select
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-          value={sortKey}
-        >
-          <option value="az">Sort: A–Z</option>
-          <option value="za">Sort: Z–A</option>
-          <option value="cases_desc">Sort: Cases ↑ (most)</option>
-          <option value="cases_asc">Sort: Cases ↓ (least)</option>
-        </select>
+        {view === "list" && (
+          <select
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            value={sortKey}
+          >
+            <option value="az">Sort: A–Z</option>
+            <option value="za">Sort: Z–A</option>
+            <option value="cases_desc">Sort: Cases ↑ (most)</option>
+            <option value="cases_asc">Sort: Cases ↓ (least)</option>
+          </select>
+        )}
       </div>
 
       {attorneys.length === 0 && (
@@ -206,6 +264,7 @@ export default function MarketingPage() {
         </div>
       )}
 
+      {view === "list" && (
       <div className="flex flex-col gap-3">
         {rows.map((row) => {
           const isExpanded = expandedId === row.contact.id;
@@ -366,6 +425,63 @@ export default function MarketingPage() {
           );
         })}
       </div>
+      )}
+
+      {view === "timeline" && (
+        <div>
+          {timelineItems.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-[var(--line-soft)] bg-white p-8 text-center text-sm text-[var(--text-muted)]">
+              No activity logged yet. Switch to List and log a marketing touch.
+            </p>
+          ) : (
+            timelineItems.map((item, i) => {
+              const isLatest = i === 0;
+              const ml = monthLabel(item.activity.date);
+              const showDivider = i === 0 || ml !== monthLabel(timelineItems[i - 1].activity.date);
+              return (
+                <div key={item.activity.id}>
+                  {showDivider && (
+                    <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] first:mt-0">
+                      {ml}
+                    </div>
+                  )}
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "16px 1fr" }}>
+                    <div className="relative flex justify-center">
+                      <div className="absolute inset-y-0 w-0.5 bg-[var(--line-strong)]" />
+                      <span
+                        className={`relative z-10 mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                          isLatest
+                            ? "border-[var(--brand-primary)] bg-blue-100"
+                            : "border-[var(--line-strong)] bg-white"
+                        }`}
+                      />
+                    </div>
+                    <div className="pb-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-[var(--text-muted)]">{item.activity.date}</span>
+                        {isLatest && (
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                            Latest
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                        <div className="text-sm font-semibold">{item.firmName}</div>
+                        <div className="mt-0.5 text-sm">{typesLabel(item.activity.types)}</div>
+                        {(item.activity.repName || item.activity.notes) && (
+                          <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                            {[item.activity.repName, item.activity.notes].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {totalActivities > 0 && (
         <p className="text-center text-xs text-[var(--text-muted)]">
