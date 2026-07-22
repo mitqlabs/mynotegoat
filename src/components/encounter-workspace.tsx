@@ -1489,6 +1489,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         return;
       }
     }
+    // Clear this section's existing macro runs FIRST. Copying only
+    // replaced the section text, leaving the old runs behind in
+    // macroRuns — so the charge reconciler saw a stale mix of old + new
+    // macros and their linked charges reconciled unpredictably (the
+    // "sometimes charges disappear" bug). Removing them means reconcile
+    // below sees exactly the copied section's macros, so the charges end
+    // up matching the copied note.
+    for (const oldRun of selectedEncounter.macroRuns) {
+      if (oldRun.section === activeSection) {
+        removeMacroRun(selectedEncounter.id, oldRun.id);
+      }
+    }
     // Re-key every macro-run id reference in the source HTML (covers both
     // the new per-prompt span format and the legacy single-wrapper format),
     // then carry the underlying macro runs over so taps still re-open the
