@@ -75,7 +75,8 @@ export function MarketingVisitTypesSection() {
       </button>
 
       {open && (
-        <div className="mt-3">
+        <div className="mt-3 grid gap-6 lg:grid-cols-2">
+          <div>
           <h4 className="text-sm font-semibold text-[var(--text-muted)]">Types of Visit</h4>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
             Edit a name to rename it (Tab or Enter to save). These are the options in the
@@ -124,9 +125,11 @@ export function MarketingVisitTypesSection() {
               Reset to defaults
             </button>
           </div>
+          </div>
 
-          <h4 className="mt-6 text-sm font-semibold text-[var(--text-muted)]">
-            How cases are counted
+          <div>
+          <h4 className="text-sm font-semibold text-[var(--text-muted)]">
+            Case Count
           </h4>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
             For each case status, choose whether it counts toward a firm&apos;s{" "}
@@ -158,6 +161,7 @@ export function MarketingVisitTypesSection() {
                 </div>
               );
             })}
+          </div>
           </div>
         </div>
       )}
