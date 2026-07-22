@@ -5536,6 +5536,8 @@ export default function SettingsPage() {
 
       <TeamSettingsSection />
 
+      <MarketingVisitTypesSection />
+
       {/* ── Admin group ──────────────────────────────────────────────
           Diagnostics, Backup & Restore, Data Recovery, Security
           Baseline, and Subscription used to each sit as separate
@@ -5839,8 +5841,6 @@ export default function SettingsPage() {
       >
         <SubscriptionSection />
       </CollapsibleSection>
-
-      <MarketingVisitTypesSection />
         </div>
       </CollapsibleSection>
 

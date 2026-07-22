@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMarketingSettings } from "@/hooks/use-marketing-settings";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { DEFAULT_MARKETING_VISIT_TYPES } from "@/lib/marketing";
@@ -37,8 +37,17 @@ export function MarketingVisitTypesSection() {
     setDraft("");
   };
 
-  const removeType = (target: string) => {
-    setVisitTypes(types.filter((t) => t !== target));
+  const removeType = (index: number) => {
+    setVisitTypes(types.filter((_, i) => i !== index));
+  };
+
+  const renameType = (index: number, next: string) => {
+    const value = next.trim();
+    const current = types[index];
+    if (!value || value === current) return;
+    // Ignore if the new name collides with another existing type.
+    if (types.some((t, i) => i !== index && t.toLowerCase() === value.toLowerCase())) return;
+    setVisitTypes(types.map((t, i) => (i === index ? value : t)));
   };
 
   return (
@@ -68,22 +77,18 @@ export function MarketingVisitTypesSection() {
       {open && (
         <div className="mt-3">
           <h4 className="text-sm font-semibold text-[var(--text-muted)]">Types of Visit</h4>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {types.map((type) => (
-              <span
-                key={type}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1 text-sm font-medium"
-              >
-                {type}
-                <button
-                  aria-label={`Remove ${type}`}
-                  className="text-[var(--text-muted)] transition hover:text-red-600"
-                  onClick={() => removeType(type)}
-                  type="button"
-                >
-                  ✕
-                </button>
-              </span>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+            Edit a name to rename it (Tab or Enter to save). These are the options in the
+            Marketing “Type of visit” dropdown.
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            {types.map((type, index) => (
+              <VisitTypeRow
+                key={index}
+                value={type}
+                onRename={(next) => renameType(index, next)}
+                onRemove={() => removeType(index)}
+              />
             ))}
             {types.length === 0 && (
               <span className="text-sm text-[var(--text-muted)]">No types yet — add one below.</span>
@@ -157,5 +162,38 @@ export function MarketingVisitTypesSection() {
         </div>
       )}
     </section>
+  );
+}
+
+function VisitTypeRow({
+  value,
+  onRename,
+  onRemove,
+}: {
+  value: string;
+  onRename: (next: string) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
+        onBlur={() => onRename(draft)}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        value={draft}
+      />
+      <button
+        className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
+        onClick={onRemove}
+        type="button"
+      >
+        Remove
+      </button>
+    </div>
   );
 }
