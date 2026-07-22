@@ -31,7 +31,7 @@ function normalizeName(value: string): string {
 // back to a neutral dot.
 const TYPE_EMOJI: Record<string, string> = {
   Visit: "🚗",
-  "Lunch Drop-off": "🥪",
+  "Lunch Drop-off": "🍽️",
   Call: "📞",
   Email: "✉️",
   Gift: "🎁",
