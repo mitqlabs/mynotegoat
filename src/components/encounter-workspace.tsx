@@ -1765,19 +1765,27 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       setMessage("Select a prior encounter first.");
       return;
     }
-    const sectionsWithText = encounterSections.filter(
+    // When a treatment plan owns this encounter's Plan section, salt the
+    // S/O/A over but keep the P as the established plan.
+    const protectPlan = planWins;
+    const targetSections = protectPlan
+      ? encounterSections.filter((section) => section !== "plan")
+      : encounterSections;
+    const sectionsWithText = targetSections.filter(
       (section) => saltSourceEncounter.soap[section].trim().length > 0,
     );
     if (sectionsWithText.length === 0) {
       setMessage(`No SOAP text found on ${saltSourceEncounter.encounterDate}.`);
       return;
     }
-    const hasExistingText = encounterSections.some(
+    const hasExistingText = sectionsWithText.some(
       (section) => selectedEncounter.soap[section].trim().length > 0,
     );
     if (hasExistingText) {
       const confirmed = window.confirm(
-        `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`,
+        protectPlan
+          ? `Replace the Subjective / Objective / Assessment sections with the notes from ${saltSourceEncounter.encounterDate}? The Plan section stays as this patient's treatment plan.`
+          : `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`,
       );
       if (!confirmed) {
         return;
@@ -1815,8 +1823,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       selectedEncounter.id,
       macroLibraryById,
     );
+    // Make sure the protected Plan section actually holds the treatment plan:
+    // if it's still empty, establish it now (charges reconcile inside).
+    if (protectPlan && selectedEncounter.soap.plan.trim().length === 0) {
+      applyTreatmentPlan({ replace: false, silent: true });
+    }
     setMessage(
-      `Copied ${totalSections} SOAP section${totalSections === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
+      protectPlan
+        ? `Copied ${totalSections} S/O/A section${totalSections === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}; kept the Plan as the treatment plan.${formatChargeDelta(added, removed)}`
+        : `Copied ${totalSections} SOAP section${totalSections === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
     );
   };
 
@@ -2686,6 +2701,30 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                         Close + Check Out
                       </button>
                     )}
+                    <button
+                      className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                      onClick={() => {
+                        const now = new Date();
+                        const dateUs = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(
+                          now.getDate(),
+                        ).padStart(2, "0")}/${now.getFullYear()}`;
+                        const newId = createEncounter({
+                          patientId: selectedEncounter.patientId,
+                          patientName: selectedEncounter.patientName,
+                          provider: officeSettings.doctorName || "Provider",
+                          appointmentType: selectedEncounter.appointmentType || "Follow-Up",
+                          encounterDate: dateUs,
+                        });
+                        if (newId) {
+                          setSelectedEncounterId(newId);
+                          setMessage(`New encounter created for ${dateUs}.`);
+                        }
+                      }}
+                      title={`Create a new encounter for ${selectedEncounter.patientName} (today)`}
+                      type="button"
+                    >
+                      + Enc.
+                    </button>
                     <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600 transition-all active:scale-[0.97]"
                       onClick={handleDeleteEncounter}
