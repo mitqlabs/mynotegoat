@@ -1910,6 +1910,69 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     );
   };
 
+  // Jump to the patient's NEXT non-cancelled appointment after the current
+  // encounter (chronological). Opens its encounter if one exists, otherwise
+  // starts one — so the user can tap through visits without hunting the
+  // "+ Enc." row in the appointments list.
+  const handleGoToNextEncounter = () => {
+    if (!selectedEncounter) return;
+    const usToIso = (us: string) => {
+      const m = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[1]}-${m[2]}` : "";
+    };
+    const list = allPatientAppointments
+      .filter((a) => a.status !== "Canceled")
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+    if (!list.length) {
+      setMessage("No appointments found for this patient.");
+      return;
+    }
+    // Locate the current encounter's appointment (by date + type, else date).
+    let idx = list.findIndex(
+      (a) =>
+        toUsDate(a.date) === selectedEncounter.encounterDate &&
+        a.appointmentType.toLowerCase() === selectedEncounter.appointmentType.toLowerCase(),
+    );
+    if (idx === -1) {
+      idx = list.findIndex((a) => toUsDate(a.date) === selectedEncounter.encounterDate);
+    }
+    const currentIso = usToIso(selectedEncounter.encounterDate);
+    const next =
+      idx >= 0 ? list[idx + 1] ?? null : list.find((a) => a.date > currentIso) ?? null;
+    if (!next) {
+      setMessage("No later appointment for this patient.");
+      return;
+    }
+    const dateUs = toUsDate(next.date);
+    // Open an existing encounter for that appointment if there is one.
+    const existing =
+      encountersByNewest.find(
+        (e) =>
+          e.patientId === next.patientId &&
+          e.encounterDate === dateUs &&
+          e.appointmentType.toLowerCase() === next.appointmentType.toLowerCase(),
+      ) ??
+      encountersByNewest.find(
+        (e) => e.patientId === next.patientId && e.encounterDate === dateUs,
+      );
+    if (existing) {
+      setSelectedEncounterId(existing.id);
+      setMessage(`Opened ${dateUs} — ${next.appointmentType || "visit"}.`);
+      return;
+    }
+    const newId = createEncounter({
+      patientId: next.patientId,
+      patientName: next.patientName,
+      provider: officeSettings.doctorName || "Provider",
+      appointmentType: next.appointmentType || "Follow-Up",
+      encounterDate: dateUs,
+    });
+    if (newId) {
+      setSelectedEncounterId(newId);
+      setMessage(`Started ${dateUs} — ${next.appointmentType || "visit"}.`);
+    }
+  };
+
   const addChargeFromTreatment = (treatmentMacroId: string) => {
     if (!selectedEncounter) {
       return;
@@ -2703,27 +2766,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     )}
                     <button
                       className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
-                      onClick={() => {
-                        const now = new Date();
-                        const dateUs = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(
-                          now.getDate(),
-                        ).padStart(2, "0")}/${now.getFullYear()}`;
-                        const newId = createEncounter({
-                          patientId: selectedEncounter.patientId,
-                          patientName: selectedEncounter.patientName,
-                          provider: officeSettings.doctorName || "Provider",
-                          appointmentType: selectedEncounter.appointmentType || "Follow-Up",
-                          encounterDate: dateUs,
-                        });
-                        if (newId) {
-                          setSelectedEncounterId(newId);
-                          setMessage(`New encounter created for ${dateUs}.`);
-                        }
-                      }}
-                      title={`Create a new encounter for ${selectedEncounter.patientName} (today)`}
+                      onClick={handleGoToNextEncounter}
+                      title={`Open the next non-cancelled appointment for ${selectedEncounter.patientName} (starts it if needed)`}
                       type="button"
                     >
-                      + Enc.
+                      Next Enc. →
                     </button>
                     <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600 transition-all active:scale-[0.97]"
