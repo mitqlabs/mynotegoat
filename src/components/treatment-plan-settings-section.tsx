@@ -20,6 +20,14 @@ export function TreatmentPlanSettingsSection() {
   const { settings, toggleRegion, setRegionMembership, setToggle } = useTreatmentPlanSettings();
   const { macroLibrary } = useMacroTemplates();
   const [open, setOpen] = useState(false);
+  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  const toggleFolder = (folder: string) =>
+    setOpenFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
 
   const regionSet = useMemo(() => new Set(settings.regionMacroIds), [settings.regionMacroIds]);
 
@@ -82,37 +90,55 @@ export function TreatmentPlanSettingsSection() {
                 const ids = macros.map((m) => m.id);
                 const allOn = ids.every((id) => regionSet.has(id));
                 const someOn = !allOn && ids.some((id) => regionSet.has(id));
+                const isOpen = openFolders.has(folder);
                 return (
                   <div key={folder} className="rounded-lg border border-[var(--line-soft)] bg-white p-2">
-                    <label className="flex cursor-pointer items-center gap-2 border-b border-[var(--line-soft)] pb-1.5 text-sm font-semibold">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
                       <input
                         checked={allOn}
+                        className="cursor-pointer"
                         ref={(el) => {
                           if (el) el.indeterminate = someOn;
                         }}
                         onChange={(e) => setRegionMembership(ids, e.target.checked)}
                         type="checkbox"
                       />
-                      {folder}
-                      <span className="text-xs font-normal text-[var(--text-muted)]">
-                        ({ids.filter((id) => regionSet.has(id)).length}/{ids.length})
-                      </span>
-                    </label>
-                    <div className="mt-1.5 grid gap-1 sm:grid-cols-2">
-                      {macros.map((m) => (
-                        <label
-                          key={m.id}
-                          className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-[var(--bg-soft)]"
+                      <button
+                        className="flex flex-1 items-center gap-2 text-left"
+                        onClick={() => toggleFolder(folder)}
+                        type="button"
+                      >
+                        <span
+                          aria-hidden
+                          className={`inline-block text-xs text-[var(--text-muted)] transition-transform ${
+                            isOpen ? "rotate-90" : ""
+                          }`}
                         >
-                          <input
-                            checked={regionSet.has(m.id)}
-                            onChange={(e) => toggleRegion(m.id, e.target.checked)}
-                            type="checkbox"
-                          />
-                          {m.buttonName}
-                        </label>
-                      ))}
+                          ▸
+                        </span>
+                        {folder}
+                        <span className="text-xs font-normal text-[var(--text-muted)]">
+                          ({ids.filter((id) => regionSet.has(id)).length}/{ids.length})
+                        </span>
+                      </button>
                     </div>
+                    {isOpen && (
+                      <div className="mt-1.5 grid gap-1 border-t border-[var(--line-soft)] pt-1.5 sm:grid-cols-2">
+                        {macros.map((m) => (
+                          <label
+                            key={m.id}
+                            className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-[var(--bg-soft)]"
+                          >
+                            <input
+                              checked={regionSet.has(m.id)}
+                              onChange={(e) => toggleRegion(m.id, e.target.checked)}
+                              type="checkbox"
+                            />
+                            {m.buttonName}
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

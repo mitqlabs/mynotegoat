@@ -58,6 +58,7 @@ import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
+import { TreatmentPlanSection } from "@/components/treatment-plan-section";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
@@ -6165,7 +6166,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className="panel-card p-4 order-6 xl:col-span-2" style={hiddenStyle("diagnosis")}>
+      <div className="order-6 xl:col-span-6">
+        <TreatmentPlanSection
+          patientId={patient.id}
+          appointments={patientAppointmentRecords}
+        />
+      </div>
+
+      <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("diagnosis")}>
         <button
           // Bar turns red when no diagnoses are on file — visible
           // warning that the patient is missing dx codes (which break
@@ -6415,7 +6423,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("narrative")}>
+      <section className="panel-card p-4 order-8 xl:col-span-2" style={hiddenStyle("narrative")}>
         <button
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("narrative")}
@@ -6703,7 +6711,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         )}
       </section>
-      <section className="panel-card p-4 order-8 xl:col-span-2" style={hiddenStyle("additionalDetails")}>
+      <section className="panel-card p-4 order-9 xl:col-span-2" style={hiddenStyle("additionalDetails")}>
         {(() => {
           // Non-PI (cash) patients have no insurance billing milestones,
           // so their bar is a plain teal header with no status coloring.

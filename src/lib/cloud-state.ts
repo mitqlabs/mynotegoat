@@ -693,6 +693,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.patient-billing.v1",
           "casemate.patient-diagnoses.v1",
           "casemate.patient-follow-up-overrides.v1",
+          "casemate.treatment-plans.v1",
         ],
         macros: [
           "casemate.soap-macros.v1",

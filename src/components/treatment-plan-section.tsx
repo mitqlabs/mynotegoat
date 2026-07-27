@@ -1,0 +1,347 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
+import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
+import { useMacroTemplates } from "@/hooks/use-macro-templates";
+import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-date-input";
+import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import type { WeekdayRegion } from "@/lib/treatment-plans";
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function getTodayUsDate(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${m}/${d}/${String(now.getFullYear())}`;
+}
+
+type Props = {
+  patientId: string;
+  appointments: ScheduleAppointmentRecord[];
+};
+
+export function TreatmentPlanSection({ patientId, appointments }: Props) {
+  const { getPlansForPatient, addPlan, updatePlan, removePlan, setDayRegions } = useTreatmentPlans();
+  const { settings } = useTreatmentPlanSettings();
+  const { macroLibrary } = useMacroTemplates();
+
+  const [open, setOpen] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [startDraft, setStartDraft] = useState(getTodayUsDate());
+  const [endDraft, setEndDraft] = useState("");
+  const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+  const [activeDay, setActiveDay] = useState(1); // Monday
+
+  const plans = useMemo(
+    () => getPlansForPatient(patientId),
+    [getPlansForPatient, patientId],
+  );
+
+  // Resolve each configured region → { macroId, name, treatments[] }.
+  const regions = useMemo(() => {
+    return settings.regionMacroIds
+      .map((macroId) => {
+        const macro = macroLibrary.templates.find((m) => m.id === macroId);
+        if (!macro) return null;
+        const q =
+          macro.questions.find((qq) => qq.linksCharges) ??
+          macro.questions.find((qq) => (qq.options?.length ?? 0) > 0);
+        return { macroId, name: macro.buttonName, treatments: q?.options ?? [] };
+      })
+      .filter((r): r is { macroId: string; name: string; treatments: string[] } => Boolean(r));
+  }, [settings.regionMacroIds, macroLibrary.templates]);
+
+  // Unique appointment dates (US), for the start/end quick-pick.
+  const apptDates = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const a of appointments) {
+      const us = isoToUsDate(a.date);
+      if (us && !seen.has(us)) {
+        seen.add(us);
+        out.push(us);
+      }
+    }
+    return out.sort();
+  }, [appointments]);
+
+  const handleAdd = () => {
+    if (!startDraft.trim() || !endDraft.trim()) return;
+    const plan = addPlan(patientId, { startDate: startDraft, endDate: endDraft });
+    setShowAdd(false);
+    setStartDraft(getTodayUsDate());
+    setEndDraft("");
+    if (plan) setExpandedPlanId(plan.id);
+  };
+
+  return (
+    <section className="panel-card p-4">
+      <button
+        className="flex w-full items-center justify-between rounded-xl bg-[#5b8f7d] px-3 py-2 text-lg font-semibold text-white"
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        <span className="flex items-center gap-2">
+          Treatment Plan
+          {plans.length > 0 && (
+            <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-bold">
+              {plans.length}
+            </span>
+          )}
+        </span>
+        <span className="text-xl">{open ? "−" : "+"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          {settings.regionMacroIds.length === 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              No treatment regions set up yet. Add them in Settings → Macros → Treatment Plan
+              Settings first.
+            </p>
+          )}
+
+          {plans.map((plan) => {
+            const isExpanded = expandedPlanId === plan.id;
+            const dayRegions: WeekdayRegion[] = plan.days[activeDay] ?? [];
+            const setDay = (next: WeekdayRegion[]) =>
+              setDayRegions(patientId, plan.id, activeDay, next);
+            return (
+              <div key={plan.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-semibold">{plan.startDate || "—"}</span>
+                    <span className="text-[var(--text-muted)]">to</span>
+                    <span className="font-semibold">{plan.endDate || "—"}</span>
+                    {!plan.active && (
+                      <span className="rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+                        paused
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                      onClick={() => updatePlan(patientId, plan.id, { active: !plan.active })}
+                      type="button"
+                    >
+                      {plan.active ? "Pause" : "Resume"}
+                    </button>
+                    <button
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                      onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
+                      type="button"
+                    >
+                      {isExpanded ? "Done" : "Edit"}
+                    </button>
+                    <button
+                      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
+                      onClick={() => {
+                        if (window.confirm("Delete this treatment plan?")) removePlan(patientId, plan.id);
+                      }}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">Start</span>
+                        <UsDateInput
+                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                          onChange={(v) => updatePlan(patientId, plan.id, { startDate: v })}
+                          value={plan.startDate}
+                        />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">End</span>
+                        <UsDateInput
+                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                          onChange={(v) => updatePlan(patientId, plan.id, { endDate: v })}
+                          value={plan.endDate}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Weekday selector — a dot marks days that have regions. */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {WEEKDAYS.map((label, day) => {
+                        const configured = (plan.days[day]?.length ?? 0) > 0;
+                        return (
+                          <button
+                            key={day}
+                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                              activeDay === day
+                                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                                : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                            }`}
+                            onClick={() => setActiveDay(day)}
+                            type="button"
+                          >
+                            {label}
+                            {configured && (
+                              <span className={activeDay === day ? "text-white" : "text-emerald-600"}> •</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Regions for the selected weekday. */}
+                    <div className="space-y-2">
+                      {regions.length === 0 && (
+                        <p className="text-xs text-[var(--text-muted)]">No regions configured.</p>
+                      )}
+                      {regions.map((region) => {
+                        const onDay = dayRegions.find((r) => r.macroId === region.macroId);
+                        const included = Boolean(onDay);
+                        const toggleRegion = () => {
+                          setDay(
+                            included
+                              ? dayRegions.filter((r) => r.macroId !== region.macroId)
+                              : [...dayRegions, { macroId: region.macroId, treatments: [] }],
+                          );
+                        };
+                        const toggleTreatment = (t: string) => {
+                          setDay(
+                            dayRegions.map((r) =>
+                              r.macroId === region.macroId
+                                ? {
+                                    ...r,
+                                    treatments: r.treatments.includes(t)
+                                      ? r.treatments.filter((x) => x !== t)
+                                      : [...r.treatments, t],
+                                  }
+                                : r,
+                            ),
+                          );
+                        };
+                        return (
+                          <div
+                            key={region.macroId}
+                            className={`rounded-lg border p-2 ${
+                              included ? "border-[var(--brand-primary)]" : "border-[var(--line-soft)]"
+                            }`}
+                          >
+                            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                              <input checked={included} onChange={toggleRegion} type="checkbox" />
+                              {region.name}
+                            </label>
+                            {included && region.treatments.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5 pl-6">
+                                {region.treatments.map((t) => {
+                                  const on = onDay?.treatments.includes(t) ?? false;
+                                  return (
+                                    <button
+                                      key={t}
+                                      className={`rounded-full border px-2 py-0.5 text-xs ${
+                                        on
+                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                          : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                                      }`}
+                                      onClick={() => toggleTreatment(t)}
+                                      type="button"
+                                    >
+                                      {on ? "✓ " : ""}
+                                      {t}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {showAdd ? (
+            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Start date</span>
+                  <UsDateInput
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                    onChange={(v) => setStartDraft(v)}
+                    value={startDraft}
+                  />
+                  {apptDates.length > 0 && (
+                    <select
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                      onChange={(e) => e.target.value && setStartDraft(formatUsDateInput(e.target.value))}
+                      value=""
+                    >
+                      <option value="">…or pick a visit date</option>
+                      {apptDates.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">End date</span>
+                  <UsDateInput
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                    onChange={(v) => setEndDraft(v)}
+                    value={endDraft}
+                  />
+                  {apptDates.length > 0 && (
+                    <select
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                      onChange={(e) => e.target.value && setEndDraft(formatUsDateInput(e.target.value))}
+                      value=""
+                    >
+                      <option value="">…or pick a visit date</option>
+                      {apptDates.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+                  disabled={!startDraft.trim() || !endDraft.trim()}
+                  onClick={handleAdd}
+                  type="button"
+                >
+                  Create Plan
+                </button>
+                <button
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  onClick={() => setShowAdd(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97]"
+              onClick={() => setShowAdd(true)}
+              type="button"
+            >
+              + Treatment Plan
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
