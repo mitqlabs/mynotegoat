@@ -19,6 +19,13 @@ export interface WeekdayRegion {
   macroId: string;
   /** Selected "Treatments Performed" option labels for this region/day. */
   treatments: string[];
+  /**
+   * Pre-picked answers to the macro's OTHER options-questions (e.g. a
+   * Left/Right laterality picker), keyed by question id → selected option
+   * labels. The charge-linked treatments question stays in `treatments`;
+   * everything else lives here so auto-apply fills the note completely.
+   */
+  answers?: Record<string, string[]>;
 }
 
 export interface TreatmentPlan {
@@ -60,6 +67,18 @@ function normalizeStringArray(value: unknown): string[] {
   return out;
 }
 
+function normalizeAnswers(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    const key = normalizeText(k);
+    if (!key) continue;
+    const arr = normalizeStringArray(v);
+    if (arr.length) out[key] = arr;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function normalizeDays(value: unknown): Record<number, WeekdayRegion[]> {
   const out: Record<number, WeekdayRegion[]> = {};
   if (!value || typeof value !== "object") return out;
@@ -71,7 +90,12 @@ function normalizeDays(value: unknown): Record<number, WeekdayRegion[]> {
       if (!r || typeof r !== "object") continue;
       const macroId = normalizeText((r as { macroId?: unknown }).macroId);
       if (!macroId) continue;
-      regions.push({ macroId, treatments: normalizeStringArray((r as { treatments?: unknown }).treatments) });
+      const answers = normalizeAnswers((r as { answers?: unknown }).answers);
+      regions.push({
+        macroId,
+        treatments: normalizeStringArray((r as { treatments?: unknown }).treatments),
+        ...(answers ? { answers } : {}),
+      });
     }
     if (regions.length) out[day] = regions;
   }

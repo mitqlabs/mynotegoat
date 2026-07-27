@@ -1465,9 +1465,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       const treatmentsQuestion =
         macro.questions.find((question) => question.linksCharges) ??
         macro.questions.find((question) => (question.options?.length ?? 0) > 0);
-      const answers: MacroAnswerMap = treatmentsQuestion
-        ? { [treatmentsQuestion.id]: [...region.treatments] }
-        : {};
+      // Pre-picked answers to the macro's OTHER questions (e.g. Left/Right)
+      // come first; the charge-linked treatments answer is layered on top.
+      const answers: MacroAnswerMap = {};
+      for (const [questionId, values] of Object.entries(region.answers ?? {})) {
+        answers[questionId] = [...values];
+      }
+      if (treatmentsQuestion) {
+        answers[treatmentsQuestion.id] = [...region.treatments];
+      }
       const snippetId = createEncounterMacroRunId();
       const rendered = renderMacroTemplateWithPromptSpans(
         macro.body,

@@ -6486,6 +6486,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         <TreatmentPlanSection
           patientId={patient.id}
           appointments={patientAppointmentRecords}
+          encounters={patientEncounterRecords}
         />
       </div>
 

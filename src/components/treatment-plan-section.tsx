@@ -7,6 +7,7 @@ import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-date-input";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import type { MacroQuestion } from "@/lib/macro-templates";
 import type { WeekdayRegion } from "@/lib/treatment-plans";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -18,12 +19,28 @@ function getTodayUsDate(): string {
   return `${m}/${d}/${String(now.getFullYear())}`;
 }
 
+/** US MM/DD/YYYY → sortable YYYYMMDD number, or null if malformed. */
+function usDateToStamp(us: string): number | null {
+  const m = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]);
+}
+
+type PlanRegion = {
+  macroId: string;
+  name: string;
+  treatments: string[];
+  otherQuestions: MacroQuestion[];
+};
+
 type Props = {
   patientId: string;
   appointments: ScheduleAppointmentRecord[];
+  /** This patient's encounters — used to count completed visits in range. */
+  encounters: { encounterDate: string }[];
 };
 
-export function TreatmentPlanSection({ patientId, appointments }: Props) {
+export function TreatmentPlanSection({ patientId, appointments, encounters }: Props) {
   const { getPlansForPatient, addPlan, updatePlan, removePlan, copyDayRegions, setDayRegions } =
     useTreatmentPlans();
   const { settings } = useTreatmentPlanSettings();
@@ -56,18 +73,28 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
     [getPlansForPatient, patientId],
   );
 
-  // Resolve each configured region → { macroId, name, treatments[] }.
+  // Resolve each configured region → the charge-linked treatments plus the
+  // macro's OTHER options-questions (e.g. Left/Right) so they're pickable too.
   const regions = useMemo(() => {
     return settings.regionMacroIds
       .map((macroId) => {
         const macro = macroLibrary.templates.find((m) => m.id === macroId);
         if (!macro) return null;
-        const q =
+        const treatmentsQuestion =
           macro.questions.find((qq) => qq.linksCharges) ??
           macro.questions.find((qq) => (qq.options?.length ?? 0) > 0);
-        return { macroId, name: macro.buttonName, treatments: q?.options ?? [] };
+        // Everything else that has options (skip free-text / date questions).
+        const otherQuestions = macro.questions.filter(
+          (qq) => qq.id !== treatmentsQuestion?.id && (qq.options?.length ?? 0) > 0,
+        );
+        return {
+          macroId,
+          name: macro.buttonName,
+          treatments: treatmentsQuestion?.options ?? [],
+          otherQuestions,
+        };
       })
-      .filter((r): r is { macroId: string; name: string; treatments: string[] } => Boolean(r));
+      .filter((r): r is PlanRegion => Boolean(r));
   }, [settings.regionMacroIds, macroLibrary.templates]);
 
   // Appointment dates (US) with their visit type, for the start/end
@@ -128,6 +155,17 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
             const dayRegions: WeekdayRegion[] = plan.days[activeDay] ?? [];
             const setDay = (next: WeekdayRegion[]) =>
               setDayRegions(patientId, plan.id, activeDay, next);
+            // Completed visits = this patient's encounters dated within the
+            // plan's range (each encounter is one treatment session).
+            const startStamp = usDateToStamp(plan.startDate);
+            const endStamp = usDateToStamp(plan.endDate);
+            const completedVisits =
+              startStamp !== null && endStamp !== null
+                ? encounters.filter((e) => {
+                    const s = usDateToStamp(e.encounterDate);
+                    return s !== null && s >= startStamp && s <= endStamp;
+                  }).length
+                : null;
             return (
               <div key={plan.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -135,6 +173,14 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                     <span className="font-semibold">{plan.startDate || "—"}</span>
                     <span className="text-[var(--text-muted)]">to</span>
                     <span className="font-semibold">{plan.endDate || "—"}</span>
+                    {completedVisits !== null && (
+                      <span
+                        className="rounded-full bg-[#eaf3ef] px-2 py-0.5 text-xs font-semibold text-[#3f6d5c]"
+                        title="Encounters recorded within this plan's date range"
+                      >
+                        {completedVisits} visit{completedVisits === 1 ? "" : "s"}
+                      </span>
+                    )}
                     {!plan.active && (
                       <span className="rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
                         paused
@@ -273,6 +319,28 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                             ),
                           );
                         };
+                        // Toggle an answer to a non-treatment question (e.g.
+                        // Left/Right). Single-select questions replace; multi
+                        // toggle. Empty selection drops the key.
+                        const toggleAnswer = (qid: string, option: string, multi: boolean) => {
+                          setDay(
+                            dayRegions.map((r) => {
+                              if (r.macroId !== region.macroId) return r;
+                              const current = r.answers?.[qid] ?? [];
+                              const next = multi
+                                ? current.includes(option)
+                                  ? current.filter((x) => x !== option)
+                                  : [...current, option]
+                                : current.includes(option)
+                                  ? []
+                                  : [option];
+                              const answers = { ...(r.answers ?? {}) };
+                              if (next.length) answers[qid] = next;
+                              else delete answers[qid];
+                              return { ...r, answers };
+                            }),
+                          );
+                        };
                         return (
                           <div
                             key={region.macroId}
@@ -306,6 +374,44 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                                 })}
                               </div>
                             )}
+                            {included &&
+                              region.otherQuestions.map((question) => {
+                                const selected = onDay?.answers?.[question.id] ?? [];
+                                return (
+                                  <div key={question.id} className="mt-1.5 pl-6">
+                                    <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                      {question.label}
+                                      {question.multiSelect ? "" : " (pick one)"}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap gap-1.5">
+                                      {question.options.map((opt) => {
+                                        const on = selected.includes(opt);
+                                        return (
+                                          <button
+                                            key={opt}
+                                            className={`rounded-full border px-2 py-0.5 text-xs ${
+                                              on
+                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                                : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                                            }`}
+                                            onClick={() =>
+                                              toggleAnswer(
+                                                question.id,
+                                                opt,
+                                                Boolean(question.multiSelect),
+                                              )
+                                            }
+                                            type="button"
+                                          >
+                                            {on ? "✓ " : ""}
+                                            {opt}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                           </div>
                         );
                       })}
