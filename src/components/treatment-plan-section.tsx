@@ -24,7 +24,7 @@ type Props = {
 };
 
 export function TreatmentPlanSection({ patientId, appointments }: Props) {
-  const { getPlansForPatient, addPlan, updatePlan, removePlan, duplicatePlan, setDayRegions } =
+  const { getPlansForPatient, addPlan, updatePlan, removePlan, copyDayRegions, setDayRegions } =
     useTreatmentPlans();
   const { settings } = useTreatmentPlanSettings();
   const { scheduleSettings } = useScheduleSettings();
@@ -157,17 +157,6 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                       {isExpanded ? "Done" : "Edit"}
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
-                      onClick={() => {
-                        const copy = duplicatePlan(patientId, plan.id);
-                        if (copy) setExpandedPlanId(copy.id);
-                      }}
-                      title="Duplicate this plan's days & treatments into a new plan"
-                      type="button"
-                    >
-                      Copy
-                    </button>
-                    <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
                       onClick={() => {
                         if (window.confirm("Delete this treatment plan?")) removePlan(patientId, plan.id);
@@ -225,6 +214,42 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                         );
                       })}
                     </div>
+
+                    {/* Copy this day's regions/treatments to another open day. */}
+                    {dayRegions.length > 0 && openDays.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-[var(--text-muted)]">
+                          Copy {WEEKDAYS[activeDay]} to:
+                        </span>
+                        {openDays
+                          .filter((day) => day !== activeDay)
+                          .map((day) => {
+                            const targetHasRegions = (plan.days[day]?.length ?? 0) > 0;
+                            return (
+                              <button
+                                key={day}
+                                className="rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-0.5 text-xs font-semibold hover:border-[var(--brand-primary)]"
+                                onClick={() => {
+                                  if (
+                                    targetHasRegions &&
+                                    !window.confirm(
+                                      `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`,
+                                    )
+                                  ) {
+                                    return;
+                                  }
+                                  copyDayRegions(patientId, plan.id, activeDay, day);
+                                  setActiveDay(day);
+                                }}
+                                title={`Copy ${WEEKDAYS[activeDay]}'s setup to ${WEEKDAYS[day]}`}
+                                type="button"
+                              >
+                                {WEEKDAYS[day]}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    )}
 
                     {/* Regions for the selected weekday. */}
                     <div className="space-y-2">

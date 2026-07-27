@@ -94,36 +94,27 @@ export function useTreatmentPlans() {
     [updatePatientList],
   );
 
-  // Clone an existing plan (dates + every weekday's regions/treatments) into a
-  // new plan so the user can edit from the previous one instead of rebuilding.
-  const duplicatePlan = useCallback(
-    (patientId: string, planId: string): TreatmentPlan | null => {
-      const key = patientId.trim();
-      const source = (plansByPatient[key] ?? []).find((p) => p.id === planId);
-      if (!source) return null;
-      const ts = nowIso();
-      // Deep-copy days so edits to the copy never mutate the source.
-      const days: Record<number, WeekdayRegion[]> = {};
-      for (const [day, regions] of Object.entries(source.days)) {
-        days[Number(day)] = regions.map((r) => ({
-          macroId: r.macroId,
-          treatments: [...r.treatments],
-        }));
-      }
-      const copy: TreatmentPlan = {
-        id: createTreatmentPlanId(),
-        patientId: key,
-        startDate: source.startDate,
-        endDate: source.endDate,
-        days,
-        active: source.active,
-        createdAt: ts,
-        updatedAt: ts,
-      };
-      updatePatientList(key, (current) => [copy, ...current]);
-      return copy;
+  // Copy one weekday's regions/treatments onto another weekday of the same
+  // plan (e.g. Monday → Wednesday). Deep-copied so the two days stay
+  // independent; overwrites the target day.
+  const copyDayRegions = useCallback(
+    (patientId: string, planId: string, fromWeekday: number, toWeekday: number) => {
+      if (fromWeekday === toWeekday) return;
+      updatePatientList(patientId, (current) =>
+        current.map((p) => {
+          if (p.id !== planId) return p;
+          const source = (p.days[fromWeekday] ?? []).map((r) => ({
+            macroId: r.macroId,
+            treatments: [...r.treatments],
+          }));
+          const days = { ...p.days };
+          if (source.length) days[toWeekday] = source;
+          else delete days[toWeekday];
+          return { ...p, days, updatedAt: nowIso() };
+        }),
+      );
     },
-    [plansByPatient, updatePatientList],
+    [updatePatientList],
   );
 
   // Set the regions (with treatments) for one weekday of a plan.
@@ -143,5 +134,5 @@ export function useTreatmentPlans() {
     [updatePatientList],
   );
 
-  return { plansByPatient, getPlansForPatient, addPlan, updatePlan, removePlan, duplicatePlan, setDayRegions };
+  return { plansByPatient, getPlansForPatient, addPlan, updatePlan, removePlan, copyDayRegions, setDayRegions };
 }
