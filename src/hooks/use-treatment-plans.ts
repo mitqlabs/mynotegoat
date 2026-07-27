@@ -106,6 +106,13 @@ export function useTreatmentPlans() {
           const source = (p.days[fromWeekday] ?? []).map((r) => ({
             macroId: r.macroId,
             treatments: [...r.treatments],
+            ...(r.answers
+              ? {
+                  answers: Object.fromEntries(
+                    Object.entries(r.answers).map(([k, v]) => [k, [...v]]),
+                  ),
+                }
+              : {}),
           }));
           const days = { ...p.days };
           if (source.length) days[toWeekday] = source;

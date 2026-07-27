@@ -111,7 +111,9 @@ export function UsDateInput({
     <span className="relative inline-flex w-full items-stretch">
       <input
         autoFocus={autoFocus}
-        className={className}
+        // flex-1 makes the field fill the full-width wrapper so the calendar
+        // button sits right at the field's edge, not off at the container's.
+        className={`${className ?? ""} flex-1 min-w-0`.trim()}
         disabled={disabled}
         id={inputId}
         inputMode="numeric"
