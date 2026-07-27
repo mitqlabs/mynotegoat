@@ -53,18 +53,21 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
       .filter((r): r is { macroId: string; name: string; treatments: string[] } => Boolean(r));
   }, [settings.regionMacroIds, macroLibrary.templates]);
 
-  // Unique appointment dates (US), for the start/end quick-pick.
-  const apptDates = useMemo(() => {
+  // Appointment dates (US) with their visit type, for the start/end
+  // quick-pick — so you know which visit you're picking. Sorted by date.
+  const apptOptions = useMemo(() => {
     const seen = new Set<string>();
-    const out: string[] = [];
+    const rows: { value: string; label: string; iso: string }[] = [];
     for (const a of appointments) {
       const us = isoToUsDate(a.date);
-      if (us && !seen.has(us)) {
-        seen.add(us);
-        out.push(us);
-      }
+      if (!us) continue;
+      const type = (a.appointmentType || "").trim();
+      const k = `${us}|${type}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      rows.push({ value: us, label: type ? `${us} — ${type}` : us, iso: a.date });
     }
-    return out.sort();
+    return rows.sort((x, y) => x.iso.localeCompare(y.iso));
   }, [appointments]);
 
   const handleAdd = () => {
@@ -275,16 +278,16 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                     onChange={(v) => setStartDraft(v)}
                     value={startDraft}
                   />
-                  {apptDates.length > 0 && (
+                  {apptOptions.length > 0 && (
                     <select
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
                       onChange={(e) => e.target.value && setStartDraft(formatUsDateInput(e.target.value))}
                       value=""
                     >
                       <option value="">…or pick a visit date</option>
-                      {apptDates.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
+                      {apptOptions.map((o, i) => (
+                        <option key={`${o.value}-${i}`} value={o.value}>
+                          {o.label}
                         </option>
                       ))}
                     </select>
@@ -297,16 +300,16 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                     onChange={(v) => setEndDraft(v)}
                     value={endDraft}
                   />
-                  {apptDates.length > 0 && (
+                  {apptOptions.length > 0 && (
                     <select
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
                       onChange={(e) => e.target.value && setEndDraft(formatUsDateInput(e.target.value))}
                       value=""
                     >
                       <option value="">…or pick a visit date</option>
-                      {apptDates.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
+                      {apptOptions.map((o, i) => (
+                        <option key={`${o.value}-${i}`} value={o.value}>
+                          {o.label}
                         </option>
                       ))}
                     </select>

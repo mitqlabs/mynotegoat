@@ -5437,7 +5437,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           (spans 2 cols) · Patient Files; row 3: Diagnosis · Reports ·
           Additional Details. */}
       <section className="grid gap-4 xl:grid-cols-6 items-start">
-        <section className="panel-card p-4 order-4 xl:col-span-3" style={hiddenStyle("appointments")}>
+        <section className="panel-card p-4 order-4 xl:col-span-2" style={hiddenStyle("appointments")}>
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
@@ -6166,13 +6166,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <div className="order-6 xl:col-span-6">
-        <TreatmentPlanSection
-          patientId={patient.id}
-          appointments={patientAppointmentRecords}
-        />
-      </div>
-
       <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("diagnosis")}>
         <button
           // Bar turns red when no diagnoses are on file — visible
@@ -6489,7 +6482,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         )}
       </section>
       {/* ── Patient Files ──────────────────────────────────────────────── */}
-      <section className="panel-card p-4 order-5 xl:col-span-3" style={hiddenStyle("patientFiles")}>
+      <div className="order-5 xl:col-span-2">
+        <TreatmentPlanSection
+          patientId={patient.id}
+          appointments={patientAppointmentRecords}
+        />
+      </div>
+
+      <section className="panel-card p-4 order-6 xl:col-span-2" style={hiddenStyle("patientFiles")}>
         <button
           className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
           onClick={() => toggleSectionPanel("patientFiles")}
