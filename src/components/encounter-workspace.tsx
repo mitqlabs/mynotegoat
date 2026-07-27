@@ -31,6 +31,8 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
+import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
 import {
   appointmentStatusOptions,
@@ -213,6 +215,16 @@ const sectionLabels: Record<EncounterSection, string> = {
   assessment: "Assessment",
   plan: "Plan",
 };
+
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 function escapeHtml(value: string) {
   return value
@@ -712,6 +724,8 @@ function AppointmentsOverview({
 
 export function EncounterWorkspace({ initialPatientId, initialEncounterId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
+  const { getPlansForPatient } = useTreatmentPlans();
+  const { settings: treatmentPlanSettings } = useTreatmentPlanSettings();
 
   // Indexed view of all macro templates for O(1) lookup during charge
   // reconciliation. Rebuilt whenever templates change.
@@ -1015,9 +1029,46 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     [priorPatientEncounters, resolvedSaltSourceEncounterId],
   );
 
+  // Treatment Plan coverage for the selected encounter. If an active plan
+  // covers this encounter's date AND that weekday has configured regions,
+  // the plan is the source of truth for the Plan SOAP section (text +
+  // charges). Null when no plan applies — everything then behaves as normal.
+  const treatmentPlanCoverage = useMemo(() => {
+    if (!selectedEncounter) return null;
+    const encDate = parseUsDate(selectedEncounter.encounterDate);
+    if (!encDate) return null;
+    const plans = getPlansForPatient(selectedEncounter.patientId).filter(
+      (plan) => plan.active,
+    );
+    if (!plans.length) return null;
+    const encTime = encDate.getTime();
+    const weekday = encDate.getDay();
+    for (const plan of plans) {
+      const start = parseUsDate(plan.startDate);
+      const end = parseUsDate(plan.endDate);
+      if (!start || !end) continue;
+      // Inclusive range; all three dates are local-midnight so a direct
+      // getTime() compare is exact.
+      if (encTime < start.getTime() || encTime > end.getTime()) continue;
+      const regions = (plan.days[weekday] ?? []).filter((region) => region.macroId);
+      if (!regions.length) continue;
+      return { plan, weekday, regions };
+    }
+    return null;
+  }, [selectedEncounter, getPlansForPatient]);
+
+  // "Plan wins": an active plan covers this encounter AND the setting says the
+  // plan should override the prior-encounter auto-salt for the Plan section.
+  // When true, the prior-encounter salt skips the Plan section + its charges
+  // so the plan is the sole author of both.
+  const planWins =
+    Boolean(treatmentPlanCoverage) && treatmentPlanSettings.planOverridesSalt;
+
   // Track which encounter we last auto-salted into so we don't repeat
   const autoSaltedRef = useRef<string | null>(null);
   const autoSaltedChargesRef = useRef<string | null>(null);
+  // Track which encounter we last auto-applied the treatment plan into.
+  const autoAppliedPlanRef = useRef<string | null>(null);
 
   // Auto-Salt: when enabled and a new encounter is selected that has empty SOAP,
   // automatically copy all SOAP sections from the most recent prior encounter.
@@ -1042,7 +1093,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     // Copy all SOAP from the most recent prior encounter
     autoSaltedRef.current = selectedEncounter.id;
     const sectionsWithText = encounterSections.filter(
-      (section) => saltSourceEncounter.soap[section].trim().length > 0,
+      (section) =>
+        saltSourceEncounter.soap[section].trim().length > 0 &&
+        // When a treatment plan owns the Plan section, don't copy the prior
+        // encounter's Plan text over it — the plan auto-apply fills it.
+        !(planWins && section === "plan"),
     );
     if (sectionsWithText.length === 0) return;
 
@@ -1088,6 +1143,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     addMacroRun,
     reconcileLinkedCharges,
     macroLibraryById,
+    planWins,
   ]);
 
   // Auto-Salt Charges: when enabled and a new encounter is selected that has no charges,
@@ -1098,6 +1154,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     if (selectedEncounter.signed) return;
     if (!saltSourceEncounter) return;
     if (autoSaltedChargesRef.current === selectedEncounter.id) return;
+
+    // When a treatment plan owns this encounter's Plan section, the plan
+    // reconciles its own charges — skip the prior-encounter charge salt so
+    // we don't double-bill on top of the plan's treatments.
+    if (planWins) {
+      autoSaltedChargesRef.current = selectedEncounter.id;
+      return;
+    }
 
     // Only auto-salt charges if encounter has no charges yet
     if (selectedEncounter.charges.length > 0) {
@@ -1134,6 +1198,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     addChargesBulk,
     reconcileLinkedCharges,
     macroLibraryById,
+    planWins,
   ]);
 
   const sectionMacros = useMemo(
@@ -1357,6 +1422,148 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       `${sectionLabels[activeSection]} updated from macro: ${macro.buttonName}.${formatChargeDelta(added, removed)}`,
     );
   };
+
+  // Apply the covering treatment plan's regions for this encounter's weekday
+  // into the Plan SOAP section (text + charges). Each region is its own
+  // Plan-section macro; its "Treatments Performed" answer is pre-filled from
+  // the plan, so this reuses the exact macro-run + charge-reconciliation path
+  // a manual macro tap would. `replace` clears the Plan section + drops its
+  // old macro runs first (used by the SALT button); the auto-apply appends
+  // into an empty section.
+  const applyTreatmentPlan = (options?: { replace?: boolean; silent?: boolean }) => {
+    if (!selectedEncounter) return 0;
+    if (selectedEncounter.signed) {
+      if (!options?.silent) {
+        setMessage("Encounter is closed. Reopen it to apply the treatment plan.");
+      }
+      return 0;
+    }
+    const coverage = treatmentPlanCoverage;
+    if (!coverage) return 0;
+    const context = buildMacroContext(selectedEncounter.patientId);
+    const stripBlankWrappers = (html: string) =>
+      html
+        .replace(
+          /^(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)+/gi,
+          "",
+        )
+        .replace(
+          /(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)+$/gi,
+          "",
+        );
+    const prepared: Array<{
+      snippetId: string;
+      macro: MacroTemplate;
+      answers: MacroAnswerMap;
+      html: string;
+    }> = [];
+    for (const region of coverage.regions) {
+      const macro = macroLibraryById.get(region.macroId);
+      if (!macro || !macro.active) continue;
+      // The treatments question is the charge-linked multi-select (same
+      // resolution the Treatment Plan editor uses to list the options).
+      const treatmentsQuestion =
+        macro.questions.find((question) => question.linksCharges) ??
+        macro.questions.find((question) => (question.options?.length ?? 0) > 0);
+      const answers: MacroAnswerMap = treatmentsQuestion
+        ? { [treatmentsQuestion.id]: [...region.treatments] }
+        : {};
+      const snippetId = createEncounterMacroRunId();
+      const rendered = renderMacroTemplateWithPromptSpans(
+        macro.body,
+        answers,
+        context,
+        snippetId,
+      );
+      const html = stripBlankWrappers(rendered);
+      if (!html) continue;
+      prepared.push({ snippetId, macro, answers, html });
+    }
+    if (!prepared.length) {
+      if (!options?.silent) {
+        setMessage("No treatment regions are configured for this day.");
+      }
+      return 0;
+    }
+    // Replace mode: clear existing Plan text + drop old Plan macro runs so
+    // reconciliation rebuilds charges cleanly from the plan.
+    if (options?.replace) {
+      selectedEncounter.macroRuns
+        .filter((run) => run.section === "plan")
+        .forEach((run) => removeMacroRun(selectedEncounter.id, run.id));
+      setSoapSection(selectedEncounter.id, "plan", "");
+    }
+    prepared.forEach(({ snippetId, macro, answers, html }) => {
+      appendSoapSection(selectedEncounter.id, "plan", html);
+      addMacroRun(selectedEncounter.id, {
+        id: snippetId,
+        section: "plan",
+        macroId: macro.id,
+        macroName: macro.buttonName,
+        body: macro.body,
+        answers: { ...answers },
+        generatedText: html,
+      });
+    });
+    const { added, removed } = reconcileLinkedCharges(
+      selectedEncounter.id,
+      macroLibraryById,
+    );
+    if (!options?.silent) {
+      setMessage(
+        `Applied ${WEEKDAY_NAMES[coverage.weekday]} treatment plan: ${prepared.length} region${prepared.length === 1 ? "" : "s"}.${formatChargeDelta(added, removed)}`,
+      );
+    }
+    return prepared.length;
+  };
+
+  // Manual SALT button for the Plan section. Confirms before replacing when
+  // the Plan section already has content and the setting requires it.
+  const handleApplyTreatmentPlanClick = () => {
+    if (!selectedEncounter) return;
+    if (
+      treatmentPlanSettings.saltConfirmsReplace &&
+      selectedEncounter.soap.plan.trim().length > 0
+    ) {
+      const ok = window.confirm(
+        "The Plan section already has content. Replace it with this day's treatment plan?",
+      );
+      if (!ok) return;
+    }
+    applyTreatmentPlan({ replace: true });
+  };
+
+  // Auto-apply the treatment plan into the Plan section when a fresh encounter
+  // is opened whose date falls inside an active plan. Only fills an EMPTY Plan
+  // section (never clobbers existing notes). When prior-encounter auto-salt is
+  // on and the plan is not set to win, the salt owns the Plan section instead.
+  useEffect(() => {
+    if (!selectedEncounter) return;
+    if (selectedEncounter.signed) return;
+    if (!treatmentPlanCoverage) return;
+    if (autoAppliedPlanRef.current === selectedEncounter.id) return;
+    // Never overwrite existing Plan text.
+    if (selectedEncounter.soap.plan.trim().length > 0) {
+      autoAppliedPlanRef.current = selectedEncounter.id;
+      return;
+    }
+    // Prior-encounter salt owns the Plan section only when it's enabled AND
+    // the plan is not configured to override it.
+    if (autoSalt && !treatmentPlanSettings.planOverridesSalt) {
+      autoAppliedPlanRef.current = selectedEncounter.id;
+      return;
+    }
+    autoAppliedPlanRef.current = selectedEncounter.id;
+    applyTreatmentPlan({ replace: false });
+    // applyTreatmentPlan is a stable-enough inline closure; re-running only
+    // when the encounter/coverage/toggle identity changes is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedEncounter,
+    treatmentPlanCoverage,
+    autoSalt,
+    treatmentPlanSettings.planOverridesSalt,
+  ]);
 
   const handleRunMacroClick = (macro: MacroTemplate) => {
     if (!selectedEncounter) {
@@ -2560,6 +2767,20 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
 
                 <div className="mt-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                   <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
+                  {activeSection === "plan" && treatmentPlanCoverage && (
+                    <button
+                      type="button"
+                      onClick={handleApplyTreatmentPlanClick}
+                      className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#5b8f7d] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#4e7c6c]"
+                      title="Apply this day's treatment plan into the Plan section"
+                    >
+                      Apply {WEEKDAY_NAMES[treatmentPlanCoverage.weekday]} Treatment Plan
+                      <span className="text-xs font-normal opacity-90">
+                        ({treatmentPlanCoverage.regions.length} region
+                        {treatmentPlanCoverage.regions.length === 1 ? "" : "s"})
+                      </span>
+                    </button>
+                  )}
                   <div className="mt-2 space-y-2">
                     {sectionMacroFolderGroups.map((group) => {
                       const isUngrouped = group.folder === "";
