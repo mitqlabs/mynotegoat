@@ -94,6 +94,38 @@ export function useTreatmentPlans() {
     [updatePatientList],
   );
 
+  // Clone an existing plan (dates + every weekday's regions/treatments) into a
+  // new plan so the user can edit from the previous one instead of rebuilding.
+  const duplicatePlan = useCallback(
+    (patientId: string, planId: string): TreatmentPlan | null => {
+      const key = patientId.trim();
+      const source = (plansByPatient[key] ?? []).find((p) => p.id === planId);
+      if (!source) return null;
+      const ts = nowIso();
+      // Deep-copy days so edits to the copy never mutate the source.
+      const days: Record<number, WeekdayRegion[]> = {};
+      for (const [day, regions] of Object.entries(source.days)) {
+        days[Number(day)] = regions.map((r) => ({
+          macroId: r.macroId,
+          treatments: [...r.treatments],
+        }));
+      }
+      const copy: TreatmentPlan = {
+        id: createTreatmentPlanId(),
+        patientId: key,
+        startDate: source.startDate,
+        endDate: source.endDate,
+        days,
+        active: source.active,
+        createdAt: ts,
+        updatedAt: ts,
+      };
+      updatePatientList(key, (current) => [copy, ...current]);
+      return copy;
+    },
+    [plansByPatient, updatePatientList],
+  );
+
   // Set the regions (with treatments) for one weekday of a plan.
   const setDayRegions = useCallback(
     (patientId: string, planId: string, weekday: number, regions: WeekdayRegion[]) => {
@@ -111,5 +143,5 @@ export function useTreatmentPlans() {
     [updatePatientList],
   );
 
-  return { plansByPatient, getPlansForPatient, addPlan, updatePlan, removePlan, setDayRegions };
+  return { plansByPatient, getPlansForPatient, addPlan, updatePlan, removePlan, duplicatePlan, setDayRegions };
 }

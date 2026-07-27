@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
+import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-date-input";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
@@ -23,8 +24,10 @@ type Props = {
 };
 
 export function TreatmentPlanSection({ patientId, appointments }: Props) {
-  const { getPlansForPatient, addPlan, updatePlan, removePlan, setDayRegions } = useTreatmentPlans();
+  const { getPlansForPatient, addPlan, updatePlan, removePlan, duplicatePlan, setDayRegions } =
+    useTreatmentPlans();
   const { settings } = useTreatmentPlanSettings();
+  const { scheduleSettings } = useScheduleSettings();
   const { macroLibrary } = useMacroTemplates();
 
   const [open, setOpen] = useState(false);
@@ -33,6 +36,20 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
   const [endDraft, setEndDraft] = useState("");
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState(1); // Monday
+
+  // Only offer the office's open days (from Schedule Settings → office hours).
+  // Falls back to all seven if none are enabled (misconfigured/blank).
+  const openDays = useMemo(() => {
+    const enabled = scheduleSettings.officeHours
+      .filter((h) => h.enabled)
+      .map((h) => h.dayOfWeek);
+    return enabled.length ? [...enabled].sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6];
+  }, [scheduleSettings.officeHours]);
+
+  // Keep the selected day within the open set (e.g. if Monday is closed).
+  useEffect(() => {
+    if (!openDays.includes(activeDay)) setActiveDay(openDays[0]);
+  }, [openDays, activeDay]);
 
   const plans = useMemo(
     () => getPlansForPatient(patientId),
@@ -140,6 +157,17 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                       {isExpanded ? "Done" : "Edit"}
                     </button>
                     <button
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                      onClick={() => {
+                        const copy = duplicatePlan(patientId, plan.id);
+                        if (copy) setExpandedPlanId(copy.id);
+                      }}
+                      title="Duplicate this plan's days & treatments into a new plan"
+                      type="button"
+                    >
+                      Copy
+                    </button>
+                    <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
                       onClick={() => {
                         if (window.confirm("Delete this treatment plan?")) removePlan(patientId, plan.id);
@@ -172,9 +200,11 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                       </label>
                     </div>
 
-                    {/* Weekday selector — a dot marks days that have regions. */}
+                    {/* Weekday selector — open office days only; a dot marks
+                        days that have regions. */}
                     <div className="flex flex-wrap gap-1.5">
-                      {WEEKDAYS.map((label, day) => {
+                      {openDays.map((day) => {
+                        const label = WEEKDAYS[day];
                         const configured = (plan.days[day]?.length ?? 0) > 0;
                         return (
                           <button
