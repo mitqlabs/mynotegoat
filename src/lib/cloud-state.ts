@@ -700,6 +700,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.report-templates.v1",
           "casemate.document-templates.v1",
           "casemate.billing-macros.v1",
+          "casemate.treatment-plan-settings.v1",
         ],
         schedulingSettings: [
           "casemate.schedule-settings.v1",

@@ -10,6 +10,7 @@ import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-s
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
+import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
 import { AddressFieldGroup } from "@/components/address-field-group";
@@ -5277,6 +5278,8 @@ export default function SettingsPage() {
       >
         <PackageBuilderSettingsPanel />
       </CollapsibleSection>
+
+      <TreatmentPlanSettingsSection />
         </div>
       </CollapsibleSection>
 
