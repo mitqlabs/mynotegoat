@@ -190,8 +190,9 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                     </div>
 
                     {/* Weekday selector — open office days only; a dot marks
-                        days that have regions. */}
-                    <div className="flex flex-wrap gap-1.5">
+                        days that have regions. The Copy-to control sits inline
+                        at the end of the same row to save vertical space. */}
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {openDays.map((day) => {
                         const label = WEEKDAYS[day];
                         const configured = (plan.days[day]?.length ?? 0) > 0;
@@ -213,43 +214,39 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                           </button>
                         );
                       })}
-                    </div>
-
-                    {/* Copy this day's regions/treatments to another open day. */}
-                    {dayRegions.length > 0 && openDays.length > 1 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-[var(--text-muted)]">
-                          Copy {WEEKDAYS[activeDay]} to:
-                        </span>
-                        {openDays
-                          .filter((day) => day !== activeDay)
-                          .map((day) => {
+                      {dayRegions.length > 0 && openDays.length > 1 && (
+                        <select
+                          className="ml-auto rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)]"
+                          onChange={(e) => {
+                            const day = Number(e.target.value);
+                            e.target.value = "";
+                            if (!Number.isInteger(day)) return;
                             const targetHasRegions = (plan.days[day]?.length ?? 0) > 0;
-                            return (
-                              <button
-                                key={day}
-                                className="rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-0.5 text-xs font-semibold hover:border-[var(--brand-primary)]"
-                                onClick={() => {
-                                  if (
-                                    targetHasRegions &&
-                                    !window.confirm(
-                                      `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`,
-                                    )
-                                  ) {
-                                    return;
-                                  }
-                                  copyDayRegions(patientId, plan.id, activeDay, day);
-                                  setActiveDay(day);
-                                }}
-                                title={`Copy ${WEEKDAYS[activeDay]}'s setup to ${WEEKDAYS[day]}`}
-                                type="button"
-                              >
+                            if (
+                              targetHasRegions &&
+                              !window.confirm(
+                                `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`,
+                              )
+                            ) {
+                              return;
+                            }
+                            copyDayRegions(patientId, plan.id, activeDay, day);
+                            setActiveDay(day);
+                          }}
+                          title={`Copy ${WEEKDAYS[activeDay]}'s setup to another day`}
+                          value=""
+                        >
+                          <option value="">Copy {WEEKDAYS[activeDay]} to…</option>
+                          {openDays
+                            .filter((day) => day !== activeDay)
+                            .map((day) => (
+                              <option key={day} value={day}>
                                 {WEEKDAYS[day]}
-                              </button>
-                            );
-                          })}
-                      </div>
-                    )}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
 
                     {/* Regions for the selected weekday. */}
                     <div className="space-y-2">
