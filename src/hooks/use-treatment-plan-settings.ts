@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  createRegionId,
   loadTreatmentPlanSettings,
   saveTreatmentPlanSettings,
   STORAGE_KEY_TREATMENT_PLAN_SETTINGS,
-  type TreatmentPlanRegion,
   type TreatmentPlanSettings,
 } from "@/lib/treatment-plan-settings";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
@@ -34,49 +32,31 @@ export function useTreatmentPlanSettings() {
     return next;
   }, []);
 
-  const addRegion = useCallback(
-    (name: string, macroId: string) => {
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      setSettings((current) =>
-        persist({
-          ...current,
-          regions: [...current.regions, { id: createRegionId(), name: trimmed, macroId }],
-        }),
-      );
-    },
-    [persist],
-  );
-
-  const updateRegion = useCallback(
-    (id: string, patch: Partial<Omit<TreatmentPlanRegion, "id">>) => {
-      setSettings((current) =>
-        persist({
-          ...current,
-          regions: current.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-        }),
-      );
-    },
-    [persist],
-  );
-
-  const removeRegion = useCallback(
-    (id: string) => {
-      setSettings((current) =>
-        persist({ ...current, regions: current.regions.filter((r) => r.id !== id) }),
-      );
-    },
-    [persist],
-  );
-
-  const moveRegion = useCallback(
-    (from: number, to: number) => {
+  // Add/remove a single Plan macro as a region.
+  const toggleRegion = useCallback(
+    (macroId: string, on: boolean) => {
       setSettings((current) => {
-        if (to < 0 || to >= current.regions.length) return current;
-        const regions = [...current.regions];
-        const [moved] = regions.splice(from, 1);
-        regions.splice(to, 0, moved);
-        return persist({ ...current, regions });
+        const has = current.regionMacroIds.includes(macroId);
+        if (on === has) return current;
+        const regionMacroIds = on
+          ? [...current.regionMacroIds, macroId]
+          : current.regionMacroIds.filter((id) => id !== macroId);
+        return persist({ ...current, regionMacroIds });
+      });
+    },
+    [persist],
+  );
+
+  // Bulk add/remove (e.g. a whole folder's macros at once).
+  const setRegionMembership = useCallback(
+    (macroIds: string[], on: boolean) => {
+      setSettings((current) => {
+        const set = new Set(current.regionMacroIds);
+        for (const id of macroIds) {
+          if (on) set.add(id);
+          else set.delete(id);
+        }
+        return persist({ ...current, regionMacroIds: [...set] });
       });
     },
     [persist],
@@ -89,5 +69,5 @@ export function useTreatmentPlanSettings() {
     [persist],
   );
 
-  return { settings, addRegion, updateRegion, removeRegion, moveRegion, setToggle };
+  return { settings, toggleRegion, setRegionMembership, setToggle };
 }

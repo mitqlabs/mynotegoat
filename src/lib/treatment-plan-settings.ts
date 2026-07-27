@@ -16,16 +16,10 @@
 const STORAGE_KEY = "casemate.treatment-plan-settings.v1";
 export const STORAGE_KEY_TREATMENT_PLAN_SETTINGS = STORAGE_KEY;
 
-export interface TreatmentPlanRegion {
-  id: string;
-  /** Display name shown in plans, e.g. "Cervical". */
-  name: string;
-  /** Id of the Plan-section macro that produces this region's output + charges. */
-  macroId: string;
-}
-
 export interface TreatmentPlanSettings {
-  regions: TreatmentPlanRegion[];
+  /** Plan-section macro ids marked as treatment regions (Cervical, Lumbar,
+   *  …). A "region" IS its macro — name/treatments/charges come from it. */
+  regionMacroIds: string[];
   /** When true, an active treatment plan turns off the prior-encounter
    *  auto-salt for that patient (the plan is the source of truth). */
   planOverridesSalt: boolean;
@@ -34,37 +28,37 @@ export interface TreatmentPlanSettings {
   saltConfirmsReplace: boolean;
 }
 
-export function createRegionId(): string {
-  return `TPR-${Date.now()}-${Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0")}`;
-}
-
 function normalizeText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeRegion(value: unknown): TreatmentPlanRegion | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Partial<TreatmentPlanRegion>;
-  const id = normalizeText(row.id);
-  const name = normalizeText(row.name);
-  const macroId = normalizeText(row.macroId);
-  if (!id || !name) return null;
-  return { id, name, macroId };
+function normalizeMacroIds(value: unknown, legacyRegions: unknown): string[] {
+  const ids: string[] = [];
+  const push = (v: unknown) => {
+    const id = normalizeText(v);
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  if (Array.isArray(value)) {
+    for (const v of value) push(v);
+  } else if (Array.isArray(legacyRegions)) {
+    // Migrate the old {id, name, macroId}[] shape → macro-id list.
+    for (const r of legacyRegions) {
+      if (r && typeof r === "object") push((r as { macroId?: unknown }).macroId);
+    }
+  }
+  return ids;
 }
 
 export function getDefaultTreatmentPlanSettings(): TreatmentPlanSettings {
-  return { regions: [], planOverridesSalt: true, saltConfirmsReplace: true };
+  return { regionMacroIds: [], planOverridesSalt: true, saltConfirmsReplace: true };
 }
 
 export function normalizeTreatmentPlanSettings(value: unknown): TreatmentPlanSettings {
-  const row = (value && typeof value === "object" ? value : {}) as Partial<TreatmentPlanSettings>;
-  const regions = Array.isArray(row.regions)
-    ? row.regions.map(normalizeRegion).filter((r): r is TreatmentPlanRegion => Boolean(r))
-    : [];
+  const row = (value && typeof value === "object" ? value : {}) as Partial<TreatmentPlanSettings> & {
+    regions?: unknown;
+  };
   return {
-    regions,
+    regionMacroIds: normalizeMacroIds(row.regionMacroIds, row.regions),
     planOverridesSalt: row.planOverridesSalt !== false,
     saltConfirmsReplace: row.saltConfirmsReplace !== false,
   };
