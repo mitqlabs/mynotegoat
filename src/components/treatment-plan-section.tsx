@@ -222,14 +222,10 @@ export function TreatmentPlanSection({ patientId, appointments }: Props) {
                             e.target.value = "";
                             if (!Number.isInteger(day)) return;
                             const targetHasRegions = (plan.days[day]?.length ?? 0) > 0;
-                            if (
-                              targetHasRegions &&
-                              !window.confirm(
-                                `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`,
-                              )
-                            ) {
-                              return;
-                            }
+                            const prompt = targetHasRegions
+                              ? `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`
+                              : `Copy ${WEEKDAYS[activeDay]}'s setup to ${WEEKDAYS[day]}?`;
+                            if (!window.confirm(prompt)) return;
                             copyDayRegions(patientId, plan.id, activeDay, day);
                             setActiveDay(day);
                           }}
