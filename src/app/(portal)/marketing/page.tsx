@@ -194,6 +194,18 @@ export default function MarketingPage() {
     return filtered.sort((a, b) => isoKey(b.activity.date).localeCompare(isoKey(a.activity.date)));
   }, [activitiesByContact, contacts, search]);
 
+  // Collapse the timeline into one node per date — all of a day's activities
+  // stack under a single 07/23/2026 header instead of repeating the date.
+  const timelineGroups = useMemo(() => {
+    const groups: { date: string; items: typeof timelineItems }[] = [];
+    for (const item of timelineItems) {
+      const last = groups[groups.length - 1];
+      if (last && last.date === item.activity.date) last.items.push(item);
+      else groups.push({ date: item.activity.date, items: [item] });
+    }
+    return groups;
+  }, [timelineItems]);
+
   const visitTypes = settings.visitTypes;
 
   return (
@@ -434,12 +446,12 @@ export default function MarketingPage() {
               No activity logged yet. Switch to List and log a marketing touch.
             </p>
           ) : (
-            timelineItems.map((item, i) => {
-              const isLatest = i === 0;
-              const ml = monthLabel(item.activity.date);
-              const showDivider = i === 0 || ml !== monthLabel(timelineItems[i - 1].activity.date);
+            timelineGroups.map((group, gi) => {
+              const isLatest = gi === 0;
+              const ml = monthLabel(group.date);
+              const showDivider = gi === 0 || ml !== monthLabel(timelineGroups[gi - 1].date);
               return (
-                <div key={item.activity.id}>
+                <div key={group.date}>
                   {showDivider && (
                     <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] first:mt-0">
                       {ml}
@@ -458,21 +470,33 @@ export default function MarketingPage() {
                     </div>
                     <div className="pb-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-[var(--text-muted)]">{item.activity.date}</span>
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">{group.date}</span>
                         {isLatest && (
                           <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                             Latest
                           </span>
                         )}
-                      </div>
-                      <div className="mt-1 rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                        <div className="text-sm font-semibold">{item.firmName}</div>
-                        <div className="mt-0.5 text-sm">{typesLabel(item.activity.types)}</div>
-                        {(item.activity.repName || item.activity.notes) && (
-                          <div className="mt-0.5 text-xs text-[var(--text-muted)]">
-                            {[item.activity.repName, item.activity.notes].filter(Boolean).join(" · ")}
-                          </div>
+                        {group.items.length > 1 && (
+                          <span className="text-[10px] text-[var(--text-muted)]">
+                            {group.items.length} activities
+                          </span>
                         )}
+                      </div>
+                      <div className="mt-1 space-y-2">
+                        {group.items.map((item) => (
+                          <div
+                            key={item.activity.id}
+                            className="rounded-xl border border-[var(--line-soft)] bg-white p-3"
+                          >
+                            <div className="text-sm font-semibold">{item.firmName}</div>
+                            <div className="mt-0.5 text-sm">{typesLabel(item.activity.types)}</div>
+                            {(item.activity.repName || item.activity.notes) && (
+                              <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                                {[item.activity.repName, item.activity.notes].filter(Boolean).join(" · ")}
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
