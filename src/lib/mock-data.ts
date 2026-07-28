@@ -133,6 +133,12 @@ export const CONTACT_CATEGORIES: ContactCategory[] = [
   "Acute Care",
 ];
 
+export interface ContactEmail {
+  /** Optional label/note for this address, e.g. "Paralegal", "Jason". */
+  label: string;
+  email: string;
+}
+
 export interface ContactRecord {
   id: string;
   name: string;
@@ -140,7 +146,10 @@ export interface ContactRecord {
   /** Optional user-defined sub-category (e.g. "Orthopedic" under Specialist). */
   subCategory?: string;
   phone: string;
+  /** Primary email — kept in sync with emails[0] for backward compatibility. */
   email: string;
+  /** Zero or more labeled emails (e.g. Paralegal, Jason). */
+  emails?: ContactEmail[];
   fax?: string;
   address?: string;
 }

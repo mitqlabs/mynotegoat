@@ -1,4 +1,4 @@
-import { contacts as defaultContacts, type ContactRecord } from "@/lib/mock-data";
+import { contacts as defaultContacts, type ContactEmail, type ContactRecord } from "@/lib/mock-data";
 import { migrateLegacyCategory } from "@/lib/contact-categories";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { notifyChange } from "@/lib/local-sync";
@@ -13,6 +13,33 @@ function normalizeText(value: unknown, fallback = "") {
   return value.trim();
 }
 
+function normalizeEmails(value: unknown, legacyEmail: string): ContactEmail[] {
+  const out: ContactEmail[] = [];
+  const seen = new Set<string>();
+  const push = (label: string, email: string) => {
+    const em = email.trim();
+    if (!em) return;
+    const key = em.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ label: label.trim(), email: em });
+  };
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === "string") push("", entry);
+      else if (entry && typeof entry === "object") {
+        push(
+          normalizeText((entry as { label?: unknown }).label),
+          normalizeText((entry as { email?: unknown }).email),
+        );
+      }
+    }
+  }
+  // Migrate the legacy single email if the array didn't already include it.
+  if (legacyEmail) push("", legacyEmail);
+  return out;
+}
+
 function normalizeContact(value: unknown): ContactRecord | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -22,7 +49,9 @@ function normalizeContact(value: unknown): ContactRecord | null {
   const id = normalizeText(row.id);
   const name = normalizeText(row.name);
   const phone = formatUsPhoneInput(normalizeText(row.phone));
-  const email = normalizeText(row.email);
+  const legacyEmail = normalizeText(row.email);
+  const emails = normalizeEmails(row.emails, legacyEmail);
+  const email = emails[0]?.email ?? legacyEmail;
   const fax = formatUsPhoneInput(normalizeText(row.fax));
   const address = normalizeText(row.address);
 
@@ -46,6 +75,7 @@ function normalizeContact(value: unknown): ContactRecord | null {
     ...(subCategory ? { subCategory } : {}),
     phone,
     email,
+    ...(emails.length ? { emails } : {}),
     fax,
     address,
   };

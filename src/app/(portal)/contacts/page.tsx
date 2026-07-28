@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
-import type { ContactRecord } from "@/lib/mock-data";
+import type { ContactEmail, ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ConsolidateAttorneysModal } from "@/components/consolidate-attorneys-modal";
 import { AddressFieldGroup } from "@/components/address-field-group";
@@ -15,9 +15,17 @@ type ContactFormState = {
   subCategory: string;
   phone: string;
   fax: string;
-  email: string;
+  emails: ContactEmail[];
   address: string;
 };
+
+/** Emails for a form: existing labeled list, else the legacy single email,
+ *  else one blank row to type into. */
+function toFormEmails(contact?: ContactRecord): ContactEmail[] {
+  if (contact?.emails?.length) return contact.emails.map((e) => ({ ...e }));
+  if (contact?.email) return [{ label: "", email: contact.email }];
+  return [{ label: "", email: "" }];
+}
 
 function createBlankContactForm(
   defaultCategory: ContactRecord["category"] = "Attorney",
@@ -28,7 +36,7 @@ function createBlankContactForm(
     subCategory: "",
     phone: "",
     fax: "",
-    email: "",
+    emails: toFormEmails(),
     address: "",
   };
 }
@@ -40,9 +48,70 @@ function toContactForm(contact: ContactRecord): ContactFormState {
     subCategory: contact.subCategory ?? "",
     phone: contact.phone,
     fax: contact.fax ?? "",
-    email: contact.email ?? "",
+    emails: toFormEmails(contact),
     address: contact.address ?? "",
   };
+}
+
+/** Display rows for a saved contact (labeled list, or legacy single email). */
+function toDisplayEmails(contact: ContactRecord): ContactEmail[] {
+  if (contact.emails?.length) return contact.emails;
+  if (contact.email) return [{ label: "", email: contact.email }];
+  return [];
+}
+
+/** Repeatable labeled-email editor used by both the add and edit forms. */
+function EmailFieldList({
+  emails,
+  onChange,
+}: {
+  emails: ContactEmail[];
+  onChange: (next: ContactEmail[]) => void;
+}) {
+  const rows = emails.length ? emails : [{ label: "", email: "" }];
+  const update = (index: number, patch: Partial<ContactEmail>) =>
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  const remove = (index: number) => {
+    const next = rows.filter((_, i) => i !== index);
+    onChange(next.length ? next : [{ label: "", email: "" }]);
+  };
+  return (
+    <div className="grid gap-2">
+      {rows.map((row, i) => (
+        <div key={i} className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] gap-2">
+          <input
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+            onChange={(event) => update(i, { label: event.target.value })}
+            placeholder="Label (e.g. Paralegal)"
+            value={row.label}
+          />
+          <input
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+            inputMode="email"
+            onChange={(event) => update(i, { email: event.target.value })}
+            placeholder="Email Address"
+            type="email"
+            value={row.email}
+          />
+          <button
+            aria-label="Remove email"
+            className="rounded-lg border border-[var(--line-soft)] px-2.5 text-sm text-[var(--text-muted)] transition hover:border-red-200 hover:text-red-600"
+            onClick={() => remove(i)}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        className="justify-self-start rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+        onClick={() => onChange([...rows, { label: "", email: "" }])}
+        type="button"
+      >
+        + Add email
+      </button>
+    </div>
+  );
 }
 
 function normalizeLookupValue(value: string) {
@@ -96,7 +165,9 @@ export default function ContactsPage() {
             contact.category,
             contact.phone,
             contact.fax ?? "",
-            contact.email ?? "",
+            toDisplayEmails(contact)
+              .map((e) => `${e.label} ${e.email}`)
+              .join(" "),
             contact.address ?? "",
           ]
             .join(" ")
@@ -301,9 +372,22 @@ export default function ContactsPage() {
                       <span className="font-semibold">Fax:</span> {contact.fax}
                     </p>
                   )}
-                  <p className="text-sm">
-                    <span className="font-semibold">Email:</span> {contact.email || "-"}
-                  </p>
+                  {(() => {
+                    const emailRows = toDisplayEmails(contact);
+                    if (!emailRows.length) {
+                      return (
+                        <p className="text-sm">
+                          <span className="font-semibold">Email:</span> -
+                        </p>
+                      );
+                    }
+                    return emailRows.map((e, i) => (
+                      <p key={i} className="text-sm">
+                        <span className="font-semibold">{e.label ? `${e.label}:` : "Email:"}</span>{" "}
+                        {e.email}
+                      </p>
+                    ));
+                  })()}
                   {contact.address && (
                     <p className="text-sm">
                       <span className="font-semibold">Address:</span> {contact.address}
@@ -390,14 +474,17 @@ export default function ContactsPage() {
                     placeholder="Fax Number"
                     value={editContactForm.fax}
                   />
-                  <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setEditContactForm((current) => ({ ...current, email: event.target.value }))
-                    }
-                    placeholder="Email Address"
-                    value={editContactForm.email}
-                  />
+                  <div className="grid gap-1">
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">
+                      Emails (add a label like Paralegal or a name)
+                    </span>
+                    <EmailFieldList
+                      emails={editContactForm.emails}
+                      onChange={(emails) =>
+                        setEditContactForm((current) => ({ ...current, emails }))
+                      }
+                    />
+                  </div>
                   <AddressFieldGroup
                     onChange={(nextAddress) =>
                       setEditContactForm((current) => ({ ...current, address: nextAddress }))
@@ -542,16 +629,17 @@ export default function ContactsPage() {
                 />
               </label>
 
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold text-[var(--text-muted)]">Email Address</span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) =>
-                    setAddContactForm((current) => ({ ...current, email: event.target.value }))
+              <div className="grid gap-1 md:col-span-2">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">
+                  Emails (add a label like Paralegal or a name)
+                </span>
+                <EmailFieldList
+                  emails={addContactForm.emails}
+                  onChange={(emails) =>
+                    setAddContactForm((current) => ({ ...current, emails }))
                   }
-                  value={addContactForm.email}
                 />
-              </label>
+              </div>
 
               <div className="md:col-span-2">
                 <AddressFieldGroup

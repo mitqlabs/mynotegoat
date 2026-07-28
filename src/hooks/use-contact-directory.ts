@@ -9,7 +9,7 @@ import {
   STORAGE_KEY_CONTACT_DIRECTORY,
 } from "@/lib/contact-directory";
 import { sanitizeContactCategory } from "@/lib/contact-categories";
-import type { ContactRecord } from "@/lib/mock-data";
+import type { ContactEmail, ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { onLocalChange } from "@/lib/local-sync";
 
@@ -19,9 +19,34 @@ type ContactDraft = {
   subCategory?: string;
   phone: string;
   fax?: string;
+  /** Legacy single email (still accepted from older call sites). */
   email?: string;
+  /** Labeled emails; takes precedence over `email` when present. */
+  emails?: ContactEmail[];
   address?: string;
 };
+
+/** Clean a draft's emails (trim, drop blanks, dedupe), falling back to the
+ *  legacy single-email field. Returns the list plus the primary address. */
+function resolveDraftEmails(draft: ContactDraft): { emails: ContactEmail[]; primary: string } {
+  const source =
+    draft.emails && draft.emails.length
+      ? draft.emails
+      : draft.email
+        ? [{ label: "", email: draft.email }]
+        : [];
+  const emails: ContactEmail[] = [];
+  const seen = new Set<string>();
+  for (const entry of source) {
+    const email = (entry.email ?? "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    emails.push({ label: (entry.label ?? "").trim(), email });
+  }
+  return { emails, primary: emails[0]?.email ?? "" };
+}
 
 type AddContactResult =
   | { added: true; contact: ContactRecord }
@@ -71,7 +96,7 @@ export function useContactDirectory() {
       const subCategory = (draft.subCategory ?? "").trim() || undefined;
       const phone = formatUsPhoneInput(draft.phone);
       const fax = formatUsPhoneInput(draft.fax ?? "");
-      const email = (draft.email ?? "").trim();
+      const { emails, primary: email } = resolveDraftEmails(draft);
       const address = (draft.address ?? "").trim();
 
       if (!name || !phone) {
@@ -106,6 +131,7 @@ export function useContactDirectory() {
         phone,
         fax,
         email,
+        ...(emails.length ? { emails } : {}),
         address,
       };
 
@@ -127,7 +153,7 @@ export function useContactDirectory() {
       const subCategory = (draft.subCategory ?? "").trim() || undefined;
       const phone = formatUsPhoneInput(draft.phone);
       const fax = formatUsPhoneInput(draft.fax ?? "");
-      const email = (draft.email ?? "").trim();
+      const { emails, primary: email } = resolveDraftEmails(draft);
       const address = (draft.address ?? "").trim();
 
       if (!name || !phone) {
@@ -170,6 +196,7 @@ export function useContactDirectory() {
         phone,
         fax,
         email,
+        emails: emails.length ? emails : undefined,
         address,
       };
 
