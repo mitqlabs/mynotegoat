@@ -306,6 +306,23 @@ export default function MarketingPage() {
                         {row.contact.phone}
                       </a>
                     )}
+                    {(row.contact.emails?.length
+                      ? row.contact.emails
+                      : row.contact.email
+                        ? [{ name: "", label: "", email: row.contact.email }]
+                        : []
+                    ).map((e, i) => {
+                      const prefix = [e.name, e.label].filter(Boolean).join(" · ");
+                      return (
+                        <a
+                          key={i}
+                          className="w-fit text-[var(--brand-primary)] hover:underline"
+                          href={`mailto:${e.email}`}
+                        >
+                          {prefix ? `${prefix}: ${e.email}` : e.email}
+                        </a>
+                      );
+                    })}
                     {row.contact.address && (
                       <a
                         className="w-fit text-[var(--brand-primary)] hover:underline"
