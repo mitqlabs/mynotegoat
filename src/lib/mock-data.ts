@@ -134,7 +134,9 @@ export const CONTACT_CATEGORIES: ContactCategory[] = [
 ];
 
 export interface ContactEmail {
-  /** Optional label/note for this address, e.g. "Paralegal", "Jason". */
+  /** Optional person's name for this address, e.g. "Jason". */
+  name: string;
+  /** Optional role/label for this address, e.g. "Paralegal". */
   label: string;
   email: string;
 }

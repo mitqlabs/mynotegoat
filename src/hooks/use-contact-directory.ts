@@ -33,7 +33,7 @@ function resolveDraftEmails(draft: ContactDraft): { emails: ContactEmail[]; prim
     draft.emails && draft.emails.length
       ? draft.emails
       : draft.email
-        ? [{ label: "", email: draft.email }]
+        ? [{ name: "", label: "", email: draft.email }]
         : [];
   const emails: ContactEmail[] = [];
   const seen = new Set<string>();
@@ -43,7 +43,7 @@ function resolveDraftEmails(draft: ContactDraft): { emails: ContactEmail[]; prim
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    emails.push({ label: (entry.label ?? "").trim(), email });
+    emails.push({ name: (entry.name ?? "").trim(), label: (entry.label ?? "").trim(), email });
   }
   return { emails, primary: emails[0]?.email ?? "" };
 }

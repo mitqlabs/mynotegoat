@@ -16,19 +16,20 @@ function normalizeText(value: unknown, fallback = "") {
 function normalizeEmails(value: unknown, legacyEmail: string): ContactEmail[] {
   const out: ContactEmail[] = [];
   const seen = new Set<string>();
-  const push = (label: string, email: string) => {
+  const push = (name: string, label: string, email: string) => {
     const em = email.trim();
     if (!em) return;
     const key = em.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ label: label.trim(), email: em });
+    out.push({ name: name.trim(), label: label.trim(), email: em });
   };
   if (Array.isArray(value)) {
     for (const entry of value) {
-      if (typeof entry === "string") push("", entry);
+      if (typeof entry === "string") push("", "", entry);
       else if (entry && typeof entry === "object") {
         push(
+          normalizeText((entry as { name?: unknown }).name),
           normalizeText((entry as { label?: unknown }).label),
           normalizeText((entry as { email?: unknown }).email),
         );
@@ -36,7 +37,7 @@ function normalizeEmails(value: unknown, legacyEmail: string): ContactEmail[] {
     }
   }
   // Migrate the legacy single email if the array didn't already include it.
-  if (legacyEmail) push("", legacyEmail);
+  if (legacyEmail) push("", "", legacyEmail);
   return out;
 }
 

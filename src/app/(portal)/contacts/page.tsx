@@ -23,8 +23,8 @@ type ContactFormState = {
  *  else one blank row to type into. */
 function toFormEmails(contact?: ContactRecord): ContactEmail[] {
   if (contact?.emails?.length) return contact.emails.map((e) => ({ ...e }));
-  if (contact?.email) return [{ label: "", email: contact.email }];
-  return [{ label: "", email: "" }];
+  if (contact?.email) return [{ name: "", label: "", email: contact.email }];
+  return [{ name: "", label: "", email: "" }];
 }
 
 function createBlankContactForm(
@@ -56,7 +56,7 @@ function toContactForm(contact: ContactRecord): ContactFormState {
 /** Display rows for a saved contact (labeled list, or legacy single email). */
 function toDisplayEmails(contact: ContactRecord): ContactEmail[] {
   if (contact.emails?.length) return contact.emails;
-  if (contact.email) return [{ label: "", email: contact.email }];
+  if (contact.email) return [{ name: "", label: "", email: contact.email }];
   return [];
 }
 
@@ -68,21 +68,31 @@ function EmailFieldList({
   emails: ContactEmail[];
   onChange: (next: ContactEmail[]) => void;
 }) {
-  const rows = emails.length ? emails : [{ label: "", email: "" }];
+  const blank: ContactEmail = { name: "", label: "", email: "" };
+  const rows = emails.length ? emails : [blank];
   const update = (index: number, patch: Partial<ContactEmail>) =>
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   const remove = (index: number) => {
     const next = rows.filter((_, i) => i !== index);
-    onChange(next.length ? next : [{ label: "", email: "" }]);
+    onChange(next.length ? next : [blank]);
   };
   return (
     <div className="grid gap-2">
       {rows.map((row, i) => (
-        <div key={i} className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] gap-2">
+        <div
+          key={i}
+          className="grid grid-cols-[minmax(0,6rem)_minmax(0,6rem)_minmax(0,1fr)_auto] gap-2"
+        >
+          <input
+            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+            onChange={(event) => update(i, { name: event.target.value })}
+            placeholder="Name"
+            value={row.name}
+          />
           <input
             className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
             onChange={(event) => update(i, { label: event.target.value })}
-            placeholder="Label (e.g. Paralegal)"
+            placeholder="Label"
             value={row.label}
           />
           <input
@@ -105,7 +115,7 @@ function EmailFieldList({
       ))}
       <button
         className="justify-self-start rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
-        onClick={() => onChange([...rows, { label: "", email: "" }])}
+        onClick={() => onChange([...rows, blank])}
         type="button"
       >
         + Add email
@@ -166,7 +176,7 @@ export default function ContactsPage() {
             contact.phone,
             contact.fax ?? "",
             toDisplayEmails(contact)
-              .map((e) => `${e.label} ${e.email}`)
+              .map((e) => `${e.name} ${e.label} ${e.email}`)
               .join(" "),
             contact.address ?? "",
           ]
@@ -381,12 +391,28 @@ export default function ContactsPage() {
                         </p>
                       );
                     }
-                    return emailRows.map((e, i) => (
-                      <p key={i} className="text-sm">
-                        <span className="font-semibold">{e.label ? `${e.label}:` : "Email:"}</span>{" "}
-                        {e.email}
-                      </p>
-                    ));
+                    return (
+                      <div className="text-sm">
+                        <span className="font-semibold">Email:</span>
+                        <div className="mt-1 flex flex-col gap-1">
+                          {emailRows.map((e, i) => (
+                            <div key={i} className="flex flex-wrap items-center gap-1.5">
+                              {e.name && (
+                                <span className="rounded-full bg-[rgba(13,121,191,0.10)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]">
+                                  {e.name}
+                                </span>
+                              )}
+                              {e.label && (
+                                <span className="rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--text-muted)]">
+                                  {e.label}
+                                </span>
+                              )}
+                              <span>{e.email}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
                   })()}
                   {contact.address && (
                     <p className="text-sm">
@@ -476,7 +502,7 @@ export default function ContactsPage() {
                   />
                   <div className="grid gap-1">
                     <span className="text-xs font-semibold text-[var(--text-muted)]">
-                      Emails (add a label like Paralegal or a name)
+                      Emails (Name · Label · Address)
                     </span>
                     <EmailFieldList
                       emails={editContactForm.emails}
@@ -631,7 +657,7 @@ export default function ContactsPage() {
 
               <div className="grid gap-1 md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">
-                  Emails (add a label like Paralegal or a name)
+                  Emails (Name · Label · Address)
                 </span>
                 <EmailFieldList
                   emails={addContactForm.emails}
