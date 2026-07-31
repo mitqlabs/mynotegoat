@@ -1320,7 +1320,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, createEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
@@ -3933,6 +3933,37 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // is the normal schedule "+ Appointment" → "Check In" → "+ Encounter"
   // flow, which can't introduce duplicates the same way.
 
+  // ── Re-link an orphaned "Encounter Only" back to an appointment ──
+  // Safe recovery for an encounter whose appointment link was lost (e.g. a
+  // date/type edit floated it off). Unlike the removed "Restore Appt" button,
+  // this links to an EXISTING appointment — it never mints a new one — so it
+  // can't create the duplicate appointments that made the old path dangerous.
+  // It stamps the durable appointmentId and aligns the encounter's date/type
+  // to the appointment so the two rows merge into one.
+  const linkEncounterToAppointment = (
+    encounter: (typeof patientEncounterRecords)[number],
+    appointment: ScheduleAppointmentRecord,
+  ) => {
+    const dateUs = toUsDate(appointment.date);
+    const chargeNote =
+      encounter.charges.length > 0
+        ? ` and its ${encounter.charges.length} charge${encounter.charges.length === 1 ? "" : "s"}`
+        : "";
+    const proceed = window.confirm(
+      `Attach this encounter (your note${chargeNote}) to the ${dateUs} ${appointment.appointmentType} appointment?` +
+        (encounter.encounterDate && encounter.encounterDate !== dateUs
+          ? `\n\nIts date will change from ${encounter.encounterDate} to ${dateUs}.`
+          : ""),
+    );
+    if (!proceed) return;
+    updateEncounter(encounter.id, {
+      appointmentId: appointment.id,
+      encounterDate: dateUs,
+      appointmentType: appointment.appointmentType,
+    });
+    setEncounterMessage(`Encounter linked to the ${dateUs} ${appointment.appointmentType} appointment.`);
+  };
+
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
@@ -5825,13 +5856,43 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             </td>
                             <td className="px-2 py-2">
                               {linkedEncounter ? (
-                                <button
-                                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                                  onClick={() => openEncounterEditor(linkedEncounter.id)}
-                                  type="button"
-                                >
-                                  Open Encounter
-                                </button>
+                                <div className="flex flex-col items-start gap-1">
+                                  <button
+                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    onClick={() => openEncounterEditor(linkedEncounter.id)}
+                                    type="button"
+                                  >
+                                    Open Encounter
+                                  </button>
+                                  {!appointment &&
+                                    (() => {
+                                      // Encounter-only row: offer to re-link it to
+                                      // an appointment that has no encounter yet.
+                                      const targets = appointmentRows
+                                        .filter((r) => r.appointment && !r.linkedEncounter)
+                                        .map((r) => r.appointment!);
+                                      if (!targets.length) return null;
+                                      return (
+                                        <select
+                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                                          onChange={(event) => {
+                                            const apt = targets.find((a) => a.id === event.target.value);
+                                            event.target.value = "";
+                                            if (apt) linkEncounterToAppointment(linkedEncounter, apt);
+                                          }}
+                                          title="Attach this encounter (with your note) to an appointment"
+                                          value=""
+                                        >
+                                          <option value="">Link to appointment…</option>
+                                          {targets.map((a) => (
+                                            <option key={a.id} value={a.id}>
+                                              {toUsDate(a.date)} — {a.appointmentType}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })()}
+                                </div>
                               ) : appointment ? (
                                 (appointment.status === "Check In") ? (
                                     <button
