@@ -3940,38 +3940,95 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // can't create the duplicate appointments that made the old path dangerous.
   // It stamps the durable appointmentId and aligns the encounter's date/type
   // to the appointment so the two rows merge into one.
-  const linkEncounterToAppointment = (
-    encounter: (typeof patientEncounterRecords)[number],
+  const mergeEncounterIntoAppointment = (
+    note: (typeof patientEncounterRecords)[number],
     appointment: ScheduleAppointmentRecord,
     occupant?: (typeof patientEncounterRecords)[number] | null,
   ) => {
     const dateUs = toUsDate(appointment.date);
+    const merging = occupant && occupant.id !== note.id ? occupant : null;
     const chargeNote =
-      encounter.charges.length > 0
-        ? ` and its ${encounter.charges.length} charge${encounter.charges.length === 1 ? "" : "s"}`
+      note.charges.length > 0
+        ? ` and its ${note.charges.length} charge${note.charges.length === 1 ? "" : "s"}`
         : "";
     const dateNote =
-      encounter.encounterDate && encounter.encounterDate !== dateUs
-        ? `\n\nIts date will change from ${encounter.encounterDate} to ${dateUs}.`
+      note.encounterDate && note.encounterDate !== dateUs
+        ? `\n\nIts date will change from ${note.encounterDate} to ${dateUs}.`
         : "";
-    // If the target appointment already shows a different encounter, warn: it
-    // will be displaced to its own "Encounter Only" row (nothing is deleted).
-    const occupantNote =
-      occupant && occupant.id !== encounter.id
-        ? `\n\nHeads up: the ${dateUs} appointment already has another encounter${
-            occupant.charges.length > 0 ? ` with ${occupant.charges.length} charge(s)` : ""
-          }. It won't be deleted — it'll show as its own "Encounter Only" row so you can review or remove it.`
-        : "";
+    // If the target appointment already has a different encounter, its notes
+    // and charges are folded into this one, then it's removed — one encounter.
+    const mergeNote = merging
+      ? `\n\nThe ${dateUs} appointment already has an encounter — its notes${
+          merging.charges.length > 0 ? " and charges" : ""
+        } will be merged into this one and it's removed. Nothing is lost.`
+      : "";
     const proceed = window.confirm(
-      `Attach this encounter (your note${chargeNote}) to the ${dateUs} ${appointment.appointmentType} appointment?${dateNote}${occupantNote}`,
+      `Merge this encounter (your note${chargeNote}) into the ${dateUs} ${appointment.appointmentType} appointment so they become one?${dateNote}${mergeNote}`,
     );
     if (!proceed) return;
-    updateEncounter(encounter.id, {
+
+    // 1) Point the note encounter at the appointment (durable link + aligned
+    //    date/type) so it becomes the appointment's encounter.
+    updateEncounter(note.id, {
       appointmentId: appointment.id,
       encounterDate: dateUs,
       appointmentType: appointment.appointmentType,
     });
-    setEncounterMessage(`Encounter linked to the ${dateUs} ${appointment.appointmentType} appointment.`);
+
+    // 2) Fold the occupant's content in, then delete it.
+    if (merging) {
+      encounterSections.forEach((section) => {
+        const sourceText = merging.soap[section]?.trim() ?? "";
+        if (!sourceText) return;
+        // Re-key macro-run ids so moved pills can't collide, then carry the
+        // underlying runs over (mirrors the salt-default copy path).
+        const idMap = new Map<string, string>();
+        const rewritten = sourceText.replace(
+          /data-macro-run-id=["']([^"']+)["']/g,
+          (_match, oldId: string) => {
+            let newId = idMap.get(oldId);
+            if (!newId) {
+              newId = createEncounterMacroRunId();
+              idMap.set(oldId, newId);
+            }
+            return `data-macro-run-id="${newId}"`;
+          },
+        );
+        const existing = note.soap[section]?.trim() ?? "";
+        setSoapSection(note.id, section, existing ? `${existing}\n${rewritten}` : rewritten);
+        idMap.forEach((newId, oldId) => {
+          const run = merging.macroRuns.find((entry) => entry.id === oldId);
+          if (!run) return;
+          addMacroRun(note.id, {
+            id: newId,
+            section,
+            macroId: run.macroId,
+            macroName: run.macroName,
+            body: run.body,
+            answers: { ...run.answers },
+            generatedText: run.generatedText.replace(
+              new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
+              `data-macro-run-id="${newId}"`,
+            ),
+          });
+        });
+      });
+      // addCharge dedupes by CPT, so overlapping treatments aren't double-billed.
+      merging.charges.forEach((charge) => {
+        addCharge(note.id, {
+          treatmentMacroId: charge.treatmentMacroId,
+          name: charge.name,
+          procedureCode: charge.procedureCode,
+          unitPrice: charge.unitPrice,
+          units: charge.units,
+        });
+      });
+      deleteEncounter(merging.id);
+      cascadeCashPaymentsOnEncounterDelete(patient.id, (current) =>
+        current.filter((e) => e.encounterId !== merging.id),
+      );
+    }
+    setEncounterMessage(`Merged into the ${dateUs} ${appointment.appointmentType} appointment.`);
   };
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
@@ -5893,21 +5950,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                             );
                                             event.target.value = "";
                                             if (target) {
-                                              linkEncounterToAppointment(
+                                              mergeEncounterIntoAppointment(
                                                 linkedEncounter,
                                                 target.appointment!,
                                                 target.linkedEncounter,
                                               );
                                             }
                                           }}
-                                          title="Attach this encounter (with your note) to an appointment"
+                                          title="Merge this encounter (with your note) into an appointment"
                                           value=""
                                         >
-                                          <option value="">Link to appointment…</option>
+                                          <option value="">Merge into appointment…</option>
                                           {targets.map((r) => (
                                             <option key={r.appointment!.id} value={r.appointment!.id}>
                                               {toUsDate(r.appointment!.date)} — {r.appointment!.appointmentType}
-                                              {r.linkedEncounter ? " (has encounter)" : ""}
+                                              {r.linkedEncounter ? " (merge)" : ""}
                                             </option>
                                           ))}
                                         </select>
