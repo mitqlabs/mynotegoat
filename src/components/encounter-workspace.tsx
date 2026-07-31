@@ -1956,6 +1956,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         (e) => e.patientId === next.patientId && e.encounterDate === dateUs,
       );
     if (existing) {
+      // Heal the durable link if this encounter never got an appointmentId
+      // (e.g. an older encounter), so it can't orphan into "Encounter Only".
+      if (!existing.appointmentId) {
+        updateEncounter(existing.id, { appointmentId: next.id });
+      }
       setSelectedEncounterId(existing.id);
       setMessage(`Opened ${dateUs} — ${next.appointmentType || "visit"}.`);
       return;
@@ -1966,6 +1971,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       provider: officeSettings.doctorName || "Provider",
       appointmentType: next.appointmentType || "Follow-Up",
       encounterDate: dateUs,
+      // Durable link to the appointment so date/type edits never orphan it.
+      appointmentId: next.id,
     });
     if (newId) {
       setSelectedEncounterId(newId);
