@@ -3943,17 +3943,27 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const linkEncounterToAppointment = (
     encounter: (typeof patientEncounterRecords)[number],
     appointment: ScheduleAppointmentRecord,
+    occupant?: (typeof patientEncounterRecords)[number] | null,
   ) => {
     const dateUs = toUsDate(appointment.date);
     const chargeNote =
       encounter.charges.length > 0
         ? ` and its ${encounter.charges.length} charge${encounter.charges.length === 1 ? "" : "s"}`
         : "";
+    const dateNote =
+      encounter.encounterDate && encounter.encounterDate !== dateUs
+        ? `\n\nIts date will change from ${encounter.encounterDate} to ${dateUs}.`
+        : "";
+    // If the target appointment already shows a different encounter, warn: it
+    // will be displaced to its own "Encounter Only" row (nothing is deleted).
+    const occupantNote =
+      occupant && occupant.id !== encounter.id
+        ? `\n\nHeads up: the ${dateUs} appointment already has another encounter${
+            occupant.charges.length > 0 ? ` with ${occupant.charges.length} charge(s)` : ""
+          }. It won't be deleted — it'll show as its own "Encounter Only" row so you can review or remove it.`
+        : "";
     const proceed = window.confirm(
-      `Attach this encounter (your note${chargeNote}) to the ${dateUs} ${appointment.appointmentType} appointment?` +
-        (encounter.encounterDate && encounter.encounterDate !== dateUs
-          ? `\n\nIts date will change from ${encounter.encounterDate} to ${dateUs}.`
-          : ""),
+      `Attach this encounter (your note${chargeNote}) to the ${dateUs} ${appointment.appointmentType} appointment?${dateNote}${occupantNote}`,
     );
     if (!proceed) return;
     updateEncounter(encounter.id, {
@@ -5867,26 +5877,37 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                   {!appointment &&
                                     (() => {
                                       // Encounter-only row: offer to re-link it to
-                                      // an appointment that has no encounter yet.
-                                      const targets = appointmentRows
-                                        .filter((r) => r.appointment && !r.linkedEncounter)
-                                        .map((r) => r.appointment!);
+                                      // ANY of this patient's appointments (ones that
+                                      // already have an encounter are flagged, and the
+                                      // link confirms before displacing that one).
+                                      const targets = appointmentRows.filter(
+                                        (r) => r.appointment && r.linkedEncounter?.id !== linkedEncounter.id,
+                                      );
                                       if (!targets.length) return null;
                                       return (
                                         <select
                                           className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                                           onChange={(event) => {
-                                            const apt = targets.find((a) => a.id === event.target.value);
+                                            const target = targets.find(
+                                              (r) => r.appointment!.id === event.target.value,
+                                            );
                                             event.target.value = "";
-                                            if (apt) linkEncounterToAppointment(linkedEncounter, apt);
+                                            if (target) {
+                                              linkEncounterToAppointment(
+                                                linkedEncounter,
+                                                target.appointment!,
+                                                target.linkedEncounter,
+                                              );
+                                            }
                                           }}
                                           title="Attach this encounter (with your note) to an appointment"
                                           value=""
                                         >
                                           <option value="">Link to appointment…</option>
-                                          {targets.map((a) => (
-                                            <option key={a.id} value={a.id}>
-                                              {toUsDate(a.date)} — {a.appointmentType}
+                                          {targets.map((r) => (
+                                            <option key={r.appointment!.id} value={r.appointment!.id}>
+                                              {toUsDate(r.appointment!.date)} — {r.appointment!.appointmentType}
+                                              {r.linkedEncounter ? " (has encounter)" : ""}
                                             </option>
                                           ))}
                                         </select>
