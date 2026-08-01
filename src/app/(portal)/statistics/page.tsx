@@ -832,8 +832,8 @@ export default function StatisticsPage() {
       </section>
 
       <div className="space-y-5">
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <article className="panel-card p-4">
+        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-5 xl:items-start">
+          <article className="panel-card p-4 xl:order-1">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Billing Snapshot</h4>
               <button
@@ -895,7 +895,7 @@ export default function StatisticsPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card p-4 xl:order-3">
             <h4 className="text-lg font-semibold">Total Reports</h4>
             <p className="mt-2 text-3xl font-bold">{filteredPatients.length}</p>
             <div className="mt-3 space-y-1">
@@ -912,7 +912,7 @@ export default function StatisticsPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card p-4 xl:order-4">
             <h4 className="text-lg font-semibold">Cycle Time Averages</h4>
             <div className="mt-4 space-y-2 text-sm">
               <p className="flex items-center justify-between">
@@ -930,7 +930,7 @@ export default function StatisticsPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card p-4 xl:order-5">
             <h4 className="text-lg font-semibold">Cases By Month</h4>
             <div className="mt-2 space-y-1 text-sm">
               {monthCounts.map((entry) => (
@@ -947,7 +947,7 @@ export default function StatisticsPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card p-4 xl:order-2">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
               <button
@@ -993,6 +993,32 @@ export default function StatisticsPage() {
                   <span className="text-[var(--text-muted)]">Total Collected</span>
                   <span className="font-bold tabular-nums text-emerald-700">{formatMoney(cashStats.totalCollected)}</span>
                 </p>
+                {/* Outstanding balances per patient — folded in here since an
+                    outstanding balance is a cash/package concept. */}
+                <div className="my-2 border-t border-[var(--line-soft)]" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  Outstanding by patient
+                </p>
+                {cashStats.outstandingList.length === 0 ? (
+                  <p className="text-xs text-[var(--text-muted)]">No outstanding balances.</p>
+                ) : (
+                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                    {cashStats.outstandingList.map((row) => (
+                      <li
+                        key={row.pid}
+                        className="flex justify-between gap-2 border-b border-[var(--line-soft)] py-1 text-xs"
+                      >
+                        <Link
+                          className="truncate font-medium text-[var(--brand-primary)] hover:underline"
+                          href={`/patients/${row.pid}`}
+                        >
+                          {row.name}
+                        </Link>
+                        <span className="font-semibold tabular-nums text-[#c93b1d]">{formatMoney(row.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {!showCash && (
                 <button
@@ -1007,38 +1033,17 @@ export default function StatisticsPage() {
           </article>
         </section>
 
-        <section className="panel-card p-4">
-          <h4 className="text-lg font-semibold">Outstanding Balance</h4>
-          {cashStats.outstandingList.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--text-muted)]">No outstanding package balances.</p>
-          ) : (
-            <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              {cashStats.outstandingList.map((row) => (
-                <li
-                  key={row.pid}
-                  className="flex justify-between gap-2 border-b border-[var(--line-soft)] py-1"
-                >
-                  <Link
-                    className="truncate font-medium text-[var(--brand-primary)] hover:underline"
-                    href={`/patients/${row.pid}`}
-                  >
-                    {row.name}
-                  </Link>
-                  <span className="font-semibold tabular-nums text-[#c93b1d]">{formatMoney(row.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr_2.6fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.5fr_2fr]">
           <article className="panel-card overflow-hidden">
             <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Imaging Referral Totals</h4>
+              <h4 className="text-lg font-semibold">Referral Totals</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Cases = distinct patients sent to the facility. Xrays / MRIs = one per imaged
-                region (a bilateral BL extremity counts as two).
+                Imaging: Cases = distinct patients per facility; Xrays / MRIs = one per imaged
+                region (a bilateral BL extremity counts as two). Specialists: case counts only.
               </p>
+            </div>
+            <div className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Imaging
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
@@ -1071,12 +1076,9 @@ export default function StatisticsPage() {
                 </tbody>
               </table>
             </div>
-          </article>
 
-          <article className="panel-card overflow-hidden">
-            <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Specialist Referral Totals</h4>
-              <p className="text-sm text-[var(--text-muted)]">Case counts only.</p>
+            <div className="border-t border-[var(--line-soft)] px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Specialists
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
