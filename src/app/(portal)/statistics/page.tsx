@@ -545,20 +545,34 @@ export default function StatisticsPage() {
     type FacilityRow = { facility: string; xray: number; mri: number; total: number; casePatientIds: Set<string> };
     const grouped: Record<string, FacilityRow> = {};
 
-    const addReferral = (patientId: string, facility: string, type: "xray" | "mri", regions: string[]) => {
+    const addReferral = (patientId: string, facility: string, type: "xray" | "mri", count: number) => {
       const key = facility.toLowerCase();
       if (!grouped[key]) {
         grouped[key] = { facility, xray: 0, mri: 0, total: 0, casePatientIds: new Set<string>() };
       }
       grouped[key].casePatientIds.add(patientId);
-      // Count each region as a referral (or 1 if no regions)
-      const count = Math.max(1, regions.length);
       if (type === "xray") {
         grouped[key].xray += count;
       } else {
         grouped[key].mri += count;
       }
       grouped[key].total += count;
+    };
+
+    // One study per imaged region; a bilateral (BL) extremity is two studies
+    // (left + right). A referral with no regions still counts as one.
+    const countStudies = (ref: Record<string, unknown>): number => {
+      const regions = Array.isArray(ref.regions) ? (ref.regions as string[]) : [];
+      if (!regions.length) return 1;
+      const laterality =
+        ref.lateralityByRegion && typeof ref.lateralityByRegion === "object"
+          ? (ref.lateralityByRegion as Record<string, string>)
+          : {};
+      let count = 0;
+      for (const region of regions) {
+        count += laterality[region] === "BL" ? 2 : 1;
+      }
+      return count;
     };
 
     filteredPatients.forEach((patient) => {
@@ -568,8 +582,7 @@ export default function StatisticsPage() {
           const ref = raw as Record<string, unknown>;
           const center = typeof ref.center === "string" ? ref.center.trim() : "";
           if (!center) continue;
-          const regions = Array.isArray(ref.regions) ? (ref.regions as string[]) : [];
-          addReferral(patient.id, center, "xray", regions);
+          addReferral(patient.id, center, "xray", countStudies(ref));
         }
       }
       // MRI / CT referrals
@@ -578,8 +591,7 @@ export default function StatisticsPage() {
           const ref = raw as Record<string, unknown>;
           const center = typeof ref.center === "string" ? ref.center.trim() : "";
           if (!center) continue;
-          const regions = Array.isArray(ref.regions) ? (ref.regions as string[]) : [];
-          addReferral(patient.id, center, "mri", regions);
+          addReferral(patient.id, center, "mri", countStudies(ref));
         }
       }
     });
@@ -1021,9 +1033,9 @@ export default function StatisticsPage() {
         <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">
           <article className="panel-card overflow-hidden">
             <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Imaging Referral Totals</h4>
+              <h4 className="text-lg font-semibold">Imaging Study Totals</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Counts use referral quantity (for example, one patient can have multiple X-rays).
+                One study per imaged region; a bilateral (BL) extremity counts as two.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -1032,9 +1044,9 @@ export default function StatisticsPage() {
                   <tr className="bg-[var(--bg-soft)] text-left text-sm">
                     <th className="px-4 py-3">Facility</th>
                     <th className="px-4 py-3">Cases</th>
-                    <th className="px-4 py-3">X-Ray Referrals</th>
-                    <th className="px-4 py-3">MRI Referrals</th>
-                    <th className="px-4 py-3">Total Referrals</th>
+                    <th className="px-4 py-3">X-Ray Studies</th>
+                    <th className="px-4 py-3">MRI Studies</th>
+                    <th className="px-4 py-3">Total Studies</th>
                   </tr>
                 </thead>
                 <tbody>
