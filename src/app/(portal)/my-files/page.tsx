@@ -1076,7 +1076,7 @@ export default function MyFilesPage() {
                                 }}
                               />
                             ) : (
-                              <span className="block font-medium text-[var(--text-heading)] truncate max-w-[200px] sm:max-w-[300px]">
+                              <span className="block break-words line-clamp-2 font-medium text-[var(--text-heading)] max-w-[200px] sm:max-w-[300px]" title={file.name}>
                                 {file.name}
                               </span>
                             )}
@@ -1336,7 +1336,7 @@ export default function MyFilesPage() {
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <span className="opacity-50">{getFileIcon(file.mimeType)}</span>
-                            <span className="font-medium text-[var(--text-heading)] truncate max-w-[200px] sm:max-w-[300px]">
+                            <span className="font-medium text-[var(--text-heading)] break-words line-clamp-2 max-w-[200px] sm:max-w-[300px]" title={file.name}>
                               {file.name}
                             </span>
                           </div>

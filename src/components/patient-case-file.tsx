@@ -6754,7 +6754,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               }}
                             />
                           ) : (
-                            <span className="truncate block">{file.name}</span>
+                            <span className="block break-words line-clamp-2" title={file.name}>{file.name}</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap py-2.5 pr-3 text-[var(--text-muted)]">
