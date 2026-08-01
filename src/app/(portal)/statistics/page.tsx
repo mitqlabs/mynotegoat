@@ -832,8 +832,10 @@ export default function StatisticsPage() {
       </section>
 
       <div className="space-y-5">
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-5 xl:items-start">
-          <article className="panel-card p-4 xl:order-1">
+        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 xl:items-start">
+          {/* Column 1 — money: Billing Snapshot over Cash Patients */}
+          <div className="flex flex-col gap-5">
+          <article className="panel-card p-4">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Billing Snapshot</h4>
               <button
@@ -895,59 +897,7 @@ export default function StatisticsPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4 xl:order-3">
-            <h4 className="text-lg font-semibold">Total Reports</h4>
-            <p className="mt-2 text-3xl font-bold">{filteredPatients.length}</p>
-            <div className="mt-3 space-y-1">
-              {caseStatuses.map((statusConfig) => (
-                <p key={statusConfig.name} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full border border-[var(--line-soft)]"
-                    style={{ backgroundColor: statusConfig.color }}
-                  />
-                  <span>{statusConfig.name.toUpperCase()}</span>
-                  <span className="font-semibold">{statusCounts[statusConfig.name] ?? 0}</span>
-                </p>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel-card p-4 xl:order-4">
-            <h4 className="text-lg font-semibold">Cycle Time Averages</h4>
-            <div className="mt-4 space-y-2 text-sm">
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
-              </p>
-            </div>
-          </article>
-
-          <article className="panel-card p-4 xl:order-5">
-            <h4 className="text-lg font-semibold">Cases By Month</h4>
-            <div className="mt-2 space-y-1 text-sm">
-              {monthCounts.map((entry) => (
-                <div key={entry.month} className="flex items-center justify-between">
-                  <span>{entry.month}</span>
-                  <span className="font-semibold">{entry.count}</span>
-                </div>
-              ))}
-              <div className="my-2 border-t border-[var(--line-soft)]" />
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">Average / Month</span>
-                <span className="font-bold">{formatAverageCaseCount(averageCasesPerMonth)}</span>
-              </div>
-            </div>
-          </article>
-
-          <article className="panel-card p-4 xl:order-2">
+          <article className="panel-card p-4">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
               <button
@@ -1031,6 +981,64 @@ export default function StatisticsPage() {
               )}
             </div>
           </article>
+          </div>
+
+          {/* Column 2 — counts: Total Reports over Cycle Time Averages */}
+          <div className="flex flex-col gap-5">
+          <article className="panel-card p-4">
+            <h4 className="text-lg font-semibold">Total Reports</h4>
+            <p className="mt-2 text-3xl font-bold">{filteredPatients.length}</p>
+            <div className="mt-3 space-y-1">
+              {caseStatuses.map((statusConfig) => (
+                <p key={statusConfig.name} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="inline-block h-3 w-3 rounded-full border border-[var(--line-soft)]"
+                    style={{ backgroundColor: statusConfig.color }}
+                  />
+                  <span>{statusConfig.name.toUpperCase()}</span>
+                  <span className="font-semibold">{statusCounts[statusConfig.name] ?? 0}</span>
+                </p>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-card p-4">
+            <h4 className="text-lg font-semibold">Cycle Time Averages</h4>
+            <div className="mt-4 space-y-2 text-sm">
+              <p className="flex items-center justify-between">
+                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
+                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
+                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
+                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
+              </p>
+            </div>
+          </article>
+          </div>
+
+          {/* Column 3 — Cases By Month */}
+          <article className="panel-card p-4">
+            <h4 className="text-lg font-semibold">Cases By Month</h4>
+            <div className="mt-2 space-y-1 text-sm">
+              {monthCounts.map((entry) => (
+                <div key={entry.month} className="flex items-center justify-between">
+                  <span>{entry.month}</span>
+                  <span className="font-semibold">{entry.count}</span>
+                </div>
+              ))}
+              <div className="my-2 border-t border-[var(--line-soft)]" />
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">Average / Month</span>
+                <span className="font-bold">{formatAverageCaseCount(averageCasesPerMonth)}</span>
+              </div>
+            </div>
+          </article>
+
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[1.5fr_2fr]">
