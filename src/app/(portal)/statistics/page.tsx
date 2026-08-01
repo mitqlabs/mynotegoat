@@ -542,33 +542,20 @@ export default function StatisticsPage() {
   }, [filteredPatients]);
 
   const imagingFacilityStats = useMemo(() => {
-    type FacilityRow = {
-      facility: string;
-      xray: number;
-      mri: number;
-      // Distinct patients per modality — kept separate so an x-ray-only and an
-      // MRI-only patient aren't merged into one ambiguous "cases" number.
-      xrayPatientIds: Set<string>;
-      mriPatientIds: Set<string>;
-    };
+    type FacilityRow = { facility: string; xray: number; mri: number; casePatientIds: Set<string> };
     const grouped: Record<string, FacilityRow> = {};
 
+    // Cases = distinct patients sent to the facility (any modality). Xrays/MRIs
+    // = total studies (one per imaged region; a bilateral extremity = two).
     const addReferral = (patientId: string, facility: string, type: "xray" | "mri", count: number) => {
       const key = facility.toLowerCase();
       if (!grouped[key]) {
-        grouped[key] = {
-          facility,
-          xray: 0,
-          mri: 0,
-          xrayPatientIds: new Set<string>(),
-          mriPatientIds: new Set<string>(),
-        };
+        grouped[key] = { facility, xray: 0, mri: 0, casePatientIds: new Set<string>() };
       }
+      grouped[key].casePatientIds.add(patientId);
       if (type === "xray") {
-        grouped[key].xrayPatientIds.add(patientId);
         grouped[key].xray += count;
       } else {
-        grouped[key].mriPatientIds.add(patientId);
         grouped[key].mri += count;
       }
     };
@@ -613,9 +600,8 @@ export default function StatisticsPage() {
     return Object.values(grouped)
       .map((row) => ({
         facility: row.facility,
-        xrayCases: row.xrayPatientIds.size,
+        cases: row.casePatientIds.size,
         xray: row.xray,
-        mriCases: row.mriPatientIds.size,
         mri: row.mri,
         total: row.xray + row.mri,
       }))
@@ -1048,11 +1034,10 @@ export default function StatisticsPage() {
         <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">
           <article className="panel-card overflow-hidden">
             <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Imaging Study Totals</h4>
+              <h4 className="text-lg font-semibold">Imaging Referral Totals</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Cases = distinct patients sent there per modality. Studies = one per imaged
-                region (a bilateral BL extremity counts as two). A patient sent for both x-ray
-                and MRI is counted in each modality&apos;s Cases.
+                Cases = distinct patients sent to the facility. Xrays / MRIs = one per imaged
+                region (a bilateral BL extremity counts as two).
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -1060,27 +1045,25 @@ export default function StatisticsPage() {
                 <thead>
                   <tr className="bg-[var(--bg-soft)] text-left text-sm">
                     <th className="px-4 py-3">Facility</th>
-                    <th className="px-4 py-3">X-Ray Cases</th>
-                    <th className="px-4 py-3">X-Ray Studies</th>
-                    <th className="px-4 py-3">MRI Cases</th>
-                    <th className="px-4 py-3">MRI Studies</th>
-                    <th className="px-4 py-3">Total Studies</th>
+                    <th className="px-4 py-3">Cases</th>
+                    <th className="px-4 py-3">Xrays</th>
+                    <th className="px-4 py-3">MRIs</th>
+                    <th className="px-4 py-3">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {imagingFacilityStats.map((row) => (
                     <tr key={row.facility} className="border-t border-[var(--line-soft)]">
                       <td className="px-4 py-3 font-semibold">{row.facility}</td>
-                      <td className="px-4 py-3">{row.xrayCases}</td>
+                      <td className="px-4 py-3">{row.cases}</td>
                       <td className="px-4 py-3">{row.xray}</td>
-                      <td className="px-4 py-3">{row.mriCases}</td>
                       <td className="px-4 py-3">{row.mri}</td>
                       <td className="px-4 py-3">{row.total}</td>
                     </tr>
                   ))}
                   {imagingFacilityStats.length === 0 && (
                     <tr className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={6}>
+                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={5}>
                         No imaging rows for selected filters.
                       </td>
                     </tr>
