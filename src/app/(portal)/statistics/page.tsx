@@ -1031,7 +1031,7 @@ export default function StatisticsPage() {
           )}
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr_2.6fr]">
           <article className="panel-card overflow-hidden">
             <div className="border-b border-[var(--line-soft)] p-4">
               <h4 className="text-lg font-semibold">Imaging Referral Totals</h4>
@@ -1104,9 +1104,8 @@ export default function StatisticsPage() {
               </table>
             </div>
           </article>
-        </section>
 
-        <section className="panel-card overflow-hidden">
+          <article className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Attorney Performance</h4>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -1164,6 +1163,7 @@ export default function StatisticsPage() {
               </tbody>
             </table>
           </div>
+          </article>
         </section>
       </div>
     </div>
