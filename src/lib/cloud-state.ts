@@ -3,6 +3,27 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
 import { notifyChange } from "@/lib/local-sync";
+import { mergeFileManagerStates } from "@/lib/file-manager";
+
+/** The files/folders index. Its state is a { folders, files } wrapper, so the
+ *  generic entry-count guard sees a constant 2 keys and lets cloud overwrite
+ *  local — silently dropping freshly uploaded files. Everywhere we'd write
+ *  this key from cloud, we MERGE by id instead so no record is ever lost. */
+const FILES_INDEX_KEY = "casemate.files.v1";
+
+function mergeFilesIndexIntoLocal(cloudValue: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    const localRaw = window.localStorage.getItem(FILES_INDEX_KEY);
+    const localParsed = localRaw ? JSON.parse(localRaw) : null;
+    const cloudParsed = typeof cloudValue === "string" ? JSON.parse(cloudValue) : cloudValue;
+    const merged = mergeFileManagerStates(localParsed as never, cloudParsed as never);
+    window.localStorage.setItem(FILES_INDEX_KEY, JSON.stringify(merged));
+    notifyChange(FILES_INDEX_KEY);
+  } catch (err) {
+    console.warn("[Cloud Sync] files index merge failed, keeping local:", err);
+  }
+}
 
 type LocalSnapshot = Record<string, string>;
 
@@ -265,6 +286,12 @@ function writeLocalSnapshot(snapshot: Record<string, unknown>) {
 
   for (const [key, value] of Object.entries(snapshot)) {
     if (!key.startsWith(LOCAL_KEY_PREFIX)) {
+      continue;
+    }
+    // The files/folders index must MERGE, never overwrite — a stale snapshot
+    // copy would otherwise wipe a just-uploaded file (the orphan bug).
+    if (key === FILES_INDEX_KEY) {
+      mergeFilesIndexIntoLocal(value);
       continue;
     }
     try {
@@ -805,6 +832,18 @@ async function bootstrapTableBackedEntities() {
               const value = remoteKv.get(key);
               if (value === undefined) continue;
               const localRaw = window.localStorage.getItem(key);
+              // Files/folders index: MERGE local + cloud by id instead of
+              // overwriting. The state is a { folders, files } wrapper, so the
+              // entry-count guard below always saw 2-vs-2 and let cloud win —
+              // which silently wiped a freshly uploaded file whose record
+              // hadn't synced yet (the orphaned-upload bug). A union by id
+              // (newer updatedAt wins, tombstones respected) can't drop either
+              // side's records.
+              if (key === FILES_INDEX_KEY) {
+                mergeFilesIndexIntoLocal(value);
+                replacedCount += 1;
+                continue;
+              }
               if (localRaw) {
                 let localCount = -1;
                 let cloudCount = -1;

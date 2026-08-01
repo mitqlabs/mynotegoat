@@ -38,6 +38,43 @@ export type FileManagerState = {
   files: FileRecord[];
 };
 
+/**
+ * Union two lists by id, keeping the record with the later `updatedAt` on each
+ * side. Nothing present on either side is dropped; soft-delete tombstones
+ * (deleted:true with a newer updatedAt) win over a stale live copy.
+ */
+function mergeById<T extends { id: string; updatedAt?: string }>(a: T[], b: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const item of a) if (item && item.id) map.set(item.id, item);
+  for (const item of b) {
+    if (!item || !item.id) continue;
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+      continue;
+    }
+    const ta = Date.parse(existing.updatedAt ?? "") || 0;
+    const tb = Date.parse(item.updatedAt ?? "") || 0;
+    if (tb >= ta) map.set(item.id, item);
+  }
+  return [...map.values()];
+}
+
+/**
+ * Merge a local and a cloud file-manager state. Used on cloud hydration so a
+ * stale cloud copy can NEVER wipe a file/folder that was just created locally
+ * and hasn't synced yet — the exact failure that orphaned uploaded files.
+ */
+export function mergeFileManagerStates(
+  local: FileManagerState | null | undefined,
+  cloud: FileManagerState | null | undefined,
+): FileManagerState {
+  return {
+    folders: mergeById(local?.folders ?? [], cloud?.folders ?? []),
+    files: mergeById(local?.files ?? [], cloud?.files ?? []),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
