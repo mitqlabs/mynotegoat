@@ -920,6 +920,56 @@ async function bootstrapTableBackedEntities() {
     }
   }
 
+  // ── Phase 9: patient files (one row per file) ──
+  // OFF by default. When enabled AND the table exists, the table is the source
+  // of truth for files. We MERGE local + table by id (never drop either side),
+  // write the merged set back to localStorage (folders untouched), and backfill
+  // the merged set to the table so any local-only file lands in it. If the flag
+  // is on but the table isn't created yet, we skip entirely and the blob path
+  // keeps working — flipping the flag before running the SQL can't lose data.
+  if (isCloudEntityEnabled("patientFiles")) {
+    try {
+      const { isPatientFilesTableReady, fetchAllFilesFromTable, bulkUpsertFilesToTable } =
+        await import("@/lib/files-cloud");
+      const { loadFileManagerState, mergeFileManagerStates } = await import("@/lib/file-manager");
+      const ready = await isPatientFilesTableReady();
+      if (ready) {
+        const tableFiles = await fetchAllFilesFromTable();
+        if (tableFiles !== null) {
+          const local = loadFileManagerState();
+          // Union local files + table files by id (newer updatedAt wins). Keep
+          // folders exactly as the blob hydration left them.
+          const mergedFiles = mergeFileManagerStates(
+            { folders: [], files: local.files },
+            { folders: [], files: tableFiles },
+          ).files;
+          window.localStorage.setItem(
+            FILES_INDEX_KEY,
+            JSON.stringify({ folders: local.folders, files: mergedFiles }),
+          );
+          notifyChange(FILES_INDEX_KEY);
+          // Backfill: make sure the table contains everything the merge produced
+          // (covers first-time migration from the blob + any local-only files).
+          const backfill = await bulkUpsertFilesToTable(mergedFiles);
+          if (!backfill.ok) {
+            console.error("[Cloud Sync] patient_files backfill failed:", backfill.error);
+          } else {
+            console.info(
+              `[Cloud Sync] patient_files: merged ${mergedFiles.length} file(s) (table + local).`,
+            );
+          }
+        }
+      } else {
+        console.warn(
+          "[Cloud Sync] patientFiles flag is on but patient_files table isn't ready — " +
+            "keeping the blob path. Run supabase/patient_files_table.sql.",
+        );
+      }
+    } catch (err) {
+      console.error("[Cloud Sync] patient_files hydration failed (kept blob path):", err);
+    }
+  }
+
   // ── Phase 3: encounter notes ──
   if (isCloudEntityEnabled("encounterNotes")) {
     const {

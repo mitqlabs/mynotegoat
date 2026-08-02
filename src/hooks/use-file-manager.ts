@@ -29,6 +29,24 @@ import {
   deleteFilesFromStorage,
 } from "@/lib/file-storage";
 
+/**
+ * Flag-gated: remove permanently-deleted files' rows from the patient_files
+ * table so a hard delete doesn't resurrect on the next merge/hydrate. No-op
+ * when the per-row table flag is off (default) — so normal deletes (soft
+ * tombstones) are unaffected and this changes nothing until we opt in.
+ */
+async function purgeFileTableRows(ids: string[]) {
+  if (!ids.length) return;
+  try {
+    const { isCloudEntityEnabled } = await import("@/lib/feature-flags");
+    if (!isCloudEntityEnabled("patientFiles")) return;
+    const { deleteFilesFromTable } = await import("@/lib/files-cloud");
+    await deleteFilesFromTable(ids);
+  } catch (err) {
+    console.error("[use-file-manager] patient_files row purge failed:", err);
+  }
+}
+
 export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStatusConfig[] = []) {
   const [state, setState] = useState<FileManagerState>(() => {
     const loaded = loadFileManagerState();
@@ -275,6 +293,7 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
       // file is gone from the user's view either way; the worst case is a
       // dangling blob in the bucket which can be reaped server-side.
       if (toCleanUp) {
+        void purgeFileTableRows([fileId]);
         await deleteFilesFromStorage([toCleanUp]);
       }
     },
@@ -284,14 +303,21 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
   const permanentlyDeleteFolder = useCallback(
     async (folderId: string) => {
       let toCleanUp: string[] = [];
+      let removedFileIds: string[] = [];
       setState((current) => {
         const result = permanentlyDeleteFolderRecord(current, folderId);
         toCleanUp = result.storagePaths;
+        removedFileIds = current.files
+          .filter((f) => !result.state.files.some((g) => g.id === f.id))
+          .map((f) => f.id);
         // Always save — the helper returns the original state if it
         // refused (e.g. system folder), so no harm.
         saveFileManagerState(result.state);
         return result.state;
       });
+      if (removedFileIds.length > 0) {
+        void purgeFileTableRows(removedFileIds);
+      }
       if (toCleanUp.length > 0) {
         await deleteFilesFromStorage(toCleanUp);
       }

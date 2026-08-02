@@ -34,6 +34,9 @@ export const cloudEntityFlags: Record<CloudEntityFlag, boolean> = {
   contacts: true,
   /** Phase 8: tasks, dashboard, settings. */
   tasks: true,
+  /** Phase 9: patient files index — one row per file (kills the orphan-prone
+   *  single blob). OFF by default; flip per-browser to test, then globally. */
+  patientFiles: false,
 };
 
 export type CloudEntityFlag =
@@ -44,7 +47,8 @@ export type CloudEntityFlag =
   | "macros"
   | "schedulingSettings"
   | "contacts"
-  | "tasks";
+  | "tasks"
+  | "patientFiles";
 
 /**
  * Per-browser override key. Setting `casemate.feature-flag.<name>` to "on"

@@ -121,13 +121,27 @@ export function loadFileManagerState(): FileManagerState {
 export function saveFileManagerState(state: FileManagerState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  // Sync the index to the cloud with retries. Fire-and-forget dual-write used
-  // to silently drop a transient failure — combined with the old overwrite-on-
-  // hydrate, a network blip meant an uploaded file's record never reached the
-  // cloud and vanished on the next refresh. We now retry a few times with
-  // backoff; the merge-on-hydrate change keeps the record locally in the
-  // meantime, so nothing is lost even if every attempt fails.
-  void saveFilesIndexToCloudWithRetry(state);
+  void syncFileManagerStateToCloud(state);
+}
+
+async function syncFileManagerStateToCloud(state: FileManagerState) {
+  // (1) Keep the workspace_kv blob synced — carries folders + a files fallback,
+  // and is the ONLY path when the per-row table flag is off. Retry on
+  // transient failure; merge-on-hydrate keeps the record locally meanwhile.
+  await saveFilesIndexToCloudWithRetry(state);
+
+  // (2) When the per-row table is enabled, ALSO write each file as its own row.
+  // One row per file means a concurrent write can't clobber another file's
+  // record. Flag OFF (default) → this whole block is skipped → zero change.
+  try {
+    const { isCloudEntityEnabled } = await import("@/lib/feature-flags");
+    if (!isCloudEntityEnabled("patientFiles")) return;
+    const { bulkUpsertFilesToTable } = await import("@/lib/files-cloud");
+    await bulkUpsertFilesToTable(state.files);
+  } catch (err) {
+    // Never throw from a save — the blob path (1) already protected the data.
+    console.error("[file-manager] patient_files row sync failed (data safe in blob + local):", err);
+  }
 }
 
 async function saveFilesIndexToCloudWithRetry(state: FileManagerState, attempts = 4) {
