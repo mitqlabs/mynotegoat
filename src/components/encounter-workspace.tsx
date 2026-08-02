@@ -3395,7 +3395,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     </span>
                   </p>
                   {specialistContactNames.length > 0 ? (
-                    <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: specialistContactNames.length > 5 ? `repeat(${Math.ceil(specialistContactNames.length / 5)}, 1fr)` : "1fr" }}>
+                    <div
+                      className="mt-2 grid gap-2"
+                      style={{
+                        // Alphabetical DOWN each column, then across (A,B,C
+                        // top-to-bottom), not left-to-right across rows. Fill
+                        // ~5 per column: columns = ceil(n/5), rows balance them.
+                        gridAutoFlow: "column",
+                        gridAutoColumns: "minmax(0, 1fr)",
+                        gridTemplateRows: `repeat(${Math.max(
+                          1,
+                          Math.ceil(
+                            specialistContactNames.length /
+                              Math.max(1, Math.ceil(specialistContactNames.length / 5)),
+                          ),
+                        )}, auto)`,
+                      }}
+                    >
                       {specialistContactNames.map((name) => (
                         <label
                           key={`spec-pick-${name}`}
