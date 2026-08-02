@@ -121,7 +121,33 @@ export function loadFileManagerState(): FileManagerState {
 export function saveFileManagerState(state: FileManagerState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", state));
+  // Sync the index to the cloud with retries. Fire-and-forget dual-write used
+  // to silently drop a transient failure — combined with the old overwrite-on-
+  // hydrate, a network blip meant an uploaded file's record never reached the
+  // cloud and vanished on the next refresh. We now retry a few times with
+  // backoff; the merge-on-hydrate change keeps the record locally in the
+  // meantime, so nothing is lost even if every attempt fails.
+  void saveFilesIndexToCloudWithRetry(state);
+}
+
+async function saveFilesIndexToCloudWithRetry(state: FileManagerState, attempts = 4) {
+  let mod: typeof import("@/lib/kv-cloud");
+  try {
+    mod = await import("@/lib/kv-cloud");
+  } catch {
+    return;
+  }
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await mod.dualWriteKvOrThrow(STORAGE_KEY, "tasks", state);
+      return;
+    } catch {
+      // Backoff: 0.5s, 1s, 1.5s … then give up (local copy is safe; the next
+      // save or the merge-on-hydrate will carry it up).
+      await new Promise((resolve) => setTimeout(resolve, 500 * (i + 1)));
+    }
+  }
+  console.error("[file-manager] files index cloud sync failed after retries — kept locally, will retry on next save.");
 }
 
 // ---------------------------------------------------------------------------
