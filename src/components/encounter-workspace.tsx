@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
+import { CaseNotesBox } from "@/components/case-notes-box";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
@@ -2640,6 +2641,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               Full edit/delete/email lives on the My Files page. */}
           {selectedEncounter && (
             <PatientFilesPreviewPanel patientId={selectedEncounter.patientId} />
+          )}
+          {/* Case Notes — mirrors the patient page's Notes box (shared store). */}
+          {selectedEncounter && (
+            <CaseNotesBox
+              patientId={selectedEncounter.patientId}
+              seed={selectedPatient?.matrix?.notes ?? ""}
+            />
           )}
         </aside>
 

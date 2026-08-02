@@ -754,6 +754,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.key-dates.v1",
           "casemate.dashboard-priority-rules.v1",
           "casemate.files.v1",
+          "casemate.case-notes.v1",
           "casemate.patient-page-prefs.v1",
           "casemate.module-visibility.v1",
           // SMS templates were dual-written to workspace_kv (namespace

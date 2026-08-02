@@ -9,6 +9,7 @@ import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { useCaseNotes } from "@/hooks/use-case-notes";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
@@ -1423,7 +1424,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [specialistRecommendations, setSpecialistRecommendations] = useState(
     patient.matrix?.specialistRecommendations ?? "",
   );
-  const [patientNotes, setPatientNotes] = useState(patient.matrix?.notes ?? "");
+  // Case Notes live in a shared store so this box mirrors the encounter
+  // workspace's Notes box (seeded from the legacy matrix.notes value).
+  const { notes: patientNotes, setNotes: setPatientNotes } = useCaseNotes(
+    patient.id,
+    patient.matrix?.notes ?? "",
+  );
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
   const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
 
