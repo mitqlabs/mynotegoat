@@ -14,7 +14,7 @@
  * iframe; images render in an <img>; anything else falls back to a link.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import {
   getFilesInFolder,
   getFoldersInParent,
@@ -24,16 +24,19 @@ import {
 import { formatFileSize, getSignedUrl } from "@/lib/file-storage";
 import { useFileManager } from "@/hooks/use-file-manager";
 import { patients } from "@/lib/mock-data";
-import { ScrollLock } from "@/components/scroll-lock";
-
-type PreviewTarget = { file: FileRecord } | null;
 
 export function PatientFilesPreviewPanel({ patientId }: { patientId: string }) {
   // We reuse the same file-manager hook the full /my-files page uses so the
   // inline panel automatically picks up system-folder sync, soft-deletes, and
   // any future state changes without a separate loader.
   const { state } = useFileManager(patients);
-  const [preview, setPreview] = useState<PreviewTarget>(null);
+
+  // Preview opens the file in a NEW TAB (same as the patient page), not a
+  // popup modal — signs a fresh URL then opens it.
+  const handlePreview = async (file: FileRecord) => {
+    const { url, error } = await getSignedUrl(file.storagePath);
+    if (!error && url) window.open(url, "_blank");
+  };
 
   // The patient's system folder is the one tagged with this patientId on
   // creation. Any files uploaded for this patient live there or in one of
@@ -115,8 +118,8 @@ export function PatientFilesPreviewPanel({ patientId }: { patientId: string }) {
               </div>
               <button
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-[var(--text-muted)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
-                onClick={() => setPreview({ file })}
-                title="Preview"
+                onClick={() => handlePreview(file)}
+                title="Preview (opens in a new tab)"
                 type="button"
               >
                 <svg
@@ -140,144 +143,6 @@ export function PatientFilesPreviewPanel({ patientId }: { patientId: string }) {
         </ul>
       )}
 
-      {preview && (
-        <FilePreviewModal file={preview.file} onClose={() => setPreview(null)} />
-      )}
     </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// FilePreviewModal — inline popup within the window.
-// Signs a fresh URL on open (1 hr TTL). Renders PDFs in an iframe and images
-// in an <img>. Unknown types fall back to a "open in new tab" link because
-// we don't want to try to inline-render arbitrary binaries.
-// ---------------------------------------------------------------------------
-
-function FilePreviewModal({
-  file,
-  onClose,
-}: {
-  file: FileRecord;
-  onClose: () => void;
-}) {
-  const [url, setUrl] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Fresh mount per preview target — the modal is unmounted and remounted
-    // for each file, so state defaults (loading=true, error=null, url="")
-    // are correct on entry. No need to reset them here.
-    let active = true;
-    void (async () => {
-      const result = await getSignedUrl(file.storagePath);
-      if (!active) return;
-      if (result.error || !result.url) {
-        setError(result.error ?? "Could not load file.");
-        setLoading(false);
-        return;
-      }
-      setUrl(result.url);
-      setLoading(false);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [file.storagePath]);
-
-  // Escape to close for keyboard users. Pull onClose through a ref so
-  // this effect can stay mounted with `[]` deps — if the parent passes
-  // a new onClose identity on every render (common when the parent
-  // doesn't memoize), we don't want to thrash listener registration.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  const mime = file.mimeType.toLowerCase();
-  const isPdf = mime === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-  const isImage = mime.startsWith("image/");
-
-  return (
-    <div
-      aria-label="File preview"
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-      role="dialog"
-    >
-      <ScrollLock />
-      <div
-        className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-[var(--text-heading)]">
-              {file.name}
-            </div>
-            <div className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-              {file.mimeType || "Unknown type"} · {formatFileSize(file.sizeBytes)}
-            </div>
-          </div>
-          <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
-        </div>
-        <div className="flex-1 overflow-hidden bg-[var(--bg-soft)]">
-          {loading && (
-            <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-              Loading preview...
-            </div>
-          )}
-          {!loading && error && (
-            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-600">
-              {error}
-            </div>
-          )}
-          {!loading && !error && url && isPdf && (
-            <iframe
-              className="h-full w-full border-0"
-              src={url}
-              title={file.name}
-            />
-          )}
-          {!loading && !error && url && isImage && (
-            <div className="flex h-full items-center justify-center overflow-auto p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt={file.name}
-                className="max-h-full max-w-full object-contain"
-                src={url}
-              />
-            </div>
-          )}
-          {!loading && !error && url && !isPdf && !isImage && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-[var(--text-muted)]">
-              <p>This file type cannot be previewed inline.</p>
-              <a
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold text-[var(--brand-primary)] hover:border-[var(--brand-primary)]"
-                href={url}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Open in new tab
-              </a>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
