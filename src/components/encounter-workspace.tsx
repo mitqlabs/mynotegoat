@@ -3395,27 +3395,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     </span>
                   </p>
                   {specialistContactNames.length > 0 ? (
-                    <div
-                      className="mt-2 grid gap-2"
-                      style={{
-                        // Alphabetical DOWN each column, then across (A,B,C
-                        // top-to-bottom), not left-to-right across rows. Fill
-                        // ~5 per column: columns = ceil(n/5), rows balance them.
-                        gridAutoFlow: "column",
-                        gridAutoColumns: "minmax(0, 1fr)",
-                        gridTemplateRows: `repeat(${Math.max(
-                          1,
-                          Math.ceil(
-                            specialistContactNames.length /
-                              Math.max(1, Math.ceil(specialistContactNames.length / 5)),
-                          ),
-                        )}, auto)`,
-                      }}
-                    >
+                    <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
                       {specialistContactNames.map((name) => (
                         <label
                           key={`spec-pick-${name}`}
-                          className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                          className="mb-2 flex w-full items-center gap-2 break-inside-avoid rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                         >
                           <input
                             checked={runMacroAnswers.__specialist_referred__ === name}
@@ -3513,14 +3497,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     : [];
                   const selectableOptions = normalizedOptions.length > 0 ? normalizedOptions : question.options;
                   const useMultiColumn = !usePainScaleColumns && selectableOptions.length >= 5;
-                  const columnCount = useMultiColumn ? Math.ceil(selectableOptions.length / 5) : 1;
-                  const columns: string[][] = [];
-                  if (useMultiColumn) {
-                    const perCol = Math.ceil(selectableOptions.length / columnCount);
-                    for (let c = 0; c < columnCount; c++) {
-                      columns.push(selectableOptions.slice(c * perCol, (c + 1) * perCol));
-                    }
-                  }
                   const renderOptionRow = (option: string) => (
                     <label
                       key={`${question.id}-${option}`}
@@ -3593,9 +3569,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                               )}
                             </div>
                           ) : useMultiColumn ? (
-                            <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}>
-                              {columns.map((col, ci) => (
-                                <div key={ci} className="grid gap-2 content-start">{col.map(renderOptionRow)}</div>
+                            // Auto-balanced multi-column: the browser fits as
+                            // many equal ~11rem columns as the width allows and
+                            // balances their heights, so options read A,B,C DOWN
+                            // each column with no lopsided last column.
+                            // break-inside-avoid keeps each chip whole.
+                            <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
+                              {selectableOptions.map((option) => (
+                                <div
+                                  key={`${question.id}-opt-${option}`}
+                                  className="mb-2 break-inside-avoid"
+                                >
+                                  {renderOptionRow(option)}
+                                </div>
                               ))}
                             </div>
                           ) : (
