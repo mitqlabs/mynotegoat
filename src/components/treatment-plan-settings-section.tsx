@@ -123,7 +123,7 @@ export function TreatmentPlanSettingsSection() {
                       </button>
                     </div>
                     {isOpen && (
-                      <div className="mt-1.5 grid gap-1 border-t border-[var(--line-soft)] pt-1.5 sm:grid-cols-2">
+                      <div className="mt-1.5 grid gap-1 border-t border-[var(--line-soft)] pt-1.5">
                         {macros.map((m) => (
                           <label
                             key={m.id}
