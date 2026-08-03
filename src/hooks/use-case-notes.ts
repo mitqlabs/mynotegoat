@@ -10,6 +10,11 @@ import { notifyChange, onLocalChange } from "@/lib/local-sync";
  * the two note boxes mirror each other — edit or clear on one, it shows on the
  * other. `seed` is the legacy patient.matrix.notes fallback used only until the
  * note has been touched through this store.
+ *
+ * On-screen text updates instantly on every keystroke; the persist (localStorage
+ * + cloud + mirror notify) is DEBOUNCED so fast typing isn't stalled by a
+ * per-keystroke cloud write (which dropped characters). The pending edit is
+ * flushed on unmount / patient change so nothing is lost.
  */
 export function useCaseNotes(patientId: string, seed = "") {
   const key = patientId.trim();
@@ -17,16 +22,33 @@ export function useCaseNotes(patientId: string, seed = "") {
   const seedRef = useRef(seed);
   seedRef.current = seed;
 
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<string | null>(null);
+
   const [notes, setNotesState] = useState<string>(() => {
     const stored = getCaseNote(key);
     return stored !== null ? stored : seed;
   });
 
-  // Re-read when the patient changes.
+  const flush = useCallback((flushKey: string) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (pendingRef.current !== null) {
+      setCaseNote(flushKey, pendingRef.current);
+      pendingRef.current = null;
+      selfWriteCountRef.current++;
+      notifyChange(STORAGE_KEY_CASE_NOTES);
+    }
+  }, []);
+
+  // Re-read when the patient changes; flush the previous patient's pending edit.
   useEffect(() => {
     const stored = getCaseNote(key);
     setNotesState(stored !== null ? stored : seedRef.current);
-  }, [key]);
+    return () => flush(key);
+  }, [key, flush]);
 
   // React to writes from other instances (the mirror).
   useEffect(() => {
@@ -35,6 +57,8 @@ export function useCaseNotes(patientId: string, seed = "") {
         selfWriteCountRef.current--;
         return;
       }
+      // Don't clobber an in-progress local edit that hasn't been flushed yet.
+      if (pendingRef.current !== null) return;
       const stored = getCaseNote(key);
       setNotesState(stored !== null ? stored : seedRef.current);
     });
@@ -42,10 +66,16 @@ export function useCaseNotes(patientId: string, seed = "") {
 
   const setNotes = useCallback(
     (value: string) => {
-      setNotesState(value);
-      setCaseNote(key, value);
-      selfWriteCountRef.current++;
-      notifyChange(STORAGE_KEY_CASE_NOTES);
+      setNotesState(value); // instant on-screen update
+      pendingRef.current = value;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        setCaseNote(key, pendingRef.current ?? value);
+        pendingRef.current = null;
+        saveTimerRef.current = null;
+        selfWriteCountRef.current++;
+        notifyChange(STORAGE_KEY_CASE_NOTES);
+      }, 400);
     },
     [key],
   );
