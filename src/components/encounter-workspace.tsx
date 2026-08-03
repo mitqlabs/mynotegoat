@@ -1458,7 +1458,22 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       answers: MacroAnswerMap;
       html: string;
     }> = [];
-    for (const region of coverage.regions) {
+    // Fill in the canonical Treatment Plan Settings order (Head, Cervical, …,
+    // Exercises, Spinal Decompression) regardless of the order the regions were
+    // toggled on for the day. Regions not found in settings sort to the end.
+    const settingsOrder = new Map(
+      treatmentPlanSettings.regionMacroIds.map((id, index) => [id, index]),
+    );
+    const orderedRegions = [...coverage.regions].sort((a, b) => {
+      const ai = settingsOrder.has(a.macroId)
+        ? (settingsOrder.get(a.macroId) as number)
+        : Number.MAX_SAFE_INTEGER;
+      const bi = settingsOrder.has(b.macroId)
+        ? (settingsOrder.get(b.macroId) as number)
+        : Number.MAX_SAFE_INTEGER;
+      return ai - bi;
+    });
+    for (const region of orderedRegions) {
       const macro = macroLibraryById.get(region.macroId);
       if (!macro || !macro.active) continue;
       // The treatments question is the charge-linked multi-select (same
