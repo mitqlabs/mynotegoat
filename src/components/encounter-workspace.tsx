@@ -1458,18 +1458,22 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       answers: MacroAnswerMap;
       html: string;
     }> = [];
-    // Fill in the canonical Treatment Plan Settings order (Head, Cervical, …,
-    // Exercises, Spinal Decompression) regardless of the order the regions were
-    // toggled on for the day. Regions not found in settings sort to the end.
-    const settingsOrder = new Map(
-      treatmentPlanSettings.regionMacroIds.map((id, index) => [id, index]),
+    // Fill in the order the Plan macros are listed (Head, Cervical, …,
+    // Exercises, Spinal Decompression) — the same order shown in the Treatment
+    // Plan Settings box — regardless of the order regions were checked. Uses the
+    // folder-grouped macro order so it matches what the user sees. Anything not
+    // found sorts to the end.
+    const planMacroOrder = new Map(
+      groupMacrosByFolder(macroLibrary.templates.filter((t) => t.section === "plan"))
+        .flatMap((group) => group.macros)
+        .map((macro, index) => [macro.id, index]),
     );
     const orderedRegions = [...coverage.regions].sort((a, b) => {
-      const ai = settingsOrder.has(a.macroId)
-        ? (settingsOrder.get(a.macroId) as number)
+      const ai = planMacroOrder.has(a.macroId)
+        ? (planMacroOrder.get(a.macroId) as number)
         : Number.MAX_SAFE_INTEGER;
-      const bi = settingsOrder.has(b.macroId)
-        ? (settingsOrder.get(b.macroId) as number)
+      const bi = planMacroOrder.has(b.macroId)
+        ? (planMacroOrder.get(b.macroId) as number)
         : Number.MAX_SAFE_INTEGER;
       return ai - bi;
     });
