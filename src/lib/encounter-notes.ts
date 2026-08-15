@@ -665,6 +665,22 @@ async function runDualWriteUnserialized(
   for (const note of nextRecords) {
     const prev = prevById.get(note.id);
     if (!prev || JSON.stringify(prev) !== JSON.stringify(note)) {
+      // ── DATA-LOSS GUARD ──
+      // Never let autosave turn a previously non-empty encounter into a BLANK
+      // one in the cloud. A full → totally-empty transition is virtually always
+      // a load/merge race (the encounter flashed empty before it hydrated, then
+      // a save fired), not a real edit — and writing that blank clobbers the
+      // real note for good. Legitimately clearing a visit is done by deleting
+      // the encounter, not by blanking every field. Partial edits (shorter
+      // SOAP, one fewer charge) still sync normally — this only blocks the
+      // catastrophic full→empty write.
+      if (prev && encounterContentScore(prev) > 0 && encounterContentScore(note) === 0) {
+        console.warn(
+          `[encounter-notes] BLOCKED a blank overwrite of encounter ${note.id} ` +
+            `(${note.encounterDate}) — it had content and the new copy is empty. Keeping the cloud copy.`,
+        );
+        continue;
+      }
       tasks.push(() => upsertEncounterNoteToTable(note));
     }
   }
@@ -723,6 +739,11 @@ function encounterContentScore(r: EncounterNoteRecord): number {
   return score;
 }
 
+/** True if the encounter has any SOAP text, charges, diagnoses, or macro runs. */
+export function encounterHasContent(r: EncounterNoteRecord): boolean {
+  return encounterContentScore(r) > 0;
+}
+
 /**
  * Remove duplicate encounters that share the same patient + date + type.
  * Keeps the copy with more SOAP/charges/diagnoses content; on tie keeps
@@ -772,13 +793,24 @@ export function replaceEncounterNotesFromCloud(cloudRecords: EncounterNoteRecord
       // Only exists locally (cloud write may still be in flight) — keep it
       mergedById.set(local.id, local);
     } else {
-      // Both exist — keep whichever is newer
-      const localTime = Date.parse(local.updatedAt) || 0;
-      const cloudTime = Date.parse(cloud.updatedAt) || 0;
-      if (localTime > cloudTime) {
-        mergedById.set(local.id, local);
+      // Both exist — normally keep whichever is newer, BUT never let a BLANK
+      // copy win over one that has content, regardless of timestamp. A
+      // clobbered-empty cloud row (from the write race) is often newer than
+      // the real local note; without this guard it would wipe the note on load.
+      const localScore = encounterContentScore(local);
+      const cloudScore = encounterContentScore(cloud);
+      if (localScore > 0 && cloudScore === 0) {
+        mergedById.set(local.id, local); // keep local's content over blank cloud
+      } else if (cloudScore > 0 && localScore === 0) {
+        // keep cloud (already in mergedById) — content beats blank local
+      } else {
+        const localTime = Date.parse(local.updatedAt) || 0;
+        const cloudTime = Date.parse(cloud.updatedAt) || 0;
+        if (localTime > cloudTime) {
+          mergedById.set(local.id, local);
+        }
+        // else cloud version is already in mergedById
       }
-      // else cloud version is already in mergedById
     }
   }
 

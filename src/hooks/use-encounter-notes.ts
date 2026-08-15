@@ -7,6 +7,7 @@ import {
   createEncounterId,
   createEncounterMacroRunId,
   forceSaveAllEncountersToCloud,
+  encounterHasContent,
   encounterSections,
   getNowUsDate,
   loadEncounterNoteRecords,
@@ -146,11 +147,19 @@ export function useEncounterNotes() {
             byId.set(c.id, c);
             changed = true;
           } else {
-            const localTime = Date.parse(existing.updatedAt) || 0;
-            const cloudTime = Date.parse(c.updatedAt) || 0;
-            if (cloudTime > localTime) {
-              byId.set(c.id, c);
-              changed = true;
+            // Never let a BLANK cloud copy replace a local one that has
+            // content, even if the cloud copy is newer (clobber guard).
+            const existingHas = encounterHasContent(existing);
+            const cloudHas = encounterHasContent(c);
+            if (existingHas && !cloudHas) {
+              // keep existing (local content) — skip the blank cloud copy
+            } else {
+              const localTime = Date.parse(existing.updatedAt) || 0;
+              const cloudTime = Date.parse(c.updatedAt) || 0;
+              if (cloudTime > localTime) {
+                byId.set(c.id, c);
+                changed = true;
+              }
             }
           }
         }
@@ -243,6 +252,11 @@ export function useEncounterNotes() {
                   if (idx < 0) {
                     // Net-new encounter (created on another device).
                     return [...local, incoming];
+                  }
+                  // Never let a BLANK incoming row replace a local copy that
+                  // has content, even if it's newer (clobber guard).
+                  if (encounterHasContent(local[idx]) && !encounterHasContent(incoming)) {
+                    return local;
                   }
                   // Merge by newer updatedAt — if our local copy is
                   // newer (mid-edit), keep local. Otherwise apply.
