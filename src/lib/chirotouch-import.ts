@@ -105,62 +105,95 @@ export interface ImportPlan {
  */
 export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]): ImportPlan {
   // Index every macro question by its normalized label.
-  const questionIndex = new Map<
-    string,
-    { macro: MacroTemplate; questionId: string; options: string[]; multiSelect: boolean }
-  >();
+  type Candidate = {
+    macro: MacroTemplate;
+    questionId: string;
+    options: string[];
+    multiSelect: boolean;
+  };
+  // A question label can exist in more than one macro (e.g. both the MVC and
+  // Slip & Fall history macros ask "Were you seen at emergency/urgent care?").
+  // Index ALL macros that own a given label so we can pick the right one.
+  const index = new Map<string, Candidate[]>();
   for (const macro of macros) {
     for (const q of macro.questions) {
       const key = normalizeQuestion(q.label);
-      if (key && !questionIndex.has(key)) {
-        questionIndex.set(key, {
-          macro,
-          questionId: q.id,
-          options: q.options ?? [],
-          multiSelect: Boolean(q.multiSelect),
-        });
-      }
+      if (!key) continue;
+      if (!index.has(key)) index.set(key, []);
+      index.get(key)!.push({
+        macro,
+        questionId: q.id,
+        options: q.options ?? [],
+        multiSelect: Boolean(q.multiSelect),
+      });
+    }
+  }
+
+  // Resolve each record to its candidate macros (respecting ignore + aliases).
+  const resolved = records.map((rec) => {
+    const norm = normalizeQuestion(rec.question);
+    if (CHIROTOUCH_IGNORE_QUESTIONS.has(norm)) {
+      return { rec, candidates: [] as Candidate[], ignore: true };
+    }
+    const effective = CHIROTOUCH_QUESTION_ALIASES[norm] ?? norm;
+    return { rec, candidates: index.get(effective) ?? [], ignore: false };
+  });
+
+  // Score each macro by how many of the pasted questions it could fill. A
+  // question shared by two macros then routes to the one the rest of the data
+  // belongs to (many matches) rather than a stray single-question macro — so a
+  // full MVC paste fills MVC HX and never triggers an empty Slip & Fall block.
+  const macroScore = new Map<string, number>();
+  for (const r of resolved) {
+    if (r.ignore) continue;
+    const seen = new Set<string>();
+    for (const c of r.candidates) {
+      if (seen.has(c.macro.id)) continue;
+      seen.add(c.macro.id);
+      macroScore.set(c.macro.id, (macroScore.get(c.macro.id) ?? 0) + 1);
     }
   }
 
   const fillByMacro = new Map<string, ImportMacroFill>();
   const unmatched: ImportRecord[] = [];
 
-  for (const rec of records) {
-    const norm = normalizeQuestion(rec.question);
-    if (CHIROTOUCH_IGNORE_QUESTIONS.has(norm)) continue; // skip entirely
-    const effective = CHIROTOUCH_QUESTION_ALIASES[norm] ?? norm;
-    const hit = questionIndex.get(effective);
-    if (!hit) {
-      unmatched.push(rec);
+  for (const r of resolved) {
+    if (r.ignore) continue;
+    if (!r.candidates.length) {
+      unmatched.push(r.rec);
       continue;
     }
+    // Pick the candidate whose macro the rest of the data most belongs to.
+    let best = r.candidates[0];
+    for (const c of r.candidates) {
+      if ((macroScore.get(c.macro.id) ?? 0) > (macroScore.get(best.macro.id) ?? 0)) {
+        best = c;
+      }
+    }
     const toCanonical = (raw: string) =>
-      hit.options.find((opt) => normalizeQuestion(opt) === normalizeQuestion(raw)) ?? raw;
+      best.options.find((opt) => normalizeQuestion(opt) === normalizeQuestion(raw)) ?? raw;
     let value: string | string[];
-    if (hit.multiSelect) {
+    if (best.multiSelect) {
       // Split a combined answer ("a, b, c, and d") into parts and map each to a
       // canonical option so the checkboxes come in selected. Only for
       // multi-select questions — single-select free text ("...jarring and being
       // thrown...") must NOT be split.
-      const parts = rec.answer
+      const parts = r.rec.answer
         .split(/,|\s+and\s+/i)
         .map((p) => p.trim())
         .filter((p) => p.length > 0);
-      value = parts.length ? parts.map(toCanonical) : rec.answer;
+      value = parts.length ? parts.map(toCanonical) : r.rec.answer;
     } else {
-      // Prefer the macro's canonical option text when the answer matches one
-      // (so the pill shows selected); otherwise keep the raw answer (Other/edit).
-      value = toCanonical(rec.answer);
+      value = toCanonical(r.rec.answer);
     }
 
-    let fill = fillByMacro.get(hit.macro.id);
+    let fill = fillByMacro.get(best.macro.id);
     if (!fill) {
-      fill = { macro: hit.macro, answers: {}, filled: [] };
-      fillByMacro.set(hit.macro.id, fill);
+      fill = { macro: best.macro, answers: {}, filled: [] };
+      fillByMacro.set(best.macro.id, fill);
     }
-    fill.answers[hit.questionId] = value;
-    fill.filled.push({ question: rec.question, answer: rec.answer });
+    fill.answers[best.questionId] = value;
+    fill.filled.push({ question: r.rec.question, answer: r.rec.answer });
   }
 
   return { fills: Array.from(fillByMacro.values()), unmatched };
