@@ -3824,29 +3824,35 @@ function ImagingSpecialistSummary({
       {/* Quick dates strip — the most recent referral's key dates per modality,
           for an at-a-glance read. Full findings/results follow below. */}
       {(xrayRows.length > 0 || mriRows.length > 0 || specRows.length > 0) && (
-        <div className="mb-3 grid gap-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+        <div className="mb-3 grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5">
           {xrayRows.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <span className="w-16 shrink-0 font-semibold">X-Ray</span>
-              <Date label="Sent" value={xrayRows[0].sent} />
-              <Date label="Completed" value={xrayRows[0].completed} />
-              <Date label="Reviewed" value={xrayRows[0].reviewed} />
-            </div>
+            <>
+              <span className="font-semibold">X-Ray</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                <Date label="Sent" value={xrayRows[0].sent} />
+                <Date label="Completed" value={xrayRows[0].completed} />
+                <Date label="Reviewed" value={xrayRows[0].reviewed} />
+              </div>
+            </>
           )}
           {mriRows.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <span className="w-16 shrink-0 font-semibold">MRI</span>
-              <Date label="Sent" value={mriRows[0].sent} />
-              <Date label="Completed" value={mriRows[0].completed} />
-              <Date label="Reviewed" value={mriRows[0].reviewed} />
-            </div>
+            <>
+              <span className="font-semibold">MRI</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                <Date label="Sent" value={mriRows[0].sent} />
+                <Date label="Completed" value={mriRows[0].completed} />
+                <Date label="Reviewed" value={mriRows[0].reviewed} />
+              </div>
+            </>
           )}
           {specRows.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <span className="w-16 shrink-0 font-semibold">Specialist</span>
-              <Date label="Sent" value={specRows[0].sent} />
-              <Date label="Completed" value={specRows[0].completed} />
-            </div>
+            <>
+              <span className="font-semibold">Specialist</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                <Date label="Sent" value={specRows[0].sent} />
+                <Date label="Completed" value={specRows[0].completed} />
+              </div>
+            </>
           )}
         </div>
       )}
@@ -3872,11 +3878,6 @@ function ImagingSpecialistSummary({
                   key={`imaging-summary-xray-${idx}`}
                 >
                   <p className="font-medium">{row.regions || <Empty />}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <Date label="Sent" value={row.sent} />
-                    <Date label="Completed" value={row.completed} />
-                    <Date label="Reviewed" value={row.reviewed} />
-                  </div>
                   {row.findings && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {row.findings}
@@ -3908,11 +3909,6 @@ function ImagingSpecialistSummary({
                   key={`imaging-summary-mri-${idx}`}
                 >
                   <p className="font-medium">{row.regions || <Empty />}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <Date label="Sent" value={row.sent} />
-                    <Date label="Completed" value={row.completed} />
-                    <Date label="Reviewed" value={row.reviewed} />
-                  </div>
                   {row.findings && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {row.findings}
@@ -3944,10 +3940,6 @@ function ImagingSpecialistSummary({
                   key={`imaging-summary-spec-${idx}`}
                 >
                   <p className="font-medium">{row.doctor || <Empty />}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <Date label="Sent" value={row.sent} />
-                    <Date label="Completed" value={row.completed} />
-                  </div>
                   {row.recommendations && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Recommendations:</span> {row.recommendations}
