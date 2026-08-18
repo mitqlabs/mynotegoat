@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { CaseNotesBox } from "@/components/case-notes-box";
+import { parseChirotouchData, buildImportPlan, type ImportPlan } from "@/lib/chirotouch-import";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
@@ -814,6 +815,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   // id currently in edit mode, or null when nothing is being edited.
   const [aptTypeEditId, setAptTypeEditId] = useState<string | null>(null);
   const [runMacroAnswers, setRunMacroAnswers] = useState<MacroAnswerMap>({});
+  // ChiroTouch import (temporary migration tool) — paste the Data tab, match to
+  // Objective macros, preview, then apply into the Objective section.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   // When set, the macro picker dialog is editing a single prompt only — used
   // when the user taps an inline prompt span in the SOAP editor and wants to
   // change just that one answer without re-running the whole macro.
@@ -1431,6 +1437,80 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   // a manual macro tap would. `replace` clears the Plan section + drops its
   // old macro runs first (used by the SALT button); the auto-apply appends
   // into an empty section.
+  // Parse the pasted ChiroTouch Data text and match it to the Objective macros.
+  const handleImportPreview = () => {
+    const objectiveMacros = macroLibrary.templates.filter(
+      (t) => t.section === "objective" && t.active,
+    );
+    const records = parseChirotouchData(importText);
+    setImportPlan(buildImportPlan(records, objectiveMacros));
+  };
+
+  // Apply the matched import into the Objective section as native macro runs.
+  const applyChirotouchImport = () => {
+    if (!selectedEncounter || !importPlan) return;
+    if (selectedEncounter.signed) {
+      setMessage("Encounter is closed. Reopen it to import.");
+      return;
+    }
+    const context = buildMacroContext(selectedEncounter.patientId);
+    const stripBlankWrappers = (html: string) =>
+      html
+        .replace(
+          /^(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)+/gi,
+          "",
+        )
+        .replace(
+          /(?:<p>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/p>\s*|<div>\s*(?:&nbsp;|<br\s*\/?\s*>)?\s*<\/div>\s*)+$/gi,
+          "",
+        );
+    let applied = 0;
+    for (const fill of importPlan.fills) {
+      const snippetId = createEncounterMacroRunId();
+      const rendered = renderMacroTemplateWithPromptSpans(
+        fill.macro.body,
+        fill.answers,
+        context,
+        snippetId,
+      );
+      const html = stripBlankWrappers(rendered);
+      if (!html) continue;
+      appendSoapSection(selectedEncounter.id, "objective", html);
+      addMacroRun(selectedEncounter.id, {
+        id: snippetId,
+        section: "objective",
+        macroId: fill.macro.id,
+        macroName: fill.macro.buttonName,
+        body: fill.macro.body,
+        answers: { ...fill.answers },
+        generatedText: html,
+      });
+      applied += 1;
+    }
+    // Anything we couldn't match is appended as labeled text so it's never lost.
+    if (importPlan.unmatched.length) {
+      const list = importPlan.unmatched
+        .map((u) => `${escapeHtml(u.question)} — ${escapeHtml(u.answer)}`)
+        .join("<br>");
+      appendSoapSection(
+        selectedEncounter.id,
+        "objective",
+        `<p><strong>Unmatched imports (place manually):</strong><br>${list}</p>`,
+      );
+    }
+    const { added, removed } = reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
+    setMessage(
+      `Imported ${applied} macro${applied === 1 ? "" : "s"} into Objective` +
+        (importPlan.unmatched.length
+          ? ` (${importPlan.unmatched.length} unmatched added as text)`
+          : "") +
+        `.${formatChargeDelta(added, removed)}`,
+    );
+    setImportOpen(false);
+    setImportText("");
+    setImportPlan(null);
+  };
+
   const applyTreatmentPlan = (options?: { replace?: boolean; silent?: boolean }) => {
     if (!selectedEncounter) return 0;
     if (selectedEncounter.signed) {
@@ -2892,7 +2972,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               <section className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
 
                 <div className="mt-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                  <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
+                    {activeSection === "objective" && (
+                      <button
+                        className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                        onClick={() => {
+                          setImportText("");
+                          setImportPlan(null);
+                          setImportOpen(true);
+                        }}
+                        title="Import an initial encounter from ChiroTouch's Data tab"
+                        type="button"
+                      >
+                        ⬇ Import
+                      </button>
+                    )}
+                  </div>
                   {activeSection === "plan" && treatmentPlanCoverage && (
                     <button
                       type="button"
@@ -3369,6 +3465,102 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
           )}
         </article>
       </section>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] pb-2">
+              <h3 className="text-base font-semibold">Import from ChiroTouch → Objective</h3>
+              <button
+                className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                onClick={() => setImportOpen(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              In ChiroTouch, open the chart note&apos;s <strong>Data</strong> tab, highlight the
+              Section / Question / Text rows, copy, and paste below. Each question is matched to
+              your Objective macros — preview before applying. It appends to Objective and never
+              overwrites existing content.
+            </p>
+            <textarea
+              className="mt-2 h-48 w-full resize-y rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+              onChange={(event) => {
+                setImportText(event.target.value);
+                setImportPlan(null);
+              }}
+              placeholder="Paste the ChiroTouch Data here…"
+              value={importText}
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                disabled={!importText.trim()}
+                onClick={handleImportPreview}
+                type="button"
+              >
+                Preview
+              </button>
+              {importPlan && (
+                <button
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 disabled:opacity-40"
+                  disabled={importPlan.fills.length === 0 && importPlan.unmatched.length === 0}
+                  onClick={applyChirotouchImport}
+                  type="button"
+                >
+                  Apply to Objective
+                </button>
+              )}
+            </div>
+            {importPlan && (
+              <div className="mt-3 space-y-2 text-xs">
+                {importPlan.fills.length > 0 ? (
+                  <div>
+                    <p className="font-semibold">
+                      Will fill {importPlan.fills.length} macro
+                      {importPlan.fills.length === 1 ? "" : "s"}:
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {importPlan.fills.map((f) => (
+                        <li
+                          className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1"
+                          key={f.macro.id}
+                        >
+                          <span className="font-medium">{f.macro.buttonName}</span> — {f.filled.length}{" "}
+                          answer{f.filled.length === 1 ? "" : "s"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-[var(--text-muted)]">
+                    No questions matched your Objective macros. Double-check the paste, or the
+                    questions may be worded differently (tell me and I&apos;ll add an alias).
+                  </p>
+                )}
+                {importPlan.unmatched.length > 0 && (
+                  <div>
+                    <p className="font-semibold text-amber-700">
+                      {importPlan.unmatched.length} unmatched — added as text at the bottom of
+                      Objective so nothing is lost:
+                    </p>
+                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+                      {importPlan.unmatched.map((u, i) => (
+                        <li className="text-[var(--text-muted)]" key={`unmatched-${i}`}>
+                          <span className="font-medium text-[var(--text-strong)]">{u.question}</span>{" "}
+                          — {u.answer}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {runMacro && (
         // No ScrollLock on this modal on purpose. The background page
