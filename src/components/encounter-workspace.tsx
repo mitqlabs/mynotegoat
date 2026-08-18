@@ -3998,8 +3998,16 @@ function ImagingSpecialistSummary({
     xrayReferrals?: unknown[];
     mriReferrals?: unknown[];
     specialistReferrals?: unknown[];
+    matrix?: Record<string, unknown>;
   };
 }) {
+  // Older charts stored the imaging "reviewed" date only in the legacy matrix
+  // (xrayReviewed / mriReviewed), not on the referral entry. Read it so we can
+  // fall back to it when the entry's own reportReviewedDate is blank.
+  const matrixDate = (key: string): string => {
+    const value = patient.matrix?.[key];
+    return typeof value === "string" ? toUsDate(value) : "";
+  };
   const xrayEntries = (patient.xrayReferrals ?? []) as ImagingSummaryEntry[];
   const mriEntries = (patient.mriReferrals ?? []) as ImagingSummaryEntry[];
   const specEntries = (patient.specialistReferrals ?? []) as ImagingSummaryEntry[];
@@ -4059,6 +4067,11 @@ function ImagingSpecialistSummary({
       readStringField(entry, "completedDate", "reportReceivedDate", "reportDate") ?? "",
     ),
   }));
+
+  // Fall back to the legacy matrix reviewed date on the most-recent row when the
+  // entry itself has none (older imports stored it only in the matrix).
+  if (xrayRows[0] && !xrayRows[0].reviewed) xrayRows[0].reviewed = matrixDate("xrayReviewed");
+  if (mriRows[0] && !mriRows[0].reviewed) mriRows[0].reviewed = matrixDate("mriReviewed");
 
   const Empty = () => <span className="text-[var(--text-muted)]">—</span>;
   const Date = ({ label, value }: { label: string; value: string }) => (
