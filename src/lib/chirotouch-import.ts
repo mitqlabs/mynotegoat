@@ -38,7 +38,19 @@ export function normalizeQuestion(value: string): string {
 export const CHIROTOUCH_QUESTION_ALIASES: Record<string, string> = {
   "what type of vehicle were you driving": "what was the vehicle you were in",
   "what type of vehicle was the other vehicle": "what was the other vehicle",
+  "were you prepared or any of the following": "were you prepared for impact",
+  "how did you feel after the impact? were you": "how did you feel after the impact",
+  "are you experiencing any of the following": "symptoms since collision",
 };
+
+/**
+ * ChiroTouch questions to SKIP entirely on import (not filled, not flagged as
+ * unmatched). Compared after normalizeQuestion().
+ */
+export const CHIROTOUCH_IGNORE_QUESTIONS = new Set<string>([
+  "injury date",
+  "when was your last car accident prior this one",
+]);
 
 /** Parse pasted ChiroTouch "Data" text into Question/Answer records. */
 export function parseChirotouchData(text: string): ImportRecord[] {
@@ -106,6 +118,7 @@ export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]
 
   for (const rec of records) {
     const norm = normalizeQuestion(rec.question);
+    if (CHIROTOUCH_IGNORE_QUESTIONS.has(norm)) continue; // skip entirely
     const effective = CHIROTOUCH_QUESTION_ALIASES[norm] ?? norm;
     const hit = questionIndex.get(effective);
     if (!hit) {
