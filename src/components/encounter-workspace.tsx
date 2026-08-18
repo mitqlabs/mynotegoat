@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { CaseNotesBox } from "@/components/case-notes-box";
-import { parseChirotouchData, buildImportPlan, type ImportPlan } from "@/lib/chirotouch-import";
+import {
+  parseChirotouchData,
+  buildImportPlan,
+  listImportCandidateMacros,
+  type ImportPlan,
+} from "@/lib/chirotouch-import";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
@@ -820,6 +825,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
+  // Macro ids the user has toggled OFF for this import (e.g. Slip & Fall HX when
+  // importing a car-accident chart). Their shared questions re-route to the
+  // macro that's kept on.
+  const [importExcludedMacroIds, setImportExcludedMacroIds] = useState<Set<string>>(new Set());
+  // Macros the paste could touch (for the include/exclude toggles).
+  const [importCandidates, setImportCandidates] = useState<Array<{ id: string; name: string }>>([]);
   // When set, the macro picker dialog is editing a single prompt only — used
   // when the user taps an inline prompt span in the SOAP editor and wants to
   // change just that one answer without re-running the whole macro.
@@ -1443,7 +1454,26 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       (t) => t.section === "objective" && t.active,
     );
     const records = parseChirotouchData(importText);
-    setImportPlan(buildImportPlan(records, objectiveMacros));
+    setImportCandidates(
+      listImportCandidateMacros(records, objectiveMacros).map((m) => ({
+        id: m.id,
+        name: m.buttonName,
+      })),
+    );
+    setImportPlan(buildImportPlan(records, objectiveMacros, importExcludedMacroIds));
+  };
+
+  // Toggle a macro in/out of the import and re-plan (shared questions re-route).
+  const toggleImportMacro = (macroId: string) => {
+    const next = new Set(importExcludedMacroIds);
+    if (next.has(macroId)) next.delete(macroId);
+    else next.add(macroId);
+    setImportExcludedMacroIds(next);
+    const objectiveMacros = macroLibrary.templates.filter(
+      (t) => t.section === "objective" && t.active,
+    );
+    const records = parseChirotouchData(importText);
+    setImportPlan(buildImportPlan(records, objectiveMacros, next));
   };
 
   // Apply the matched import into the Objective section as native macro runs.
@@ -1509,6 +1539,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     setImportOpen(false);
     setImportText("");
     setImportPlan(null);
+    setImportCandidates([]);
+    setImportExcludedMacroIds(new Set());
   };
 
   const applyTreatmentPlan = (options?: { replace?: boolean; silent?: boolean }) => {
@@ -3473,7 +3505,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               <h3 className="text-base font-semibold">Import from ChiroTouch → Objective</h3>
               <button
                 className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
-                onClick={() => setImportOpen(false)}
+                onClick={() => {
+                  setImportOpen(false);
+                  setImportPlan(null);
+                  setImportCandidates([]);
+                  setImportExcludedMacroIds(new Set());
+                }}
                 type="button"
               >
                 Close
@@ -3514,6 +3551,30 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                 </button>
               )}
             </div>
+            {importPlan && importCandidates.length > 1 && (
+              <div className="mt-3 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-2 text-xs">
+                <p className="font-semibold">
+                  Import into these macros{" "}
+                  <span className="font-normal text-[var(--text-muted)]">
+                    (uncheck ones this chart isn&apos;t — e.g. Slip &amp; Fall on a car accident;
+                    shared questions re-route to what stays checked)
+                  </span>
+                  :
+                </p>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  {importCandidates.map((c) => (
+                    <label className="flex items-center gap-1.5" key={c.id}>
+                      <input
+                        checked={!importExcludedMacroIds.has(c.id)}
+                        onChange={() => toggleImportMacro(c.id)}
+                        type="checkbox"
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {importPlan && (
               <div className="mt-3 space-y-2 text-xs">
                 {importPlan.fills.length > 0 ? (

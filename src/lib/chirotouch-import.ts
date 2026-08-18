@@ -42,6 +42,8 @@ export const CHIROTOUCH_QUESTION_ALIASES: Record<string, string> = {
   "how did you feel after the impact? were you": "how did you feel after the impact",
   "are you experiencing any of the following": "symptoms since collision",
   "areas of chief complaint": "what are your chief complaints",
+  // ChiroTouch says "...at AN emergency/urgent care?"; MVC HX drops the "an".
+  "were you seen at an emergency/urgent care": "were you seen at emergency/urgent care",
 };
 
 /**
@@ -52,6 +54,27 @@ export const CHIROTOUCH_IGNORE_QUESTIONS = new Set<string>([
   "injury date",
   "when was your last car accident prior this one",
 ]);
+
+/**
+ * Every macro that owns at least one question present in the paste — before
+ * scoring or exclusion. The import UI uses this to list include/exclude toggles
+ * (so a macro that ends up with 0 fills after routing, like Slip & Fall on a car
+ * accident, still shows a checkbox the user can leave off).
+ */
+export function listImportCandidateMacros(
+  records: ImportRecord[],
+  macros: MacroTemplate[],
+): MacroTemplate[] {
+  const effectiveKeys = new Set(
+    records
+      .map((r) => normalizeQuestion(r.question))
+      .filter((norm) => !CHIROTOUCH_IGNORE_QUESTIONS.has(norm))
+      .map((norm) => CHIROTOUCH_QUESTION_ALIASES[norm] ?? norm),
+  );
+  return macros.filter((m) =>
+    m.questions.some((q) => effectiveKeys.has(normalizeQuestion(q.label))),
+  );
+}
 
 /** Parse pasted ChiroTouch "Data" text into Question/Answer records. */
 export function parseChirotouchData(text: string): ImportRecord[] {
@@ -103,7 +126,11 @@ export interface ImportPlan {
  * a question wins. Answers are mapped to a matching option (canonical casing)
  * when one exists, otherwise kept as free text (Other/edit).
  */
-export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]): ImportPlan {
+export function buildImportPlan(
+  records: ImportRecord[],
+  macros: MacroTemplate[],
+  excludeMacroIds?: ReadonlySet<string>,
+): ImportPlan {
   // Index every macro question by its normalized label.
   type Candidate = {
     macro: MacroTemplate;
@@ -116,6 +143,7 @@ export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]
   // Index ALL macros that own a given label so we can pick the right one.
   const index = new Map<string, Candidate[]>();
   for (const macro of macros) {
+    if (excludeMacroIds?.has(macro.id)) continue; // user opted this macro out
     for (const q of macro.questions) {
       const key = normalizeQuestion(q.label);
       if (!key) continue;
