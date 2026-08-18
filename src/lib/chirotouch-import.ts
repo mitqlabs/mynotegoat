@@ -41,6 +41,7 @@ export const CHIROTOUCH_QUESTION_ALIASES: Record<string, string> = {
   "were you prepared or any of the following": "were you prepared for impact",
   "how did you feel after the impact? were you": "how did you feel after the impact",
   "are you experiencing any of the following": "symptoms since collision",
+  "areas of chief complaint": "what are your chief complaints",
 };
 
 /**
@@ -84,8 +85,9 @@ export function parseChirotouchData(text: string): ImportRecord[] {
 
 export interface ImportMacroFill {
   macro: MacroTemplate;
-  /** questionId → answer value (canonical option text when it matched one). */
-  answers: Record<string, string>;
+  /** questionId → answer value. String for single-select/free-text; array of
+   *  option labels for multi-select (so checkboxes come in selected). */
+  answers: Record<string, string | string[]>;
   /** For the preview: which Q/A rows filled this macro. */
   filled: Array<{ question: string; answer: string }>;
 }
@@ -103,12 +105,20 @@ export interface ImportPlan {
  */
 export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]): ImportPlan {
   // Index every macro question by its normalized label.
-  const questionIndex = new Map<string, { macro: MacroTemplate; questionId: string; options: string[] }>();
+  const questionIndex = new Map<
+    string,
+    { macro: MacroTemplate; questionId: string; options: string[]; multiSelect: boolean }
+  >();
   for (const macro of macros) {
     for (const q of macro.questions) {
       const key = normalizeQuestion(q.label);
       if (key && !questionIndex.has(key)) {
-        questionIndex.set(key, { macro, questionId: q.id, options: q.options ?? [] });
+        questionIndex.set(key, {
+          macro,
+          questionId: q.id,
+          options: q.options ?? [],
+          multiSelect: Boolean(q.multiSelect),
+        });
       }
     }
   }
@@ -125,12 +135,24 @@ export function buildImportPlan(records: ImportRecord[], macros: MacroTemplate[]
       unmatched.push(rec);
       continue;
     }
-    // Prefer the macro's canonical option text when the answer matches one
-    // (so the pill shows selected); otherwise keep the raw answer (Other/edit).
-    const canonicalOption = hit.options.find(
-      (opt) => normalizeQuestion(opt) === normalizeQuestion(rec.answer),
-    );
-    const value = canonicalOption ?? rec.answer;
+    const toCanonical = (raw: string) =>
+      hit.options.find((opt) => normalizeQuestion(opt) === normalizeQuestion(raw)) ?? raw;
+    let value: string | string[];
+    if (hit.multiSelect) {
+      // Split a combined answer ("a, b, c, and d") into parts and map each to a
+      // canonical option so the checkboxes come in selected. Only for
+      // multi-select questions — single-select free text ("...jarring and being
+      // thrown...") must NOT be split.
+      const parts = rec.answer
+        .split(/,|\s+and\s+/i)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+      value = parts.length ? parts.map(toCanonical) : rec.answer;
+    } else {
+      // Prefer the macro's canonical option text when the answer matches one
+      // (so the pill shows selected); otherwise keep the raw answer (Other/edit).
+      value = toCanonical(rec.answer);
+    }
 
     let fill = fillByMacro.get(hit.macro.id);
     if (!fill) {
