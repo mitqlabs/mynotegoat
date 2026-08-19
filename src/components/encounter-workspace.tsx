@@ -2759,6 +2759,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               </>
             )}
           </article>
+          {/* Case Notes — mirrors the patient page's Notes box (shared store).
+              Kept above Imaging & Specialist so the provider reads/writes the
+              running case notes first. */}
+          {selectedEncounter && (
+            <CaseNotesBox
+              patientId={selectedEncounter.patientId}
+              seed={selectedPatient?.matrix?.notes ?? ""}
+            />
+          )}
           {/* Imaging & Specialist at-a-glance: lets the charting provider
               see the most recent X-Ray / MRI / Specialist dates without
               leaving the encounter to dig through the patient file.
@@ -2772,13 +2781,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
               Full edit/delete/email lives on the My Files page. */}
           {selectedEncounter && (
             <PatientFilesPreviewPanel patientId={selectedEncounter.patientId} />
-          )}
-          {/* Case Notes — mirrors the patient page's Notes box (shared store). */}
-          {selectedEncounter && (
-            <CaseNotesBox
-              patientId={selectedEncounter.patientId}
-              seed={selectedPatient?.matrix?.notes ?? ""}
-            />
           )}
         </aside>
 
