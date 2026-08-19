@@ -70,11 +70,19 @@ export async function resolveValidatedWorkspaceId(
     if (!supabase) {
       throw new Error(`${logPrefix} ${source}: supabase client not configured`);
     }
-    const { data, error } = await supabase.auth.getUser();
+    // Use getSession() (reads the token from localStorage — NO network) rather
+    // than getUser() (which hits the Supabase auth server on every single
+    // write). getUser's network round-trip was the single point of failure
+    // behind the "auth.getUser failed: Failed to fetch" sync errors: a blip
+    // reaching the auth endpoint blocked EVERY save even when the database was
+    // reachable. session.user.id is the same JWT subject RLS enforces, so this
+    // keeps the workspace/user-prefix guard intact; a genuinely revoked or
+    // expired token still gets rejected server-side by RLS on the real write.
+    const { data, error } = await supabase.auth.getSession();
     if (error) {
-      throw new Error(`${logPrefix} ${source}: auth.getUser failed: ${error.message}`);
+      throw new Error(`${logPrefix} ${source}: auth.getSession failed: ${error.message}`);
     }
-    const userId = data.user?.id;
+    const userId = data.session?.user?.id;
     if (!userId) {
       throw new Error(`${logPrefix} ${source}: no authenticated user`);
     }
