@@ -8,7 +8,11 @@ import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-date-input";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { MacroQuestion } from "@/lib/macro-templates";
-import { isDecompressionMacroName, type WeekdayRegion } from "@/lib/treatment-plans";
+import {
+  isDecompressionMacroName,
+  type WeekdayRegion,
+  type DecompressionProgression,
+} from "@/lib/treatment-plans";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -102,6 +106,17 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
       })
       .filter((r): r is PlanRegion => Boolean(r));
   }, [settings.regionMacroIds, macroLibrary.templates]);
+
+  // Decompression is configured once per plan (applies to every visit in
+  // range); every other region stays weekday-based.
+  const weekdayRegions = useMemo(
+    () => regions.filter((r) => !isDecompressionMacroName(r.name)),
+    [regions],
+  );
+  const decompDef = useMemo(
+    () => regions.find((r) => isDecompressionMacroName(r.name)) ?? null,
+    [regions],
+  );
 
   // Appointment dates (US) with their visit type, for the start/end
   // quick-pick — so you know which visit you're picking. Sorted by date.
@@ -284,12 +299,13 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                       )}
                     </div>
 
-                    {/* Regions for the selected weekday. */}
+                    {/* Regions for the selected weekday. Decompression is not
+                        here — it's configured once for the whole plan below. */}
                     <div className="space-y-2">
-                      {regions.length === 0 && (
+                      {weekdayRegions.length === 0 && (
                         <p className="text-xs text-[var(--text-muted)]">No regions configured.</p>
                       )}
-                      {regions.map((region) => {
+                      {weekdayRegions.map((region) => {
                         const onDay = dayRegions.find((r) => r.macroId === region.macroId);
                         const included = Boolean(onDay);
                         const toggleRegion = () => {
@@ -411,68 +427,168 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                   </div>
                                 );
                               })}
-                            {/* Weight progression — lives inside the decompression
-                                card so it flows with Segment/Program. Config is
-                                plan-level (one set for the whole plan). */}
-                            {included && isDecompressionMacroName(region.name) && (
-                              <div className="mt-1.5 pl-6">
-                                <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                                  Weight Progression
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-end gap-2.5">
-                                  {(
-                                    [
-                                      { key: "startWeight", label: "Start (lbs)" },
-                                      { key: "increase", label: "Increase" },
-                                      { key: "cycles", label: "Cycles" },
-                                    ] as const
-                                  ).map((field) => (
-                                    <label key={field.key} className="grid gap-0.5">
-                                      <span className="text-[10px] font-medium text-[var(--text-muted)]">
-                                        {field.label}
-                                      </span>
-                                      <input
-                                        className="w-16 rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-0.5 text-xs"
-                                        inputMode="decimal"
-                                        onChange={(e) =>
-                                          updatePlan(patientId, plan.id, {
-                                            decompression: {
-                                              startWeight: plan.decompression?.startWeight ?? "",
-                                              increase: plan.decompression?.increase ?? "",
-                                              cycles: plan.decompression?.cycles ?? "",
-                                              [field.key]: e.target.value,
-                                            },
-                                          })
-                                        }
-                                        placeholder="—"
-                                        value={plan.decompression?.[field.key] ?? ""}
-                                      />
-                                    </label>
-                                  ))}
-                                  {(() => {
-                                    const start = Number(plan.decompression?.startWeight);
-                                    if (
-                                      !Number.isFinite(start) ||
-                                      !(plan.decompression?.startWeight ?? "").trim()
-                                    ) {
-                                      return null;
-                                    }
-                                    const incN = Number(plan.decompression?.increase);
-                                    const inc = Number.isFinite(incN) ? incN : 0;
-                                    const preview = [0, 1, 2, 3].map((i) => start + inc * i).join(" → ");
-                                    return (
-                                      <span className="pb-1 text-[11px] text-[var(--text-muted)]">
-                                        {preview} …
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         );
                       })}
                     </div>
+
+                    {/* Spinal Decompression — configured ONCE for the whole plan
+                        and auto-applied to every encounter in the date range. */}
+                    {decompDef &&
+                      (() => {
+                        const dc = plan.decompression;
+                        const dcRegion: WeekdayRegion =
+                          dc?.region ?? { macroId: decompDef.macroId, treatments: [] };
+                        const writeDecomp = (patch: Partial<DecompressionProgression>) =>
+                          updatePlan(patientId, plan.id, {
+                            decompression: {
+                              startWeight: dc?.startWeight ?? "",
+                              increase: dc?.increase ?? "",
+                              cycles: dc?.cycles ?? "",
+                              ...(dc?.region ? { region: dc.region } : {}),
+                              ...patch,
+                            },
+                          });
+                        const toggleSegment = (t: string) => {
+                          const cur = dcRegion.treatments;
+                          writeDecomp({
+                            region: {
+                              ...dcRegion,
+                              macroId: decompDef.macroId,
+                              treatments: cur.includes(t)
+                                ? cur.filter((x) => x !== t)
+                                : [...cur, t],
+                            },
+                          });
+                        };
+                        const toggleAnswer = (qid: string, opt: string, multi: boolean) => {
+                          const cur = dcRegion.answers?.[qid] ?? [];
+                          const nextArr = multi
+                            ? cur.includes(opt)
+                              ? cur.filter((x) => x !== opt)
+                              : [...cur, opt]
+                            : cur.includes(opt)
+                              ? []
+                              : [opt];
+                          const answers = { ...(dcRegion.answers ?? {}) };
+                          if (nextArr.length) answers[qid] = nextArr;
+                          else delete answers[qid];
+                          writeDecomp({
+                            region: { ...dcRegion, macroId: decompDef.macroId, answers },
+                          });
+                        };
+                        const startN = Number(dc?.startWeight);
+                        const showPreview =
+                          Number.isFinite(startN) && (dc?.startWeight ?? "").trim() !== "";
+                        const incN = Number(dc?.increase);
+                        const inc = Number.isFinite(incN) ? incN : 0;
+                        const preview = showPreview
+                          ? [0, 1, 2, 3].map((i) => startN + inc * i).join(" → ")
+                          : "";
+                        const chip = (on: boolean) =>
+                          `rounded-full border px-2 py-0.5 text-xs ${
+                            on
+                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                              : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                          }`;
+                        return (
+                          <div className="rounded-xl border border-[var(--brand-primary)] bg-white p-3">
+                            <div className="text-sm font-semibold">{decompDef.name}</div>
+                            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                              Applies to every visit in the date range — no weekday setup. Weight
+                              steps up each visit; editable per encounter.
+                            </p>
+                            {decompDef.treatments.length > 0 && (
+                              <>
+                                {decompDef.treatmentsLabel && (
+                                  <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                    {decompDef.treatmentsLabel}
+                                  </div>
+                                )}
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {decompDef.treatments.map((t) => {
+                                    const on = dcRegion.treatments.includes(t);
+                                    return (
+                                      <button
+                                        key={t}
+                                        className={chip(on)}
+                                        onClick={() => toggleSegment(t)}
+                                        type="button"
+                                      >
+                                        {on ? "✓ " : ""}
+                                        {t}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            )}
+                            {decompDef.otherQuestions.map((question) => {
+                              const selected = dcRegion.answers?.[question.id] ?? [];
+                              return (
+                                <div key={question.id} className="mt-2">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                    {question.label}
+                                    {question.multiSelect ? "" : " (pick one)"}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-1.5">
+                                    {question.options.map((opt) => {
+                                      const on = selected.includes(opt);
+                                      return (
+                                        <button
+                                          key={opt}
+                                          className={chip(on)}
+                                          onClick={() =>
+                                            toggleAnswer(
+                                              question.id,
+                                              opt,
+                                              Boolean(question.multiSelect),
+                                            )
+                                          }
+                                          type="button"
+                                        >
+                                          {on ? "✓ " : ""}
+                                          {opt}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                              Weight Progression
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-end gap-2.5">
+                              {(
+                                [
+                                  { key: "startWeight", label: "Start (lbs)" },
+                                  { key: "increase", label: "Increase" },
+                                  { key: "cycles", label: "Cycles" },
+                                ] as const
+                              ).map((field) => (
+                                <label key={field.key} className="grid gap-0.5">
+                                  <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                                    {field.label}
+                                  </span>
+                                  <input
+                                    className="w-16 rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-0.5 text-xs"
+                                    inputMode="decimal"
+                                    onChange={(e) => writeDecomp({ [field.key]: e.target.value })}
+                                    placeholder="—"
+                                    value={dc?.[field.key] ?? ""}
+                                  />
+                                </label>
+                              ))}
+                              {showPreview && (
+                                <span className="pb-1 text-[11px] text-[var(--text-muted)]">
+                                  {preview} …
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                   </div>
                 )}
               </div>

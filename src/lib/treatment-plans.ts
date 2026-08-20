@@ -40,6 +40,14 @@ export interface DecompressionProgression {
   startWeight: string;
   increase: string;
   cycles: string;
+  /**
+   * The decompression region — macro id + picked segment/program answers —
+   * configured ONCE per plan and auto-applied to every encounter in the plan's
+   * date range (not tied to weekdays, unlike the per-day `days` regions). The
+   * charge-linked "Disc Level / segment" question lives in `treatments`; the
+   * program (and any other options-questions) live in `answers`.
+   */
+  region?: WeekdayRegion;
 }
 
 export interface TreatmentPlan {
@@ -118,6 +126,18 @@ function normalizeAnswers(value: unknown): Record<string, string[]> | undefined 
   return Object.keys(out).length ? out : undefined;
 }
 
+function normalizeRegion(value: unknown): WeekdayRegion | null {
+  if (!value || typeof value !== "object") return null;
+  const macroId = normalizeText((value as { macroId?: unknown }).macroId);
+  if (!macroId) return null;
+  const answers = normalizeAnswers((value as { answers?: unknown }).answers);
+  return {
+    macroId,
+    treatments: normalizeStringArray((value as { treatments?: unknown }).treatments),
+    ...(answers ? { answers } : {}),
+  };
+}
+
 function normalizeDays(value: unknown): Record<number, WeekdayRegion[]> {
   const out: Record<number, WeekdayRegion[]> = {};
   if (!value || typeof value !== "object") return out;
@@ -126,15 +146,8 @@ function normalizeDays(value: unknown): Record<number, WeekdayRegion[]> {
     if (!Number.isInteger(day) || day < 0 || day > 6 || !Array.isArray(list)) continue;
     const regions: WeekdayRegion[] = [];
     for (const r of list) {
-      if (!r || typeof r !== "object") continue;
-      const macroId = normalizeText((r as { macroId?: unknown }).macroId);
-      if (!macroId) continue;
-      const answers = normalizeAnswers((r as { answers?: unknown }).answers);
-      regions.push({
-        macroId,
-        treatments: normalizeStringArray((r as { treatments?: unknown }).treatments),
-        ...(answers ? { answers } : {}),
-      });
+      const region = normalizeRegion(r);
+      if (region) regions.push(region);
     }
     if (regions.length) out[day] = regions;
   }
@@ -147,12 +160,13 @@ function nowIso() {
 
 function normalizeDecompression(value: unknown): DecompressionProgression | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const row = value as Partial<DecompressionProgression>;
+  const row = value as Partial<DecompressionProgression> & { region?: unknown };
   const startWeight = normalizeText(row.startWeight);
   const increase = normalizeText(row.increase);
   const cycles = normalizeText(row.cycles);
-  if (!startWeight && !increase && !cycles) return undefined;
-  return { startWeight, increase, cycles };
+  const region = normalizeRegion(row.region) ?? undefined;
+  if (!startWeight && !increase && !cycles && !region) return undefined;
+  return { startWeight, increase, cycles, ...(region ? { region } : {}) };
 }
 
 function normalizePlan(value: unknown): TreatmentPlan | null {

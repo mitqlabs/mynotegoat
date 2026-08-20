@@ -1072,7 +1072,16 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       // Inclusive range; all three dates are local-midnight so a direct
       // getTime() compare is exact.
       if (encTime < start.getTime() || encTime > end.getTime()) continue;
-      const regions = (plan.days[weekday] ?? []).filter((region) => region.macroId);
+      // Spinal Decompression is configured once per plan and applies to EVERY
+      // encounter in the date range (not weekday-bound). Everything else comes
+      // from the weekday config. Filter any stray weekday decompression entry so
+      // it isn't applied twice.
+      const decompRegion =
+        plan.decompression?.region?.macroId ? plan.decompression.region : null;
+      const weekdayRegions = (plan.days[weekday] ?? []).filter(
+        (region) => region.macroId && region.macroId !== decompRegion?.macroId,
+      );
+      const regions = decompRegion ? [...weekdayRegions, decompRegion] : weekdayRegions;
       if (!regions.length) continue;
       return { plan, weekday, regions };
     }
@@ -1606,18 +1615,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       const startT = parseUsDate(coverage.plan.startDate)?.getTime() ?? -Infinity;
       const endT = parseUsDate(coverage.plan.endDate)?.getTime() ?? Infinity;
       const curT = parseUsDate(selectedEncounter.encounterDate)?.getTime() ?? 0;
-      // Count this patient's encounters inside the plan range, dated strictly
-      // before this one, on weekdays whose plan includes the decompression macro
-      // — that's this visit's 0-based index in the progression.
+      // Decompression applies to every encounter in range, so this visit's
+      // 0-based progression index is simply how many of the patient's prior
+      // encounters fall inside the plan range before this one.
       const priorVisits = encountersByNewest.filter((e) => {
         if (e.patientId !== selectedEncounter.patientId) return false;
         const d = parseUsDate(e.encounterDate);
         if (!d) return false;
         const t = d.getTime();
-        if (t < startT || t > endT || t >= curT) return false;
-        return (coverage.plan.days[d.getDay()] ?? []).some(
-          (r) => r.macroId === decompRegion.macroId,
-        );
+        return t >= startT && t <= endT && t < curT;
       }).length;
       decompWeight = computeDecompressionWeight(decompConfig, priorVisits);
     }
