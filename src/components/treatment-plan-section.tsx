@@ -8,7 +8,7 @@ import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-date-input";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { MacroQuestion } from "@/lib/macro-templates";
-import type { WeekdayRegion } from "@/lib/treatment-plans";
+import { isDecompressionMacroName, type WeekdayRegion } from "@/lib/treatment-plans";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -29,6 +29,9 @@ function usDateToStamp(us: string): number | null {
 type PlanRegion = {
   macroId: string;
   name: string;
+  /** Heading shown above the treatment chips (the treatments question's label;
+   *  defaults to "Region" for the Spinal Decompression macro). */
+  treatmentsLabel: string;
   treatments: string[];
   otherQuestions: MacroQuestion[];
 };
@@ -87,9 +90,12 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
         const otherQuestions = macro.questions.filter(
           (qq) => qq.id !== treatmentsQuestion?.id && (qq.options?.length ?? 0) > 0,
         );
+        const isDecomp = isDecompressionMacroName(macro.buttonName);
         return {
           macroId,
           name: macro.buttonName,
+          treatmentsLabel:
+            (treatmentsQuestion?.label ?? "").trim() || (isDecomp ? "Region" : ""),
           treatments: treatmentsQuestion?.options ?? [],
           otherQuestions,
         };
@@ -352,6 +358,11 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               <input checked={included} onChange={toggleRegion} type="checkbox" />
                               {region.name}
                             </label>
+                            {included && region.treatments.length > 0 && region.treatmentsLabel && (
+                              <div className="mt-1.5 pl-6 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                {region.treatmentsLabel}
+                              </div>
+                            )}
                             {included && region.treatments.length > 0 && (
                               <div className="mt-1.5 flex flex-wrap gap-1.5 pl-6">
                                 {region.treatments.map((t) => {
@@ -416,6 +427,68 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         );
                       })}
                     </div>
+
+                    {/* Spinal Decompression weight progression — plan-level (one
+                        set for the whole macro). Shown whenever the decompression
+                        macro is a configured region. The weight steps up by the
+                        increase each covered visit and pre-fills on the encounter
+                        (editable there). */}
+                    {regions.some((r) => isDecompressionMacroName(r.name)) && (
+                      <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                          Spinal Decompression — Weight Progression
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                          Applies to the whole plan. Weight steps up by the increase each visit
+                          and pre-fills on every encounter (editable per visit).
+                        </p>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {(
+                            [
+                              { key: "startWeight", label: "Start weight (lbs)" },
+                              { key: "increase", label: "Increase / visit" },
+                              { key: "cycles", label: "Cycles" },
+                            ] as const
+                          ).map((field) => (
+                            <label key={field.key} className="grid gap-1">
+                              <span className="text-[11px] font-semibold text-[var(--text-muted)]">
+                                {field.label}
+                              </span>
+                              <input
+                                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                                inputMode="decimal"
+                                onChange={(e) =>
+                                  updatePlan(patientId, plan.id, {
+                                    decompression: {
+                                      startWeight: plan.decompression?.startWeight ?? "",
+                                      increase: plan.decompression?.increase ?? "",
+                                      cycles: plan.decompression?.cycles ?? "",
+                                      [field.key]: e.target.value,
+                                    },
+                                  })
+                                }
+                                placeholder="—"
+                                value={plan.decompression?.[field.key] ?? ""}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        {(() => {
+                          const start = Number(plan.decompression?.startWeight);
+                          if (!Number.isFinite(start) || !(plan.decompression?.startWeight ?? "").trim()) {
+                            return null;
+                          }
+                          const incN = Number(plan.decompression?.increase);
+                          const inc = Number.isFinite(incN) ? incN : 0;
+                          const preview = [0, 1, 2, 3].map((i) => start + inc * i).join(" → ");
+                          return (
+                            <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+                              Progression: {preview} …
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

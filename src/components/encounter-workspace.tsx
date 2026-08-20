@@ -18,6 +18,10 @@ import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { draftKeyFor } from "@/lib/draft-recovery";
 import { normalizeEditorBlocks } from "@/lib/soap-html-normalize";
+import {
+  isDecompressionMacroName,
+  computeDecompressionWeight,
+} from "@/lib/treatment-plans";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -1589,6 +1593,34 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         : Number.MAX_SAFE_INTEGER;
       return ai - bi;
     });
+    // Spinal Decompression weight progression: compute this encounter's stepped
+    // weight from how many prior covered decompression visits the patient has,
+    // so it pre-fills the note (editable there). One config per plan.
+    const decompConfig = coverage.plan.decompression;
+    const decompRegion = orderedRegions.find((r) => {
+      const m = macroLibraryById.get(r.macroId);
+      return m ? isDecompressionMacroName(m.buttonName) : false;
+    });
+    let decompWeight: number | null = null;
+    if (decompConfig && decompRegion) {
+      const startT = parseUsDate(coverage.plan.startDate)?.getTime() ?? -Infinity;
+      const endT = parseUsDate(coverage.plan.endDate)?.getTime() ?? Infinity;
+      const curT = parseUsDate(selectedEncounter.encounterDate)?.getTime() ?? 0;
+      // Count this patient's encounters inside the plan range, dated strictly
+      // before this one, on weekdays whose plan includes the decompression macro
+      // — that's this visit's 0-based index in the progression.
+      const priorVisits = encountersByNewest.filter((e) => {
+        if (e.patientId !== selectedEncounter.patientId) return false;
+        const d = parseUsDate(e.encounterDate);
+        if (!d) return false;
+        const t = d.getTime();
+        if (t < startT || t > endT || t >= curT) return false;
+        return (coverage.plan.days[d.getDay()] ?? []).some(
+          (r) => r.macroId === decompRegion.macroId,
+        );
+      }).length;
+      decompWeight = computeDecompressionWeight(decompConfig, priorVisits);
+    }
     for (const region of orderedRegions) {
       const macro = macroLibraryById.get(region.macroId);
       if (!macro || !macro.active) continue;
@@ -1627,7 +1659,17 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       );
       const html = stripBlankWrappers(rendered);
       if (!html) continue;
-      prepared.push({ snippetId, macro, answers, html });
+      // For the decompression region, append the stepped Weight (+ Cycles) as a
+      // plain line so it prints in the note and the provider can edit it.
+      let regionHtml = html;
+      if (decompWeight != null && decompRegion && region.macroId === decompRegion.macroId) {
+        const weightText = String(Math.round(decompWeight * 100) / 100);
+        const cyclesText = decompConfig?.cycles?.trim()
+          ? ` · Cycles: ${escapeHtml(decompConfig.cycles.trim())}`
+          : "";
+        regionHtml = `${html}<p>Weight: ${weightText} lbs${cyclesText}</p>`;
+      }
+      prepared.push({ snippetId, macro, answers, html: regionHtml });
     }
     if (!prepared.length) {
       if (!options?.silent) {

@@ -28,6 +28,20 @@ export interface WeekdayRegion {
   answers?: Record<string, string[]>;
 }
 
+/**
+ * Spinal Decompression weight progression. One config per plan (applies to the
+ * whole decompression macro, not per region). The weight steps up by `increase`
+ * each decompression visit, starting from `startWeight` — e.g. start 12,
+ * increase 2 → 12, 14, 16 … on successive covered encounters. `cycles` is a
+ * static per-session value printed alongside the weight. All stored as the
+ * user-typed strings so blanks/partial entry don't get coerced to 0.
+ */
+export interface DecompressionProgression {
+  startWeight: string;
+  increase: string;
+  cycles: string;
+}
+
 export interface TreatmentPlan {
   id: string;
   patientId: string;
@@ -36,9 +50,34 @@ export interface TreatmentPlan {
   endDate: string;
   /** weekday 0=Sunday … 6=Saturday → the regions applied that day. */
   days: Record<number, WeekdayRegion[]>;
+  /** Spinal Decompression weight progression (optional; see type). */
+  decompression?: DecompressionProgression;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Detect the Spinal Decompression macro by its button name — the weight-
+ *  progression feature keys off this (the macro itself is user data). */
+export function isDecompressionMacroName(name: string): boolean {
+  return /decompress/i.test(name);
+}
+
+/**
+ * Stepped weight for a decompression visit. `visitIndex` is 0-based (first
+ * covered encounter = 0 → startWeight). Returns null when no usable start
+ * weight is configured.
+ */
+export function computeDecompressionWeight(
+  config: DecompressionProgression | undefined,
+  visitIndex: number,
+): number | null {
+  if (!config) return null;
+  const start = Number(config.startWeight);
+  if (!Number.isFinite(start) || config.startWeight.trim() === "") return null;
+  const incRaw = Number(config.increase);
+  const increase = Number.isFinite(incRaw) ? incRaw : 0;
+  return start + increase * Math.max(0, visitIndex);
 }
 
 export type TreatmentPlansByPatient = Record<string, TreatmentPlan[]>;
@@ -106,18 +145,30 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeDecompression(value: unknown): DecompressionProgression | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<DecompressionProgression>;
+  const startWeight = normalizeText(row.startWeight);
+  const increase = normalizeText(row.increase);
+  const cycles = normalizeText(row.cycles);
+  if (!startWeight && !increase && !cycles) return undefined;
+  return { startWeight, increase, cycles };
+}
+
 function normalizePlan(value: unknown): TreatmentPlan | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<TreatmentPlan>;
   const id = normalizeText(row.id);
   const patientId = normalizeText(row.patientId);
   if (!id || !patientId) return null;
+  const decompression = normalizeDecompression(row.decompression);
   return {
     id,
     patientId,
     startDate: normalizeText(row.startDate),
     endDate: normalizeText(row.endDate),
     days: normalizeDays(row.days),
+    ...(decompression ? { decompression } : {}),
     active: row.active !== false,
     createdAt: normalizeText(row.createdAt) || nowIso(),
     updatedAt: normalizeText(row.updatedAt) || nowIso(),
