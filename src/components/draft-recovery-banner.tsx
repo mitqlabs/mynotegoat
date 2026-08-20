@@ -74,52 +74,57 @@ export function DraftRecoveryBanner() {
   const [pending, setPending] = useState<PendingDraft[]>([]);
   const [dismissed, setDismissed] = useState(false);
 
-  // One-shot scan on mount. Reading localStorage + setting state once
-  // is exactly what this effect is for — the lint rule is correct in
-  // general but wrong here (this isn't a cascade, it's bootstrapping
-  // state from a side-channel data source).
+  // Scan for ORPHAN drafts — drafts whose parent encounter is no longer
+  // present in the local cache. The banner is strictly for this case: the
+  // encounter went missing and the typed text is the only copy left. Normal
+  // uncommitted drafts (encounter present) are the editor's own crash-recovery
+  // layer and must never bug the user here.
+  //
+  // CRITICAL timing: on a fresh page load the cloud hasn't hydrated the
+  // encounter cache yet, so an encounter that's merely still-downloading looks
+  // "missing" and its draft is falsely flagged as orphaned — the scary
+  // "unsaved work recovered / Restored 0 drafts" false alarm. So we evaluate
+  // once, and if there are any candidate orphans we WAIT a grace period for the
+  // cloud to catch up and re-evaluate, surfacing only drafts that are STILL
+  // orphaned. A draft whose encounter has since loaded is dropped (and cleared
+  // if its content already matches the now-present encounter).
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const drafts = scanDrafts();
-    if (drafts.length === 0) return;
-    // The banner is now strictly for ORPHAN drafts — drafts whose
-    // parent encounter is no longer present in the local cache. The
-    // old behavior surfaced every uncommitted draft (anything whose
-    // html differed from the committed soap section), which fired on
-    // every normal mid-typing navigation since the 250ms debounce
-    // hadn't run yet. That noise drowned out the case the user
-    // actually cares about: the encounter went missing and the typed
-    // text is the only copy left.
-    //
-    // Non-orphan drafts are still useful as a last-ditch crash
-    // recovery layer (handled at the encounter editor level), but
-    // they shouldn't bug the user on every page load — the standard
-    // save path will pick them up.
-    const encounters = loadEncounterNoteRecords();
-    const byId = new Map(encounters.map((e) => [e.id, e]));
-    const pend: PendingDraft[] = [];
-    for (const draft of drafts) {
-      const encounter = byId.get(draft.encounterId);
-      if (encounter) {
-        // Encounter still exists — not an orphan. Don't surface in the
-        // banner. The normal save path keeps these in sync.
-        continue;
+    const evaluateOrphans = (): PendingDraft[] => {
+      const drafts = scanDrafts();
+      if (drafts.length === 0) return [];
+      const encounters = loadEncounterNoteRecords();
+      const byId = new Map(encounters.map((e) => [e.id, e]));
+      const orphans: PendingDraft[] = [];
+      for (const draft of drafts) {
+        if (byId.has(draft.encounterId)) continue; // encounter present — not orphan
+        if (!draft.html.trim()) {
+          clearDraft(draft.key); // empty body — nothing to recover, GC it
+          continue;
+        }
+        orphans.push({
+          ...draft,
+          encounterLabel: formatIdFallbackLabel(draft.encounterId),
+          committedHtml: "",
+        });
       }
-      // Encounter is missing from the local cache. Could be: deleted,
-      // pruned out, or never persisted due to a race. Show it so the
-      // user can recover.
-      if (!draft.html.trim()) {
-        // Empty draft body — nothing to recover, just GC.
-        clearDraft(draft.key);
-        continue;
-      }
-      pend.push({
-        ...draft,
-        encounterLabel: formatIdFallbackLabel(draft.encounterId),
-        committedHtml: "",
-      });
-    }
-    setPending(pend);
+      return orphans;
+    };
+
+    // First pass. No candidates → nothing to do, and no false alarm.
+    if (evaluateOrphans().length === 0) return;
+
+    // Candidates exist — give the cloud time to hydrate, then re-check. Only
+    // drafts still orphaned after the grace window reach the banner.
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setPending(evaluateOrphans());
+    }, 6000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
