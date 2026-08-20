@@ -59,6 +59,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
   const [startDraft, setStartDraft] = useState(getTodayUsDate());
   const [endDraft, setEndDraft] = useState("");
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+  // Which plans have the Spinal Decompression card expanded (default collapsed).
+  const [expandedDecompIds, setExpandedDecompIds] = useState<Set<string>>(new Set());
   const [activeDay, setActiveDay] = useState(1); // Monday
 
   // Only offer the office's open days (from Schedule Settings → office hours).
@@ -496,9 +498,48 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                           }`;
+                        const decompOpen = expandedDecompIds.has(plan.id);
+                        const toggleDecompOpen = () =>
+                          setExpandedDecompIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(plan.id)) next.delete(plan.id);
+                            else next.add(plan.id);
+                            return next;
+                          });
+                        const programQId = decompDef.otherQuestions[0]?.id;
+                        const summary =
+                          [
+                            dcRegion.treatments.join(", "),
+                            programQId ? (dcRegion.answers?.[programQId] ?? []).join(", ") : "",
+                            (dc?.startWeight ?? "").trim()
+                              ? `${dc?.startWeight}${
+                                  (dc?.maxWeight ?? "").trim() ? `→${dc?.maxWeight}` : ""
+                                } lbs`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "Not set up yet — tap to configure";
                         return (
                           <div className="rounded-xl border border-[var(--brand-primary)] bg-white p-3">
-                            <div className="text-sm font-semibold">{decompDef.name}</div>
+                            <button
+                              className="flex w-full items-center justify-between gap-2 text-left"
+                              onClick={toggleDecompOpen}
+                              type="button"
+                            >
+                              <span className="min-w-0">
+                                <span className="block text-sm font-semibold">{decompDef.name}</span>
+                                {!decompOpen && (
+                                  <span className="block truncate text-[11px] text-[var(--text-muted)]">
+                                    {summary}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="shrink-0 text-[var(--text-muted)]">
+                                {decompOpen ? "▾" : "▸"}
+                              </span>
+                            </button>
+                            {decompOpen && (
+                            <>
                             <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
                               Applies to every visit in the date range — no weekday setup. Weight
                               steps up each visit; editable per encounter.
@@ -592,6 +633,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 </span>
                               )}
                             </div>
+                            </>
+                            )}
                           </div>
                         );
                       })()}
