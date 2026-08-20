@@ -21,6 +21,9 @@ import { normalizeEditorBlocks } from "@/lib/soap-html-normalize";
 import {
   isDecompressionMacroName,
   computeDecompressionWeight,
+  type TreatmentPlan,
+  type WeekdayRegion,
+  type DecompressionProgression,
 } from "@/lib/treatment-plans";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -735,7 +738,7 @@ function AppointmentsOverview({
 
 export function EncounterWorkspace({ initialPatientId, initialEncounterId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
-  const { getPlansForPatient } = useTreatmentPlans();
+  const { getPlansForPatient, updatePlan } = useTreatmentPlans();
   const { settings: treatmentPlanSettings } = useTreatmentPlanSettings();
 
   // Indexed view of all macro templates for O(1) lookup during charge
@@ -1087,6 +1090,25 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     }
     return null;
   }, [selectedEncounter, getPlansForPatient]);
+
+  // Count this patient's prior encounters inside a plan's date range (strictly
+  // before the given US date) — the 0-based decompression progression index.
+  const decompressionVisitIndexFor = (
+    plan: TreatmentPlan,
+    patientId: string,
+    encounterDateUs: string,
+  ): number => {
+    const startT = parseUsDate(plan.startDate)?.getTime() ?? -Infinity;
+    const endT = parseUsDate(plan.endDate)?.getTime() ?? Infinity;
+    const curT = parseUsDate(encounterDateUs)?.getTime() ?? 0;
+    return encountersByNewest.filter((e) => {
+      if (e.patientId !== patientId) return false;
+      const d = parseUsDate(e.encounterDate);
+      if (!d) return false;
+      const t = d.getTime();
+      return t >= startT && t <= endT && t < curT;
+    }).length;
+  };
 
   // "Plan wins": an active plan covers this encounter AND the setting says the
   // plan should override the prior-encounter auto-salt for the Plan section.
@@ -1612,19 +1634,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     });
     let decompWeight: number | null = null;
     if (decompConfig && decompRegion) {
-      const startT = parseUsDate(coverage.plan.startDate)?.getTime() ?? -Infinity;
-      const endT = parseUsDate(coverage.plan.endDate)?.getTime() ?? Infinity;
-      const curT = parseUsDate(selectedEncounter.encounterDate)?.getTime() ?? 0;
       // Decompression applies to every encounter in range, so this visit's
-      // 0-based progression index is simply how many of the patient's prior
-      // encounters fall inside the plan range before this one.
-      const priorVisits = encountersByNewest.filter((e) => {
-        if (e.patientId !== selectedEncounter.patientId) return false;
-        const d = parseUsDate(e.encounterDate);
-        if (!d) return false;
-        const t = d.getTime();
-        return t >= startT && t <= endT && t < curT;
-      }).length;
+      // 0-based progression index is how many of the patient's prior encounters
+      // fall inside the plan range before this one.
+      const priorVisits = decompressionVisitIndexFor(
+        coverage.plan,
+        selectedEncounter.patientId,
+        selectedEncounter.encounterDate,
+      );
       decompWeight = computeDecompressionWeight(decompConfig, priorVisits);
     }
     for (const region of orderedRegions) {
@@ -1861,11 +1878,101 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     handleEditExistingMacroRun(matchingRun, promptId);
   };
 
+  // When the user edits the decompression macro in a note (weight, cycles, or
+  // program), offer to carry that change forward to the rest of the plan by
+  // updating the plan's decompression defaults — so they don't have to spin up
+  // a new treatment plan. Weight only prompts when LOWERED (sets the new cap).
+  const maybeCarryForwardDecompression = (
+    macro: MacroTemplate,
+    newAnswers: MacroAnswerMap,
+    editingRun: EncounterMacroRunRecord | null,
+  ) => {
+    if (!editingRun || !selectedEncounter) return;
+    if (!isDecompressionMacroName(macro.buttonName)) return;
+    const coverage = treatmentPlanCoverage;
+    const dc = coverage?.plan.decompression;
+    if (!coverage || !dc) return;
+
+    const weightQ = macro.questions.find((q) => /weight/i.test(q.label));
+    const cyclesQ = macro.questions.find((q) => /cycle/i.test(q.label));
+    const treatmentsQ =
+      macro.questions.find((q) => q.linksCharges) ??
+      macro.questions.find((q) => (q.options?.length ?? 0) > 0);
+    const optionQs = macro.questions.filter(
+      (q) => (q.options?.length ?? 0) > 0 && q.id !== treatmentsQ?.id,
+    );
+    const programQ = optionQs.find((q) => /program/i.test(q.label)) ?? optionQs[0];
+
+    const nextUpdates: Partial<DecompressionProgression> = {};
+    let regionUpdate: WeekdayRegion | undefined;
+
+    // Weight — only when lowered below this visit's computed value → new cap.
+    if (weightQ) {
+      const newWeightStr = formatMacroAnswerValue(newAnswers[weightQ.id]).trim();
+      const newWeight = Number(newWeightStr);
+      if (newWeightStr && Number.isFinite(newWeight)) {
+        const idx = decompressionVisitIndexFor(
+          coverage.plan,
+          selectedEncounter.patientId,
+          selectedEncounter.encounterDate,
+        );
+        const formulaWeight = computeDecompressionWeight(dc, idx);
+        if (
+          formulaWeight != null &&
+          newWeight < formulaWeight &&
+          window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?`)
+        ) {
+          nextUpdates.maxWeight = newWeightStr;
+        }
+      }
+    }
+    // Cycles — carry forward when changed.
+    if (cyclesQ) {
+      const newCycles = formatMacroAnswerValue(newAnswers[cyclesQ.id]).trim();
+      if (
+        newCycles &&
+        newCycles !== (dc.cycles ?? "").trim() &&
+        window.confirm(`Use ${newCycles} cycles for the rest of this plan?`)
+      ) {
+        nextUpdates.cycles = newCycles;
+      }
+    }
+    // Program — carry forward when changed.
+    if (programQ) {
+      const raw = newAnswers[programQ.id];
+      const newProgram = Array.isArray(raw) ? raw : typeof raw === "string" && raw ? [raw] : [];
+      const curProgram = dc.region?.answers?.[programQ.id] ?? [];
+      if (
+        newProgram.length &&
+        newProgram.join("|") !== curProgram.join("|") &&
+        window.confirm(`Use ${newProgram.join(", ")} for the rest of this plan?`)
+      ) {
+        const base = dc.region ?? { macroId: macro.id, treatments: [] };
+        regionUpdate = {
+          ...base,
+          macroId: macro.id,
+          answers: { ...(base.answers ?? {}), [programQ.id]: newProgram },
+        };
+      }
+    }
+
+    if (Object.keys(nextUpdates).length || regionUpdate) {
+      updatePlan(selectedEncounter.patientId, coverage.plan.id, {
+        decompression: {
+          ...dc,
+          ...nextUpdates,
+          ...(regionUpdate ? { region: regionUpdate } : {}),
+        },
+      });
+    }
+  };
+
   const handleConfirmMacroRun = () => {
     if (!runMacro) {
       return;
     }
     applyMacroTemplate(runMacro, runMacroAnswers, editingMacroRun);
+    maybeCarryForwardDecompression(runMacro, runMacroAnswers, editingMacroRun);
     setRunMacroId(null);
     setEditingMacroRunId(null);
     setEditingMacroPromptId(null);
