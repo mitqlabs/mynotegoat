@@ -423,72 +423,68 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                   </div>
                                 );
                               })}
+                            {/* Weight progression — lives inside the decompression
+                                card so it flows with Segment/Program. Config is
+                                plan-level (one set for the whole plan). */}
+                            {included && isDecompressionMacroName(region.name) && (
+                              <div className="mt-1.5 pl-6">
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                  Weight Progression
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-end gap-2.5">
+                                  {(
+                                    [
+                                      { key: "startWeight", label: "Start (lbs)" },
+                                      { key: "increase", label: "Increase" },
+                                      { key: "cycles", label: "Cycles" },
+                                    ] as const
+                                  ).map((field) => (
+                                    <label key={field.key} className="grid gap-0.5">
+                                      <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                                        {field.label}
+                                      </span>
+                                      <input
+                                        className="w-16 rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-0.5 text-xs"
+                                        inputMode="decimal"
+                                        onChange={(e) =>
+                                          updatePlan(patientId, plan.id, {
+                                            decompression: {
+                                              startWeight: plan.decompression?.startWeight ?? "",
+                                              increase: plan.decompression?.increase ?? "",
+                                              cycles: plan.decompression?.cycles ?? "",
+                                              [field.key]: e.target.value,
+                                            },
+                                          })
+                                        }
+                                        placeholder="—"
+                                        value={plan.decompression?.[field.key] ?? ""}
+                                      />
+                                    </label>
+                                  ))}
+                                  {(() => {
+                                    const start = Number(plan.decompression?.startWeight);
+                                    if (
+                                      !Number.isFinite(start) ||
+                                      !(plan.decompression?.startWeight ?? "").trim()
+                                    ) {
+                                      return null;
+                                    }
+                                    const incN = Number(plan.decompression?.increase);
+                                    const inc = Number.isFinite(incN) ? incN : 0;
+                                    const preview = [0, 1, 2, 3].map((i) => start + inc * i).join(" → ");
+                                    return (
+                                      <span className="pb-1 text-[11px] text-[var(--text-muted)]">
+                                        {preview} …
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
-
-                    {/* Spinal Decompression weight progression — plan-level (one
-                        set for the whole macro). Shown whenever the decompression
-                        macro is a configured region. The weight steps up by the
-                        increase each covered visit and pre-fills on the encounter
-                        (editable there). */}
-                    {regions.some((r) => isDecompressionMacroName(r.name)) && (
-                      <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                          Spinal Decompression — Weight Progression
-                        </div>
-                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                          Applies to the whole plan. Weight steps up by the increase each visit
-                          and pre-fills on every encounter (editable per visit).
-                        </p>
-                        <div className="mt-2 grid grid-cols-3 gap-2">
-                          {(
-                            [
-                              { key: "startWeight", label: "Start weight (lbs)" },
-                              { key: "increase", label: "Increase / visit" },
-                              { key: "cycles", label: "Cycles" },
-                            ] as const
-                          ).map((field) => (
-                            <label key={field.key} className="grid gap-1">
-                              <span className="text-[11px] font-semibold text-[var(--text-muted)]">
-                                {field.label}
-                              </span>
-                              <input
-                                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                                inputMode="decimal"
-                                onChange={(e) =>
-                                  updatePlan(patientId, plan.id, {
-                                    decompression: {
-                                      startWeight: plan.decompression?.startWeight ?? "",
-                                      increase: plan.decompression?.increase ?? "",
-                                      cycles: plan.decompression?.cycles ?? "",
-                                      [field.key]: e.target.value,
-                                    },
-                                  })
-                                }
-                                placeholder="—"
-                                value={plan.decompression?.[field.key] ?? ""}
-                              />
-                            </label>
-                          ))}
-                        </div>
-                        {(() => {
-                          const start = Number(plan.decompression?.startWeight);
-                          if (!Number.isFinite(start) || !(plan.decompression?.startWeight ?? "").trim()) {
-                            return null;
-                          }
-                          const incN = Number(plan.decompression?.increase);
-                          const inc = Number.isFinite(incN) ? incN : 0;
-                          const preview = [0, 1, 2, 3].map((i) => start + inc * i).join(" → ");
-                          return (
-                            <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">
-                              Progression: {preview} …
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
