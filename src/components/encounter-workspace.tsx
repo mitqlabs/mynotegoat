@@ -1604,7 +1604,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         answers[questionId] = [...values];
       }
       if (treatmentsQuestion) {
-        answers[treatmentsQuestion.id] = [...region.treatments];
+        // Emit the treatments in the macro's own option-list order (the order
+        // shown in the picker) rather than however they were stored/selected,
+        // so "Cervical: Therapeutic Massage, Cryotherapy, TPT, and LLLT" always
+        // reads in the same predictable sequence. Anything not in the option
+        // list (shouldn't happen) sorts to the end, preserving relative order.
+        const optionOrder = new Map(
+          (treatmentsQuestion.options ?? []).map((opt, i) => [opt, i]),
+        );
+        answers[treatmentsQuestion.id] = [...region.treatments].sort((a, b) => {
+          const ai = optionOrder.has(a) ? (optionOrder.get(a) as number) : Number.MAX_SAFE_INTEGER;
+          const bi = optionOrder.has(b) ? (optionOrder.get(b) as number) : Number.MAX_SAFE_INTEGER;
+          return ai - bi;
+        });
       }
       const snippetId = createEncounterMacroRunId();
       const rendered = renderMacroTemplateWithPromptSpans(
