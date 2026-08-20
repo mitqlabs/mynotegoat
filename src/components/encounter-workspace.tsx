@@ -42,6 +42,7 @@ import {
   renderMacroPromptSpan,
   renderMacroTemplateWithPromptSpans,
   type MacroAnswerMap,
+  type MacroAnswerValue,
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -1937,24 +1938,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         nextUpdates.cycles = newCycles;
       }
     }
-    // Program — carry forward when changed.
+    // Segment (Disc Level) + Program — carry forward when changed. Both live on
+    // the decompression region; build one combined region update.
+    const baseRegion: WeekdayRegion = dc.region ?? { macroId: macro.id, treatments: [] };
+    let nextRegion: WeekdayRegion = { ...baseRegion, macroId: macro.id };
+    let regionChanged = false;
+    const asArray = (raw: MacroAnswerValue | undefined): string[] =>
+      Array.isArray(raw) ? raw : typeof raw === "string" && raw ? [raw] : [];
+
+    if (treatmentsQ) {
+      const newSeg = asArray(newAnswers[treatmentsQ.id]);
+      const curSeg = baseRegion.treatments ?? [];
+      if (
+        newSeg.length &&
+        newSeg.join("|") !== curSeg.join("|") &&
+        window.confirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?`)
+      ) {
+        nextRegion = { ...nextRegion, treatments: newSeg };
+        regionChanged = true;
+      }
+    }
     if (programQ) {
-      const raw = newAnswers[programQ.id];
-      const newProgram = Array.isArray(raw) ? raw : typeof raw === "string" && raw ? [raw] : [];
-      const curProgram = dc.region?.answers?.[programQ.id] ?? [];
+      const newProgram = asArray(newAnswers[programQ.id]);
+      const curProgram = baseRegion.answers?.[programQ.id] ?? [];
       if (
         newProgram.length &&
         newProgram.join("|") !== curProgram.join("|") &&
-        window.confirm(`Use ${newProgram.join(", ")} for the rest of this plan?`)
+        window.confirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?`)
       ) {
-        const base = dc.region ?? { macroId: macro.id, treatments: [] };
-        regionUpdate = {
-          ...base,
-          macroId: macro.id,
-          answers: { ...(base.answers ?? {}), [programQ.id]: newProgram },
+        nextRegion = {
+          ...nextRegion,
+          answers: { ...(nextRegion.answers ?? {}), [programQ.id]: newProgram },
         };
+        regionChanged = true;
       }
     }
+    if (regionChanged) regionUpdate = nextRegion;
 
     if (Object.keys(nextUpdates).length || regionUpdate) {
       updatePlan(selectedEncounter.patientId, coverage.plan.id, {
