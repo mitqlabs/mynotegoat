@@ -4445,12 +4445,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const addDiagnosisFromMacro = () => {
-    const targetId = diagnosisMacroIdDraft || activeDiagnosisMacros[0]?.id;
-    if (!targetId) {
-      setDiagnosisMessage("Create diagnosis macros in Settings > Billing Macro Settings first.");
+    if (!diagnosisMacroIdDraft) {
+      setDiagnosisMessage(
+        activeDiagnosisMacros.length
+          ? "Nothing selected — pick a diagnosis code first."
+          : "Create diagnosis macros in Settings > Billing Macro Settings first.",
+      );
       return;
     }
-    const macro = activeDiagnosisMacros.find((entry) => entry.id === targetId);
+    const macro = activeDiagnosisMacros.find((entry) => entry.id === diagnosisMacroIdDraft);
     if (!macro) {
       setDiagnosisMessage("Selected diagnosis macro is not available.");
       return;
@@ -4460,12 +4463,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const addDiagnosisBundle = () => {
-    const targetId = diagnosisBundleIdDraft || activeDiagnosisBundles[0]?.id;
-    if (!targetId) {
-      setDiagnosisMessage("Create diagnosis bundles in Settings > Billing Macro Settings first.");
+    if (!diagnosisBundleIdDraft) {
+      setDiagnosisMessage(
+        activeDiagnosisBundles.length
+          ? "Nothing selected — pick a bundle first."
+          : "Create diagnosis bundles in Settings > Billing Macro Settings first.",
+      );
       return;
     }
-    const bundle = activeDiagnosisBundles.find((entry) => entry.id === targetId);
+    const bundle = activeDiagnosisBundles.find((entry) => entry.id === diagnosisBundleIdDraft);
     if (!bundle) {
       setDiagnosisMessage("Selected diagnosis bundle is not available.");
       return;
