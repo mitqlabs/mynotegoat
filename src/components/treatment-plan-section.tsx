@@ -187,20 +187,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         {completedVisits} visit{completedVisits === 1 ? "" : "s"}
                       </span>
                     )}
-                    {!plan.active && (
-                      <span className="rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
-                        paused
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
-                      onClick={() => updatePlan(patientId, plan.id, { active: !plan.active })}
-                      type="button"
-                    >
-                      {plan.active ? "Pause" : "Resume"}
-                    </button>
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
                       onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
