@@ -1650,6 +1650,20 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
           return ai - bi;
         });
       }
+      // Fill the decompression macro's OWN Weight / Cycles input fields (the
+      // pills in its body) rather than appending a separate line: set the
+      // computed stepped weight and the configured cycles as answers so they
+      // render into the [[weight]] / [[cycles]] prompt spans, still editable.
+      if (decompRegion && region.macroId === decompRegion.macroId) {
+        const weightQ = macro.questions.find((q) => /weight/i.test(q.label));
+        const cyclesQ = macro.questions.find((q) => /cycle/i.test(q.label));
+        if (weightQ && decompWeight != null) {
+          answers[weightQ.id] = [String(Math.round(decompWeight * 100) / 100)];
+        }
+        if (cyclesQ && decompConfig?.cycles?.trim()) {
+          answers[cyclesQ.id] = [decompConfig.cycles.trim()];
+        }
+      }
       const snippetId = createEncounterMacroRunId();
       const rendered = renderMacroTemplateWithPromptSpans(
         macro.body,
@@ -1659,17 +1673,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       );
       const html = stripBlankWrappers(rendered);
       if (!html) continue;
-      // For the decompression region, append the stepped Weight (+ Cycles) as a
-      // plain line so it prints in the note and the provider can edit it.
-      let regionHtml = html;
-      if (decompWeight != null && decompRegion && region.macroId === decompRegion.macroId) {
-        const weightText = String(Math.round(decompWeight * 100) / 100);
-        const cyclesText = decompConfig?.cycles?.trim()
-          ? ` · Cycles: ${escapeHtml(decompConfig.cycles.trim())}`
-          : "";
-        regionHtml = `${html}<p>Weight: ${weightText} lbs${cyclesText}</p>`;
-      }
-      prepared.push({ snippetId, macro, answers, html: regionHtml });
+      prepared.push({ snippetId, macro, answers, html });
     }
     if (!prepared.length) {
       if (!options?.silent) {
