@@ -40,6 +40,9 @@ export interface DecompressionProgression {
   startWeight: string;
   increase: string;
   cycles: string;
+  /** Cap — the stepped weight never exceeds this (e.g. start 12, increase 2,
+   *  max 20 → 12, 14, 16, 18, 20, 20 …). Blank = no cap. */
+  maxWeight?: string;
   /**
    * The decompression region — macro id + picked segment/program answers —
    * configured ONCE per plan and auto-applied to every encounter in the plan's
@@ -85,7 +88,12 @@ export function computeDecompressionWeight(
   if (!Number.isFinite(start) || config.startWeight.trim() === "") return null;
   const incRaw = Number(config.increase);
   const increase = Number.isFinite(incRaw) ? incRaw : 0;
-  return start + increase * Math.max(0, visitIndex);
+  let weight = start + increase * Math.max(0, visitIndex);
+  const max = Number(config.maxWeight);
+  if ((config.maxWeight ?? "").trim() !== "" && Number.isFinite(max)) {
+    weight = Math.min(weight, max);
+  }
+  return weight;
 }
 
 export type TreatmentPlansByPatient = Record<string, TreatmentPlan[]>;
@@ -164,9 +172,16 @@ function normalizeDecompression(value: unknown): DecompressionProgression | unde
   const startWeight = normalizeText(row.startWeight);
   const increase = normalizeText(row.increase);
   const cycles = normalizeText(row.cycles);
+  const maxWeight = normalizeText((row as { maxWeight?: unknown }).maxWeight);
   const region = normalizeRegion(row.region) ?? undefined;
-  if (!startWeight && !increase && !cycles && !region) return undefined;
-  return { startWeight, increase, cycles, ...(region ? { region } : {}) };
+  if (!startWeight && !increase && !cycles && !maxWeight && !region) return undefined;
+  return {
+    startWeight,
+    increase,
+    cycles,
+    ...(maxWeight ? { maxWeight } : {}),
+    ...(region ? { region } : {}),
+  };
 }
 
 function normalizePlan(value: unknown): TreatmentPlan | null {

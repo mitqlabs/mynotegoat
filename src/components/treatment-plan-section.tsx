@@ -445,6 +445,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               startWeight: dc?.startWeight ?? "",
                               increase: dc?.increase ?? "",
                               cycles: dc?.cycles ?? "",
+                              ...(dc?.maxWeight ? { maxWeight: dc.maxWeight } : {}),
                               ...(dc?.region ? { region: dc.region } : {}),
                               ...patch,
                             },
@@ -482,8 +483,12 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                           Number.isFinite(startN) && (dc?.startWeight ?? "").trim() !== "";
                         const incN = Number(dc?.increase);
                         const inc = Number.isFinite(incN) ? incN : 0;
+                        const maxN = Number(dc?.maxWeight);
+                        const hasMax =
+                          (dc?.maxWeight ?? "").trim() !== "" && Number.isFinite(maxN);
+                        const cap = (w: number) => (hasMax ? Math.min(w, maxN) : w);
                         const preview = showPreview
-                          ? [0, 1, 2, 3].map((i) => startN + inc * i).join(" → ")
+                          ? [0, 1, 2, 3, 4].map((i) => cap(startN + inc * i)).join(" → ")
                           : "";
                         const chip = (on: boolean) =>
                           `rounded-full border px-2 py-0.5 text-xs ${
@@ -564,6 +569,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 [
                                   { key: "startWeight", label: "Start (lbs)" },
                                   { key: "increase", label: "Increase" },
+                                  { key: "maxWeight", label: "Max (lbs)" },
                                   { key: "cycles", label: "Cycles" },
                                 ] as const
                               ).map((field) => (
