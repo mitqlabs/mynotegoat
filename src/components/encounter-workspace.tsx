@@ -1394,7 +1394,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       );
 
       if (hasPromptSpans) {
-        macro.questions.forEach((question) => {
+        // When the user tapped a SINGLE prompt pill, only that pill may change.
+        // Re-rendering every question's span from `answers` would overwrite the
+        // other pills with their initial (possibly defaulted-to-first-option)
+        // values — e.g. editing Weight would silently reset a blank-in-answers
+        // Segment to option[0]. So restrict replacement to the edited prompt.
+        const onlyPrompt =
+          editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
+            ? editingMacroPromptId
+            : null;
+        const questionsToReplace = onlyPrompt
+          ? macro.questions.filter((question) => question.id === onlyPrompt)
+          : macro.questions;
+        questionsToReplace.forEach((question) => {
           const replacement = renderMacroPromptSpan(
             snippetId,
             question.id,
@@ -1416,8 +1428,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       }
 
       setSoapSection(selectedEncounter.id, activeSection, nextSectionText);
+      // Persist only the edited prompt's answer on a single-pill edit; keep the
+      // run's other saved answers untouched so a defaulted value can't overwrite
+      // them (matches the surgical span replacement above).
+      const onlyPromptAnswer =
+        editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
+          ? editingMacroPromptId
+          : null;
+      const nextRunAnswers = onlyPromptAnswer
+        ? { ...existingRun.answers, [onlyPromptAnswer]: answers[onlyPromptAnswer] }
+        : { ...answers };
       updateMacroRun(selectedEncounter.id, existingRun.id, {
-        answers: { ...answers },
+        answers: nextRunAnswers,
         generatedText,
       });
       const { added, removed } = reconcileLinkedCharges(
@@ -1894,6 +1916,17 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     const dc = coverage?.plan.decompression;
     if (!coverage || !dc) return;
 
+    // Only consider the field the user actually edited. On a single-pill edit
+    // the OTHER answers in `newAnswers` are just the run's initial values (some
+    // defaulted), so checking them would fire spurious prompts (e.g. a Weight
+    // edit asking to change the Segment). null = full-macro edit → check all.
+    const onlyPrompt =
+      editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
+        ? editingMacroPromptId
+        : null;
+    const edited = (questionId: string | undefined) =>
+      Boolean(questionId) && (!onlyPrompt || onlyPrompt === questionId);
+
     const weightQ = macro.questions.find((q) => /weight/i.test(q.label));
     const cyclesQ = macro.questions.find((q) => /cycle/i.test(q.label));
     const treatmentsQ =
@@ -1907,8 +1940,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     const nextUpdates: Partial<DecompressionProgression> = {};
     let regionUpdate: WeekdayRegion | undefined;
 
-    // Weight — only when lowered below this visit's computed value → new cap.
-    if (weightQ) {
+    // Weight — when changed from this visit's computed value (raised OR
+    // lowered), offer to hold/set it as the plan's cap going forward.
+    if (weightQ && edited(weightQ.id)) {
       const newWeightStr = formatMacroAnswerValue(newAnswers[weightQ.id]).trim();
       const newWeight = Number(newWeightStr);
       if (newWeightStr && Number.isFinite(newWeight)) {
@@ -1920,7 +1954,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         const formulaWeight = computeDecompressionWeight(dc, idx);
         if (
           formulaWeight != null &&
-          newWeight < formulaWeight &&
+          newWeight !== formulaWeight &&
           window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?`)
         ) {
           nextUpdates.maxWeight = newWeightStr;
@@ -1928,7 +1962,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
       }
     }
     // Cycles — carry forward when changed.
-    if (cyclesQ) {
+    if (cyclesQ && edited(cyclesQ.id)) {
       const newCycles = formatMacroAnswerValue(newAnswers[cyclesQ.id]).trim();
       if (
         newCycles &&
@@ -1946,7 +1980,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
     const asArray = (raw: MacroAnswerValue | undefined): string[] =>
       Array.isArray(raw) ? raw : typeof raw === "string" && raw ? [raw] : [];
 
-    if (treatmentsQ) {
+    if (treatmentsQ && edited(treatmentsQ.id)) {
       const newSeg = asArray(newAnswers[treatmentsQ.id]);
       const curSeg = baseRegion.treatments ?? [];
       if (
@@ -1958,7 +1992,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         regionChanged = true;
       }
     }
-    if (programQ) {
+    if (programQ && edited(programQ.id)) {
       const newProgram = asArray(newAnswers[programQ.id]);
       const curProgram = baseRegion.answers?.[programQ.id] ?? [];
       if (
