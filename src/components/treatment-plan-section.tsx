@@ -30,6 +30,14 @@ function usDateToStamp(us: string): number | null {
   return Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]);
 }
 
+/** US MM/DD/YYYY → weekday (0=Sun … 6=Sat), computed at local midnight so it
+ *  matches the encounter/plan weekday logic. Null if malformed. */
+function usDateWeekday(us: string): number | null {
+  const m = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2])).getDay();
+}
+
 type PlanRegion = {
   macroId: string;
   name: string;
@@ -189,6 +197,28 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                     return s !== null && s >= startStamp && s <= endStamp;
                   }).length
                 : null;
+            // Which weekdays actually have appointments booked inside this
+            // plan's date range — so we can warn when a weekday is configured
+            // but has no visits (e.g. Wednesday treatments with no Wed appts).
+            const weekdaysWithAppts = new Set<number>();
+            if (startStamp !== null && endStamp !== null) {
+              for (const a of appointments) {
+                const us = isoToUsDate(a.date);
+                if (!us) continue;
+                const s = usDateToStamp(us);
+                if (s === null || s < startStamp || s > endStamp) continue;
+                const wd = usDateWeekday(us);
+                if (wd !== null) weekdaysWithAppts.add(wd);
+              }
+            }
+            // Only trust the "no appointments" signal when we actually see
+            // appointments in the range (otherwise they may just not be loaded).
+            const hasApptData = weekdaysWithAppts.size > 0;
+            const configuredDaysWithoutAppts = hasApptData
+              ? openDays.filter(
+                  (day) => (plan.days[day]?.length ?? 0) > 0 && !weekdaysWithAppts.has(day),
+                )
+              : [];
             return (
               <div key={plan.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -253,15 +283,23 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                       {openDays.map((day) => {
                         const label = WEEKDAYS[day];
                         const configured = (plan.days[day]?.length ?? 0) > 0;
+                        const noAppts = hasApptData && !weekdaysWithAppts.has(day);
                         return (
                           <button
                             key={day}
                             className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                               activeDay === day
                                 ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                                : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                                : noAppts
+                                  ? "border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-60"
+                                  : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                             }`}
                             onClick={() => setActiveDay(day)}
+                            title={
+                              noAppts
+                                ? `No appointments booked on ${label} in this date range`
+                                : undefined
+                            }
                             type="button"
                           >
                             {label}
@@ -300,6 +338,21 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         </select>
                       )}
                     </div>
+
+                    {/* Warn when a weekday has treatments configured but no
+                        appointments booked in the range — those treatments will
+                        never apply (e.g. Wednesday setup with no Wed visits). */}
+                    {configuredDaysWithoutAppts.length > 0 && (
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        ⚠ No appointments in this date range on{" "}
+                        <strong>
+                          {configuredDaysWithoutAppts.map((d) => WEEKDAYS[d]).join(", ")}
+                        </strong>
+                        , but {configuredDaysWithoutAppts.length === 1 ? "it has" : "they have"}{" "}
+                        treatments configured — those won&apos;t apply to any visit. Move them to a
+                        day that has appointments, or book the visit.
+                      </p>
+                    )}
 
                     {/* Regions for the selected weekday. Decompression is not
                         here — it's configured once for the whole plan below. */}
