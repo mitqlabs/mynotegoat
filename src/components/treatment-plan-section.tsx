@@ -314,9 +314,11 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                           </button>
                         );
                       })}
-                      {dayRegions.length > 0 && openDays.length > 1 && (
+                      {dayRegions.length > 0 && (
+                        <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                        {openDays.length > 1 && (
                         <select
-                          className="ml-auto rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)]"
+                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)]"
                           onChange={(e) => {
                             const day = Number(e.target.value);
                             e.target.value = "";
@@ -334,13 +336,37 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         >
                           <option value="">Copy {WEEKDAYS[activeDay]} to…</option>
                           {openDays
-                            .filter((day) => day !== activeDay)
+                            .filter(
+                              (day) =>
+                                day !== activeDay &&
+                                // Don't offer dead days (no appointments in range)
+                                // as copy targets — copying treatments there is
+                                // exactly the trap we're trying to prevent.
+                                !(hasApptData && !weekdaysWithAppts.has(day)),
+                            )
                             .map((day) => (
                               <option key={day} value={day}>
                                 {WEEKDAYS[day]}
                               </option>
                             ))}
                         </select>
+                        )}
+                        <button
+                          className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Clear all ${WEEKDAYS[activeDay]} treatments from this plan?`,
+                              )
+                            ) {
+                              setDay([]);
+                            }
+                          }}
+                          type="button"
+                        >
+                          Clear {WEEKDAYS[activeDay]}
+                        </button>
+                        </span>
                       )}
                     </div>
 
