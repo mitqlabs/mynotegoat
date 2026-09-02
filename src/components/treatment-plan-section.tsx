@@ -284,6 +284,10 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         const label = WEEKDAYS[day];
                         const configured = (plan.days[day]?.length ?? 0) > 0;
                         const noAppts = hasApptData && !weekdaysWithAppts.has(day);
+                        // Disable empty dead days so they can't be configured.
+                        // A dead day that already HAS treatments stays clickable
+                        // so the user can open it and clear the stale setup.
+                        const disabled = noAppts && !configured;
                         return (
                           <button
                             key={day}
@@ -293,7 +297,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 : noAppts
                                   ? "border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-60"
                                   : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
-                            }`}
+                            } ${disabled ? "cursor-not-allowed" : ""}`}
+                            disabled={disabled}
                             onClick={() => setActiveDay(day)}
                             title={
                               noAppts
