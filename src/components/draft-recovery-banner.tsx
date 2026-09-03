@@ -69,10 +69,40 @@ function formatIdFallbackLabel(id: string): string {
   })}`;
 }
 
+/** Visible text of a draft's HTML, whitespace-collapsed — for the preview and
+ *  the emptiness check. */
+function draftPlainText(html: string): string {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return html
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return (div.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** True if a draft actually has recoverable content — visible text, or an
+ *  embedded image / macro pill. An "empty" editor still serializes to markup
+ *  like <p><br></p>, whose `.trim()` is non-empty; that must NOT be surfaced as
+ *  recoverable work (the recurring blank-banner complaint). */
+function hasRealDraftContent(html: string): boolean {
+  if (draftPlainText(html)) return true;
+  if (typeof document !== "undefined") {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+    if (div.querySelector("img, [data-macro-run-id], [data-prompt-id]")) return true;
+  }
+  return false;
+}
+
 export function DraftRecoveryBanner() {
   const router = useRouter();
   const [pending, setPending] = useState<PendingDraft[]>([]);
   const [dismissed, setDismissed] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Scan for ORPHAN drafts — drafts whose parent encounter is no longer
   // present in the local cache. The banner is strictly for this case: the
@@ -98,8 +128,8 @@ export function DraftRecoveryBanner() {
       const orphans: PendingDraft[] = [];
       for (const draft of drafts) {
         if (byId.has(draft.encounterId)) continue; // encounter present — not orphan
-        if (!draft.html.trim()) {
-          clearDraft(draft.key); // empty body — nothing to recover, GC it
+        if (!hasRealDraftContent(draft.html)) {
+          clearDraft(draft.key); // blank body (e.g. <p><br></p>) — GC, don't surface
           continue;
         }
         orphans.push({
@@ -225,19 +255,45 @@ export function DraftRecoveryBanner() {
           </div>
         </div>
         <ul className="max-h-48 overflow-y-auto space-y-1 border-t border-amber-950/30 pt-2 text-xs font-normal">
-          {visibleDrafts.map((draft) => (
-            <li key={draft.key} className="flex items-center justify-between gap-2">
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-semibold">
-                  {draft.encounterLabel ?? `Encounter ${draft.encounterId}`}
-                </span>
-                <span className="ml-1 rounded bg-amber-950/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                  {draft.section}
-                </span>
-                <span className="ml-2 text-amber-950/70">{formatAge(draft.at)}</span>
-              </span>
-            </li>
-          ))}
+          {visibleDrafts.map((draft) => {
+            const preview = draftPlainText(draft.html);
+            return (
+              <li key={draft.key} className="border-b border-amber-950/10 pb-1.5 last:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-semibold">
+                      {draft.encounterLabel ?? `Encounter ${draft.encounterId}`}
+                    </span>
+                    <span className="ml-1 rounded bg-amber-950/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                      {draft.section}
+                    </span>
+                    <span className="ml-2 text-amber-950/70">{formatAge(draft.at)}</span>
+                  </span>
+                  <button
+                    className="shrink-0 rounded border border-amber-950/40 px-2 py-0.5 text-[10px] font-semibold hover:bg-amber-400/40"
+                    onClick={() => {
+                      try {
+                        void navigator.clipboard?.writeText(preview);
+                        setCopiedKey(draft.key);
+                        window.setTimeout(() => setCopiedKey(null), 1500);
+                      } catch {
+                        // Clipboard blocked — the visible preview below is still
+                        // there to copy by hand.
+                      }
+                    }}
+                    type="button"
+                  >
+                    {copiedKey === draft.key ? "Copied ✓" : "Copy text"}
+                  </button>
+                </div>
+                {preview && (
+                  <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-[11px] font-normal text-amber-950/80">
+                    {preview}
+                  </p>
+                )}
+              </li>
+            );
+          })}
           {pending.length > visibleDrafts.length && (
             <li className="text-[10px] italic text-amber-950/70">
               …and {pending.length - visibleDrafts.length} more
