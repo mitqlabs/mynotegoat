@@ -140,11 +140,10 @@ function extractYearMonthNumber(value: string | undefined): number {
   return -1;
 }
 
-/** Convert an <input type="month"> value ("YYYY-MM") to a YYYYMM number, or null. */
-function monthInputToYearMonth(value: string): number | null {
-  const m = value.match(/^(\d{4})-(\d{2})$/);
-  return m ? Number(m[1]) * 100 + Number(m[2]) : null;
-}
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 function loadCfColumnOrder(): CfColumnId[] {
   if (typeof window === "undefined") return defaultCfColumnOrder;
@@ -480,10 +479,11 @@ export default function PatientsPage() {
   const [editTaskDueDate, setEditTaskDueDate] = useState("");
   const [editTaskError, setEditTaskError] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
-  // Month-range filter on Date of Injury (live). "YYYY-MM" from <input month>;
-  // either side may be blank for an open-ended range.
-  const [fromMonth, setFromMonth] = useState("");
-  const [toMonth, setToMonth] = useState("");
+  // Month-range filter on Date of Injury, WITHIN the selected year. "1".."12"
+  // or "" for any. From alone = that single month; From+To = the span. Only
+  // applies when a specific Year is chosen.
+  const [fromMon, setFromMon] = useState("");
+  const [toMon, setToMon] = useState("");
   const [yearDraft, setYearDraft] = useState("ALL");
   const [attorneyDraft, setAttorneyDraft] = useState("ALL");
   const [statusDraft, setStatusDraft] = useState("ALL");
@@ -719,14 +719,14 @@ export default function PatientsPage() {
     () => {
       const collected = new Set<string>();
       for (const patient of patients) {
-        const y = extractYearFromDateString(patient.dateOfLoss);
+        const y = extractYearFromDateString(patient.matrix?.initialExam);
         if (y) collected.add(y);
       }
       // Newest year first so the dropdown opens to recent years
       const sorted = Array.from(collected).sort((a, b) => Number(b) - Number(a));
       return ["ALL", ...sorted];
     },
-    [],
+    [patients],
   );
 
   const attorneyOptions = useMemo(() => {
@@ -788,9 +788,13 @@ export default function PatientsPage() {
     const q = searchDraft.trim().toLowerCase();
     // Split query into individual words so "john doe" matches "Doe, John"
     const qWords = q.replace(/[,.:;]/g, " ").split(/\s+/).filter(Boolean);
-    // Month-range bounds (YYYYMM), computed once. Either may be null (open end).
-    const fromYM = monthInputToYearMonth(fromMonth);
-    const toYM = monthInputToYearMonth(toMonth);
+    // Month-range bounds within the selected year (only meaningful when a
+    // specific Year is chosen). From alone = single month; From+To = span.
+    const fromN = Number(fromMon) || 0;
+    const toN = Number(toMon) || 0;
+    const startMon = fromN || toN; // prefer From; fall back to To
+    const endMon = toN || fromN; // prefer To; fall back to From
+    const monthRangeActive = year !== "ALL" && startMon > 0;
     const filtered = patients.filter((patient) => {
       // Skip soft-deleted patients
       if (patient.deleted) return false;
@@ -805,19 +809,16 @@ export default function PatientsPage() {
       const matchesSearch =
         !q || qWords.every((word) => haystack.includes(word));
 
+      // Filter by INITIAL EXAM date (year + optional month range within it).
+      const examYm = extractYearMonthNumber(patient.matrix?.initialExam);
       const matchesYear =
         year === "ALL" ||
-        extractYearFromDateString(patient.dateOfLoss) === year;
+        (examYm > 0 && String(Math.floor(examYm / 100)) === year);
 
-      // Date-of-Injury month range. When a bound is set but the patient has no
-      // usable injury date, it can't match — excluded from the range.
       let matchesMonthRange = true;
-      if (fromYM !== null || toYM !== null) {
-        const ym = extractYearMonthNumber(patient.dateOfLoss);
-        matchesMonthRange =
-          ym > 0 &&
-          (fromYM === null || ym >= fromYM) &&
-          (toYM === null || ym <= toYM);
+      if (monthRangeActive) {
+        const mon = examYm > 0 ? examYm % 100 : -1;
+        matchesMonthRange = mon >= startMon && mon <= endMon;
       }
 
       const matchesAttorney =
@@ -914,7 +915,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, year, fromMonth, toMonth, sortColumn, sortAsc, section]);
+  }, [attorney, searchDraft, status, year, fromMon, toMon, sortColumn, sortAsc, section]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1402,13 +1403,13 @@ export default function PatientsPage() {
           <div className="grid gap-3 md:grid-cols-[1.6fr_1fr_1fr_96px]">
             <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               <span className="flex flex-wrap items-center gap-2">
-                Year / Injury month range
-                {(fromMonth || toMonth) && (
+                Initial Exam — year / months
+                {(fromMon || toMon) && (
                   <button
                     className="text-xs font-normal text-[var(--brand-primary)] underline"
                     onClick={() => {
-                      setFromMonth("");
-                      setToMonth("");
+                      setFromMon("");
+                      setToMon("");
                     }}
                     type="button"
                   >
@@ -1419,30 +1420,53 @@ export default function PatientsPage() {
               <div className="flex flex-wrap items-center gap-1.5">
                 <select
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm font-normal text-[var(--text-primary)]"
-                  onChange={(event) => { setYearDraft(event.target.value); setYear(event.target.value); }}
+                  onChange={(event) => {
+                    setYearDraft(event.target.value);
+                    setYear(event.target.value);
+                    if (event.target.value === "ALL") {
+                      setFromMon("");
+                      setToMon("");
+                    }
+                  }}
                   value={yearDraft}
                 >
                   {years.map((yearOption) => (
                     <option key={yearOption} value={yearOption}>
-                      {yearOption}
+                      {yearOption === "ALL" ? "All years" : yearOption}
                     </option>
                   ))}
                 </select>
-                <input
+                <select
                   aria-label="From month"
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-normal"
-                  onChange={(event) => setFromMonth(event.target.value)}
-                  type="month"
-                  value={fromMonth}
-                />
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-normal disabled:opacity-40"
+                  disabled={year === "ALL"}
+                  onChange={(event) => setFromMon(event.target.value)}
+                  title={year === "ALL" ? "Pick a year first" : "From month"}
+                  value={fromMon}
+                >
+                  <option value="">From…</option>
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={name} value={String(i + 1)}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
                 <span className="text-xs text-[var(--text-muted)]">to</span>
-                <input
+                <select
                   aria-label="To month"
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-normal"
-                  onChange={(event) => setToMonth(event.target.value)}
-                  type="month"
-                  value={toMonth}
-                />
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-normal disabled:opacity-40"
+                  disabled={year === "ALL"}
+                  onChange={(event) => setToMon(event.target.value)}
+                  title={year === "ALL" ? "Pick a year first" : "To month (blank = single month)"}
+                  value={toMon}
+                >
+                  <option value="">To…</option>
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={name} value={String(i + 1)}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
