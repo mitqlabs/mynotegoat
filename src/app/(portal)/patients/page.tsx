@@ -120,6 +120,32 @@ function extractYearFromDateString(value: string | undefined): string {
   return "";
 }
 
+/**
+ * Extract a YYYYMM number (e.g. 202605 for May 2026) from a date string in ISO
+ * or US format, tolerating trailing notes. -1 for empty/invalid. Used by the
+ * month-range filter.
+ */
+function extractYearMonthNumber(value: string | undefined): number {
+  if (!value) return -1;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return -1;
+  const iso = trimmed.match(/^(\d{4})-(\d{1,2})/);
+  if (iso) return Number(iso[1]) * 100 + Number(iso[2]);
+  const us = trimmed.match(/^(\d{1,2})\/\d{1,2}\/(\d{2,4})/);
+  if (us) {
+    let y = Number(us[2]);
+    if (y < 100) y += 2000;
+    return y * 100 + Number(us[1]);
+  }
+  return -1;
+}
+
+/** Convert an <input type="month"> value ("YYYY-MM") to a YYYYMM number, or null. */
+function monthInputToYearMonth(value: string): number | null {
+  const m = value.match(/^(\d{4})-(\d{2})$/);
+  return m ? Number(m[1]) * 100 + Number(m[2]) : null;
+}
+
 function loadCfColumnOrder(): CfColumnId[] {
   if (typeof window === "undefined") return defaultCfColumnOrder;
   try {
@@ -454,6 +480,10 @@ export default function PatientsPage() {
   const [editTaskDueDate, setEditTaskDueDate] = useState("");
   const [editTaskError, setEditTaskError] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
+  // Month-range filter on Date of Injury (live). "YYYY-MM" from <input month>;
+  // either side may be blank for an open-ended range.
+  const [fromMonth, setFromMonth] = useState("");
+  const [toMonth, setToMonth] = useState("");
   const [yearDraft, setYearDraft] = useState("ALL");
   const [attorneyDraft, setAttorneyDraft] = useState("ALL");
   const [statusDraft, setStatusDraft] = useState("ALL");
@@ -758,6 +788,9 @@ export default function PatientsPage() {
     const q = searchDraft.trim().toLowerCase();
     // Split query into individual words so "john doe" matches "Doe, John"
     const qWords = q.replace(/[,.:;]/g, " ").split(/\s+/).filter(Boolean);
+    // Month-range bounds (YYYYMM), computed once. Either may be null (open end).
+    const fromYM = monthInputToYearMonth(fromMonth);
+    const toYM = monthInputToYearMonth(toMonth);
     const filtered = patients.filter((patient) => {
       // Skip soft-deleted patients
       if (patient.deleted) return false;
@@ -776,13 +809,26 @@ export default function PatientsPage() {
         year === "ALL" ||
         extractYearFromDateString(patient.dateOfLoss) === year;
 
+      // Date-of-Injury month range. When a bound is set but the patient has no
+      // usable injury date, it can't match — excluded from the range.
+      let matchesMonthRange = true;
+      if (fromYM !== null || toYM !== null) {
+        const ym = extractYearMonthNumber(patient.dateOfLoss);
+        matchesMonthRange =
+          ym > 0 &&
+          (fromYM === null || ym >= fromYM) &&
+          (toYM === null || ym <= toYM);
+      }
+
       const matchesAttorney =
         attorney === "ALL" ||
         normalizeAttorneyKey(patient.attorney) === normalizeAttorneyKey(attorney);
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
 
-      return matchesSearch && matchesYear && matchesAttorney && matchesStatus;
+      return (
+        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus
+      );
     });
 
     // Sort
@@ -868,7 +914,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, year, sortColumn, sortAsc, section]);
+  }, [attorney, searchDraft, status, year, fromMonth, toMonth, sortColumn, sortAsc, section]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1352,6 +1398,46 @@ export default function PatientsPage() {
               value={searchDraft}
             />
           </label>
+
+          {/* Date-of-Injury month range. Either side may be left blank for an
+              open-ended range (e.g. From May → everything from May onward). */}
+          <div className="grid gap-1">
+            <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+              Date of Injury range
+              {(fromMonth || toMonth) && (
+                <button
+                  className="text-xs font-normal text-[var(--brand-primary)] underline"
+                  onClick={() => {
+                    setFromMonth("");
+                    setToMonth("");
+                  }}
+                  type="button"
+                >
+                  clear
+                </button>
+              )}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label="From month"
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal"
+                onChange={(event) => setFromMonth(event.target.value)}
+                type="month"
+                value={fromMonth}
+              />
+              <span className="text-sm text-[var(--text-muted)]">to</span>
+              <input
+                aria-label="To month"
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal"
+                onChange={(event) => setToMonth(event.target.value)}
+                type="month"
+                value={toMonth}
+              />
+              <span className="text-xs text-[var(--text-muted)]">
+                leave a side blank for open-ended
+              </span>
+            </div>
+          </div>
 
           <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_96px]">
             <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
