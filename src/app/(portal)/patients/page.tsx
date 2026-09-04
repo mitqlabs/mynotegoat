@@ -1399,61 +1399,52 @@ export default function PatientsPage() {
             />
           </label>
 
-          {/* Date-of-Injury month range. Either side may be left blank for an
-              open-ended range (e.g. From May → everything from May onward). */}
-          <div className="grid gap-1">
-            <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-              Date of Injury range
-              {(fromMonth || toMonth) && (
-                <button
-                  className="text-xs font-normal text-[var(--brand-primary)] underline"
-                  onClick={() => {
-                    setFromMonth("");
-                    setToMonth("");
-                  }}
-                  type="button"
-                >
-                  clear
-                </button>
-              )}
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                aria-label="From month"
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal"
-                onChange={(event) => setFromMonth(event.target.value)}
-                type="month"
-                value={fromMonth}
-              />
-              <span className="text-sm text-[var(--text-muted)]">to</span>
-              <input
-                aria-label="To month"
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal"
-                onChange={(event) => setToMonth(event.target.value)}
-                type="month"
-                value={toMonth}
-              />
-              <span className="text-xs text-[var(--text-muted)]">
-                leave a side blank for open-ended
+          <div className="grid gap-3 md:grid-cols-[1.6fr_1fr_1fr_96px]">
+            <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+              <span className="flex flex-wrap items-center gap-2">
+                Year / Injury month range
+                {(fromMonth || toMonth) && (
+                  <button
+                    className="text-xs font-normal text-[var(--brand-primary)] underline"
+                    onClick={() => {
+                      setFromMonth("");
+                      setToMonth("");
+                    }}
+                    type="button"
+                  >
+                    clear
+                  </button>
+                )}
               </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <select
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm font-normal text-[var(--text-primary)]"
+                  onChange={(event) => { setYearDraft(event.target.value); setYear(event.target.value); }}
+                  value={yearDraft}
+                >
+                  {years.map((yearOption) => (
+                    <option key={yearOption} value={yearOption}>
+                      {yearOption}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  aria-label="From month"
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-normal"
+                  onChange={(event) => setFromMonth(event.target.value)}
+                  type="month"
+                  value={fromMonth}
+                />
+                <span className="text-xs text-[var(--text-muted)]">to</span>
+                <input
+                  aria-label="To month"
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-normal"
+                  onChange={(event) => setToMonth(event.target.value)}
+                  type="month"
+                  value={toMonth}
+                />
+              </div>
             </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_96px]">
-            <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
-              Year
-              <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
-                onChange={(event) => { setYearDraft(event.target.value); setYear(event.target.value); }}
-                value={yearDraft}
-              >
-                {years.map((yearOption) => (
-                  <option key={yearOption} value={yearOption}>
-                    {yearOption}
-                  </option>
-                ))}
-              </select>
-            </label>
 
             <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Attorney
