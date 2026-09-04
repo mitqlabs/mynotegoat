@@ -5092,6 +5092,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <p>
                     Sent: {entry.sentDate || "-"}
                     {" | Completed: "}{entry.doneDate || "-"}
+                    {" | Received: "}{entry.reportReceivedDate || "-"}
                     {" | Reviewed: "}{entry.reportReviewedDate || "-"}
                   </p>
                   {entry.findings?.trim() && (
@@ -5305,6 +5306,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     Sent: {entry.sentDate || "-"}
                     {" | Scheduled: "}{entry.scheduledDate || "-"}
                     {" | Completed: "}{entry.doneDate || "-"}
+                    {" | Received: "}{entry.reportReceivedDate || "-"}
                     {" | Reviewed: "}{entry.reportReviewedDate || "-"}
                   </p>
                   {entry.findings?.trim() && (

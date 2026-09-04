@@ -4257,6 +4257,7 @@ function ImagingSpecialistSummary({
     regions: string;
     sent: string;
     completed: string;
+    received: string;
     reviewed: string;
     findings: string;
   };
@@ -4272,6 +4273,9 @@ function ImagingSpecialistSummary({
     findings: readStringField(entry, "findings"),
     sent: toUsDate(readStringField(entry, "sentDate", "sent") ?? ""),
     completed: toUsDate(readStringField(entry, "doneDate", "completedDate") ?? ""),
+    received: toUsDate(
+      readStringField(entry, "reportReceivedDate", "receivedDate", "received") ?? "",
+    ),
     reviewed: toUsDate(
       readStringField(entry, "reportReviewedDate", "reviewedDate", "reviewed") ?? "",
     ),
@@ -4281,6 +4285,9 @@ function ImagingSpecialistSummary({
     findings: readStringField(entry, "findings"),
     sent: toUsDate(readStringField(entry, "sentDate", "sent") ?? ""),
     completed: toUsDate(readStringField(entry, "doneDate", "completedDate") ?? ""),
+    received: toUsDate(
+      readStringField(entry, "reportReceivedDate", "receivedDate", "received") ?? "",
+    ),
     reviewed: toUsDate(
       readStringField(entry, "reportReviewedDate", "reviewedDate", "reviewed") ?? "",
     ),
@@ -4294,8 +4301,10 @@ function ImagingSpecialistSummary({
     ),
   }));
 
-  // Fall back to the legacy matrix reviewed date on the most-recent row when the
-  // entry itself has none (older imports stored it only in the matrix).
+  // Fall back to the legacy matrix received/reviewed dates on the most-recent
+  // row when the entry itself has none (older imports stored them only there).
+  if (xrayRows[0] && !xrayRows[0].received) xrayRows[0].received = matrixDate("xrayReceived");
+  if (mriRows[0] && !mriRows[0].received) mriRows[0].received = matrixDate("mriReceived");
   if (xrayRows[0] && !xrayRows[0].reviewed) xrayRows[0].reviewed = matrixDate("xrayReviewed");
   if (mriRows[0] && !mriRows[0].reviewed) mriRows[0].reviewed = matrixDate("mriReviewed");
 
@@ -4323,6 +4332,7 @@ function ImagingSpecialistSummary({
               <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                 <Date label="Sent" value={xrayRows[0].sent} />
                 <Date label="Completed" value={xrayRows[0].completed} />
+                <Date label="Received" value={xrayRows[0].received} />
                 <Date label="Reviewed" value={xrayRows[0].reviewed} />
               </div>
             </>
@@ -4333,6 +4343,7 @@ function ImagingSpecialistSummary({
               <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                 <Date label="Sent" value={mriRows[0].sent} />
                 <Date label="Completed" value={mriRows[0].completed} />
+                <Date label="Received" value={mriRows[0].received} />
                 <Date label="Reviewed" value={mriRows[0].reviewed} />
               </div>
             </>
