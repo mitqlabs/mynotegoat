@@ -10,6 +10,7 @@ import {
   type MemberPermissions,
 } from "@/lib/team-permissions";
 import type { PortalFeature } from "@/lib/plan-access";
+import { useModuleVisibility } from "@/hooks/use-module-visibility";
 
 type Member = {
   member_user_id: string;
@@ -27,6 +28,9 @@ const ACCESS_LABEL: Record<AccessLevel, string> = {
 const EMPTY_PERMS: MemberPermissions = {};
 
 export function TeamSettingsSection() {
+  // Owner's module visibility — a feature the office has turned off can't be
+  // granted to anyone, so those rows show "Off" instead of an access picker.
+  const { isFeatureEnabled } = useModuleVisibility();
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
@@ -224,25 +228,39 @@ export function TeamSettingsSection() {
                     </button>
                   </div>
                   <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                    {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => (
-                      <div
-                        key={feature}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1"
-                      >
-                        <span className="text-xs">{fLabel}</span>
-                        <select
-                          className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                          onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
-                          value={member.permissions[feature] ?? "none"}
+                    {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
+                      const featureOn = isFeatureEnabled(feature);
+                      return (
+                        <div
+                          key={feature}
+                          className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1"
                         >
-                          {ACCESS_LEVELS.map((lvl) => (
-                            <option key={lvl} value={lvl}>
-                              {ACCESS_LABEL[lvl]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+                          <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
+                            {fLabel}
+                          </span>
+                          {featureOn ? (
+                            <select
+                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                              onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
+                              value={member.permissions[feature] ?? "none"}
+                            >
+                              {ACCESS_LEVELS.map((lvl) => (
+                                <option key={lvl} value={lvl}>
+                                  {ACCESS_LABEL[lvl]}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span
+                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
+                              title="This module is turned off for the whole office (Settings → Module Visibility)."
+                            >
+                              Off · office-wide
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -283,33 +301,47 @@ export function TeamSettingsSection() {
               </div>
               <p className="mt-3 text-xs font-semibold text-[var(--text-muted)]">Access</p>
               <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
-                {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => (
-                  <div
-                    key={feature}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1"
-                  >
-                    <span className="text-xs">{fLabel}</span>
-                    <select
-                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                      onChange={(e) => {
-                        const level = e.target.value as AccessLevel;
-                        setDraftPerms((cur) => {
-                          const next = { ...cur };
-                          if (level === "none") delete next[feature];
-                          else next[feature] = level;
-                          return next;
-                        });
-                      }}
-                      value={draftPerms[feature] ?? "none"}
+                {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
+                  const featureOn = isFeatureEnabled(feature);
+                  return (
+                    <div
+                      key={feature}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1"
                     >
-                      {ACCESS_LEVELS.map((lvl) => (
-                        <option key={lvl} value={lvl}>
-                          {ACCESS_LABEL[lvl]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+                      <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
+                        {fLabel}
+                      </span>
+                      {featureOn ? (
+                        <select
+                          className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                          onChange={(e) => {
+                            const level = e.target.value as AccessLevel;
+                            setDraftPerms((cur) => {
+                              const next = { ...cur };
+                              if (level === "none") delete next[feature];
+                              else next[feature] = level;
+                              return next;
+                            });
+                          }}
+                          value={draftPerms[feature] ?? "none"}
+                        >
+                          {ACCESS_LEVELS.map((lvl) => (
+                            <option key={lvl} value={lvl}>
+                              {ACCESS_LABEL[lvl]}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span
+                          className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
+                          title="This module is turned off for the whole office (Settings → Module Visibility)."
+                        >
+                          Off · office-wide
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <button

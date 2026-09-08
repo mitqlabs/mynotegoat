@@ -1,4 +1,5 @@
 import type { PortalFeature } from "@/lib/plan-access";
+import { isFeatureEnabled, type ModuleVisibility } from "@/lib/module-visibility";
 
 /**
  * Team permissions model.
@@ -60,6 +61,28 @@ export function canEdit(
   feature: PortalFeature,
 ): boolean {
   return accessLevelFor(perms, feature) === "edit";
+}
+
+/**
+ * The access a user ACTUALLY gets for a feature, applying the office's module
+ * visibility as a hard ceiling: a feature the OWNER has turned off is "none"
+ * for EVERYONE — owner and every member alike — no matter what a member's
+ * stored permission says. When the feature is on, the owner gets full "edit"
+ * and a member gets whatever the owner granted them (capped, never above).
+ *
+ * This is the single source of truth for "can this user reach X" and must be
+ * used everywhere access is gated, so turning a module off can never be
+ * bypassed by a leftover member grant.
+ */
+export function effectiveAccessLevel(
+  visibility: ModuleVisibility | null | undefined,
+  memberPerms: MemberPermissions | null | undefined,
+  isOwner: boolean,
+  feature: PortalFeature,
+): AccessLevel {
+  if (!isFeatureEnabled(visibility, feature)) return "none"; // office cap
+  if (isOwner) return "edit";
+  return accessLevelFor(memberPerms, feature);
 }
 
 export function normalizeAccessLevel(value: unknown): AccessLevel {
