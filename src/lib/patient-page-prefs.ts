@@ -14,6 +14,7 @@ export type PatientPagePanelKey =
   | "reExam"
   | "relatedCases"
   | "appointments"
+  | "treatmentPlan"
   | "diagnosis"
   | "letters"
   | "narrative"
@@ -25,6 +26,7 @@ export const patientPagePanelKeys: PatientPagePanelKey[] = [
   "reExam",
   "relatedCases",
   "appointments",
+  "treatmentPlan",
   "diagnosis",
   "letters",
   "narrative",
@@ -39,6 +41,7 @@ export const patientPagePanelLabels: Record<PatientPagePanelKey, string> = {
   reExam: "Case Flow & To-Do",
   relatedCases: "Related Cases",
   appointments: "Appointments / Encounters",
+  treatmentPlan: "Treatment Plan",
   diagnosis: "Diagnosis Codes",
   letters: "Letters",
   narrative: "Reports",
@@ -68,6 +71,7 @@ export function getDefaultPatientPagePrefs(): PatientPagePrefs {
       reExam: "show",
       relatedCases: "show",
       appointments: "show",
+      treatmentPlan: "show",
       diagnosis: "show",
       letters: "show",
       narrative: "show",

@@ -106,6 +106,7 @@ type SectionPanelKey =
   | "reExam"
   | "relatedCases"
   | "appointments"
+  | "treatmentPlan"
   | "diagnosis"
   | "letters"
   | "narrative"
@@ -1538,6 +1539,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       reExam: startOpen("reExam"),
       relatedCases: startOpen("relatedCases"),
       appointments: startOpen("appointments"),
+      treatmentPlan: startOpen("treatmentPlan"),
       diagnosis: startOpen("diagnosis"),
       letters: startOpen("letters"),
       narrative: startOpen("narrative"),
@@ -6657,7 +6659,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         )}
       </section>
       {/* ── Patient Files ──────────────────────────────────────────────── */}
-      <div className="order-5 xl:col-span-2">
+      <div className="order-5 xl:col-span-2" style={hiddenStyle("treatmentPlan")}>
         <TreatmentPlanSection
           patientId={patient.id}
           appointments={patientAppointmentRecords}
