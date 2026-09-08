@@ -75,6 +75,12 @@ export default function MigrateCasematePage() {
   const [fixBilledResult, setFixBilledResult] = useState("");
   const [fixingDates, setFixingDates] = useState(false);
   const [fixDatesResult, setFixDatesResult] = useState("");
+  // Paste-import of pre-mapped {patients, contacts} JSON (e.g. scraped live).
+  const [pasteAccount, setPasteAccount] = useState("");
+  const [pasteJson, setPasteJson] = useState("");
+  const [loadedPayload, setLoadedPayload] = useState("");
+  const [pasteBusy, setPasteBusy] = useState<"" | "preview" | "execute">("");
+  const [pasteMsg, setPasteMsg] = useState("");
 
   useEffect(() => {
     async function loadAccounts() {
@@ -254,6 +260,65 @@ export default function MigrateCasematePage() {
     [previewData, mappings, previews, accounts]
   );
 
+  // Paste-import: POST an already-mapped { patients, contacts } payload to the
+  // same migrate API (used for data scraped from the live Casemate app rather
+  // than a SQL dump). Preview counts new vs duplicate; Import inserts.
+  const handlePasteImport = useCallback(
+    async (mode: "preview" | "execute") => {
+      setPasteMsg("");
+      if (!pasteAccount) {
+        setPasteMsg("Pick the target account first.");
+        return;
+      }
+      const source = (loadedPayload || pasteJson).trim();
+      let payload: { patients?: unknown[]; contacts?: unknown[] };
+      try {
+        payload = JSON.parse(source);
+      } catch {
+        setPasteMsg("That isn't valid JSON. Paste or upload the { patients, contacts } object.");
+        return;
+      }
+      if (!Array.isArray(payload.patients)) {
+        setPasteMsg('JSON must have a "patients" array.');
+        return;
+      }
+      setPasteBusy(mode);
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch("/api/admin/migrate-casemate", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            workspaceId: `${pasteAccount}:main-office`,
+            patients: payload.patients,
+            contacts: Array.isArray(payload.contacts) ? payload.contacts : [],
+            mode,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setPasteMsg(`Error: ${data.error ?? res.statusText}`);
+        } else if (mode === "preview") {
+          setPasteMsg(
+            `Preview: ${data.newCount} new patients (${data.duplicateCount} duplicates skipped), ` +
+              `${data.newContactCount} new contacts (${data.duplicateContactCount} already there). ` +
+              `Workspace already has ${data.existingCount} patients.`,
+          );
+        } else {
+          setPasteMsg(
+            `Imported ${data.patientsInserted} patients (${data.patientsSkipped} skipped) and ` +
+              `${data.contactsInserted} contacts.` +
+              (data.errors?.length ? ` Errors: ${data.errors.join("; ")}` : ""),
+          );
+        }
+      } catch (err) {
+        setPasteMsg(`Error: ${err instanceof Error ? err.message : "Unknown"}`);
+      }
+      setPasteBusy("");
+    },
+    [pasteAccount, pasteJson, loadedPayload]
+  );
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -271,6 +336,92 @@ export default function MigrateCasematePage() {
           Back to Admin
         </a>
       </div>
+
+      {/* Paste pre-mapped JSON (for data scraped from the live Casemate app). */}
+      <section className="mb-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50/40 p-5">
+        <h3 className="text-lg font-semibold">Paste Pre-Mapped JSON</h3>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
+          For data pulled from the live Casemate app. Paste a{" "}
+          <code>{`{ "patients": [...], "contacts": [...] }`}</code> object, pick the target
+          account, Preview, then Import. Duplicates (same name + date of loss) are skipped.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <label className="text-sm font-semibold">
+            Target account:{" "}
+            <select
+              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm font-normal"
+              onChange={(e) => setPasteAccount(e.target.value)}
+              value={pasteAccount}
+            >
+              <option value="">Select…</option>
+              {accounts.map((a) => (
+                <option key={a.user_id} value={a.user_id}>
+                  {a.email}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-3 text-sm">
+          <span className="font-semibold">Or upload a .json file:</span>{" "}
+          <input
+            accept=".json,application/json"
+            className="text-sm"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                setLoadedPayload((ev.target?.result as string) ?? "");
+                setPasteJson("");
+                setPasteMsg(`Loaded ${file.name} (${Math.round(file.size / 1024)} KB). Ready to Preview.`);
+              };
+              reader.readAsText(file);
+            }}
+            type="file"
+          />
+          {loadedPayload && (
+            <span className="ml-2 text-xs font-semibold text-emerald-700">
+              file loaded ✓ ({Math.round(loadedPayload.length / 1024)} KB)
+            </span>
+          )}
+        </div>
+        {!loadedPayload && (
+          <textarea
+            className="mt-3 h-32 w-full rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 font-mono text-xs"
+            onChange={(e) => setPasteJson(e.target.value)}
+            placeholder='{"patients":[...],"contacts":[...]}  — or use the file upload above'
+            value={pasteJson}
+          />
+        )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-lg border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+            disabled={!!pasteBusy || !(loadedPayload || pasteJson).trim()}
+            onClick={() => handlePasteImport("preview")}
+            type="button"
+          >
+            {pasteBusy === "preview" ? "Previewing…" : "Preview"}
+          </button>
+          <button
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            disabled={!!pasteBusy || !(loadedPayload || pasteJson).trim() || !pasteAccount}
+            onClick={() => {
+              if (window.confirm("Import these patients + contacts into the selected account?")) {
+                void handlePasteImport("execute");
+              }
+            }}
+            type="button"
+          >
+            {pasteBusy === "execute" ? "Importing…" : "Import"}
+          </button>
+        </div>
+        {pasteMsg && (
+          <p className="mt-3 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold">
+            {pasteMsg}
+          </p>
+        )}
+      </section>
 
       {/* Step 1: Upload SQL file */}
       <section className="rounded-2xl border border-[var(--line-soft)] bg-white p-5">
