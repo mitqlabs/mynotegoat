@@ -36,6 +36,11 @@ export function TeamSettingsSection() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notReady, setNotReady] = useState(false);
+  // Inline label (role/name) editing per member.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  // Which members have their permission grid expanded (default collapsed).
+  const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
 
   // Add-member form.
   const [showAdd, setShowAdd] = useState(false);
@@ -142,6 +147,25 @@ export function TeamSettingsSection() {
     void loadMembers();
   };
 
+  const saveLabel = async (member: Member) => {
+    const next = editLabel.trim();
+    setEditingId(null);
+    if (!next || next === member.label) return;
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setMembers((cur) =>
+      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, label: next } : m)),
+    );
+    const { error: uErr } = await supabase
+      .from("workspace_members")
+      .update({ label: next, updated_at: new Date().toISOString() })
+      .eq("member_user_id", member.member_user_id);
+    if (uErr) {
+      setError(uErr.message);
+      void loadMembers();
+    }
+  };
+
   const setMemberAccess = async (member: Member, feature: PortalFeature, level: AccessLevel) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
@@ -214,19 +238,81 @@ export function TeamSettingsSection() {
                   className="rounded-xl border border-[var(--line-soft)] bg-white p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold">{member.label}</p>
+                    <div className="min-w-0">
+                      {editingId === member.member_user_id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-sm"
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveLabel(member);
+                              else if (e.key === "Escape") setEditingId(null);
+                            }}
+                            placeholder="Role / name (e.g. Front Desk)"
+                            value={editLabel}
+                          />
+                          <button
+                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]"
+                            onClick={() => void saveLabel(member)}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold text-[var(--text-muted)]"
+                            onClick={() => setEditingId(null)}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="flex items-center gap-1.5 text-sm font-semibold">
+                          {member.label}
+                          <button
+                            className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+                            onClick={() => {
+                              setEditLabel(member.label);
+                              setEditingId(member.member_user_id);
+                            }}
+                            title="Rename this member's role/name"
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                        </p>
+                      )}
                       <p className="text-xs text-[var(--text-muted)]">{member.email}</p>
                     </div>
-                    <button
-                      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
-                      disabled={busy}
-                      onClick={() => removeMember(member)}
-                      type="button"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                        onClick={() =>
+                          setExpandedMembers((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(member.member_user_id)) next.delete(member.member_user_id);
+                            else next.add(member.member_user_id);
+                            return next;
+                          })
+                        }
+                        type="button"
+                      >
+                        {expandedMembers.has(member.member_user_id)
+                          ? "▾ Access"
+                          : `▸ Access (${Object.keys(member.permissions).length})`}
+                      </button>
+                      <button
+                        className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
+                        disabled={busy}
+                        onClick={() => removeMember(member)}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
+                  {expandedMembers.has(member.member_user_id) && (
                   <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
                     {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
                       const featureOn = isFeatureEnabled(feature);
@@ -262,6 +348,7 @@ export function TeamSettingsSection() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               ))}
             </div>
