@@ -26,6 +26,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 
 const WORKSPACE_VALIDATION_TTL_MS = 5000;
 
@@ -87,11 +88,20 @@ export async function resolveValidatedWorkspaceId(
       throw new Error(`${logPrefix} ${source}: no authenticated user`);
     }
     const prefix = workspaceId.split(":")[0];
-    if (prefix !== userId) {
+    // The prefix is the workspace OWNER's uid. It matches auth.uid for an owner;
+    // for a team MEMBER it's their owner's uid, and the member is allowed to
+    // write there (server-side RLS confirms via can_access_owner). Allow either.
+    const membership = getCurrentMembershipSync();
+    const isOwnWorkspace = prefix === userId;
+    const isMemberOfPrefix =
+      membership?.isMember === true &&
+      membership.userId === userId &&
+      membership.ownerId === prefix;
+    if (!isOwnWorkspace && !isMemberOfPrefix) {
       throw new Error(
         `${logPrefix} ${source}: workspace/user mismatch — ` +
-          `workspace_id prefix="${prefix}" does not match auth.uid="${userId}". ` +
-          `Refusing to write (would be silently rejected by RLS).`,
+          `workspace_id prefix="${prefix}" does not match auth.uid="${userId}" ` +
+          `and no membership grants access. Refusing to write (RLS would reject).`,
       );
     }
     cachedValidation = {

@@ -17,6 +17,11 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { resolveAuthAccessState } from "@/lib/auth-access";
 import type { PlanTier } from "@/lib/plan-access";
 import { PlanTierProvider } from "@/lib/plan-context";
+import {
+  resolveWorkspaceMembership,
+  type WorkspaceMembership,
+} from "@/lib/workspace-membership";
+import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -95,6 +100,7 @@ export default function PortalLayout({
   const [showSavedFlash, setShowSavedFlash] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapErrorDetail, setBootstrapErrorDetail] = useState<string | null>(null);
+  const [membership, setMembership] = useState<WorkspaceMembership | null>(null);
   const [syncBlocked, setSyncBlocked] = useState<{ localSize: number; remoteSize: number } | null>(null);
 
   useEffect(() => {
@@ -135,7 +141,13 @@ export default function PortalLayout({
         setPlanTier(access.planTier);
       }
 
-      const workspaceId = buildWorkspaceIdForUser(access.userId);
+      // Team members work INSIDE their owner's workspace, not their own. Resolve
+      // membership first so we point localStorage + cloud at the owner's data.
+      const resolvedMembership = await resolveWorkspaceMembership(access.userId);
+      if (!active) return;
+      setMembership(resolvedMembership);
+
+      const workspaceId = buildWorkspaceIdForUser(resolvedMembership.ownerId);
 
       // CRITICAL: Before doing ANYTHING else, make sure localStorage belongs
       // to THIS user. If the previous workspace pointer doesn't match (or is
@@ -402,6 +414,7 @@ export default function PortalLayout({
 
   return (
     <PlanTierProvider planTier={planTier}>
+      <WorkspaceAccessProvider membership={membership}>
       <AppShell planTier={planTier}>
         {/* Sync status indicator.
             Priority: error > syncing > saved-flash. An "error" state is
@@ -507,6 +520,7 @@ export default function PortalLayout({
         <GlobalRecordRealtime />
         {children}
       </AppShell>
+      </WorkspaceAccessProvider>
     </PlanTierProvider>
   );
 }

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { wipeLocalWorkspaceForSignOut } from "@/lib/cloud-state";
 import { getVisiblePortalNavItems, type PlanTier } from "@/lib/plan-access";
-import { useModuleVisibility } from "@/hooks/use-module-visibility";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -93,10 +93,13 @@ export function AppShell({
     if (typeof window === "undefined") return false;
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
   });
-  const { isFeatureEnabled } = useModuleVisibility();
+  // canView() = the office module cap AND (for a member) their granted access.
+  // Owners/office-admins see everything the office has enabled; a member only
+  // sees sections they were granted, and never Settings.
+  const { canView } = useWorkspaceAccess();
   const navItems = useMemo(
-    () => getVisiblePortalNavItems(planTier).filter((item) => isFeatureEnabled(item.feature)),
-    [planTier, isFeatureEnabled],
+    () => getVisiblePortalNavItems(planTier).filter((item) => canView(item.feature)),
+    [planTier, canView],
   );
 
   const toggleSidebar = useCallback(() => {
