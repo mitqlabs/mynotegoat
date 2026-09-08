@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import {
-  ACCESS_LEVELS,
+  accessLevelsForFeature,
   PERMISSIONABLE_FEATURES,
   normalizePermissions,
   type AccessLevel,
@@ -314,7 +314,7 @@ export function TeamSettingsSection() {
                   </div>
                   {expandedMembers.has(member.member_user_id) && (
                   <div className="mt-2 grid gap-1.5">
-                    {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
+                    {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
                       const featureOn = isFeatureEnabled(feature);
                       return (
                         <div
@@ -330,7 +330,7 @@ export function TeamSettingsSection() {
                               onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
                               value={member.permissions[feature] ?? "none"}
                             >
-                              {ACCESS_LEVELS.map((lvl) => (
+                              {accessLevelsForFeature(viewOnly).map((lvl) => (
                                 <option key={lvl} value={lvl}>
                                   {ACCESS_LABEL[lvl]}
                                 </option>
@@ -388,7 +388,7 @@ export function TeamSettingsSection() {
               </div>
               <p className="mt-3 text-xs font-semibold text-[var(--text-muted)]">Access</p>
               <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
-                {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
+                {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
                   const featureOn = isFeatureEnabled(feature);
                   return (
                     <div
@@ -412,7 +412,7 @@ export function TeamSettingsSection() {
                           }}
                           value={draftPerms[feature] ?? "none"}
                         >
-                          {ACCESS_LEVELS.map((lvl) => (
+                          {accessLevelsForFeature(viewOnly).map((lvl) => (
                             <option key={lvl} value={lvl}>
                               {ACCESS_LABEL[lvl]}
                             </option>

@@ -23,9 +23,14 @@ export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>>;
  * Sections a member can be granted. "settings" is intentionally excluded
  * — office/system configuration and team management stay owner-only.
  */
-export const PERMISSIONABLE_FEATURES: { feature: PortalFeature; label: string }[] = [
+export const PERMISSIONABLE_FEATURES: {
+  feature: PortalFeature;
+  label: string;
+  /** Read-only section (nothing to edit) — offer only None / View. */
+  viewOnly?: boolean;
+}[] = [
   { feature: "patients", label: "Patients" },
-  { feature: "statistics", label: "Statistics" },
+  { feature: "statistics", label: "Statistics", viewOnly: true },
   { feature: "contacts", label: "Contacts" },
   { feature: "appointments", label: "Schedule" },
   { feature: "encounters", label: "Encounters" },
@@ -35,6 +40,11 @@ export const PERMISSIONABLE_FEATURES: { feature: PortalFeature; label: string }[
   { feature: "timers", label: "Timers" },
   { feature: "marketing", label: "Marketing" },
 ];
+
+/** Access levels offered for a feature — read-only sections drop "edit". */
+export function accessLevelsForFeature(viewOnly?: boolean): AccessLevel[] {
+  return viewOnly ? ["none", "view"] : ACCESS_LEVELS;
+}
 
 export const ACCESS_LEVELS: AccessLevel[] = ["none", "view", "edit"];
 
