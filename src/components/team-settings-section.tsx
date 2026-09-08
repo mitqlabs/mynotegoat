@@ -228,14 +228,14 @@ export function TeamSettingsSection() {
           {loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
-            <div className="space-y-3">
+            <div className="grid items-start gap-3 sm:grid-cols-2">
               {members.length === 0 && !notReady && (
-                <p className="text-sm text-[var(--text-muted)]">No team members yet.</p>
+                <p className="text-sm text-[var(--text-muted)] sm:col-span-2">No team members yet.</p>
               )}
               {members.map((member) => (
                 <div
                   key={member.member_user_id}
-                  className="rounded-xl border border-[var(--line-soft)] bg-white p-3"
+                  className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -313,7 +313,7 @@ export function TeamSettingsSection() {
                     </div>
                   </div>
                   {expandedMembers.has(member.member_user_id) && (
-                  <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                  <div className="mt-2 grid gap-1.5">
                     {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel }) => {
                       const featureOn = isFeatureEnabled(feature);
                       return (
