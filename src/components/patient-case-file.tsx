@@ -3882,14 +3882,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setEncounterMessage(`Appointment on ${dateLabel} at ${timeLabel} deleted.`);
   };
 
-  const commitQuickTimeEdit = (appointment: ScheduleAppointmentRecord) => {
+  // Open the time editor on the next appointment row (used to "run through" a
+  // series of time changes with Enter — type, Enter, type, Enter …).
+  const advanceToNextTimeEdit = (currentAppointmentId: string) => {
+    const idx = appointmentRows.findIndex(
+      (r) => r.appointment?.id === currentAppointmentId,
+    );
+    if (idx < 0) return;
+    const next = appointmentRows.slice(idx + 1).find((r) => r.appointment);
+    if (next?.appointment) beginQuickTimeEdit(next.appointment);
+    else cancelQuickTimeEdit();
+  };
+
+  const commitQuickTimeEdit = (
+    appointment: ScheduleAppointmentRecord,
+    advance = false,
+  ) => {
     // Run the user's draft through the flexible parser so input like
     // "4:45pm", "445p", or "16:45" all land as the same canonical
     // 24h "HH:MM" we store. Invalid drafts just dismiss the editor
     // without overwriting the existing time.
     const parsed = parseTimeFlexible(quickTimeDraft);
     if (!parsed || parsed === appointment.startTime) {
-      cancelQuickTimeEdit();
+      if (advance) advanceToNextTimeEdit(appointment.id);
+      else cancelQuickTimeEdit();
       return;
     }
     updateAppointment(appointment.id, (current) => ({
@@ -3899,7 +3915,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setEncounterMessage(
       `Time updated to ${formatTimeLabel(parsed)} on ${toUsDate(appointment.date)}.`,
     );
-    cancelQuickTimeEdit();
+    if (advance) advanceToNextTimeEdit(appointment.id);
+    else cancelQuickTimeEdit();
   };
 
   const rescheduleTargetAppointment = useMemo(
@@ -5652,9 +5669,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr className="bg-[var(--bg-soft)] text-left">
-                        <th className="px-2 py-2">Date</th>
+                        {/* Fixed widths on Date/Time so the inline editors
+                            (input + ✓/✕) don't grow the column and shove the
+                            rest of the row sideways while you run through edits. */}
+                        <th className="w-[13rem] px-2 py-2">Date</th>
                         <th className="px-2 py-2">Day</th>
-                        <th className="px-2 py-2">Time</th>
+                        <th className="w-[10rem] px-2 py-2">Time</th>
                         <th className="px-2 py-2">Type</th>
                         <th className="px-2 py-2">Status</th>
                         <th className="px-2 py-2">Encounter</th>
@@ -5683,7 +5703,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         })();
                         return (
                           <tr key={row.rowId} className="border-t border-[var(--line-soft)]">
-                            <td className="px-2 py-2 tabular-nums">
+                            <td className="w-[13rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickDateEditId === appointment.id ? (
                                   <span className="inline-flex items-center gap-1">
@@ -5735,7 +5755,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="px-2 py-2 text-xs text-[var(--text-muted)]">
                               {dayLabel || <span>—</span>}
                             </td>
-                            <td className="px-2 py-2 tabular-nums">
+                            <td className="w-[10rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickTimeEditId === appointment.id ? (
                                   <span className="inline-flex items-center gap-1">
@@ -5753,7 +5773,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                       onChange={(event) => setQuickTimeDraft(event.target.value)}
                                       onKeyDown={(event) => {
                                         if (event.key === "Enter") {
-                                          commitQuickTimeEdit(appointment);
+                                          // Save and jump to the next row's time,
+                                          // so you can run through them quickly.
+                                          commitQuickTimeEdit(appointment, true);
                                         } else if (event.key === "Escape") {
                                           cancelQuickTimeEdit();
                                         }
