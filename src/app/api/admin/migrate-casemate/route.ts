@@ -13,8 +13,34 @@ import { createClient } from "@supabase/supabase-js";
  * Only callable by admins.
  */
 
+// Order-independent, punctuation-insensitive name key: "Gilstrap, Billy",
+// "Billy Gilstrap", and "gilstrap  billy" all collapse to "billy gilstrap".
+function normName(name: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+// Canonical date key (YYYYMMDD) parsing both US MM/DD/YYYY and ISO YYYY-MM-DD
+// (and M/D/YY), so "08/08/2026" and "2026-08-08" match.
+function normDate(d: string): string {
+  const s = (d || "").trim();
+  if (!s) return "";
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}${m[2].padStart(2, "0")}${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    let y = m[3];
+    if (y.length === 2) y = `20${y}`;
+    return `${y}${m[1].padStart(2, "0")}${m[2].padStart(2, "0")}`;
+  }
+  return s.toLowerCase();
+}
 function dedupeKey(name: string, dateOfLoss: string): string {
-  return `${(name || "").trim().toLowerCase()}||${(dateOfLoss || "").trim()}`;
+  return `${normName(name)}||${normDate(dateOfLoss)}`;
 }
 
 async function verifyAdmin(request: Request) {
@@ -124,6 +150,20 @@ export async function POST(request: Request) {
 
     // ---- PREVIEW MODE ----
     if (mode === "preview") {
+      // Diagnostic samples so a 0-duplicate result can be checked for a
+      // name/date format mismatch between existing rows and incoming data.
+      const sampleExisting = (existingRows ?? []).slice(0, 5).map(
+        (r: { full_name: string; date_of_loss: string }) => ({
+          full_name: r.full_name,
+          date_of_loss: r.date_of_loss,
+          key: dedupeKey(r.full_name, r.date_of_loss),
+        }),
+      );
+      const sampleIncoming = incoming.slice(0, 5).map((p: Record<string, unknown>) => ({
+        full_name: (p.full_name as string) ?? "",
+        date_of_loss: (p.date_of_loss as string) ?? "",
+        key: dedupeKey((p.full_name as string) ?? "", (p.date_of_loss as string) ?? ""),
+      }));
       return NextResponse.json({
         newCount: newPatients.length,
         duplicateCount: duplicates.length,
@@ -132,6 +172,8 @@ export async function POST(request: Request) {
         duplicateContactCount: duplicateContacts.length,
         existingCount: existingRows?.length ?? 0,
         existingContactCount: existingContacts.length,
+        sampleExisting,
+        sampleIncoming,
       });
     }
 

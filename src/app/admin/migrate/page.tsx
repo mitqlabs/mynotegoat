@@ -299,10 +299,19 @@ export default function MigrateCasematePage() {
         if (!res.ok) {
           setPasteMsg(`Error: ${data.error ?? res.statusText}`);
         } else if (mode === "preview") {
+          const fmt = (arr: { full_name: string; date_of_loss: string; key: string }[]) =>
+            (arr ?? [])
+              .map((r) => `    "${r.full_name}" | ${r.date_of_loss} → ${r.key}`)
+              .join("\n");
           setPasteMsg(
             `Preview: ${data.newCount} new patients (${data.duplicateCount} duplicates skipped), ` +
               `${data.newContactCount} new contacts (${data.duplicateContactCount} already there). ` +
-              `Workspace already has ${data.existingCount} patients.`,
+              `Workspace already has ${data.existingCount} patients.` +
+              (data.duplicateCount === 0 && data.existingCount > 0
+                ? `\n\n⚠ 0 duplicates but ${data.existingCount} exist — check the keys match:\n` +
+                  `  EXISTING sample:\n${fmt(data.sampleExisting)}\n` +
+                  `  INCOMING sample:\n${fmt(data.sampleIncoming)}`
+                : ""),
           );
         } else {
           setPasteMsg(
@@ -417,9 +426,9 @@ export default function MigrateCasematePage() {
           </button>
         </div>
         {pasteMsg && (
-          <p className="mt-3 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold">
+          <pre className="mt-3 whitespace-pre-wrap rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-xs font-semibold">
             {pasteMsg}
-          </p>
+          </pre>
         )}
       </section>
 
