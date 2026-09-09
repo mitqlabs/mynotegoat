@@ -3646,6 +3646,9 @@ export default function SettingsPage() {
         onToggle={() => toggleSection("office")}
         title="Office Information"
       >
+        <div className="mb-4">
+          <OfficeLocationsDoctorsSection />
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Office Name</span>
@@ -3712,8 +3715,6 @@ export default function SettingsPage() {
               value={officeSettings.address}
             />
           </div>
-
-          <OfficeLocationsDoctorsSection />
 
           {/* 3-up row: Logo Preview / Delete Password / Change Account
               Password. They stack to 1-col on small screens and to
