@@ -13,6 +13,7 @@ import {
   type OfficeLocation,
 } from "@/lib/office-settings";
 import { dualWriteKvOrThrow } from "@/lib/kv-cloud";
+import { markLocalWrite } from "@/lib/local-sync";
 import {
   getDefaultScheduleSettings,
   loadScheduleSettings,
@@ -52,6 +53,7 @@ export function OfficeLocationsDoctorsSection() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       try {
+        markLocalWrite(STORAGE_KEY_OFFICE_SETTINGS);
         await dualWriteKvOrThrow(STORAGE_KEY_OFFICE_SETTINGS, "tasks", officeSettings);
         if (!cancelled) setSaveState("saved");
       } catch {

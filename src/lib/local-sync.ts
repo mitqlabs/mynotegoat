@@ -27,6 +27,22 @@ export function onLocalChange(key: string, callback: Listener): () => void {
   };
 }
 
+// ── Recent-local-write guard ────────────────────────────────────────
+// When a key is being actively edited locally, incoming cloud realtime
+// echoes (which can arrive out of order and stale) must NOT overwrite it.
+// Writers call markLocalWrite(key); the realtime handler and sync hooks
+// check wasRecentlyWrittenLocally(key) before applying a foreign change.
+const recentWrites = new Map<string, number>();
+
+export function markLocalWrite(key: string): void {
+  recentWrites.set(key, Date.now());
+}
+
+export function wasRecentlyWrittenLocally(key: string, windowMs = 6000): boolean {
+  const at = recentWrites.get(key);
+  return at !== undefined && Date.now() - at < windowMs;
+}
+
 /** Notify all subscribers (except the caller) that a key has changed. */
 export function notifyChange(key: string): void {
   const set = listeners.get(key);

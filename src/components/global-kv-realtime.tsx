@@ -57,7 +57,7 @@
 
 import { useEffect } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { notifyChange } from "@/lib/local-sync";
+import { notifyChange, wasRecentlyWrittenLocally } from "@/lib/local-sync";
 
 export function GlobalKvRealtime() {
   useEffect(() => {
@@ -84,6 +84,11 @@ export function GlobalKvRealtime() {
             const oldRow = payload.old as { key?: string } | undefined;
             const key = newRow?.key ?? oldRow?.key;
             if (!key || !key.startsWith("casemate.")) return;
+
+            // Don't let a (possibly stale, out-of-order) echo clobber a key
+            // the user is actively editing on this device — that's how a
+            // just-added office would disappear.
+            if (wasRecentlyWrittenLocally(key)) return;
 
             try {
               if (payload.eventType === "DELETE") {
