@@ -9,6 +9,8 @@ import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
+import { useTasks } from "@/hooks/use-tasks";
+import type { TaskPriority } from "@/lib/tasks";
 import { markMessagesSeen } from "@/lib/messages-read";
 
 const GENERAL_KEY = "__general__";
@@ -102,6 +104,14 @@ export function MessagesWorkspace() {
   const [replyingTo, setReplyingTo] = useState<
     { id: string; author: string; excerpt: string; patientId: string; patientName: string } | null
   >(null);
+
+  // "Add to To Do" — an inline task form opened from a message.
+  const { addTask } = useTasks();
+  const [todoForId, setTodoForId] = useState<string | null>(null);
+  const [todoTitle, setTodoTitle] = useState("");
+  const [todoAssignee, setTodoAssignee] = useState("");
+  const [todoPriority, setTodoPriority] = useState<TaskPriority>("Medium");
+  const [todoDone, setTodoDone] = useState<string | null>(null);
 
   // Inline @mention autocomplete.
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -239,6 +249,30 @@ export function MessagesWorkspace() {
       setMentionQuery(null);
       setReplyingTo(null);
       // Keep the tagged case so the user can post several notes to one case.
+    }
+  };
+
+  const openTodo = (m: WorkspaceMessage) => {
+    setTodoForId(m.id);
+    setTodoTitle(m.body.length > 140 ? m.body.slice(0, 140) : m.body);
+    setTodoAssignee(m.mentions[0]?.label ?? "");
+    setTodoPriority("Medium");
+  };
+
+  const submitTodo = (m: WorkspaceMessage) => {
+    const title = todoTitle.trim();
+    if (!title) return;
+    const res = addTask({
+      title,
+      priority: todoPriority,
+      patientId: m.patientId || undefined,
+      patientName: m.patientName || undefined,
+      assignee: todoAssignee.trim() || undefined,
+    });
+    if (res.added) {
+      setTodoForId(null);
+      setTodoDone(m.id);
+      window.setTimeout(() => setTodoDone((cur) => (cur === m.id ? null : cur)), 2500);
     }
   };
 
@@ -596,6 +630,15 @@ export function MessagesWorkspace() {
                                       Reply
                                     </button>
                                   )}
+                                  {canPost && (
+                                    <button
+                                      className="text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:underline"
+                                      onClick={() => (todoForId === m.id ? setTodoForId(null) : openTodo(m))}
+                                      type="button"
+                                    >
+                                      + To Do
+                                    </button>
+                                  )}
                                   {canDelete && (
                                     <span className="ml-auto">
                                       {pendingDelete === m.id ? (
@@ -646,6 +689,66 @@ export function MessagesWorkspace() {
                                         @{mn.label}
                                       </span>
                                     ))}
+                                  </div>
+                                )}
+                                {todoDone === m.id && (
+                                  <p className="mt-1.5 text-xs font-semibold text-emerald-700">
+                                    ✓ Added to To Do{m.patientName ? ` for ${m.patientName}` : ""}
+                                  </p>
+                                )}
+                                {todoForId === m.id && (
+                                  <div className="mt-2 grid gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5">
+                                    <input
+                                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                                      onChange={(e) => setTodoTitle(e.target.value)}
+                                      placeholder="Task…"
+                                      value={todoTitle}
+                                    />
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <select
+                                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                                        onChange={(e) => setTodoAssignee(e.target.value)}
+                                        value={todoAssignee}
+                                      >
+                                        <option value="">Assign to… (optional)</option>
+                                        {people.map((p) => (
+                                          <option key={p.userId} value={p.label}>
+                                            {p.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                                        onChange={(e) => setTodoPriority(e.target.value as TaskPriority)}
+                                        value={todoPriority}
+                                      >
+                                        {(["Low", "Medium", "High", "Urgent"] as TaskPriority[]).map((p) => (
+                                          <option key={p} value={p}>
+                                            {p}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        className="rounded-md bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+                                        disabled={!todoTitle.trim()}
+                                        onClick={() => submitTodo(m)}
+                                        type="button"
+                                      >
+                                        Add to To Do
+                                      </button>
+                                      <button
+                                        className="rounded-md border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
+                                        onClick={() => setTodoForId(null)}
+                                        type="button"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                    {m.patientName && (
+                                      <span className="text-[11px] text-[var(--text-muted)]">
+                                        Linked to case: {m.patientName}
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>

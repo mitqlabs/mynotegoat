@@ -1997,7 +1997,7 @@ export default function PatientsPage() {
                         ) : (
                           <>
                             <p className={`font-semibold ${task.done ? "text-[var(--text-muted)] line-through" : ""}`}>{task.title}</p>
-                            <p className="text-xs text-[var(--text-muted)]">Created: {new Date(task.createdAt).toLocaleDateString("en-US")}{task.dueDate ? ` • Due: ${formatUsDateFromIso(task.dueDate)}` : ""}{task.patientName ? ` • Patient: ${task.patientName}` : ""}</p>
+                            <p className="text-xs text-[var(--text-muted)]">Created: {new Date(task.createdAt).toLocaleDateString("en-US")}{task.dueDate ? ` • Due: ${formatUsDateFromIso(task.dueDate)}` : ""}{task.patientName ? ` • Patient: ${task.patientName}` : ""}{task.assignee ? ` • For: ${task.assignee}` : ""}</p>
                           </>
                         )}
                         {editingTaskId === task.id && editTaskError ? <p className="text-xs font-semibold text-[#b43b34]">{editTaskError}</p> : null}

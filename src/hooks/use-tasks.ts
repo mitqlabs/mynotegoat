@@ -15,6 +15,7 @@ type AddTaskDraft = {
   dueDate?: string;
   patientId?: string;
   patientName?: string;
+  assignee?: string;
 };
 
 type AddTaskResult =
@@ -54,6 +55,7 @@ export function useTasks() {
       const now = new Date().toISOString();
       const patientId = draft.patientId?.trim() || undefined;
       const patientName = draft.patientName?.trim() || undefined;
+      const assignee = draft.assignee?.trim() || undefined;
       const next: TaskRecord = {
         id: createTaskId(),
         title,
@@ -64,6 +66,7 @@ export function useTasks() {
         updatedAt: now,
         patientId,
         patientName,
+        assignee,
       };
       updateTasks((current) => [next, ...current]);
       return { added: true, task: next };

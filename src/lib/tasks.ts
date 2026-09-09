@@ -10,6 +10,8 @@ export interface TaskRecord {
   updatedAt: string; // ISO timestamp
   patientId?: string;
   patientName?: string;
+  /** Who the task is assigned to (a person's label). Optional. */
+  assignee?: string;
 }
 
 const STORAGE_KEY = "casemate.tasks.v1";
@@ -71,6 +73,7 @@ function normalizeTask(value: unknown): TaskRecord | null {
   const updatedAt = normalizeIsoTimestamp(row.updatedAt) || createdAt;
   const patientId = normalizeText(row.patientId);
   const patientName = normalizeText(row.patientName);
+  const assignee = normalizeText(row.assignee);
 
   if (!id || !title) {
     return null;
@@ -86,6 +89,7 @@ function normalizeTask(value: unknown): TaskRecord | null {
     updatedAt,
     patientId: patientId || undefined,
     patientName: patientName || undefined,
+    assignee: assignee || undefined,
   };
 }
 
