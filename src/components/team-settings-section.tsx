@@ -81,7 +81,9 @@ export function TeamSettingsSection() {
   const [notReady, setNotReady] = useState(false);
   // Inline label (role/name) editing per member.
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState("");
+  const [editFirst, setEditFirst] = useState("");
+  const [editLast, setEditLast] = useState("");
+  const [editRole, setEditRole] = useState("");
   // Which members have their permission grid expanded (default collapsed).
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
   // Drag-to-reorder.
@@ -231,20 +233,41 @@ export function TeamSettingsSection() {
     void loadMembers();
   };
 
-  const saveLabel = async (member: Member) => {
-    const next = editLabel.trim();
+  const beginEditMember = (member: Member) => {
+    // Prefill from stored parts; fall back to splitting the display name.
+    const p = member.permissions;
+    const nameParts = member.label.trim().split(/\s+/);
+    setEditFirst(p.firstName ?? nameParts[0] ?? "");
+    setEditLast(p.lastName ?? nameParts.slice(1).join(" ") ?? "");
+    setEditRole(p.role ?? "");
+    setEditingId(member.member_user_id);
+  };
+
+  const saveMemberIdentity = async (member: Member) => {
+    const first = editFirst.trim();
+    const last = editLast.trim();
+    const role = editRole.trim();
     setEditingId(null);
-    if (!next || next === member.label) return;
+    const label = `${first} ${last}`.trim() || role || member.label;
+    const nextPerms: MemberPermissions = { ...member.permissions };
+    if (first) nextPerms.firstName = first;
+    else delete nextPerms.firstName;
+    if (last) nextPerms.lastName = last;
+    else delete nextPerms.lastName;
+    if (role) nextPerms.role = role;
+    else delete nextPerms.role;
+
+    setMembers((cur) =>
+      cur.map((m) =>
+        m.member_user_id === member.member_user_id ? { ...m, label, permissions: nextPerms } : m,
+      ),
+    );
+    if (isDoctor(member.member_user_id)) setDoctor(member.member_user_id, label, true);
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
-    setMembers((cur) =>
-      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, label: next } : m)),
-    );
-    // Keep the doctor roster name in sync if this member is a doctor.
-    if (isDoctor(member.member_user_id)) setDoctor(member.member_user_id, next, true);
     const { error: uErr } = await supabase
       .from("workspace_members")
-      .update({ label: next, updated_at: new Date().toISOString() })
+      .update({ label, permissions: nextPerms, updated_at: new Date().toISOString() })
       .eq("member_user_id", member.member_user_id);
     if (uErr) {
       setError(uErr.message);
@@ -456,21 +479,41 @@ export function TeamSettingsSection() {
                       </span>
                       <div className="min-w-0">
                       {editingId === member.member_user_id ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <input
                             autoFocus
-                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-sm"
-                            onChange={(e) => setEditLabel(e.target.value)}
+                            className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-sm"
+                            onChange={(e) => setEditFirst(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") void saveLabel(member);
+                              if (e.key === "Enter") void saveMemberIdentity(member);
                               else if (e.key === "Escape") setEditingId(null);
                             }}
-                            placeholder="Full name"
-                            value={editLabel}
+                            placeholder="First"
+                            value={editFirst}
+                          />
+                          <input
+                            className="w-24 rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-sm"
+                            onChange={(e) => setEditLast(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveMemberIdentity(member);
+                              else if (e.key === "Escape") setEditingId(null);
+                            }}
+                            placeholder="Last"
+                            value={editLast}
+                          />
+                          <input
+                            className="w-28 rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-sm"
+                            onChange={(e) => setEditRole(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveMemberIdentity(member);
+                              else if (e.key === "Escape") setEditingId(null);
+                            }}
+                            placeholder="Role"
+                            value={editRole}
                           />
                           <button
                             className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]"
-                            onClick={() => void saveLabel(member)}
+                            onClick={() => void saveMemberIdentity(member)}
                             type="button"
                           >
                             Save
@@ -495,11 +538,8 @@ export function TeamSettingsSection() {
                           )}
                           <button
                             className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
-                            onClick={() => {
-                              setEditLabel(member.label);
-                              setEditingId(member.member_user_id);
-                            }}
-                            title="Edit this member's name"
+                            onClick={() => beginEditMember(member)}
+                            title="Edit name & role"
                             type="button"
                           >
                             Edit
@@ -717,33 +757,35 @@ export function TeamSettingsSection() {
                     value={password}
                   />
                 </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">First name</span>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Jane"
-                    value={firstName}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Last name</span>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Smith"
-                    value={lastName}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Role</span>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                    onChange={(e) => setRole(e.target.value)}
-                    placeholder="e.g. Front Desk"
-                    value={role}
-                  />
-                </label>
+                <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">
+                  <label className="grid gap-1">
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">First name</span>
+                    <input
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Jane"
+                      value={firstName}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">Last name</span>
+                    <input
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Smith"
+                      value={lastName}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">Role</span>
+                    <input
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                      onChange={(e) => setRole(e.target.value)}
+                      placeholder="e.g. Front Desk"
+                      value={role}
+                    />
+                  </label>
+                </div>
               </div>
               <p className="mt-3 text-xs font-semibold text-[var(--text-muted)]">Access</p>
               <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
