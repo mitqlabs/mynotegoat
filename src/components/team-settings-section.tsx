@@ -286,16 +286,24 @@ export function TeamSettingsSection() {
   // ── Doctor designation (stored in office.doctors, single source) ──
   const officeDoctors = officeSettings.doctors ?? [];
   const isDoctor = (userId: string) => officeDoctors.some((d) => d.memberUserId === userId);
+  // A doctor's roster name is shown as "Dr. <name>".
+  const doctorDisplayName = (name: string) => {
+    const n = (name || "").trim();
+    return !n ? "Dr." : /^dr\.?\s/i.test(n) ? n : `Dr. ${n}`;
+  };
   const setDoctor = (userId: string, name: string, on: boolean) => {
-    const cur = officeSettings.doctors ?? [];
-    if (on) {
-      const next = cur.some((d) => d.memberUserId === userId)
-        ? cur.map((d) => (d.memberUserId === userId ? { ...d, name } : d))
-        : [...cur, { id: `doc-${Date.now()}-${Math.floor(Math.random() * 100000)}`, name, memberUserId: userId }];
-      updateOfficeSettings({ doctors: next });
-    } else {
-      updateOfficeSettings({ doctors: cur.filter((d) => d.memberUserId !== userId) });
-    }
+    const display = doctorDisplayName(name);
+    // Functional update — never clobber concurrent doctor edits with a stale copy.
+    updateOfficeSettings((cur) => {
+      const list = cur.doctors ?? [];
+      if (on) {
+        const next = list.some((d) => d.memberUserId === userId)
+          ? list.map((d) => (d.memberUserId === userId ? { ...d, name: display } : d))
+          : [...list, { id: `doc-${Date.now()}-${Math.floor(Math.random() * 100000)}`, name: display, memberUserId: userId }];
+        return { doctors: next };
+      }
+      return { doctors: list.filter((d) => d.memberUserId !== userId) };
+    });
   };
 
   const setMemberMainLocation = (member: Member, locationId: string) => {

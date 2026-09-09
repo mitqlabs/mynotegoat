@@ -20,7 +20,14 @@ export interface OfficeLocation {
   /** Short distinguishing label (Hulen, Saginaw…) — the practice name lives
    *  once in OfficeSettings.officeName; this is what tells offices apart. */
   nickname: string;
+  /** Composed one-line address (for display / back-compat). */
   address: string;
+  /** Structured address parts — the editable source of truth (no parsing). */
+  addr1: string;
+  addr2: string;
+  city: string;
+  state: string;
+  zip: string;
   phone: string;
   fax: string;
   email: string;
@@ -54,6 +61,21 @@ function normalizeOfficeHours(value: unknown): DailyOfficeHours[] | undefined {
 /** The label to show for a location on pills/selectors — nickname wins. */
 export function locationLabel(loc: Pick<OfficeLocation, "name" | "nickname">): string {
   return (loc.nickname || "").trim() || (loc.name || "").trim() || "Location";
+}
+
+/** One-line address composed from the structured parts (for display). */
+export function composeLocationAddress(
+  loc: Pick<OfficeLocation, "addr1" | "addr2" | "city" | "state" | "zip" | "address">,
+): string {
+  const lines = [loc.addr1, loc.addr2].map((s) => (s || "").trim()).filter(Boolean);
+  const cityStateZip = [
+    (loc.city || "").trim(),
+    [(loc.state || "").trim(), (loc.zip || "").trim()].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const composed = [...lines, cityStateZip].filter(Boolean).join(", ");
+  return composed || (loc.address || "").trim();
 }
 
 export interface OfficeSettings {
@@ -128,6 +150,11 @@ function normalizeLocations(value: unknown): OfficeLocation[] {
       name,
       nickname: normalizeString(row.nickname),
       address: normalizeString(row.address),
+      addr1: normalizeString(row.addr1),
+      addr2: normalizeString(row.addr2),
+      city: normalizeString(row.city),
+      state: normalizeString(row.state),
+      zip: normalizeString(row.zip),
       phone: formatUsPhoneInput(normalizeString(row.phone)),
       fax: formatUsPhoneInput(normalizeString(row.fax)),
       email: normalizeString(row.email),

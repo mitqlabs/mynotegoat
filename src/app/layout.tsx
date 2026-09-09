@@ -14,6 +14,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Apply the saved theme before first paint so there's no flash of
+            the wrong palette. Mirrors src/lib/theme.ts. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var p=localStorage.getItem('casemate.theme.v1')||'system';var d=p==='dark'||(p==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();",
+          }}
+        />
+      </head>
       <body className="antialiased" suppressHydrationWarning>
         <AppQueryClientProvider>{children}</AppQueryClientProvider>
       </body>
