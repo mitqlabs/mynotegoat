@@ -98,6 +98,10 @@ export function MessagesWorkspace() {
   const [notify, setNotify] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [composerOpen, setComposerOpen] = useState(true);
+  // Quote-reply target (the message being replied to).
+  const [replyingTo, setReplyingTo] = useState<
+    { id: string; author: string; excerpt: string; patientId: string; patientName: string } | null
+  >(null);
 
   // Inline @mention autocomplete.
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -215,20 +219,39 @@ export function MessagesWorkspace() {
     if (!text || sending) return;
     setSending(true);
     const mentions = people.filter((p) => notify.has(p.userId)).map((p) => ({ userId: p.userId, label: p.label }));
+    // A reply lands in the SAME conversation as the message it answers.
+    const patientId = replyingTo ? replyingTo.patientId : resolvedCase?.id;
+    const patientName = replyingTo ? replyingTo.patientName : resolvedCase?.label;
     const ok = await postMessage({
       body: text,
       authorLabel: myLabel,
-      patientId: resolvedCase?.id,
-      patientName: resolvedCase?.label,
+      patientId,
+      patientName,
       mentions,
+      replyTo: replyingTo
+        ? { id: replyingTo.id, author: replyingTo.author, excerpt: replyingTo.excerpt }
+        : undefined,
     });
     setSending(false);
     if (ok) {
       setBody("");
       setNotify(new Set());
       setMentionQuery(null);
+      setReplyingTo(null);
       // Keep the tagged case so the user can post several notes to one case.
     }
+  };
+
+  const startReply = (m: WorkspaceMessage) => {
+    setReplyingTo({
+      id: m.id,
+      author: m.authorLabel,
+      excerpt: m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body,
+      patientId: m.patientId,
+      patientName: m.patientName,
+    });
+    setComposerOpen(true);
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   const toggleCollapse = (key: string) =>
@@ -296,6 +319,23 @@ export function MessagesWorkspace() {
           </button>
           {composerOpen && (
             <div className="space-y-3 border-t border-[var(--line-soft)] p-4">
+              {replyingTo && (
+                <div className="flex items-start justify-between gap-2 rounded-lg border-l-2 border-[var(--brand-primary)] bg-[var(--bg-soft)] px-3 py-2">
+                  <div className="min-w-0 text-xs">
+                    <span className="font-semibold text-[var(--brand-primary)]">
+                      Replying to {replyingTo.author}
+                    </span>
+                    <p className="truncate text-[var(--text-muted)]">{replyingTo.excerpt}</p>
+                  </div>
+                  <button
+                    className="shrink-0 text-xs font-semibold text-[var(--text-muted)] hover:text-[#b43b34]"
+                    onClick={() => setReplyingTo(null)}
+                    type="button"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <div className="relative">
                 <textarea
                   className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
@@ -547,6 +587,15 @@ export function MessagesWorkspace() {
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-semibold">{m.authorLabel}</span>
                                   <span className="text-xs text-[var(--text-muted)]">{timeLabel(m.createdAt)}</span>
+                                  {canPost && (
+                                    <button
+                                      className="text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+                                      onClick={() => startReply(m)}
+                                      type="button"
+                                    >
+                                      Reply
+                                    </button>
+                                  )}
                                   {canDelete && (
                                     <span className="ml-auto">
                                       {pendingDelete === m.id ? (
@@ -581,6 +630,11 @@ export function MessagesWorkspace() {
                                     </span>
                                   )}
                                 </div>
+                                {m.replyToId && (
+                                  <div className="mt-1 rounded-md border-l-2 border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs text-[var(--text-muted)]">
+                                    <span className="font-semibold">↳ {m.replyToAuthor}</span>: {m.replyToExcerpt}
+                                  </div>
+                                )}
                                 <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">{m.body}</p>
                                 {m.mentions.length > 0 && (
                                   <div className="mt-1.5 flex flex-wrap gap-1">

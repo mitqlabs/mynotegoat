@@ -25,6 +25,10 @@ export interface WorkspaceMessage {
   patientName: string;
   mentions: MessageMention[];
   createdAt: string;
+  /** Quote-reply: the message this one replies to (empty when not a reply). */
+  replyToId: string;
+  replyToAuthor: string;
+  replyToExcerpt: string;
 }
 
 function rowToMessage(row: Record<string, unknown>): WorkspaceMessage {
@@ -50,6 +54,9 @@ function rowToMessage(row: Record<string, unknown>): WorkspaceMessage {
     patientName: String(row.patient_name ?? ""),
     mentions,
     createdAt: String(row.created_at ?? ""),
+    replyToId: String(row.reply_to_id ?? ""),
+    replyToAuthor: String(row.reply_to_author ?? ""),
+    replyToExcerpt: String(row.reply_to_excerpt ?? ""),
   };
 }
 
@@ -128,6 +135,7 @@ export function useWorkspaceMessages() {
       patientId?: string;
       patientName?: string;
       mentions?: MessageMention[];
+      replyTo?: { id: string; author: string; excerpt: string };
     }) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase || !workspaceId) return false;
@@ -146,6 +154,9 @@ export function useWorkspaceMessages() {
         patient_id: input.patientId ?? "",
         patient_name: input.patientName ?? "",
         mentions: input.mentions ?? [],
+        reply_to_id: input.replyTo?.id ?? "",
+        reply_to_author: input.replyTo?.author ?? "",
+        reply_to_excerpt: input.replyTo?.excerpt ?? "",
       };
       // Optimistic insert.
       const optimistic = rowToMessage({ ...row, created_at: new Date().toISOString() });

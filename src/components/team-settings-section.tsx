@@ -12,6 +12,7 @@ import {
 } from "@/lib/team-permissions";
 import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -28,7 +29,7 @@ type Member = {
 const ACCESS_LABEL: Record<AccessLevel, string> = {
   none: "No access",
   view: "View only",
-  edit: "Edit",
+  edit: "Full",
 };
 
 const EMPTY_PERMS: MemberPermissions = {};
@@ -70,6 +71,10 @@ export function TeamSettingsSection() {
   // granted to anyone, so those rows show "Off" instead of an access picker.
   const { isFeatureEnabled } = useModuleVisibility();
   const { officeSettings, updateOfficeSettings } = useOfficeSettings();
+  // Only the actual account OWNER controls the master switch and appears as
+  // the "Admin (You)" card. An office-admin member can still manage the
+  // roster, but must not be shown as the account holder.
+  const { isOwner } = useWorkspaceAccess();
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
@@ -371,7 +376,7 @@ export function TeamSettingsSection() {
             </div>
           )}
 
-          {!notReady && (
+          {!notReady && isOwner && (
             <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2.5">
               <span className="text-sm font-semibold">
                 Team Members{" "}
@@ -408,8 +413,10 @@ export function TeamSettingsSection() {
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
             <div className="grid items-start gap-3 sm:grid-cols-2">
-              {/* The logged-in account holder, shown automatically as Admin —
-                  no self sign-up. Non-removable, not draggable. */}
+              {/* The account OWNER, shown automatically as Admin — no self
+                  sign-up. Only rendered for the owner themselves, so an
+                  office-admin member never sees the owner's identity here. */}
+              {isOwner && (
               <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -432,6 +439,7 @@ export function TeamSettingsSection() {
                   </label>
                 </div>
               </div>
+              )}
               {members.map((member) => (
                 <div
                   key={member.member_user_id}
