@@ -52,6 +52,7 @@ export const PERMISSIONABLE_FEATURES: {
   { feature: "billing", label: "Billing" },
   { feature: "timers", label: "Timers" },
   { feature: "marketing", label: "Marketing" },
+  { feature: "messages", label: "Messages" },
 ];
 
 /** Access levels offered for a feature — read-only sections drop "edit". */

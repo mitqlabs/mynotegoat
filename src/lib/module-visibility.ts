@@ -25,6 +25,7 @@ export const HIDEABLE_FEATURES: { feature: PortalFeature; label: string }[] = [
   { feature: "billing", label: "Billing" },
   { feature: "timers", label: "Timers" },
   { feature: "marketing", label: "Marketing" },
+  { feature: "messages", label: "Messages" },
 ];
 
 const HIDEABLE_SET = new Set<PortalFeature>(HIDEABLE_FEATURES.map((f) => f.feature));
