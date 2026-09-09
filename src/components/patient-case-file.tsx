@@ -5734,7 +5734,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
                         })();
                         return (
-                          <tr key={row.rowId} className="border-t border-[var(--line-soft)]">
+                          <tr
+                            key={row.rowId}
+                            className="border-t border-[var(--line-soft)]"
+                            /* Faint wash so you can pick canceled and finished
+                               visits out of a long list at a glance. Inline
+                               style rather than a class because the value is a
+                               theme variable that has to win over the row's own
+                               transparent background in both themes. */
+                            style={
+                              appointment?.status === "Canceled"
+                                ? { backgroundColor: "var(--row-tint-canceled)" }
+                                : appointment?.status === "Check Out"
+                                  ? { backgroundColor: "var(--row-tint-complete)" }
+                                  : undefined
+                            }
+                          >
                             <td className="w-[6.5rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickDateEditId === appointment.id ? (

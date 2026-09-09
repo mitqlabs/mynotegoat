@@ -12,6 +12,12 @@
   --status-active: #1f9d60;
   --status-warning: #f0a43f;
   --status-alert: #c9423a;
+  /* Barely-there row tints for appointment tables: canceled reads faintly
+     red, checked-out faintly green. Deliberately weak — this is a wash over
+     the row, not a badge. Anything stronger fights the status pill sitting
+     in the same row. */
+  --row-tint-canceled: rgba(201, 66, 58, 0.055);
+  --row-tint-complete: rgba(31, 157, 96, 0.065);
   --text-main: #172a3a;
   --text-muted: #57758b;
   --font-body:
@@ -60,6 +66,10 @@
   --status-active: #34c77b;
   --status-warning: #f0b45a;
   --status-alert: #e5675e;
+  /* Dark mode needs more alpha: a 5% wash over a near-black panel is
+     invisible, where the same value over white reads fine. */
+  --row-tint-canceled: rgba(229, 103, 94, 0.085);
+  --row-tint-complete: rgba(52, 199, 123, 0.08);
   --text-main: #e6eef7;
   --text-muted: #93a6ba;
   --field-bg: #0f1824;
