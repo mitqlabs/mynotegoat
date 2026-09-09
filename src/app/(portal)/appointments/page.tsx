@@ -14,6 +14,8 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { createPatientRecord, patients } from "@/lib/mock-data";
+import { useLocationView } from "@/hooks/use-location-view";
+import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import {
   findClosedKeyDateForDate,
@@ -415,6 +417,12 @@ function getCardBackground(status: AppointmentStatus) {
 export default function AppointmentsPage() {
   const router = useRouter();
   const { scheduleAppointments, addAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
+  const {
+    multiLocation,
+    locations: officeLocations,
+    selectedLocationId,
+    setLocation,
+  } = useLocationView();
   const { encountersByNewest, createEncounter, deleteEncounter } = useEncounterNotes();
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
@@ -509,9 +517,26 @@ export default function AppointmentsPage() {
 
   const schedulePatientSearchQuery = schedulePatientSearch.trim().toLowerCase();
 
+  // Map each patient to their location so the schedule can be filtered by
+  // the current location view (an appointment belongs to its patient's
+  // location). Recomputed via scheduleAppointments so quick-created
+  // patients are included.
+  const patientLocationById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of patients) map.set(p.id, p.locationId ?? "");
+    return map;
+  }, [scheduleAppointments]);
+
   const selectedDayAppointments = useMemo(
-    () => scheduleAppointments.filter((appointment) => appointment.date === selectedDate),
-    [scheduleAppointments, selectedDate],
+    () =>
+      scheduleAppointments.filter((appointment) => {
+        if (appointment.date !== selectedDate) return false;
+        if (multiLocation && selectedLocationId) {
+          return patientLocationById.get(appointment.patientId ?? "") === selectedLocationId;
+        }
+        return true;
+      }),
+    [scheduleAppointments, selectedDate, multiLocation, selectedLocationId, patientLocationById],
   );
   const selectedDayAppointmentsForView = useMemo(() => {
     if (!schedulePatientSearchQuery) {
@@ -1101,6 +1126,23 @@ export default function AppointmentsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {multiLocation && (
+              <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-3 py-2 text-sm font-semibold">
+                Location
+                <select
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                  onChange={(event) => setLocation(event.target.value)}
+                  value={selectedLocationId}
+                >
+                  <option value="">All locations</option>
+                  {officeLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {locationLabel(loc)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold">
               Date
               <input
