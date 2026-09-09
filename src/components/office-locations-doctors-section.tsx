@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { parseAddressString } from "@/lib/address-parts";
@@ -29,6 +29,38 @@ export function OfficeLocationsDoctorsSection() {
   const [newDoctor, setNewDoctor] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [openLocId, setOpenLocId] = useState<string | null>(null);
+  const seededRef = useRef(false);
+
+  // Locations are universal: there's always at least one office (this one).
+  // Seed it once from the existing single-office info so a solo practice
+  // just edits "Location #1" instead of a separate Office Information block.
+  useEffect(() => {
+    if (seededRef.current) return;
+    if ((officeSettings.locations ?? []).length > 0) {
+      seededRef.current = true;
+      return;
+    }
+    seededRef.current = true;
+    const p = parseAddressString(officeSettings.address ?? "");
+    const first: OfficeLocation = {
+      ...emptyLoc(officeSettings.officeName.trim() || "Main office"),
+      addr1: p.address1,
+      addr2: p.address2,
+      city: p.city,
+      state: p.state,
+      zip: p.zip,
+      phone: officeSettings.phone ?? "",
+      fax: officeSettings.fax ?? "",
+      email: officeSettings.email ?? "",
+      officeHours: loadScheduleSettings().officeHours,
+    };
+    first.address = composeLocationAddress(first);
+    updateOfficeSettings((cur) =>
+      (cur.locations ?? []).length ? {} : { multiLocation: true, locations: [first] },
+    );
+    setOpenLocId(first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // All array edits are FUNCTIONAL (read the latest state) so a debounced
   // commit from one field can never clobber another field's change.
@@ -122,44 +154,15 @@ export function OfficeLocationsDoctorsSection() {
     <div className="sm:col-span-2 grid gap-4">
       {/* ── Office Locations ────────────────────────────────────── */}
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold text-[var(--text-main)]">
-            Office Locations{" "}
-            <span className="font-normal text-[var(--text-muted)]">
-              — turn on to run several offices, each with its own doctors &amp; schedule
-            </span>
-          </span>
-          <ToggleSwitch
-            checked={officeSettings.multiLocation}
-            onChange={(on) => {
-              // Seed the FIRST office from the existing single office so
-              // nothing is lost; parse its address ONCE into structured parts.
-              if (on && (officeSettings.locations ?? []).length === 0) {
-                const p = parseAddressString(officeSettings.address ?? "");
-                const first: OfficeLocation = {
-                  ...emptyLoc(officeSettings.officeName.trim() || "Main office"),
-                  addr1: p.address1,
-                  addr2: p.address2,
-                  city: p.city,
-                  state: p.state,
-                  zip: p.zip,
-                  phone: officeSettings.phone ?? "",
-                  fax: officeSettings.fax ?? "",
-                  email: officeSettings.email ?? "",
-                  officeHours: loadScheduleSettings().officeHours,
-                };
-                first.address = composeLocationAddress(first);
-                updateOfficeSettings((cur) => ({ multiLocation: true, locations: [...(cur.locations ?? []), first] }));
-                setOpenLocId(first.id);
-              } else {
-                updateOfficeSettings({ multiLocation: on });
-              }
-            }}
-            ariaLabel="Multi-location"
-          />
-        </label>
+        <div>
+          <h5 className="text-sm font-semibold text-[var(--text-main)]">Office Locations</h5>
+          <p className="text-xs text-[var(--text-muted)]">
+            Each office has its own address, phone, doctors &amp; hours. Add a second office and the
+            Schedule &amp; Patients let you switch between them.
+          </p>
+        </div>
 
-        {officeSettings.multiLocation && (
+        {(
           <div className="mt-3 grid gap-2">
             {locations.length === 0 && (
               <p className="text-xs text-[var(--text-muted)]">

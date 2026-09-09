@@ -16,7 +16,6 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
-import { loadTeamEnabled, saveTeamEnabled } from "@/lib/team-settings";
 import { ToggleSwitch } from "@/components/toggle-switch";
 
 type Member = {
@@ -89,7 +88,6 @@ export function TeamSettingsSection() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Master switch. null = not yet resolved; once members load we fall back to
   // "on when any members exist" so an existing team is never hidden.
-  const [teamEnabled, setTeamEnabled] = useState<boolean | null>(() => loadTeamEnabled());
   // The logged-in account holder — shown as the Admin card (no self sign-up).
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string }>({ id: "", email: "" });
   const doctorName = useMemo(() => (loadOfficeSettings().doctorName ?? "").trim(), []);
@@ -139,13 +137,6 @@ export function TeamSettingsSection() {
       permissions: normalizePermissions(row.permissions),
     }));
     setMembers(applyMemberOrder(list, loadMemberOrder()));
-    // Resolve the master switch default once we know whether a team exists.
-    setTeamEnabled((cur) => (cur === null ? loadTeamEnabled() ?? list.length > 0 : cur));
-  }, []);
-
-  const setTeam = useCallback((on: boolean) => {
-    setTeamEnabled(on);
-    saveTeamEnabled(on);
   }, []);
 
   // Move `sourceId` to just before `targetId` and persist the new order.
@@ -398,40 +389,7 @@ export function TeamSettingsSection() {
             </div>
           )}
 
-          {!notReady && isOwner && (
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2.5">
-              <span className="text-sm font-semibold">
-                Team Members{" "}
-                <span className="font-normal text-[var(--text-muted)]">
-                  — activate staff logins and the shared roster
-                </span>
-              </span>
-              <ToggleSwitch
-                checked={Boolean(teamEnabled)}
-                onChange={(on) => {
-                  if (
-                    !on &&
-                    !window.confirm(
-                      "Turn off Team Members?\n\nYour staff and all their settings are KEPT — they just won't show here until you turn it back on. (To block a specific person's login, use the Active switch on their card instead.)",
-                    )
-                  ) {
-                    return;
-                  }
-                  setTeam(on);
-                }}
-                ariaLabel="Enable team members"
-              />
-            </label>
-          )}
-
-          {!notReady && !teamEnabled && (
-            <p className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-3 text-sm text-[var(--text-muted)]">
-              Team Members is off — you&apos;re working solo. Turn it on to add staff logins and choose
-              what each person can access.
-            </p>
-          )}
-
-          {teamEnabled && (loading ? (
+          {loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
             <div className="gap-3 sm:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
@@ -735,9 +693,9 @@ export function TeamSettingsSection() {
                 </div>
               ))}
             </div>
-          ))}
+          )}
 
-          {teamEnabled && (showAdd ? (
+          {showAdd ? (
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="grid gap-1">
@@ -858,7 +816,7 @@ export function TeamSettingsSection() {
             >
               + Team Member
             </button>
-          ))}
+          )}
         </div>
       )}
     </section>

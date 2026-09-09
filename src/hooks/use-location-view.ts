@@ -18,8 +18,12 @@ import {
 
 export function useLocationView() {
   const { officeSettings } = useOfficeSettings();
-  const multiLocation = officeSettings.multiLocation;
-  const locations = multiLocation ? officeSettings.locations ?? [] : [];
+  // Locations are universal — there's always ≥1. The location PICKER only
+  // matters when there are 2+ offices to switch between; a solo office needs
+  // no selector or per-row filtering. `multiLocation` here therefore means
+  // "has more than one location" (what all the UI gates should key on).
+  const locations = officeSettings.locations ?? [];
+  const multiLocation = locations.length > 1;
 
   const [selectedId, setSelectedId] = useState<string>(() => getSelectedLocationId());
 

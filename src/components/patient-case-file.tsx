@@ -4901,7 +4901,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {officeSettings.multiLocation && !patientReadOnly && (
+          {(officeSettings.locations?.length ?? 0) > 1 && !patientReadOnly && (
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
               <select

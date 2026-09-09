@@ -431,10 +431,12 @@ export default function AppointmentsPage() {
   // When a specific location is in view and it has its own hours, use those;
   // everything else (interval, capacity, enforce/override) stays global.
   const scheduleSettings = useMemo(() => {
-    if (!multiLocation || !selectedLocationId) return globalScheduleSettings;
-    const loc = officeLocations.find((l) => l.id === selectedLocationId);
+    // Which office's hours apply: the one in view, or the sole office.
+    const loc =
+      officeLocations.find((l) => l.id === selectedLocationId) ??
+      (officeLocations.length === 1 ? officeLocations[0] : null);
     return loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
-  }, [globalScheduleSettings, multiLocation, selectedLocationId, officeLocations]);
+  }, [globalScheduleSettings, selectedLocationId, officeLocations]);
   const { keyDates } = useKeyDates();
   const [mode, setMode] = useState<AppointmentMode>("schedule");
   const [selectedDate, setSelectedDate] = useState(() => getTodayIsoDate());
