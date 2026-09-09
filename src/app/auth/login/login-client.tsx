@@ -151,6 +151,12 @@ export default function LoginClient({ verifyNotice, disabledNotice }: LoginClien
         </div>
       ) : null}
 
+      {disabledNotice ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Your access has been turned off by the account owner. Contact them to be reactivated.
+        </div>
+      ) : null}
+
       {supabaseMissing ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           Supabase environment variables are missing in this deployment.

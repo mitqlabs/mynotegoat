@@ -259,6 +259,19 @@ export function TeamSettingsSection() {
     void saveMemberPerms(member, next);
   };
 
+  const setMemberActive = (member: Member, active: boolean) => {
+    if (!active) {
+      const who = member.label || member.email || "this member";
+      if (!window.confirm(`Turn OFF ${who}? Their login will be blocked until you turn them back on. Their record and settings are kept.`)) {
+        return;
+      }
+    }
+    const next = { ...member.permissions };
+    if (active) delete next.disabled;
+    else next.disabled = true;
+    void saveMemberPerms(member, next);
+  };
+
   const setMemberSectionHidden = (member: Member, key: string, hidden: boolean) => {
     const set = new Set(member.permissions.hiddenSections ?? []);
     if (hidden) set.add(key);
@@ -338,7 +351,17 @@ export function TeamSettingsSection() {
               </span>
               <ToggleSwitch
                 checked={Boolean(teamEnabled)}
-                onChange={setTeam}
+                onChange={(on) => {
+                  if (
+                    !on &&
+                    !window.confirm(
+                      "Turn off Team Members?\n\nYour staff and all their settings are KEPT — they just won't show here until you turn it back on. (To block a specific person's login, use the Active switch on their card instead.)",
+                    )
+                  ) {
+                    return;
+                  }
+                  setTeam(on);
+                }}
                 ariaLabel="Enable team members"
               />
             </label>
@@ -375,10 +398,12 @@ export function TeamSettingsSection() {
               {members.map((member) => (
                 <div
                   key={member.member_user_id}
-                  className={`rounded-xl border bg-white p-2.5 transition-colors ${
+                  className={`rounded-xl border p-2.5 transition-colors ${
                     draggingId === member.member_user_id
                       ? "border-[var(--brand-primary)] opacity-60"
-                      : "border-[var(--line-soft)]"
+                      : member.permissions.disabled
+                        ? "border-[var(--line-soft)] bg-[var(--bg-soft)] opacity-75"
+                        : "border-[var(--line-soft)] bg-white"
                   }`}
                   draggable={editingId !== member.member_user_id}
                   onDragStart={(e) => {
@@ -436,6 +461,11 @@ export function TeamSettingsSection() {
                       ) : (
                         <p className="flex items-center gap-1.5 text-sm font-semibold">
                           {member.label}
+                          {member.permissions.disabled && (
+                            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                              OFF · no login
+                            </span>
+                          )}
                           <button
                             className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                             onClick={() => {
@@ -453,6 +483,23 @@ export function TeamSettingsSection() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <span
+                        className="flex items-center gap-1.5"
+                        title={
+                          member.permissions.disabled
+                            ? "Login blocked — flip on to let this person sign in"
+                            : "Active — flip off to block this person's login"
+                        }
+                      >
+                        <span className="text-[10px] font-semibold text-[var(--text-muted)]">
+                          {member.permissions.disabled ? "Off" : "Active"}
+                        </span>
+                        <ToggleSwitch
+                          checked={!member.permissions.disabled}
+                          onChange={(on) => setMemberActive(member, on)}
+                          ariaLabel="Member active"
+                        />
+                      </span>
                       <button
                         className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
                         onClick={() =>
