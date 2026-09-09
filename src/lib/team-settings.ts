@@ -1,54 +1,40 @@
 /**
- * Team feature master switch.
+ * Team feature master switch (per workspace).
  *
- * A single per-workspace toggle for the whole team-members system:
- *   - ON  → team members can log in and work inside the workspace with
- *           their granted permissions; the account holder is the ADMIN.
- *   - OFF → solo mode. Member logins are blocked (they see an "access
- *           disabled" screen) and the owner works alone.
+ *   ON  → the team roster is active; the logged-in account holder shows as
+ *         the ADMIN automatically (no self sign-up), and staff members the
+ *         owner creates appear alongside them.
+ *   OFF → solo mode; the roster UI is tucked away.
  *
- * Stored per workspace and dual-written to the "tasks" KV namespace, so a
- * member's device reads the owner's value after the bootstrap cloud pull
- * (same mechanism as module visibility).
+ * This is a presentation/organization switch — it does NOT revoke a
+ * member's granted permissions, so flipping it can never strand anyone.
+ * Stored per workspace, dual-written to the "tasks" KV namespace so it
+ * rides the normal cloud sync.
  *
- * DEFAULT IS ON. An unset flag must never lock existing members out — the
- * owner has to deliberately turn the team off.
+ * load returns `null` when the flag was never set, so callers can fall
+ * back to "on if any members exist" rather than forcing a default.
  */
 
 const STORAGE_KEY = "casemate.team-settings.v1";
 export const STORAGE_KEY_TEAM_SETTINGS = STORAGE_KEY;
 
-export interface TeamSettings {
-  /** Master on/off for the team-members feature. */
-  enabled: boolean;
-}
-
-export const defaultTeamSettings: TeamSettings = { enabled: true };
-
-export function normalizeTeamSettings(value: unknown): TeamSettings {
-  if (!value || typeof value !== "object") return { ...defaultTeamSettings };
-  const raw = value as Record<string, unknown>;
-  return { enabled: typeof raw.enabled === "boolean" ? raw.enabled : true };
-}
-
-export function loadTeamSettings(): TeamSettings {
-  if (typeof window === "undefined") return { ...defaultTeamSettings };
+export function loadTeamEnabled(): boolean | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...defaultTeamSettings };
-    return normalizeTeamSettings(JSON.parse(raw));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && typeof (parsed as { enabled?: unknown }).enabled === "boolean") {
+      return (parsed as { enabled: boolean }).enabled;
+    }
+    return null;
   } catch {
-    return { ...defaultTeamSettings };
+    return null;
   }
 }
 
-export function saveTeamSettings(settings: TeamSettings) {
+export function saveTeamEnabled(enabled: boolean) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", settings));
-}
-
-/** True when the team-members feature is switched on for this workspace. */
-export function isTeamEnabled(): boolean {
-  return loadTeamSettings().enabled;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ enabled }));
+  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", { enabled }));
 }

@@ -13,6 +13,8 @@ import {
 import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
+import { loadOfficeSettings } from "@/lib/office-settings";
+import { loadTeamEnabled, saveTeamEnabled } from "@/lib/team-settings";
 import { ToggleSwitch } from "@/components/toggle-switch";
 
 type Member = {
@@ -30,6 +32,38 @@ const ACCESS_LABEL: Record<AccessLevel, string> = {
 
 const EMPTY_PERMS: MemberPermissions = {};
 
+// Manual display order for member cards (drag-to-reorder). Stored as an
+// ordered list of member ids, KV-synced like other office prefs.
+const ORDER_KEY = "casemate.team-member-order.v1";
+
+function loadMemberOrder(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ORDER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMemberOrder(ids: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(ORDER_KEY, "tasks", ids));
+}
+
+/** Sort members by the saved order; unknown (new) members fall to the end. */
+function applyMemberOrder(list: Member[], order: string[]): Member[] {
+  if (!order.length) return list;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return [...list].sort((a, b) => {
+    const ra = rank.has(a.member_user_id) ? rank.get(a.member_user_id)! : Number.MAX_SAFE_INTEGER;
+    const rb = rank.has(b.member_user_id) ? rank.get(b.member_user_id)! : Number.MAX_SAFE_INTEGER;
+    return ra - rb;
+  });
+}
+
 export function TeamSettingsSection() {
   // Owner's module visibility — a feature the office has turned off can't be
   // granted to anyone, so those rows show "Off" instead of an access picker.
@@ -44,6 +78,14 @@ export function TeamSettingsSection() {
   const [editLabel, setEditLabel] = useState("");
   // Which members have their permission grid expanded (default collapsed).
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
+  // Drag-to-reorder.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Master switch. null = not yet resolved; once members load we fall back to
+  // "on when any members exist" so an existing team is never hidden.
+  const [teamEnabled, setTeamEnabled] = useState<boolean | null>(() => loadTeamEnabled());
+  // The logged-in account holder — shown as the Admin card (no self sign-up).
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string }>({ id: "", email: "" });
+  const doctorName = useMemo(() => (loadOfficeSettings().doctorName ?? "").trim(), []);
   // Office-wide patient-section hide state — a section hidden office-wide can't
   // be individually toggled (it's off for everyone).
   const officeSectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
@@ -68,6 +110,7 @@ export function TeamSettingsSection() {
       setLoading(false);
       return;
     }
+    setCurrentUser({ id: session.user.id, email: session.user.email ?? "" });
     const { data, error: qErr } = await supabase
       .from("workspace_members")
       .select("member_user_id, email, label, permissions")
@@ -80,14 +123,35 @@ export function TeamSettingsSection() {
       return;
     }
     setNotReady(false);
-    setMembers(
-      (data ?? []).map((row) => ({
-        member_user_id: String(row.member_user_id),
-        email: (row.email as string | null) ?? null,
-        label: String(row.label ?? "Team Member"),
-        permissions: normalizePermissions(row.permissions),
-      })),
-    );
+    const list: Member[] = (data ?? []).map((row) => ({
+      member_user_id: String(row.member_user_id),
+      email: (row.email as string | null) ?? null,
+      label: String(row.label ?? "Team Member"),
+      permissions: normalizePermissions(row.permissions),
+    }));
+    setMembers(applyMemberOrder(list, loadMemberOrder()));
+    // Resolve the master switch default once we know whether a team exists.
+    setTeamEnabled((cur) => (cur === null ? loadTeamEnabled() ?? list.length > 0 : cur));
+  }, []);
+
+  const setTeam = useCallback((on: boolean) => {
+    setTeamEnabled(on);
+    saveTeamEnabled(on);
+  }, []);
+
+  // Move `sourceId` to just before `targetId` and persist the new order.
+  const reorderMembers = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setMembers((cur) => {
+      const from = cur.findIndex((m) => m.member_user_id === sourceId);
+      const to = cur.findIndex((m) => m.member_user_id === targetId);
+      if (from === -1 || to === -1) return cur;
+      const next = [...cur];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      saveMemberOrder(next.map((m) => m.member_user_id));
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -264,20 +328,83 @@ export function TeamSettingsSection() {
             </div>
           )}
 
-          {loading ? (
+          {!notReady && (
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2.5">
+              <span className="text-sm font-semibold">
+                Team Members{" "}
+                <span className="font-normal text-[var(--text-muted)]">
+                  — activate staff logins and the shared roster
+                </span>
+              </span>
+              <ToggleSwitch
+                checked={Boolean(teamEnabled)}
+                onChange={setTeam}
+                ariaLabel="Enable team members"
+              />
+            </label>
+          )}
+
+          {!notReady && !teamEnabled && (
+            <p className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-3 text-sm text-[var(--text-muted)]">
+              Team Members is off — you&apos;re working solo. Turn it on to add staff logins and choose
+              what each person can access.
+            </p>
+          )}
+
+          {teamEnabled && (loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
             <div className="grid items-start gap-3 sm:grid-cols-2">
-              {members.length === 0 && !notReady && (
-                <p className="text-sm text-[var(--text-muted)] sm:col-span-2">No team members yet.</p>
-              )}
+              {/* The logged-in account holder, shown automatically as Admin —
+                  no self sign-up. Non-removable, not draggable. */}
+              <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold">
+                      {doctorName || "Admin"}
+                      <span className="rounded-full bg-[var(--brand-primary)] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        ADMIN
+                      </span>
+                      <span className="text-[10px] font-semibold text-[var(--text-muted)]">You</span>
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)]">{currentUser.email}</p>
+                  </div>
+                  <span className="text-[11px] font-semibold text-[var(--text-muted)]">Full access</span>
+                </div>
+              </div>
               {members.map((member) => (
                 <div
                   key={member.member_user_id}
-                  className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5"
+                  className={`rounded-xl border bg-white p-2.5 transition-colors ${
+                    draggingId === member.member_user_id
+                      ? "border-[var(--brand-primary)] opacity-60"
+                      : "border-[var(--line-soft)]"
+                  }`}
+                  draggable={editingId !== member.member_user_id}
+                  onDragStart={(e) => {
+                    setDraggingId(member.member_user_id);
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    if (draggingId && draggingId !== member.member_user_id) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggingId) reorderMembers(draggingId, member.member_user_id);
+                    setDraggingId(null);
+                  }}
+                  onDragEnd={() => setDraggingId(null)}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className="cursor-grab select-none text-[var(--text-muted)] active:cursor-grabbing"
+                        title="Drag to reorder"
+                        aria-hidden
+                      >
+                        ⠿
+                      </span>
+                      <div className="min-w-0">
                       {editingId === member.member_user_id ? (
                         <div className="flex items-center gap-1.5">
                           <input
@@ -323,6 +450,7 @@ export function TeamSettingsSection() {
                         </p>
                       )}
                       <p className="text-xs text-[var(--text-muted)]">{member.email}</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -451,9 +579,9 @@ export function TeamSettingsSection() {
                 </div>
               ))}
             </div>
-          )}
+          ))}
 
-          {showAdd ? (
+          {teamEnabled && (showAdd ? (
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="grid gap-1">
@@ -554,9 +682,9 @@ export function TeamSettingsSection() {
               onClick={() => setShowAdd(true)}
               type="button"
             >
-              + Add Team Member
+              + Team Member
             </button>
-          )}
+          ))}
         </div>
       )}
     </section>
