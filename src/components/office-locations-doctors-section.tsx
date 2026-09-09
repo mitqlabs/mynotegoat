@@ -246,11 +246,11 @@ export function OfficeLocationsDoctorsSection() {
                           />
                         </label>
 
-                        {/* Structured address — separate fields, no parsing. */}
-                        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-[2fr_1fr]">
+                        {/* Structured address — all five on one line. */}
+                        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_52px_84px]">
                           <label className="grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                              Street address
+                              Street
                             </span>
                             <DebouncedInput
                               className={partInputCls}
@@ -261,17 +261,15 @@ export function OfficeLocationsDoctorsSection() {
                           </label>
                           <label className="grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                              Suite / Unit
+                              Suite
                             </span>
                             <DebouncedInput
                               className={partInputCls}
                               onCommit={(v) => updateLocation(loc.id, { addr2: v })}
-                              placeholder="Suite 100 (optional)"
+                              placeholder="Suite"
                               value={loc.addr2}
                             />
                           </label>
-                        </div>
-                        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-[2fr_70px_110px]">
                           <label className="grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                               City
