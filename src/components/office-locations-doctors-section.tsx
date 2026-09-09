@@ -64,7 +64,7 @@ export function OfficeLocationsDoctorsSection() {
   return (
     <div className="sm:col-span-2 grid gap-4">
       {/* ── Doctors ─────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+      <div className="order-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h5 className="text-sm font-semibold text-[var(--text-main)]">Doctors</h5>
@@ -138,7 +138,7 @@ export function OfficeLocationsDoctorsSection() {
       </div>
 
       {/* ── Multi-Location ──────────────────────────────────────── */}
-      <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+      <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <label className="flex items-center justify-between gap-3">
           <span className="text-sm font-semibold text-[var(--text-main)]">
             Multi-Location{" "}
