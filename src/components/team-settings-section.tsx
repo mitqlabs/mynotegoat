@@ -94,7 +94,7 @@ export function TeamSettingsSection() {
   const [showAdd, setShowAdd] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [label, setLabel] = useState("Front Desk");
+  const [label, setLabel] = useState("");
   const [draftPerms, setDraftPerms] = useState<MemberPermissions>(EMPTY_PERMS);
   const [busy, setBusy] = useState(false);
 
@@ -191,7 +191,7 @@ export function TeamSettingsSection() {
     setShowAdd(false);
     setEmail("");
     setPassword("");
-    setLabel("Front Desk");
+    setLabel("");
     setDraftPerms(EMPTY_PERMS);
     void loadMembers();
   };
@@ -415,7 +415,7 @@ export function TeamSettingsSection() {
                               if (e.key === "Enter") void saveLabel(member);
                               else if (e.key === "Escape") setEditingId(null);
                             }}
-                            placeholder="Role / name (e.g. Front Desk)"
+                            placeholder="Full name"
                             value={editLabel}
                           />
                           <button
@@ -442,7 +442,7 @@ export function TeamSettingsSection() {
                               setEditLabel(member.label);
                               setEditingId(member.member_user_id);
                             }}
-                            title="Rename this member's role/name"
+                            title="Edit this member's name"
                             type="button"
                           >
                             Edit
@@ -604,11 +604,11 @@ export function TeamSettingsSection() {
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Role label</span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Name</span>
                   <input
                     className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="Front Desk"
+                    placeholder="e.g. Jane Smith"
                     value={label}
                   />
                 </label>
@@ -660,7 +660,7 @@ export function TeamSettingsSection() {
               <div className="mt-3 flex items-center gap-2">
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
-                  disabled={busy || !email.trim() || password.length < 6}
+                  disabled={busy || !label.trim() || !email.trim() || password.length < 6}
                   onClick={addMember}
                   type="button"
                 >
