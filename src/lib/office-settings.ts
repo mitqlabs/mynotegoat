@@ -17,10 +17,13 @@ export interface OfficeDoctor {
 export interface OfficeLocation {
   id: string;
   name: string;
-  /** Short label (street / city / number) shown on pills and selectors. */
+  /** Short distinguishing label (Hulen, Saginaw…) — the practice name lives
+   *  once in OfficeSettings.officeName; this is what tells offices apart. */
   nickname: string;
   address: string;
   phone: string;
+  fax: string;
+  email: string;
   /** Doctor ids (OfficeDoctor.id) that work at this location. */
   doctorIds: string[];
   /** This office's weekly hours. Absent = inherit the global schedule hours. */
@@ -126,6 +129,8 @@ function normalizeLocations(value: unknown): OfficeLocation[] {
       nickname: normalizeString(row.nickname),
       address: normalizeString(row.address),
       phone: formatUsPhoneInput(normalizeString(row.phone)),
+      fax: formatUsPhoneInput(normalizeString(row.fax)),
+      email: normalizeString(row.email),
       doctorIds: Array.isArray(row.doctorIds)
         ? row.doctorIds.filter((x): x is string => typeof x === "string")
         : [],
@@ -195,10 +200,19 @@ export function loadOfficeSettings(): OfficeSettings {
   }
 }
 
-export function saveOfficeSettings(settings: OfficeSettings) {
-  if (typeof window === "undefined") {
-    return;
-  }
+/** Fast synchronous local write — safe to call on every keystroke. */
+export function writeOfficeSettingsLocal(settings: OfficeSettings) {
+  if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+/** Heavier cloud dual-write — debounce this; don't call it per keystroke. */
+export function pushOfficeSettingsCloud(settings: OfficeSettings) {
+  if (typeof window === "undefined") return;
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", settings));
+}
+
+export function saveOfficeSettings(settings: OfficeSettings) {
+  writeOfficeSettingsLocal(settings);
+  pushOfficeSettingsCloud(settings);
 }

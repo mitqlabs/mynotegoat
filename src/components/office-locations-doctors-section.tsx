@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ToggleSwitch } from "@/components/toggle-switch";
-import type { OfficeDoctor, OfficeLocation } from "@/lib/office-settings";
+import { AddressFieldGroup } from "@/components/address-field-group";
+import { locationLabel, type OfficeDoctor, type OfficeLocation } from "@/lib/office-settings";
 import {
   getDefaultScheduleSettings,
   loadScheduleSettings,
@@ -48,7 +49,10 @@ export function OfficeLocationsDoctorsSection() {
     const name = newLocation.trim();
     if (!name) return;
     const id = genId("loc");
-    setLocations([...locations, { id, name, nickname: "", address: "", phone: "", doctorIds: [] }]);
+    setLocations([
+      ...locations,
+      { id, name: "", nickname: name, address: "", phone: "", fax: "", email: "", doctorIds: [] },
+    ]);
     setNewLocation("");
     setOpenLocId(id);
   };
@@ -185,6 +189,8 @@ export function OfficeLocationsDoctorsSection() {
                   nickname: "",
                   address: officeSettings.address ?? "",
                   phone: officeSettings.phone ?? "",
+                  fax: officeSettings.fax ?? "",
+                  email: officeSettings.email ?? "",
                   doctorIds: [],
                   officeHours: loadScheduleSettings().officeHours,
                 };
@@ -218,7 +224,7 @@ export function OfficeLocationsDoctorsSection() {
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold">
-                      {loc.name || "Untitled office"}
+                      {loc.nickname?.trim() || loc.name?.trim() || "Untitled office"}
                     </span>
                     <span className="text-[11px] text-[var(--text-muted)]">
                       {assignedCount} doctor{assignedCount === 1 ? "" : "s"}
@@ -233,13 +239,13 @@ export function OfficeLocationsDoctorsSection() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="grid gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Office name
+                      Nickname
                     </span>
                     <input
                       className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                      onChange={(e) => updateLocation(loc.id, { name: e.target.value })}
+                      onChange={(e) => updateLocation(loc.id, { nickname: e.target.value })}
                       placeholder="e.g. Hulen"
-                      value={loc.name}
+                      value={loc.nickname}
                     />
                   </label>
                   <label className="grid gap-1">
@@ -255,17 +261,39 @@ export function OfficeLocationsDoctorsSection() {
                       value={loc.phone}
                     />
                   </label>
-                  <label className="grid gap-1 sm:col-span-2">
+                  <label className="grid gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Address
+                      Fax
                     </span>
                     <input
                       className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                      onChange={(e) => updateLocation(loc.id, { address: e.target.value })}
-                      placeholder="Street, City, State ZIP"
-                      value={loc.address}
+                      inputMode="numeric"
+                      maxLength={12}
+                      onChange={(e) => updateLocation(loc.id, { fax: formatUsPhoneInput(e.target.value) })}
+                      placeholder="(555) 555-5555"
+                      value={loc.fax}
                     />
                   </label>
+                  <label className="grid gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Email
+                    </span>
+                    <input
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(e) => updateLocation(loc.id, { email: e.target.value })}
+                      placeholder="office@practice.com"
+                      value={loc.email}
+                    />
+                  </label>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Address
+                    </span>
+                    <AddressFieldGroup
+                      onChange={(next) => updateLocation(loc.id, { address: next })}
+                      value={loc.address}
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-2">
@@ -363,7 +391,7 @@ export function OfficeLocationsDoctorsSection() {
                     addLocation();
                   }
                 }}
-                placeholder="New office name"
+                placeholder="New office nickname (e.g. Saginaw)"
                 value={newLocation}
               />
               <button
