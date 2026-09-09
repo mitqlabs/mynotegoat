@@ -5692,19 +5692,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
                 <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
-                  <table className="min-w-full border-collapse text-sm">
+                  <table className="min-w-full table-fixed border-collapse text-sm">
                     <thead>
                       <tr className="bg-[var(--bg-soft)] text-left">
-                        {/* Fixed widths on Date/Time so the inline editors
-                            (input + ✓/✕) don't grow the column and shove the
-                            rest of the row sideways while you run through edits. */}
-                        <th className="w-[13rem] px-2 py-2">Date</th>
-                        <th className="px-2 py-2">Day</th>
-                        <th className="w-[10rem] px-2 py-2">Time</th>
-                        <th className="w-[15rem] px-2 py-2">Type</th>
-                        <th className="px-2 py-2">Status</th>
-                        <th className="px-2 py-2">Encounter</th>
-                        <th className="px-2 py-2"></th>
+                        {/* Every column carries a width EXCEPT Type, so under
+                            table-fixed all the leftover width lands on Type —
+                            appointment type names are long and were the thing
+                            getting truncated. Keep these lean; widening one
+                            here narrows the type names by the same amount.
+                            The Date/Time inline editors are wider than their
+                            columns on purpose and overlay the row while open
+                            (see the editing spans below) rather than making
+                            the columns reserve space they only need mid-edit. */}
+                        <th className="w-[6.5rem] px-2 py-2">Date</th>
+                        <th className="w-[2.5rem] px-1 py-2">Day</th>
+                        <th className="w-[5.25rem] px-2 py-2">Time</th>
+                        <th className="px-2 py-2">Type</th>
+                        <th className="w-[7.5rem] px-2 py-2">Status</th>
+                        <th className="w-[5.25rem] px-2 py-2">Encounter</th>
+                        <th className="w-[2.25rem] px-1 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -5729,13 +5735,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         })();
                         return (
                           <tr key={row.rowId} className="border-t border-[var(--line-soft)]">
-                            <td className="w-[13rem] px-2 py-2 tabular-nums">
+                            <td className="w-[6.5rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickDateEditId === appointment.id ? (
-                                  <span className="inline-flex items-center gap-1">
+                                  <span className="relative z-10 inline-flex w-max items-center gap-1 rounded-md bg-white">
                                     <input
                                       autoFocus
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                      className="w-[7.75rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                       onChange={(event) => setQuickDateDraft(event.target.value)}
                                       onKeyDown={(event) => {
                                         if (event.key === "Enter") {
@@ -5778,16 +5784,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 <span>{row.dateLabel}</span>
                               )}
                             </td>
-                            <td className="px-2 py-2 text-xs text-[var(--text-muted)]">
+                            <td className="w-[2.5rem] px-1 py-2 text-xs text-[var(--text-muted)]">
                               {dayLabel || <span>—</span>}
                             </td>
-                            <td className="w-[10rem] px-2 py-2 tabular-nums">
+                            <td className="w-[5.25rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickTimeEditId === appointment.id ? (
-                                  <span className="inline-flex items-center gap-1">
+                                  <span className="relative z-10 inline-flex w-max items-center gap-1 rounded-md bg-white">
                                     <input
                                       autoFocus
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                      className="w-[5.25rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                       // No numeric inputMode + no digit
                                       // filter on the value: the user types
                                       // "4:45pm" / "445p" / "16:45" and the
@@ -5806,7 +5812,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                           cancelQuickTimeEdit();
                                         }
                                       }}
-                                      placeholder="4:45pm or 16:45"
+                                      placeholder="4:45pm"
                                       value={quickTimeDraft}
                                     />
                                     <button
@@ -5840,7 +5846,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 <span className="text-xs text-[var(--text-muted)]">—</span>
                               )}
                             </td>
-                            <td className="w-[15rem] px-2 py-2">
+                            <td className="px-2 py-2">
                               {/* Always render the real <select>. The old
                                   click-to-reveal button had a transparent
                                   border and no fixed width, so long type
@@ -5851,7 +5857,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                   pill sitting next to it. */}
                               {appointment ? (
                                 <select
-                                  className="w-full max-w-[15rem] truncate rounded-full border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                  className="w-full min-w-0 truncate rounded-full border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
                                   onChange={(event) =>
                                     commitQuickTypeEdit(appointment, event.target.value)
                                   }
