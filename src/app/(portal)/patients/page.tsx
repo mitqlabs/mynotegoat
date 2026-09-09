@@ -375,7 +375,7 @@ function composePatientAddress(street: string, unit: string, city: string, state
 
 function getFollowUpBadgeClass(category: FollowUpCategory) {
   if (category === "X-Ray") {
-    return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+    return "bg-[rgba(24,24,27,0.14)] text-[#27272a]";
   }
   if (category === "MRI / CT") {
     return "bg-[rgba(97,73,179,0.14)] text-[#4d3d8f]";
@@ -400,7 +400,7 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
   if (days >= 0) {
     return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
   }
-  return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+  return "bg-[rgba(24,24,27,0.14)] text-[#27272a]";
 }
 
 function getDetailValue(patient: PatientRecord, key: DetailRow["key"]) {
@@ -1544,7 +1544,7 @@ export default function PatientsPage() {
                   {columnOrder.map((colId) => (
                     <th
                       key={colId}
-                      className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)] ${dragColumnId === colId ? "opacity-50" : ""}`}
+                      className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(24,24,27,0.06)] ${dragColumnId === colId ? "opacity-50" : ""}`}
                       draggable
                       onClick={() => toggleSort(colId)}
                       onDragEnd={handleColumnDragEnd}
@@ -1614,11 +1614,11 @@ export default function PatientsPage() {
                               className="status-pill"
                               style={{
                                 backgroundColor: withAlpha(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
+                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#27272a",
                                   0.2,
                                 ),
                                 color: getContrastTextColor(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
+                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#27272a",
                                 ),
                               }}
                             >
@@ -1758,7 +1758,7 @@ export default function PatientsPage() {
                   </select>
                   <button
                     type="button"
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(24,24,27,0.06)]"
                     onClick={() => updateCfSortLevel(index, { asc: !level.asc })}
                     title="Toggle direction"
                   >
@@ -1781,7 +1781,7 @@ export default function PatientsPage() {
                 <div className="ml-24">
                   <button
                     type="button"
-                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(24,24,27,0.06)]"
                     onClick={addCfSortLevel}
                   >
                     + Add sort level
@@ -1884,11 +1884,11 @@ export default function PatientsPage() {
                             className="status-pill"
                             style={{
                               backgroundColor: withAlpha(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
+                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#27272a",
                                 0.2,
                               ),
                               color: getContrastTextColor(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
+                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#27272a",
                               ),
                             }}
                           >

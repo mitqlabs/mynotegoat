@@ -462,7 +462,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                       key={t}
                                       className={`rounded-full border px-2 py-0.5 text-xs ${
                                         on
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.10)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                                       }`}
                                       onClick={() => toggleTreatment(t)}
@@ -492,7 +492,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             key={opt}
                                             className={`rounded-full border px-2 py-0.5 text-xs ${
                                               on
-                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                                ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.10)] text-[var(--brand-primary)]"
                                                 : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                                             }`}
                                             onClick={() =>
@@ -579,7 +579,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         const chip = (on: boolean) =>
                           `rounded-full border px-2 py-0.5 text-xs ${
                             on
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.10)] text-[var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                           }`;
                         const decompOpen = expandedDecompIds.has(plan.id);

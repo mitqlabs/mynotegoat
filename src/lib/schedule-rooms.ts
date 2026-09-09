@@ -26,7 +26,7 @@ function normalizeText(value: unknown) {
   return value.trim();
 }
 
-function normalizeColor(value: unknown, fallback = "#0d79bf") {
+function normalizeColor(value: unknown, fallback = "#27272a") {
   if (typeof value !== "string") {
     return fallback;
   }

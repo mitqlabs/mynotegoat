@@ -460,7 +460,7 @@ export function ReportTemplateSettingsPanel() {
               <button
                 className={`w-full rounded-xl border px-3 py-2 text-left ${
                   template.id === selectedTemplate.id
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)]"
+                    ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 key={template.id}
@@ -569,7 +569,7 @@ export function ReportTemplateSettingsPanel() {
 
             {showLivePreview && (
               <div className="mt-3 space-y-3">
-                <div className="flex items-center gap-2 rounded-lg bg-[rgba(13,121,191,0.08)] px-3 py-2 text-xs text-[var(--brand-primary)]">
+                <div className="flex items-center gap-2 rounded-lg bg-[rgba(24,24,27,0.08)] px-3 py-2 text-xs text-[var(--brand-primary)]">
                   <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
                   </svg>
@@ -603,7 +603,7 @@ export function ReportTemplateSettingsPanel() {
                     <div className="flex flex-wrap gap-1.5 border-t border-[var(--line-soft)] px-3 py-2">
                       {usedFieldTokens.map((token) => (
                         <span
-                          className="rounded-full border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                          className="rounded-full border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                           key={token}
                         >
                           {token}
@@ -703,8 +703,8 @@ export function ReportTemplateSettingsPanel() {
                             <button
                               className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 used
-                                  ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
-                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.04)]"
+                                  ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] text-[var(--brand-primary)]"
+                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(24,24,27,0.04)]"
                               }`}
                               key={token}
                               onClick={() =>
@@ -736,8 +736,8 @@ export function ReportTemplateSettingsPanel() {
                             <button
                               className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 used
-                                  ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
-                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.04)]"
+                                  ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] text-[var(--brand-primary)]"
+                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(24,24,27,0.04)]"
                               }`}
                               key={prompt.id}
                               onClick={() =>
@@ -861,7 +861,7 @@ export function ReportTemplateSettingsPanel() {
                   <div className="flex flex-wrap gap-1.5">
                     {usedEncTokens.map((token) => (
                       <span
-                        className="rounded-full border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)]"
+                        className="rounded-full border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)]"
                         key={token}
                       >
                         {token}

@@ -602,7 +602,7 @@ function LogActivityForm({
                 key={t}
                 className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                   on
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                    ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.10)] text-[var(--brand-primary)]"
                     : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                 }`}
                 onClick={() => toggleType(t)}

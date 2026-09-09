@@ -398,7 +398,7 @@ export default function ContactsPage() {
                           {emailRows.map((e, i) => (
                             <div key={i} className="flex flex-wrap items-center gap-1.5">
                               {e.name && (
-                                <span className="rounded-full bg-[rgba(13,121,191,0.10)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]">
+                                <span className="rounded-full bg-[rgba(24,24,27,0.10)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]">
                                   {e.name}
                                 </span>
                               )}
