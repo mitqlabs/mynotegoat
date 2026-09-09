@@ -1323,7 +1323,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, encountersHydrated, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
@@ -4057,6 +4057,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
+    // Belt and braces alongside the render-time gate: creating before the
+    // cloud pull settles can duplicate an encounter that already exists.
+    if (!encountersHydrated) {
+      setEncounterMessage("Still loading this patient's encounters — try again in a moment.");
+      return;
+    }
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
       return;
@@ -6038,7 +6044,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     })()}
                                 </div>
                               ) : appointment ? (
-                                (appointment.status === "Check In") ? (
+                                /* Until the cloud pull lands we cannot tell
+                                   "no encounter" from "not loaded yet", and
+                                   offering + Encounter in that window is what
+                                   produced duplicate encounters on one date. */
+                                !encountersHydrated ? (
+                                  <span
+                                    className="text-xs text-[var(--text-muted)]"
+                                    title="Loading this patient's encounters…"
+                                  >
+                                    …
+                                  </span>
+                                ) : (appointment.status === "Check In") ? (
                                     <button
                                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
                                       onClick={() => createEncounterFromAppointment(appointment)}

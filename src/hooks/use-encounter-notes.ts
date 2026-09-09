@@ -138,13 +138,26 @@ export function useEncounterNotes() {
   // even for two calls in the same tick.
   const recordsRef = useRef<EncounterNoteRecord[]>([]);
 
+  /**
+   * False until the cloud pull below has settled. localStorage only caches
+   * the last 90 days, so on first paint this hook can be missing encounters
+   * that exist in the cloud. Callers MUST NOT conclude "this appointment has
+   * no encounter" while this is false — that window is exactly how a row
+   * showed "+ Encounter" for an appointment that already had one, and how
+   * clicking it minted duplicates.
+   */
+  const [cloudHydrated, setCloudHydrated] = useState(false);
+
   recordsRef.current = encounters;
 
   // Merge cloud encounters into state.  localStorage only caches the
   // last 90 days, so we always pull from the cloud to ensure older
   // encounters (needed for billing, reports, etc.) are available.
   useEffect(() => {
-    void loadEncounterNotesFromCloud().then((cloud) => {
+    let cancelled = false;
+    void loadEncounterNotesFromCloud()
+      .then((cloud) => {
+      if (cancelled) return;
       if (!cloud || cloud.length === 0) return;
       setEncounters((local) => {
         // Merge: for each record keep the newer copy by updatedAt;
@@ -175,7 +188,20 @@ export function useEncounterNotes() {
         }
         return changed ? Array.from(byId.values()) : local;
       });
-    });
+      })
+      // Mark hydrated on EVERY outcome, including an empty result or a
+      // failed pull. If this only fired on success, a workspace with no
+      // cloud encounters (or an offline one) would leave the UI gated
+      // forever.
+      .catch((err) => {
+        console.error("[encounter-notes] cloud hydrate failed:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setCloudHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Listen for changes made by other hook instances on this page
@@ -309,7 +335,10 @@ export function useEncounterNotes() {
   const pendingRecordsRef = useRef<EncounterNoteRecord[] | null>(null);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flushPendingNow = useCallback((records?: EncounterNoteRecord[]) => {
+  const flushPendingNow = useCallback((
+    records?: EncounterNoteRecord[],
+    options?: { skipDraftClear?: boolean },
+  ) => {
     if (commitTimerRef.current) {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
@@ -322,7 +351,7 @@ export function useEncounterNotes() {
     const pending = records ?? pendingRecordsRef.current;
     if (!pending) return;
     pendingRecordsRef.current = null;
-    saveEncounterNoteRecords(pending);
+    saveEncounterNoteRecords(pending, options);
     selfWriteCountRef.current++;
     notifyChange(SYNC_KEY);
   }, []);
@@ -469,7 +498,10 @@ export function useEncounterNotes() {
       // mark every older encounter as a delete — which WIPED real encounters
       // from the cloud table. React state always includes the cloud-loaded
       // ones, so keep sourcing from it.
-      flushPendingNow(nextRecords);
+      // skipDraftClear: a new encounter has no drafts to clear, and the
+      // sweep would otherwise blow away drafts for every OTHER encounter
+      // while blocking the click on thousands of localStorage calls.
+      flushPendingNow(nextRecords, { skipDraftClear: true });
       return newId;
     },
     [flushPendingNow],
@@ -1230,6 +1262,8 @@ export function useEncounterNotes() {
   return {
     encounters,
     encountersByNewest,
+    /** See cloudHydrated — gate "no encounter exists" decisions on this. */
+    encountersHydrated: cloudHydrated,
     createEncounter,
     updateEncounter,
     setSoapSection,
