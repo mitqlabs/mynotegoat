@@ -4,6 +4,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
 import { notifyChange } from "@/lib/local-sync";
 import { mergeFileManagerStates } from "@/lib/file-manager";
+import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 
 /** The files/folders index. Its state is a { folders, files } wrapper, so the
  *  generic entry-count guard sees a constant 2 keys and lets cloud overwrite
@@ -347,11 +348,21 @@ async function getAuthedConfig() {
     return null;
   }
 
+  // CRITICAL for team members: a member works INSIDE their owner's
+  // workspace, so the cloud workspace id must be built from the OWNER's
+  // id, not the member's own. Membership is resolved at bootstrap (cached)
+  // before this runs. Owners (and any unresolved case) fall back to self.
+  const membership = getCurrentMembershipSync();
+  const ownerId =
+    membership && membership.isMember && membership.userId === userId
+      ? membership.ownerId
+      : userId;
+
   return {
     ...config,
     supabase,
     userId,
-    workspaceId: `${userId}:${config.officeId}`,
+    workspaceId: `${ownerId}:${config.officeId}`,
   };
 }
 
