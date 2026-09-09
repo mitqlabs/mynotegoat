@@ -17,7 +17,7 @@ export function loadThemePref(): ThemePref {
   if (typeof window === "undefined") return "system";
   try {
     const raw = window.localStorage.getItem(KEY);
-    return raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
+    return raw === "light" || raw === "dark" || raw === "system" ? raw : "light";
   } catch {
     return "system";
   }

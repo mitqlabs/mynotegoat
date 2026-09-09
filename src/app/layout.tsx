@@ -20,7 +20,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var p=localStorage.getItem('casemate.theme.v1')||'system';var d=p==='dark'||(p==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();",
+              "(function(){try{var p=localStorage.getItem('casemate.theme.v1')||'light';var d=p==='dark';document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();",
           }}
         />
       </head>
