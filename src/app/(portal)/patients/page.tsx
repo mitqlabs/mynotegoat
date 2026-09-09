@@ -1574,6 +1574,14 @@ export default function PatientsPage() {
                             >
                               {patient.fullName}
                             </Link>
+                            {multiLocation && (
+                              <span className="ml-2 rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+                                {(() => {
+                                  const loc = locations.find((l) => l.id === patient.locationId);
+                                  return loc ? locationLabel(loc) : "Unassigned";
+                                })()}
+                              </span>
+                            )}
                             {patient.phone && (
                               <p className="text-sm text-[var(--text-muted)]">
                                 <SmsSendMenu

@@ -4266,7 +4266,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       address: patientAddress.trim(),
       caseStatus: caseStatus as PatientRecord["caseStatus"],
       isCashPatient: isCashPatient || undefined,
-      locationId: patientLocationId || undefined,
+      locationId: (overrides.locationId ?? patientLocationId) || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
       relatedCases: effectiveRelated.length > 0 ? effectiveRelated : undefined,
       xrayReferrals: effectiveXrays,
@@ -4895,6 +4895,28 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {caseStatuses.map((statusConfigEntry) => (
                   <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
                     {statusConfigEntry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {officeSettings.multiLocation && !patientReadOnly && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setPatientLocationId(next);
+                  autoSavePatientFile({ locationId: next });
+                }}
+                value={patientLocationId}
+              >
+                <option value="">Unassigned</option>
+                {(officeSettings.locations ?? []).map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.nickname?.trim() || loc.name}
                   </option>
                 ))}
               </select>
