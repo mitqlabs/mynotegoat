@@ -1434,6 +1434,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   );
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
   const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
+  const [patientLocationId, setPatientLocationId] = useState<string>(patient.locationId ?? "");
 
   const [xray, setXray] = useState<ImagingFormState>({
     sentDate: "",
@@ -4239,6 +4240,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     xrayReferrals?: ImagingReferral[];
     mriReferrals?: ImagingReferral[];
     relatedCases?: RelatedCaseEntry[];
+    locationId?: string;
   } = {}): UpdatePatientRecordPatch => {
     const effectiveSpecialists = overrides.specialistReferrals ?? specialistReferrals;
     const effectiveXrays = overrides.xrayReferrals ?? xrayReferrals;
@@ -4264,6 +4266,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       address: patientAddress.trim(),
       caseStatus: caseStatus as PatientRecord["caseStatus"],
       isCashPatient: isCashPatient || undefined,
+      locationId: patientLocationId || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
       relatedCases: effectiveRelated.length > 0 ? effectiveRelated : undefined,
       xrayReferrals: effectiveXrays,
