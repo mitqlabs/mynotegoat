@@ -3,6 +3,9 @@ export interface DailyOfficeHours {
   enabled: boolean;
   start: string;
   end: string;
+  /** Optional second block for a split day (e.g. lunch break): 10-1, 2-6. */
+  start2?: string;
+  end2?: string;
 }
 
 export interface ScheduleSettingsConfig {
@@ -92,11 +95,15 @@ export function normalizeScheduleSettings(value: unknown): ScheduleSettingsConfi
       }
       const dayOfWeek = Math.max(0, Math.min(6, row.dayOfWeek));
       const fallback = defaults.officeHours[dayOfWeek];
+      const s2 = typeof row.start2 === "string" ? normalizeTime(row.start2, "") : "";
+      const e2 = typeof row.end2 === "string" ? normalizeTime(row.end2, "") : "";
+      const hasSecond = Boolean(s2 && e2 && (toMinutes(e2) ?? 0) > (toMinutes(s2) ?? 0));
       officeHoursByDay.set(dayOfWeek, {
         dayOfWeek,
         enabled: typeof row.enabled === "boolean" ? row.enabled : fallback.enabled,
         start: normalizeTime(row.start, fallback.start),
         end: normalizeTime(row.end, fallback.end),
+        ...(hasSecond ? { start2: s2, end2: e2 } : {}),
       });
     });
   }
@@ -199,14 +206,19 @@ export function isAppointmentWithinOfficeHours(
   }
 
   const appointmentStart = toMinutes(startTime);
-  const officeStart = toMinutes(officeHours.start);
-  const officeEnd = toMinutes(officeHours.end);
-  if (appointmentStart === null || officeStart === null || officeEnd === null) {
-    return false;
-  }
-
+  if (appointmentStart === null) return false;
   const appointmentEnd = appointmentStart + Math.max(1, Math.round(durationMin));
-  return appointmentStart >= officeStart && appointmentEnd <= officeEnd;
+
+  const withinBlock = (start: string | undefined, end: string | undefined) => {
+    if (!start || !end) return false;
+    const s = toMinutes(start);
+    const e = toMinutes(end);
+    if (s === null || e === null) return false;
+    return appointmentStart >= s && appointmentEnd <= e;
+  };
+
+  // Fits in either the morning block or the optional afternoon block.
+  return withinBlock(officeHours.start, officeHours.end) || withinBlock(officeHours.start2, officeHours.end2);
 }
 
 export function getOfficeHoursLabel(settings: ScheduleSettingsConfig, dateIso: string) {
@@ -214,7 +226,10 @@ export function getOfficeHoursLabel(settings: ScheduleSettingsConfig, dateIso: s
   if (!officeHours || !officeHours.enabled) {
     return "Closed";
   }
-  return `${officeHours.start} - ${officeHours.end}`;
+  const first = `${officeHours.start} - ${officeHours.end}`;
+  return officeHours.start2 && officeHours.end2
+    ? `${first}, ${officeHours.start2} - ${officeHours.end2}`
+    : first;
 }
 
 /**

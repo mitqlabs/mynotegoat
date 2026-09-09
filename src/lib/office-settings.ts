@@ -47,11 +47,14 @@ function normalizeOfficeHours(value: unknown): DailyOfficeHours[] | undefined {
     if (typeof row.dayOfWeek !== "number") continue;
     const dayOfWeek = Math.max(0, Math.min(6, Math.round(row.dayOfWeek)));
     const fb = defaults[dayOfWeek];
+    const hasSecond =
+      typeof row.start2 === "string" && row.start2 && typeof row.end2 === "string" && row.end2;
     byDay.set(dayOfWeek, {
       dayOfWeek,
       enabled: typeof row.enabled === "boolean" ? row.enabled : fb.enabled,
       start: typeof row.start === "string" ? row.start : fb.start,
       end: typeof row.end === "string" ? row.end : fb.end,
+      ...(hasSecond ? { start2: row.start2 as string, end2: row.end2 as string } : {}),
     });
   }
   if (byDay.size === 0) return undefined;

@@ -358,7 +358,7 @@ export function OfficeLocationsDoctorsSection() {
                                 ariaLabel={`${weekdayLabels[h.dayOfWeek]} open`}
                               />
                               {h.enabled ? (
-                                <>
+                                <div className="flex flex-wrap items-center gap-1.5">
                                   <input
                                     className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                     onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { start: e.target.value })}
@@ -372,7 +372,42 @@ export function OfficeLocationsDoctorsSection() {
                                     type="time"
                                     value={h.end}
                                   />
-                                </>
+                                  {h.start2 && h.end2 ? (
+                                    <>
+                                      <span className="text-[10px] font-semibold text-[var(--text-muted)]">then</span>
+                                      <input
+                                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { start2: e.target.value })}
+                                        type="time"
+                                        value={h.start2}
+                                      />
+                                      <span className="text-xs text-[var(--text-muted)]">–</span>
+                                      <input
+                                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { end2: e.target.value })}
+                                        type="time"
+                                        value={h.end2}
+                                      />
+                                      <button
+                                        className="text-xs font-semibold text-[var(--text-muted)] hover:text-[#b43b34]"
+                                        onClick={() => setLocHour(loc.id, h.dayOfWeek, { start2: undefined, end2: undefined })}
+                                        title="Remove the split (lunch) break"
+                                        type="button"
+                                      >
+                                        ✕
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                                      onClick={() => setLocHour(loc.id, h.dayOfWeek, { start2: "14:00", end2: h.end })}
+                                      title="Add a lunch break / second block"
+                                      type="button"
+                                    >
+                                      + Split
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-xs text-[var(--text-muted)]">Closed</span>
                               )}
@@ -459,22 +494,22 @@ export function OfficeLocationsDoctorsSection() {
                     value={doc.name}
                   />
                 )}
-                {isMember ? (
+                {isMember && (
                   <span
                     className="shrink-0 rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#0d79bf]"
-                    title="This doctor is a team member. Manage them in Settings → Team."
+                    title="This doctor is a team member (managed in Settings → Team). Removing here just un-marks them as a doctor."
                   >
                     Team member
                   </span>
-                ) : (
-                  <button
-                    className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
-                    onClick={() => removeDoctor(doc.id)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
                 )}
+                <button
+                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
+                  onClick={() => removeDoctor(doc.id)}
+                  title={isMember ? "Un-mark as doctor (keeps them as a team member)" : "Remove this doctor"}
+                  type="button"
+                >
+                  {isMember ? "Un-doctor" : "Remove"}
+                </button>
               </div>
             );
           })}
