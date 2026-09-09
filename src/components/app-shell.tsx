@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { wipeLocalWorkspaceForSignOut } from "@/lib/cloud-state";
 import { getVisiblePortalNavItems, type PlanTier } from "@/lib/plan-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import { ReadOnlyContentGuard } from "@/components/read-only-content-guard";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -342,7 +343,9 @@ export function AppShell({
                 })}
               </nav>
 
-              <main className="p-4 lg:p-7">{children}</main>
+              <main className="p-4 lg:p-7">
+                <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
+              </main>
             </section>
           </div>
         </div>

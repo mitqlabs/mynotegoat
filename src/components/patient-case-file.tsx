@@ -1524,7 +1524,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // isn't shown. hiddenStyle() drops a "hide" panel from layout while its
   // logic stays mounted (so background linkages keep working).
   const sectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
-  const { sectionHidden } = useWorkspaceAccess();
+  const { sectionHidden, canEdit } = useWorkspaceAccess();
+  // View-only members can read but not edit this patient. The page content is
+  // made inert by ReadOnlyContentGuard; we start every panel expanded so they
+  // can still read sections that would otherwise need a (now-blocked) click.
+  const patientReadOnly = !canEdit("patients");
   // Hide via inline style, NOT a conditional class — appending to the
   // className with a template literal stops Tailwind's production build
   // from extracting single-use utilities like xl:col-span-3, which
@@ -1537,7 +1541,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [sectionModes, sectionHidden],
   );
   const [sectionPanelsOpen, setSectionPanelsOpen] = useState<Record<SectionPanelKey, boolean>>(() => {
-    const startOpen = (key: SectionPanelKey) => sectionModes[key] === "open";
+    const startOpen = (key: SectionPanelKey) => patientReadOnly || sectionModes[key] === "open";
     return {
       notes: startOpen("notes"),
       reExam: startOpen("reExam"),
