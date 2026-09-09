@@ -5738,38 +5738,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="w-[6.5rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickDateEditId === appointment.id ? (
-                                  <span className="relative z-10 inline-flex w-max items-center gap-1 rounded-md bg-white">
-                                    <input
-                                      autoFocus
-                                      className="w-[7.75rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                      onChange={(event) => setQuickDateDraft(event.target.value)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                          commitQuickDateEdit(appointment);
-                                        } else if (event.key === "Escape") {
-                                          cancelQuickDateEdit();
-                                        }
-                                      }}
-                                      type="date"
-                                      value={quickDateDraft}
-                                    />
-                                    <button
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs font-semibold text-[var(--brand-primary)]"
-                                      onClick={() => commitQuickDateEdit(appointment)}
-                                      title="Save new date"
-                                      type="button"
-                                    >
-                                      ✓
-                                    </button>
-                                    <button
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs font-semibold text-[var(--text-muted)]"
-                                      onClick={cancelQuickDateEdit}
-                                      title="Cancel"
-                                      type="button"
-                                    >
-                                      ✕
-                                    </button>
-                                  </span>
+                                  /* Just the field — no ✓/✕. Enter or clicking
+                                     away saves, Escape backs out. The buttons
+                                     were costing width in the row's tightest
+                                     column for something two keys already do. */
+                                  <input
+                                    autoFocus
+                                    className="relative z-10 w-[7.25rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    onBlur={() => {
+                                      if (quickDateEditId === appointment.id) {
+                                        commitQuickDateEdit(appointment);
+                                      }
+                                    }}
+                                    onChange={(event) => setQuickDateDraft(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        commitQuickDateEdit(appointment);
+                                      } else if (event.key === "Escape") {
+                                        cancelQuickDateEdit();
+                                      }
+                                    }}
+                                    title="Change the date, then press Enter (Escape cancels)"
+                                    type="date"
+                                    value={quickDateDraft}
+                                  />
                                 ) : (
                                   <button
                                     className="rounded-md border border-transparent px-1.5 py-0.5 text-xs font-semibold hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
@@ -5790,48 +5782,43 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="w-[5.25rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickTimeEditId === appointment.id ? (
-                                  <span className="relative z-10 inline-flex w-max items-center gap-1 rounded-md bg-white">
-                                    <input
-                                      autoFocus
-                                      className="w-[5.25rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                      // No numeric inputMode + no digit
-                                      // filter on the value: the user types
-                                      // "4:45pm" / "445p" / "16:45" and the
-                                      // parser handles it on commit. The
-                                      // old digit-only filter forced the
-                                      // user to translate 4:45 PM into
-                                      // 16:45 in their head every time.
-                                      maxLength={8}
-                                      onChange={(event) => setQuickTimeDraft(event.target.value)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                          // Save and jump to the next row's time,
-                                          // so you can run through them quickly.
-                                          commitQuickTimeEdit(appointment, true);
-                                        } else if (event.key === "Escape") {
-                                          cancelQuickTimeEdit();
-                                        }
-                                      }}
-                                      placeholder="4:45pm"
-                                      value={quickTimeDraft}
-                                    />
-                                    <button
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs font-semibold text-[var(--brand-primary)]"
-                                      onClick={() => commitQuickTimeEdit(appointment)}
-                                      title="Save new time"
-                                      type="button"
-                                    >
-                                      ✓
-                                    </button>
-                                    <button
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs font-semibold text-[var(--text-muted)]"
-                                      onClick={cancelQuickTimeEdit}
-                                      title="Cancel"
-                                      type="button"
-                                    >
-                                      ✕
-                                    </button>
-                                  </span>
+                                  /* Field only — Enter saves and jumps to the
+                                     next row's time, clicking away saves,
+                                     Escape backs out. */
+                                  <input
+                                    autoFocus
+                                    className="relative z-10 w-[5rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    // No numeric inputMode + no digit
+                                    // filter on the value: the user types
+                                    // "4:45pm" / "445p" / "16:45" and the
+                                    // parser handles it on commit. The
+                                    // old digit-only filter forced the
+                                    // user to translate 4:45 PM into
+                                    // 16:45 in their head every time.
+                                    maxLength={8}
+                                    // Enter advances to the next row, which blurs
+                                    // THIS input after quickTimeEditId has already
+                                    // moved on. Without the id check that blur
+                                    // would commit a second time.
+                                    onBlur={() => {
+                                      if (quickTimeEditId === appointment.id) {
+                                        commitQuickTimeEdit(appointment);
+                                      }
+                                    }}
+                                    onChange={(event) => setQuickTimeDraft(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        // Save and jump to the next row's time,
+                                        // so you can run through them quickly.
+                                        commitQuickTimeEdit(appointment, true);
+                                      } else if (event.key === "Escape") {
+                                        cancelQuickTimeEdit();
+                                      }
+                                    }}
+                                    placeholder="4:45pm"
+                                    title="Type a time, then press Enter (Escape cancels)"
+                                    value={quickTimeDraft}
+                                  />
                                 ) : (
                                   <button
                                     className="rounded-md border border-transparent px-1.5 py-0.5 text-xs font-semibold hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
