@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { patients } from "@/lib/mock-data";
 import { buildCaseNumber } from "@/lib/follow-up-queue";
@@ -9,6 +9,7 @@ import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
+import { markMessagesSeen } from "@/lib/messages-read";
 
 const GENERAL_KEY = "__general__";
 const GENERAL_NAME = "General — whole team";
@@ -112,6 +113,14 @@ export function MessagesWorkspace() {
   // The account holder posts as ADMIN (by name when set); a team member
   // posts under their role label.
   const myLabel = isOwner ? ownerName || "Admin" : getCurrentMembershipSync()?.label || "Team Member";
+
+  // Viewing the feed clears the unread badge. Re-mark on every change so a
+  // message arriving while you're on this tab stays "seen".
+  useEffect(() => {
+    if (loading) return;
+    const latest = messages.reduce((max, m) => (m.createdAt > max ? m.createdAt : max), "");
+    markMessagesSeen(latest || undefined);
+  }, [messages, loading]);
 
   const conversations = useMemo<Conversation[]>(() => {
     const map = new Map<string, Conversation>();
