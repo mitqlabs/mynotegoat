@@ -494,22 +494,22 @@ export function OfficeLocationsDoctorsSection() {
                     value={doc.name}
                   />
                 )}
-                {isMember && (
+                {isMember ? (
                   <span
                     className="shrink-0 rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#0d79bf]"
-                    title="This doctor is a team member (managed in Settings → Team). Removing here just un-marks them as a doctor."
+                    title="This doctor is a team member. Manage them in Settings → Team."
                   >
                     Team member
                   </span>
+                ) : (
+                  <button
+                    className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
+                    onClick={() => removeDoctor(doc.id)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
                 )}
-                <button
-                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
-                  onClick={() => removeDoctor(doc.id)}
-                  title={isMember ? "Un-mark as doctor (keeps them as a team member)" : "Remove this doctor"}
-                  type="button"
-                >
-                  {isMember ? "Un-doctor" : "Remove"}
-                </button>
               </div>
             );
           })}
