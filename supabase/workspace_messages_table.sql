@@ -67,11 +67,11 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
--- Roster read for @mentions. The original wm_select only let a member
--- see their OWN row. Messages needs every member of a workspace to see
--- the roster (to @mention teammates), so widen the read to anyone in the
--- workspace. Writes (insert/update/delete) stay owner-only — unchanged.
+-- NOTE: an earlier version of this file widened wm_select to call
+-- can_access_owner() so members could read the full roster for @mentions.
+-- That RECURSED (can_access_owner reads workspace_members) and locked
+-- members out of all data. Do NOT reintroduce that. wm_select stays the
+-- original non-recursive rule (see supabase/fix_member_access_recursion.sql):
+--   using (workspace_owner_id = auth.uid() or member_user_id = auth.uid())
+-- The @mention roster falls back to the owner + self for a member view.
 -- ---------------------------------------------------------------------
-drop policy if exists "wm_select" on public.workspace_members;
-create policy "wm_select" on public.workspace_members for select to authenticated
-using (public.can_access_owner(workspace_owner_id::text));
