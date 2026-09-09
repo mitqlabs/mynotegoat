@@ -69,6 +69,8 @@ export interface PatientRecord {
   deletedAt?: string;
   /** Cash patient (no attorney / injury / case-number workflow). PI patient when false/undefined. */
   isCashPatient?: boolean;
+  /** Which office location this patient treats at (OfficeLocation.id). Multi-location only. */
+  locationId?: string;
 }
 
 export interface CashPaymentEntry {
@@ -369,6 +371,7 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
     xrayReferrals: Array.isArray(value.xrayReferrals) ? value.xrayReferrals : undefined,
     mriReferrals: Array.isArray(value.mriReferrals) ? value.mriReferrals : undefined,
     specialistReferrals: Array.isArray(value.specialistReferrals) ? value.specialistReferrals : undefined,
+    locationId: cleanString(value.locationId) || undefined,
   };
 }
 
@@ -620,6 +623,7 @@ export type CreatePatientDraft = {
   priorCare?: string;
   notes?: string;
   isCashPatient?: boolean;
+  locationId?: string;
 };
 
 export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | null {
@@ -675,6 +679,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
     priority: "Normal",
     matrix: Object.keys(matrix).length > 0 ? matrix : undefined,
     isCashPatient: isCashPatient || undefined,
+    locationId: cleanString(draft.locationId) || undefined,
   };
 
   persistPatients([nextPatient, ...patients]);
@@ -684,7 +689,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }

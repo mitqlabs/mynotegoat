@@ -19,6 +19,8 @@ import {
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
 import { createPatientRecord, patients, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { useLocationView } from "@/hooks/use-location-view";
+import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { UsDateInput } from "@/components/us-date-input";
@@ -265,6 +267,7 @@ type NewPatientDraft = {
   caseStatus: PatientRecord["caseStatus"];
   notes: string;
   isCashPatient: boolean;
+  locationId: string;
 };
 
 const detailRowsTemplate: DetailRow[] = [
@@ -490,6 +493,8 @@ export default function PatientsPage() {
   const [year, setYear] = useState("ALL");
   const [attorney, setAttorney] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+  // Multi-location: filter the list by the shared "current location" view.
+  const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
 
   // Sort state (persisted)
   const [sortColumn, setSortColumn] = useState<ListColumnId>(() => {
@@ -561,6 +566,7 @@ export default function PatientsPage() {
     caseStatus: defaultCaseStatus,
     notes: "",
     isCashPatient: false,
+    locationId: "",
   });
 
   const resetNewPatientDraft = () => {
@@ -586,6 +592,7 @@ export default function PatientsPage() {
       caseStatus: defaultCaseStatus,
       notes: "",
       isCashPatient: false,
+      locationId: "",
     });
   };
 
@@ -680,6 +687,7 @@ export default function PatientsPage() {
       priorCare: newPatientDraft.priorCare.trim(),
       notes: newPatientDraft.notes.trim(),
       isCashPatient: newPatientDraft.isCashPatient,
+      locationId: newPatientDraft.locationId || undefined,
     });
 
     if (!createdPatient) {
@@ -827,8 +835,13 @@ export default function PatientsPage() {
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
 
+      // Location filter (only when multi-location is on and a specific
+      // location is selected). "" selected = all locations.
+      const matchesLocation =
+        !multiLocation || !selectedLocationId || patient.locationId === selectedLocationId;
+
       return (
-        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus
+        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus && matchesLocation
       );
     });
 
@@ -915,7 +928,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, year, fromMon, toMon, sortColumn, sortAsc, section]);
+  }, [attorney, searchDraft, status, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1469,6 +1482,24 @@ export default function PatientsPage() {
                 </select>
               </div>
             </div>
+
+            {multiLocation && (
+              <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+                Location
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                  onChange={(event) => setLocation(event.target.value)}
+                  value={selectedLocationId}
+                >
+                  <option value="">All locations</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {locationLabel(loc)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Attorney
@@ -2497,6 +2528,26 @@ export default function PatientsPage() {
                       {caseStatuses.map((statusConfig) => (
                         <option key={statusConfig.name} value={statusConfig.name}>
                           {statusConfig.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {multiLocation && (
+                  <label className="grid gap-1">
+                    <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
+                    <select
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setNewPatientDraft((current) => ({ ...current, locationId: event.target.value }))
+                      }
+                      value={newPatientDraft.locationId}
+                    >
+                      <option value="">Select location…</option>
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {locationLabel(loc)}
                         </option>
                       ))}
                     </select>
