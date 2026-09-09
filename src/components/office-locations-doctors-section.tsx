@@ -6,7 +6,13 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 import { parseAddressString } from "@/lib/address-parts";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { DebouncedInput } from "@/components/debounced-input";
-import { composeLocationAddress, type OfficeDoctor, type OfficeLocation } from "@/lib/office-settings";
+import {
+  composeLocationAddress,
+  STORAGE_KEY_OFFICE_SETTINGS,
+  type OfficeDoctor,
+  type OfficeLocation,
+} from "@/lib/office-settings";
+import { dualWriteKvOrThrow } from "@/lib/kv-cloud";
 import {
   getDefaultScheduleSettings,
   loadScheduleSettings,
@@ -30,6 +36,33 @@ export function OfficeLocationsDoctorsSection() {
   const [newLocation, setNewLocation] = useState("");
   const [openLocId, setOpenLocId] = useState<string | null>(null);
   const seededRef = useRef(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Confirm each change reached the CLOUD (awaited), so a fast refresh can't
+  // lose a just-added office. The hook already writes fire-and-forget; this
+  // adds an awaited, visible confirmation (idempotent upsert). Skips the very
+  // first run (initial load).
+  const firstRunRef = useRef(true);
+  useEffect(() => {
+    if (firstRunRef.current) {
+      firstRunRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    setSaveState("saving");
+    const t = setTimeout(async () => {
+      try {
+        await dualWriteKvOrThrow(STORAGE_KEY_OFFICE_SETTINGS, "tasks", officeSettings);
+        if (!cancelled) setSaveState("saved");
+      } catch {
+        if (!cancelled) setSaveState("error");
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [officeSettings]);
 
   // Locations are universal: there's always at least one office (this one).
   // Seed it once from the existing single-office info so a solo practice
@@ -154,8 +187,23 @@ export function OfficeLocationsDoctorsSection() {
     <div className="sm:col-span-2 grid gap-4">
       {/* ── Office Locations ────────────────────────────────────── */}
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-        <div>
+        <div className="flex items-start justify-between gap-2">
           <h5 className="text-sm font-semibold text-[var(--text-main)]">Office Locations</h5>
+          {saveState !== "idle" && (
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                saveState === "saving"
+                  ? "bg-[var(--bg-soft)] text-[var(--text-muted)]"
+                  : saveState === "saved"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-red-100 text-red-700"
+              }`}
+            >
+              {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed — retry"}
+            </span>
+          )}
+        </div>
+        <div>
           <p className="text-xs text-[var(--text-muted)]">
             Each office has its own address, phone, doctors &amp; hours. Add a second office and the
             Schedule &amp; Patients let you switch between them.
