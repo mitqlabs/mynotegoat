@@ -18,7 +18,7 @@ export interface WorkspacePerson {
   email: string;
 }
 
-export function useWorkspacePeople() {
+export function useWorkspacePeople(ownerName?: string) {
   const [people, setPeople] = useState<WorkspacePerson[]>([]);
 
   useEffect(() => {
@@ -39,9 +39,11 @@ export function useWorkspacePeople() {
         email: String(row.email ?? ""),
       }));
       // The owner never appears in workspace_members — add them so staff can
-      // @mention the doctor and vice-versa.
+      // @mention the doctor and vice-versa. The account holder is the office
+      // ADMIN (shown by name when Office Settings has a doctor name).
       if (ownerId && !roster.some((p) => p.userId === ownerId)) {
-        roster.unshift({ userId: ownerId, label: "Owner", email: "" });
+        const name = (ownerName ?? "").trim();
+        roster.unshift({ userId: ownerId, label: name || "Admin", email: name ? "Admin" : "" });
       }
       setPeople(roster);
     };
@@ -49,7 +51,7 @@ export function useWorkspacePeople() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ownerName]);
 
   return people;
 }

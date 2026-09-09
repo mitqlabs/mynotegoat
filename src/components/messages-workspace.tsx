@@ -8,6 +8,7 @@ import { useWorkspaceMessages, type WorkspaceMessage } from "@/hooks/use-workspa
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 
 const GENERAL_KEY = "__general__";
 const GENERAL_NAME = "General — whole team";
@@ -73,7 +74,9 @@ export function MessagesWorkspace() {
   const { canEdit, isOwner } = useWorkspaceAccess();
   const canPost = canEdit("messages");
   const { messages, loading, notReady, currentUserId, postMessage, deleteMessage } = useWorkspaceMessages();
-  const people = useWorkspacePeople();
+  const { officeSettings } = useOfficeSettings();
+  const ownerName = (officeSettings.doctorName ?? "").trim();
+  const people = useWorkspacePeople(ownerName);
 
   // Case options, keyed by case number + name (e.g. "072726GAMI Galstyan,
   // Mike") so the tag makes it unambiguous which case a message is about.
@@ -106,7 +109,9 @@ export function MessagesWorkspace() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-  const myLabel = getCurrentMembershipSync()?.label || "Owner";
+  // The account holder posts as ADMIN (by name when set); a team member
+  // posts under their role label.
+  const myLabel = isOwner ? ownerName || "Admin" : getCurrentMembershipSync()?.label || "Team Member";
 
   const conversations = useMemo<Conversation[]>(() => {
     const map = new Map<string, Conversation>();
