@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import {
   accessLevelsForFeature,
   PERMISSIONABLE_FEATURES,
+  MEMBER_LOCKABLE_SECTIONS,
   normalizePermissions,
   type AccessLevel,
   type MemberPermissions,
 } from "@/lib/team-permissions";
 import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
+import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 
 type Member = {
   member_user_id: string;
@@ -41,6 +43,9 @@ export function TeamSettingsSection() {
   const [editLabel, setEditLabel] = useState("");
   // Which members have their permission grid expanded (default collapsed).
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
+  // Office-wide patient-section hide state — a section hidden office-wide can't
+  // be individually toggled (it's off for everyone).
+  const officeSectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
 
   // Add-member form.
   const [showAdd, setShowAdd] = useState(false);
@@ -164,6 +169,39 @@ export function TeamSettingsSection() {
       setError(uErr.message);
       void loadMembers();
     }
+  };
+
+  const saveMemberPerms = async (member: Member, nextPerms: MemberPermissions) => {
+    setMembers((cur) =>
+      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),
+    );
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const { error: uErr } = await supabase
+      .from("workspace_members")
+      .update({ permissions: nextPerms, updated_at: new Date().toISOString() })
+      .eq("member_user_id", member.member_user_id);
+    if (uErr) {
+      setError(uErr.message);
+      void loadMembers();
+    }
+  };
+
+  const setMemberOfficeAdmin = (member: Member, on: boolean) => {
+    const next = { ...member.permissions };
+    if (on) next.officeAdmin = true;
+    else delete next.officeAdmin;
+    void saveMemberPerms(member, next);
+  };
+
+  const setMemberSectionHidden = (member: Member, key: string, hidden: boolean) => {
+    const set = new Set(member.permissions.hiddenSections ?? []);
+    if (hidden) set.add(key);
+    else set.delete(key);
+    const next = { ...member.permissions };
+    if (set.size) next.hiddenSections = [...set];
+    else delete next.hiddenSections;
+    void saveMemberPerms(member, next);
   };
 
   const setMemberAccess = async (member: Member, feature: PortalFeature, level: AccessLevel) => {
@@ -313,40 +351,100 @@ export function TeamSettingsSection() {
                     </div>
                   </div>
                   {expandedMembers.has(member.member_user_id) && (
-                  <div className="mt-2 grid gap-1.5">
-                    {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
-                      const featureOn = isFeatureEnabled(feature);
-                      return (
-                        <div
-                          key={feature}
-                          className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1"
-                        >
-                          <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
-                            {fLabel}
-                          </span>
-                          {featureOn ? (
-                            <select
-                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                              onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
-                              value={member.permissions[feature] ?? "none"}
-                            >
-                              {accessLevelsForFeature(viewOnly).map((lvl) => (
-                                <option key={lvl} value={lvl}>
-                                  {ACCESS_LABEL[lvl]}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span
-                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
-                              title="This module is turned off for the whole office (Settings → Module Visibility)."
-                            >
-                              Off · office-wide
-                            </span>
-                          )}
+                  <div className="mt-2 space-y-2">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] px-2 py-1.5">
+                      <span className="text-xs font-semibold">
+                        Office Admin{" "}
+                        <span className="font-normal text-[var(--text-muted)]">
+                          — full access incl. Settings &amp; Team
+                        </span>
+                      </span>
+                      <input
+                        checked={Boolean(member.permissions.officeAdmin)}
+                        onChange={(e) => setMemberOfficeAdmin(member, e.target.checked)}
+                        type="checkbox"
+                      />
+                    </label>
+                    {member.permissions.officeAdmin ? (
+                      <p className="text-[11px] text-[var(--text-muted)]">
+                        Full owner-level access. Turn off Office Admin to set specific permissions.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="grid gap-1.5">
+                          {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
+                            const featureOn = isFeatureEnabled(feature);
+                            return (
+                              <div
+                                key={feature}
+                                className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1"
+                              >
+                                <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
+                                  {fLabel}
+                                </span>
+                                {featureOn ? (
+                                  <select
+                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
+                                    value={member.permissions[feature] ?? "none"}
+                                  >
+                                    {accessLevelsForFeature(viewOnly).map((lvl) => (
+                                      <option key={lvl} value={lvl}>
+                                        {ACCESS_LABEL[lvl]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span
+                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
+                                    title="This module is turned off for the whole office (Settings → Module Visibility)."
+                                  >
+                                    Off · office-wide
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                        <div>
+                          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                            Patient-page sections — flip OFF to hide from this member
+                          </p>
+                          <div className="mt-1 grid gap-1">
+                            {MEMBER_LOCKABLE_SECTIONS.map(({ key, label }) => {
+                              const officeHidden =
+                                officeSectionModes[key as keyof typeof officeSectionModes] === "hide";
+                              const memberVisible = !(member.permissions.hiddenSections ?? []).includes(key);
+                              return (
+                                <div
+                                  key={key}
+                                  className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1"
+                                >
+                                  <span className={`text-xs ${officeHidden ? "text-[var(--text-muted)]" : ""}`}>
+                                    {label}
+                                  </span>
+                                  {officeHidden ? (
+                                    <span
+                                      className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
+                                      title="Hidden for the whole office (Settings → Patient Page Sections)."
+                                    >
+                                      Off · office-wide
+                                    </span>
+                                  ) : (
+                                    <input
+                                      checked={memberVisible}
+                                      onChange={(e) => setMemberSectionHidden(member, key, !e.target.checked)}
+                                      title={memberVisible ? "Visible — flip off to hide" : "Hidden from this member"}
+                                      type="checkbox"
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   )}
                 </div>

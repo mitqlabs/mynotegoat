@@ -1,5 +1,13 @@
 import type { PortalFeature } from "@/lib/plan-access";
 import { isFeatureEnabled, type ModuleVisibility } from "@/lib/module-visibility";
+import { patientPagePanelKeys, patientPagePanelLabels } from "@/lib/patient-page-prefs";
+
+/** Patient-page sub-panels an owner can hide from an individual member
+ *  (on top of the office-wide hide). Same catalog as Patient Page Sections. */
+export const MEMBER_LOCKABLE_SECTIONS = patientPagePanelKeys.map((key) => ({
+  key: key as string,
+  label: patientPagePanelLabels[key],
+}));
 
 /**
  * Team permissions model.
@@ -17,7 +25,12 @@ import { isFeatureEnabled, type ModuleVisibility } from "@/lib/module-visibility
 
 export type AccessLevel = "none" | "view" | "edit";
 
-export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>>;
+export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
+  /** Elevate this member to office-admin (full access + Settings/Team). */
+  officeAdmin?: boolean;
+  /** Patient-page sub-panels hidden for this member (panel keys). */
+  hiddenSections?: string[];
+};
 
 /**
  * Sections a member can be granted. "settings" is intentionally excluded
@@ -101,7 +114,13 @@ export function normalizeAccessLevel(value: unknown): AccessLevel {
 
 export function normalizePermissions(value: unknown): MemberPermissions {
   if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
   const out: MemberPermissions = {};
+  if (raw.officeAdmin === true) out.officeAdmin = true;
+  if (Array.isArray(raw.hiddenSections)) {
+    const hs = raw.hiddenSections.filter((s): s is string => typeof s === "string");
+    if (hs.length) out.hiddenSections = hs;
+  }
   for (const { feature } of PERMISSIONABLE_FEATURES) {
     const level = normalizeAccessLevel((value as Record<string, unknown>)[feature]);
     if (level !== "none") out[feature] = level;

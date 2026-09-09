@@ -98,6 +98,7 @@ import {
 import { loadEmailSettings, renderEmailTemplate } from "@/lib/email-settings";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { usePlanTier } from "@/lib/plan-context";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -1523,14 +1524,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // isn't shown. hiddenStyle() drops a "hide" panel from layout while its
   // logic stays mounted (so background linkages keep working).
   const sectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
+  const { sectionHidden } = useWorkspaceAccess();
   // Hide via inline style, NOT a conditional class — appending to the
   // className with a template literal stops Tailwind's production build
   // from extracting single-use utilities like xl:col-span-3, which
   // silently breaks the panel grid. Keep classNames fully static.
+  // A panel is hidden if the office hid it (sectionModes) OR the owner hid it
+  // for THIS team member (sectionHidden). Owners/office-admins never hide.
   const hiddenStyle = useCallback(
     (key: SectionPanelKey): CSSProperties | undefined =>
-      sectionModes[key] === "hide" ? { display: "none" } : undefined,
-    [sectionModes],
+      sectionModes[key] === "hide" || sectionHidden(key) ? { display: "none" } : undefined,
+    [sectionModes, sectionHidden],
   );
   const [sectionPanelsOpen, setSectionPanelsOpen] = useState<Record<SectionPanelKey, boolean>>(() => {
     const startOpen = (key: SectionPanelKey) => sectionModes[key] === "open";

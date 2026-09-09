@@ -34,9 +34,14 @@ export interface WorkspaceAccessValue {
   canView: (feature: PortalFeature) => boolean;
   /** Can the user create/modify within this feature? */
   canEdit: (feature: PortalFeature) => boolean;
+  /** Is this patient-page sub-panel hidden for this member? (never for owner) */
+  sectionHidden: (sectionKey: string) => boolean;
 }
 
-const OWNER_FULL: Omit<WorkspaceAccessValue, "access" | "canView" | "canEdit"> = {
+const OWNER_FULL: Omit<
+  WorkspaceAccessValue,
+  "access" | "canView" | "canEdit" | "sectionHidden"
+> = {
   isOwner: true,
   isMember: false,
   officeAdmin: false,
@@ -58,6 +63,7 @@ export function WorkspaceAccessProvider({
     // Owner OR office-admin = full access. Regular member = their grants.
     const fullAccess = !isMember || officeAdmin;
     const perms = membership?.permissions ?? {};
+    const hidden = new Set(perms.hiddenSections ?? []);
     const access = (feature: PortalFeature): AccessLevel =>
       effectiveAccessLevel(visibility, perms, fullAccess, feature);
     return {
@@ -67,6 +73,9 @@ export function WorkspaceAccessProvider({
       access,
       canView: (f) => access(f) !== "none",
       canEdit: (f) => access(f) === "edit",
+      // Owners/office-admins see every section; a regular member hides the
+      // panels the owner switched off for them.
+      sectionHidden: (sectionKey) => (fullAccess ? false : hidden.has(sectionKey)),
     };
   }, [membership, visibility]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -81,5 +90,6 @@ export function useWorkspaceAccess(): WorkspaceAccessValue {
     access: () => "edit",
     canView: () => true,
     canEdit: () => true,
+    sectionHidden: () => false,
   };
 }

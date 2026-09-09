@@ -22,6 +22,7 @@ import {
   type WorkspaceMembership,
 } from "@/lib/workspace-membership";
 import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
+import { RouteAccessGuard } from "@/components/route-access-guard";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -415,6 +416,7 @@ export default function PortalLayout({
   return (
     <PlanTierProvider planTier={planTier}>
       <WorkspaceAccessProvider membership={membership}>
+      <RouteAccessGuard />
       <AppShell planTier={planTier}>
         {/* Sync status indicator.
             Priority: error > syncing > saved-flash. An "error" state is
