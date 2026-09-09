@@ -12,7 +12,10 @@ import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 
 export interface WorkspacePerson {
   userId: string;
+  /** Display name — the member's role label ("Front Desk", "Owner", …). */
   label: string;
+  /** Secondary line (email), shown under the name in the @ picker. */
+  email: string;
 }
 
 export function useWorkspacePeople() {
@@ -27,17 +30,18 @@ export function useWorkspacePeople() {
       const ownerId = membership?.ownerId ?? "";
       const { data } = await supabase
         .from("workspace_members")
-        .select("member_user_id, label")
+        .select("member_user_id, label, email")
         .eq("workspace_owner_id", ownerId);
       if (cancelled) return;
       const roster: WorkspacePerson[] = (data ?? []).map((row) => ({
         userId: String(row.member_user_id),
         label: String(row.label ?? "Team Member"),
+        email: String(row.email ?? ""),
       }));
       // The owner never appears in workspace_members — add them so staff can
       // @mention the doctor and vice-versa.
       if (ownerId && !roster.some((p) => p.userId === ownerId)) {
-        roster.unshift({ userId: ownerId, label: "Owner" });
+        roster.unshift({ userId: ownerId, label: "Owner", email: "" });
       }
       setPeople(roster);
     };

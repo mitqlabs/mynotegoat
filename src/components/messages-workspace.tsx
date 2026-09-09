@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { patients } from "@/lib/mock-data";
+import { buildCaseNumber } from "@/lib/follow-up-queue";
 import { useWorkspaceMessages, type WorkspaceMessage } from "@/hooks/use-workspace-messages";
-import { useWorkspacePeople } from "@/hooks/use-workspace-people";
+import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 
@@ -24,7 +25,14 @@ function conversationKeyOf(m: WorkspaceMessage) {
 }
 
 function initialsOf(label: string) {
-  const parts = label.trim().split(/\s+/).filter(Boolean);
+  // Prefer the alphabetic words (so a case-number label like
+  // "072726GAMI Galstyan, Mike" yields "GM", not "0M").
+  const words = label
+    .replace(/,/g, " ")
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => /^[a-zA-Z]/.test(w));
+  const parts = words.length ? words : label.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -67,10 +75,18 @@ export function MessagesWorkspace() {
   const { messages, loading, notReady, currentUserId, postMessage, deleteMessage } = useWorkspaceMessages();
   const people = useWorkspacePeople();
 
-  const activePatients = useMemo(
-    () => patients.filter((p) => !p.deleted).sort((a, b) => a.fullName.localeCompare(b.fullName)),
-    [],
-  );
+  // Case options, keyed by case number + name (e.g. "072726GAMI Galstyan,
+  // Mike") so the tag makes it unambiguous which case a message is about.
+  const caseOptions = useMemo(() => {
+    return patients
+      .filter((p) => !p.deleted)
+      .map((p) => {
+        const caseNumber = buildCaseNumber(p.dateOfLoss, p.fullName);
+        const label = caseNumber ? `${caseNumber} ${p.fullName}` : p.fullName;
+        return { id: p.id, name: p.fullName, caseNumber, label };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
 
   // Composer state.
   const [body, setBody] = useState("");
@@ -78,6 +94,11 @@ export function MessagesWorkspace() {
   const [notify, setNotify] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [composerOpen, setComposerOpen] = useState(true);
+
+  // Inline @mention autocomplete.
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<{ at: number; query: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   // View state.
   const [filterKey, setFilterKey] = useState<string>("all");
@@ -123,8 +144,57 @@ export function MessagesWorkspace() {
   const resolvedCase = useMemo(() => {
     const q = caseQuery.trim().toLowerCase();
     if (!q) return null;
-    return activePatients.find((p) => p.fullName.toLowerCase() === q) ?? null;
-  }, [caseQuery, activePatients]);
+    return caseOptions.find((c) => c.label.toLowerCase() === q) ?? null;
+  }, [caseQuery, caseOptions]);
+
+  // People matching the active @token, minus the current user and anyone
+  // already mentioned.
+  const mentionMatches = useMemo<WorkspacePerson[]>(() => {
+    if (!mentionQuery) return [];
+    const q = mentionQuery.query.toLowerCase();
+    return people
+      .filter((p) => p.userId !== currentUserId)
+      .filter((p) => !q || p.label.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionQuery, people, currentUserId]);
+
+  // Recompute the active @token from the text up to the caret.
+  const syncMentionQuery = (value: string, caret: number) => {
+    const upto = value.slice(0, caret);
+    const match = upto.match(/(?:^|\s)@([\w.'-]*)$/);
+    if (match) {
+      setMentionQuery({ at: caret - match[1].length - 1, query: match[1] });
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
+  };
+
+  const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setBody(value);
+    syncMentionQuery(value, e.target.selectionStart ?? value.length);
+  };
+
+  const pickMention = (person: WorkspacePerson) => {
+    if (!mentionQuery) return;
+    const ta = textareaRef.current;
+    const caret = ta?.selectionStart ?? body.length;
+    const before = body.slice(0, mentionQuery.at);
+    const after = body.slice(caret);
+    const insert = `@${person.label} `;
+    const next = before + insert + after;
+    setBody(next);
+    setNotify((cur) => new Set(cur).add(person.userId));
+    setMentionQuery(null);
+    // Restore focus + caret just past the inserted mention.
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      const pos = before.length + insert.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    });
+  };
 
   const handleSend = async () => {
     const text = body.trim();
@@ -135,13 +205,14 @@ export function MessagesWorkspace() {
       body: text,
       authorLabel: myLabel,
       patientId: resolvedCase?.id,
-      patientName: resolvedCase?.fullName,
+      patientName: resolvedCase?.label,
       mentions,
     });
     setSending(false);
     if (ok) {
       setBody("");
       setNotify(new Set());
+      setMentionQuery(null);
       // Keep the tagged case so the user can post several notes to one case.
     }
   };
@@ -211,19 +282,81 @@ export function MessagesWorkspace() {
           </button>
           {composerOpen && (
             <div className="space-y-3 border-t border-[var(--line-soft)] p-4">
-              <textarea
-                className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                onChange={(e) => setBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                    e.preventDefault();
-                    void handleSend();
-                  }
-                }}
-                placeholder="Write a message to the team…"
-                rows={3}
-                value={body}
-              />
+              <div className="relative">
+                <textarea
+                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  onBlur={() => {
+                    // Let a click on a dropdown row register before closing.
+                    window.setTimeout(() => setMentionQuery(null), 150);
+                  }}
+                  onChange={handleBodyChange}
+                  onKeyDown={(e) => {
+                    if (mentionQuery && mentionMatches.length > 0) {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        pickMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                        return;
+                      }
+                      if (e.key === "Escape") {
+                        setMentionQuery(null);
+                        return;
+                      }
+                    }
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      void handleSend();
+                    }
+                  }}
+                  onKeyUp={(e) => {
+                    const t = e.target as HTMLTextAreaElement;
+                    syncMentionQuery(t.value, t.selectionStart ?? t.value.length);
+                  }}
+                  placeholder="Write a message… type @ to mention a teammate"
+                  ref={textareaRef}
+                  rows={3}
+                  value={body}
+                />
+
+                {mentionQuery && mentionMatches.length > 0 && (
+                  <div className="absolute bottom-full left-0 z-20 mb-1 w-64 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
+                    {mentionMatches.map((p, i) => (
+                      <button
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                          i === mentionIndex ? "bg-[var(--bg-soft)]" : "bg-white"
+                        }`}
+                        key={p.userId}
+                        // onMouseDown (not onClick) so it fires before textarea blur.
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickMention(p);
+                        }}
+                        onMouseEnter={() => setMentionIndex(i)}
+                        type="button"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] text-xs font-bold text-[var(--text-muted)]">
+                          {initialsOf(p.label)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold">{p.label}</span>
+                          {p.email && (
+                            <span className="block truncate text-xs text-[var(--text-muted)]">{p.email}</span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="grid gap-1">
@@ -232,49 +365,43 @@ export function MessagesWorkspace() {
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                     list="messages-case-list"
                     onChange={(e) => setCaseQuery(e.target.value)}
-                    placeholder="Start typing a patient's name…"
+                    placeholder="Case # or name — e.g. 072726GAMI"
                     value={caseQuery}
                   />
                   <datalist id="messages-case-list">
-                    {activePatients.map((p) => (
-                      <option key={p.id} value={p.fullName} />
+                    {caseOptions.map((c) => (
+                      <option key={c.id} value={c.label} />
                     ))}
                   </datalist>
                   {caseQuery.trim() && !resolvedCase && (
                     <span className="text-xs text-[var(--text-muted)]">
-                      No exact match — posts to the General feed.
+                      Pick a case from the list — otherwise it posts to the General feed.
                     </span>
                   )}
                   {resolvedCase && (
                     <span className="text-xs font-semibold text-[var(--brand-primary)]">
-                      Tagged: {resolvedCase.fullName}
+                      Tagged: {resolvedCase.label}
                     </span>
                   )}
                 </label>
 
-                {people.length > 0 && (
+                {notify.size > 0 && (
                   <div className="grid gap-1">
-                    <span className="text-xs font-semibold text-[var(--text-muted)]">Notify (@mention)</span>
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">Mentioning</span>
                     <div className="flex flex-wrap gap-1.5">
                       {people
-                        .filter((p) => p.userId !== currentUserId)
-                        .map((p) => {
-                          const on = notify.has(p.userId);
-                          return (
-                            <button
-                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-all active:scale-95 ${
-                                on
-                                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                                  : "border-[var(--line-soft)] bg-white text-[var(--text-muted)]"
-                              }`}
-                              key={p.userId}
-                              onClick={() => toggleNotify(p.userId)}
-                              type="button"
-                            >
-                              @{p.label}
-                            </button>
-                          );
-                        })}
+                        .filter((p) => notify.has(p.userId))
+                        .map((p) => (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-full border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white"
+                            key={p.userId}
+                            onClick={() => toggleNotify(p.userId)}
+                            title="Remove mention"
+                            type="button"
+                          >
+                            @{p.label} <span aria-hidden>✕</span>
+                          </button>
+                        ))}
                     </div>
                   </div>
                 )}
