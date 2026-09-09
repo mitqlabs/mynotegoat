@@ -3958,6 +3958,14 @@ export default function SettingsPage() {
 
           <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
             <h4 className="text-lg font-semibold">Office Hours</h4>
+            {officeSettings.multiLocation ? (
+              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                You&apos;re running multiple locations — office hours are set{" "}
+                <span className="font-semibold">per office</span> in Office Settings → Office
+                Information → Office Locations. The settings above (enforcement, interval, capacity)
+                still apply to every location.
+              </p>
+            ) : (
             <div className="mt-3 space-y-2">
               {scheduleSettings.officeHours.map((officeHour) => (
                 <div
@@ -4006,6 +4014,7 @@ export default function SettingsPage() {
                 </div>
               ))}
             </div>
+            )}
           </article>
         </div>
 

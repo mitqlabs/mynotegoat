@@ -7,6 +7,7 @@ import { ToggleSwitch } from "@/components/toggle-switch";
 import type { OfficeDoctor, OfficeLocation } from "@/lib/office-settings";
 import {
   getDefaultScheduleSettings,
+  loadScheduleSettings,
   weekdayLabels,
   type DailyOfficeHours,
 } from "@/lib/schedule-settings";
@@ -172,7 +173,27 @@ export function OfficeLocationsDoctorsSection() {
           </span>
           <ToggleSwitch
             checked={officeSettings.multiLocation}
-            onChange={(on) => updateOfficeSettings({ multiLocation: on })}
+            onChange={(on) => {
+              // Turning multi-location ON with no offices yet: seed the FIRST
+              // office from the existing single office (name/address/phone) and
+              // its current schedule hours, so nothing is lost and the original
+              // office simply becomes location #1.
+              if (on && (officeSettings.locations ?? []).length === 0) {
+                const first: OfficeLocation = {
+                  id: genId("loc"),
+                  name: officeSettings.officeName.trim() || "Main office",
+                  nickname: "",
+                  address: officeSettings.address ?? "",
+                  phone: officeSettings.phone ?? "",
+                  doctorIds: [],
+                  officeHours: loadScheduleSettings().officeHours,
+                };
+                updateOfficeSettings({ multiLocation: true, locations: [first] });
+                setOpenLocId(first.id);
+              } else {
+                updateOfficeSettings({ multiLocation: on });
+              }
+            }}
             ariaLabel="Multi-location"
           />
         </label>
