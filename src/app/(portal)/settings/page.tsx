@@ -3659,6 +3659,10 @@ export default function SettingsPage() {
               value={officeSettings.officeName}
             />
           </label>
+          {/* Practice-wide contact fields. When Multi-Location is on these
+              live PER OFFICE (in Office Locations above), so hide them here. */}
+          {!officeSettings.multiLocation && (
+            <>
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Doctor Name</span>
             <input
@@ -3699,6 +3703,8 @@ export default function SettingsPage() {
               value={officeSettings.email}
             />
           </label>
+            </>
+          )}
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Office Logo</span>
             <input
@@ -3708,13 +3714,15 @@ export default function SettingsPage() {
               type="file"
             />
           </label>
-          <div className="grid gap-1 sm:col-span-2">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Address</span>
-            <AddressFieldGroup
-              onChange={(nextAddress) => updateOfficeSettings({ address: nextAddress })}
-              value={officeSettings.address}
-            />
-          </div>
+          {!officeSettings.multiLocation && (
+            <div className="grid gap-1 sm:col-span-2">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Address</span>
+              <AddressFieldGroup
+                onChange={(nextAddress) => updateOfficeSettings({ address: nextAddress })}
+                value={officeSettings.address}
+              />
+            </div>
+          )}
 
           {/* 3-up row: Logo Preview / Delete Password / Change Account
               Password. They stack to 1-col on small screens and to
@@ -3748,11 +3756,13 @@ export default function SettingsPage() {
 
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 space-y-2">
               <div>
-                <h5 className="text-sm font-semibold text-[var(--text-main)]">Delete Password</h5>
+                <h5 className="text-sm font-semibold text-[var(--text-main)]">
+                  Patient-Delete Password
+                </h5>
                 <p className="text-xs text-[var(--text-muted)]">
                   {officeSettings.deletePassword
-                    ? "A delete password is set. To change it, verify identity below."
-                    : "Set a delete password to unlock patient deletion."}
+                    ? "Required to delete a patient record. To change it, verify identity below."
+                    : "Set the password required to delete a patient record."}
                 </p>
               </div>
               <label className="grid gap-1">
