@@ -4109,61 +4109,48 @@ export default function SettingsPage() {
             </select>
           </label>
 
-          <div className="overflow-x-auto">
-            <div className="min-w-[760px] space-y-2">
-              <div className="grid grid-cols-[40px_1.8fr_120px_140px_110px_90px] items-center gap-2 border-b border-[var(--line-soft)] pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                <span />
-                <span>Name</span>
-                <span>Color</span>
-                <span>Duration</span>
-                <span>Default</span>
-                <span />
-              </div>
-
-              {appointmentTypes.map((entry) => (
-                <div
-                  key={`appointment-type-row-${entry.id}`}
-                  className="grid grid-cols-[40px_1.8fr_120px_140px_110px_90px] items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2"
-                >
-                  <span className="text-xl font-semibold text-[var(--brand-primary)]">≡</span>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {appointmentTypes.map((entry) => (
+              <div
+                key={`appointment-type-row-${entry.id}`}
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5"
+              >
+                <div className="flex items-center gap-2">
                   <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
-                    onChange={(event) =>
-                      updateAppointmentType(entry.id, {
-                        name: event.target.value,
-                      })
-                    }
+                    aria-label="Color"
+                    className="h-8 w-8 shrink-0 rounded-md border border-[var(--line-soft)] bg-white p-0.5"
+                    onChange={(event) => updateAppointmentType(entry.id, { color: event.target.value })}
+                    type="color"
+                    value={entry.color}
+                  />
+                  <input
+                    className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm font-semibold"
+                    onChange={(event) => updateAppointmentType(entry.id, { name: event.target.value })}
                     value={entry.name}
                   />
-                  <div className="flex items-center gap-2">
+                  <button
+                    className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 disabled:opacity-40"
+                    disabled={appointmentTypes.length <= 1}
+                    onClick={() => { if (window.confirm(`Remove appointment type "${entry.name}"?`)) removeAppointmentType(entry.id); }}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+                  <label className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-muted)]">
+                    Duration
                     <input
-                      className="h-10 w-14 rounded-lg border border-[var(--line-soft)] bg-white p-1"
-                      onChange={(event) =>
-                        updateAppointmentType(entry.id, {
-                          color: event.target.value,
-                        })
-                      }
-                      type="color"
-                      value={entry.color}
+                      className="w-16 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-1 text-center"
+                      min={5}
+                      onChange={(event) => updateAppointmentType(entry.id, { durationMin: Number(event.target.value) || 5 })}
+                      type="number"
+                      value={entry.durationMin}
                     />
-                    <span
-                      aria-hidden
-                      className="inline-block h-4 w-4 rounded-full border border-[var(--line-soft)]"
-                      style={{ backgroundColor: entry.color }}
-                    />
-                  </div>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
-                    min={5}
-                    onChange={(event) =>
-                      updateAppointmentType(entry.id, {
-                        durationMin: Number(event.target.value) || 5,
-                      })
-                    }
-                    type="number"
-                    value={entry.durationMin}
-                  />
-                  <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                    min
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 font-semibold">
                     <input
                       checked={entry.isDefault}
                       onChange={() => setDefaultAppointmentType(entry.id)}
@@ -4171,76 +4158,43 @@ export default function SettingsPage() {
                     />
                     Default
                   </label>
-                  <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
-                    disabled={appointmentTypes.length <= 1}
-                    onClick={() => { if (window.confirm(`Remove appointment type "${entry.name}"?`)) removeAppointmentType(entry.id); }}
-                    type="button"
-                  >
-                    Remove
-                  </button>
-                  <p className="col-start-2 text-xs text-[var(--text-muted)]">
-                    {formatDurationMinutes(entry.durationMin)}
-                  </p>
-                  <div className="col-span-full flex flex-wrap items-center gap-3 border-t border-[var(--line-soft)] pt-2 text-xs">
-                    <span className="font-semibold text-[var(--text-muted)]">Patient types:</span>
-                    {(() => {
-                      const pi = entry.patientTypes.pi;
-                      const cash = entry.patientTypes.cash;
-                      const both = pi && cash;
-                      return (
-                        <>
-                          <label className="inline-flex items-center gap-1.5">
-                            <input
-                              checked={pi}
-                              onChange={(event) =>
-                                updateAppointmentType(entry.id, {
-                                  patientTypes: {
-                                    pi: event.target.checked,
-                                    cash: event.target.checked ? cash : true,
-                                  },
-                                })
-                              }
-                              type="checkbox"
-                            />
-                            PI
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">
-                            <input
-                              checked={cash}
-                              onChange={(event) =>
-                                updateAppointmentType(entry.id, {
-                                  patientTypes: {
-                                    cash: event.target.checked,
-                                    pi: event.target.checked ? pi : true,
-                                  },
-                                })
-                              }
-                              type="checkbox"
-                            />
-                            Non-PI
-                          </label>
-                          <label className="inline-flex items-center gap-1.5">
-                            <input
-                              checked={both}
-                              onChange={(event) =>
-                                updateAppointmentType(entry.id, {
-                                  patientTypes: event.target.checked
-                                    ? { pi: true, cash: true }
-                                    : { pi: true, cash: false },
-                                })
-                              }
-                              type="checkbox"
-                            />
-                            Both
-                          </label>
-                        </>
-                      );
-                    })()}
-                  </div>
+                  {(() => {
+                    const pi = entry.patientTypes.pi;
+                    const cash = entry.patientTypes.cash;
+                    const both = pi && cash;
+                    return (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="font-semibold text-[var(--text-muted)]">Shows for:</span>
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            checked={pi}
+                            onChange={(event) => updateAppointmentType(entry.id, { patientTypes: { pi: event.target.checked, cash: event.target.checked ? cash : true } })}
+                            type="checkbox"
+                          />
+                          PI
+                        </label>
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            checked={cash}
+                            onChange={(event) => updateAppointmentType(entry.id, { patientTypes: { cash: event.target.checked, pi: event.target.checked ? pi : true } })}
+                            type="checkbox"
+                          />
+                          Non-PI
+                        </label>
+                        <label className="inline-flex items-center gap-1">
+                          <input
+                            checked={both}
+                            onChange={(event) => updateAppointmentType(entry.id, { patientTypes: event.target.checked ? { pi: true, cash: true } : { pi: true, cash: false } })}
+                            type="checkbox"
+                          />
+                          Both
+                        </label>
+                      </span>
+                    );
+                  })()}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         </article>
 
