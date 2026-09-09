@@ -13,6 +13,7 @@ import {
 import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
+import { ToggleSwitch } from "@/components/toggle-switch";
 
 type Member = {
   member_user_id: string;
@@ -359,10 +360,10 @@ export function TeamSettingsSection() {
                           — full access incl. Settings &amp; Team
                         </span>
                       </span>
-                      <input
+                      <ToggleSwitch
                         checked={Boolean(member.permissions.officeAdmin)}
-                        onChange={(e) => setMemberOfficeAdmin(member, e.target.checked)}
-                        type="checkbox"
+                        onChange={(on) => setMemberOfficeAdmin(member, on)}
+                        ariaLabel="Office Admin"
                       />
                     </label>
                     {member.permissions.officeAdmin ? (
@@ -431,11 +432,11 @@ export function TeamSettingsSection() {
                                       Off · office-wide
                                     </span>
                                   ) : (
-                                    <input
+                                    <ToggleSwitch
                                       checked={memberVisible}
-                                      onChange={(e) => setMemberSectionHidden(member, key, !e.target.checked)}
+                                      onChange={(on) => setMemberSectionHidden(member, key, !on)}
                                       title={memberVisible ? "Visible — flip off to hide" : "Hidden from this member"}
-                                      type="checkbox"
+                                      ariaLabel={`${label} visible`}
                                     />
                                   )}
                                 </div>
