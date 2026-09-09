@@ -13,17 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Apply the saved theme before first paint so there's no flash of
-            the wrong palette. Mirrors src/lib/theme.ts. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{var p=localStorage.getItem('casemate.theme.v1')||'light';var d=p==='dark';document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();",
-          }}
-        />
-      </head>
+    <html lang="en">
       <body className="antialiased" suppressHydrationWarning>
         <AppQueryClientProvider>{children}</AppQueryClientProvider>
       </body>

@@ -47,38 +47,6 @@
   --field-shadow-focus: 0 0 0 4px var(--field-focus), 0 1px 2px rgba(14, 51, 78, 0.1);
 }
 
-/* ── Dark mode ──────────────────────────────────────────────────────
-   The blue palette above is the LIGHT theme. Dark mode re-defines the
-   same variables (a deep blue-charcoal) so every var-driven surface
-   adapts automatically; the overrides further down catch the common
-   hardcoded light utilities (bg-white, translucent whites). Applied via
-   data-theme="dark" on <html> (set by src/lib/theme.ts + the no-flash
-   script in layout.tsx). */
-:root[data-theme="dark"] {
-  --bg-canvas: #0d1420;
-  --bg-panel: #151d2b;
-  --bg-soft: #1c2738;
-  --bg-sidebar: #0a1019;
-  --line-soft: #29384f;
-  --brand-primary: #3a9fe0;
-  --brand-secondary: #2bb7b9;
-  --brand-accent: #f0a35a;
-  --status-active: #34c77b;
-  --status-warning: #f0b45a;
-  --status-alert: #e5675e;
-  /* Dark mode needs more alpha: a 5% wash over a near-black panel is
-     invisible, where the same value over white reads fine. */
-  --row-tint-canceled: rgba(229, 103, 94, 0.085);
-  --row-tint-complete: rgba(52, 199, 123, 0.08);
-  --text-main: #e6eef7;
-  --text-muted: #93a6ba;
-  --field-bg: #0f1824;
-  --field-border: #29384f;
-  --field-focus: rgba(58, 159, 224, 0.30);
-  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  --field-shadow-focus: 0 0 0 4px var(--field-focus), 0 1px 2px rgba(0, 0, 0, 0.55);
-}
-
 @theme inline {
   --color-background: var(--bg-canvas);
   --color-foreground: var(--text-main);
