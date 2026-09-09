@@ -1,5 +1,31 @@
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
+/** A provider the office schedules under. May be a team member (login) or
+ *  a name-only doctor added in Office Information. */
+export interface OfficeDoctor {
+  id: string;
+  name: string;
+  /** Set when this doctor is a team member; absent for a name-only doctor. */
+  memberUserId?: string;
+}
+
+/** A physical office location (used when Multi-Location is on). */
+export interface OfficeLocation {
+  id: string;
+  name: string;
+  /** Short label (street / city / number) shown on pills and selectors. */
+  nickname: string;
+  address: string;
+  phone: string;
+  /** Doctor ids (OfficeDoctor.id) that work at this location. */
+  doctorIds: string[];
+}
+
+/** The label to show for a location on pills/selectors — nickname wins. */
+export function locationLabel(loc: Pick<OfficeLocation, "name" | "nickname">): string {
+  return (loc.nickname || "").trim() || (loc.name || "").trim() || "Location";
+}
+
 export interface OfficeSettings {
   officeName: string;
   phone: string;
@@ -9,9 +35,15 @@ export interface OfficeSettings {
   doctorName: string;
   logoDataUrl: string;
   deletePassword: string;
+  /** When on, the office runs multiple locations, each with its own schedule. */
+  multiLocation: boolean;
+  locations: OfficeLocation[];
+  /** All providers the office schedules under (name-only + team-member doctors). */
+  doctors: OfficeDoctor[];
 }
 
 const STORAGE_KEY = "casemate.office-settings.v1";
+export const STORAGE_KEY_OFFICE_SETTINGS = STORAGE_KEY;
 
 // NOTE: these defaults MUST be completely empty strings, not real
 // office information. Every brand-new user starts with a truly blank
@@ -30,7 +62,50 @@ const defaultOfficeSettings: OfficeSettings = {
   doctorName: "",
   logoDataUrl: "",
   deletePassword: "",
+  multiLocation: false,
+  locations: [],
+  doctors: [],
 };
+
+function normalizeDoctors(value: unknown): OfficeDoctor[] {
+  if (!Array.isArray(value)) return [];
+  const out: OfficeDoctor[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const name = normalizeString(row.name);
+    const id = normalizeString(row.id);
+    if (!name || !id) continue;
+    const doctor: OfficeDoctor = { id, name };
+    const memberUserId = normalizeString(row.memberUserId);
+    if (memberUserId) doctor.memberUserId = memberUserId;
+    out.push(doctor);
+  }
+  return out;
+}
+
+function normalizeLocations(value: unknown): OfficeLocation[] {
+  if (!Array.isArray(value)) return [];
+  const out: OfficeLocation[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const id = normalizeString(row.id);
+    const name = normalizeString(row.name);
+    if (!id || !name) continue;
+    out.push({
+      id,
+      name,
+      nickname: normalizeString(row.nickname),
+      address: normalizeString(row.address),
+      phone: formatUsPhoneInput(normalizeString(row.phone)),
+      doctorIds: Array.isArray(row.doctorIds)
+        ? row.doctorIds.filter((x): x is string => typeof x === "string")
+        : [],
+    });
+  }
+  return out;
+}
 
 function normalizeString(value: unknown, fallback = "") {
   if (typeof value !== "string") {
@@ -71,6 +146,9 @@ export function normalizeOfficeSettings(value: unknown): OfficeSettings {
     doctorName: normalizeString(row.doctorName, defaultOfficeSettings.doctorName),
     logoDataUrl: normalizeLogoDataUrl(row.logoDataUrl),
     deletePassword: normalizeString(row.deletePassword),
+    multiLocation: row.multiLocation === true,
+    locations: normalizeLocations(row.locations),
+    doctors: normalizeDoctors(row.doctors),
   };
 }
 

@@ -1,0 +1,281 @@
+"use client";
+
+import { useState } from "react";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
+import { formatUsPhoneInput } from "@/lib/phone-format";
+import { ToggleSwitch } from "@/components/toggle-switch";
+import type { OfficeDoctor, OfficeLocation } from "@/lib/office-settings";
+
+function genId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
+
+export function OfficeLocationsDoctorsSection() {
+  const { officeSettings, updateOfficeSettings } = useOfficeSettings();
+  const doctors = officeSettings.doctors ?? [];
+  const locations = officeSettings.locations ?? [];
+
+  const [newDoctor, setNewDoctor] = useState("");
+  const [newLocation, setNewLocation] = useState("");
+
+  const setDoctors = (next: OfficeDoctor[]) => updateOfficeSettings({ doctors: next });
+  const setLocations = (next: OfficeLocation[]) => updateOfficeSettings({ locations: next });
+
+  const addDoctor = () => {
+    const name = newDoctor.trim();
+    if (!name) return;
+    setDoctors([...doctors, { id: genId("doc"), name }]);
+    setNewDoctor("");
+  };
+
+  const renameDoctor = (id: string, name: string) =>
+    setDoctors(doctors.map((d) => (d.id === id ? { ...d, name } : d)));
+
+  const removeDoctor = (id: string) => {
+    setDoctors(doctors.filter((d) => d.id !== id));
+    // Also drop the doctor from any location assignment.
+    setLocations(locations.map((l) => ({ ...l, doctorIds: l.doctorIds.filter((x) => x !== id) })));
+  };
+
+  const addLocation = () => {
+    const name = newLocation.trim();
+    if (!name) return;
+    setLocations([...locations, { id: genId("loc"), name, nickname: "", address: "", phone: "", doctorIds: [] }]);
+    setNewLocation("");
+  };
+
+  const updateLocation = (id: string, patch: Partial<OfficeLocation>) =>
+    setLocations(locations.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+
+  const removeLocation = (id: string) => setLocations(locations.filter((l) => l.id !== id));
+
+  const toggleLocationDoctor = (locId: string, docId: string, on: boolean) => {
+    setLocations(
+      locations.map((l) => {
+        if (l.id !== locId) return l;
+        const set = new Set(l.doctorIds);
+        if (on) set.add(docId);
+        else set.delete(docId);
+        return { ...l, doctorIds: [...set] };
+      }),
+    );
+  };
+
+  return (
+    <div className="sm:col-span-2 grid gap-4">
+      {/* ── Doctors ─────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h5 className="text-sm font-semibold text-[var(--text-main)]">Doctors</h5>
+            <p className="text-xs text-[var(--text-muted)]">
+              Providers you schedule under. Add a name here, or mark a team member as a Doctor in
+              Settings → Team.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2">
+          {doctors.length === 0 && (
+            <p className="text-xs text-[var(--text-muted)]">No doctors yet.</p>
+          )}
+          {doctors.map((doc) => {
+            const isMember = Boolean(doc.memberUserId);
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5"
+              >
+                <input
+                  className="min-w-0 flex-1 rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                  disabled={isMember}
+                  onChange={(e) => renameDoctor(doc.id, e.target.value)}
+                  value={doc.name}
+                />
+                {isMember ? (
+                  <span
+                    className="shrink-0 rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#0d79bf]"
+                    title="This doctor is a team member. Manage them in Settings → Team."
+                  >
+                    Team member
+                  </span>
+                ) : (
+                  <button
+                    className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
+                    onClick={() => removeDoctor(doc.id)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+            onChange={(e) => setNewDoctor(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addDoctor();
+              }
+            }}
+            placeholder="Dr. Last, First"
+            value={newDoctor}
+          />
+          <button
+            className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            disabled={!newDoctor.trim()}
+            onClick={addDoctor}
+            type="button"
+          >
+            + Doctor
+          </button>
+        </div>
+      </div>
+
+      {/* ── Multi-Location ──────────────────────────────────────── */}
+      <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-[var(--text-main)]">
+            Multi-Location{" "}
+            <span className="font-normal text-[var(--text-muted)]">
+              — run several offices, each with its own schedule
+            </span>
+          </span>
+          <ToggleSwitch
+            checked={officeSettings.multiLocation}
+            onChange={(on) => updateOfficeSettings({ multiLocation: on })}
+            ariaLabel="Multi-location"
+          />
+        </label>
+
+        {officeSettings.multiLocation && (
+          <div className="mt-3 grid gap-2">
+            {locations.length === 0 && (
+              <p className="text-xs text-[var(--text-muted)]">
+                No locations yet. Add your first below — the Schedule will let you switch between
+                them.
+              </p>
+            )}
+            {locations.map((loc) => (
+              <div key={loc.id} className="rounded-lg border border-[var(--line-soft)] bg-white p-2.5">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Location name
+                    </span>
+                    <input
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(e) => updateLocation(loc.id, { name: e.target.value })}
+                      placeholder="e.g. Houston Main"
+                      value={loc.name}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Nickname (shown on pills)
+                    </span>
+                    <input
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(e) => updateLocation(loc.id, { nickname: e.target.value })}
+                      placeholder="e.g. Hulen"
+                      value={loc.nickname}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Phone
+                    </span>
+                    <input
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      inputMode="numeric"
+                      maxLength={12}
+                      onChange={(e) => updateLocation(loc.id, { phone: formatUsPhoneInput(e.target.value) })}
+                      placeholder="(555) 555-5555"
+                      value={loc.phone}
+                    />
+                  </label>
+                  <label className="grid gap-1 sm:col-span-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Address
+                    </span>
+                    <input
+                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(e) => updateLocation(loc.id, { address: e.target.value })}
+                      placeholder="Street, City, State ZIP"
+                      value={loc.address}
+                    />
+                  </label>
+                </div>
+
+                {doctors.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Doctors at this location
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {doctors.map((doc) => {
+                        const on = loc.doctorIds.includes(doc.id);
+                        return (
+                          <button
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-all active:scale-95 ${
+                              on
+                                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                                : "border-[var(--line-soft)] bg-white text-[var(--text-muted)]"
+                            }`}
+                            key={doc.id}
+                            onClick={() => toggleLocationDoctor(loc.id, doc.id, !on)}
+                            type="button"
+                          >
+                            {doc.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2 flex justify-end">
+                  <button
+                    className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
+                    onClick={() => removeLocation(loc.id)}
+                    type="button"
+                  >
+                    Remove location
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                onChange={(e) => setNewLocation(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLocation();
+                  }
+                }}
+                placeholder="New location name"
+                value={newLocation}
+              />
+              <button
+                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                disabled={!newLocation.trim()}
+                onClick={addLocation}
+                type="button"
+              >
+                + Location
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

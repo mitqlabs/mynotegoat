@@ -9,6 +9,7 @@ import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
+import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
@@ -3711,6 +3712,8 @@ export default function SettingsPage() {
               value={officeSettings.address}
             />
           </div>
+
+          <OfficeLocationsDoctorsSection />
 
           {/* 3-up row: Logo Preview / Delete Password / Change Account
               Password. They stack to 1-col on small screens and to

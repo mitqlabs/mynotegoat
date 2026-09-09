@@ -14,6 +14,7 @@ import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { loadTeamEnabled, saveTeamEnabled } from "@/lib/team-settings";
 import { ToggleSwitch } from "@/components/toggle-switch";
 
@@ -68,6 +69,7 @@ export function TeamSettingsSection() {
   // Owner's module visibility — a feature the office has turned off can't be
   // granted to anyone, so those rows show "Off" instead of an access picker.
   const { isFeatureEnabled } = useModuleVisibility();
+  const { officeSettings, updateOfficeSettings } = useOfficeSettings();
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
@@ -214,6 +216,8 @@ export function TeamSettingsSection() {
       setError(json.error || "Could not remove the member.");
       return;
     }
+    // Drop them from the doctor roster too.
+    setDoctor(member.member_user_id, "", false);
     void loadMembers();
   };
 
@@ -226,6 +230,8 @@ export function TeamSettingsSection() {
     setMembers((cur) =>
       cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, label: next } : m)),
     );
+    // Keep the doctor roster name in sync if this member is a doctor.
+    if (isDoctor(member.member_user_id)) setDoctor(member.member_user_id, next, true);
     const { error: uErr } = await supabase
       .from("workspace_members")
       .update({ label: next, updated_at: new Date().toISOString() })
@@ -271,6 +277,30 @@ export function TeamSettingsSection() {
     else next.disabled = true;
     void saveMemberPerms(member, next);
   };
+
+  // ── Doctor designation (stored in office.doctors, single source) ──
+  const officeDoctors = officeSettings.doctors ?? [];
+  const isDoctor = (userId: string) => officeDoctors.some((d) => d.memberUserId === userId);
+  const setDoctor = (userId: string, name: string, on: boolean) => {
+    const cur = officeSettings.doctors ?? [];
+    if (on) {
+      const next = cur.some((d) => d.memberUserId === userId)
+        ? cur.map((d) => (d.memberUserId === userId ? { ...d, name } : d))
+        : [...cur, { id: `doc-${Date.now()}-${Math.floor(Math.random() * 100000)}`, name, memberUserId: userId }];
+      updateOfficeSettings({ doctors: next });
+    } else {
+      updateOfficeSettings({ doctors: cur.filter((d) => d.memberUserId !== userId) });
+    }
+  };
+
+  const setMemberMainLocation = (member: Member, locationId: string) => {
+    const next = { ...member.permissions };
+    if (locationId) next.mainLocationId = locationId;
+    else delete next.mainLocationId;
+    void saveMemberPerms(member, next);
+  };
+
+  const locations = officeSettings.multiLocation ? officeSettings.locations ?? [] : [];
 
   const setMemberSectionHidden = (member: Member, key: string, hidden: boolean) => {
     const set = new Set(member.permissions.hiddenSections ?? []);
@@ -392,7 +422,14 @@ export function TeamSettingsSection() {
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">{currentUser.email}</p>
                   </div>
-                  <span className="text-[11px] font-semibold text-[var(--text-muted)]">Full access</span>
+                  <label className="flex shrink-0 items-center gap-1.5" title="Schedule patients under yourself">
+                    <span className="text-[10px] font-semibold text-[var(--text-muted)]">Doctor</span>
+                    <ToggleSwitch
+                      checked={isDoctor(currentUser.id)}
+                      onChange={(on) => setDoctor(currentUser.id, doctorName || currentUser.email || "Admin", on)}
+                      ariaLabel="Admin is a doctor"
+                    />
+                  </label>
                 </div>
               </div>
               {members.map((member) => (
@@ -528,6 +565,43 @@ export function TeamSettingsSection() {
                   </div>
                   {expandedMembers.has(member.member_user_id) && (
                   <div className="mt-2 space-y-2">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5">
+                      <span className="text-xs font-semibold">
+                        Doctor{" "}
+                        <span className="font-normal text-[var(--text-muted)]">
+                          — schedule patients under this person
+                        </span>
+                      </span>
+                      <ToggleSwitch
+                        checked={isDoctor(member.member_user_id)}
+                        onChange={(on) => setDoctor(member.member_user_id, member.label, on)}
+                        ariaLabel="Doctor"
+                      />
+                    </label>
+
+                    {officeSettings.multiLocation && (
+                      <label className="flex items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5">
+                        <span className="text-xs font-semibold">
+                          Main location{" "}
+                          <span className="font-normal text-[var(--text-muted)]">
+                            — their default view at login
+                          </span>
+                        </span>
+                        <select
+                          className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                          onChange={(e) => setMemberMainLocation(member, e.target.value)}
+                          value={member.permissions.mainLocationId ?? ""}
+                        >
+                          <option value="">All locations</option>
+                          {locations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.nickname?.trim() || loc.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
                     <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] px-2 py-1.5">
                       <span className="text-xs font-semibold">
                         Office Admin{" "}

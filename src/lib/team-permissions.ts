@@ -32,6 +32,8 @@ export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
   hiddenSections?: string[];
   /** Deactivated — the member keeps their record but can no longer log in. */
   disabled?: boolean;
+  /** Default location view on login (OfficeLocation.id); they can still switch. */
+  mainLocationId?: string;
 };
 
 /**
@@ -121,6 +123,9 @@ export function normalizePermissions(value: unknown): MemberPermissions {
   const out: MemberPermissions = {};
   if (raw.officeAdmin === true) out.officeAdmin = true;
   if (raw.disabled === true) out.disabled = true;
+  if (typeof raw.mainLocationId === "string" && raw.mainLocationId) {
+    out.mainLocationId = raw.mainLocationId;
+  }
   if (Array.isArray(raw.hiddenSections)) {
     const hs = raw.hiddenSections.filter((s): s is string => typeof s === "string");
     if (hs.length) out.hiddenSections = hs;
