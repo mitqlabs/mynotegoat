@@ -244,6 +244,10 @@ function readLocalSnapshot(): LocalSnapshot {
       !key.startsWith(LOCAL_KEY_PREFIX) ||
       key === ACTIVE_WORKSPACE_KEY ||
       key === BACKUP_KEY ||
+      // Office settings are owned by the KV table. Keeping them OUT of the
+      // legacy full-localStorage snapshot means a stale snapshot restore can
+      // never wipe a freshly-added office/hours on reload.
+      key === "casemate.office-settings.v1" ||
       key.startsWith(`${LOCAL_SYNC_AT_PREFIX}.`)
     ) {
       // BACKUP_KEY is intentionally excluded from snapshots that get pushed
@@ -287,6 +291,12 @@ function writeLocalSnapshot(snapshot: Record<string, unknown>) {
 
   for (const [key, value] of Object.entries(snapshot)) {
     if (!key.startsWith(LOCAL_KEY_PREFIX)) {
+      continue;
+    }
+    // Office settings are KV-owned. Never let a legacy snapshot (which may
+    // still carry a stale copy) restore over the KV value — that wiped
+    // freshly-added offices on reload.
+    if (key === "casemate.office-settings.v1") {
       continue;
     }
     // The files/folders index must MERGE, never overwrite — a stale snapshot
@@ -835,6 +845,12 @@ async function bootstrapTableBackedEntities() {
           const CONTENT_SIZED_LIBRARY_KEYS = new Set([
             "casemate.report-templates.v1",
             "casemate.document-templates.v1",
+            // Office settings is a single wrapper object, so a top-level key
+            // count is CONSTANT no matter how many locations/doctors it holds.
+            // That made the entry-count guard blind to it — a stale/smaller
+            // cloud copy would overwrite freshly-added offices on reload.
+            // Compare serialized SIZE so a bigger local (more offices) wins.
+            "casemate.office-settings.v1",
           ]);
           let replacedCount = 0;
           let skippedLocalIsBigger = 0;
