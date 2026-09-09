@@ -1684,7 +1684,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [quickTimeDraft, setQuickTimeDraft] = useState("");
   const [quickDateEditId, setQuickDateEditId] = useState<string | null>(null);
   const [quickDateDraft, setQuickDateDraft] = useState("");
-  const [quickTypeEditId, setQuickTypeEditId] = useState<string | null>(null);
   const [editAppointmentId, setEditAppointmentId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
   // Discrete save lifecycle so the UI can render the right pill
@@ -3671,21 +3670,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     cancelQuickDateEdit();
   };
 
-  const beginQuickTypeEdit = (appointment: ScheduleAppointmentRecord) => {
-    setQuickTypeEditId(appointment.id);
-  };
-  const cancelQuickTypeEdit = () => {
-    setQuickTypeEditId(null);
-  };
+  // The Type column is a permanently-mounted <select>, so there is no
+  // begin/cancel edit mode any more — only the commit.
   const commitQuickTypeEdit = (
     appointment: ScheduleAppointmentRecord,
     nextType: string,
   ) => {
     const trimmed = nextType.trim();
-    if (!trimmed || trimmed === appointment.appointmentType) {
-      cancelQuickTypeEdit();
-      return;
-    }
+    if (!trimmed || trimmed === appointment.appointmentType) return;
     // Pick up the matching type's default duration so a fast switch from
     // (say) "Office Visit / 30m" to "New Patient / 60m" snaps the slot
     // length too. User can still fine-tune via the full edit modal.
@@ -3698,7 +3690,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       durationMin: matchedType?.durationMin ?? current.durationMin,
     }));
     setEncounterMessage(`Appointment type updated to ${trimmed}.`);
-    cancelQuickTypeEdit();
   };
 
   /**
@@ -5710,7 +5701,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         <th className="w-[13rem] px-2 py-2">Date</th>
                         <th className="px-2 py-2">Day</th>
                         <th className="w-[10rem] px-2 py-2">Time</th>
-                        <th className="px-2 py-2">Type</th>
+                        <th className="w-[15rem] px-2 py-2">Type</th>
                         <th className="px-2 py-2">Status</th>
                         <th className="px-2 py-2">Encounter</th>
                         <th className="px-2 py-2"></th>
@@ -5849,59 +5840,55 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 <span className="text-xs text-[var(--text-muted)]">—</span>
                               )}
                             </td>
-                            <td className="px-2 py-2">
+                            <td className="w-[15rem] px-2 py-2">
+                              {/* Always render the real <select>. The old
+                                  click-to-reveal button had a transparent
+                                  border and no fixed width, so long type
+                                  names wrapped onto two lines and the column
+                                  visibly changed shape the moment you clicked
+                                  it. A permanently-mounted select is one line,
+                                  always the same size, and matches the Status
+                                  pill sitting next to it. */}
                               {appointment ? (
-                                quickTypeEditId === appointment.id ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    <select
-                                      autoFocus
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                      onBlur={cancelQuickTypeEdit}
-                                      onChange={(event) =>
-                                        commitQuickTypeEdit(appointment, event.target.value)
-                                      }
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Escape") cancelQuickTypeEdit();
-                                      }}
-                                      value={appointment.appointmentType}
-                                    >
-                                      {/* Show the current type even if it's no longer in
-                                          the configured list — otherwise selecting it would
-                                          appear to "switch" to whatever option is at the top. */}
-                                      {!filterAppointmentTypesForPatient(
-                                        appointmentTypes,
-                                        Boolean(patient.isCashPatient),
-                                      ).some(
-                                        (t) =>
-                                          t.name.toLowerCase() ===
-                                          appointment.appointmentType.toLowerCase(),
-                                      ) && (
-                                        <option value={appointment.appointmentType}>
-                                          {appointment.appointmentType}
-                                        </option>
-                                      )}
-                                      {filterAppointmentTypesForPatient(
-                                        appointmentTypes,
-                                        Boolean(patient.isCashPatient),
-                                      ).map((type) => (
-                                        <option key={`quick-type-${type.id}`} value={type.name}>
-                                          {type.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </span>
-                                ) : (
-                                  <button
-                                    className="rounded-md border border-transparent px-1.5 py-0.5 text-xs font-semibold hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
-                                    onClick={() => beginQuickTypeEdit(appointment)}
-                                    title="Click to change appointment type"
-                                    type="button"
-                                  >
-                                    {row.typeLabel}
-                                  </button>
-                                )
+                                <select
+                                  className="w-full max-w-[15rem] truncate rounded-full border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                  onChange={(event) =>
+                                    commitQuickTypeEdit(appointment, event.target.value)
+                                  }
+                                  title="Click to change appointment type"
+                                  value={appointment.appointmentType}
+                                >
+                                  {/* Show the current type even if it's no longer in
+                                      the configured list — otherwise selecting it would
+                                      appear to "switch" to whatever option is at the top. */}
+                                  {!filterAppointmentTypesForPatient(
+                                    appointmentTypes,
+                                    Boolean(patient.isCashPatient),
+                                  ).some(
+                                    (t) =>
+                                      t.name.toLowerCase() ===
+                                      appointment.appointmentType.toLowerCase(),
+                                  ) && (
+                                    <option value={appointment.appointmentType}>
+                                      {appointment.appointmentType}
+                                    </option>
+                                  )}
+                                  {filterAppointmentTypesForPatient(
+                                    appointmentTypes,
+                                    Boolean(patient.isCashPatient),
+                                  ).map((type) => (
+                                    <option key={`quick-type-${type.id}`} value={type.name}>
+                                      {type.name}
+                                    </option>
+                                  ))}
+                                </select>
                               ) : (
-                                <span>{row.typeLabel}</span>
+                                /* Encounter-only rows have no appointment to
+                                   retype — keep the label on one line so the
+                                   row height matches its neighbours. */
+                                <span className="block truncate whitespace-nowrap text-xs font-semibold">
+                                  {row.typeLabel}
+                                </span>
                               )}
                             </td>
                             <td className="px-2 py-2">
