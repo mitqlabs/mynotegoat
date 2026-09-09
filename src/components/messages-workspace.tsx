@@ -328,7 +328,7 @@ export function MessagesWorkspace() {
                 />
 
                 {mentionQuery && mentionMatches.length > 0 && (
-                  <div className="absolute bottom-full left-0 z-20 mb-1 w-64 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
+                  <div className="absolute top-full left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
                     {mentionMatches.map((p, i) => (
                       <button
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
