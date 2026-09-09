@@ -5,6 +5,11 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import type { OfficeDoctor, OfficeLocation } from "@/lib/office-settings";
+import {
+  getDefaultScheduleSettings,
+  weekdayLabels,
+  type DailyOfficeHours,
+} from "@/lib/schedule-settings";
 
 function genId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -51,6 +56,22 @@ export function OfficeLocationsDoctorsSection() {
     setLocations(locations.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const removeLocation = (id: string) => setLocations(locations.filter((l) => l.id !== id));
+
+  const locHours = (loc: OfficeLocation): DailyOfficeHours[] =>
+    loc.officeHours ?? getDefaultScheduleSettings().officeHours;
+
+  const setLocHour = (locId: string, dayOfWeek: number, patch: Partial<DailyOfficeHours>) => {
+    setLocations(
+      locations.map((l) => {
+        if (l.id !== locId) return l;
+        const base = l.officeHours ?? getDefaultScheduleSettings().officeHours;
+        return {
+          ...l,
+          officeHours: base.map((h) => (h.dayOfWeek === dayOfWeek ? { ...h, ...patch } : h)),
+        };
+      }),
+    );
+  };
 
   const toggleLocationDoctor = (locId: string, docId: string, on: boolean) => {
     setLocations(
@@ -255,6 +276,45 @@ export function OfficeLocationsDoctorsSection() {
                       })}
                     </div>
                   )}
+                </div>
+
+                <div className="mt-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Office hours
+                  </p>
+                  <div className="mt-1 grid gap-1">
+                    {locHours(loc).map((h) => (
+                      <div key={h.dayOfWeek} className="flex items-center gap-2">
+                        <span className="w-9 shrink-0 text-[11px] font-semibold text-[var(--text-muted)]">
+                          {weekdayLabels[h.dayOfWeek].slice(0, 3)}
+                        </span>
+                        <ToggleSwitch
+                          checked={h.enabled}
+                          onChange={(on) => setLocHour(loc.id, h.dayOfWeek, { enabled: on })}
+                          ariaLabel={`${weekdayLabels[h.dayOfWeek]} open`}
+                        />
+                        {h.enabled ? (
+                          <>
+                            <input
+                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                              onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { start: e.target.value })}
+                              type="time"
+                              value={h.start}
+                            />
+                            <span className="text-xs text-[var(--text-muted)]">–</span>
+                            <input
+                              className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                              onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { end: e.target.value })}
+                              type="time"
+                              value={h.end}
+                            />
+                          </>
+                        ) : (
+                          <span className="text-xs text-[var(--text-muted)]">Closed</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="mt-2 flex justify-end">

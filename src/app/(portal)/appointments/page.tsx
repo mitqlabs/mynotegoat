@@ -427,7 +427,14 @@ export default function AppointmentsPage() {
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleRooms } = useScheduleRooms();
-  const { scheduleSettings } = useScheduleSettings();
+  const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
+  // When a specific location is in view and it has its own hours, use those;
+  // everything else (interval, capacity, enforce/override) stays global.
+  const scheduleSettings = useMemo(() => {
+    if (!multiLocation || !selectedLocationId) return globalScheduleSettings;
+    const loc = officeLocations.find((l) => l.id === selectedLocationId);
+    return loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+  }, [globalScheduleSettings, multiLocation, selectedLocationId, officeLocations]);
   const { keyDates } = useKeyDates();
   const [mode, setMode] = useState<AppointmentMode>("schedule");
   const [selectedDate, setSelectedDate] = useState(() => getTodayIsoDate());

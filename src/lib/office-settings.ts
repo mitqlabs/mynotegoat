@@ -1,4 +1,8 @@
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import {
+  getDefaultScheduleSettings,
+  type DailyOfficeHours,
+} from "@/lib/schedule-settings";
 
 /** A provider the office schedules under. May be a team member (login) or
  *  a name-only doctor added in Office Information. */
@@ -19,6 +23,29 @@ export interface OfficeLocation {
   phone: string;
   /** Doctor ids (OfficeDoctor.id) that work at this location. */
   doctorIds: string[];
+  /** This office's weekly hours. Absent = inherit the global schedule hours. */
+  officeHours?: DailyOfficeHours[];
+}
+
+function normalizeOfficeHours(value: unknown): DailyOfficeHours[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const defaults = getDefaultScheduleSettings().officeHours;
+  const byDay = new Map<number, DailyOfficeHours>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Partial<DailyOfficeHours>;
+    if (typeof row.dayOfWeek !== "number") continue;
+    const dayOfWeek = Math.max(0, Math.min(6, Math.round(row.dayOfWeek)));
+    const fb = defaults[dayOfWeek];
+    byDay.set(dayOfWeek, {
+      dayOfWeek,
+      enabled: typeof row.enabled === "boolean" ? row.enabled : fb.enabled,
+      start: typeof row.start === "string" ? row.start : fb.start,
+      end: typeof row.end === "string" ? row.end : fb.end,
+    });
+  }
+  if (byDay.size === 0) return undefined;
+  return defaults.map((fb) => byDay.get(fb.dayOfWeek) ?? fb);
 }
 
 /** The label to show for a location on pills/selectors — nickname wins. */
@@ -102,6 +129,7 @@ function normalizeLocations(value: unknown): OfficeLocation[] {
       doctorIds: Array.isArray(row.doctorIds)
         ? row.doctorIds.filter((x): x is string => typeof x === "string")
         : [],
+      officeHours: normalizeOfficeHours(row.officeHours),
     });
   }
   return out;
