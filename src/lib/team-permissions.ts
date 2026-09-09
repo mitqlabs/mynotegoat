@@ -34,6 +34,11 @@ export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
   disabled?: boolean;
   /** Default location view on login (OfficeLocation.id); they can still switch. */
   mainLocationId?: string;
+  /** Identity — stored here (jsonb) so no DB migration is needed. The
+   *  workspace_members.label column holds the composed display name. */
+  firstName?: string;
+  lastName?: string;
+  role?: string;
 };
 
 /**
@@ -126,6 +131,9 @@ export function normalizePermissions(value: unknown): MemberPermissions {
   if (typeof raw.mainLocationId === "string" && raw.mainLocationId) {
     out.mainLocationId = raw.mainLocationId;
   }
+  if (typeof raw.firstName === "string" && raw.firstName.trim()) out.firstName = raw.firstName.trim();
+  if (typeof raw.lastName === "string" && raw.lastName.trim()) out.lastName = raw.lastName.trim();
+  if (typeof raw.role === "string" && raw.role.trim()) out.role = raw.role.trim();
   if (Array.isArray(raw.hiddenSections)) {
     const hs = raw.hiddenSections.filter((s): s is string => typeof s === "string");
     if (hs.length) out.hiddenSections = hs;

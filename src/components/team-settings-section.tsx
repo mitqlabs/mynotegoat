@@ -101,7 +101,9 @@ export function TeamSettingsSection() {
   const [showAdd, setShowAdd] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [label, setLabel] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [role, setRole] = useState("");
   const [draftPerms, setDraftPerms] = useState<MemberPermissions>(EMPTY_PERMS);
   const [busy, setBusy] = useState(false);
 
@@ -184,10 +186,20 @@ export function TeamSettingsSection() {
       setError("Not signed in.");
       return;
     }
+    const first = firstName.trim();
+    const last = lastName.trim();
+    const composedName = `${first} ${last}`.trim();
+    const label = composedName || role.trim() || "Team Member";
+    const permsWithIdentity: MemberPermissions = {
+      ...draftPerms,
+      ...(first ? { firstName: first } : {}),
+      ...(last ? { lastName: last } : {}),
+      ...(role.trim() ? { role: role.trim() } : {}),
+    };
     const res = await fetch("/api/team/create-member", {
       method: "POST",
       headers,
-      body: JSON.stringify({ email, password, label, permissions: draftPerms }),
+      body: JSON.stringify({ email, password, label, permissions: permsWithIdentity }),
     });
     const json = await res.json().catch(() => ({}));
     setBusy(false);
@@ -198,7 +210,9 @@ export function TeamSettingsSection() {
     setShowAdd(false);
     setEmail("");
     setPassword("");
-    setLabel("");
+    setFirstName("");
+    setLastName("");
+    setRole("");
     setDraftPerms(EMPTY_PERMS);
     void loadMembers();
   };
@@ -420,7 +434,7 @@ export function TeamSettingsSection() {
           {teamEnabled && (loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
-            <div className="grid items-start gap-3 sm:grid-cols-2">
+            <div className="gap-3 sm:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
               {/* The account OWNER, shown automatically as Admin — no self
                   sign-up. Only rendered for the owner themselves, so an
                   office-admin member never sees the owner's identity here. */}
@@ -513,7 +527,9 @@ export function TeamSettingsSection() {
                         </div>
                       ) : (
                         <p className="flex items-center gap-1.5 text-sm font-semibold">
-                          {member.label}
+                          {isDoctor(member.member_user_id) && !/^dr\.?\s/i.test(member.label)
+                            ? `Dr. ${member.label}`
+                            : member.label}
                           {member.permissions.disabled && (
                             <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
                               OFF · no login
@@ -532,7 +548,10 @@ export function TeamSettingsSection() {
                           </button>
                         </p>
                       )}
-                      <p className="text-xs text-[var(--text-muted)]">{member.email}</p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {member.permissions.role ? `${member.permissions.role} · ` : ""}
+                        {member.email}
+                      </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -741,12 +760,30 @@ export function TeamSettingsSection() {
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Name</span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">First name</span>
                   <input
                     className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g. Jane Smith"
-                    value={label}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Jane"
+                    value={firstName}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Last name</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Smith"
+                    value={lastName}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Role</span>
+                  <input
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                    onChange={(e) => setRole(e.target.value)}
+                    placeholder="e.g. Front Desk"
+                    value={role}
                   />
                 </label>
               </div>
@@ -797,7 +834,7 @@ export function TeamSettingsSection() {
               <div className="mt-3 flex items-center gap-2">
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
-                  disabled={busy || !label.trim() || !email.trim() || password.length < 6}
+                  disabled={busy || !firstName.trim() || !email.trim() || password.length < 6}
                   onClick={addMember}
                   type="button"
                 >
