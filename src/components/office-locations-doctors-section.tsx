@@ -17,6 +17,7 @@ export function OfficeLocationsDoctorsSection() {
 
   const [newDoctor, setNewDoctor] = useState("");
   const [newLocation, setNewLocation] = useState("");
+  const [openLocId, setOpenLocId] = useState<string | null>(null);
 
   const setDoctors = (next: OfficeDoctor[]) => updateOfficeSettings({ doctors: next });
   const setLocations = (next: OfficeLocation[]) => updateOfficeSettings({ locations: next });
@@ -40,8 +41,10 @@ export function OfficeLocationsDoctorsSection() {
   const addLocation = () => {
     const name = newLocation.trim();
     if (!name) return;
-    setLocations([...locations, { id: genId("loc"), name, nickname: "", address: "", phone: "", doctorIds: [] }]);
+    const id = genId("loc");
+    setLocations([...locations, { id, name, nickname: "", address: "", phone: "", doctorIds: [] }]);
     setNewLocation("");
+    setOpenLocId(id);
   };
 
   const updateLocation = (id: string, patch: Partial<OfficeLocation>) =>
@@ -141,9 +144,9 @@ export function OfficeLocationsDoctorsSection() {
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <label className="flex items-center justify-between gap-3">
           <span className="text-sm font-semibold text-[var(--text-main)]">
-            Multi-Location{" "}
+            Office Locations{" "}
             <span className="font-normal text-[var(--text-muted)]">
-              — run several offices, each with its own schedule
+              — turn on to run several offices, each with its own doctors &amp; schedule
             </span>
           </span>
           <ToggleSwitch
@@ -157,33 +160,44 @@ export function OfficeLocationsDoctorsSection() {
           <div className="mt-3 grid gap-2">
             {locations.length === 0 && (
               <p className="text-xs text-[var(--text-muted)]">
-                No locations yet. Add your first below — the Schedule will let you switch between
-                them.
+                No offices yet. Add your first below — each becomes its own collapsible office with
+                its own doctors, and the Schedule &amp; Patients let you switch between them.
               </p>
             )}
-            {locations.map((loc) => (
-              <div key={loc.id} className="rounded-lg border border-[var(--line-soft)] bg-white p-2.5">
+            {locations.map((loc) => {
+              const isOpen = openLocId === loc.id;
+              const assignedCount = loc.doctorIds.length;
+              return (
+              <div key={loc.id} className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-white">
+                <button
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                  onClick={() => setOpenLocId(isOpen ? null : loc.id)}
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">
+                      {loc.name || "Untitled office"}
+                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)]">
+                      {assignedCount} doctor{assignedCount === 1 ? "" : "s"}
+                      {loc.address ? ` · ${loc.address}` : ""}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[var(--text-muted)]">{isOpen ? "▾" : "▸"}</span>
+                </button>
+
+                {isOpen && (
+                <div className="border-t border-[var(--line-soft)] p-2.5">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="grid gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Location name
+                      Office name
                     </span>
                     <input
                       className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
                       onChange={(e) => updateLocation(loc.id, { name: e.target.value })}
-                      placeholder="e.g. Houston Main"
-                      value={loc.name}
-                    />
-                  </label>
-                  <label className="grid gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Nickname (shown on pills)
-                    </span>
-                    <input
-                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                      onChange={(e) => updateLocation(loc.id, { nickname: e.target.value })}
                       placeholder="e.g. Hulen"
-                      value={loc.nickname}
+                      value={loc.name}
                     />
                   </label>
                   <label className="grid gap-1">
@@ -212,11 +226,15 @@ export function OfficeLocationsDoctorsSection() {
                   </label>
                 </div>
 
-                {doctors.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Doctors at this location
+                <div className="mt-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Doctors at this office
+                  </p>
+                  {doctors.length === 0 ? (
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                      Add doctors below, then tap to assign them here.
                     </p>
+                  ) : (
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {doctors.map((doc) => {
                         const on = loc.doctorIds.includes(doc.id);
@@ -236,8 +254,8 @@ export function OfficeLocationsDoctorsSection() {
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 <div className="mt-2 flex justify-end">
                   <button
@@ -245,11 +263,14 @@ export function OfficeLocationsDoctorsSection() {
                     onClick={() => removeLocation(loc.id)}
                     type="button"
                   >
-                    Remove location
+                    Remove office
                   </button>
                 </div>
+                </div>
+                )}
               </div>
-            ))}
+              );
+            })}
 
             <div className="flex items-center gap-2">
               <input
@@ -261,7 +282,7 @@ export function OfficeLocationsDoctorsSection() {
                     addLocation();
                   }
                 }}
-                placeholder="New location name"
+                placeholder="New office name"
                 value={newLocation}
               />
               <button
@@ -270,7 +291,7 @@ export function OfficeLocationsDoctorsSection() {
                 onClick={addLocation}
                 type="button"
               >
-                + Location
+                + Office
               </button>
             </div>
           </div>
