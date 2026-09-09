@@ -12,7 +12,8 @@ import {
   type OfficeDoctor,
   type OfficeLocation,
 } from "@/lib/office-settings";
-import { dualWriteKvOrThrow } from "@/lib/kv-cloud";
+import { dualWriteKvOrThrow, fetchKvValue } from "@/lib/kv-cloud";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { markLocalWrite } from "@/lib/local-sync";
 import {
   getDefaultScheduleSettings,
@@ -54,9 +55,31 @@ export function OfficeLocationsDoctorsSection() {
     const t = setTimeout(async () => {
       try {
         markLocalWrite(STORAGE_KEY_OFFICE_SETTINGS);
+        const ws = getActiveWorkspaceIdSync();
+        const localCount = (officeSettings.locations ?? []).length;
+        console.info("[office-save] writing", { workspaceId: ws, locations: localCount });
+        if (!ws) {
+          console.error("[office-save] NO active workspace id — write would be a no-op.");
+          if (!cancelled) setSaveState("error");
+          return;
+        }
         await dualWriteKvOrThrow(STORAGE_KEY_OFFICE_SETTINGS, "tasks", officeSettings);
-        if (!cancelled) setSaveState("saved");
-      } catch {
+        // Read it straight back from the cloud to PROVE it persisted.
+        const cloud = await fetchKvValue<{ locations?: unknown[] }>(STORAGE_KEY_OFFICE_SETTINGS);
+        const cloudCount = Array.isArray(cloud?.locations) ? cloud!.locations!.length : -1;
+        console.info("[office-save] read back from cloud", { locations: cloudCount });
+        if (cloudCount >= localCount) {
+          if (!cancelled) setSaveState("saved");
+        } else {
+          console.error("[office-save] MISMATCH — cloud has fewer locations than local", {
+            localCount,
+            cloudCount,
+            cloud,
+          });
+          if (!cancelled) setSaveState("error");
+        }
+      } catch (err) {
+        console.error("[office-save] failed:", err);
         if (!cancelled) setSaveState("error");
       }
     }, 250);
