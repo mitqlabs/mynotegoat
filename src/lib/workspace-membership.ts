@@ -78,9 +78,18 @@ export async function resolveWorkspaceMembership(
       .limit(1)
       .maybeSingle();
     if (error || !data) {
+      // Diagnostic: distinguish "query blocked/errored" from "no membership
+      // row" — a member who lands here is silently treated as an owner of
+      // their own (empty) workspace, which looks exactly like data loss.
+      console.info(
+        "[membership] no member row for",
+        userId,
+        error ? `— query ERROR: ${error.message} (code ${error.code ?? "?"})` : "— no row matched (this account is not a team member of anyone)",
+      );
       cached = ownerFallback;
       return ownerFallback;
     }
+    console.info("[membership] linked as member of owner", String(data.workspace_owner_id));
     const perms = normalizePermissions(data.permissions);
     const membership: WorkspaceMembership = {
       userId,
