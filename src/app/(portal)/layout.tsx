@@ -146,6 +146,16 @@ export default function PortalLayout({
       // membership first so we point localStorage + cloud at the owner's data.
       const resolvedMembership = await resolveWorkspaceMembership(access.userId);
       if (!active) return;
+
+      // A member the owner has deactivated may no longer use the app. Sign
+      // them out and bounce to a notice — never mount their owner's data.
+      if (resolvedMembership.isMember && resolvedMembership.disabled) {
+        const supabase = getSupabaseBrowserClient();
+        if (supabase) await supabase.auth.signOut();
+        routerRef.current.replace("/auth/login?disabled=1");
+        return;
+      }
+
       setMembership(resolvedMembership);
 
       const workspaceId = buildWorkspaceIdForUser(resolvedMembership.ownerId);
@@ -511,7 +521,9 @@ export default function PortalLayout({
         )}
         <GlobalTimerAlerts />
         <DraftRecoveryBanner />
-        <OnboardingModal />
+        {/* Onboarding is the OWNER's one-time office setup. A team member
+            logs into an already-configured office — never show it to them. */}
+        {!membership?.isMember && <OnboardingModal />}
         {/* Realtime listeners — propagate cross-device changes from
             Supabase to local React hooks within seconds. KV one
             covers every workspace_kv-backed entity (cash payments,

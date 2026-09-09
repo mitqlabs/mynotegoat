@@ -30,6 +30,8 @@ export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
   officeAdmin?: boolean;
   /** Patient-page sub-panels hidden for this member (panel keys). */
   hiddenSections?: string[];
+  /** Deactivated — the member keeps their record but can no longer log in. */
+  disabled?: boolean;
 };
 
 /**
@@ -118,6 +120,7 @@ export function normalizePermissions(value: unknown): MemberPermissions {
   const raw = value as Record<string, unknown>;
   const out: MemberPermissions = {};
   if (raw.officeAdmin === true) out.officeAdmin = true;
+  if (raw.disabled === true) out.disabled = true;
   if (Array.isArray(raw.hiddenSections)) {
     const hs = raw.hiddenSections.filter((s): s is string => typeof s === "string");
     if (hs.length) out.hiddenSections = hs;

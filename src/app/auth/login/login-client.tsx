@@ -8,9 +8,10 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type LoginClientProps = {
   verifyNotice: boolean;
+  disabledNotice?: boolean;
 };
 
-export default function LoginClient({ verifyNotice }: LoginClientProps) {
+export default function LoginClient({ verifyNotice, disabledNotice }: LoginClientProps) {
   const router = useRouter();
 
   const [email, setEmail] = useState("");

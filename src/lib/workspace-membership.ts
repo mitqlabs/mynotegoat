@@ -33,6 +33,8 @@ export interface WorkspaceMembership {
   label: string;
   /** Whether this member is elevated to office-admin (can manage settings/team). */
   officeAdmin: boolean;
+  /** Member deactivated by the owner — must be blocked from logging in. */
+  disabled: boolean;
 }
 
 let cached: WorkspaceMembership | null = null;
@@ -61,6 +63,7 @@ export async function resolveWorkspaceMembership(
     permissions: {},
     label: "",
     officeAdmin: false,
+    disabled: false,
   };
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
@@ -87,6 +90,7 @@ export async function resolveWorkspaceMembership(
       label: typeof data.label === "string" ? data.label : "Team Member",
       // Office-admin is stored as an "officeAdmin" flag inside permissions.
       officeAdmin: Boolean((data.permissions as Record<string, unknown> | null)?.officeAdmin),
+      disabled: Boolean((data.permissions as Record<string, unknown> | null)?.disabled),
     };
     cached = membership;
     return membership;
