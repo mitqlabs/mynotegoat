@@ -1,21 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  /* Neutral black / white / grey theme (no blue tint). Status colors stay
-     semantic (green / amber / red) so meaning is preserved. */
-  --bg-canvas: #f4f4f5;
-  --bg-panel: #ffffff;
-  --bg-soft: #f0f0f1;
-  --bg-sidebar: #18181b;
-  --line-soft: #e4e4e7;
-  --brand-primary: #27272a;
-  --brand-secondary: #52525b;
-  --brand-accent: #71717a;
+  --bg-canvas: #eef6fb;
+  --bg-panel: #fdfefe;
+  --bg-soft: #e4f0f7;
+  --bg-sidebar: #0f2e46;
+  --line-soft: #d7e6f1;
+  --brand-primary: #0d79bf;
+  --brand-secondary: #1aa0a2;
+  --brand-accent: #f08d3f;
   --status-active: #1f9d60;
-  --status-warning: #d97706;
+  --status-warning: #f0a43f;
   --status-alert: #c9423a;
-  --text-main: #18181b;
-  --text-muted: #6b7280;
+  --text-main: #172a3a;
+  --text-muted: #57758b;
   --font-body:
     "Avenir Next",
     "Avenir",
@@ -36,11 +34,11 @@
     "Consolas",
     "Liberation Mono",
     monospace;
-  --field-bg: #ffffff;
-  --field-border: #d4d4d8;
-  --field-focus: rgba(24, 24, 27, 0.12);
-  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --field-shadow-focus: 0 0 0 4px var(--field-focus), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --field-bg: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%);
+  --field-border: #c0d8ea;
+  --field-focus: rgba(13, 121, 191, 0.16);
+  --field-shadow: 0 1px 2px rgba(14, 51, 78, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --field-shadow-focus: 0 0 0 4px var(--field-focus), 0 1px 2px rgba(14, 51, 78, 0.1);
 }
 
 @theme inline {
@@ -56,7 +54,10 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(140deg, #f6f6f7, #f2f2f3 52%, #f7f7f8);
+  background:
+    radial-gradient(circle at 15% 20%, rgba(26, 160, 162, 0.16), transparent 34%),
+    radial-gradient(circle at 88% 3%, rgba(240, 141, 63, 0.12), transparent 27%),
+    linear-gradient(140deg, #edf7fb, #ebf2fa 52%, #f5f7fb);
   color: var(--text-main);
   font-family: var(--font-body);
   line-height: 1.45;
@@ -104,14 +105,14 @@ textarea {
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="color"])::placeholder,
 textarea::placeholder {
-  color: #9ca3af;
+  color: #7f91a4;
   opacity: 1;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus,
 select:focus,
 textarea:focus {
-  border-color: #a1a1aa;
+  border-color: #7cb0d3;
   box-shadow: var(--field-shadow-focus);
   background: #ffffff;
   outline: none;
@@ -164,12 +165,12 @@ a {
   border: 1px solid var(--line-soft);
   background: var(--bg-panel);
   border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 14px 28px rgba(14, 51, 78, 0.05);
 }
 
 .rich-text-editor:empty::before {
   content: attr(data-placeholder);
-  color: #9ca3af;
+  color: #7f91a4;
   pointer-events: none;
 }
 
@@ -239,7 +240,7 @@ a {
    to re-open the picker for that one question. */
 .rich-text-editor .macro-prompt {
   display: inline;
-  background-color: rgba(24, 24, 27, 0.08);
+  background-color: rgba(56, 132, 197, 0.12);
   border-radius: 4px;
   padding: 1px 5px;
   margin: 0 1px;
@@ -250,8 +251,8 @@ a {
 }
 
 .rich-text-editor .macro-prompt:hover {
-  background-color: rgba(24, 24, 27, 0.15);
-  box-shadow: 0 0 0 1px rgba(24, 24, 27, 0.3);
+  background-color: rgba(56, 132, 197, 0.22);
+  box-shadow: 0 0 0 1px rgba(56, 132, 197, 0.4);
 }
 
 .rich-text-editor .macro-prompt:empty::before {
@@ -263,8 +264,8 @@ a {
    support so old notes still render and stay tappable. */
 .rich-text-editor .macro-snippet {
   display: block;
-  background-color: rgba(24, 24, 27, 0.05);
-  border-left: 3px solid rgba(24, 24, 27, 0.4);
+  background-color: rgba(56, 132, 197, 0.06);
+  border-left: 3px solid rgba(56, 132, 197, 0.55);
   border-radius: 4px;
   padding: 6px 10px;
   margin: 6px 0;
@@ -275,7 +276,7 @@ a {
 }
 
 .rich-text-editor .macro-snippet:hover {
-  background-color: rgba(24, 24, 27, 0.1);
+  background-color: rgba(56, 132, 197, 0.14);
 }
 
 .rich-text-editor .macro-snippet * {

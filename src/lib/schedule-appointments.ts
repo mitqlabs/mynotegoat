@@ -429,7 +429,7 @@ export function createAppointmentId() {
 export function getStatusBadgeClass(status: AppointmentStatus) {
   switch (status) {
     case "Check In":
-      return "bg-[rgba(24, 24, 27,0.14)] text-[#27272a]";
+      return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
     case "Check Out":
       return "bg-[rgba(31,157,96,0.14)] text-[#1f9d60]";
     case "Canceled":

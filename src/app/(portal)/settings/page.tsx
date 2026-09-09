@@ -2983,18 +2983,18 @@ export default function SettingsPage() {
   const { emailSettings, updateEmailSettings, resetEmailSettings } = useEmailSettings();
 
   const [statusNameDraft, setStatusNameDraft] = useState("");
-  const [statusColorDraft, setStatusColorDraft] = useState("#27272a");
+  const [statusColorDraft, setStatusColorDraft] = useState("#0d79bf");
   const [statusCaseClosedDraft, setStatusCaseClosedDraft] = useState(false);
   const [lienOptionDraft, setLienOptionDraft] = useState("");
   const [reviewOptionDraft, setReviewOptionDraft] = useState("");
   const [appointmentTypeNameDraft, setAppointmentTypeNameDraft] = useState("");
-  const [appointmentTypeColorDraft, setAppointmentTypeColorDraft] = useState("#27272a");
+  const [appointmentTypeColorDraft, setAppointmentTypeColorDraft] = useState("#0d79bf");
   const [appointmentTypeDurationDraft, setAppointmentTypeDurationDraft] = useState(30);
   const [appointmentTypeDefaultDraft, setAppointmentTypeDefaultDraft] = useState(false);
   const [appointmentTypeError, setAppointmentTypeError] = useState("");
   const [appointmentTypeSuccess, setAppointmentTypeSuccess] = useState("");
   const [roomNameDraft, setRoomNameDraft] = useState("");
-  const [roomColorDraft, setRoomColorDraft] = useState("#27272a");
+  const [roomColorDraft, setRoomColorDraft] = useState("#0d79bf");
   const [roomError, setRoomError] = useState("");
   // Per-top-level sub-category input drafts
   const [subCategoryDrafts, setSubCategoryDrafts] = useState<
@@ -3201,7 +3201,7 @@ export default function SettingsPage() {
     }
     addStatus(nextName, false, statusColorDraft, statusCaseClosedDraft);
     setStatusNameDraft("");
-    setStatusColorDraft("#27272a");
+    setStatusColorDraft("#0d79bf");
     setStatusCaseClosedDraft(false);
   };
 
@@ -3246,7 +3246,7 @@ export default function SettingsPage() {
     setAppointmentTypeError("");
     setAppointmentTypeSuccess(`"${typeName}" has been added.`);
     setAppointmentTypeNameDraft("");
-    setAppointmentTypeColorDraft("#27272a");
+    setAppointmentTypeColorDraft("#0d79bf");
     setAppointmentTypeDurationDraft(30);
     setAppointmentTypeDefaultDraft(false);
   };
@@ -3259,7 +3259,7 @@ export default function SettingsPage() {
     }
     setRoomError("");
     setRoomNameDraft("");
-    setRoomColorDraft("#27272a");
+    setRoomColorDraft("#0d79bf");
   };
 
   const handleAddSubCategory = (category: ContactCategory) => {

@@ -402,7 +402,7 @@ function getDatesForDraft(draft: NewAppointmentDraft) {
 function getCardBackground(status: AppointmentStatus) {
   switch (status) {
     case "Check In":
-      return "border-l-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)]";
+      return "border-l-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)]";
     case "Check Out":
       return "border-l-[#2e9b5d] bg-[rgba(46,155,93,0.11)]";
     case "Canceled":
@@ -1134,7 +1134,7 @@ export default function AppointmentsPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {multiLocation && (
-              <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.06)] px-3 py-2 text-sm font-semibold">
+              <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-3 py-2 text-sm font-semibold">
                 Location
                 <select
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
@@ -1231,7 +1231,7 @@ export default function AppointmentsPage() {
                   searchedPatientAppointments.slice(0, 30).map((appointment) => (
                     <button
                       key={`schedule-search-match-${appointment.id}`}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-left hover:border-[var(--brand-primary)] hover:bg-[rgba(24,24,27,0.06)]"
+                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-left hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
                       onClick={() => {
                         setMode("schedule");
                         setSelectedDate(appointment.date);
@@ -1281,7 +1281,7 @@ export default function AppointmentsPage() {
               className={`mt-2 rounded-xl border px-3 py-2 text-sm ${
                 selectedDateClosedKeyDate
                   ? "border-[rgba(201,66,58,0.5)] bg-[rgba(201,66,58,0.11)] text-[#9f2f2a]"
-                  : "border-[rgba(24,24,27,0.45)] bg-[rgba(24,24,27,0.1)] text-[#0f5d92]"
+                  : "border-[rgba(13,121,191,0.45)] bg-[rgba(13,121,191,0.1)] text-[#0f5d92]"
               }`}
             >
               <span className="font-semibold">Key Date Notice:</span>{" "}
@@ -1608,7 +1608,7 @@ export default function AppointmentsPage() {
                       filteredPatientSuggestions.map((patient) => (
                         <button
                           key={`new-appointment-patient-${patient.id}`}
-                          className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[rgba(24,24,27,0.08)]"
+                          className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => handleSelectPatient(patient)}
                           type="button"
@@ -1627,7 +1627,7 @@ export default function AppointmentsPage() {
               </label>
 
               {showQuickNewPatient && (
-                <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(24,24,27,0.05)] p-3 md:col-span-2">
+                <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 md:col-span-2">
                   <div className="flex items-center justify-between gap-2">
                     <h5 className="text-sm font-semibold">Quick New Patient</h5>
                     <span className="text-xs text-[var(--text-muted)]">Complete the rest of the chart later</span>
@@ -1686,7 +1686,7 @@ export default function AppointmentsPage() {
                           {quickAttorneyMatches.map((entry) => (
                             <li key={entry.id}>
                               <button
-                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[rgba(24,24,27,0.08)]"
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[rgba(13,121,191,0.08)]"
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => {
                                   setQuickNewPatientDraft((c) => ({ ...c, attorney: entry.name }));
@@ -1870,7 +1870,7 @@ export default function AppointmentsPage() {
               <button
                 className={`rounded-xl border px-4 py-3 text-left font-semibold ${
                   !newAppointmentDraft.isRecurring
-                    ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 onClick={() => setNewAppointmentDraft((current) => ({ ...current, isRecurring: false }))}
@@ -1881,7 +1881,7 @@ export default function AppointmentsPage() {
               <button
                 className={`rounded-xl border px-4 py-3 text-left font-semibold ${
                   newAppointmentDraft.isRecurring
-                    ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 onClick={() =>
@@ -2215,7 +2215,7 @@ export default function AppointmentsPage() {
                       key={`checkin-room-${room.id}`}
                       className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
                         selected
-                          ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)]"
+                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)]"
                           : "border-[var(--line-soft)] bg-white"
                       }`}
                       onClick={() => setCheckInRoomDraft(room.name)}
@@ -2386,7 +2386,7 @@ export default function AppointmentsPage() {
                     !selectable
                       ? "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-50"
                       : statusDraft === status
-                      ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   disabled={!selectable}

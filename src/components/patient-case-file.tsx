@@ -827,7 +827,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         align-items: flex-start;
         gap: 16px;
         padding-bottom: 8px;
-        border-bottom: 2px solid #27272a;
+        border-bottom: 2px solid #0d79bf;
         margin-bottom: 10px;
       }
       .soap-pages .logo {
@@ -841,7 +841,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         padding: 0;
       }
       .soap-pages .office-info { flex: 1; text-align: right; margin: 0; padding: 0; }
-      .soap-pages .office-name-lh { font-size: 15px; font-weight: 700; color: #27272a; margin: 0; padding: 0; line-height: 1.2; }
+      .soap-pages .office-name-lh { font-size: 15px; font-weight: 700; color: #0d79bf; margin: 0; padding: 0; line-height: 1.2; }
       .soap-pages .office-detail { font-size: 11px; color: #444; line-height: 1.5; margin: 0; }
       .soap-pages p { display: block; margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; }
       .soap-pages strong, .soap-pages b { font-weight: 700; }
@@ -864,7 +864,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
       }
       .soap-pages .patient-banner .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #5a7a8f; }
       .soap-pages .patient-banner .name { font-size: 14px; font-weight: 700; color: #13293d; }
-      .soap-pages .patient-banner .doc-title { font-size: 11px; font-weight: 600; color: #27272a; }
+      .soap-pages .patient-banner .doc-title { font-size: 11px; font-weight: 600; color: #0d79bf; }
       .soap-pages .encounter {
         border: 1px solid #d0dfe9;
         border-radius: 4px;
@@ -872,7 +872,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         display: block;
       }
       .soap-pages .encounter-header {
-        background: #27272a;
+        background: #0d79bf;
         color: #fff;
         padding: 4px 10px;
         display: flex;
@@ -901,7 +901,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        color: #27272a;
+        color: #0d79bf;
         margin-bottom: 2px;
         display: block;
       }
@@ -942,7 +942,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         align-items: flex-start;
         gap: 12px;
         padding-bottom: 6px;
-        border-bottom: 2px solid #27272a;
+        border-bottom: 2px solid #0d79bf;
         margin-bottom: 8px;
       }
       .billing-pages .bill-logo {
@@ -953,9 +953,9 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         flex-shrink: 0;
       }
       .billing-pages .bill-office-info { flex: 1; text-align: right; }
-      .billing-pages .bill-office-name { font-size: 14px; font-weight: 700; color: #27272a; margin: 0; line-height: 1.2; }
+      .billing-pages .bill-office-name { font-size: 14px; font-weight: 700; color: #0d79bf; margin: 0; line-height: 1.2; }
       .billing-pages .bill-office-detail { font-size: 10px; color: #444; line-height: 1.4; margin: 0; }
-      .billing-pages .bill-title { text-align: center; font-size: 16px; font-weight: 700; margin: 10px 0 8px 0; color: #27272a; }
+      .billing-pages .bill-title { text-align: center; font-size: 16px; font-weight: 700; margin: 10px 0 8px 0; color: #0d79bf; }
       .billing-pages .bill-meta-row {
         border-top: 1px solid #d0dfe9;
         padding-top: 6px;
@@ -966,7 +966,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         font-size: 10px;
       }
       .billing-pages .bill-section { margin-top: 8px; }
-      .billing-pages .bill-section h3 { margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #27272a; }
+      .billing-pages .bill-section h3 { margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #0d79bf; }
       .billing-pages table { width: 100%; border-collapse: collapse; }
       .billing-pages th, .billing-pages td {
         border: 1px solid #d0dfe9;
@@ -985,7 +985,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
       }
       .billing-pages .bill-totals { margin-top: 8px; display: flex; justify-content: flex-end; }
       .billing-pages .bill-total-box {
-        background: #27272a !important;
+        background: #0d79bf !important;
         color: #fff !important;
         padding: 8px 18px;
         font-size: 14px;
@@ -2017,7 +2017,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const statusConfig = caseStatuses.find(
     (statusConfigEntry) => statusConfigEntry.name.toLowerCase() === caseStatus.toLowerCase(),
   );
-  const statusColor = statusConfig?.color ?? "#27272a";
+  const statusColor = statusConfig?.color ?? "#0d79bf";
   // When the case is in a closed status (Submitted / Dropped / Paid, per
   // Settings → Case Statuses), lock the Appointments/Encounters panel so
   // a closed case isn't changed by accident — mirrors the signed-note
@@ -5040,7 +5040,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           >
                             {formatRegionLabel(region, xray.lateralityByRegion)}
                             {xray.flexExtRegions.includes(region) && (
-                              <span className="rounded-full bg-[#27272a] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                              <span className="rounded-full bg-[#0d79bf] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                                 F/E
                               </span>
                             )}
@@ -6014,7 +6014,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                       if (!targets.length) return null;
                                       return (
                                         <select
-                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                                           onChange={(event) => {
                                             const target = targets.find(
                                               (r) => r.appointment!.id === event.target.value,
@@ -7153,7 +7153,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <span
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold shadow-sm ${
                 saveStatus === "saving"
-                  ? "border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)] text-[var(--brand-primary)]"
+                  ? "border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)] text-[var(--brand-primary)]"
                   : saveStatus === "saved"
                     ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
                     : "border-2 border-red-400 bg-red-50 text-red-800"
@@ -7293,7 +7293,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               <button
                                 className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
                                   checked
-                                    ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] text-[var(--brand-primary)]"
+                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
                                     : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                                 }`}
                                 key={`${prompt.id}-${option}`}
@@ -7550,7 +7550,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       aria-pressed={checked}
                       className={`flex min-h-12 w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
                         checked
-                          ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] text-[var(--brand-primary)]"
+                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
                           : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                       }`}
                       onClick={() => {
@@ -7599,7 +7599,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           !checked
                             ? "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-70"
                             : flexExt
-                              ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.12)] text-[var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                         }`}
                         disabled={!checked}

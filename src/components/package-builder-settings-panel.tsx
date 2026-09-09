@@ -312,7 +312,7 @@ export function PackageBuilderSettingsPanel() {
                   isFamilyDragging
                     ? "opacity-50"
                     : isFamilyDragOver
-                      ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.06)]"
+                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)]"
                       : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 key={group.key}
@@ -432,7 +432,7 @@ export function PackageBuilderSettingsPanel() {
                             isTierDragging
                               ? "opacity-50"
                               : isTierDragOver
-                                ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.06)]"
+                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)]"
                                 : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                           }`}
                           draggable

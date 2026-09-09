@@ -683,7 +683,7 @@ export function MessagesWorkspace() {
                                   <div className="mt-1.5 flex flex-wrap gap-1">
                                     {m.mentions.map((mn) => (
                                       <span
-                                        className="rounded-full bg-[rgba(24,24,27,0.12)] px-2 py-0.5 text-xs font-semibold text-[#27272a]"
+                                        className="rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-xs font-semibold text-[#0d79bf]"
                                         key={mn.userId}
                                       >
                                         @{mn.label}

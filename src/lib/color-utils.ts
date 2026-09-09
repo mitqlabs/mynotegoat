@@ -15,7 +15,7 @@ export function hexToRgb(hexColor: string) {
 export function withAlpha(hexColor: string, alpha: number) {
   const rgb = hexToRgb(hexColor);
   if (!rgb) {
-    return `rgba(24, 24, 27, ${alpha})`;
+    return `rgba(13, 121, 191, ${alpha})`;
   }
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }

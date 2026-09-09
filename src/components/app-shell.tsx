@@ -192,7 +192,7 @@ export function AppShell({
             )}
             style={{ transition: "grid-template-columns 0.2s ease" }}
           >
-            <aside className="sticky top-0 hidden max-h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-sidebar)] text-zinc-100 lg:block">
+            <aside className="sticky top-0 hidden max-h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-sidebar)] text-[#e4f4ff] lg:block">
               <div className={sidebarCollapsed ? "p-2" : "p-6"}>
                 {!sidebarCollapsed && (
                   <>
@@ -211,7 +211,7 @@ export function AppShell({
                           </div>
                         )}
                       </div>
-                      <p className="mt-2 text-sm text-zinc-400">Secure office workspace</p>
+                      <p className="mt-2 text-sm text-[#aad0e4]">Secure office workspace</p>
                     </div>
 
                     <nav className="space-y-2">
@@ -225,8 +225,8 @@ export function AppShell({
                             className={classNames(
                               "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                               active
-                                ? "bg-gradient-to-r from-[#3f3f46] to-[#27272a] text-white"
-                                : "text-zinc-300 hover:bg-white/10",
+                                ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                                : "text-[#d5ebf8] hover:bg-white/10",
                             )}
                           >
                             <span>{item.label}</span>
@@ -283,8 +283,8 @@ export function AppShell({
                             className={classNames(
                               "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
                               active
-                                ? "bg-gradient-to-r from-[#3f3f46] to-[#27272a] text-white"
-                                : "text-zinc-300 hover:bg-white/10",
+                                ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                                : "text-[#d5ebf8] hover:bg-white/10",
                             )}
                             title={item.label}
                           >

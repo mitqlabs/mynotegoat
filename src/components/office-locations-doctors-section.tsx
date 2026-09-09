@@ -123,7 +123,7 @@ export function OfficeLocationsDoctorsSection() {
                 />
                 {isMember ? (
                   <span
-                    className="shrink-0 rounded-full bg-[rgba(24,24,27,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#27272a]"
+                    className="shrink-0 rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-[10px] font-semibold text-[#0d79bf]"
                     title="This doctor is a team member. Manage them in Settings → Team."
                   >
                     Team member

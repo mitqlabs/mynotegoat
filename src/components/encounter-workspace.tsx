@@ -336,7 +336,7 @@ function buildSoapPrintHtml(config: {
         align-items: flex-start;
         gap: 16px;
         padding-bottom: 8px;
-        border-bottom: 2px solid #27272a;
+        border-bottom: 2px solid #0d79bf;
         margin-bottom: 10px;
       }
       .logo {
@@ -358,7 +358,7 @@ function buildSoapPrintHtml(config: {
       .office-name {
         font-size: 15px;
         font-weight: 700;
-        color: #27272a;
+        color: #0d79bf;
         margin: 0;
         padding: 0;
         line-height: 1.2;
@@ -395,7 +395,7 @@ function buildSoapPrintHtml(config: {
       .patient-banner .doc-title {
         font-size: 11px;
         font-weight: 600;
-        color: #27272a;
+        color: #0d79bf;
       }
 
       /* ── Encounter card ── */
@@ -405,7 +405,7 @@ function buildSoapPrintHtml(config: {
         margin-bottom: 8px;
       }
       .encounter-header {
-        background: #27272a;
+        background: #0d79bf;
         color: #fff;
         padding: 4px 10px;
         display: flex;
@@ -443,7 +443,7 @@ function buildSoapPrintHtml(config: {
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        color: #27272a;
+        color: #0d79bf;
         margin-bottom: 2px;
       }
       .soap-content {
@@ -2719,7 +2719,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                 key={apt.id}
                                 className={`border-t border-[var(--line-soft)] ${
                                   isLinkedToSelected
-                                    ? "bg-[rgba(24,24,27,0.08)]"
+                                    ? "bg-[rgba(13,121,191,0.08)]"
                                     : ""
                                 }`}
                               >
@@ -2839,7 +2839,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                                     <button
                                       className={`rounded-lg border px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] ${
                                         resolvedEncounterId === linked.id
-                                          ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white"
                                       }`}
                                       onClick={() => setSelectedEncounterId(linked.id)}
@@ -3137,7 +3137,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                       </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                      className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                       onClick={handleGoToNextEncounter}
                       title={`Open the next non-cancelled appointment for ${selectedEncounter.patientName} (starts it if needed)`}
                       type="button"
@@ -3198,7 +3198,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     Copy {sectionLabels[activeSection]}
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                    className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                     disabled={selectedEncounter.signed || !saltSourceEncounter}
                     onClick={handleCopyAllSoapFromSelected}
                     title={
@@ -3234,7 +3234,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                     <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
                     {activeSection === "objective" && (
                       <button
-                        className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(24,24,27,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                        className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                         onClick={() => {
                           setImportText("");
                           setImportPlan(null);
@@ -3605,7 +3605,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                           {filteredActiveTreatments.map((entry) => (
                             <button
                               key={entry.id}
-                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[rgba(24,24,27,0.08)]"
+                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.08)]"
                               disabled={selectedEncounter.signed}
                               onClick={() => { addChargeFromTreatment(entry.id); setChargeSearch(""); }}
                               type="button"
@@ -3885,10 +3885,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
                   Hidden when editing a single non-specialist prompt. */}
               {runMacroAnswers.__specialist_referred__ !== undefined &&
                 (!editingMacroPromptId || editingMacroPromptId === "__specialist_referred__") && (
-                <div className="rounded-xl border-2 border-[#27272a] bg-[#e9f4fb] p-3">
+                <div className="rounded-xl border-2 border-[#0d79bf] bg-[#e9f4fb] p-3">
                   <p className="text-sm font-semibold">
                     Referring Specialist
-                    <span className="ml-2 rounded-full bg-[#27272a] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    <span className="ml-2 rounded-full bg-[#0d79bf] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       From Contacts
                     </span>
                   </p>

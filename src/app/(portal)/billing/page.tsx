@@ -220,7 +220,7 @@ function buildPrintHtml(config: {
         align-items: flex-start;
         gap: 12px;
         padding-bottom: 6px;
-        border-bottom: 2px solid #27272a;
+        border-bottom: 2px solid #0d79bf;
         margin-bottom: 8px;
       }
       .logo {
@@ -237,7 +237,7 @@ function buildPrintHtml(config: {
       .office-name {
         font-size: 14px;
         font-weight: 700;
-        color: #27272a;
+        color: #0d79bf;
         margin: 0;
         line-height: 1.2;
       }
@@ -252,7 +252,7 @@ function buildPrintHtml(config: {
         font-size: 16px;
         font-weight: 700;
         margin: 10px 0 8px 0;
-        color: #27272a;
+        color: #0d79bf;
       }
       .meta-row {
         border-top: 1px solid #d0dfe9;
@@ -270,7 +270,7 @@ function buildPrintHtml(config: {
         margin: 0 0 4px 0;
         font-size: 12px;
         font-weight: 700;
-        color: #27272a;
+        color: #0d79bf;
       }
       table {
         width: 100%;
@@ -298,7 +298,7 @@ function buildPrintHtml(config: {
         justify-content: flex-end;
       }
       .total-box {
-        background: #27272a;
+        background: #0d79bf;
         color: #fff;
         padding: 6px 14px;
         font-size: 12px;

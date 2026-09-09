@@ -349,7 +349,7 @@ export function DocumentTemplateSettingsPanel({
                 <button
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
                     selectedTemplate?.id === specialistTemplate?.id
-                      ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   onClick={handleEnsureSpecialistTemplate}
@@ -360,7 +360,7 @@ export function DocumentTemplateSettingsPanel({
                 <button
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
                     selectedTemplate?.id === imagingTemplate?.id
-                      ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   onClick={handleEnsureImagingTemplate}
@@ -399,7 +399,7 @@ export function DocumentTemplateSettingsPanel({
                   key={template.id}
                   className={`w-full rounded-xl border px-3 py-2 text-left ${
                     selectedTemplate?.id === template.id
-                      ? "border-[var(--brand-primary)] bg-[rgba(24,24,27,0.1)]"
+                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   onClick={() => selectTemplate(template.id)}

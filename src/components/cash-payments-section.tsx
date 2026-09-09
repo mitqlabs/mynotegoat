@@ -456,8 +456,8 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
       * { box-sizing: border-box; }
       body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #1f2d3a; background: #fff; margin: 0; padding: 24px; }
       .wrap { max-width: 760px; margin: 0 auto; }
-      .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #27272a; padding-bottom: 10px; margin-bottom: 14px; }
-      .office-name { font-size: 20px; font-weight: 800; color: #27272a; margin: 0; }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0d79bf; padding-bottom: 10px; margin-bottom: 14px; }
+      .office-name { font-size: 20px; font-weight: 800; color: #0d79bf; margin: 0; }
       .office-detail { font-size: 11px; color: #5a7a8f; margin: 4px 0 0; }
       .doc { font-size: 11px; color: #5a7a8f; text-align: right; }
       h1 { font-size: 16px; margin: 0 0 12px; }
@@ -471,7 +471,7 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
       td.covered { color: #12805c; font-weight: 600; }
       .totals { margin-top: 14px; margin-left: auto; width: 300px; font-size: 12px; }
       .totals .row { display: flex; justify-content: space-between; padding: 4px 0; }
-      .totals .row.due { border-top: 2px solid #27272a; margin-top: 4px; padding-top: 8px; font-size: 15px; font-weight: 800; color: #27272a; }
+      .totals .row.due { border-top: 2px solid #0d79bf; margin-top: 4px; padding-top: 8px; font-size: 15px; font-weight: 800; color: #0d79bf; }
       .foot { margin-top: 26px; font-size: 10px; color: #90a4b3; text-align: center; }
       @page { size: Letter; margin: 0.5in; }
     </style></head><body><div class="wrap">

@@ -271,7 +271,7 @@ export default function KeyDatesPage() {
               <span className="font-semibold text-[#b43b34]">{closedWarnings.length}</span> Closed-date conflicts
             </p>
             <p>
-              <span className="font-semibold text-[#27272a]">{coveredWarnings.length}</span> Covered-date appointments
+              <span className="font-semibold text-[#0d79bf]">{coveredWarnings.length}</span> Covered-date appointments
             </p>
           </div>
         </div>
@@ -388,7 +388,7 @@ export default function KeyDatesPage() {
                       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                         row.officeStatus === "Closed"
                           ? "bg-[rgba(201,66,58,0.15)] text-[#b43b34]"
-                          : "bg-[rgba(24,24,27,0.12)] text-[#27272a]"
+                          : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
                       }`}
                     >
                       {row.officeStatus}
@@ -493,7 +493,7 @@ export default function KeyDatesPage() {
                         className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                           row.hasClosedDate
                             ? "bg-[rgba(201,66,58,0.15)] text-[#b43b34]"
-                            : "bg-[rgba(24,24,27,0.12)] text-[#27272a]"
+                            : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
                         }`}
                       >
                         {keyStatusLabel}

@@ -417,7 +417,7 @@ export function TeamSettingsSection() {
                   sign-up. Only rendered for the owner themselves, so an
                   office-admin member never sees the owner's identity here. */}
               {isOwner && (
-              <div className="rounded-xl border border-[rgba(24,24,27,0.35)] bg-[rgba(24,24,27,0.06)] p-2.5">
+              <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold">
@@ -610,7 +610,7 @@ export function TeamSettingsSection() {
                       </label>
                     )}
 
-                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(24,24,27,0.35)] bg-[rgba(24,24,27,0.06)] px-2 py-1.5">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] px-2 py-1.5">
                       <span className="text-xs font-semibold">
                         Office Admin{" "}
                         <span className="font-normal text-[var(--text-muted)]">

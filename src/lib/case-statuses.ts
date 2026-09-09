@@ -30,7 +30,7 @@ const fallbackColors = [
   "#f4e526",
   "#c9423a",
   "#80e74b",
-  "#27272a",
+  "#0d79bf",
 ];
 
 const defaultStatusColorByName: Record<string, string> = {
