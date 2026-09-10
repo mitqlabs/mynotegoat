@@ -130,34 +130,11 @@ export function useEncounterNotes() {
   // when counter hits 0 (meaning a DIFFERENT hook instance wrote).
   const selfWriteCountRef = useRef(0);
 
-  // Synchronous mirror of `encounters`. React defers state updaters to the
-  // render phase, so a click handler that calls setEncounters and then reads
-  // the result on the very next line always sees stale data. Anything that
-  // must act on "the records as of right now" reads this instead. Assigned
-  // during render (below) and again inside updateRecords, so it is correct
-  // even for two calls in the same tick.
-  const recordsRef = useRef<EncounterNoteRecord[]>([]);
-
-  /**
-   * False until the cloud pull below has settled. localStorage only caches
-   * the last 90 days, so on first paint this hook can be missing encounters
-   * that exist in the cloud. Callers MUST NOT conclude "this appointment has
-   * no encounter" while this is false — that window is exactly how a row
-   * showed "+ Encounter" for an appointment that already had one, and how
-   * clicking it minted duplicates.
-   */
-  const [cloudHydrated, setCloudHydrated] = useState(false);
-
-  recordsRef.current = encounters;
-
   // Merge cloud encounters into state.  localStorage only caches the
   // last 90 days, so we always pull from the cloud to ensure older
   // encounters (needed for billing, reports, etc.) are available.
   useEffect(() => {
-    let cancelled = false;
-    void loadEncounterNotesFromCloud()
-      .then((cloud) => {
-      if (cancelled) return;
+    void loadEncounterNotesFromCloud().then((cloud) => {
       if (!cloud || cloud.length === 0) return;
       setEncounters((local) => {
         // Merge: for each record keep the newer copy by updatedAt;
@@ -188,20 +165,7 @@ export function useEncounterNotes() {
         }
         return changed ? Array.from(byId.values()) : local;
       });
-      })
-      // Mark hydrated on EVERY outcome, including an empty result or a
-      // failed pull. If this only fired on success, a workspace with no
-      // cloud encounters (or an offline one) would leave the UI gated
-      // forever.
-      .catch((err) => {
-        console.error("[encounter-notes] cloud hydrate failed:", err);
-      })
-      .finally(() => {
-        if (!cancelled) setCloudHydrated(true);
-      });
-    return () => {
-      cancelled = true;
-    };
+    });
   }, []);
 
   // Listen for changes made by other hook instances on this page
@@ -335,23 +299,15 @@ export function useEncounterNotes() {
   const pendingRecordsRef = useRef<EncounterNoteRecord[] | null>(null);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flushPendingNow = useCallback((
-    records?: EncounterNoteRecord[],
-    options?: { skipDraftClear?: boolean },
-  ) => {
+  const flushPendingNow = useCallback(() => {
     if (commitTimerRef.current) {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
     }
-    // Callers on the create path pass the records they just built. Without
-    // that, this read pendingRecordsRef — which updateRecords only fills
-    // from inside a deferred state updater — so a flush issued in the same
-    // tick as the create found null and wrote nothing, and we navigated to
-    // an encounter that had never been persisted.
-    const pending = records ?? pendingRecordsRef.current;
+    const pending = pendingRecordsRef.current;
     if (!pending) return;
     pendingRecordsRef.current = null;
-    saveEncounterNoteRecords(pending, options);
+    saveEncounterNoteRecords(pending);
     selfWriteCountRef.current++;
     notifyChange(SYNC_KEY);
   }, []);
@@ -389,7 +345,6 @@ export function useEncounterNotes() {
       // heavy work (prune + stringify + dual-write) runs once per ~700ms
       // of quiet instead of once per keystroke.
       pendingRecordsRef.current = next;
-      recordsRef.current = next;
       if (commitTimerRef.current) {
         clearTimeout(commitTimerRef.current);
       }
@@ -438,22 +393,21 @@ export function useEncounterNotes() {
       // ── Duplicate guard ──
       // If an encounter already exists for this patient + date + type,
       // return its id instead of creating a duplicate.
-      //
-      // This used to read the records inside a setEncounters updater and
-      // check the captured flag on the very next line. React defers those
-      // updaters to the render phase, so the flag was ALWAYS still null and
-      // the guard never once fired — every click of "+ Encounter" minted a
-      // brand new encounter for the same day. Read the synchronous mirror
-      // instead.
-      const current = recordsRef.current;
-      const existing = current.find(
-        (e) =>
-          e.patientId === patientId &&
-          e.encounterDate === encounterDate &&
-          e.appointmentType.toLowerCase() === appointmentType.toLowerCase(),
-      );
-      if (existing) {
-        return existing.id;
+      let existingId: string | null = null;
+      setEncounters((current) => {
+        const existing = current.find(
+          (e) =>
+            e.patientId === patientId &&
+            e.encounterDate === encounterDate &&
+            e.appointmentType.toLowerCase() === appointmentType.toLowerCase(),
+        );
+        if (existing) {
+          existingId = existing.id;
+        }
+        return current; // no mutation — just a read
+      });
+      if (existingId) {
+        return existingId;
       }
 
       const timestamp = nowIso();
@@ -481,30 +435,35 @@ export function useEncounterNotes() {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      const nextRecords = [newRecord, ...current];
-      recordsRef.current = nextRecords;
-      setEncounters(nextRecords);
-      // Force the commit to run NOW so the encounter is durable before the
-      // caller navigates. Passing nextRecords explicitly matters: the no-arg
-      // form reads pendingRecordsRef, which on this path is still null, so
-      // the encounter reached neither localStorage nor the cloud before we
-      // navigated to it — the encounter page then opened an id that existed
-      // nowhere yet and rendered nothing.
-      //
-      // nextRecords is derived from recordsRef (a mirror of React state), NOT
-      // from localStorage. That distinction is load-bearing: a previous
-      // attempt read straight from localStorage, got back only the pruned
-      // 90-day subset, and saving that truncated list made the cloud diff
-      // mark every older encounter as a delete — which WIPED real encounters
-      // from the cloud table. React state always includes the cloud-loaded
-      // ones, so keep sourcing from it.
-      // skipDraftClear: a new encounter has no drafts to clear, and the
-      // sweep would otherwise blow away drafts for every OTHER encounter
-      // while blocking the click on thousands of localStorage calls.
-      flushPendingNow(nextRecords, { skipDraftClear: true });
-      return newId;
+      updateRecords((current) => {
+        // Double-check inside updater (fresh state) to prevent race conditions
+        const alreadyExists = current.find(
+          (e) =>
+            e.patientId === patientId &&
+            e.encounterDate === encounterDate &&
+            e.appointmentType.toLowerCase() === appointmentType.toLowerCase(),
+        );
+        if (alreadyExists) {
+          existingId = alreadyExists.id;
+          return current; // no mutation
+        }
+        return [newRecord, ...current];
+      });
+      // Force the debounced commit to run NOW so the encounter is
+      // durable in localStorage before the caller navigates / writes
+      // drafts. We previously tried to bypass updateRecords entirely
+      // and read straight from localStorage, but that read returned
+      // the pruned 90-day subset — encounters that were only in
+      // React state (loaded from the cloud table) were missing from
+      // it, and saving the truncated list back made the cloud diff
+      // mark them as deletes. That WIPED real encounters from the
+      // cloud table. Reverting that path and instead just flushing
+      // the pending debounce keeps React state as the source of
+      // truth (which always includes the cloud-loaded ones).
+      flushPendingNow();
+      return existingId ?? newId;
     },
-    [flushPendingNow],
+    [updateRecords, flushPendingNow],
   );
 
   const updateEncounter = useCallback(
@@ -1262,8 +1221,6 @@ export function useEncounterNotes() {
   return {
     encounters,
     encountersByNewest,
-    /** See cloudHydrated — gate "no encounter exists" decisions on this. */
-    encountersHydrated: cloudHydrated,
     createEncounter,
     updateEncounter,
     setSoapSection,

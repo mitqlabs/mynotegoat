@@ -405,23 +405,7 @@ function pruneForLocalStorage(records: EncounterNoteRecord[]): EncounterNoteReco
   return kept;
 }
 
-export interface SaveEncounterOptions {
-  /**
-   * Skip the "clear crash-recovery drafts" sweep. That sweep walks every
-   * record × every SOAP section issuing a synchronous localStorage.removeItem
-   * — 4 × N blocking calls, which is thousands of them on a real workspace.
-   * It earns its cost after an edit commit. It is pure waste when creating a
-   * brand-new encounter, which by definition has no drafts, and it is worse
-   * than waste for the OTHER encounters in the list: a create would throw
-   * away drafts belonging to encounters the user never touched.
-   */
-  skipDraftClear?: boolean;
-}
-
-export function saveEncounterNoteRecords(
-  records: EncounterNoteRecord[],
-  options: SaveEncounterOptions = {},
-): boolean {
+export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolean {
   if (typeof window === "undefined") {
     return false;
   }
@@ -507,7 +491,7 @@ export function saveEncounterNoteRecords(
   // calls inline against the same prefix shape that draft-recovery
   // uses so there's no cross-module ordering race.
   try {
-    for (const record of options.skipDraftClear ? [] : safeRecords) {
+    for (const record of safeRecords) {
       for (const section of encounterSections) {
         // Matches draftKeyFor(record.id, section) — keep in sync with
         // src/lib/draft-recovery.ts DRAFT_KEY_PREFIX.
