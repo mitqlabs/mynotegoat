@@ -103,6 +103,15 @@ export default function KeyDatesPage() {
   const allWarningRows = useMemo(() => {
     const rows: ConflictRow[] = [];
     scheduleAppointments.forEach((appointment) => {
+      // A visit that already happened, or that is already called off, is not a
+      // conflict to resolve — it is history. Half-day holidays are the common
+      // case: the office is marked Closed, but a few patients were still seen
+      // and checked out. Those rows only ever needed clearing because they
+      // should not have appeared. Canceled is the same story from the other
+      // direction: the appointment is already off the books.
+      if (appointment.status === "Check Out" || appointment.status === "Canceled") {
+        return;
+      }
       const matches = findKeyDatesForDate(keyDates, appointment.date);
       if (!matches.length) {
         return;
@@ -128,6 +137,37 @@ export default function KeyDatesPage() {
     [allWarningRows, dismissals],
   );
 
+  // Clicking the Appointments count on a Configured Key Date narrows the
+  // warning list below to just that date. null = show everything.
+  const [focusedKeyDateId, setFocusedKeyDateId] = useState<string | null>(null);
+
+  // How many outstanding warnings each configured key date accounts for.
+  // Counted off warningRows (undismissed) so the number matches what the list
+  // below actually shows, and drops to 0 as they are cleared.
+  const warningCountByKeyDateId = useMemo(() => {
+    const counts = new Map<string, number>();
+    warningRows.forEach((row) => {
+      row.matches.forEach((match) => {
+        counts.set(match.id, (counts.get(match.id) ?? 0) + 1);
+      });
+    });
+    return counts;
+  }, [warningRows]);
+
+  const focusedKeyDate = focusedKeyDateId
+    ? keyDates.find((entry) => entry.id === focusedKeyDateId) ?? null
+    : null;
+
+  // The list honours the focus filter; if the focused date's warnings all get
+  // cleared the filter simply yields an empty list, which reads correctly.
+  const visibleWarningRows = useMemo(
+    () =>
+      focusedKeyDateId
+        ? warningRows.filter((row) => row.matches.some((m) => m.id === focusedKeyDateId))
+        : warningRows,
+    [focusedKeyDateId, warningRows],
+  );
+
   const closedWarnings = warningRows.filter((row) => row.hasClosedDate);
   const coveredWarnings = warningRows.filter((row) => !row.hasClosedDate);
 
@@ -138,6 +178,8 @@ export default function KeyDatesPage() {
         map.set(patient.fullName.toLowerCase(), patient.id);
       }
     }
+    // `patients` is a module-scope import, not reactive state, so it is
+    // deliberately not a dependency here.
     return map;
   }, []);
 
@@ -376,6 +418,7 @@ export default function KeyDatesPage() {
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Reason</th>
+                <th className="px-4 py-3 font-semibold">Appointments</th>
                 <th className="px-4 py-3 font-semibold text-right">Actions</th>
               </tr>
             </thead>
@@ -395,6 +438,33 @@ export default function KeyDatesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">{row.reason || "-"}</td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const count = warningCountByKeyDateId.get(row.id) ?? 0;
+                      if (count === 0) {
+                        return <span className="text-xs text-[var(--text-muted)]">None</span>;
+                      }
+                      const isFocused = focusedKeyDateId === row.id;
+                      return (
+                        <button
+                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                            isFocused
+                              ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                              : "border-amber-200 bg-amber-50 text-amber-700"
+                          }`}
+                          onClick={() => setFocusedKeyDateId(isFocused ? null : row.id)}
+                          title={
+                            isFocused
+                              ? "Showing only this date's appointments — click to show all"
+                              : "Show only this date's appointments in the warning list below"
+                          }
+                          type="button"
+                        >
+                          {count} appointment{count === 1 ? "" : "s"}
+                        </button>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-2">
                       <button
@@ -451,10 +521,27 @@ export default function KeyDatesPage() {
 
       <section className="panel-card overflow-hidden">
         <div className="border-b border-[var(--line-soft)] px-4 py-3">
-          <h4 className="text-lg font-semibold">Warning List: Appointments On Key Dates</h4>
-          <p className="text-sm text-[var(--text-muted)]">
-            Use this to catch migration mistakes where appointments landed on office key dates.
-          </p>
+          <h4 className="text-lg font-semibold">
+            Warning List: Appointments On Key Dates
+            {focusedKeyDate ? ` — ${formatKeyDateRange(focusedKeyDate)}` : ""}
+          </h4>
+          {focusedKeyDate ? (
+            <p className="text-sm text-[var(--text-muted)]">
+              Showing only {focusedKeyDate.reason || "this key date"}.{" "}
+              <button
+                className="font-semibold text-[var(--brand-primary)] underline"
+                onClick={() => setFocusedKeyDateId(null)}
+                type="button"
+              >
+                Show all key dates
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-[var(--text-muted)]">
+              Use this to catch migration mistakes where appointments landed on office key dates.
+              Click an Appointments count above to narrow this to one date.
+            </p>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -471,7 +558,7 @@ export default function KeyDatesPage() {
               </tr>
             </thead>
             <tbody>
-              {warningRows.map((row) => {
+              {visibleWarningRows.map((row) => {
                 const keyStatusLabel = row.matches.map((entry) => entry.officeStatus).join(", ");
                 const reasonLabel = row.matches
                   .map((entry) =>
@@ -548,7 +635,7 @@ export default function KeyDatesPage() {
                   </tr>
                 );
               })}
-              {warningRows.length === 0 && (
+              {visibleWarningRows.length === 0 && (
                 <tr>
                   <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={7}>
                     No appointments currently fall on key dates.

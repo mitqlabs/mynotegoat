@@ -49,4 +49,40 @@ export function saveKeyDateDismissals(dismissals: KeyDateDismissalSet) {
   );
 }
 
+/**
+ * Pull the cloud copy and merge it into localStorage.
+ *
+ * saveKeyDateDismissals has always dual-written to the cloud, but nothing
+ * ever read that copy back — load only looked at localStorage. So a cleared
+ * warning survived only until localStorage lost it (another browser, another
+ * device, cleared site data, a cache eviction), and then every warning the
+ * user had already dealt with came flooding back.
+ *
+ * Union rather than replace: a dismissal is "I have dealt with this", and
+ * that is never worth silently undoing because one side is stale.
+ */
+export async function loadKeyDateDismissalsFromCloud(): Promise<KeyDateDismissalSet | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const { fetchKvValue } = await import("@/lib/kv-cloud");
+    const remote = await fetchKvValue<unknown>(STORAGE_KEY);
+    if (remote === null || remote === undefined) return null;
+    const merged = new Set([
+      ...normalizeList(remote),
+      ...loadKeyDateDismissals(),
+    ]);
+    // Write the union straight to localStorage. Deliberately NOT via
+    // saveKeyDateDismissals — that would dual-write back to the cloud and
+    // start a write loop between devices.
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(merged).sort()));
+    } catch {
+      // Quota or private mode — the in-memory set below is still correct.
+    }
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
 export const keyDateDismissalsStorageKey = STORAGE_KEY;

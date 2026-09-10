@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   keyDateDismissalsStorageKey,
   loadKeyDateDismissals,
+  loadKeyDateDismissalsFromCloud,
   saveKeyDateDismissals,
   type KeyDateDismissalSet,
 } from "@/lib/key-date-dismissals";
@@ -23,6 +24,29 @@ export function useKeyDateDismissals() {
       }
       setDismissals(loadKeyDateDismissals());
     });
+  }, []);
+
+  // Hydrate from the cloud once on mount. Without this, "Clear" only ever
+  // stuck in the browser that clicked it.
+  useEffect(() => {
+    let cancelled = false;
+    void loadKeyDateDismissalsFromCloud().then((merged) => {
+      if (cancelled || !merged) return;
+      setDismissals((current) => {
+        // Only re-render if the cloud actually added something.
+        let changed = false;
+        for (const id of merged) {
+          if (!current.has(id)) {
+            changed = true;
+            break;
+          }
+        }
+        return changed ? new Set([...current, ...merged]) : current;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const dismissAppointment = useCallback((appointmentId: string) => {
