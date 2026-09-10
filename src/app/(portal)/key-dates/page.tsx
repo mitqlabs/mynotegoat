@@ -140,6 +140,13 @@ export default function KeyDatesPage() {
   // Clicking the Appointments count on a Configured Key Date narrows the
   // warning list below to just that date. null = show everything.
   const [focusedKeyDateId, setFocusedKeyDateId] = useState<string | null>(null);
+  // Two-click inline confirm for Cancel, same reason as the Delete one above:
+  // browsers can suppress window.confirm entirely, which made the button look
+  // dead. Also the visible result banner — cancelling used to change the
+  // appointment silently and leave the row looking identical, so it read as
+  // "nothing happened" even though it had worked.
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState("");
 
   // How many outstanding warnings each configured key date accounts for.
   // Counted off warningRows (undismissed) so the number matches what the list
@@ -195,7 +202,18 @@ export default function KeyDatesPage() {
   // cascade the patient file uses, and is always gated behind a confirm.
   const handleCancelAppointment = (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = formatUsDateFromIso(appointment.date);
+    // A visit the patient actually attended is history, not something to call
+    // off. Cancel is for appointments that never happened.
+    if (appointment.status === "Check Out") {
+      setActionNotice(
+        `${appointment.patientName}'s appointment on ${dateLabel} is already Checked Out — a completed visit can't be canceled.`,
+      );
+      return;
+    }
     updateAppointment(appointment.id, (current) => ({ ...current, status: "Canceled" }));
+    setActionNotice(
+      `${appointment.patientName}'s appointment on ${dateLabel} is now Canceled. It stays on the schedule and the patient file so you can see it was there.`,
+    );
     restoreAppointment(appointment.id);
     const patientId = resolvePatientId(appointment);
     const linkedEncounter = encountersByNewest.find(
@@ -544,6 +562,19 @@ export default function KeyDatesPage() {
           )}
         </div>
 
+        {actionNotice && (
+          <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="flex-1">{actionNotice}</span>
+            <button
+              className="font-semibold text-amber-800 underline"
+              onClick={() => setActionNotice("")}
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="min-w-[960px] w-full text-sm">
             <thead className="bg-[var(--bg-soft)] text-left">
@@ -612,14 +643,43 @@ export default function KeyDatesPage() {
                             Open
                           </span>
                         )}
-                        <button
-                          className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"
-                          onClick={() => handleCancelAppointment(row.appointment)}
-                          title="Mark this appointment Canceled. If an encounter exists for that day, you'll be asked whether to delete it too."
-                          type="button"
-                        >
-                          Cancel
-                        </button>
+                        {row.appointment.status === "Check Out" ? (
+                          <span
+                            className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs font-semibold text-[var(--text-muted)]"
+                            title="This visit was completed — a checked-out appointment can't be canceled."
+                          >
+                            Checked Out
+                          </span>
+                        ) : pendingCancelId === row.appointment.id ? (
+                          <>
+                            <button
+                              className="rounded-lg border border-amber-300 bg-amber-500 px-2 py-1 text-xs font-semibold text-white"
+                              onClick={() => {
+                                handleCancelAppointment(row.appointment);
+                                setPendingCancelId(null);
+                              }}
+                              type="button"
+                            >
+                              Confirm Cancel
+                            </button>
+                            <button
+                              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                              onClick={() => setPendingCancelId(null)}
+                              type="button"
+                            >
+                              Keep
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700"
+                            onClick={() => setPendingCancelId(row.appointment.id)}
+                            title="Mark this appointment Canceled. It stays on record so you can see it was there."
+                            type="button"
+                          >
+                            Cancel Appointment
+                          </button>
+                        )}
                         {row.hasClosedDate && (
                           <button
                             className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
