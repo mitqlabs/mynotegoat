@@ -4557,6 +4557,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <section className="panel-card overflow-hidden">
         <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
+          {/* Field order is deliberate, four to a row on xl:
+                1. Last Name | First Name | DOB | Phone
+                2. Sex | Marital Status | Email | Case #
+                3. Attorney | Attorney Phone | Date Of Injury | Initial Exam
+              Everything from Case # onward is PI-only, so a cash patient
+              simply drops those and the rest reflows. */}
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Last Name</span>
             <input
@@ -4575,33 +4581,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             />
           </label>
 
-          {!isCashPatient && (
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                list="attorney-contacts"
-                ref={attorneyInputRef}
-                onBlur={handleAttorneyBlur}
-                onChange={(event) => handleAttorneyChange(event.target.value)}
-                value={attorney}
-              />
-            </label>
-          )}
-
-          {!isCashPatient && (
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                readOnly
-                placeholder="(000) 000-0000"
-                value={attorneyPhone}
-              />
-            </label>
-          )}
-
-
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
             <input
@@ -4615,81 +4594,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </label>
 
           <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
-            <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientSex(event.target.value as "Male" | "Female" | "Other" | "")}
-              value={patientSex}
-            >
-              <option value="">—</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
-            <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setMaritalStatus(event.target.value as "Single" | "Married" | "Divorced" | "Widowed" | "Other" | "")}
-              value={maritalStatus}
-            >
-              <option value="">—</option>
-              <option value="Single">Single</option>
-              <option value="Married">Married</option>
-              <option value="Divorced">Divorced</option>
-              <option value="Widowed">Widowed</option>
-            </select>
-          </label>
-
-          {!isCashPatient && (
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                inputMode="numeric"
-                maxLength={10}
-                onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
-                placeholder="MM/DD/YYYY"
-                value={dateOfLoss}
-              />
-            </label>
-          )}
-
-          {!isCashPatient && (
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                inputMode="numeric"
-                maxLength={10}
-                onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
-                placeholder="MM/DD/YYYY"
-                value={initialExam}
-              />
-            </label>
-          )}
-
-          {!isCashPatient && (
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
-                placeholder="MMDDYYLASTFIRST"
-                readOnly
-                value={caseNumber}
-              />
-            </label>
-          )}
-
-          {/* Phone and Email share one row. Email used to be a plain grid
-              child, and because Phone spans two columns it filled its row and
-              pushed Email onto a line of its own. Pairing them in a wrapper
-              that owns the full row keeps them together no matter how many
-              fields above are conditionally hidden (Case #, Attorney). */}
-          <div className="grid gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[2fr_1fr]">
-          <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
+            {/* Text / Add to Contacts wrap under the input when the column is
+                too narrow for them — this cell is one column wide now. */}
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -4735,6 +4642,34 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </label>
 
           <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
+            <select
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setPatientSex(event.target.value as "Male" | "Female" | "Other" | "")}
+              value={patientSex}
+            >
+              <option value="">—</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
+            <select
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setMaritalStatus(event.target.value as "Single" | "Married" | "Divorced" | "Widowed" | "Other" | "")}
+              value={maritalStatus}
+            >
+              <option value="">—</option>
+              <option value="Single">Single</option>
+              <option value="Married">Married</option>
+              <option value="Divorced">Divorced</option>
+              <option value="Widowed">Widowed</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Email</span>
             <input
               className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -4743,7 +4678,76 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               value={patientEmail}
             />
           </label>
-          </div>
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
+                placeholder="MMDDYYLASTFIRST"
+                readOnly
+                value={caseNumber}
+              />
+            </label>
+          )}
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                list="attorney-contacts"
+                ref={attorneyInputRef}
+                onBlur={handleAttorneyBlur}
+                onChange={(event) => handleAttorneyChange(event.target.value)}
+                value={attorney}
+              />
+            </label>
+          )}
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                readOnly
+                placeholder="(000) 000-0000"
+                value={attorneyPhone}
+              />
+            </label>
+          )}
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
+                placeholder="MM/DD/YYYY"
+                value={dateOfLoss}
+              />
+            </label>
+          )}
+
+          {!isCashPatient && (
+            <label className="grid gap-1">
+              {/* Kept: this drives the initial-to-discharge duration on the
+                  Statistics page and the Initial Exam column on the patient
+                  list. Nothing derives it automatically, so removing the input
+                  would leave both permanently blank for new patients. */}
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
+                placeholder="MM/DD/YYYY"
+                value={initialExam}
+              />
+            </label>
+          )}
 
           <div className="md:col-span-2 xl:col-span-4">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
