@@ -4682,7 +4682,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          <label className="grid gap-1 xl:col-span-2">
+          {/* Phone and Email share one row. Email used to be a plain grid
+              child, and because Phone spans two columns it filled its row and
+              pushed Email onto a line of its own. Pairing them in a wrapper
+              that owns the full row keeps them together no matter how many
+              fields above are conditionally hidden (Case #, Attorney). */}
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[2fr_1fr]">
+          <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -4731,11 +4737,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Email</span>
             <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               onChange={(event) => setPatientEmail(event.target.value)}
+              type="email"
               value={patientEmail}
             />
           </label>
+          </div>
 
           <div className="md:col-span-2 xl:col-span-4">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
