@@ -13,7 +13,6 @@ import { useCaseNotes } from "@/hooks/use-case-notes";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
-import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
@@ -1323,13 +1322,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, createEncounter, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
   // deleted encounter) and silently inflates Cash Payments totals.
   const { updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
-  const { macroLibrary } = useMacroTemplates();
   const { entries: patientDiagnoses, addDiagnosis, addBulkDiagnoses, removeDiagnosis, reorderDiagnoses } = usePatientDiagnoses(patient.id);
   const {
     recordsByPatientId: followUpOverridesByPatientId,
@@ -4117,109 +4115,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const patientDisplayName = `${lastName.trim()}, ${firstName.trim()}`
-      .replace(/^,\s*|,\s*$/g, "")
-      .trim();
-    const newEncounterId = createEncounter({
-      patientId: patient.id,
-      patientName: patientDisplayName || patient.fullName,
-      provider: appointment.provider || officeSettings.doctorName || "Provider",
-      appointmentType: appointment.appointmentType || "Personal Injury Office Visit",
-      encounterDate: appointmentDate,
-      // Durable link — if the appointment date / type later drifts,
-      // the patient-page table still finds this encounter by id
-      // instead of orphaning it as "Encounter Only".
-      appointmentId: appointment.id,
-    });
-
-    if (!newEncounterId) {
-      setEncounterMessage("Could not create encounter. Verify appointment details and try again.");
-      return;
-    }
-
-    const selectedSections = encounterSections.filter((section) => macroLibrary.saltDefaults.sections[section]);
-    if (macroLibrary.saltDefaults.enabled && selectedSections.length > 0) {
-      const sourceEncounter =
-        patientEncounterRecords.find((entry) =>
-          selectedSections.some((section) => entry.soap[section].trim().length > 0),
-        ) ?? null;
-
-      if (sourceEncounter) {
-        let copiedCount = 0;
-        selectedSections.forEach((section) => {
-          const sourceText = sourceEncounter.soap[section].trim();
-          if (!sourceText) {
-            return;
-          }
-          // Re-key every data-macro-run-id reference in the source HTML
-          // (covers both the new per-prompt span format and the legacy
-          // wrapper format), then carry the underlying macro runs over.
-          const idMap = new Map<string, string>();
-          const rewrittenText = sourceText.replace(
-            /data-macro-run-id=["']([^"']+)["']/g,
-            (_match, oldId: string) => {
-              let newId = idMap.get(oldId);
-              if (!newId) {
-                newId = createEncounterMacroRunId();
-                idMap.set(oldId, newId);
-              }
-              return `data-macro-run-id="${newId}"`;
-            },
-          );
-          setSoapSection(newEncounterId, section, rewrittenText);
-          idMap.forEach((newId, oldId) => {
-            const sourceRun = sourceEncounter.macroRuns.find((entry) => entry.id === oldId);
-            if (!sourceRun) {
-              return;
-            }
-            addMacroRun(newEncounterId, {
-              id: newId,
-              section,
-              macroId: sourceRun.macroId,
-              macroName: sourceRun.macroName,
-              body: sourceRun.body,
-              answers: { ...sourceRun.answers },
-              generatedText: sourceRun.generatedText.replace(
-                new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
-                `data-macro-run-id="${newId}"`,
-              ),
-            });
-          });
-          copiedCount += 1;
-        });
-        // Also carry encounter charges over so the new visit starts with the prior plan.
-        let copiedChargeCount = 0;
-        sourceEncounter.charges.forEach((charge) => {
-          const added = addCharge(newEncounterId, {
-            treatmentMacroId: charge.treatmentMacroId,
-            name: charge.name,
-            procedureCode: charge.procedureCode,
-            unitPrice: charge.unitPrice,
-            units: charge.units,
-          });
-          if (added) {
-            copiedChargeCount += 1;
-          }
-        });
-        if (copiedCount > 0 || copiedChargeCount > 0) {
-          const chargeSuffix =
-            copiedChargeCount > 0
-              ? ` and ${copiedChargeCount} charge${copiedChargeCount === 1 ? "" : "s"}`
-              : "";
-          setEncounterMessage(
-            `Encounter created for ${appointmentDate}. SALT copied ${copiedCount} section(s)${chargeSuffix} from ${sourceEncounter.encounterDate}.`,
-          );
-        } else {
-          setEncounterMessage(`Encounter created for ${appointmentDate}.`);
-        }
-      } else {
-        setEncounterMessage(`Encounter created for ${appointmentDate}.`);
-      }
-    } else {
-      setEncounterMessage(`Encounter created for ${appointmentDate}.`);
-    }
-
-    openEncounterEditor(newEncounterId);
+    // Hand the appointment to the encounters page and let IT create the
+    // encounter. Creating here and then navigating cannot work: the new record
+    // lives only in this page's React state, which is torn down on navigation,
+    // so /encounters opened on an id that existed nowhere and rendered blank.
+    // The encounters workspace creates into the very state it renders from,
+    // which is why its own "+ Encounter" button has always worked. SALT
+    // carry-over and charge copying live on that path too, so nothing is lost.
+    router.push(
+      `/encounters?patientId=${encodeURIComponent(patient.id)}&appointmentId=${encodeURIComponent(appointment.id)}`,
+    );
   };
 
   // Build the full patch for updatePatientRecordById. Accepts overrides so

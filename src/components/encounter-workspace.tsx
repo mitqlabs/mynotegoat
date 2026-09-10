@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
 import { CaseNotesBox } from "@/components/case-notes-box";
 import {
@@ -62,6 +62,8 @@ import {
 type EncounterWorkspaceProps = {
   initialPatientId?: string;
   initialEncounterId?: string;
+  /** Appointment handed over from the patient page's "+ Encounter" button. */
+  initialAppointmentId?: string;
 };
 
 /**
@@ -737,7 +739,7 @@ function AppointmentsOverview({
   );
 }
 
-export function EncounterWorkspace({ initialPatientId, initialEncounterId }: EncounterWorkspaceProps) {
+export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
   const { getPlansForPatient, updatePlan } = useTreatmentPlans();
   const { settings: treatmentPlanSettings } = useTreatmentPlanSettings();
@@ -905,6 +907,169 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
         return right.updatedAt.localeCompare(left.updatedAt);
       });
   }, [encountersByNewest, selectedPatientIdForList, statusFilter]);
+
+  /**
+   * SALT: seed a brand-new encounter from the patient's most recent charted
+   * visit — the configured SOAP sections plus that visit's charges.
+   *
+   * This used to live only on the patient page's create path. Moving it here
+   * means BOTH ways of starting an encounter carry prior work forward; the
+   * workspace's own "+ Encounter" button never did, which was an
+   * inconsistency rather than a deliberate choice.
+   *
+   * Returns a human-readable suffix describing what it copied, or "".
+   */
+  const applySaltToNewEncounter = useCallback(
+    (newEncounterId: string, patientId: string): string => {
+      const selectedSections = encounterSections.filter(
+        (section) => macroLibrary.saltDefaults.sections[section],
+      );
+      if (!macroLibrary.saltDefaults.enabled || selectedSections.length === 0) return "";
+
+      const priorForPatient = encountersByNewest.filter(
+        (entry) => entry.patientId === patientId && entry.id !== newEncounterId,
+      );
+      const sourceEncounter =
+        priorForPatient.find((entry) =>
+          selectedSections.some((section) => entry.soap[section].trim().length > 0),
+        ) ?? null;
+      if (!sourceEncounter) return "";
+
+      let copiedCount = 0;
+      selectedSections.forEach((section) => {
+        const sourceText = sourceEncounter.soap[section].trim();
+        if (!sourceText) return;
+        // Re-key every data-macro-run-id in the source HTML, then carry the
+        // underlying macro runs over so the copy stays editable as macros.
+        const idMap = new Map<string, string>();
+        const rewrittenText = sourceText.replace(
+          /data-macro-run-id=["']([^"']+)["']/g,
+          (_match, oldId: string) => {
+            let newId = idMap.get(oldId);
+            if (!newId) {
+              newId = createEncounterMacroRunId();
+              idMap.set(oldId, newId);
+            }
+            return `data-macro-run-id="${newId}"`;
+          },
+        );
+        setSoapSection(newEncounterId, section, rewrittenText);
+        idMap.forEach((newId, oldId) => {
+          const sourceRun = sourceEncounter.macroRuns.find((entry) => entry.id === oldId);
+          if (!sourceRun) return;
+          addMacroRun(newEncounterId, {
+            id: newId,
+            section,
+            macroId: sourceRun.macroId,
+            macroName: sourceRun.macroName,
+            body: sourceRun.body,
+            answers: { ...sourceRun.answers },
+            generatedText: sourceRun.generatedText.replace(
+              new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
+              `data-macro-run-id="${newId}"`,
+            ),
+          });
+        });
+        copiedCount += 1;
+      });
+
+      let copiedChargeCount = 0;
+      sourceEncounter.charges.forEach((charge) => {
+        const added = addCharge(newEncounterId, {
+          treatmentMacroId: charge.treatmentMacroId,
+          name: charge.name,
+          procedureCode: charge.procedureCode,
+          unitPrice: charge.unitPrice,
+          units: charge.units,
+        });
+        if (added) copiedChargeCount += 1;
+      });
+
+      if (copiedCount === 0 && copiedChargeCount === 0) return "";
+      const chargeSuffix =
+        copiedChargeCount > 0
+          ? ` and ${copiedChargeCount} charge${copiedChargeCount === 1 ? "" : "s"}`
+          : "";
+      return ` SALT copied ${copiedCount} section(s)${chargeSuffix} from ${sourceEncounter.encounterDate}.`;
+    },
+    [addCharge, addMacroRun, encountersByNewest, macroLibrary, setSoapSection],
+  );
+
+  // ── Handoff from the patient page's "+ Encounter" ──
+  //
+  // Mirrors the on-page green button (onCreateEncounter below): find or create
+  // the encounter for this appointment and select it, all inside THIS
+  // component's state. Nothing has to survive a navigation, which is exactly
+  // why the on-page button works and creating-then-navigating did not.
+  const handledAppointmentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialAppointmentId) return;
+    // Run at most once per appointment. React StrictMode double-invokes
+    // effects in development; without this guard that means two encounters.
+    if (handledAppointmentRef.current === initialAppointmentId) return;
+
+    const appointment = scheduleAppointments.find((entry) => entry.id === initialAppointmentId);
+    // Appointments may not have loaded yet — bail without marking handled so
+    // this retries on the render that brings them in.
+    if (!appointment) return;
+
+    handledAppointmentRef.current = initialAppointmentId;
+
+    const dateUs = toUsDate(appointment.date);
+    // Prefer an encounter already linked to this appointment, then same
+    // date + type, then same date. Same precedence the rest of the app uses.
+    const existing =
+      encountersByNewest.find((e) => e.appointmentId === appointment.id) ??
+      encountersByNewest.find(
+        (e) =>
+          e.patientId === appointment.patientId &&
+          e.encounterDate === dateUs &&
+          e.appointmentType.toLowerCase() === appointment.appointmentType.toLowerCase(),
+      ) ??
+      encountersByNewest.find(
+        (e) => e.patientId === appointment.patientId && e.encounterDate === dateUs,
+      );
+    if (existing) {
+      setEncounterSearch(appointment.patientName);
+      setSelectedEncounterId(existing.id);
+      setMessage(`Opened ${dateUs} — ${appointment.appointmentType || "visit"}.`);
+      return;
+    }
+
+    // Same gate as the on-page button: only chart a visit the patient
+    // actually showed up for.
+    if (appointment.status !== "Check In" && appointment.status !== "Check Out") {
+      setMessage(
+        `Cannot start encounter — patient must be Checked In first (current status: ${formatAppointmentStatusLabel(appointment.status)}).`,
+      );
+      return;
+    }
+
+    const newId = createEncounter({
+      patientId: appointment.patientId,
+      patientName: appointment.patientName,
+      provider: appointment.provider || officeSettings.doctorName || "Provider",
+      appointmentType: appointment.appointmentType || "Follow-Up",
+      encounterDate: dateUs,
+      // Durable link so a later date/type edit can't orphan this encounter.
+      appointmentId: appointment.id,
+    });
+    if (newId) {
+      const saltNote = applySaltToNewEncounter(newId, appointment.patientId);
+      setEncounterSearch(appointment.patientName);
+      setSelectedEncounterId(newId);
+      setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
+    } else {
+      setMessage("Could not start the encounter. Check the appointment details and try again.");
+    }
+  }, [
+    applySaltToNewEncounter,
+    createEncounter,
+    encountersByNewest,
+    initialAppointmentId,
+    officeSettings.doctorName,
+    scheduleAppointments,
+  ]);
 
   const initialPatientEncounterId = useMemo(() => {
     if (!initialPatientId) {
@@ -2504,9 +2669,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId }: Enc
             encounterDate: date,
           });
           if (newId) {
+            const saltNote = applySaltToNewEncounter(newId, patientId);
             setEncounterSearch(patientName);
             setSelectedEncounterId(newId);
-            setMessage(`Encounter created for ${date}.`);
+            setMessage(`Encounter created for ${date}.${saltNote}`);
           }
         }}
         onOpenEncounter={(encounterId, patientName) => {
