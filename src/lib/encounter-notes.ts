@@ -467,12 +467,19 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // ALL records still go to the cloud via dual-write below.
   const localSubset = pruneForLocalStorage(safeRecords);
 
+  // The cloud is the record; localStorage is only a speed cache. A failed
+  // cache write must NOT stop the cloud write. It used to `return false`
+  // right here, before the dual-write below — so once the browser's 5 MB
+  // quota filled (appointments + patients alone take ~3 MB), every note save
+  // on that browser silently stopped reaching the cloud. Verified live on
+  // 2026-09-12: typing in a note logged QuotaExceededError and produced zero
+  // encounter_notes requests.
+  let localCacheOk = true;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localSubset));
   } catch (err) {
-    // localStorage can throw QuotaExceededError — log but don't crash the app.
-    console.error("[encounter-notes] localStorage write failed:", err);
-    return false;
+    localCacheOk = false;
+    console.error("[encounter-notes] localStorage write failed (cloud save continues):", err);
   }
 
   // Committed successfully → clear the crash-safe drafts for each
@@ -490,8 +497,11 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // problem the wider fix was meant to solve. Do the removeItem
   // calls inline against the same prefix shape that draft-recovery
   // uses so there's no cross-module ordering race.
+  // Drafts are cleared only after a successful local commit. If the cache
+  // write failed, the drafts are the only local safety copy until the cloud
+  // write lands, so leave them alone.
   try {
-    for (const record of safeRecords) {
+    for (const record of localCacheOk ? safeRecords : []) {
       for (const section of encounterSections) {
         // Matches draftKeyFor(record.id, section) — keep in sync with
         // src/lib/draft-recovery.ts DRAFT_KEY_PREFIX.
@@ -525,7 +535,8 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // call's "did the prior have content?" check compares against
   // what we actually persisted, not what was rejected.
   previousNotesById = new Map(safeRecords.map((n) => [n.id, n]));
-  return true;
+  // true = local cache written too. The cloud write was attempted either way.
+  return localCacheOk;
 }
 
 /**
@@ -536,11 +547,10 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
 export async function forceSaveAllEncountersToCloud(
   records: EncounterNoteRecord[],
 ): Promise<{ ok: boolean; count: number; error?: string }> {
-  // 1. Save to localStorage first
-  const lsOk = saveEncounterNoteRecords(records);
-  if (!lsOk) {
-    return { ok: false, count: 0, error: "localStorage write failed (storage may be full)" };
-  }
+  // 1. Refresh the local cache. A full browser store must not block the
+  // cloud upsert below — this button exists precisely to force data into
+  // the cloud, and it used to bail out here when storage was full.
+  saveEncounterNoteRecords(records);
 
   // 2. Bulk-upsert everything to cloud, WITH visible status signals so the
   // user gets the familiar blue "Saving to cloud..." pill during the
