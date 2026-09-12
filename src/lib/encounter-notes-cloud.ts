@@ -116,6 +116,36 @@ async function resolveValidatedWorkspaceId(source: string): Promise<string> {
   return resolveValidatedWorkspaceIdShared("[encounter-notes-cloud]", source);
 }
 
+/**
+ * Fetch specific encounter notes by id — a handful of rows, not the whole
+ * table. Returns null when the cloud can't be asked (no client, no workspace,
+ * or an error), so callers can tell "not in the cloud" apart from "couldn't
+ * check" and fail safe.
+ */
+export async function fetchEncounterNotesByIds(ids: string[]): Promise<EncounterNoteRecord[] | null> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return [];
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const workspaceId = getActiveWorkspaceOrNull();
+  if (!workspaceId) return null;
+  const out: EncounterNoteRow[] = [];
+  // Chunk so the `in (...)` filter keeps the request URL short.
+  for (let i = 0; i < unique.length; i += 100) {
+    const { data, error } = await supabase
+      .from("encounter_notes")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .in("id", unique.slice(i, i + 100));
+    if (error) {
+      console.error("[encounter-notes-cloud] fetchByIds failed:", error.message);
+      return null;
+    }
+    out.push(...((data ?? []) as EncounterNoteRow[]));
+  }
+  return out.map(rowToNote);
+}
+
 export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRecord[] | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;

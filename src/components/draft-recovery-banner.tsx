@@ -25,6 +25,7 @@ import {
   saveEncounterNoteRecords,
 } from "@/lib/encounter-notes";
 import { clearDraft, scanDrafts, type DraftEntry } from "@/lib/draft-recovery";
+import type { EncounterNoteRecord } from "@/lib/encounter-notes";
 
 function formatAge(at: number): string {
   const diff = Date.now() - at;
@@ -120,16 +121,49 @@ export function DraftRecoveryBanner() {
   // if its content already matches the now-present encounter).
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const evaluateOrphans = (): PendingDraft[] => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const evaluateOrphans = async (): Promise<PendingDraft[]> => {
       const drafts = scanDrafts();
       if (drafts.length === 0) return [];
       const encounters = loadEncounterNoteRecords();
       const byId = new Map(encounters.map((e) => [e.id, e]));
-      const orphans: PendingDraft[] = [];
+      const candidates: DraftEntry[] = [];
       for (const draft of drafts) {
         if (byId.has(draft.encounterId)) continue; // encounter present — not orphan
         if (!hasRealDraftContent(draft.html)) {
           clearDraft(draft.key); // blank body (e.g. <p><br></p>) — GC, don't surface
+          continue;
+        }
+        candidates.push(draft);
+      }
+      if (candidates.length === 0) return [];
+
+      // "Not in the local cache" is not "missing". The cache is only a speed
+      // copy, and once the browser's storage quota fills it stays EMPTY — at
+      // which point every draft looked orphaned and this banner claimed
+      // "unsaved work" for notes that were safely in the cloud. Ask the cloud
+      // about just these encounters before raising the alarm.
+      let cloudById: Map<string, EncounterNoteRecord> | null = null;
+      try {
+        const { fetchEncounterNotesByIds } = await import("@/lib/encounter-notes-cloud");
+        const rows = await fetchEncounterNotesByIds(candidates.map((d) => d.encounterId));
+        if (rows) cloudById = new Map(rows.map((e) => [e.id, e]));
+      } catch {
+        cloudById = null; // couldn't check — fall back to warning, never hide
+      }
+
+      const orphans: PendingDraft[] = [];
+      for (const draft of candidates) {
+        const remote = cloudById?.get(draft.encounterId);
+        if (remote) {
+          // Encounter exists in the cloud, so it isn't orphaned. If the saved
+          // section already matches the draft, the draft is a stale copy of
+          // saved work — clear it. If it differs, leave it for the editor's
+          // own recovery layer, exactly as for a locally cached encounter.
+          const saved = (remote.soap as Record<string, string>)[draft.section] ?? "";
+          if (saved.trim() === draft.html.trim()) clearDraft(draft.key);
           continue;
         }
         orphans.push({
@@ -142,18 +176,19 @@ export function DraftRecoveryBanner() {
     };
 
     // First pass. No candidates → nothing to do, and no false alarm.
-    if (evaluateOrphans().length === 0) return;
-
-    // Candidates exist — give the cloud time to hydrate, then re-check. Only
-    // drafts still orphaned after the grace window reach the banner.
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-      setPending(evaluateOrphans());
-    }, 6000);
+    void evaluateOrphans().then((first) => {
+      if (cancelled || first.length === 0) return;
+      // Candidates exist — give the cloud time to hydrate, then re-check. Only
+      // drafts still orphaned after the grace window reach the banner.
+      timer = setTimeout(() => {
+        void evaluateOrphans().then((stillOrphaned) => {
+          if (!cancelled) setPending(stillOrphaned);
+        });
+      }, 6000);
+    });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     };
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
