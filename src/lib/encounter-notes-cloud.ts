@@ -146,6 +146,42 @@ export async function fetchEncounterNotesByIds(ids: string[]): Promise<Encounter
   return out.map(rowToNote);
 }
 
+/**
+ * Every encounter note for one patient, straight from the cloud. Used where a
+ * decision must not depend on how much of the full table has hydrated into
+ * memory yet — e.g. "does this visit already have a note?" before bulk-filling.
+ * Returns null when the cloud couldn't be asked, so callers can refuse to act.
+ */
+export async function fetchEncounterNotesForPatient(
+  patientId: string,
+): Promise<EncounterNoteRecord[] | null> {
+  if (!patientId) return [];
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const workspaceId = getActiveWorkspaceOrNull();
+  if (!workspaceId) return null;
+  const pageSize = 1000;
+  const all: EncounterNoteRow[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("encounter_notes")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("patient_id", patientId)
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.error("[encounter-notes-cloud] fetchForPatient failed:", error.message);
+      return null;
+    }
+    const rows = (data ?? []) as EncounterNoteRow[];
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return all.map(rowToNote);
+}
+
 export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRecord[] | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
