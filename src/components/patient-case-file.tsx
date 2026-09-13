@@ -4899,16 +4899,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           missed during a visit. */}
       {/* Notes and Quick Glance share a row on wide screens. */}
       <div className="grid items-start gap-5 lg:grid-cols-2">
-        <section className="panel-card p-3" style={hiddenStyle("notes")}>
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold">Case Notes</span>
-            <textarea
-              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientNotes(event.target.value)}
-              placeholder="Enter any free-form case notes..."
-              value={patientNotes}
-            />
-          </label>
+        <section className="panel-card p-4" style={hiddenStyle("notes")}>
+          <button
+            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            onClick={() => toggleSectionPanel("notes")}
+            type="button"
+          >
+            <span>Notes</span>
+            <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
+          </button>
+          {sectionPanelsOpen.notes && (
+            <label className="mt-3 grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
+              <textarea
+                className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => setPatientNotes(event.target.value)}
+                placeholder="Enter any free-form case notes..."
+                value={patientNotes}
+              />
+            </label>
+          )}
         </section>
 
         {/* Quick Glance — same component as the Encounters side-rail, fed from
