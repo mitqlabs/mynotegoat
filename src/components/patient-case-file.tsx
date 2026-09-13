@@ -4996,7 +4996,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             {e.what || <span className="text-[var(--text-muted)]">Referral</span>}
                             {e.done && (
                               <span
-                                className={`ml-1.5 font-semibold tabular-nums ${
+                                className={`ml-1.5 whitespace-nowrap font-semibold tabular-nums ${
                                   e.done === "Refused" ? "text-[#b43b34]" : "text-[#047857]"
                                 }`}
                               >
