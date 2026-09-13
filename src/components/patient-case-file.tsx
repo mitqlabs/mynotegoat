@@ -4800,9 +4800,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         </div>
 
-        <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-3">
+        {/* Lien and Case Status are short picks, so they size to their content and
+            Prior Care (free text) takes the rest of the row. Equal thirds made
+            the two dropdowns needlessly long. */}
+        <div className="flex flex-wrap items-end gap-3 border-b border-[var(--line-soft)] p-4">
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 w-full sm:w-44">
               <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -4819,7 +4822,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 min-w-[14rem] flex-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -4833,7 +4836,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Non-PI (cash) patients don't run through an insurance case
               lifecycle, so they have no Case Status. */}
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 w-full sm:w-52">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case Status</span>
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -4850,7 +4853,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {(officeSettings.locations?.length ?? 0) > 1 && !patientReadOnly && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 w-full sm:w-44">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
