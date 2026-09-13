@@ -105,6 +105,33 @@ async function resolveValidatedWorkspaceId(source: string): Promise<string> {
   return resolveValidatedWorkspaceIdShared("[appointments-cloud]", source);
 }
 
+/**
+ * Specific appointments by id — used to confirm a status change actually
+ * reached the cloud. Null when the cloud couldn't be asked.
+ */
+export async function fetchAppointmentsByIds(ids: string[]): Promise<ScheduleAppointmentRecord[] | null> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return [];
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const workspaceId = getActiveWorkspaceOrNull();
+  if (!workspaceId) return null;
+  const out: AppointmentRow[] = [];
+  for (let i = 0; i < unique.length; i += 100) {
+    const { data, error } = await supabase
+      .from("schedule_appointments")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .in("id", unique.slice(i, i + 100));
+    if (error) {
+      console.error("[appointments-cloud] fetchByIds failed:", error.message);
+      return null;
+    }
+    out.push(...((data ?? []) as AppointmentRow[]));
+  }
+  return out.map(rowToAppointment);
+}
+
 export async function fetchAllAppointmentsFromTable(): Promise<ScheduleAppointmentRecord[] | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;

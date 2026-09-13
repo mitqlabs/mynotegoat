@@ -239,17 +239,6 @@ type FillRow = {
   reason: string;
   selected: boolean;
 };
-type FillPreview = {
-  sourceEncounterId: string;
-  sourceDateUs: string;
-  patientId: string;
-  patientName: string;
-  planStartUs: string;
-  planEndUs: string;
-  rows: FillRow[];
-  error: string;
-  loading: boolean;
-};
 
 // Visit types that need their own exam, never a copy of a treatment note.
 // Offered in the preview but unticked, so they are filled only on purpose.
@@ -862,8 +851,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // ChiroTouch import (temporary migration tool) — paste the Data tab, match to
   // Objective macros, preview, then apply into the Objective section.
   const [importOpen, setImportOpen] = useState(false);
-  // "Fill rest of treatment plan" preview. null = closed.
-  const [fillPreview, setFillPreview] = useState<FillPreview | null>(null);
   const [fillBusy, setFillBusy] = useState(false);
   const [importText, setImportText] = useState("");
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
@@ -2113,8 +2100,75 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       });
   };
 
-  const openFillPreview = async () => {
-    if (!selectedEncounter) return;
+  // Mirrors the charge reconciler: a snippet yields a charge when a picked
+  // answer on a charge-linked question maps to a procedure code. Checked
+  // up front because reconcileLinkedCharges applies on the next render.
+  const snippetsProduceCharges = (
+    snippets: Array<{ macro: MacroTemplate; answers: MacroAnswerMap }>,
+  ): boolean =>
+    snippets.some(({ macro, answers }) =>
+      macro.questions.some((q) => {
+        if (!q.linksCharges || !q.optionCharges) return false;
+        const answer = answers[q.id];
+        const picks = Array.isArray(answer) ? answer : answer ? [answer] : [];
+        return picks.some((pick) => {
+          const link = q.optionCharges?.[pick];
+          return Boolean(link?.procedureCode && link?.name);
+        });
+      }),
+    );
+
+  // After filling, ask the cloud whether every new note landed — and for the
+  // ones closed, that the note is closed and its appointment is Checked Out.
+  // If an appointment status didn't make it (its local save path can fail
+  // when browser storage is full), push that one row straight to the cloud.
+  const confirmFillSaved = async (
+    createdIds: string[],
+    closed: Array<{ encounterId: string; appointmentId: string }>,
+    summary: string,
+  ) => {
+    const { fetchEncounterNotesByIds } = await import("@/lib/encounter-notes-cloud");
+    const { fetchAppointmentsByIds, upsertAppointmentToTable } = await import("@/lib/appointments-cloud");
+    const closedIds = new Set(closed.map((c) => c.encounterId));
+    let notesOk = 0;
+    let apptsOk = 0;
+    let retriedAppts = false;
+    for (const waitMs of [4000, 6000, 10000, 20000]) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      const notes = await fetchEncounterNotesByIds(createdIds);
+      const appts = closed.length ? await fetchAppointmentsByIds(closed.map((c) => c.appointmentId)) : [];
+      if (!notes || !appts) continue;
+      notesOk = notes.filter((n) => !closedIds.has(n.id) || n.signed).length;
+      const checkedOut = new Set(appts.filter((a) => a.status === "Check Out").map((a) => a.id));
+      apptsOk = closed.filter((c) => checkedOut.has(c.appointmentId)).length;
+      if (notesOk >= createdIds.length && apptsOk >= closed.length) {
+        setMessage(`${summary} All saved to the cloud ✓`);
+        return;
+      }
+      if (!retriedAppts && notesOk >= createdIds.length && apptsOk < closed.length) {
+        retriedAppts = true;
+        for (const c of closed) {
+          if (checkedOut.has(c.appointmentId)) continue;
+          const local = scheduleAppointments.find((a) => a.id === c.appointmentId);
+          if (!local) continue;
+          try {
+            await upsertAppointmentToTable({ ...local, status: "Check Out" });
+          } catch {
+            // Reported by the upsert itself; the final message below says so.
+          }
+        }
+      }
+    }
+    setMessage(
+      `${summary} Only ${notesOk} of ${createdIds.length} notes${closed.length ? ` and ${apptsOk} of ${closed.length} check-outs` : ""} confirmed in the cloud so far. Keep this page open and press Save Encounters.`,
+    );
+  };
+
+  // One tap: fill every remaining Checked In visit in the plan from the open
+  // note, then Close + Check Out each one. No preview by design — the user
+  // reopens any note that needs an edit. All the safety checks still run.
+  const fillTreatmentPlan = async () => {
+    if (!selectedEncounter || fillBusy) return;
     const source = selectedEncounter;
     const plan = findActivePlanForDate(source.patientId, source.encounterDate);
     if (!plan) {
@@ -2128,119 +2182,33 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       setMessage("This note has no Subjective, Objective or Assessment to copy yet.");
       return;
     }
-    const shell: FillPreview = {
-      sourceEncounterId: source.id,
-      sourceDateUs: source.encounterDate,
-      patientId: source.patientId,
-      patientName: source.patientName,
-      planStartUs: plan.startDate,
-      planEndUs: plan.endDate,
-      rows: [],
-      error: "",
-      loading: true,
-    };
-    setFillPreview(shell);
-    try {
-      const known = await loadKnownNotesForPatient(source.patientId);
-      if (!known) {
-        // Refuse rather than guess: without the cloud list we can't be sure a
-        // visit doesn't already have a note, and guessing wrong makes duplicates.
-        setFillPreview({
-          ...shell,
-          loading: false,
-          error: "Couldn't reach the cloud to check for existing notes. Nothing was changed — try again in a moment.",
-        });
-        return;
-      }
-      setFillPreview({ ...shell, loading: false, rows: buildFillRows(source, plan, known) });
-    } catch {
-      setFillPreview({
-        ...shell,
-        loading: false,
-        error: "Couldn't check for existing notes. Nothing was changed — try again in a moment.",
-      });
-    }
-  };
-
-  const toggleFillRow = (appointmentId: string) => {
-    setFillPreview((current) =>
-      current
-        ? {
-            ...current,
-            rows: current.rows.map((row) =>
-              row.appointmentId === appointmentId && row.action !== "skip"
-                ? { ...row, selected: !row.selected }
-                : row,
-            ),
-          }
-        : current,
-    );
-  };
-
-  // After filling, ask the cloud whether every new note actually landed.
-  const confirmFillSaved = async (createdIds: string[], filledCount: number, sourceDateUs: string) => {
-    const { fetchEncounterNotesByIds } = await import("@/lib/encounter-notes-cloud");
-    let saved = 0;
-    for (const waitMs of [4000, 6000, 10000, 20000]) {
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      const rows = await fetchEncounterNotesByIds(createdIds);
-      if (!rows) continue;
-      saved = rows.length;
-      if (saved >= createdIds.length) {
-        setMessage(
-          `Filled ${filledCount} note${filledCount === 1 ? "" : "s"} from ${sourceDateUs} — all saved to the cloud ✓ They're open for you to review and close.`,
-        );
-        return;
-      }
-    }
-    setMessage(
-      `Filled ${filledCount} note${filledCount === 1 ? "" : "s"}, but only ${saved} confirmed in the cloud so far. Keep this page open and press Save Encounters.`,
-    );
-  };
-
-  const runFill = async () => {
-    if (!fillPreview || fillBusy) return;
-    const preview = fillPreview;
-    const source = encountersByNewest.find((n) => n.id === preview.sourceEncounterId);
-    const plan = source ? findActivePlanForDate(source.patientId, source.encounterDate) : null;
-    if (!source || !plan) {
-      setFillPreview({ ...preview, error: "The source note or its treatment plan is no longer available." });
-      return;
-    }
-    const chosen = preview.rows.filter((row) => row.selected && row.action !== "skip");
-    if (!chosen.length) return;
     setFillBusy(true);
+    setMessage("Checking for existing notes…");
     try {
-      // Re-check against the cloud right before writing: something may have
-      // been charted (here or on another device) since the preview opened.
+      // Decide "already has a note" against the cloud, never the half-loaded
+      // in-memory table. Refuse if the cloud can't be asked.
       const known = await loadKnownNotesForPatient(source.patientId);
       if (!known) {
-        setFillPreview({
-          ...preview,
-          error: "Couldn't reach the cloud to re-check existing notes. Nothing was changed — try again.",
-        });
+        setMessage("Couldn't reach the cloud to check for existing notes. Nothing was changed — try again in a moment.");
         return;
       }
+      const rows = buildFillRows(source, plan, known);
+      const toFill = rows.filter((row) => row.action === "fill");
+      const examSkipped = rows.filter((row) => row.action === "optional").map((row) => row.dateUs);
+      const hadNote = rows.filter((row) => row.reason === "Already has a note").length;
+
       const planStartT = parseUsDate(plan.startDate)?.getTime() ?? -Infinity;
       const planEndT = parseUsDate(plan.endDate)?.getTime() ?? Infinity;
       const createdIds: string[] = [];
-      const skippedLate: string[] = [];
+      const closedPairs: Array<{ encounterId: string; appointmentId: string }> = [];
+      const leftOpenNoCharges: string[] = [];
 
-      for (const row of chosen) {
+      for (const row of toFill) {
         const appointment = scheduleAppointments.find((a) => a.id === row.appointmentId);
-        if (!appointment || appointment.status !== "Check In") {
-          skippedLate.push(row.dateUs);
-          continue;
-        }
-        if (findNoteForAppointment(known, appointment, row.dateUs)) {
-          skippedLate.push(row.dateUs);
-          continue;
-        }
+        if (!appointment || appointment.status !== "Check In") continue;
+        if (findNoteForAppointment(known, appointment, row.dateUs)) continue;
         const coverage = resolvePlanCoverage(source.patientId, row.dateUs);
-        if (!coverage) {
-          skippedLate.push(row.dateUs);
-          continue;
-        }
+        if (!coverage) continue;
 
         const newId = createEncounter({
           patientId: source.patientId,
@@ -2250,13 +2218,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           encounterDate: row.dateUs,
           appointmentId: appointment.id,
         });
-        if (!newId) {
-          skippedLate.push(row.dateUs);
-          continue;
-        }
+        if (!newId) continue;
 
-        // S, O, A from the source, with macro runs re-keyed so each copy stays
-        // independently editable.
+        // S, O, A from the source, macro runs re-keyed so each copy stays editable.
         for (const section of ["subjective", "objective", "assessment"] as const) {
           const sourceText = source.soap[section].trim();
           if (!sourceText) continue;
@@ -2280,9 +2244,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           });
         }
 
-        // P and charges from the plan. Decompression steps by visit: every note
-        // already in the plan range before this date, plus the ones this fill
-        // has created so far (not in memory yet, so counted explicitly).
+        // P and charges from the plan; decompression steps per visit, counting
+        // the notes this fill has already created.
         const targetT = parseUsDate(row.dateUs)?.getTime() ?? 0;
         const priorInRange = known.filter((n) => {
           const t = parseUsDate(n.encounterDate)?.getTime();
@@ -2303,20 +2266,35 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         }
         reconcileLinkedCharges(newId, macroLibraryById);
         createdIds.push(newId);
+
+        // Same rule as the Close + Check Out button, which asks before closing
+        // a note with no charges: never close those silently.
+        if (snippetsProduceCharges(snippets)) {
+          setSigned(newId, true);
+          updateAppointment(appointment.id, (current) => ({ ...current, status: "Check Out" }));
+          closedPairs.push({ encounterId: newId, appointmentId: appointment.id });
+        } else {
+          leftOpenNoCharges.push(row.dateUs);
+        }
       }
 
-      setFillPreview(null);
+      const extras = [
+        examSkipped.length ? `skipped exam visits ${examSkipped.join(", ")}` : "",
+        hadNote ? `${hadNote} already had a note` : "",
+        leftOpenNoCharges.length
+          ? `left ${leftOpenNoCharges.join(", ")} open (no plan charges)`
+          : "",
+      ].filter(Boolean);
+      const extraText = extras.length ? ` (${extras.join("; ")})` : "";
+
       if (!createdIds.length) {
-        setMessage("Nothing was filled — every chosen visit changed since the preview opened.");
+        setMessage(`Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan${extraText}.`);
         return;
       }
-      const lateNote = skippedLate.length
-        ? ` Skipped ${skippedLate.length} that changed since the preview (${skippedLate.join(", ")}).`
-        : "";
-      setMessage(
-        `Filled ${createdIds.length} note${createdIds.length === 1 ? "" : "s"} from ${source.encounterDate}. Saving to the cloud…${lateNote}`,
-      );
-      void confirmFillSaved(createdIds, createdIds.length, source.encounterDate);
+      const n = createdIds.length;
+      const summary = `Filled ${n} note${n === 1 ? "" : "s"} from ${source.encounterDate} and closed + checked out ${closedPairs.length}${extraText}.`;
+      setMessage(`${summary} Saving to the cloud…`);
+      void confirmFillSaved(createdIds, closedPairs, summary);
     } finally {
       setFillBusy(false);
     }
@@ -3701,11 +3679,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     {findActivePlanForDate(selectedEncounter.patientId, selectedEncounter.encounterDate) && (
                       <button
                         className="rounded-lg border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 transition-all active:scale-[0.97]"
-                        onClick={() => void openFillPreview()}
-                        title="Create notes for the rest of this treatment plan: S, O, A from this note, P and charges from the plan. Checked In visits only. You'll see a preview first."
+                        disabled={fillBusy}
+                        onClick={() => void fillTreatmentPlan()}
+                        title="Fill every remaining Checked In visit in this treatment plan from this note (S, O, A copied; P and charges from the plan), then Close + Check Out each one. Reopen any note to edit it."
                         type="button"
                       >
-                        Fill Treatment Plan
+                        {fillBusy ? "Filling…" : "Fill Treatment Plan"}
                       </button>
                     )}
                     <button
@@ -4295,124 +4274,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           )}
         </article>
       </section>
-
-      {fillPreview && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
-          <div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl">
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] pb-2">
-              <h3 className="text-base font-semibold">Fill Treatment Plan — {fillPreview.patientName}</h3>
-              <button
-                className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
-                disabled={fillBusy}
-                onClick={() => setFillPreview(null)}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-3 grid gap-1 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
-              <div>
-                <span className="font-semibold">S, O, A</span> copied from{" "}
-                <span className="font-semibold">{fillPreview.sourceDateUs}</span>
-              </div>
-              <div>
-                <span className="font-semibold">P and charges</span> from the treatment plan (
-                {fillPreview.planStartUs} – {fillPreview.planEndUs})
-              </div>
-              <div className="text-xs text-[var(--text-muted)]">
-                Only Checked In visits are filled. Nothing existing is changed. New notes stay open for you to review and close.
-              </div>
-            </div>
-
-            {fillPreview.loading && (
-              <p className="mt-4 text-sm text-[var(--text-muted)]">Checking the cloud for existing notes…</p>
-            )}
-
-            {fillPreview.error && (
-              <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {fillPreview.error}
-              </p>
-            )}
-
-            {!fillPreview.loading && !fillPreview.error && (
-              <>
-                {fillPreview.rows.length === 0 ? (
-                  <p className="mt-4 text-sm text-[var(--text-muted)]">
-                    No appointments after {fillPreview.sourceDateUs} in this treatment plan.
-                  </p>
-                ) : (
-                  <div className="mt-3 max-h-[55vh] overflow-auto rounded-xl border border-[var(--line-soft)]">
-                    <table className="w-full border-collapse text-sm">
-                      <thead className="sticky top-0 bg-[var(--bg-soft)] text-left">
-                        <tr>
-                          <th className="w-10 px-2 py-2"></th>
-                          <th className="px-2 py-2">Date</th>
-                          <th className="px-2 py-2">Type</th>
-                          <th className="px-2 py-2">Status</th>
-                          <th className="px-2 py-2">Result</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fillPreview.rows.map((row) => (
-                          <tr
-                            key={row.appointmentId}
-                            className={`border-t border-[var(--line-soft)] ${row.action === "skip" ? "text-[var(--text-muted)]" : ""}`}
-                          >
-                            <td className="px-2 py-2 text-center">
-                              <input
-                                checked={row.selected}
-                                disabled={row.action === "skip" || fillBusy}
-                                onChange={() => toggleFillRow(row.appointmentId)}
-                                type="checkbox"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-2 py-2">
-                              {row.dateUs} <span className="text-xs text-[var(--text-muted)]">{row.weekday.slice(0, 3)}</span>
-                            </td>
-                            <td className="px-2 py-2">{row.appointmentType}</td>
-                            <td className="whitespace-nowrap px-2 py-2">{row.statusLabel}</td>
-                            <td className="px-2 py-2 text-xs">
-                              {row.action === "skip" ? row.reason : row.selected ? "Will fill" : row.reason}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <span className="text-sm text-[var(--text-muted)]">
-                    {fillPreview.rows.filter((r) => r.selected).length} note
-                    {fillPreview.rows.filter((r) => r.selected).length === 1 ? "" : "s"} will be created
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      className="rounded-lg border border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold"
-                      disabled={fillBusy}
-                      onClick={() => setFillPreview(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-                      disabled={fillBusy || fillPreview.rows.filter((r) => r.selected).length === 0}
-                      onClick={() => void runFill()}
-                      type="button"
-                    >
-                      {fillBusy
-                        ? "Filling…"
-                        : `Fill ${fillPreview.rows.filter((r) => r.selected).length} Note${fillPreview.rows.filter((r) => r.selected).length === 1 ? "" : "s"}`}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {importOpen && (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
