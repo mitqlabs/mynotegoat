@@ -4177,6 +4177,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     mriReferrals?: ImagingReferral[];
     relatedCases?: RelatedCaseEntry[];
     locationId?: string;
+    review?: string;
   } = {}): UpdatePatientRecordPatch => {
     const effectiveSpecialists = overrides.specialistReferrals ?? specialistReferrals;
     const effectiveXrays = overrides.xrayReferrals ?? xrayReferrals;
@@ -4240,6 +4241,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         billed: currentBillTotal.toString(),
         paidAmount: paidAmount || "0",
         paidDate: toIsoDateFromUsDate(paidDate),
+        // Review status was never written here, so changing the Review
+        // dropdown was lost on reload — only the CaseMate import ever set it.
+        review: (overrides.review ?? reviewStatus).trim(),
       },
     };
   };
@@ -4287,6 +4291,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // same handler tick — closures would otherwise read the prior value.
   const autoSavePatientFile = (overrides: Parameters<typeof buildPatientPatch>[0] = {}) => {
     void performPatientSave(overrides, { silent: true });
+  };
+
+  // Review is a follow-up flag, so it saves the moment it changes (the rest
+  // of that row waits for Save & Close). Shared by the Review pill beside
+  // Case Status and the Review? dropdown in Additional Details.
+  const handleReviewStatusChange = (next: string) => {
+    setReviewStatus(next);
+    autoSavePatientFile({ review: next });
   };
 
   // Loud, awaitable wrapper for the Patient Refused / Completed Prior
@@ -4846,6 +4858,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {caseStatuses.map((statusConfigEntry) => (
                   <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
                     {statusConfigEntry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Review pill: the Additional Details "Review?" status, surfaced here
+              so following up on reviews doesn't mean opening that section. */}
+          {!isCashPatient && (
+            <label className="grid gap-1 w-full sm:w-44">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Review</span>
+              <select
+                className={`rounded-full border px-3 py-2 font-semibold ${(() => {
+                  const v = reviewStatus.trim().toLowerCase();
+                  if (v === "received") return "border-emerald-300 bg-emerald-50 text-emerald-700";
+                  if (v === "requested") return "border-amber-300 bg-amber-50 text-amber-800";
+                  return "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
+                })()}`}
+                onChange={(event) => handleReviewStatusChange(event.target.value)}
+                value={reviewStatus}
+              >
+                {reviewSelectOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </select>
@@ -7100,7 +7136,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <span className="text-xl font-semibold">Review?</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-lg font-semibold"
-                  onChange={(event) => setReviewStatus(event.target.value)}
+                  onChange={(event) => handleReviewStatusChange(event.target.value)}
                   value={reviewStatus}
                 >
                   {reviewSelectOptions.map((option) => (
