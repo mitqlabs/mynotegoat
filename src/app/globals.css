@@ -18,6 +18,8 @@
      in the same row. */
   --row-tint-canceled: rgba(201, 66, 58, 0.075);
   --row-tint-complete: rgba(31, 157, 96, 0.11);
+  /* Checked in: patient is here / note still to finish. Light blue. */
+  --row-tint-checked-in: rgba(13, 121, 191, 0.09);
   --text-main: #172a3a;
   --text-muted: #57758b;
   --font-body:

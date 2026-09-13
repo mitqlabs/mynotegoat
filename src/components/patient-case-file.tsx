@@ -2332,13 +2332,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   );
   // Count of appointments by their type (Cervical Decompression, Lumbar
   // Decompression, New Patient, Discharge, …), most-frequent first.
+  // Per type, split by status so each chip reads "scheduled / checked in /
+  // checked out / canceled" at a glance. Sorted most-frequent first.
   const appointmentTypeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    const counts = new Map<
+      string,
+      { total: number; scheduled: number; checkedIn: number; checkedOut: number; canceled: number }
+    >();
     for (const entry of patientAppointmentRecords) {
       const t = (entry.appointmentType || "Other").trim() || "Other";
-      counts.set(t, (counts.get(t) ?? 0) + 1);
+      const c = counts.get(t) ?? { total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0 };
+      c.total += 1;
+      if (entry.status === "Scheduled") c.scheduled += 1;
+      else if (entry.status === "Check In") c.checkedIn += 1;
+      else if (entry.status === "Check Out") c.checkedOut += 1;
+      else if (entry.status === "Canceled") c.canceled += 1;
+      counts.set(t, c);
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return [...counts.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
   }, [patientAppointmentRecords]);
   // Still-scheduled appointments that fall on a date since marked CLOSED
   // in Key Dates (e.g. a sick day added after the appt was booked). These
@@ -5578,12 +5589,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             )}
             {appointmentTypeCounts.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {appointmentTypeCounts.map(([type, count]) => (
+                {appointmentTypeCounts.map(([type, c]) => (
                   <span
                     key={type}
                     className="rounded-full bg-[var(--bg-soft)] px-2.5 py-1 text-xs text-[var(--text-main)]"
+                    title={`${c.scheduled} scheduled · ${c.checkedIn} checked in · ${c.checkedOut} checked out · ${c.canceled} canceled`}
                   >
-                    {type}: <span className="font-semibold">{count}</span>
+                    {type}:{" "}
+                    <span className="font-semibold tabular-nums">
+                      <span className="text-[#111]">{c.scheduled}</span>
+                      <span className="text-[var(--text-muted)]"> / </span>
+                      <span className="text-[#0d79bf]">{c.checkedIn}</span>
+                      <span className="text-[var(--text-muted)]"> / </span>
+                      <span className="text-[#047857]">{c.checkedOut}</span>
+                      <span className="text-[var(--text-muted)]"> / </span>
+                      <span className="text-[#b43b34]">{c.canceled}</span>
+                    </span>
                   </span>
                 ))}
               </div>
@@ -5692,7 +5713,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 ? { backgroundColor: "var(--row-tint-canceled)" }
                                 : appointment?.status === "Check Out"
                                   ? { backgroundColor: "var(--row-tint-complete)" }
-                                  : undefined
+                                  : appointment?.status === "Check In"
+                                    ? { backgroundColor: "var(--row-tint-checked-in)" }
+                                    : undefined
                             }
                           >
                             <td className="w-[6.5rem] px-2 py-2 tabular-nums">
