@@ -5672,7 +5672,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             the columns reserve space they only need mid-edit. */}
                         <th className="w-[6.5rem] px-2 py-2">Date</th>
                         <th className="w-[2.5rem] px-1 py-2">Day</th>
-                        <th className="w-[5.25rem] px-2 py-2">Time</th>
+                        <th className="w-[6.5rem] px-2 py-2">Time</th>
                         <th className="px-2 py-2">Type</th>
                         <th className="w-[7.5rem] px-2 py-2">Status</th>
                         <th className="w-[5.25rem] px-2 py-2">Encounter</th>
@@ -5762,7 +5762,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="w-[2.5rem] px-1 py-2 text-xs text-[var(--text-muted)]">
                               {dayLabel || <span>—</span>}
                             </td>
-                            <td className="w-[5.25rem] px-2 py-2 tabular-nums">
+                            <td className="w-[6.5rem] px-2 py-2 tabular-nums">
                               {appointment ? (
                                 quickTimeEditId === appointment.id ? (
                                   /* Field only — Enter saves and jumps to the
@@ -5804,7 +5804,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                   />
                                 ) : (
                                   <button
-                                    className="rounded-md border border-transparent px-1.5 py-0.5 text-xs font-semibold hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
+                                    className="whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 text-xs font-semibold hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
                                     onClick={() => beginQuickTimeEdit(appointment)}
                                     title="Click to change time"
                                     type="button"
