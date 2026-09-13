@@ -629,6 +629,32 @@ export function NewAppointmentModal({
     return new Set(openDays);
   }, [scheduleSettings.officeHours]);
 
+  // Live projection for a recurring series: how many visits an end date
+  // yields, or which date a visit count ends on. Uses the same generator the
+  // save path uses (getDatesForDraft, with closed office days dropped the
+  // same way), so the projection is exactly what will be booked. Dates on
+  // CLOSED key dates are reported separately because saving skips them.
+  const recurrenceProjection = useMemo(() => {
+    if (!draft.isRecurring) return null;
+    if (draft.recurrenceEndMode === "date" && draft.recurEndDate < draft.startDate) return null;
+    const projectedDraft: NewAppointmentDraft =
+      draft.recurUnit === "weeks"
+        ? { ...draft, recurDays: draft.recurDays.filter((day) => openRecurringDays.has(day)) }
+        : draft;
+    if (projectedDraft.recurUnit === "weeks" && projectedDraft.recurDays.length === 0) return null;
+    const dates = getDatesForDraft(projectedDraft);
+    if (!dates.length) return null;
+    const closed = dates.filter((dateIso) => Boolean(findClosedKeyDateForDate(keyDates, dateIso)));
+    const bookable = dates.filter((dateIso) => !closed.includes(dateIso));
+    const lastIso = (bookable.length ? bookable : dates)[(bookable.length ? bookable : dates).length - 1];
+    const lastDay = parseIsoDate(lastIso)?.getUTCDay();
+    return {
+      visits: bookable.length,
+      closedCount: closed.length,
+      endLabel: `${lastDay != null ? weekdayLabels[lastDay] : ""} ${formatUsDateFromIso(lastIso)}`.trim(),
+    };
+  }, [draft, openRecurringDays, keyDates]);
+
   const handlePatientSearchChange = (value: string) => {
     if (lockedPatientId) {
       return;
@@ -1490,7 +1516,7 @@ export function NewAppointmentModal({
                 </select>
               </label>
               {draft.recurrenceEndMode === "date" ? (
-                <label className="grid gap-1 md:col-span-2">
+                <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">End Date *</span>
                   <UsDateInput
                     className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1505,7 +1531,7 @@ export function NewAppointmentModal({
                   />
                 </label>
               ) : (
-                <label className="grid gap-1 md:col-span-2">
+                <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Visits *</span>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1521,6 +1547,24 @@ export function NewAppointmentModal({
                   />
                 </label>
               )}
+              <div className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">
+                  {draft.recurrenceEndMode === "date" ? "Projected Visits" : "Projected End Date"}
+                </span>
+                <div className="rounded-xl border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold">
+                  {recurrenceProjection
+                    ? draft.recurrenceEndMode === "date"
+                      ? `${recurrenceProjection.visits} visit${recurrenceProjection.visits === 1 ? "" : "s"}`
+                      : recurrenceProjection.endLabel
+                    : "—"}
+                </div>
+                {recurrenceProjection && recurrenceProjection.closedCount > 0 && (
+                  <span className="text-xs text-amber-700">
+                    {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be skipped
+                    {draft.recurrenceEndMode === "visits" ? ", so fewer visits get booked" : ""}.
+                  </span>
+                )}
+              </div>
             </div>
 
             {draft.recurUnit === "weeks" && (
