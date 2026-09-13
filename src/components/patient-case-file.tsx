@@ -4893,27 +4893,126 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           Settings → Patient Page Sections; Notes ships on by default
           so a free-form note left by the front desk never gets
           missed during a visit. */}
-      <section className="panel-card p-4" style={hiddenStyle("notes")}>
-        <button
-          className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
-          onClick={() => toggleSectionPanel("notes")}
-          type="button"
-        >
-          <span>Notes</span>
-          <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
-        </button>
-        {sectionPanelsOpen.notes && (
-          <label className="mt-3 grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-            <textarea
-              className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientNotes(event.target.value)}
-              placeholder="Enter any free-form case notes..."
-              value={patientNotes}
-            />
-          </label>
-        )}
-      </section>
+      {/* Notes and Quick Glance share a row on wide screens. */}
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <section className="panel-card p-4" style={hiddenStyle("notes")}>
+          <button
+            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            onClick={() => toggleSectionPanel("notes")}
+            type="button"
+          >
+            <span>Notes</span>
+            <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
+          </button>
+          {sectionPanelsOpen.notes && (
+            <label className="mt-3 grid gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
+              <textarea
+                className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => setPatientNotes(event.target.value)}
+                placeholder="Enter any free-form case notes..."
+                value={patientNotes}
+              />
+            </label>
+          )}
+        </section>
+
+        {/* Quick Glance — a live summary of the case, built from the same state
+            the sections below edit, so it updates as you work. Deliberately
+            terse: DOI / IE / Billed on the left, imaging and specialists on
+            the right. The only dates for XR / MR / PM are COMPLETED dates —
+            a blank means it isn't done yet. Open the section to deep dive. */}
+        <section className="panel-card p-4">
+          <div className="rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white">
+            Quick Glance
+          </div>
+          <div className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+            <dl className="grid content-start gap-2">
+              {(
+                [
+                  ["DOI", dateOfLoss],
+                  ["IE", initialExam],
+                  [
+                    "Billed",
+                    currentBillTotal > 0
+                      ? currentBillTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })
+                      : "",
+                  ],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[3.25rem_1fr] items-baseline gap-2">
+                  <dt className="font-semibold text-[var(--text-muted)]">{label}</dt>
+                  <dd className="font-semibold tabular-nums">{value || <span className="text-[var(--text-muted)]">—</span>}</dd>
+                </div>
+              ))}
+            </dl>
+            <dl className="grid content-start gap-2">
+              {(
+                [
+                  [
+                    "XR",
+                    xrayReferrals.map((r) => ({
+                      id: r.id,
+                      what: [r.center.trim(), r.regions.map((region) => formatRegionLabel(region, r.lateralityByRegion)).join(", ")]
+                        .filter(Boolean)
+                        .join(" · "),
+                      done: r.patientRefused ? "Refused" : r.doneDate,
+                    })),
+                  ],
+                  [
+                    "MR",
+                    mriReferrals.map((r) => ({
+                      id: r.id,
+                      what: [
+                        r.modalityLabel === "CT" ? "CT" : "",
+                        r.center.trim(),
+                        r.regions.map((region) => formatRegionLabel(region, r.lateralityByRegion)).join(", "),
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                      done: r.patientRefused ? "Refused" : r.doneDate,
+                    })),
+                  ],
+                  [
+                    "PM",
+                    specialistReferrals.map((r) => ({
+                      id: r.id,
+                      what: r.specialist.trim(),
+                      done: r.patientRefused ? "Refused" : r.completedDate,
+                    })),
+                  ],
+                ] as const
+              ).map(([label, entries]) => (
+                <div key={label} className="grid grid-cols-[2.25rem_1fr] items-baseline gap-2">
+                  <dt className="font-semibold text-[var(--text-muted)]">{label}</dt>
+                  <dd className="grid gap-0.5">
+                    {entries.filter((e) => e.what || e.done).length === 0 ? (
+                      <span className="text-[var(--text-muted)]">—</span>
+                    ) : (
+                      entries
+                        .filter((e) => e.what || e.done)
+                        .map((e) => (
+                          <span key={e.id}>
+                            {e.what || <span className="text-[var(--text-muted)]">Referral</span>}
+                            {e.done && (
+                              <span
+                                className={`ml-1.5 font-semibold tabular-nums ${
+                                  e.done === "Refused" ? "text-[#b43b34]" : "text-[#047857]"
+                                }`}
+                              >
+                                {e.done === "Refused" ? "Refused" : `✓ ${e.done}`}
+                              </span>
+                            )}
+                          </span>
+                        ))
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
+      </div>
 
       {/* X-Ray / MRI / Specialist now live in their own top-level
           floating section instead of being nested inside the patient
