@@ -16,8 +16,8 @@
      red, checked-out faintly green. Deliberately weak — this is a wash over
      the row, not a badge. Anything stronger fights the status pill sitting
      in the same row. */
-  --row-tint-canceled: rgba(201, 66, 58, 0.055);
-  --row-tint-complete: rgba(31, 157, 96, 0.065);
+  --row-tint-canceled: rgba(201, 66, 58, 0.075);
+  --row-tint-complete: rgba(31, 157, 96, 0.11);
   --text-main: #172a3a;
   --text-muted: #57758b;
   --font-body:
