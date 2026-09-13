@@ -2126,16 +2126,44 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       })
       .slice(0, 8);
   }, [patient.id, relatedCaseDraft, relatedCases]);
-  const patientEncounterRecords = useMemo(
-    () =>
-      encountersByNewest
-        .filter((entry) => entry.patientId === patient.id)
-        .sort(
-          (left, right) =>
-            toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
-        ),
-    [encountersByNewest, patient.id],
-  );
+  // This patient's notes straight from the cloud — one small query, about a
+  // second — so the appointments table can show Open Encounter right away.
+  // Without it the table waited for the ENTIRE encounter table (2,000+ notes,
+  // 20+ seconds) to hydrate, and until then a Checked Out visit showed no
+  // button and a Checked In visit showed "+ Encounter" for a note that already
+  // existed. Display only: nothing here is written back anywhere.
+  const [cloudPatientNotes, setCloudPatientNotes] = useState<typeof encountersByNewest>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setCloudPatientNotes([]);
+    void import("@/lib/encounter-notes-cloud")
+      .then(({ fetchEncounterNotesForPatient }) => fetchEncounterNotesForPatient(patient.id))
+      .then((rows) => {
+        if (!cancelled && rows) setCloudPatientNotes(rows);
+      })
+      .catch(() => {
+        // Fall back to the in-memory list, exactly as before.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [patient.id]);
+
+  const patientEncounterRecords = useMemo(() => {
+    const byId = new Map<string, (typeof encountersByNewest)[number]>();
+    for (const note of cloudPatientNotes) byId.set(note.id, note);
+    // In-memory copies win when newer: they carry edits made on this device
+    // that may not have reached the cloud snapshot fetched above.
+    for (const note of encountersByNewest) {
+      if (note.patientId !== patient.id) continue;
+      const cloud = byId.get(note.id);
+      if (!cloud || note.updatedAt >= cloud.updatedAt) byId.set(note.id, note);
+    }
+    return Array.from(byId.values()).sort(
+      (left, right) =>
+        toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
+    );
+  }, [cloudPatientNotes, encountersByNewest, patient.id]);
 
   // Auto-fill the Discharge date when the case moves to a closed
   // status (Discharged / Settled / Reduced / etc.) and the user

@@ -1047,53 +1047,76 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
     handledAppointmentRef.current = initialAppointmentId;
 
-    const dateUs = toUsDate(appointment.date);
-    // Prefer an encounter already linked to this appointment, then same
-    // date + type, then same date. Same precedence the rest of the app uses.
-    const existing =
-      encountersByNewest.find((e) => e.appointmentId === appointment.id) ??
-      encountersByNewest.find(
-        (e) =>
-          e.patientId === appointment.patientId &&
-          e.encounterDate === dateUs &&
-          e.appointmentType.toLowerCase() === appointment.appointmentType.toLowerCase(),
-      ) ??
-      encountersByNewest.find(
-        (e) => e.patientId === appointment.patientId && e.encounterDate === dateUs,
-      );
-    if (existing) {
-      setEncounterSearch(appointment.patientName);
-      setSelectedEncounterId(existing.id);
-      setMessage(`Opened ${dateUs} — ${appointment.appointmentType || "visit"}.`);
-      return;
-    }
+    // Ask the cloud for this patient's notes before deciding "no note yet".
+    // The in-memory table can still be hydrating when this page opens, and
+    // deciding from it alone is how a quick click made duplicate encounters.
+    void (async () => {
+      let known = encountersByNewest.filter((e) => e.patientId === appointment.patientId);
+      try {
+        const { fetchEncounterNotesForPatient } = await import("@/lib/encounter-notes-cloud");
+        const cloud = await fetchEncounterNotesForPatient(appointment.patientId);
+        if (!cloud) {
+          setMessage("Couldn't reach the cloud to check for an existing note. Nothing was created — try again.");
+          handledAppointmentRef.current = null;
+          return;
+        }
+        const byId = new Map(known.map((e) => [e.id, e]));
+        for (const note of cloud) if (!byId.has(note.id)) byId.set(note.id, note);
+        known = Array.from(byId.values());
+      } catch {
+        setMessage("Couldn't reach the cloud to check for an existing note. Nothing was created — try again.");
+        handledAppointmentRef.current = null;
+        return;
+      }
 
-    // Same gate as the on-page button: only chart a visit the patient
-    // actually showed up for.
-    if (appointment.status !== "Check In" && appointment.status !== "Check Out") {
-      setMessage(
-        `Cannot start encounter — patient must be Checked In first (current status: ${formatAppointmentStatusLabel(appointment.status)}).`,
-      );
-      return;
-    }
+      const dateUs = toUsDate(appointment.date);
+      // Prefer an encounter already linked to this appointment, then same
+      // date + type, then same date. Same precedence the rest of the app uses.
+      const existing =
+        known.find((e) => e.appointmentId === appointment.id) ??
+        known.find(
+          (e) =>
+            e.patientId === appointment.patientId &&
+            e.encounterDate === dateUs &&
+            e.appointmentType.toLowerCase() === appointment.appointmentType.toLowerCase(),
+        ) ??
+        known.find(
+          (e) => e.patientId === appointment.patientId && e.encounterDate === dateUs,
+        );
+      if (existing) {
+        setEncounterSearch(appointment.patientName);
+        setSelectedEncounterId(existing.id);
+        setMessage(`Opened ${dateUs} — ${appointment.appointmentType || "visit"}.`);
+        return;
+      }
 
-    const newId = createEncounter({
-      patientId: appointment.patientId,
-      patientName: appointment.patientName,
-      provider: appointment.provider || officeSettings.doctorName || "Provider",
-      appointmentType: appointment.appointmentType || "Follow-Up",
-      encounterDate: dateUs,
-      // Durable link so a later date/type edit can't orphan this encounter.
-      appointmentId: appointment.id,
-    });
-    if (newId) {
-      const saltNote = applySaltToNewEncounter(newId, appointment.patientId);
-      setEncounterSearch(appointment.patientName);
-      setSelectedEncounterId(newId);
-      setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
-    } else {
-      setMessage("Could not start the encounter. Check the appointment details and try again.");
-    }
+      // Same gate as the on-page button: only chart a visit the patient
+      // actually showed up for.
+      if (appointment.status !== "Check In" && appointment.status !== "Check Out") {
+        setMessage(
+          `Cannot start encounter — patient must be Checked In first (current status: ${formatAppointmentStatusLabel(appointment.status)}).`,
+        );
+        return;
+      }
+
+      const newId = createEncounter({
+        patientId: appointment.patientId,
+        patientName: appointment.patientName,
+        provider: appointment.provider || officeSettings.doctorName || "Provider",
+        appointmentType: appointment.appointmentType || "Follow-Up",
+        encounterDate: dateUs,
+        // Durable link so a later date/type edit can't orphan this encounter.
+        appointmentId: appointment.id,
+      });
+      if (newId) {
+        const saltNote = applySaltToNewEncounter(newId, appointment.patientId);
+        setEncounterSearch(appointment.patientName);
+        setSelectedEncounterId(newId);
+        setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
+      } else {
+        setMessage("Could not start the encounter. Check the appointment details and try again.");
+      }
+    })();
   }, [
     applySaltToNewEncounter,
     createEncounter,
