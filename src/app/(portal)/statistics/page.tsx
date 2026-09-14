@@ -329,7 +329,6 @@ export default function StatisticsPage() {
   // Live filters — every dropdown/search update applies immediately, no
   // Go button. Previously we had a draft/applied split gated behind GO;
   // that friction wasn't worth the re-render cost on a mock-data page.
-  const [search, setSearch] = useState("");
   const [year, setYear] = useState<string>(getDefaultYear);
 
   // Cash-patient revenue, filtered by the selected Year (packages by
@@ -475,11 +474,6 @@ export default function StatisticsPage() {
 
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
-      const matchesSearch =
-        !search.trim() ||
-        patient.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        patient.attorney.toLowerCase().includes(search.toLowerCase());
-
       const matchesYear =
         year === "ALL" ||
         (parseFlexibleDate(patient.dateOfLoss)?.year.toString() === year);
@@ -490,9 +484,9 @@ export default function StatisticsPage() {
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
 
-      return matchesSearch && matchesYear && matchesAttorney && matchesStatus;
+      return matchesYear && matchesAttorney && matchesStatus;
     });
-  }, [attorney, search, status, year]);
+  }, [attorney, status, year]);
 
   // Billing data from Additional Details → $ Billed, $ Paid Amount.
   // Prefer the live patient-billing record (canonical post-rollout
@@ -837,17 +831,7 @@ export default function StatisticsPage() {
     <div className="space-y-5">
       <section className="panel-card p-4">
 
-        <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
-          <div className="grid gap-3 md:grid-cols-[180px_1fr] md:items-center">
-            <label className="text-sm font-semibold text-[var(--text-muted)]">Patient Name</label>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search patient or attorney"
-              value={search}
-            />
-          </div>
-
+        <div className="space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
           <div className="grid gap-3 md:grid-cols-3">
             <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Year
