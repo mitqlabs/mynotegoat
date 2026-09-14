@@ -16,6 +16,9 @@ import { patients } from "@/lib/mock-data";
 
 const DAY_MS = 86_400_000;
 
+/** Case statuses that are NOT ready to be asked for a review. */
+const NOT_READY_FOR_REVIEW = new Set(["active", "dropped"]);
+
 /** Local-midnight Date for an ISO (YYYY-MM-DD) or US (MM/DD/YYYY) string. */
 function parseAnyDate(value: string | undefined | null): Date | null {
   const raw = (value ?? "").trim();
@@ -214,7 +217,12 @@ export function ReviewsSummary() {
     const pi = patients.filter((p) => !p.deleted && !p.isCashPatient);
     const reviewOf = (p: (typeof pi)[number]) => (p.matrix?.review?.trim() || firstReview).toLowerCase();
     return {
-      toRequest: pi.filter((p) => p.caseStatus.toLowerCase() === "discharged" && reviewOf(p) === firstReview).length,
+      // Anyone past treatment is ready to be asked: every status except
+      // Active (still treating) and Dropped (not coming back). Becomes "to
+      // request" the moment a case moves to Discharged, Submitted, Paid, etc.
+      toRequest: pi.filter(
+        (p) => !NOT_READY_FOR_REVIEW.has(p.caseStatus.trim().toLowerCase()) && reviewOf(p) === firstReview,
+      ).length,
       requested: pi.filter((p) => reviewOf(p) === "requested").length,
       received: pi.filter((p) => reviewOf(p) === "received").length,
     };
@@ -223,7 +231,7 @@ export function ReviewsSummary() {
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Tile hint="Discharged, review not requested" label="To request" value={counts.toRequest} />
+        <Tile hint="Not Active or Dropped, not yet requested" label="To request" value={counts.toRequest} />
         <Tile label="Requested" tone="text-amber-700" value={counts.requested} />
         <Tile label="Received" tone="text-[#047857]" value={counts.received} />
       </div>
@@ -232,7 +240,7 @@ export function ReviewsSummary() {
         <Link className="font-semibold text-[var(--brand-primary)] underline" href="/patients">
           Patients
         </Link>{" "}
-        page: set Status to Discharged and Review to Not Requested.
+        page: set Review to Not Requested, then Status to Discharged or Submitted.
       </p>
     </div>
   );
