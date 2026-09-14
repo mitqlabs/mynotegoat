@@ -1443,7 +1443,7 @@ export default function PatientsPage() {
             />
           </label>
 
-          <div className={`grid gap-3 ${multiLocation ? "md:grid-cols-[1.6fr_1fr_1fr_1fr_96px]" : "md:grid-cols-[1.6fr_1fr_1fr_96px]"}`}>
+          <div className={`grid gap-3 md:grid-cols-2 ${multiLocation ? "xl:grid-cols-[1.6fr_1fr_1fr_11rem_11rem]" : "xl:grid-cols-[1.6fr_1fr_11rem_11rem]"}`}>
             <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               <span className="flex flex-wrap items-center gap-2">
                 Initial Exam — year / months
