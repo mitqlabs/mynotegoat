@@ -63,6 +63,7 @@ export function QuickGlance({
   xrayReferrals,
   mriReferrals,
   specialistReferrals,
+  appointments,
 }: {
   doi: string;
   ie: string;
@@ -70,7 +71,35 @@ export function QuickGlance({
   xrayReferrals?: unknown[];
   mriReferrals?: unknown[];
   specialistReferrals?: unknown[];
+  /** This patient's appointments, for the per-type status counts. */
+  appointments?: Array<{ appointmentType: string; status: string }>;
 }) {
+  // Per visit type: scheduled / checked in / checked out / canceled — the same
+  // black / blue / green / red the patient page's appointment chips use.
+  const apptCounts = (() => {
+    const blank = () => ({ total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0 });
+    const byType = new Map<string, ReturnType<typeof blank>>();
+    const totals = blank();
+    for (const appt of appointments ?? []) {
+      const type = (appt.appointmentType || "Other").trim() || "Other";
+      const c = byType.get(type) ?? blank();
+      const bump = (key: "scheduled" | "checkedIn" | "checkedOut" | "canceled") => {
+        c[key] += 1;
+        totals[key] += 1;
+      };
+      c.total += 1;
+      totals.total += 1;
+      if (appt.status === "Scheduled") bump("scheduled");
+      else if (appt.status === "Check In") bump("checkedIn");
+      else if (appt.status === "Check Out") bump("checkedOut");
+      else if (appt.status === "Canceled") bump("canceled");
+      byType.set(type, c);
+    }
+    return {
+      types: [...byType.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0])),
+      totals,
+    };
+  })();
   const doiLabel = toUsDateCanonical(doi ?? "");
   const ieLabel = toUsDateCanonical(ie ?? "");
   type Row = { key: string; what: string; sent: string; completed: string; refused: boolean };
@@ -158,6 +187,48 @@ export function QuickGlance({
           </div>
         ))}
       </div>
+      {appointments && (
+        <div className="mt-3 border-t border-[var(--line-soft)] pt-2 text-xs">
+          <div className="mb-1 font-semibold text-[var(--text-muted)]">Appointments</div>
+          {apptCounts.types.length === 0 ? (
+            dash
+          ) : (
+            <div className="grid gap-1">
+              {apptCounts.types.map(([type, c]) => (
+                <div className="flex items-baseline justify-between gap-2" key={type}>
+                  <span className="min-w-0 truncate">{type}</span>
+                  <StatusCounts counts={c} />
+                </div>
+              ))}
+              <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-[var(--line-soft)] pt-1 font-semibold">
+                <span>Total</span>
+                <StatusCounts counts={apptCounts.totals} />
+              </div>
+              <div className="text-[10px] text-[var(--text-muted)]">
+                Scheduled / Checked In / Checked Out / Canceled
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </article>
+  );
+}
+
+function StatusCounts({
+  counts,
+}: {
+  counts: { scheduled: number; checkedIn: number; checkedOut: number; canceled: number };
+}) {
+  return (
+    <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
+      <span className="text-[#111]">{counts.scheduled}</span>
+      <span className="text-[var(--text-muted)]"> / </span>
+      <span className="text-[#0d79bf]">{counts.checkedIn}</span>
+      <span className="text-[var(--text-muted)]"> / </span>
+      <span className="text-[#047857]">{counts.checkedOut}</span>
+      <span className="text-[var(--text-muted)]"> / </span>
+      <span className="text-[#b43b34]">{counts.canceled}</span>
+    </span>
   );
 }

@@ -3526,6 +3526,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           {selectedPatient && (
             <EncounterQuickGlance
               billedFallback={getPatientBillingRecord(selectedPatient.id)?.billedAmount ?? 0}
+              appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
               notes={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
               patient={selectedPatient}
             />
@@ -4722,6 +4723,7 @@ function EncounterQuickGlance({
   patient,
   notes,
   billedFallback,
+  appointments,
 }: {
   patient: {
     dateOfLoss?: string;
@@ -4732,6 +4734,7 @@ function EncounterQuickGlance({
   };
   notes: Array<{ charges: Array<{ unitPrice: number; units: number }> }>;
   billedFallback: number;
+  appointments: Array<{ appointmentType: string; status: string }>;
 }) {
   const chargesTotal = notes.reduce(
     (sum, note) => sum + note.charges.reduce((s2, c) => s2 + c.unitPrice * c.units, 0),
@@ -4740,6 +4743,7 @@ function EncounterQuickGlance({
   const initialExamRaw = patient.matrix?.initialExam;
   return (
     <QuickGlance
+      appointments={appointments}
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
       ie={typeof initialExamRaw === "string" ? initialExamRaw : ""}

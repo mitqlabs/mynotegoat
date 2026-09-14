@@ -4947,6 +4947,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {/* Quick Glance — same component as the Encounters side-rail, fed from
             this page's live state so it updates as you edit below. */}
         <QuickGlance
+          appointments={patientAppointmentRecords}
           billed={currentBillTotal}
           doi={dateOfLoss}
           ie={initialExam}
