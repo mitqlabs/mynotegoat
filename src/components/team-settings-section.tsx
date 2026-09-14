@@ -1,5 +1,7 @@
 "use client";
 
+import { logActivity } from "@/lib/activity-log";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import {
@@ -200,6 +202,11 @@ export function TeamSettingsSection() {
       setError(json.error || "Could not add the member.");
       return;
     }
+    logActivity({
+      category: "team",
+      action: "team.member_added",
+      summary: `Added team member ${label} (${email})${permsWithIdentity.officeAdmin ? " as Office Admin" : ""}`,
+    });
     setShowAdd(false);
     setEmail("");
     setPassword("");
@@ -228,6 +235,7 @@ export function TeamSettingsSection() {
       setError(json.error || "Could not remove the member.");
       return;
     }
+    logActivity({ category: "team", action: "team.member_removed", summary: `Removed team member ${member.label} (${member.email ?? ""})` });
     // Drop them from the doctor roster too.
     setDoctor(member.member_user_id, "", false);
     void loadMembers();
@@ -249,6 +257,13 @@ export function TeamSettingsSection() {
     const role = editRole.trim();
     setEditingId(null);
     const label = `${first} ${last}`.trim() || role || member.label;
+    if (label !== member.label || role !== (member.permissions.role ?? "")) {
+      logActivity({
+        category: "team",
+        action: "team.member_renamed",
+        summary: `Team member ${member.label} → ${label}${role ? ` (${role})` : ""}`,
+      });
+    }
     const nextPerms: MemberPermissions = { ...member.permissions };
     if (first) nextPerms.firstName = first;
     else delete nextPerms.firstName;
@@ -276,6 +291,25 @@ export function TeamSettingsSection() {
   };
 
   const saveMemberPerms = async (member: Member, nextPerms: MemberPermissions) => {
+    const before = member.permissions;
+    const changes: string[] = [];
+    if (Boolean(before.officeAdmin) !== Boolean(nextPerms.officeAdmin)) {
+      changes.push(nextPerms.officeAdmin ? "made Office Admin" : "removed Office Admin");
+    }
+    if (Boolean(before.disabled) !== Boolean(nextPerms.disabled)) {
+      changes.push(nextPerms.disabled ? "deactivated" : "reactivated");
+    }
+    if ((before.hiddenSections ?? []).join(",") !== (nextPerms.hiddenSections ?? []).join(",")) {
+      changes.push("changed hidden patient-page sections");
+    }
+    if (before.mainLocationId !== nextPerms.mainLocationId) changes.push("changed main location");
+    if (changes.length) {
+      logActivity({
+        category: "team",
+        action: "team.permissions_changed",
+        summary: `${member.label}: ${changes.join(", ")}`,
+      });
+    }
     setMembers((cur) =>
       cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),
     );
@@ -359,6 +393,14 @@ export function TeamSettingsSection() {
     const nextPerms: MemberPermissions = { ...member.permissions };
     if (level === "none") delete nextPerms[feature];
     else nextPerms[feature] = level;
+    const previous = member.permissions[feature] ?? "none";
+    if (previous !== level) {
+      logActivity({
+        category: "team",
+        action: "team.access_changed",
+        summary: `${member.label}: ${feature} access ${previous} → ${level}`,
+      });
+    }
     // Optimistic.
     setMembers((cur) =>
       cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),

@@ -9,6 +9,22 @@ import {
   type PatientBillingMap,
   type PatientBillingRecord,
 } from "@/lib/patient-billing";
+import { logActivity } from "@/lib/activity-log";
+import { patients as patientDirectory } from "@/lib/mock-data";
+
+const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+function logBilling(patientId: string, action: string, summary: string, details?: Record<string, unknown>) {
+  const patient = patientDirectory.find((p) => p.id === patientId.trim());
+  logActivity({
+    category: "billing",
+    action,
+    summary,
+    patientId: patientId.trim(),
+    patientName: patient?.fullName,
+    details,
+  });
+}
 
 type PatientBillingCorePatch = Partial<Pick<PatientBillingRecord, "billedAmount" | "paidAmount" | "paidDate">>;
 type AddPatientBillingAdjustmentDraft = {
@@ -98,6 +114,17 @@ export function usePatientBilling() {
 
   const setCoreFields = useCallback(
     (patientId: string, patch: PatientBillingCorePatch) => {
+      // Autosave re-sends these on every save, so only log real changes.
+      const before = recordsByPatientId[patientId.trim()] ?? createPatientBillingRecord(patientId.trim());
+      if (patch.billedAmount !== undefined && normalizeMoney(patch.billedAmount) !== before.billedAmount) {
+        logBilling(patientId, "billing.billed_changed", `Billed ${money(before.billedAmount)} → ${money(normalizeMoney(patch.billedAmount))}`);
+      }
+      if (patch.paidAmount !== undefined && normalizeMoney(patch.paidAmount) !== before.paidAmount) {
+        logBilling(patientId, "billing.paid_changed", `Paid ${money(before.paidAmount)} → ${money(normalizeMoney(patch.paidAmount))}`);
+      }
+      if (patch.paidDate !== undefined && toUsDate(patch.paidDate) !== before.paidDate) {
+        logBilling(patientId, "billing.paid_date_changed", `Paid date ${before.paidDate || "—"} → ${toUsDate(patch.paidDate) || "—"}`);
+      }
       updatePatientRecord(patientId, (current) => ({
         ...current,
         billedAmount:
@@ -106,7 +133,7 @@ export function usePatientBilling() {
         paidDate: patch.paidDate === undefined ? current.paidDate : toUsDate(patch.paidDate),
       }));
     },
-    [updatePatientRecord],
+    [updatePatientRecord, recordsByPatientId],
   );
 
   const addAdjustment = useCallback(
@@ -116,6 +143,7 @@ export function usePatientBilling() {
         return false;
       }
       const normalizedAmount = normalizeMoney(draft.amount);
+      logBilling(patientId, "billing.adjustment_added", `Added adjustment "${normalizedLabel}" ${money(normalizedAmount)}`);
       updatePatientRecord(patientId, (current) => ({
         ...current,
         adjustments: [
@@ -166,12 +194,16 @@ export function usePatientBilling() {
       if (!normalizedAdjustmentId) {
         return;
       }
+      const removed = recordsByPatientId[patientId.trim()]?.adjustments.find((entry) => entry.id === normalizedAdjustmentId);
+      if (removed) {
+        logBilling(patientId, "billing.adjustment_removed", `Removed adjustment "${removed.label}" ${money(removed.amount)}`);
+      }
       updatePatientRecord(patientId, (current) => ({
         ...current,
         adjustments: current.adjustments.filter((entry) => entry.id !== normalizedAdjustmentId),
       }));
     },
-    [updatePatientRecord],
+    [updatePatientRecord, recordsByPatientId],
   );
 
   const removeRecord = useCallback(

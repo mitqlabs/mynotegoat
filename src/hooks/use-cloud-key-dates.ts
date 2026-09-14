@@ -1,5 +1,7 @@
 "use client";
 
+import { activityDate, logActivity } from "@/lib/activity-log";
+
 /**
  * Cloud-first Key Dates hook — PILOT for the new architecture.
  *
@@ -116,6 +118,9 @@ async function writeKeyDatesToCloud(records: KeyDateRecord[]): Promise<void> {
   }
 }
 
+const keyDateLabel = (k: { startDate: string; endDate: string; officeStatus: string; reason: string }) =>
+  `${activityDate(k.startDate)}${k.endDate && k.endDate !== k.startDate ? ` – ${activityDate(k.endDate)}` : ""} ${k.officeStatus}${k.reason ? ` (${k.reason})` : ""}`;
+
 export function useCloudKeyDates() {
   const queryClient = useQueryClient();
 
@@ -188,6 +193,7 @@ export function useCloudKeyDates() {
       };
       const next = [...current, newRecord];
       await writeKeyDatesToCloud(next);
+      logActivity({ category: "keyDates", action: "keydate.added", summary: `Added key date ${keyDateLabel(newRecord)}` });
       return { added: true, keyDate: newRecord };
     },
     onSuccess: (result) => {
@@ -212,6 +218,7 @@ export function useCloudKeyDates() {
         return { updated: false, reason: "End date cannot be before start date." };
       }
       const current = await fetchKeyDatesFromCloud();
+      const before = current.find((entry) => entry.id === id);
       let updated: KeyDateRecord | null = null;
       const next = current.map((entry) => {
         if (entry.id !== id) return entry;
@@ -220,6 +227,13 @@ export function useCloudKeyDates() {
       });
       if (!updated) return { updated: false, reason: "Key date not found." };
       await writeKeyDatesToCloud(next);
+      if (before) {
+        logActivity({
+          category: "keyDates",
+          action: "keydate.changed",
+          summary: `Changed key date ${keyDateLabel(before)} → ${keyDateLabel(updated)}`,
+        });
+      }
       return { updated: true, keyDate: updated };
     },
     onSuccess: () => {
@@ -230,8 +244,12 @@ export function useCloudKeyDates() {
   const removeMutation = useMutation({
     mutationFn: async (id: string): Promise<void> => {
       const current = await fetchKeyDatesFromCloud();
+      const removed = current.find((entry) => entry.id === id);
       const next = current.filter((entry) => entry.id !== id);
       await writeKeyDatesToCloud(next);
+      if (removed) {
+        logActivity({ category: "keyDates", action: "keydate.deleted", summary: `Deleted key date ${keyDateLabel(removed)}` });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });

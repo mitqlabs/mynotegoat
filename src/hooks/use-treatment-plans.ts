@@ -11,6 +11,13 @@ import {
   type WeekdayRegion,
 } from "@/lib/treatment-plans";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { logActivity } from "@/lib/activity-log";
+import { patients as patientDirectory } from "@/lib/mock-data";
+
+function logPlan(patientId: string, action: string, summary: string) {
+  const patient = patientDirectory.find((p) => p.id === patientId.trim());
+  logActivity({ category: "treatmentPlans", action, summary, patientId: patientId.trim(), patientName: patient?.fullName });
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -73,6 +80,7 @@ export function useTreatmentPlans() {
         updatedAt: ts,
       };
       updatePatientList(key, (current) => [plan, ...current]);
+      logPlan(key, "plan.created", `Created treatment plan ${plan.startDate} – ${plan.endDate}`);
       return plan;
     },
     [updatePatientList],
@@ -80,18 +88,33 @@ export function useTreatmentPlans() {
 
   const updatePlan = useCallback(
     (patientId: string, planId: string, patch: Partial<Omit<TreatmentPlan, "id" | "patientId" | "createdAt">>) => {
+      // Log the plan-level changes that matter (dates, on/off). Treatment
+      // picks change click-by-click while editing, so they aren't logged.
+      const before = (plansByPatient[patientId.trim()] ?? []).find((p) => p.id === planId);
+      if (before) {
+        const nextStart = patch.startDate ?? before.startDate;
+        const nextEnd = patch.endDate ?? before.endDate;
+        if (nextStart !== before.startDate || nextEnd !== before.endDate) {
+          logPlan(patientId, "plan.dates_changed", `Treatment plan dates ${before.startDate} – ${before.endDate} → ${nextStart} – ${nextEnd}`);
+        }
+        if (patch.active !== undefined && patch.active !== before.active) {
+          logPlan(patientId, patch.active ? "plan.activated" : "plan.deactivated", `${patch.active ? "Activated" : "Deactivated"} treatment plan ${before.startDate} – ${before.endDate}`);
+        }
+      }
       updatePatientList(patientId, (current) =>
         current.map((p) => (p.id === planId ? { ...p, ...patch, updatedAt: nowIso() } : p)),
       );
     },
-    [updatePatientList],
+    [updatePatientList, plansByPatient],
   );
 
   const removePlan = useCallback(
     (patientId: string, planId: string) => {
+      const removed = (plansByPatient[patientId.trim()] ?? []).find((p) => p.id === planId);
+      if (removed) logPlan(patientId, "plan.deleted", `Deleted treatment plan ${removed.startDate} – ${removed.endDate}`);
       updatePatientList(patientId, (current) => current.filter((p) => p.id !== planId));
     },
-    [updatePatientList],
+    [updatePatientList, plansByPatient],
   );
 
   // Copy one weekday's regions/treatments onto another weekday of the same

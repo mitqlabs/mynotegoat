@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PatientRecord } from "@/lib/mock-data";
+import { logActivity } from "@/lib/activity-log";
 import type { CaseStatusConfig } from "@/lib/case-statuses";
 import {
   type FileManagerState,
@@ -109,6 +110,24 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
     });
   }, [patients, caseStatuses]);
 
+  /** Activity Log entry for a file action, attributed to the folder's patient. */
+  const logFile = useCallback(
+    (action: string, verb: string, fileName: string, folderId: string) => {
+      const folder = state.folders.find((f) => f.id === folderId);
+      const patient = folder?.patientId ? patients.find((p) => p.id === folder.patientId) : undefined;
+      logActivity({
+        category: "files",
+        action,
+        summary: `${verb} "${fileName}"${folder && !patient ? ` in ${folder.name}` : ""}`,
+        patientId: patient?.id,
+        patientName: patient?.fullName,
+        details: { folderId },
+      });
+    },
+    [state.folders, patients],
+  );
+  const fileById = useCallback((fileId: string) => state.files.find((f) => f.id === fileId), [state.files]);
+
   const persist = useCallback((next: FileManagerState) => {
     saveFileManagerState(next);
     setState(next);
@@ -175,21 +194,26 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
         saveFileManagerState(next);
         return next;
       });
+      logFile("file.uploaded", "Uploaded", file.name, folderId);
 
       return { success: true };
     },
-    [],
+    [logFile],
   );
 
   const renameFile = useCallback(
     (fileId: string, newName: string) => {
+      const before = fileById(fileId);
       setState((current) => {
         const next = renameFileRecord(current, fileId, newName);
         saveFileManagerState(next);
         return next;
       });
+      if (before && before.name !== newName) {
+        logFile("file.renamed", `Renamed "${before.name}" to`, newName, before.folderId);
+      }
     },
-    [],
+    [fileById, logFile],
   );
 
   /**
@@ -241,6 +265,8 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
 
   const deleteFile = useCallback(
     async (fileId: string) => {
+      const before = fileById(fileId);
+      if (before) logFile("file.deleted", "Deleted (moved to trash)", before.name, before.folderId);
       setState((current) => {
         const result = removeFileRecord(current, fileId);
         // Soft-delete — storagePath is null, no storage deletion needed
@@ -248,20 +274,22 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
         return result.state;
       });
     },
-    [],
+    [fileById, logFile],
   );
 
   // --- Restore operations (trash) ---
 
   const restoreFile = useCallback(
     (fileId: string) => {
+      const before = fileById(fileId);
+      if (before) logFile("file.restored", "Restored", before.name, before.folderId);
       setState((current) => {
         const next = restoreFileOp(current, fileId);
         saveFileManagerState(next);
         return next;
       });
     },
-    [],
+    [fileById, logFile],
   );
 
   const restoreFolder = useCallback(
@@ -281,6 +309,8 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
 
   const permanentlyDeleteFile = useCallback(
     async (fileId: string) => {
+      const before = fileById(fileId);
+      if (before) logFile("file.permanently_deleted", "Permanently deleted", before.name, before.folderId);
       let toCleanUp: string | null = null;
       setState((current) => {
         const result = permanentlyDeleteFileRecord(current, fileId);
@@ -297,7 +327,7 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
         await deleteFilesFromStorage([toCleanUp]);
       }
     },
-    [],
+    [fileById, logFile],
   );
 
   const permanentlyDeleteFolder = useCallback(
