@@ -52,7 +52,6 @@ export const PERMISSIONABLE_FEATURES: {
   viewOnly?: boolean;
 }[] = [
   { feature: "patients", label: "Patients" },
-  { feature: "statistics", label: "Statistics", viewOnly: true },
   { feature: "contacts", label: "Contacts" },
   { feature: "appointments", label: "Schedule" },
   { feature: "encounters", label: "Encounters" },
@@ -115,6 +114,9 @@ export function effectiveAccessLevel(
 ): AccessLevel {
   if (!isFeatureEnabled(visibility, feature)) return "none"; // office cap
   if (isOwner) return "edit";
+  // Dashboard (the "statistics" feature) is owner / office-admin only,
+  // whatever a member was granted before it became the admin Dashboard.
+  if (feature === "statistics") return "none";
   return accessLevelFor(memberPerms, feature);
 }
 

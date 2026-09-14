@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { WeeklySummary } from "@/components/weekly-summary";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
@@ -250,6 +251,67 @@ function getDefaultYear(): string {
     }
   });
   return hasCurrentYear ? currentYear : "ALL";
+}
+
+const DASHBOARD_SECTIONS_KEY = "casemate.dashboard.sections-open.v1";
+
+function subscribeToStorage(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function readSectionOpen(id: string): boolean {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
+    return saved[id] !== false;
+  } catch {
+    return true;
+  }
+}
+
+/** Collapsible Dashboard section; open/closed is remembered per browser. */
+function DashboardSection({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  // Saved open/closed via useSyncExternalStore: the server snapshot is
+  // "open", the client reads localStorage, and React reconciles the two
+  // without a hydration mismatch or a setState-in-effect.
+  const savedOpen = useSyncExternalStore(
+    subscribeToStorage,
+    () => readSectionOpen(id),
+    () => true,
+  );
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? savedOpen;
+  const toggle = () => {
+    const next = !open;
+    setOverride(next);
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
+      window.localStorage.setItem(DASHBOARD_SECTIONS_KEY, JSON.stringify({ ...saved, [id]: next }));
+    } catch {
+      // Per-browser convenience only.
+    }
+  };
+  return (
+    <section className="panel-card p-4">
+      <button
+        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        onClick={toggle}
+        type="button"
+      >
+        <span>{title}</span>
+        <span className="text-xl">{open ? "−" : "+"}</span>
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </section>
+  );
 }
 
 export default function StatisticsPage() {
@@ -765,10 +827,15 @@ export default function StatisticsPage() {
 
   return (
     <div className="space-y-5">
+      <h2 className="text-2xl font-semibold">Dashboard</h2>
+
+      <DashboardSection id="weeklySummary" title="Weekly Summary">
+        <WeeklySummary />
+      </DashboardSection>
+
+      <DashboardSection id="statistics" title="Statistics">
+    <div className="space-y-5">
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">Statistics Workspace</h3>
-        </div>
 
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
           <div className="grid gap-3 md:grid-cols-[180px_1fr] md:items-center">
@@ -1176,6 +1243,8 @@ export default function StatisticsPage() {
           </article>
         </section>
       </div>
+    </div>
+      </DashboardSection>
     </div>
   );
 }

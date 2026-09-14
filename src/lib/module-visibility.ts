@@ -16,7 +16,7 @@ export const STORAGE_KEY_MODULE_VISIBILITY = STORAGE_KEY;
 
 /** The features an office may hide. Patients + Settings are excluded. */
 export const HIDEABLE_FEATURES: { feature: PortalFeature; label: string }[] = [
-  { feature: "statistics", label: "Statistics" },
+  { feature: "statistics", label: "Dashboard" },
   { feature: "contacts", label: "Contacts" },
   { feature: "appointments", label: "Schedule" },
   { feature: "encounters", label: "Encounters" },
