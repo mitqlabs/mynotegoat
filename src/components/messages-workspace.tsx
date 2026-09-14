@@ -76,7 +76,8 @@ function relativeLabel(iso: string) {
 export function MessagesWorkspace() {
   const { canEdit, isOwner } = useWorkspaceAccess();
   const canPost = canEdit("messages");
-  const { messages, loading, notReady, currentUserId, postMessage, deleteMessage } = useWorkspaceMessages();
+  const { messages, loading, notReady, currentUserId, supportsPrivateThreads, postMessage, deleteMessage, deleteThread } =
+    useWorkspaceMessages();
   const { officeSettings } = useOfficeSettings();
   const ownerName = (officeSettings.doctorName ?? "").trim();
   const people = useWorkspacePeople(ownerName);
@@ -102,8 +103,20 @@ export function MessagesWorkspace() {
   const [composerOpen, setComposerOpen] = useState(true);
   // Quote-reply target (the message being replied to).
   const [replyingTo, setReplyingTo] = useState<
-    { id: string; author: string; excerpt: string; patientId: string; patientName: string } | null
+    {
+      id: string;
+      author: string;
+      excerpt: string;
+      patientId: string;
+      patientName: string;
+      threadRootId: string;
+      isPrivate: boolean;
+      visibleTo: string[];
+    } | null
   >(null);
+  // Eyes Only: only the author and the @mentioned people can see the message.
+  const [eyesOnly, setEyesOnly] = useState(false);
+  const [pendingThreadDelete, setPendingThreadDelete] = useState<string | null>(null);
 
   // "Add to To Do" — a checkbox in the composer. Sending the message also
   // creates a task from it (linked to the tagged case), optionally assigned.
@@ -233,7 +246,15 @@ export function MessagesWorkspace() {
     // A reply lands in the SAME conversation as the message it answers.
     const patientId = replyingTo ? replyingTo.patientId : resolvedCase?.id;
     const patientName = replyingTo ? replyingTo.patientName : resolvedCase?.label;
+    // A reply in an Eyes Only thread stays Eyes Only for the same people.
+    const privateTo = replyingTo?.isPrivate
+      ? replyingTo.visibleTo
+      : eyesOnly
+        ? Array.from(notify)
+        : undefined;
     const ok = await postMessage({
+      privateTo,
+      threadRootId: replyingTo?.threadRootId || undefined,
       body: text,
       authorLabel: myLabel,
       patientId,
@@ -267,6 +288,7 @@ export function MessagesWorkspace() {
       setNotify(new Set());
       setMentionQuery(null);
       setReplyingTo(null);
+      setEyesOnly(false);
       // Keep the tagged case so the user can post several notes to one case.
     }
   };
@@ -278,6 +300,9 @@ export function MessagesWorkspace() {
       excerpt: m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body,
       patientId: m.patientId,
       patientName: m.patientName,
+      threadRootId: m.threadRootId || m.id,
+      isPrivate: m.isPrivate,
+      visibleTo: m.visibleTo,
     });
     setComposerOpen(true);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -489,6 +514,31 @@ export function MessagesWorkspace() {
                     />
                     Add to To Do
                   </label>
+                  {supportsPrivateThreads && (
+                    replyingTo?.isPrivate ? (
+                      <span className="text-xs font-semibold text-violet-700">
+                        🔒 Eyes Only reply — only the people in this thread will see it
+                      </span>
+                    ) : (
+                      <>
+                        <label className="flex items-center gap-2 text-sm font-semibold">
+                          <input
+                            checked={eyesOnly}
+                            onChange={(e) => setEyesOnly(e.target.checked)}
+                            type="checkbox"
+                          />
+                          🔒 Eyes Only
+                        </label>
+                        {eyesOnly && (
+                          <span className={`text-[11px] ${notify.size === 0 ? "font-semibold text-[#b43b34]" : "text-[var(--text-muted)]"}`}>
+                            {notify.size === 0
+                              ? "@mention who should see it — only you and them will."
+                              : "Only you and the people you @mentioned will see this, and their replies."}
+                          </span>
+                        )}
+                      </>
+                    )
+                  )}
                   {addToTodo && (
                     <div className="flex flex-wrap items-center gap-2">
                       <select
@@ -548,7 +598,7 @@ export function MessagesWorkspace() {
                 </span>
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-5 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
-                  disabled={!body.trim() || sending}
+                  disabled={!body.trim() || sending || (eyesOnly && !replyingTo?.isPrivate && notify.size === 0)}
                   onClick={() => void handleSend()}
                   type="button"
                 >
@@ -661,6 +711,12 @@ export function MessagesWorkspace() {
                           }
                           const mine = m.authorUserId === currentUserId;
                           const canDelete = mine || isOwner;
+                          // The person who started a thread can delete all of it.
+                          const threadReplies = messages.filter(
+                            (other) => other.id !== m.id && other.threadRootId === m.id,
+                          ).length;
+                          const canDeleteThread =
+                            supportsPrivateThreads && mine && !m.replyToId && threadReplies > 0;
                           rows.push(
                             <div className="flex gap-3" key={m.id}>
                               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] text-xs font-bold text-[var(--text-muted)]">
@@ -670,6 +726,18 @@ export function MessagesWorkspace() {
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-semibold">{m.authorLabel}</span>
                                   <span className="text-xs text-[var(--text-muted)]">{timeLabel(m.createdAt)}</span>
+                                  {m.isPrivate && (
+                                    <span
+                                      className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700"
+                                      title={`Visible only to: ${m.visibleTo
+                                        .map((uid) =>
+                                          uid === currentUserId ? "You" : people.find((p) => p.userId === uid)?.label ?? "Teammate",
+                                        )
+                                        .join(", ")}`}
+                                    >
+                                      🔒 Eyes Only
+                                    </span>
+                                  )}
                                   {canPost && (
                                     <button
                                       className="text-xs font-semibold text-[var(--brand-primary)] hover:underline"
@@ -678,6 +746,40 @@ export function MessagesWorkspace() {
                                     >
                                       Reply
                                     </button>
+                                  )}
+                                  {canDeleteThread && (
+                                    <span className={canDelete ? "" : "ml-auto"}>
+                                      {pendingThreadDelete === m.id ? (
+                                        <span className="inline-flex gap-1">
+                                          <button
+                                            className="rounded-md bg-[#b43b34] px-2 py-0.5 text-xs font-semibold text-white"
+                                            onClick={() => {
+                                              void deleteThread(m.id);
+                                              setPendingThreadDelete(null);
+                                            }}
+                                            type="button"
+                                          >
+                                            Delete thread + {threadReplies} repl{threadReplies === 1 ? "y" : "ies"}
+                                          </button>
+                                          <button
+                                            className="rounded-md border border-[var(--line-soft)] px-2 py-0.5 text-xs font-semibold"
+                                            onClick={() => setPendingThreadDelete(null)}
+                                            type="button"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          className="ml-3 text-xs font-semibold text-[var(--text-muted)] hover:text-[#b43b34]"
+                                          onClick={() => setPendingThreadDelete(m.id)}
+                                          title="Delete this message and every reply to it"
+                                          type="button"
+                                        >
+                                          Delete thread
+                                        </button>
+                                      )}
+                                    </span>
                                   )}
                                   {canDelete && (
                                     <span className="ml-auto">

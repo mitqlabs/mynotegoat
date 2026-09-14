@@ -29,6 +29,11 @@ export interface WorkspaceMessage {
   replyToId: string;
   replyToAuthor: string;
   replyToExcerpt: string;
+  /** Root message of this reply chain ('' on rows from before threads). */
+  threadRootId: string;
+  /** Eyes Only: visible only to `visibleTo` (user ids, author included). */
+  isPrivate: boolean;
+  visibleTo: string[];
 }
 
 function rowToMessage(row: Record<string, unknown>): WorkspaceMessage {
@@ -57,6 +62,9 @@ function rowToMessage(row: Record<string, unknown>): WorkspaceMessage {
     replyToId: String(row.reply_to_id ?? ""),
     replyToAuthor: String(row.reply_to_author ?? ""),
     replyToExcerpt: String(row.reply_to_excerpt ?? ""),
+    threadRootId: String(row.thread_root_id ?? ""),
+    isPrivate: row.is_private === true,
+    visibleTo: Array.isArray(row.visible_to) ? (row.visible_to as unknown[]).map(String) : [],
   };
 }
 
@@ -65,6 +73,10 @@ export function useWorkspaceMessages() {
   const [loading, setLoading] = useState(true);
   const [notReady, setNotReady] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
+  // True once supabase/workspace_messages_private_threads.sql has been run.
+  // Eyes Only and whole-thread delete stay off until then, so posting never
+  // sends columns the table doesn't have.
+  const [supportsPrivateThreads, setSupportsPrivateThreads] = useState(false);
   const workspaceId = getActiveWorkspaceIdSync();
   // Guard so realtime handlers don't append a message we already have.
   const idsRef = useRef<Set<string>>(new Set());
@@ -91,6 +103,10 @@ export function useWorkspaceMessages() {
       return;
     }
     const list = (data ?? []).map(rowToMessage);
+    // Detect the private-threads columns without depending on there being
+    // any messages: an empty feed can't show us a row to inspect.
+    const probe = await supabase.from("workspace_messages").select("is_private, visible_to, thread_root_id").limit(1);
+    setSupportsPrivateThreads(!probe.error);
     idsRef.current = new Set(list.map((m) => m.id));
     setMessages(list);
     setLoading(false);
@@ -136,6 +152,10 @@ export function useWorkspaceMessages() {
       patientName?: string;
       mentions?: MessageMention[];
       replyTo?: { id: string; author: string; excerpt: string };
+      /** Root of the thread being replied to (falls back to replyTo.id). */
+      threadRootId?: string;
+      /** Eyes Only recipients (user ids). Author is added automatically. */
+      privateTo?: string[];
     }) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase || !workspaceId) return false;
@@ -157,6 +177,15 @@ export function useWorkspaceMessages() {
         reply_to_id: input.replyTo?.id ?? "",
         reply_to_author: input.replyTo?.author ?? "",
         reply_to_excerpt: input.replyTo?.excerpt ?? "",
+        ...(supportsPrivateThreads
+          ? {
+              thread_root_id: input.replyTo ? input.threadRootId || input.replyTo.id : id,
+              is_private: Boolean(input.privateTo && input.privateTo.length > 0),
+              visible_to: input.privateTo && input.privateTo.length > 0
+                ? Array.from(new Set([uid, ...input.privateTo]))
+                : [],
+            }
+          : {}),
       };
       // Optimistic insert.
       const optimistic = rowToMessage({ ...row, created_at: new Date().toISOString() });
@@ -170,7 +199,7 @@ export function useWorkspaceMessages() {
       }
       return true;
     },
-    [workspaceId],
+    [workspaceId, supportsPrivateThreads],
   );
 
   const deleteMessage = useCallback(
@@ -184,5 +213,39 @@ export function useWorkspaceMessages() {
     [workspaceId],
   );
 
-  return { messages, loading, notReady, currentUserId, postMessage, deleteMessage, reload: load };
+  /** Delete a thread: its root message and every reply in it. */
+  const deleteThread = useCallback(
+    async (rootId: string) => {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase || !workspaceId || !rootId) return false;
+      const doomed = new Set(
+        messages.filter((m) => m.id === rootId || m.threadRootId === rootId).map((m) => m.id),
+      );
+      doomed.forEach((id) => idsRef.current.delete(id));
+      setMessages((cur) => cur.filter((m) => !doomed.has(m.id)));
+      const { error } = await supabase
+        .from("workspace_messages")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .or(`id.eq.${rootId},thread_root_id.eq.${rootId}`);
+      if (error) {
+        await load(); // restore what's really there
+        return false;
+      }
+      return true;
+    },
+    [workspaceId, messages, load],
+  );
+
+  return {
+    messages,
+    loading,
+    notReady,
+    currentUserId,
+    supportsPrivateThreads,
+    postMessage,
+    deleteMessage,
+    deleteThread,
+    reload: load,
+  };
 }
