@@ -105,13 +105,13 @@ export function MessagesWorkspace() {
     { id: string; author: string; excerpt: string; patientId: string; patientName: string } | null
   >(null);
 
-  // "Add to To Do" — an inline task form opened from a message.
+  // "Add to To Do" — a checkbox in the composer. Sending the message also
+  // creates a task from it (linked to the tagged case), optionally assigned.
   const { addTask } = useTasks();
-  const [todoForId, setTodoForId] = useState<string | null>(null);
-  const [todoTitle, setTodoTitle] = useState("");
+  const [addToTodo, setAddToTodo] = useState(false);
   const [todoAssignee, setTodoAssignee] = useState("");
   const [todoPriority, setTodoPriority] = useState<TaskPriority>("Medium");
-  const [todoDone, setTodoDone] = useState<string | null>(null);
+  const [todoNotice, setTodoNotice] = useState("");
 
   // Inline @mention autocomplete.
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -182,8 +182,9 @@ export function MessagesWorkspace() {
     const q = mentionQuery.query.toLowerCase();
     return people
       .filter((p) => p.userId !== currentUserId)
-      .filter((p) => !q || p.label.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
-      .slice(0, 6);
+      .filter((p) => !q || p.label.toLowerCase().includes(q) || p.email.toLowerCase().includes(q));
+    // No cap: the list was cut to 6, so anyone past the sixth teammate only
+    // appeared if you typed their name. The dropdown scrolls instead.
   }, [mentionQuery, people, currentUserId]);
 
   // Recompute the active @token from the text up to the caret.
@@ -244,35 +245,29 @@ export function MessagesWorkspace() {
     });
     setSending(false);
     if (ok) {
+      if (addToTodo) {
+        const res = addTask({
+          title: text.length > 140 ? text.slice(0, 140) : text,
+          priority: todoPriority,
+          patientId: patientId || undefined,
+          patientName: patientName || undefined,
+          assignee: todoAssignee.trim() || undefined,
+        });
+        setTodoNotice(
+          res.added
+            ? `✓ Added to To Do${todoAssignee ? ` for ${todoAssignee}` : ""}${patientName ? ` · ${patientName}` : ""}`
+            : "Message sent, but the To Do couldn't be added.",
+        );
+        window.setTimeout(() => setTodoNotice(""), 3500);
+        setAddToTodo(false);
+        setTodoAssignee("");
+        setTodoPriority("Medium");
+      }
       setBody("");
       setNotify(new Set());
       setMentionQuery(null);
       setReplyingTo(null);
       // Keep the tagged case so the user can post several notes to one case.
-    }
-  };
-
-  const openTodo = (m: WorkspaceMessage) => {
-    setTodoForId(m.id);
-    setTodoTitle(m.body.length > 140 ? m.body.slice(0, 140) : m.body);
-    setTodoAssignee(m.mentions[0]?.label ?? "");
-    setTodoPriority("Medium");
-  };
-
-  const submitTodo = (m: WorkspaceMessage) => {
-    const title = todoTitle.trim();
-    if (!title) return;
-    const res = addTask({
-      title,
-      priority: todoPriority,
-      patientId: m.patientId || undefined,
-      patientName: m.patientName || undefined,
-      assignee: todoAssignee.trim() || undefined,
-    });
-    if (res.added) {
-      setTodoForId(null);
-      setTodoDone(m.id);
-      window.setTimeout(() => setTodoDone((cur) => (cur === m.id ? null : cur)), 2500);
     }
   };
 
@@ -416,7 +411,7 @@ export function MessagesWorkspace() {
                 />
 
                 {mentionQuery && mentionMatches.length > 0 && (
-                  <div className="absolute top-full left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
+                  <div className="absolute top-full left-0 z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
                     {mentionMatches.map((p, i) => (
                       <button
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
@@ -429,6 +424,10 @@ export function MessagesWorkspace() {
                           pickMention(p);
                         }}
                         onMouseEnter={() => setMentionIndex(i)}
+                        // Keep the keyboard-highlighted row visible while scrolling.
+                        ref={(el) => {
+                          if (el && i === mentionIndex) el.scrollIntoView({ block: "nearest" });
+                        }}
                         type="button"
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] text-xs font-bold text-[var(--text-muted)]">
@@ -473,8 +472,55 @@ export function MessagesWorkspace() {
                   )}
                 </label>
 
+                <div className="grid content-start gap-1">
+                  <label className="mt-5 flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      checked={addToTodo}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setAddToTodo(next);
+                        // Default the assignee to the first @mentioned teammate.
+                        if (next && !todoAssignee) {
+                          const first = people.find((p) => notify.has(p.userId));
+                          if (first) setTodoAssignee(first.label);
+                        }
+                      }}
+                      type="checkbox"
+                    />
+                    Add to To Do
+                  </label>
+                  {addToTodo && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                        onChange={(e) => setTodoAssignee(e.target.value)}
+                        value={todoAssignee}
+                      >
+                        <option value="">Assign to… (optional)</option>
+                        {people.map((p) => (
+                          <option key={p.userId} value={p.label}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                        onChange={(e) => setTodoPriority(e.target.value as TaskPriority)}
+                        value={todoPriority}
+                      >
+                        {(["Low", "Medium", "High", "Urgent"] as TaskPriority[]).map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[11px] text-[var(--text-muted)]">The message becomes the task.</span>
+                    </div>
+                  )}
+                </div>
+
                 {notify.size > 0 && (
-                  <div className="grid gap-1">
+                  <div className="grid gap-1 md:col-span-2">
                     <span className="text-xs font-semibold text-[var(--text-muted)]">Mentioning</span>
                     <div className="flex flex-wrap gap-1.5">
                       {people
@@ -496,7 +542,10 @@ export function MessagesWorkspace() {
               </div>
 
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-[var(--text-muted)]">Posting as {myLabel}</span>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Posting as {myLabel}
+                  {todoNotice && <span className="ml-2 font-semibold text-emerald-700">{todoNotice}</span>}
+                </span>
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-5 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
                   disabled={!body.trim() || sending}
@@ -630,15 +679,6 @@ export function MessagesWorkspace() {
                                       Reply
                                     </button>
                                   )}
-                                  {canPost && (
-                                    <button
-                                      className="text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:underline"
-                                      onClick={() => (todoForId === m.id ? setTodoForId(null) : openTodo(m))}
-                                      type="button"
-                                    >
-                                      + To Do
-                                    </button>
-                                  )}
                                   {canDelete && (
                                     <span className="ml-auto">
                                       {pendingDelete === m.id ? (
@@ -689,66 +729,6 @@ export function MessagesWorkspace() {
                                         @{mn.label}
                                       </span>
                                     ))}
-                                  </div>
-                                )}
-                                {todoDone === m.id && (
-                                  <p className="mt-1.5 text-xs font-semibold text-emerald-700">
-                                    ✓ Added to To Do{m.patientName ? ` for ${m.patientName}` : ""}
-                                  </p>
-                                )}
-                                {todoForId === m.id && (
-                                  <div className="mt-2 grid gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2.5">
-                                    <input
-                                      className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                                      onChange={(e) => setTodoTitle(e.target.value)}
-                                      placeholder="Task…"
-                                      value={todoTitle}
-                                    />
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <select
-                                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
-                                        onChange={(e) => setTodoAssignee(e.target.value)}
-                                        value={todoAssignee}
-                                      >
-                                        <option value="">Assign to… (optional)</option>
-                                        {people.map((p) => (
-                                          <option key={p.userId} value={p.label}>
-                                            {p.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <select
-                                        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
-                                        onChange={(e) => setTodoPriority(e.target.value as TaskPriority)}
-                                        value={todoPriority}
-                                      >
-                                        {(["Low", "Medium", "High", "Urgent"] as TaskPriority[]).map((p) => (
-                                          <option key={p} value={p}>
-                                            {p}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <button
-                                        className="rounded-md bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
-                                        disabled={!todoTitle.trim()}
-                                        onClick={() => submitTodo(m)}
-                                        type="button"
-                                      >
-                                        Add to To Do
-                                      </button>
-                                      <button
-                                        className="rounded-md border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
-                                        onClick={() => setTodoForId(null)}
-                                        type="button"
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                    {m.patientName && (
-                                      <span className="text-[11px] text-[var(--text-muted)]">
-                                        Linked to case: {m.patientName}
-                                      </span>
-                                    )}
                                   </div>
                                 )}
                               </div>
