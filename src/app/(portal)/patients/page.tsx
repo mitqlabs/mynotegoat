@@ -802,10 +802,15 @@ export default function PatientsPage() {
   };
 
   const defaultReview = reviewOptions[0] ?? "Not Requested";
+  // Normalised to the configured option's spelling: legacy CaseMate imports
+  // stored "REQUESTED" / "RECEIVED" in capitals, which a <select> can't match
+  // exactly and would display as the first option instead.
   const reviewOf = useCallback(
-    (patient: PatientRecord): string =>
-      reviewOverrides[patient.id] ?? (patient.matrix?.review?.trim() || defaultReview),
-    [reviewOverrides, defaultReview],
+    (patient: PatientRecord): string => {
+      const raw = reviewOverrides[patient.id] ?? (patient.matrix?.review?.trim() || defaultReview);
+      return reviewOptions.find((option) => option.trim().toLowerCase() === raw.toLowerCase()) ?? raw;
+    },
+    [reviewOverrides, defaultReview, reviewOptions],
   );
 
   const handleListReviewChange = (patient: PatientRecord, next: string) => {

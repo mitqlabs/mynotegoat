@@ -2054,6 +2054,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     return hasCurrent ? reviewOptions : [current, ...reviewOptions];
   }, [reviewOptions, reviewStatus]);
 
+  // The value the Review selects should show. Legacy CaseMate imports stored
+  // "REQUESTED" / "RECEIVED" in capitals; the options check above matched
+  // them case-insensitively, but a <select> needs the exact option string,
+  // so those patients silently displayed the FIRST option ("Not Requested").
+  const reviewDisplayValue = useMemo(() => {
+    const current = reviewStatus.trim() || (reviewOptions[0] ?? "Not Requested");
+    return (
+      reviewOptions.find((option) => option.trim().toLowerCase() === current.toLowerCase()) ?? current
+    );
+  }, [reviewOptions, reviewStatus]);
+
   const activeImaging = activeRegionModal === "xray" ? xray : mri;
   const setActiveImaging = activeRegionModal === "xray" ? setXray : setMri;
   const activeDiagnosisMacros = useMemo(
@@ -4877,7 +4888,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   return "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
                 })()}`}
                 onChange={(event) => handleReviewStatusChange(event.target.value)}
-                value={reviewStatus}
+                value={reviewDisplayValue}
               >
                 {reviewSelectOptions.map((option) => (
                   <option key={option} value={option}>
@@ -7137,7 +7148,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-lg font-semibold"
                   onChange={(event) => handleReviewStatusChange(event.target.value)}
-                  value={reviewStatus}
+                  value={reviewDisplayValue}
                 >
                   {reviewSelectOptions.map((option) => (
                     <option key={option} value={option}>
