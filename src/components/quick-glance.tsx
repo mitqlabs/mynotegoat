@@ -1,6 +1,22 @@
 "use client";
 
+import { useState, useSyncExternalStore } from "react";
 import { toUsDateCanonical } from "@/lib/follow-up-queue";
+
+const QUICK_GLANCE_OPEN_KEY = "casemate.quick-glance.open.v1";
+
+function subscribeToStorage(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function readQuickGlanceOpen(): boolean {
+  try {
+    return window.localStorage.getItem(QUICK_GLANCE_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 type ImagingSummaryEntry = Record<string, unknown>;
 
@@ -100,6 +116,18 @@ export function QuickGlance({
       totals,
     };
   })();
+  const savedOpen = useSyncExternalStore(subscribeToStorage, readQuickGlanceOpen, () => true);
+  const [openOverride, setOpenOverride] = useState<boolean | null>(null);
+  const open = openOverride ?? savedOpen;
+  const toggleOpen = () => {
+    const next = !open;
+    setOpenOverride(next);
+    try {
+      window.localStorage.setItem(QUICK_GLANCE_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // Per-browser convenience only.
+    }
+  };
   const doiLabel = toUsDateCanonical(doi ?? "");
   const ieLabel = toUsDateCanonical(ie ?? "");
   type Row = { key: string; what: string; sent: string; completed: string; refused: boolean };
@@ -136,8 +164,22 @@ export function QuickGlance({
 
   return (
     <article className="panel-card p-3">
-      <h3 className="text-sm font-semibold">Quick Glance</h3>
-      <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-xs">
+      <button
+        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        onClick={toggleOpen}
+        type="button"
+      >
+        <span>Quick Glance</span>
+        <span className="text-xl">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+      // Container query: appointments sit to the RIGHT when the card is wide
+      // enough (patient page) and stack underneath in a narrow column
+      // (Encounters side-rail), where side by side would be cramped.
+      <div className="@container mt-3">
+      <div className="grid gap-4 @xl:grid-cols-[minmax(0,1fr)_minmax(13rem,17rem)]">
+      <div className="min-w-0">
+      <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-xs">
         <div>
           <div className="font-semibold text-[var(--text-muted)]">DOI</div>
           <div className="font-semibold tabular-nums">{doiLabel || dash}</div>
@@ -187,8 +229,9 @@ export function QuickGlance({
           </div>
         ))}
       </div>
+      </div>
       {appointments && (
-        <div className="mt-3 border-t border-[var(--line-soft)] pt-2 text-xs">
+        <div className="border-t border-[var(--line-soft)] pt-2 text-xs @xl:border-t-0 @xl:border-l @xl:pt-0 @xl:pl-4">
           <div className="mb-1 font-semibold text-[var(--text-muted)]">Appointments</div>
           {apptCounts.types.length === 0 ? (
             dash
@@ -210,6 +253,9 @@ export function QuickGlance({
             </div>
           )}
         </div>
+      )}
+      </div>
+      </div>
       )}
     </article>
   );
