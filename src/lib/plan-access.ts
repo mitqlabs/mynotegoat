@@ -22,7 +22,7 @@ export type PortalNavItem = {
 
 export const portalNavItems: PortalNavItem[] = [
   { href: "/patients", label: "Patients", feature: "patients" },
-  { href: "/statistics", label: "Dashboard", feature: "statistics" },
+  { href: "/dashboard", label: "Dashboard", feature: "statistics" },
   { href: "/contacts", label: "Contacts", feature: "contacts" },
   { href: "/appointments", label: "Schedule", feature: "appointments" },
   { href: "/encounters", label: "Encounters", feature: "encounters" },
@@ -124,7 +124,7 @@ export function resolvePortalFeatureFromPath(pathname: string): PortalFeature | 
   if (pathname.startsWith("/patients")) {
     return "patients";
   }
-  if (pathname.startsWith("/statistics")) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/statistics")) {
     return "statistics";
   }
   if (pathname.startsWith("/contacts")) {

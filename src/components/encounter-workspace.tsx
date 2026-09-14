@@ -3009,13 +3009,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
   return (
     <div className="space-y-5">
-      <section className="panel-card p-4">
-        <h2 className="text-2xl font-semibold">Encounters</h2>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          SOAP charting with carry-forward copy tools and treatment charges. Create new encounters from Schedule or Patient File.
-        </p>
-      </section>
-
       {message && <p className="text-sm font-semibold text-[var(--brand-primary)]">{message}</p>}
 
       <AppointmentsOverview

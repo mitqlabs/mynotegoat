@@ -513,13 +513,8 @@ export default function MyFilesPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8">
-      <h1 className="text-2xl font-bold tracking-tight text-[var(--text-heading)]">My Files</h1>
-      <p className="mt-1 text-sm text-[var(--text-muted)]">
-        Upload and organize documents, imaging reports, attorney letters, and more.
-      </p>
-
       {/* Search bar */}
-      <div className="mt-4 relative">
+      <div className="relative">
         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
           <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" strokeLinecap="round" /></svg>
         </div>

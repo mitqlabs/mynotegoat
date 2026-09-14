@@ -330,13 +330,7 @@ export default function TimersPage() {
     <div className="space-y-4">
       {/* ── Header ── */}
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold">Room Timers</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Timers sync across all your devices. Set on desktop, dismiss on tablet.
-            </p>
-          </div>
+        <div className="flex flex-wrap items-start justify-end gap-3">
           <label className="grid gap-1">
             <span className="text-xs font-semibold text-[var(--text-muted)]">Sound Repeat</span>
             <select

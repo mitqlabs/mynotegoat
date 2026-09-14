@@ -67,7 +67,6 @@ function Tile({
 export function WeeklySummary() {
   const { scheduleAppointments } = useScheduleAppointments();
   const { recordsByPatientId } = usePatientBilling();
-  const { reviewOptions } = useCaseStatuses();
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, -1 = last week…
 
   const today = useMemo(() => {
@@ -114,17 +113,6 @@ export function WeeklySummary() {
       }
     }
 
-    // Review follow-up (current state). Stored values can be legacy capitals.
-    const firstReview = (reviewOptions[0] ?? "Not Requested").toLowerCase();
-    const reviewOf = (p: (typeof activePatients)[number]) =>
-      (p.matrix?.review?.trim() || firstReview).toLowerCase();
-    const piPatients = activePatients.filter((p) => !p.isCashPatient);
-    const reviewsRequested = piPatients.filter((p) => reviewOf(p) === "requested").length;
-    const reviewsReceived = piPatients.filter((p) => reviewOf(p) === "received").length;
-    const dischargedNotAsked = piPatients.filter(
-      (p) => p.caseStatus.toLowerCase() === "discharged" && reviewOf(p) === firstReview,
-    ).length;
-
     return {
       completed: count("Check Out"),
       checkedIn: count("Check In"),
@@ -136,11 +124,8 @@ export function WeeklySummary() {
       discharged,
       paidTotal,
       paidCases,
-      reviewsRequested,
-      reviewsReceived,
-      dischargedNotAsked,
     };
-  }, [scheduleAppointments, recordsByPatientId, reviewOptions, weekStart, weekEnd, nextWeekEnd, today]);
+  }, [scheduleAppointments, recordsByPatientId, weekStart, weekEnd, nextWeekEnd, today]);
 
   const weekLabel =
     weekOffset === 0 ? "This week" : weekOffset === -1 ? "Last week" : `${shortDate(weekStart)} week`;
@@ -211,18 +196,44 @@ export function WeeklySummary() {
             tone={stats.waitingOnNotesAllTime > 0 ? "text-[#b43b34]" : ""}
             value={stats.waitingOnNotesAllTime}
           />
-          <Tile hint="Discharged, review not requested" label="Reviews to request" value={stats.dischargedNotAsked} />
-          <Tile label="Reviews requested" tone="text-amber-700" value={stats.reviewsRequested} />
-          <Tile label="Reviews received" tone="text-[#047857]" value={stats.reviewsReceived} />
         </div>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Work through reviews on the{" "}
-          <Link className="font-semibold text-[var(--brand-primary)] underline" href="/patients">
-            Patients
-          </Link>{" "}
-          page: set Status to Discharged and Review to Not Requested.
-        </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Reviews section for the Dashboard: where review follow-up stands right now.
+ * Stored review values can be legacy capitals ("REQUESTED"), so compare
+ * case-insensitively.
+ */
+export function ReviewsSummary() {
+  const { reviewOptions } = useCaseStatuses();
+  const counts = useMemo(() => {
+    const firstReview = (reviewOptions[0] ?? "Not Requested").toLowerCase();
+    const pi = patients.filter((p) => !p.deleted && !p.isCashPatient);
+    const reviewOf = (p: (typeof pi)[number]) => (p.matrix?.review?.trim() || firstReview).toLowerCase();
+    return {
+      toRequest: pi.filter((p) => p.caseStatus.toLowerCase() === "discharged" && reviewOf(p) === firstReview).length,
+      requested: pi.filter((p) => reviewOf(p) === "requested").length,
+      received: pi.filter((p) => reviewOf(p) === "received").length,
+    };
+  }, [reviewOptions]);
+
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Tile hint="Discharged, review not requested" label="To request" value={counts.toRequest} />
+        <Tile label="Requested" tone="text-amber-700" value={counts.requested} />
+        <Tile label="Received" tone="text-[#047857]" value={counts.received} />
+      </div>
+      <p className="text-xs text-[var(--text-muted)]">
+        Work through them on the{" "}
+        <Link className="font-semibold text-[var(--brand-primary)] underline" href="/patients">
+          Patients
+        </Link>{" "}
+        page: set Status to Discharged and Review to Not Requested.
+      </p>
     </div>
   );
 }

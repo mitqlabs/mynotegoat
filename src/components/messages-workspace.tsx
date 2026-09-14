@@ -342,13 +342,7 @@ export function MessagesWorkspace() {
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-xl font-semibold">Messages</h3>
-            <p className="text-sm text-[var(--text-muted)]">
-              A shared team feed. Tag a case, @mention a teammate, and keep the whole office on the same page.
-            </p>
-          </div>
+        <div className="flex flex-wrap items-start justify-end gap-3">
           <div className="text-right text-sm">
             <p>
               <span className="font-semibold">{conversations.length}</span> active chat

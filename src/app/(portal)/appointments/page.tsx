@@ -1128,12 +1128,6 @@ export default function AppointmentsPage() {
     <div className="space-y-5">
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xl font-semibold">Schedule</h3>
-            <p className="text-sm text-[var(--text-muted)]">
-              Click a patient card to check in, check out, reschedule, or update appointment status.
-            </p>
-          </div>
           <div className="flex flex-wrap gap-2">
             {multiLocation && (
               <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-3 py-2 text-sm font-semibold">

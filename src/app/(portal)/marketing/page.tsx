@@ -210,14 +210,6 @@ export default function MarketingPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-4 lg:p-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight">Marketing</h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Track your outreach to the attorneys you work with — visits, lunches, calls, and more.
-          Firms auto-populate from your Attorney contacts.
-        </p>
-      </header>
-
       {/* Dashboard tiles */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryTile label="Attorneys" value={String(attorneys.length)} />
