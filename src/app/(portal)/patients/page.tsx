@@ -1607,6 +1607,27 @@ export default function PatientsPage() {
 
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">
+          {/* How many patients the current filters match — e.g. Review:
+              Received → "7 patients". */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--line-soft)] px-4 py-2.5 text-sm">
+            <span className="font-semibold">
+              {filteredPatients.length} patient{filteredPatients.length === 1 ? "" : "s"}
+            </span>
+            {(() => {
+              const active = [
+                attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
+                status !== "ALL" ? `Status: ${status}` : "",
+                reviewFilter !== "ALL"
+                  ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}`
+                  : "",
+                year !== "ALL" ? `Initial exam: ${year}` : "",
+                searchDraft.trim() ? `Search: “${searchDraft.trim()}”` : "",
+              ].filter(Boolean);
+              return active.length ? (
+                <span className="text-[var(--text-muted)]">{active.join(" · ")}</span>
+              ) : null;
+            })()}
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
