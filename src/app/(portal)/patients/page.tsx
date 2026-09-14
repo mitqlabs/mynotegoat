@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
@@ -18,7 +18,7 @@ import {
   formatUsDateDisplay,
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
-import { createPatientRecord, patients, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { createPatientRecord, patients, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -41,8 +41,8 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
 const SORT_COLUMN_KEY = "casemate.patient-sort-column.v1";
 const SORT_ASC_KEY = "casemate.patient-sort-asc.v1";
-type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status";
-const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status"];
+type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "review";
+const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "review"];
 
 // Case Flow columns
 const CF_COLUMN_ORDER_KEY = "casemate.cf-column-order.v1";
@@ -219,6 +219,7 @@ const columnLabels: Record<ListColumnId, string> = {
   dateOfLoss: "Date Of Injury",
   attorney: "Attorney",
   status: "Status",
+  review: "Review",
 };
 
 function loadColumnOrder(): ListColumnId[] {
@@ -227,9 +228,12 @@ function loadColumnOrder(): ListColumnId[] {
     const raw = window.localStorage.getItem(COLUMN_ORDER_KEY);
     if (!raw) return defaultColumnOrder;
     const parsed = JSON.parse(raw) as string[];
-    if (!Array.isArray(parsed) || parsed.length !== defaultColumnOrder.length) return defaultColumnOrder;
-    const valid = parsed.every((id) => defaultColumnOrder.includes(id as ListColumnId));
-    return valid ? (parsed as ListColumnId[]) : defaultColumnOrder;
+    if (!Array.isArray(parsed)) return defaultColumnOrder;
+    const known = parsed.filter((id): id is ListColumnId => defaultColumnOrder.includes(id as ListColumnId));
+    if (known.length === 0) return defaultColumnOrder;
+    // Keep a saved custom order, and append any column added since it was
+    // saved (e.g. Review) instead of throwing the whole order away.
+    return [...known, ...defaultColumnOrder.filter((id) => !known.includes(id))];
   } catch { return defaultColumnOrder; }
 }
 
@@ -447,7 +451,7 @@ export default function PatientsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [savedFromQuery]);
 
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
   const { contacts, addContact } = useContactDirectory();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
@@ -493,6 +497,11 @@ export default function PatientsPage() {
   const [year, setYear] = useState("ALL");
   const [attorney, setAttorney] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+  // Review follow-up filter (Not Requested / Requested / Received).
+  const [reviewFilter, setReviewFilter] = useState("ALL");
+  // Review changes made from this list, applied on top of the patient record
+  // so the row and the filter update instantly.
+  const [reviewOverrides, setReviewOverrides] = useState<Record<string, string>>({});
   // Multi-location: filter the list by the shared "current location" view.
   const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
 
@@ -792,6 +801,23 @@ export default function PatientsPage() {
     setStatus(statusDraft);
   };
 
+  const defaultReview = reviewOptions[0] ?? "Not Requested";
+  const reviewOf = useCallback(
+    (patient: PatientRecord): string =>
+      reviewOverrides[patient.id] ?? (patient.matrix?.review?.trim() || defaultReview),
+    [reviewOverrides, defaultReview],
+  );
+
+  const handleListReviewChange = (patient: PatientRecord, next: string) => {
+    setReviewOverrides((current) => ({ ...current, [patient.id]: next }));
+    try {
+      // matrix is merged, so this only touches review.
+      updatePatientRecordById(patient.id, { matrix: { review: next } });
+    } catch (err) {
+      console.error("[patients] review update failed:", err);
+    }
+  };
+
   const filteredPatients = useMemo(() => {
     const q = searchDraft.trim().toLowerCase();
     // Split query into individual words so "john doe" matches "Doe, John"
@@ -834,6 +860,8 @@ export default function PatientsPage() {
         normalizeAttorneyKey(patient.attorney) === normalizeAttorneyKey(attorney);
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
+      const matchesReview =
+        reviewFilter === "ALL" || reviewOf(patient).toLowerCase() === reviewFilter.toLowerCase();
 
       // Location filter (only when multi-location is on and a specific
       // location is selected). "" selected = all locations.
@@ -841,7 +869,7 @@ export default function PatientsPage() {
         !multiLocation || !selectedLocationId || patient.locationId === selectedLocationId;
 
       return (
-        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus && matchesLocation
+        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus && matchesReview && matchesLocation
       );
     });
 
@@ -907,6 +935,8 @@ export default function PatientsPage() {
         datesNeutral = true;
       } else if (sortColumn === "status") {
         cmp = a.caseStatus.localeCompare(b.caseStatus);
+      } else if (sortColumn === "review") {
+        cmp = reviewOf(a).localeCompare(reviewOf(b));
       }
       if (datesNeutral) {
         // Anchor missing dates to the bottom: if exactly one is missing the
@@ -928,7 +958,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId]);
+  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1531,6 +1561,22 @@ export default function PatientsPage() {
                 ))}
               </select>
             </label>
+
+            <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+              Review
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                onChange={(event) => setReviewFilter(event.target.value)}
+                value={reviewFilter}
+              >
+                <option value="ALL">ALL</option>
+                {reviewOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       </section>
@@ -1624,6 +1670,35 @@ export default function PatientsPage() {
                             >
                               {patient.caseStatus}
                             </span>
+                          </td>
+                        );
+                      }
+                      if (colId === "review") {
+                        const current = reviewOf(patient);
+                        const v = current.toLowerCase();
+                        const tone =
+                          v === "received"
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : v === "requested"
+                              ? "border-amber-300 bg-amber-50 text-amber-800"
+                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
+                        const options = reviewOptions.some((o) => o.toLowerCase() === v)
+                          ? reviewOptions
+                          : [current, ...reviewOptions];
+                        return (
+                          <td key={colId} className="px-4 py-3">
+                            <select
+                              className={`rounded-full border px-2.5 py-1 text-sm font-semibold ${tone}`}
+                              onChange={(event) => handleListReviewChange(patient, event.target.value)}
+                              title="Change review status — saves immediately"
+                              value={current}
+                            >
+                              {options.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                         );
                       }

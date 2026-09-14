@@ -457,7 +457,14 @@ function persistPatients(nextPatients: PatientRecord[]) {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(nextPatients));
+  // The cloud is the record; localStorage is a cache. A full browser store
+  // (QuotaExceededError) used to throw here, before the dual-write below, so
+  // the patient change never reached the cloud. Same fix as encounter notes.
+  try {
+    window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(nextPatients));
+  } catch (err) {
+    console.error("[patients] localStorage write failed (cloud save continues):", err);
+  }
 
   // Phase-1 cloud-as-truth dual-write. Only fires when the `patients` feature
   // flag is on. Diff-based: only changed rows get upserted, vanished rows get
