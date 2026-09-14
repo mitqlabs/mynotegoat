@@ -3,6 +3,7 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
+import { ActivityLogPanel } from "@/components/activity-log-panel";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
@@ -827,6 +828,10 @@ export default function DashboardPage() {
 
       <DashboardSection id="reviews" title="Reviews">
         <ReviewsSummary />
+      </DashboardSection>
+
+      <DashboardSection id="activityLog" title="Activity Log">
+        <ActivityLogPanel />
       </DashboardSection>
 
       <DashboardSection id="statistics" title="Statistics">

@@ -633,6 +633,30 @@ export type CreatePatientDraft = {
   locationId?: string;
 };
 
+/**
+ * Activity Log hook for patient changes. Lazy-imported so this data module
+ * doesn't pull the Supabase/auth chain in at load (and can't form an import
+ * cycle through office settings).
+ */
+function logPatientActivity(entry: {
+  action: string;
+  summary: string;
+  patient: PatientRecord;
+  details?: Record<string, unknown>;
+}) {
+  if (typeof window === "undefined") return;
+  void import("@/lib/activity-log").then(({ logActivity }) =>
+    logActivity({
+      category: "patients",
+      action: entry.action,
+      summary: entry.summary,
+      patientId: entry.patient.id,
+      patientName: entry.patient.fullName,
+      details: entry.details,
+    }),
+  );
+}
+
 export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | null {
   const firstName = cleanString(draft.firstName);
   const lastName = cleanString(draft.lastName);
@@ -690,6 +714,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
   };
 
   persistPatients([nextPatient, ...patients]);
+  logPatientActivity({ action: "patient.created", summary: "Created patient", patient: nextPatient });
   return nextPatient;
 }
 
@@ -726,6 +751,32 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
 
   const nextPatients = patients.map((entry) => (entry.id === normalizedPatientId ? nextPatient : entry));
   persistPatients(nextPatients);
+  if (patch.caseStatus !== undefined && patch.caseStatus !== existingPatient.caseStatus) {
+    logPatientActivity({
+      action: "patient.case_status",
+      summary: `Case status: ${existingPatient.caseStatus} → ${patch.caseStatus}`,
+      patient: nextPatient,
+      details: { from: existingPatient.caseStatus, to: patch.caseStatus },
+    });
+  }
+  if (patch.matrix && "review" in patch.matrix) {
+    // Compare normalised so a legacy "REQUESTED" re-saved as "Requested" (or
+    // blank saved as "Request") isn't reported as a change.
+    const norm = (v: string | undefined) => {
+      const x = (v ?? "").trim().toLowerCase();
+      return x === "" || x === "not requested" ? "request" : x;
+    };
+    const before = existingPatient.matrix?.review ?? "";
+    const after = patch.matrix.review ?? "";
+    if (norm(before) !== norm(after)) {
+      logPatientActivity({
+        action: "patient.review",
+        summary: `Review: ${before || "Request"} → ${after}`,
+        patient: nextPatient,
+        details: { from: before, to: after },
+      });
+    }
+  }
   return nextPatient;
 }
 
@@ -809,6 +860,7 @@ export function deletePatientRecord(patientId: string): boolean {
       : entry,
   );
   persistPatients(nextPatients);
+  logPatientActivity({ action: "patient.deleted", summary: "Deleted patient (moved to deleted patients)", patient: patients[index] });
   return true;
 }
 
@@ -823,6 +875,7 @@ export function restorePatientRecord(patientId: string): boolean {
       : entry,
   );
   persistPatients(nextPatients);
+  logPatientActivity({ action: "patient.restored", summary: "Restored deleted patient", patient });
   return true;
 }
 
@@ -831,8 +884,10 @@ export function permanentlyDeletePatientRecord(patientId: string): boolean {
   if (!normalizedPatientId) return false;
   const index = patients.findIndex((entry) => entry.id === normalizedPatientId);
   if (index === -1) return false;
+  const removed = patients[index];
   const nextPatients = patients.filter((entry) => entry.id !== normalizedPatientId);
   persistPatients(nextPatients);
+  logPatientActivity({ action: "patient.permanently_deleted", summary: "Permanently deleted patient", patient: removed });
   return true;
 }
 

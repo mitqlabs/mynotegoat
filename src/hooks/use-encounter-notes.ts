@@ -26,6 +26,7 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { logActivity } from "@/lib/activity-log";
 
 const SYNC_KEY = "casemate.encounter-notes.v1";
 
@@ -129,6 +130,10 @@ export function useEncounterNotes() {
   // increments; each notification decrements.  Only reload from LS
   // when counter hits 0 (meaning a DIFFERENT hook instance wrote).
   const selfWriteCountRef = useRef(0);
+  // Read-only mirror used ONLY to describe a change in the Activity Log.
+  // Nothing in the save path reads this.
+  const encountersForLogRef = useRef(encounters);
+  encountersForLogRef.current = encounters;
 
   // Merge cloud encounters into state.  localStorage only caches the
   // last 90 days, so we always pull from the cloud to ensure older
@@ -461,6 +466,14 @@ export function useEncounterNotes() {
       // the pending debounce keeps React state as the source of
       // truth (which always includes the cloud-loaded ones).
       flushPendingNow();
+      logActivity({
+        category: "notes",
+        action: "note.created",
+        summary: `Created ${appointmentType} note for ${encounterDate}`,
+        patientId,
+        patientName,
+        details: { encounterId: newId },
+      });
       return existingId ?? newId;
     },
     [updateRecords, flushPendingNow],
@@ -1172,6 +1185,17 @@ export function useEncounterNotes() {
 
   const setSigned = useCallback(
     (encounterId: string, signed: boolean) => {
+      const note = encountersForLogRef.current.find((entry) => entry.id === encounterId);
+      if (note && note.signed !== signed) {
+        logActivity({
+          category: "notes",
+          action: signed ? "note.closed" : "note.reopened",
+          summary: `${signed ? "Closed" : "Reopened"} ${note.appointmentType} note for ${note.encounterDate}`,
+          patientId: note.patientId,
+          patientName: note.patientName,
+          details: { encounterId },
+        });
+      }
       upsertEncounter(encounterId, (current) => ({
         ...current,
         signed,
@@ -1183,6 +1207,19 @@ export function useEncounterNotes() {
 
   const deleteEncounter = useCallback(
     (encounterId: string) => {
+      const note = encountersForLogRef.current.find((entry) => entry.id === encounterId);
+      if (note) {
+        logActivity({
+          category: "notes",
+          action: "note.deleted",
+          summary: `Deleted ${note.signed ? "closed " : ""}${note.appointmentType} note for ${note.encounterDate}${
+            note.charges.length ? ` (${note.charges.length} charge${note.charges.length === 1 ? "" : "s"})` : ""
+          }`,
+          patientId: note.patientId,
+          patientName: note.patientName,
+          details: { encounterId },
+        });
+      }
       updateRecords((current) => current.filter((entry) => entry.id !== encounterId));
       // The auto-delete diff inside dualWriteEncounterNotesToCloud was
       // removed because it was wiping rows that were merely missing from

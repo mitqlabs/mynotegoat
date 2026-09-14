@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import { logActivity } from "@/lib/activity-log";
 
 export interface MessageMention {
   userId: string;
@@ -80,6 +81,9 @@ export function useWorkspaceMessages() {
   const workspaceId = getActiveWorkspaceIdSync();
   // Guard so realtime handlers don't append a message we already have.
   const idsRef = useRef<Set<string>>(new Set());
+  // Current list, so a delete can log what it removed.
+  const messagesRef = useRef<WorkspaceMessage[]>([]);
+  messagesRef.current = messages;
 
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -206,9 +210,22 @@ export function useWorkspaceMessages() {
     async (id: string) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase || !workspaceId) return;
+      const doomed = messagesRef.current.find((m) => m.id === id);
       idsRef.current.delete(id);
       setMessages((cur) => cur.filter((m) => m.id !== id));
-      await supabase.from("workspace_messages").delete().eq("workspace_id", workspaceId).eq("id", id);
+      const { error } = await supabase.from("workspace_messages").delete().eq("workspace_id", workspaceId).eq("id", id);
+      if (!error && doomed) {
+        // Eyes Only messages are logged without their text: the log is read
+        // by admins, and those messages were deliberately hidden from them.
+        logActivity({
+          category: "messages",
+          action: "message.deleted",
+          summary: `Deleted a message by ${doomed.authorLabel}${doomed.isPrivate ? " (Eyes Only)" : ""}`,
+          patientId: doomed.patientId || undefined,
+          patientName: doomed.patientName || undefined,
+          details: doomed.isPrivate ? { messageId: id } : { messageId: id, copy: doomed.body },
+        });
+      }
     },
     [workspaceId],
   );
@@ -231,6 +248,26 @@ export function useWorkspaceMessages() {
       if (error) {
         await load(); // restore what's really there
         return false;
+      }
+      const root = messages.find((m) => m.id === rootId);
+      if (root) {
+        const replies = doomed.size - 1;
+        logActivity({
+          category: "messages",
+          action: "message.thread_deleted",
+          summary: `Deleted a thread by ${root.authorLabel} with ${replies} repl${replies === 1 ? "y" : "ies"}${root.isPrivate ? " (Eyes Only)" : ""}`,
+          patientId: root.patientId || undefined,
+          patientName: root.patientName || undefined,
+          details: root.isPrivate
+            ? { rootId }
+            : {
+                rootId,
+                copy: messages
+                  .filter((m) => doomed.has(m.id))
+                  .map((m) => `${m.authorLabel}: ${m.body}`)
+                  .join("\n"),
+              },
+        });
       }
       return true;
     },

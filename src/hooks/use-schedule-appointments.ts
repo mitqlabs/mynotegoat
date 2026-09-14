@@ -7,6 +7,40 @@ import {
   type ScheduleAppointmentRecord,
 } from "@/lib/schedule-appointments";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { activityDate, activityTime, logActivity } from "@/lib/activity-log";
+
+/** Log what a user-initiated change did to one appointment. */
+function logAppointmentChange(before: ScheduleAppointmentRecord, after: ScheduleAppointmentRecord) {
+  const when = (a: ScheduleAppointmentRecord) => `${activityDate(a.date)} ${activityTime(a.startTime)}`.trim();
+  const base = { category: "appointments" as const, patientId: after.patientId, patientName: after.patientName };
+  if (before.status !== after.status) {
+    const canceled = after.status === "Canceled";
+    logActivity({
+      ...base,
+      action: canceled ? "appointment.canceled" : "appointment.status",
+      summary: canceled
+        ? `Canceled ${when(after)} ${after.appointmentType}`
+        : `${when(after)} ${after.appointmentType}: ${before.status} → ${after.status}`,
+      details: { appointmentId: after.id, from: before.status, to: after.status },
+    });
+  }
+  if (before.date !== after.date || before.startTime !== after.startTime) {
+    logActivity({
+      ...base,
+      action: "appointment.rescheduled",
+      summary: `Rescheduled ${when(before)} → ${when(after)}`,
+      details: { appointmentId: after.id, from: when(before), to: when(after) },
+    });
+  }
+  if (before.appointmentType !== after.appointmentType) {
+    logActivity({
+      ...base,
+      action: "appointment.type",
+      summary: `${when(after)} type: ${before.appointmentType} → ${after.appointmentType}`,
+      details: { appointmentId: after.id, from: before.appointmentType, to: after.appointmentType },
+    });
+  }
+}
 
 const SYNC_KEY = "casemate.schedule-appointments.v1";
 
@@ -22,6 +56,9 @@ export function useScheduleAppointments() {
   );
 
   const selfWriteCountRef = useRef(0);
+  // Current list, for computing before/after when logging a change.
+  const appointmentsRef = useRef(scheduleAppointments);
+  appointmentsRef.current = scheduleAppointments;
 
   // Listen for changes made by other hook instances on this page
   useEffect(() => {
@@ -140,15 +177,29 @@ export function useScheduleAppointments() {
         return;
       }
       updateScheduleAppointments((current) => [...current, ...records]);
+      const first = [...records].sort(compareAppointments)[0];
+      logActivity({
+        category: "appointments",
+        action: "appointment.scheduled",
+        summary:
+          records.length === 1
+            ? `Scheduled ${activityDate(first.date)} ${activityTime(first.startTime)} ${first.appointmentType}`
+            : `Scheduled ${records.length} appointments starting ${activityDate(first.date)} (${first.appointmentType})`,
+        patientId: first.patientId,
+        patientName: first.patientName,
+        details: { count: records.length },
+      });
     },
     [updateScheduleAppointments],
   );
 
   const updateAppointment = useCallback(
     (appointmentId: string, updater: (current: ScheduleAppointmentRecord) => ScheduleAppointmentRecord) => {
+      const before = appointmentsRef.current.find((entry) => entry.id === appointmentId);
       updateScheduleAppointments((current) =>
         current.map((entry) => (entry.id === appointmentId ? updater(entry) : entry)),
       );
+      if (before) logAppointmentChange(before, updater(before));
     },
     [updateScheduleAppointments],
   );
@@ -161,15 +212,29 @@ export function useScheduleAppointments() {
       updateScheduleAppointments((current) =>
         current.map((entry) => (predicate(entry) ? updater(entry) : entry)),
       );
+      for (const before of appointmentsRef.current.filter(predicate)) {
+        logAppointmentChange(before, updater(before));
+      }
     },
     [updateScheduleAppointments],
   );
 
   const removeAppointment = useCallback(
     (appointmentId: string) => {
+      const removed = appointmentsRef.current.find((entry) => entry.id === appointmentId);
       updateScheduleAppointments((current) =>
         current.filter((entry) => entry.id !== appointmentId),
       );
+      if (removed) {
+        logActivity({
+          category: "appointments",
+          action: "appointment.deleted",
+          summary: `Deleted ${activityDate(removed.date)} ${activityTime(removed.startTime)} ${removed.appointmentType} (${removed.status})`,
+          patientId: removed.patientId,
+          patientName: removed.patientName,
+          details: { appointmentId: removed.id },
+        });
+      }
       // The auto-delete diff inside dualWriteAppointmentsToCloud was
       // removed because it was wiping appointments that were merely
       // absent from a slow / cold React-state initialization (see the
