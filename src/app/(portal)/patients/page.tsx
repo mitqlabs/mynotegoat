@@ -1543,10 +1543,10 @@ export default function PatientsPage() {
               </label>
             )}
 
-            <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+            <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Attorney
               <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                className="w-full min-w-0 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
                 onChange={(event) => { setAttorneyDraft(event.target.value); setAttorney(event.target.value); }}
                 value={attorneyDraft}
               >
@@ -1558,10 +1558,10 @@ export default function PatientsPage() {
               </select>
             </label>
 
-            <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+            <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Status
               <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                className="w-full min-w-0 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
                 onChange={(event) => { setStatusDraft(event.target.value); setStatus(event.target.value); }}
                 value={statusDraft}
               >
@@ -1574,10 +1574,10 @@ export default function PatientsPage() {
               </select>
             </label>
 
-            <label className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
+            <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Review
               <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                className="w-full min-w-0 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
                 onChange={(event) => setReviewFilter(event.target.value)}
                 value={reviewFilter}
               >
