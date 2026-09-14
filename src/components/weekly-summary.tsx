@@ -6,6 +6,7 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import {
   REVIEW_RECEIVED,
+  REVIEW_REQUEST,
   REVIEW_REFRAIN,
   REVIEW_REQUESTED,
   isReadyToRequestReview,
@@ -230,7 +231,7 @@ export function ReviewsSummary() {
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile hint="Not Active or Dropped, not yet asked" label="To request" value={counts.toRequest} />
+        <Tile hint="Ready to ask (not Active or Dropped)" label={REVIEW_REQUEST} value={counts.toRequest} />
         <Tile hint="Waiting on the review" label="Requested" tone="text-amber-700" value={counts.requested} />
         <Tile label="Received" tone="text-[#047857]" value={counts.received} />
         <Tile hint="Not asking these patients" label={REVIEW_REFRAIN} tone="text-slate-500" value={counts.refrain} />
@@ -240,7 +241,7 @@ export function ReviewsSummary() {
         <Link className="font-semibold text-[var(--brand-primary)] underline" href="/patients">
           Patients
         </Link>{" "}
-        page, set Review to <strong>To Request</strong> to work through who to ask, or <strong>Requested</strong> to mark
+        page, set Review to <strong>Request</strong> to work through who to ask, or <strong>Requested</strong> to mark
         reviews as Received.
       </p>
     </div>

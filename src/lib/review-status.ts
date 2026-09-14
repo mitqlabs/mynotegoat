@@ -15,9 +15,6 @@ export const REVIEW_REFRAIN = "Refrain";
 
 export const REVIEW_STATUSES = [REVIEW_REQUEST, REVIEW_REQUESTED, REVIEW_RECEIVED, REVIEW_REFRAIN] as const;
 
-/** Filter value for "ready to ask": Request, and the case is past treatment. */
-export const REVIEW_FILTER_TO_REQUEST = "__to_request__";
-
 /** Case statuses that are NOT ready to be asked for a review. */
 const NOT_READY_CASE_STATUSES = new Set(["active", "dropped"]);
 

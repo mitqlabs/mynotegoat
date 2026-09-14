@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  REVIEW_FILTER_TO_REQUEST,
+  REVIEW_REQUEST,
   REVIEW_STATUSES,
   isReadyToRequestReview,
   normalizeReviewStatus,
@@ -31,6 +31,8 @@ import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { useWorkspacePeople } from "@/hooks/use-workspace-people";
+import { loadOfficeSettings } from "@/lib/office-settings";
 import { UsDateInput } from "@/components/us-date-input";
 import { ScrollLock } from "@/components/scroll-lock";
 
@@ -479,6 +481,9 @@ export default function PatientsPage() {
   // To Do state
   const [taskQuickTitle, setTaskQuickTitle] = useState("");
   const [taskQuickPriority, setTaskQuickPriority] = useState<TaskPriority>("Medium");
+  const [taskQuickAssignee, setTaskQuickAssignee] = useState("");
+  // Team members a task can be assigned to (the owner plus each member).
+  const taskPeople = useWorkspacePeople(loadOfficeSettings().doctorName?.trim() || "");
   const [taskQuickDueDate, setTaskQuickDueDate] = useState("");
   const [taskQuickPatientId, setTaskQuickPatientId] = useState("");
   const [taskQuickPatientQuery, setTaskQuickPatientQuery] = useState("");
@@ -875,7 +880,9 @@ export default function PatientsPage() {
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
       const matchesReview =
         reviewFilter === "ALL" ||
-        (reviewFilter === REVIEW_FILTER_TO_REQUEST
+        // "Request" means ready to ask: still at Request, and the case isn't
+        // Active or Dropped (those shouldn't be asked yet / at all).
+        (reviewFilter === REVIEW_REQUEST
           ? isReadyToRequestReview(patient.caseStatus, reviewOf(patient))
           : reviewOf(patient) === reviewFilter);
 
@@ -1196,9 +1203,10 @@ export default function PatientsPage() {
       dueDate: dueDateIso,
       patientId: linkedPatient?.id,
       patientName: linkedPatient?.fullName,
+      assignee: taskQuickAssignee || undefined,
     });
     if (!result.added) { setTaskMessage(result.reason); return; }
-    setTaskQuickTitle(""); setTaskQuickPriority("Medium"); setTaskQuickDueDate("");
+    setTaskQuickTitle(""); setTaskQuickPriority("Medium"); setTaskQuickDueDate(""); setTaskQuickAssignee("");
     setTaskQuickPatientId(""); setTaskQuickPatientQuery("");
     setTaskMessage("Task added.");
   };
@@ -1586,7 +1594,6 @@ export default function PatientsPage() {
                 value={reviewFilter}
               >
                 <option value="ALL">ALL</option>
-                <option value={REVIEW_FILTER_TO_REQUEST}>To Request (not Active / Dropped)</option>
                 {REVIEW_STATUSES.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -2011,7 +2018,7 @@ export default function PatientsPage() {
                   value={taskQuickTitle}
                 />
               </label>
-              <label className="relative grid gap-1 md:col-span-5">
+              <label className="relative grid gap-1 md:col-span-4">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Patient</span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -2053,12 +2060,21 @@ export default function PatientsPage() {
                 )}
               </label>
               <label className="grid gap-1 md:col-span-2">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Assign to</span>
+                <select className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2" onChange={(e) => setTaskQuickAssignee(e.target.value)} value={taskQuickAssignee}>
+                  <option value="">Unassigned</option>
+                  {taskPeople.map((p) => (
+                    <option key={p.userId} value={p.label}>{p.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Priority</span>
                 <select className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2" onChange={(e) => setTaskQuickPriority(e.target.value as TaskPriority)} value={taskQuickPriority}>
                   <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option>
                 </select>
               </label>
-              <label className="grid gap-1 md:col-span-3">
+              <label className="grid gap-1 md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Due Date</span>
                 <UsDateInput
                   className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -2135,6 +2151,20 @@ export default function PatientsPage() {
                       ) : (
                         <>
                           <span className={`rounded-full px-2 py-1 text-xs font-semibold ${priorityBadgeClass(task.priority)}`}>{task.priority}</span>
+                          <select
+                            className="max-w-[10rem] rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                            onChange={(e) => updateTask(task.id, { assignee: e.target.value })}
+                            title="Assign to"
+                            value={task.assignee ?? ""}
+                          >
+                            <option value="">Unassigned</option>
+                            {task.assignee && !taskPeople.some((p) => p.label === task.assignee) && (
+                              <option value={task.assignee}>{task.assignee}</option>
+                            )}
+                            {taskPeople.map((p) => (
+                              <option key={p.userId} value={p.label}>{p.label}</option>
+                            ))}
+                          </select>
                           <select className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(e) => updateTask(task.id, { priority: e.target.value as TaskPriority })} value={task.priority}>
                             <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option>
                           </select>

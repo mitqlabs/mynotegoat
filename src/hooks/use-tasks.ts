@@ -1,5 +1,6 @@
 "use client";
 
+import { logActivity } from "@/lib/activity-log";
 import { useCallback, useState } from "react";
 import {
   createTaskId,
@@ -29,6 +30,8 @@ type UpdateTaskDraft = {
   done?: boolean;
   patientId?: string;
   patientName?: string;
+  /** Team member label the task is assigned to ("" = unassigned). */
+  assignee?: string;
 };
 
 function compareByUpdatedAtDesc(left: TaskRecord, right: TaskRecord) {
@@ -37,6 +40,15 @@ function compareByUpdatedAtDesc(left: TaskRecord, right: TaskRecord) {
 
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskRecord[]>(() => loadTasks());
+  const logTask = (action: string, summary: string, task: TaskRecord, details?: Record<string, unknown>) =>
+    logActivity({
+      category: "tasks",
+      action,
+      summary,
+      patientId: task.patientId,
+      patientName: task.patientName,
+      details: { taskId: task.id, ...details },
+    });
 
   const updateTasks = useCallback((updater: (current: TaskRecord[]) => TaskRecord[]) => {
     setTasks((current) => {
@@ -69,6 +81,7 @@ export function useTasks() {
         assignee,
       };
       updateTasks((current) => [next, ...current]);
+      logTask("task.created", `Created task "${title}"${assignee ? ` for ${assignee}` : ""}`, next);
       return { added: true, task: next };
     },
     [updateTasks],
@@ -76,6 +89,15 @@ export function useTasks() {
 
   const updateTask = useCallback(
     (id: string, patch: UpdateTaskDraft) => {
+      const before = tasks.find((entry) => entry.id === id);
+      if (before && patch.assignee !== undefined && (patch.assignee || "") !== (before.assignee || "")) {
+        logTask(
+          "task.assigned",
+          `Assigned "${before.title}" to ${patch.assignee || "nobody"}`,
+          before,
+          { from: before.assignee ?? "", to: patch.assignee ?? "" },
+        );
+      }
       let changed = false;
       updateTasks((current) =>
         current.map((entry) => {
@@ -94,11 +116,15 @@ export function useTasks() {
       );
       return changed;
     },
-    [updateTasks],
+    [updateTasks, tasks],
   );
 
   const toggleTaskDone = useCallback(
     (id: string) => {
+      const before = tasks.find((entry) => entry.id === id);
+      if (before) {
+        logTask(before.done ? "task.reopened" : "task.completed", `${before.done ? "Reopened" : "Completed"} task "${before.title}"`, before);
+      }
       updateTasks((current) =>
         current.map((entry) =>
           entry.id === id
@@ -111,19 +137,30 @@ export function useTasks() {
         ),
       );
     },
-    [updateTasks],
+    [updateTasks, tasks],
   );
 
   const removeTask = useCallback(
     (id: string) => {
+      const before = tasks.find((entry) => entry.id === id);
+      if (before) logTask("task.deleted", `Deleted task "${before.title}"`, before);
       updateTasks((current) => current.filter((entry) => entry.id !== id));
     },
-    [updateTasks],
+    [updateTasks, tasks],
   );
 
   const clearCompleted = useCallback(() => {
+    const cleared = tasks.filter((entry) => entry.done);
+    if (cleared.length) {
+      logActivity({
+        category: "tasks",
+        action: "task.cleared_completed",
+        summary: `Cleared ${cleared.length} completed task${cleared.length === 1 ? "" : "s"}`,
+        details: { titles: cleared.map((t) => t.title) },
+      });
+    }
     updateTasks((current) => current.filter((entry) => !entry.done));
-  }, [updateTasks]);
+  }, [updateTasks, tasks]);
 
   return {
     tasks,
