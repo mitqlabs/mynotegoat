@@ -7119,20 +7119,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </dl>
               </div>
 
-              <label className="grid gap-1">
-                <span className="text-xl font-semibold">Review?</span>
-                <select
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-lg font-semibold"
-                  onChange={(event) => handleReviewStatusChange(event.target.value)}
-                  value={reviewDisplayValue}
-                >
-                  {reviewSelectOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Review lives in the pill beside Lien and Case Status at the top. */}
             </div>
 
           </>
