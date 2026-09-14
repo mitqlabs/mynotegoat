@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
+import { normalizeReviewStatus, reviewSelectOptionsFor, reviewStatusTone } from "@/lib/review-status";
 import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
@@ -1299,7 +1300,7 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const router = useRouter();
   const { officeSettings } = useOfficeSettings();
-  const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
@@ -1637,7 +1638,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // (parseable) either way.
   const [billedFocused, setBilledFocused] = useState(false);
   const [paidFocused, setPaidFocused] = useState(false);
-  const [reviewStatus, setReviewStatus] = useState(patient.matrix?.review || "Not Requested");
+  const [reviewStatus, setReviewStatus] = useState(() => normalizeReviewStatus(patient.matrix?.review));
   const [diagnosisMacroIdDraft, setDiagnosisMacroIdDraft] = useState("");
   // "+ Dx Code" quick-add: creates a new ICD-10 code in the library
   // (folder-placed, like Settings) and drops it on this patient.
@@ -2039,31 +2040,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     return [resolvedLienStatus, ...lienOptions];
   }, [lienOptions, resolvedLienStatus]);
 
-  // Orphan-value preserver for the Review? dropdown. If the current
-  // patient.matrix.review string doesn't match any reviewOption (could
-  // happen after a rename if the user had an old value, or for an
-  // imported legacy patient), prepend it so the select still shows
-  // the right thing instead of silently defaulting to the first option.
-  const reviewSelectOptions = useMemo(() => {
-    const fallback = reviewOptions[0] ?? "Not Requested";
-    const current = reviewStatus.trim() || fallback;
-    const normalized = current.toLowerCase();
-    const hasCurrent = reviewOptions.some(
-      (option) => option.trim().toLowerCase() === normalized,
-    );
-    return hasCurrent ? reviewOptions : [current, ...reviewOptions];
-  }, [reviewOptions, reviewStatus]);
-
-  // The value the Review selects should show. Legacy CaseMate imports stored
-  // "REQUESTED" / "RECEIVED" in capitals; the options check above matched
-  // them case-insensitively, but a <select> needs the exact option string,
-  // so those patients silently displayed the FIRST option ("Not Requested").
-  const reviewDisplayValue = useMemo(() => {
-    const current = reviewStatus.trim() || (reviewOptions[0] ?? "Not Requested");
-    return (
-      reviewOptions.find((option) => option.trim().toLowerCase() === current.toLowerCase()) ?? current
-    );
-  }, [reviewOptions, reviewStatus]);
+  // Review statuses are built in (src/lib/review-status.ts). Legacy stored
+  // values ("REQUESTED", "Not Requested") normalise onto them; anything
+  // unrecognised ("Incomplete") is shown as-is rather than guessed at.
+  const reviewSelectOptions = useMemo(() => reviewSelectOptionsFor(reviewStatus), [reviewStatus]);
+  const reviewDisplayValue = normalizeReviewStatus(reviewStatus);
 
   const activeImaging = activeRegionModal === "xray" ? xray : mri;
   const setActiveImaging = activeRegionModal === "xray" ? setXray : setMri;
@@ -4254,7 +4235,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         paidDate: toIsoDateFromUsDate(paidDate),
         // Review status was never written here, so changing the Review
         // dropdown was lost on reload — only the CaseMate import ever set it.
-        review: (overrides.review ?? reviewStatus).trim(),
+        review: normalizeReviewStatus(overrides.review ?? reviewStatus),
       },
     };
   };
@@ -4881,12 +4862,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <label className="grid gap-1 w-full sm:w-44">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Review</span>
               <select
-                className={`rounded-full border px-3 py-2 font-semibold ${(() => {
-                  const v = reviewStatus.trim().toLowerCase();
-                  if (v === "received") return "border-emerald-300 bg-emerald-50 text-emerald-700";
-                  if (v === "requested") return "border-amber-300 bg-amber-50 text-amber-800";
-                  return "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
-                })()}`}
+                className={`rounded-full border px-3 py-2 font-semibold ${reviewStatusTone(reviewStatus)}`}
                 onChange={(event) => handleReviewStatusChange(event.target.value)}
                 value={reviewDisplayValue}
               >

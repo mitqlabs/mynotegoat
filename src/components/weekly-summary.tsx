@@ -4,7 +4,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
-import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import {
+  REVIEW_RECEIVED,
+  REVIEW_REFRAIN,
+  REVIEW_REQUESTED,
+  isReadyToRequestReview,
+  normalizeReviewStatus,
+} from "@/lib/review-status";
 import { patients } from "@/lib/mock-data";
 
 /**
@@ -16,8 +22,7 @@ import { patients } from "@/lib/mock-data";
 
 const DAY_MS = 86_400_000;
 
-/** Case statuses that are NOT ready to be asked for a review. */
-const NOT_READY_FOR_REVIEW = new Set(["active", "dropped"]);
+
 
 /** Local-midnight Date for an ISO (YYYY-MM-DD) or US (MM/DD/YYYY) string. */
 function parseAnyDate(value: string | undefined | null): Date | null {
@@ -211,36 +216,32 @@ export function WeeklySummary() {
  * case-insensitively.
  */
 export function ReviewsSummary() {
-  const { reviewOptions } = useCaseStatuses();
   const counts = useMemo(() => {
-    const firstReview = (reviewOptions[0] ?? "Not Requested").toLowerCase();
     const pi = patients.filter((p) => !p.deleted && !p.isCashPatient);
-    const reviewOf = (p: (typeof pi)[number]) => (p.matrix?.review?.trim() || firstReview).toLowerCase();
+    const status = (p: (typeof pi)[number]) => normalizeReviewStatus(p.matrix?.review);
     return {
-      // Anyone past treatment is ready to be asked: every status except
-      // Active (still treating) and Dropped (not coming back). Becomes "to
-      // request" the moment a case moves to Discharged, Submitted, Paid, etc.
-      toRequest: pi.filter(
-        (p) => !NOT_READY_FOR_REVIEW.has(p.caseStatus.trim().toLowerCase()) && reviewOf(p) === firstReview,
-      ).length,
-      requested: pi.filter((p) => reviewOf(p) === "requested").length,
-      received: pi.filter((p) => reviewOf(p) === "received").length,
+      toRequest: pi.filter((p) => isReadyToRequestReview(p.caseStatus, p.matrix?.review)).length,
+      requested: pi.filter((p) => status(p) === REVIEW_REQUESTED).length,
+      received: pi.filter((p) => status(p) === REVIEW_RECEIVED).length,
+      refrain: pi.filter((p) => status(p) === REVIEW_REFRAIN).length,
     };
-  }, [reviewOptions]);
+  }, []);
 
   return (
     <div className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Tile hint="Not Active or Dropped, not yet requested" label="To request" value={counts.toRequest} />
-        <Tile label="Requested" tone="text-amber-700" value={counts.requested} />
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile hint="Not Active or Dropped, not yet asked" label="To request" value={counts.toRequest} />
+        <Tile hint="Waiting on the review" label="Requested" tone="text-amber-700" value={counts.requested} />
         <Tile label="Received" tone="text-[#047857]" value={counts.received} />
+        <Tile hint="Not asking these patients" label={REVIEW_REFRAIN} tone="text-slate-500" value={counts.refrain} />
       </div>
       <p className="text-xs text-[var(--text-muted)]">
-        Work through them on the{" "}
+        On the{" "}
         <Link className="font-semibold text-[var(--brand-primary)] underline" href="/patients">
           Patients
         </Link>{" "}
-        page: set Review to Not Requested, then Status to Discharged or Submitted.
+        page, set Review to <strong>To Request</strong> to work through who to ask, or <strong>Requested</strong> to mark
+        reviews as Received.
       </p>
     </div>
   );

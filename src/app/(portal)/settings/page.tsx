@@ -28,7 +28,6 @@ import {
   getDeletedPatients,
   permanentlyDeletePatientRecord,
   renameLienOnAllPatients,
-  renameReviewOnAllPatients,
   restorePatientRecord,
 } from "@/lib/mock-data";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -2888,7 +2887,6 @@ export default function SettingsPage() {
     caseStatuses,
     lienLabel,
     lienOptions,
-    reviewOptions,
     addStatus,
     removeStatus,
     toggleDashboardVisibility,
@@ -2901,11 +2899,6 @@ export default function SettingsPage() {
     moveLienOption,
     removeLienOption,
     resetLienOptionsToDefaults,
-    addReviewOption,
-    updateReviewOption,
-    moveReviewOption,
-    removeReviewOption,
-    resetReviewOptionsToDefaults,
     resetToDefaults: resetCaseStatusesToDefaults,
   } = useCaseStatuses();
   const {
@@ -2986,7 +2979,6 @@ export default function SettingsPage() {
   const [statusColorDraft, setStatusColorDraft] = useState("#0d79bf");
   const [statusCaseClosedDraft, setStatusCaseClosedDraft] = useState(false);
   const [lienOptionDraft, setLienOptionDraft] = useState("");
-  const [reviewOptionDraft, setReviewOptionDraft] = useState("");
   const [appointmentTypeNameDraft, setAppointmentTypeNameDraft] = useState("");
   const [appointmentTypeColorDraft, setAppointmentTypeColorDraft] = useState("#0d79bf");
   const [appointmentTypeDurationDraft, setAppointmentTypeDurationDraft] = useState(30);
@@ -3212,15 +3204,6 @@ export default function SettingsPage() {
     }
     addLienOption(nextName);
     setLienOptionDraft("");
-  };
-
-  const handleAddReviewOption = () => {
-    const nextName = reviewOptionDraft.trim();
-    if (!nextName) {
-      return;
-    }
-    addReviewOption(nextName);
-    setReviewOptionDraft("");
   };
 
   const handleAddAppointmentType = () => {
@@ -5057,90 +5040,9 @@ export default function SettingsPage() {
             renders this list as a dropdown above billing; users want a
             customizable list so they can later filter "patients I
             haven't asked for review yet". */}
-        <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-white p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h4 className="text-lg font-semibold">Review? Options</h4>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Choices shown in the &quot;Review?&quot; dropdown on the patient page.
-                Rename a label and every existing patient on that label
-                updates with you.
-              </p>
-            </div>
-            <button
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Reset Review options to defaults? Patient records keep their current values.",
-                  )
-                ) {
-                  resetReviewOptionsToDefaults();
-                }
-              }}
-              type="button"
-            >
-              Reset to defaults
-            </button>
-          </div>
-
-          <div className="mt-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-            <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Add Review Option</span>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className="min-w-[240px] grow rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setReviewOptionDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      handleAddReviewOption();
-                    }
-                  }}
-                  placeholder="Example: Sent to attorney"
-                  value={reviewOptionDraft}
-                />
-                <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
-                  onClick={handleAddReviewOption}
-                  type="button"
-                >
-                  Add Option
-                </button>
-              </div>
-            </label>
-
-            <div className="mt-3 grid gap-2">
-              {reviewOptions.map((option, index) => (
-                <LienOptionRow
-                  canRemove={reviewOptions.length > 1}
-                  index={index}
-                  key={`review-${index}`}
-                  moveDown={() => moveReviewOption(index, "down")}
-                  moveDownDisabled={index === reviewOptions.length - 1}
-                  moveUp={() => moveReviewOption(index, "up")}
-                  moveUpDisabled={index === 0}
-                  onRemove={() => {
-                    if (window.confirm(`Remove review option "${option}"?`)) {
-                      removeReviewOption(index);
-                    }
-                  }}
-                  onRename={(nextName) => {
-                    const oldName = option;
-                    updateReviewOption(index, nextName);
-                    const touched = renameReviewOnAllPatients(oldName, nextName);
-                    if (touched > 0) {
-                      console.info(
-                        `[settings] Renamed review option "${oldName}" → "${nextName}". Updated ${touched} patient${touched === 1 ? "" : "s"}.`,
-                      );
-                    }
-                  }}
-                  option={option}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Review options used to be editable here. They are now built in
+            (Request / Requested / Received / Refrain, src/lib/review-status.ts)
+            because custom labels let stored values drift. */}
       </CollapsibleSection>
 
       {/* ── Patient Page UI prefs ────────────────────────────────────

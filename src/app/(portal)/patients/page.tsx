@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  REVIEW_FILTER_TO_REQUEST,
+  REVIEW_STATUSES,
+  isReadyToRequestReview,
+  normalizeReviewStatus,
+  reviewSelectOptionsFor,
+  reviewStatusTone,
+} from "@/lib/review-status";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
@@ -451,7 +459,7 @@ export default function PatientsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [savedFromQuery]);
 
-  const { caseStatuses, lienLabel, lienOptions, reviewOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
   const { contacts, addContact } = useContactDirectory();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
@@ -801,16 +809,9 @@ export default function PatientsPage() {
     setStatus(statusDraft);
   };
 
-  const defaultReview = reviewOptions[0] ?? "Not Requested";
-  // Normalised to the configured option's spelling: legacy CaseMate imports
-  // stored "REQUESTED" / "RECEIVED" in capitals, which a <select> can't match
-  // exactly and would display as the first option instead.
   const reviewOf = useCallback(
-    (patient: PatientRecord): string => {
-      const raw = reviewOverrides[patient.id] ?? (patient.matrix?.review?.trim() || defaultReview);
-      return reviewOptions.find((option) => option.trim().toLowerCase() === raw.toLowerCase()) ?? raw;
-    },
-    [reviewOverrides, defaultReview, reviewOptions],
+    (patient: PatientRecord): string => normalizeReviewStatus(reviewOverrides[patient.id] ?? patient.matrix?.review),
+    [reviewOverrides],
   );
 
   const handleListReviewChange = (patient: PatientRecord, next: string) => {
@@ -873,7 +874,10 @@ export default function PatientsPage() {
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
       const matchesReview =
-        reviewFilter === "ALL" || reviewOf(patient).toLowerCase() === reviewFilter.toLowerCase();
+        reviewFilter === "ALL" ||
+        (reviewFilter === REVIEW_FILTER_TO_REQUEST
+          ? isReadyToRequestReview(patient.caseStatus, reviewOf(patient))
+          : reviewOf(patient) === reviewFilter);
 
       // Location filter (only when multi-location is on and a specific
       // location is selected). "" selected = all locations.
@@ -1582,7 +1586,8 @@ export default function PatientsPage() {
                 value={reviewFilter}
               >
                 <option value="ALL">ALL</option>
-                {reviewOptions.map((option) => (
+                <option value={REVIEW_FILTER_TO_REQUEST}>To Request (not Active / Dropped)</option>
+                {REVIEW_STATUSES.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -1687,16 +1692,8 @@ export default function PatientsPage() {
                       }
                       if (colId === "review") {
                         const current = reviewOf(patient);
-                        const v = current.toLowerCase();
-                        const tone =
-                          v === "received"
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                            : v === "requested"
-                              ? "border-amber-300 bg-amber-50 text-amber-800"
-                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
-                        const options = reviewOptions.some((o) => o.toLowerCase() === v)
-                          ? reviewOptions
-                          : [current, ...reviewOptions];
+                        const tone = reviewStatusTone(current);
+                        const options = reviewSelectOptionsFor(current);
                         return (
                           <td key={colId} className="px-4 py-3">
                             <select
