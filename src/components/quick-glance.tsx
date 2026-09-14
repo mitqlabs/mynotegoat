@@ -177,7 +177,7 @@ export function QuickGlance({
       // enough (patient page) and stack underneath in a narrow column
       // (Encounters side-rail), where side by side would be cramped.
       <div className="@container mt-3">
-      <div className="grid gap-4 @xl:grid-cols-[minmax(0,1fr)_minmax(13rem,17rem)]">
+      <div className="grid gap-5 @xl:grid-cols-[minmax(0,1fr)_minmax(17rem,24rem)] @xl:gap-6">
       <div className="min-w-0">
       <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-xs">
         <div>
@@ -231,23 +231,23 @@ export function QuickGlance({
       </div>
       </div>
       {appointments && (
-        <div className="border-t border-[var(--line-soft)] pt-2 text-xs @xl:border-t-0 @xl:border-l @xl:pt-0 @xl:pl-4">
-          <div className="mb-1 font-semibold text-[var(--text-muted)]">Appointments</div>
+        <div className="border-t border-[var(--line-soft)] pt-3 text-sm @xl:border-t-0 @xl:border-l @xl:pt-0 @xl:pl-6">
+          <div className="mb-2 font-semibold text-[var(--text-muted)]">Appointments</div>
           {apptCounts.types.length === 0 ? (
             dash
           ) : (
-            <div className="grid gap-1">
+            <div className="grid gap-2">
               {apptCounts.types.map(([type, c]) => (
-                <div className="flex items-baseline justify-between gap-2" key={type}>
+                <div className="flex items-baseline justify-between gap-4" key={type}>
                   <span className="min-w-0 truncate">{type}</span>
                   <StatusCounts counts={c} />
                 </div>
               ))}
-              <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-[var(--line-soft)] pt-1 font-semibold">
+              <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-[var(--line-soft)] pt-2 font-semibold">
                 <span>Total</span>
                 <StatusCounts counts={apptCounts.totals} />
               </div>
-              <div className="text-[10px] text-[var(--text-muted)]">
+              <div className="text-[11px] text-[var(--text-muted)]">
                 Scheduled / Checked In / Checked Out / Canceled
               </div>
             </div>
