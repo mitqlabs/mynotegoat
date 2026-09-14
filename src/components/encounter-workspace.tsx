@@ -4744,6 +4744,10 @@ function EncounterQuickGlance({
   return (
     <QuickGlance
       appointments={appointments}
+      legacyReviewed={{
+        xray: typeof patient.matrix?.xrayReviewed === "string" ? patient.matrix.xrayReviewed : undefined,
+        mri: typeof patient.matrix?.mriReviewed === "string" ? patient.matrix.mriReviewed : undefined,
+      }}
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
       ie={typeof initialExamRaw === "string" ? initialExamRaw : ""}

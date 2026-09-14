@@ -4948,6 +4948,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             this page's live state so it updates as you edit below. */}
         <QuickGlance
           appointments={patientAppointmentRecords}
+          legacyReviewed={{ xray: patient.matrix?.xrayReviewed, mri: patient.matrix?.mriReviewed }}
           billed={currentBillTotal}
           doi={dateOfLoss}
           ie={initialExam}

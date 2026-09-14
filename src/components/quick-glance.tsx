@@ -80,6 +80,7 @@ export function QuickGlance({
   mriReferrals,
   specialistReferrals,
   appointments,
+  legacyReviewed,
 }: {
   doi: string;
   ie: string;
@@ -89,6 +90,8 @@ export function QuickGlance({
   specialistReferrals?: unknown[];
   /** This patient's appointments, for the per-type status counts. */
   appointments?: Array<{ appointmentType: string; status: string }>;
+  /** Legacy reviewed dates from the patient matrix (older imported charts). */
+  legacyReviewed?: { xray?: string; mri?: string };
 }) {
   // Per visit type: scheduled / checked in / checked out / canceled — the same
   // black / blue / green / red the patient page's appointment chips use.
@@ -130,7 +133,9 @@ export function QuickGlance({
   };
   const doiLabel = toUsDateCanonical(doi ?? "");
   const ieLabel = toUsDateCanonical(ie ?? "");
-  type Row = { key: string; what: string; sent: string; completed: string; refused: boolean };
+  type Row = { key: string; what: string; sent: string; completed: string; reviewed: string; refused: boolean };
+  const reviewedOf = (entry: ImagingSummaryEntry) =>
+    toUsDateCanonical(readStringField(entry, "reportReviewedDate", "reviewedDate", "reviewed"));
   const imagingRows = (entries: unknown[] | undefined, markCt: boolean): Row[] =>
     ((entries ?? []) as ImagingSummaryEntry[]).map((entry, index) => ({
       key: readStringField(entry, "id") || String(index),
@@ -143,11 +148,20 @@ export function QuickGlance({
         .join(" · "),
       sent: toUsDateCanonical(readStringField(entry, "sentDate", "sent")),
       completed: toUsDateCanonical(readStringField(entry, "doneDate", "completedDate")),
+      reviewed: reviewedOf(entry),
       refused: entry.patientRefused === true,
     }));
+  // Older charts kept the imaging reviewed date only on the patient matrix
+  // (xrayReviewed / mriReviewed). Use it for the most recent referral when
+  // that referral has none of its own — same fallback the old box used.
+  const withLegacyReviewed = (rows: Row[], legacy?: string): Row[] => {
+    const fallback = toUsDateCanonical(legacy ?? "");
+    if (!fallback || rows.length === 0 || rows[rows.length - 1].reviewed) return rows;
+    return rows.map((row, i) => (i === rows.length - 1 ? { ...row, reviewed: fallback } : row));
+  };
   const groups: Array<[string, Row[]]> = [
-    ["XR", imagingRows(xrayReferrals, false)],
-    ["MR", imagingRows(mriReferrals, true)],
+    ["XR", withLegacyReviewed(imagingRows(xrayReferrals, false), legacyReviewed?.xray)],
+    ["MR", withLegacyReviewed(imagingRows(mriReferrals, true), legacyReviewed?.mri)],
     [
       "PM",
       ((specialistReferrals ?? []) as ImagingSummaryEntry[]).map((entry, index) => ({
@@ -155,6 +169,7 @@ export function QuickGlance({
         what: readStringField(entry, "specialist", "name"),
         sent: toUsDateCanonical(readStringField(entry, "sentDate", "sent")),
         completed: toUsDateCanonical(readStringField(entry, "completedDate")),
+        reviewed: reviewedOf(entry),
         refused: entry.patientRefused === true,
       })),
     ],
@@ -217,6 +232,14 @@ export function QuickGlance({
                           <span className="font-semibold text-[#b43b34]">Refused</span>
                         ) : row.completed ? (
                           <span className="font-semibold text-[#047857]">✓ {row.completed}</span>
+                        ) : (
+                          dash
+                        )}
+                      </span>
+                      <span className="whitespace-nowrap">
+                        <span className="text-[var(--text-muted)]">Reviewed </span>
+                        {row.reviewed ? (
+                          <span className="font-semibold text-[#0d79bf]">✓ {row.reviewed}</span>
                         ) : (
                           dash
                         )}
