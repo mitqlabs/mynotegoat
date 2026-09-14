@@ -5753,11 +5753,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                transparent background in both themes. */
                             style={
                               appointment?.status === "Canceled"
-                                ? { backgroundColor: "var(--row-tint-canceled)" }
+                                ? { backgroundColor: "var(--row-tint-canceled)", boxShadow: "inset 4px 0 0 var(--row-edge-canceled)" }
                                 : appointment?.status === "Check Out"
-                                  ? { backgroundColor: "var(--row-tint-complete)" }
+                                  ? { backgroundColor: "var(--row-tint-complete)", boxShadow: "inset 4px 0 0 var(--row-edge-complete)" }
                                   : appointment?.status === "Check In"
-                                    ? { backgroundColor: "var(--row-tint-checked-in)" }
+                                    ? { backgroundColor: "var(--row-tint-checked-in)", boxShadow: "inset 4px 0 0 var(--row-edge-checked-in)" }
                                     : undefined
                             }
                           >
