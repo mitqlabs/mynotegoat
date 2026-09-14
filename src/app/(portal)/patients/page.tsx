@@ -823,6 +823,13 @@ export default function PatientsPage() {
     }
   };
 
+  // The Review column only appears while filtering by a review status, so the
+  // everyday list stays uncluttered and review follow-up still has its pills.
+  const visibleColumns = useMemo(
+    () => columnOrder.filter((colId) => colId !== "review" || reviewFilter !== "ALL"),
+    [columnOrder, reviewFilter],
+  );
+
   const filteredPatients = useMemo(() => {
     const q = searchDraft.trim().toLowerCase();
     // Split query into individual words so "john doe" matches "Doe, John"
@@ -1448,7 +1455,7 @@ export default function PatientsPage() {
             />
           </label>
 
-          <div className={`grid gap-3 md:grid-cols-2 ${multiLocation ? "xl:grid-cols-[1.6fr_1fr_1fr_11rem_11rem]" : "xl:grid-cols-[1.6fr_1fr_11rem_11rem]"}`}>
+          <div className={`grid gap-3 md:grid-cols-2 ${multiLocation ? "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem]"}`}>
             <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               <span className="flex flex-wrap items-center gap-2">
                 Initial Exam — year / months
@@ -1592,7 +1599,7 @@ export default function PatientsPage() {
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                  {columnOrder.map((colId) => (
+                  {visibleColumns.map((colId) => (
                     <th
                       key={colId}
                       className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)] ${dragColumnId === colId ? "opacity-50" : ""}`}
@@ -1615,7 +1622,7 @@ export default function PatientsPage() {
               <tbody>
                 {filteredPatients.map((patient) => (
                   <tr key={patient.id} className="border-t border-[var(--line-soft)]">
-                    {columnOrder.map((colId) => {
+                    {visibleColumns.map((colId) => {
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
@@ -1713,7 +1720,7 @@ export default function PatientsPage() {
                 ))}
                 {filteredPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
-                    <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={columnOrder.length}>
+                    <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={visibleColumns.length}>
                       No patients match the selected filters.
                     </td>
                   </tr>
