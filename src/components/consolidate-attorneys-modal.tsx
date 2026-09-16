@@ -20,73 +20,22 @@
  * it's easy to remove later if the product decision flips.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { attorneysSimilar } from "@/lib/attorney-name";
+import {
+  fetchNotSamePairs,
+  loadNotSamePairs,
+  pairKey,
+  saveNotSamePairs,
+} from "@/lib/attorney-merge-decisions";
 import { patients as patientRecords, updatePatientRecordById, type ContactRecord } from "@/lib/mock-data";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ScrollLock } from "@/components/scroll-lock";
 
-// ---------- Fuzzy matching helpers ---------------------------------------
-
-function normalizeAttorneyString(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9& ]/g, " ")
-    .replace(/\b(llp|llc|pllc|pc|p\.c\.|inc|ltd|esq|esquire)\b/gi, "")
-    .replace(/\b(law|firm|lawyer|lawyers|attorney|attorneys|associates|office|offices|legal|group)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function attorneyTokens(value: string): string[] {
-  const n = normalizeAttorneyString(value);
-  return n.split(/\s+/).filter((t) => t.length >= 2);
-}
-
-function levenshtein(a: string, b: string): number {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  const row = new Array<number>(b.length + 1);
-  for (let j = 0; j <= b.length; j++) row[j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    let prev = row[0];
-    row[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const tmp = row[j];
-      row[j] = Math.min(
-        row[j] + 1,
-        row[j - 1] + 1,
-        prev + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-      prev = tmp;
-    }
-  }
-  return row[b.length];
-}
-
-/** Two attorney strings count as similar if their normalized forms share
- *  ≥2 tokens OR are within ~30% edit distance. Tighter than the patient
- *  finder on purpose — firm names are long and accidental collisions hurt
- *  more. */
-function attorneysSimilar(a: string, b: string): boolean {
-  const na = normalizeAttorneyString(a);
-  const nb = normalizeAttorneyString(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  // Shared-token heuristic: if the non-boilerplate words overlap by ≥2,
-  // they're almost certainly the same firm ("Joe Dave" vs "Joe Dave").
-  const ta = new Set(attorneyTokens(a));
-  const tb = new Set(attorneyTokens(b));
-  let shared = 0;
-  for (const t of ta) if (tb.has(t)) shared++;
-  if (shared >= 2) return true;
-  if (shared === 1 && (ta.size === 1 || tb.size === 1)) return true;
-  // Edit-distance fallback for short names / simple typos
-  const maxLen = Math.max(na.length, nb.length);
-  if (maxLen < 6) return false;
-  const dist = levenshtein(na, nb);
-  return dist / maxLen < 0.3;
-}
+// ---------- Matching ------------------------------------------------------
+// The rules live in src/lib/attorney-name.ts: names group only when the
+// distinctive part matches (boilerplate like "Law" / "Attorneys at Law"
+// removed), not merely because they share a word.
 
 // ---------- Data types ----------------------------------------------------
 
@@ -106,7 +55,7 @@ export type AttorneyGroup = {
 
 // ---------- Core grouping logic -----------------------------------------
 
-function buildAttorneyGroups(): AttorneyGroup[] {
+function buildAttorneyGroups(notSame: Set<string>): AttorneyGroup[] {
   // Bucket by exact raw attorney name, counting patients per variant.
   const byRaw = new Map<string, { rawName: string; patientIds: string[] }>();
   for (const p of patientRecords) {
@@ -152,6 +101,7 @@ function buildAttorneyGroups(): AttorneyGroup[] {
 
   for (let i = 0; i < variants.length; i++) {
     for (let j = i + 1; j < variants.length; j++) {
+      if (notSame.has(pairKey(variants[i].rawName, variants[j].rawName))) continue;
       if (attorneysSimilar(variants[i].rawName, variants[j].rawName)) {
         union(
           variants[i].rawName.toLowerCase(),
@@ -172,11 +122,9 @@ function buildAttorneyGroups(): AttorneyGroup[] {
 
   const groups: AttorneyGroup[] = [];
   clusters.forEach((list, key) => {
-    // Only surface groups with more than one variant OR more than one patient
-    // — a single variant covering a single patient isn't a consolidation
-    // target, it's just a contact to create.
-    const totalPatients = list.reduce((sum, v) => sum + v.patientIds.length, 0);
-    if (list.length <= 1 && totalPatients <= 1) return;
+    // Only spellings that actually differ are worth a decision. One
+    // spelling, however many patients use it, is nothing to consolidate.
+    if (list.length <= 1) return;
     list.sort((a, b) => b.patientIds.length - a.patientIds.length);
     groups.push({ key, variants: list });
   });
@@ -232,7 +180,39 @@ export function ConsolidateAttorneysModal({
   onClose,
   addContact,
 }: ConsolidateAttorneysModalProps) {
-  const groups = useMemo(() => buildAttorneyGroups(), []);
+  // Pairs the user has already told us are different firms. Local first so
+  // the list is right on open, then whatever other devices decided.
+  const [notSame, setNotSame] = useState<Set<string>>(() => loadNotSamePairs());
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const remote = await fetchNotSamePairs();
+      if (cancelled || !remote) return;
+      setNotSame((current) => {
+        const merged = new Set([...current, ...remote]);
+        return merged.size === current.size ? current : merged;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const groups = useMemo(() => buildAttorneyGroups(notSame), [notSame]);
+
+  /** "This one isn't the same firm" — split a spelling out of its group
+   *  and remember it, so the pairing never comes back. */
+  const markNotSame = useCallback((group: AttorneyGroup, variantName: string) => {
+    setNotSame((current) => {
+      const next = new Set(current);
+      for (const other of group.variants) {
+        if (other.rawName === variantName) continue;
+        next.add(pairKey(variantName, other.rawName));
+      }
+      saveNotSamePairs(next);
+      return next;
+    });
+  }, []);
 
   const [selections, setSelections] = useState<Map<string, GroupSelection>>(() => {
     const initial = new Map<string, GroupSelection>();
@@ -409,8 +389,10 @@ export function ConsolidateAttorneysModal({
           <div>
             <h3 className="text-xl font-semibold">Consolidate Attorneys</h3>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Find patients who list the same firm under slightly different
-              names and merge them onto one canonical attorney.
+              Only spellings of what looks like the same firm — “John Smith”,
+              “John Smith Law”, “John Smith Attorneys at Law”. If one of them
+              is really a different firm, hit <strong>Not the same</strong> and
+              it won&apos;t be suggested here again.
             </p>
           </div>
           <button
@@ -428,8 +410,8 @@ export function ConsolidateAttorneysModal({
               ✓ No attorney duplicates found.
             </p>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Every patient&apos;s attorney name is either unique or already
-              consolidated.
+              Every patient&apos;s attorney name is either unique, already
+              consolidated, or marked as a different firm.
             </p>
           </div>
         ) : (
@@ -527,6 +509,17 @@ export function ConsolidateAttorneysModal({
                               {variant.patientIds.length} patient
                               {variant.patientIds.length === 1 ? "" : "s"}
                             </span>
+                            <button
+                              className="ml-auto rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:border-[#b43b34] hover:text-[#b43b34]"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                markNotSame(group, variant.rawName);
+                              }}
+                              title="Different firm — stop suggesting this one here"
+                              type="button"
+                            >
+                              Not the same
+                            </button>
                           </label>
                           <ul className="mt-1 grid gap-0.5 pl-6 sm:grid-cols-2">
                             {variant.patientIds.map((id) => (
