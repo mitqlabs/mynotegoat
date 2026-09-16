@@ -22,6 +22,10 @@
      from the canceled red for red-green colour vision too. */
   --row-tint-complete: rgba(16, 185, 129, 0.2);
   --row-edge-complete: #059669;
+  /* No show: the patient didn't come and didn't call. Purple, so it can't
+     be mistaken for a cancellation at a glance. */
+  --row-tint-no-show: rgba(146, 64, 168, 0.1);
+  --row-edge-no-show: #7b3a91;
   /* Checked in: patient is here / note still to finish. Light blue. */
   --row-tint-checked-in: rgba(13, 121, 191, 0.1);
   --row-edge-checked-in: #0d79bf;

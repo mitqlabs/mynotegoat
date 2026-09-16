@@ -16,6 +16,7 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
+import { roleTierOf } from "@/lib/admin-access";
 import { loadOfficeSettings } from "@/lib/office-settings";
 
 export const ACTIVITY_CATEGORIES = [
@@ -51,6 +52,8 @@ export interface ActivityEntry {
   createdAt: string;
   actorLabel: string;
   actorEmail: string;
+  /** The role the actor held when they did it: owner/admin/manager/staff. */
+  actorRole: string;
   category: string;
   action: string;
   summary: string;
@@ -113,6 +116,7 @@ async function writeActivity(entry: ActivityEntryInput): Promise<void> {
   };
   const { error } = await supabase.from("audit_log").insert({
     ...base,
+    actor_role: roleTierOf(getCurrentMembershipSync()),
     category: entry.category,
     patient_id: entry.patientId ?? "",
     patient_name: entry.patientName ?? "",
@@ -124,6 +128,7 @@ async function writeActivity(entry: ActivityEntryInput): Promise<void> {
     ...base,
     details: {
       ...(entry.details ?? {}),
+      actorRole: roleTierOf(getCurrentMembershipSync()),
       category: entry.category,
       patientId: entry.patientId ?? "",
       patientName: entry.patientName ?? "",
@@ -138,6 +143,7 @@ function rowToEntry(row: Record<string, unknown>): ActivityEntry {
     createdAt: String(row.created_at ?? ""),
     actorLabel: String(row.actor_label ?? "") || String(row.actor_email ?? "") || "Unknown",
     actorEmail: String(row.actor_email ?? ""),
+    actorRole: String(row.actor_role || details.actorRole || ""),
     category: String(row.category || details.category || ""),
     action: String(row.action ?? ""),
     summary: String(row.target ?? ""),

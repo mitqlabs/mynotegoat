@@ -1212,8 +1212,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           // Only hide if encounter exists AND is signed (fully done)
           if (linked?.signed) return false;
         }
-        // Also hide cancelled if hiding completed
-        if (apt.status === "Canceled") return false;
+        // Also hide cancelled / no-shows if hiding completed
+        if (apt.status === "Canceled" || apt.status === "No Show") return false;
         return true;
       })
       .sort((a, b) => dir * a.date.localeCompare(b.date) || dir * a.startTime.localeCompare(b.startTime));
@@ -2088,6 +2088,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         };
         const skip = (reason: string): FillRow => ({ ...base, action: "skip", reason, selected: false });
         if (a.status === "Canceled") return skip("Canceled");
+        if (a.status === "No Show") return skip("No Show");
         if (a.status === "Check Out") return skip("Checked Out — note already finished");
         if (a.status !== "Check In") return skip(`${base.statusLabel} — not checked in`);
         if (findNoteForAppointment(knownNotes, a, dateUs)) return skip("Already has a note");
@@ -2820,7 +2821,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       return m ? `${m[3]}-${m[1]}-${m[2]}` : "";
     };
     const list = allPatientAppointments
-      .filter((a) => a.status !== "Canceled")
+      .filter((a) => a.status !== "Canceled" && a.status !== "No Show")
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
     if (!list.length) {
       setMessage("No appointments found for this patient.");
@@ -3240,7 +3241,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             );
                             const sameDayAptCount = patientAppointments.filter((a) => a.date === apt.date).length;
                             const linked = linkedByType ?? (sameDayAptCount === 1 ? linkedByDate : null);
-                            const canStart = apt.status !== "Canceled";
+                            const canStart = apt.status !== "Canceled" && apt.status !== "No Show";
                             const isLinkedToSelected = linkedAppointmentForStatus?.id === apt.id;
                             const printChecked = linked ? selectedSoapPrintEncounterIds.includes(linked.id) : false;
                             // Smart word-wrap: break long type names at the midpoint

@@ -8,6 +8,7 @@ export type AppointmentStatus =
   | "Check In"
   | "Check Out"
   | "Canceled"
+  | "No Show"
   | "Reschedule";
 
 export interface ScheduleAppointmentRecord {
@@ -37,6 +38,7 @@ export const appointmentStatusOptions: AppointmentStatus[] = [
   "Check In",
   "Check Out",
   "Canceled",
+  "No Show",
   "Reschedule",
 ];
 
@@ -81,7 +83,7 @@ export function shouldWarnStatusChange(
   next: AppointmentStatus,
 ): boolean {
   if (current === next) return false;
-  return current === "Canceled" || current === "Reschedule";
+  return current === "Canceled" || current === "No Show" || current === "Reschedule";
 }
 
 /**
@@ -173,8 +175,8 @@ function normalizeStatus(value: unknown): AppointmentStatus {
   if (candidate === "check out" || candidate === "checked out" || candidate === "seen") {
     return "Check Out";
   }
-  if (candidate === "no show") {
-    return "Canceled"; // legacy: No Show mapped to Canceled
+  if (candidate === "no show" || candidate === "noshow" || candidate === "no-show") {
+    return "No Show";
   }
   if (candidate === "canceled" || candidate === "cancelled") {
     return "Canceled";
@@ -434,6 +436,9 @@ export function getStatusBadgeClass(status: AppointmentStatus) {
       return "bg-[rgba(31,157,96,0.14)] text-[#1f9d60]";
     case "Canceled":
       return "bg-[rgba(124,141,158,0.2)] text-[#516578]";
+    // No Show is its own thing: the patient didn't come and didn't call.
+    case "No Show":
+      return "bg-[rgba(146,64,168,0.16)] text-[#7b3a91]";
     case "Reschedule":
       return "bg-[rgba(240,141,63,0.18)] text-[#9d5f1e]";
     default:

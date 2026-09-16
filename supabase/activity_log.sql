@@ -16,7 +16,10 @@
 alter table public.audit_log
   add column if not exists category text not null default '',
   add column if not exists patient_id text not null default '',
-  add column if not exists patient_name text not null default '';
+  add column if not exists patient_name text not null default '',
+  -- The role of whoever did it, recorded at write time. Managers are not
+  -- allowed to read entries written by an owner or an admin.
+  add column if not exists actor_role text not null default '';
 
 create index if not exists audit_log_category_idx
   on public.audit_log(workspace_id, category, created_at desc);
@@ -40,12 +43,40 @@ as $$
     );
 $$;
 
+-- An active member whose role is "manager".
+create or replace function public.is_workspace_manager(owner_uid text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.workspace_members m
+    where m.workspace_owner_id::text = owner_uid
+      and m.member_user_id = auth.uid()
+      and coalesce(m.permissions ->> 'roleTier', '') = 'manager'
+      and coalesce((m.permissions ->> 'disabled')::boolean, false) = false
+  );
+$$;
+
 grant select, insert, delete on table public.audit_log to authenticated;
 
 drop policy if exists "audit_select_owner" on public.audit_log;
 drop policy if exists "audit_select_admin" on public.audit_log;
 create policy "audit_select_admin" on public.audit_log for select to authenticated
 using (public.is_workspace_admin(split_part(workspace_id, ':', 1)));
+
+-- Managers see the log too, minus anything an owner or admin did. The
+-- filter is here in the database, not just in the app, so a manager can't
+-- read those rows by any route. Entries written before roles existed have
+-- no actor_role, so they stay admin-only rather than being assumed safe.
+drop policy if exists "audit_select_manager" on public.audit_log;
+create policy "audit_select_manager" on public.audit_log for select to authenticated
+using (
+  public.is_workspace_manager(split_part(workspace_id, ':', 1))
+  and coalesce(actor_role, '') in ('manager', 'staff')
+);
 
 drop policy if exists "audit_delete_admin" on public.audit_log;
 create policy "audit_delete_admin" on public.audit_log for delete to authenticated

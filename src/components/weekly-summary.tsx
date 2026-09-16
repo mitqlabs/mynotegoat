@@ -126,6 +126,7 @@ export function WeeklySummary() {
       completed: count("Check Out"),
       checkedIn: count("Check In"),
       canceled: count("Canceled"),
+      noShow: count("No Show"),
       scheduled: count("Scheduled"),
       waitingOnNotesAllTime,
       scheduledNextWeek,
@@ -177,6 +178,7 @@ export function WeeklySummary() {
           <Tile label="Checked out" tone="text-[#047857]" value={stats.completed} />
           <Tile label="Checked in (note open)" tone="text-[#0d79bf]" value={stats.checkedIn} />
           <Tile label="Canceled" tone="text-[#b43b34]" value={stats.canceled} />
+          <Tile label="No show" tone="text-[#7b3a91]" value={stats.noShow} />
           <Tile label="Still scheduled" value={stats.scheduled} />
         </div>
       </div>

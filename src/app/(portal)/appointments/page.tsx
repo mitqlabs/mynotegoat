@@ -50,7 +50,13 @@ type AppointmentMode = "schedule" | "patient-flow";
 type RecurrenceUnit = "days" | "weeks";
 type RecurrenceEndMode = "date" | "visits";
 
-const quickStatusActions: AppointmentStatus[] = ["Check In", "Check Out", "Canceled", "Reschedule"];
+const quickStatusActions: AppointmentStatus[] = [
+  "Check In",
+  "Check Out",
+  "Canceled",
+  "No Show",
+  "Reschedule",
+];
 
 const flowSections: Array<{ title: string; status: AppointmentStatus }> = [
   { title: "Scheduled", status: "Scheduled" },
@@ -58,6 +64,7 @@ const flowSections: Array<{ title: string; status: AppointmentStatus }> = [
   { title: "Checked Out", status: "Check Out" },
   { title: "Rescheduled", status: "Reschedule" },
   { title: "Canceled", status: "Canceled" },
+  { title: "No Show", status: "No Show" },
 ];
 
 const dayToggleOptions = [
@@ -408,6 +415,8 @@ function getCardBackground(status: AppointmentStatus) {
       return "border-l-[#2e9b5d] bg-[rgba(46,155,93,0.11)]";
     case "Canceled":
       return "border-l-[#8698a7] bg-[rgba(134,152,167,0.16)]";
+    case "No Show":
+      return "border-l-[#7b3a91] bg-[rgba(146,64,168,0.12)]";
     case "Reschedule":
       return "border-l-[var(--brand-accent)] bg-[rgba(240,141,63,0.12)]";
     default:
@@ -1553,6 +1562,10 @@ export default function AppointmentsPage() {
               <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
                 <p className="text-3xl font-semibold">{getStatusCount("Canceled")}</p>
                 <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">Canceled</p>
+              </div>
+              <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                <p className="text-3xl font-semibold">{getStatusCount("No Show")}</p>
+                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">No Show</p>
               </div>
             </div>
           </section>

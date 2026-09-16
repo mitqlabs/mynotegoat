@@ -111,7 +111,11 @@ export default function KeyDatesPage() {
       // and checked out. Those rows only ever needed clearing because they
       // should not have appeared. Canceled is the same story from the other
       // direction: the appointment is already off the books.
-      if (appointment.status === "Check Out" || appointment.status === "Canceled") {
+      if (
+        appointment.status === "Check Out" ||
+        appointment.status === "Canceled" ||
+        appointment.status === "No Show"
+      ) {
         return;
       }
       const matches = findKeyDatesForDate(keyDates, appointment.date);

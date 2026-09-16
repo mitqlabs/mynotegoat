@@ -96,13 +96,13 @@ export function QuickGlance({
   // Per visit type: scheduled / checked in / checked out / canceled — the same
   // black / blue / green / red the patient page's appointment chips use.
   const apptCounts = (() => {
-    const blank = () => ({ total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0 });
+    const blank = () => ({ total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0, noShow: 0 });
     const byType = new Map<string, ReturnType<typeof blank>>();
     const totals = blank();
     for (const appt of appointments ?? []) {
       const type = (appt.appointmentType || "Other").trim() || "Other";
       const c = byType.get(type) ?? blank();
-      const bump = (key: "scheduled" | "checkedIn" | "checkedOut" | "canceled") => {
+      const bump = (key: "scheduled" | "checkedIn" | "checkedOut" | "canceled" | "noShow") => {
         c[key] += 1;
         totals[key] += 1;
       };
@@ -112,6 +112,7 @@ export function QuickGlance({
       else if (appt.status === "Check In") bump("checkedIn");
       else if (appt.status === "Check Out") bump("checkedOut");
       else if (appt.status === "Canceled") bump("canceled");
+      else if (appt.status === "No Show") bump("noShow");
       byType.set(type, c);
     }
     return {
@@ -271,7 +272,7 @@ export function QuickGlance({
                 <StatusCounts counts={apptCounts.totals} />
               </div>
               <div className="text-[11px] text-[var(--text-muted)]">
-                Scheduled / Checked In / Checked Out / Canceled
+                Scheduled / Checked In / Checked Out / Canceled{apptCounts.totals.noShow > 0 ? " / No Show" : ""}
               </div>
             </div>
           )}
@@ -287,7 +288,13 @@ export function QuickGlance({
 function StatusCounts({
   counts,
 }: {
-  counts: { scheduled: number; checkedIn: number; checkedOut: number; canceled: number };
+  counts: {
+    scheduled: number;
+    checkedIn: number;
+    checkedOut: number;
+    canceled: number;
+    noShow: number;
+  };
 }) {
   return (
     <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
@@ -298,6 +305,12 @@ function StatusCounts({
       <span className="text-[#047857]">{counts.checkedOut}</span>
       <span className="text-[var(--text-muted)]"> / </span>
       <span className="text-[#b43b34]">{counts.canceled}</span>
+      {counts.noShow > 0 && (
+        <>
+          <span className="text-[var(--text-muted)]"> / </span>
+          <span className="text-[#7b3a91]">{counts.noShow}</span>
+        </>
+      )}
     </span>
   );
 }

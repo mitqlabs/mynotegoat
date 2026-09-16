@@ -895,7 +895,12 @@ export function NewAppointmentModal({
     // Duplicate-day detection: prevent scheduling this patient on a day they already have an appointment
     const patientExistingDates = new Set(
       scheduleAppointments
-        .filter((entry) => entry.patientId === selectedPatient.id && entry.status !== "Canceled")
+        .filter(
+          (entry) =>
+            entry.patientId === selectedPatient.id &&
+            entry.status !== "Canceled" &&
+            entry.status !== "No Show",
+        )
         .map((entry) => entry.date),
     );
     const duplicateDates = scheduleDates.filter((dateIso) => patientExistingDates.has(dateIso));
@@ -1810,7 +1815,7 @@ function DayScheduleHint({
     for (const appt of scheduleAppointments) {
       if (appt.date !== dateIso) continue;
       if (appt.id === excludeAppointmentId) continue;
-      if (appt.status === "Canceled") continue;
+      if (appt.status === "Canceled" || appt.status === "No Show") continue;
       const typeName = appt.appointmentType || "Appointment";
       const slotMap = bySlot.get(appt.startTime) ?? new Map<string, number>();
       slotMap.set(typeName, (slotMap.get(typeName) ?? 0) + 1);

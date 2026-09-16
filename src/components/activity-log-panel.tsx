@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import { isAdminTier } from "@/lib/admin-access";
 import {
   ACTIVITY_CATEGORIES,
   clearActivity,
@@ -43,6 +45,11 @@ function whenLabel(iso: string): string {
 }
 
 export function ActivityLogPanel() {
+  // Managers get the log, minus anything an owner or admin did — the
+  // database enforces that too (audit_select_manager); this mirrors it so
+  // the screen agrees with the rule even on older rows.
+  const { roleTier } = useWorkspaceAccess();
+  const isAdmin = isAdminTier(roleTier);
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [categories, setCategories] = useState<Set<string>>(new Set());
@@ -75,14 +82,15 @@ export function ActivityLogPanel() {
         typeof saved?.retentionDays === "number" ? saved.retentionDays : DEFAULT_RETENTION_DAYS;
       if (cancelled) return;
       setRetentionDays(days);
-      if (days > 0) {
+      // Only admins may delete log rows, so only they run the sweep.
+      if (days > 0 && isAdmin) {
         await clearActivity({ olderThanIso: new Date(Date.now() - days * DAY_MS).toISOString() });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     // Fetching is async; state is only set after the await resolves.
@@ -98,10 +106,11 @@ export function ActivityLogPanel() {
     const q = patientQuery.trim().toLowerCase();
     return (entries ?? []).filter(
       (e) =>
+        (isAdmin || e.actorRole === "manager" || e.actorRole === "staff") &&
         (person === "ALL" || e.actorLabel === person) &&
         (!q || e.patientName.toLowerCase().includes(q) || e.summary.toLowerCase().includes(q)),
     );
-  }, [entries, person, patientQuery]);
+  }, [entries, person, patientQuery, isAdmin]);
 
   const toggleCategory = (key: string) =>
     setCategories((current) => {
@@ -202,6 +211,7 @@ export function ActivityLogPanel() {
             value={patientQuery}
           />
         </label>
+        {isAdmin && (
         <label className="grid gap-1 text-xs font-semibold text-[var(--text-muted)]">
           Auto-delete after
           <select
@@ -216,7 +226,8 @@ export function ActivityLogPanel() {
             ))}
           </select>
         </label>
-        {confirmClear ? (
+        )}
+        {!isAdmin ? null : confirmClear ? (
           <span className="inline-flex gap-1">
             <button
               className="rounded-lg bg-[#b43b34] px-3 py-1.5 text-sm font-semibold text-white"
@@ -298,7 +309,10 @@ export function ActivityLogPanel() {
         </table>
       </div>
       <p className="text-[11px] text-[var(--text-muted)]">
-        Showing {visible.length} entr{visible.length === 1 ? "y" : "ies"}. “Cleared the activity log” entries are always kept.
+        Showing {visible.length} entr{visible.length === 1 ? "y" : "ies"}.{" "}
+        {isAdmin
+          ? "“Cleared the activity log” entries are always kept."
+          : "What an owner or admin did isn’t shown here."}
       </p>
     </div>
   );

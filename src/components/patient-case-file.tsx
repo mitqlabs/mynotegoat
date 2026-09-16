@@ -2324,6 +2324,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => patientAppointmentRecords.filter((entry) => entry.status === "Scheduled").length,
     [patientAppointmentRecords],
   );
+  const noShowCount = useMemo(
+    () => patientAppointmentRecords.filter((entry) => entry.status === "No Show").length,
+    [patientAppointmentRecords],
+  );
   // Count of appointments by their type (Cervical Decompression, Lumbar
   // Decompression, New Patient, Discharge, …), most-frequent first.
   // Per type, split by status so each chip reads "scheduled / checked in /
@@ -2331,16 +2335,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const appointmentTypeCounts = useMemo(() => {
     const counts = new Map<
       string,
-      { total: number; scheduled: number; checkedIn: number; checkedOut: number; canceled: number }
+      {
+        total: number;
+        scheduled: number;
+        checkedIn: number;
+        checkedOut: number;
+        canceled: number;
+        noShow: number;
+      }
     >();
     for (const entry of patientAppointmentRecords) {
       const t = (entry.appointmentType || "Other").trim() || "Other";
-      const c = counts.get(t) ?? { total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0 };
+      const c =
+        counts.get(t) ?? { total: 0, scheduled: 0, checkedIn: 0, checkedOut: 0, canceled: 0, noShow: 0 };
       c.total += 1;
       if (entry.status === "Scheduled") c.scheduled += 1;
       else if (entry.status === "Check In") c.checkedIn += 1;
       else if (entry.status === "Check Out") c.checkedOut += 1;
       else if (entry.status === "Canceled") c.canceled += 1;
+      else if (entry.status === "No Show") c.noShow += 1;
       counts.set(t, c);
     }
     return [...counts.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
@@ -5616,7 +5629,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 many are scheduled vs already in / out / canceled
                 without expanding the panel. */}
             <span className="text-sm font-medium text-white/85">
-              {scheduledCount} Scheduled · {checkedInCount} Checked In · {checkedOutCount} Checked Out · {canceledCount} Canceled
+              {scheduledCount} Scheduled · {checkedInCount} Checked In · {checkedOutCount} Checked Out ·{" "}
+              {canceledCount} Canceled{noShowCount > 0 ? ` · ${noShowCount} No Show` : ""}
             </span>
           </span>
           <span className="text-xl">{sectionPanelsOpen.appointments ? "−" : "+"}</span>
@@ -5644,7 +5658,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <span
                     key={type}
                     className="rounded-full bg-[var(--bg-soft)] px-2.5 py-1 text-xs text-[var(--text-main)]"
-                    title={`${c.scheduled} scheduled · ${c.checkedIn} checked in · ${c.checkedOut} checked out · ${c.canceled} canceled`}
+                    title={`${c.scheduled} scheduled · ${c.checkedIn} checked in · ${c.checkedOut} checked out · ${c.canceled} canceled · ${c.noShow} no show`}
                   >
                     {type}:{" "}
                     <span className="font-semibold tabular-nums">
@@ -5655,6 +5669,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       <span className="text-[#047857]">{c.checkedOut}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
                       <span className="text-[#b43b34]">{c.canceled}</span>
+                      {c.noShow > 0 && (
+                        <>
+                          <span className="text-[var(--text-muted)]"> / </span>
+                          <span className="text-[#7b3a91]">{c.noShow}</span>
+                        </>
+                      )}
                     </span>
                   </span>
                 ))}
@@ -5762,6 +5782,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             style={
                               appointment?.status === "Canceled"
                                 ? { backgroundColor: "var(--row-tint-canceled)", boxShadow: "inset 4px 0 0 var(--row-edge-canceled)" }
+                                : appointment?.status === "No Show"
+                                ? { backgroundColor: "var(--row-tint-no-show)", boxShadow: "inset 4px 0 0 var(--row-edge-no-show)" }
                                 : appointment?.status === "Check Out"
                                   ? { backgroundColor: "var(--row-tint-complete)", boxShadow: "inset 4px 0 0 var(--row-edge-complete)" }
                                   : appointment?.status === "Check In"
