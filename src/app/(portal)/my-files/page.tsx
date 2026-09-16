@@ -1,5 +1,6 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useFileManager } from "@/hooks/use-file-manager";
@@ -261,6 +262,7 @@ export default function MyFilesPage() {
   };
 
   const handleDeleteFolder = async (folderId: string) => {
+    if (!(await ensureDeleteAllowed("files"))) return;
     setDeletingFolderId(folderId);
     await deleteUserFolder(folderId);
     setDeletingFolderId(null);
@@ -304,6 +306,7 @@ export default function MyFilesPage() {
   };
 
   const handleDeleteFile = async (fileId: string) => {
+    if (!(await ensureDeleteAllowed("files"))) return;
     setDeletingFileId(fileId);
     await deleteFile(fileId);
     setDeletingFileId(null);

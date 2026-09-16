@@ -9,6 +9,7 @@ import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
+import { AdminAccessSection } from "@/components/admin-access-section";
 import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
@@ -86,6 +87,7 @@ type SettingsSectionKey =
   // deep links, and reset buttons keep working exactly as before — the
   // refactor is purely a visual / scroll-length improvement.
   | "admin"
+  | "adminAccess"
   | "subscription"
   | "backup"
   | "recovery"
@@ -302,6 +304,12 @@ const settingsSearchCatalog: Array<{
     parent: "officeSettings",
   },
   {
+    key: "adminAccess",
+    title: "Admin Access",
+    description: "Roles, what Managers can see and delete, and the delete password.",
+    aliases: ["role", "roles", "manager", "admin", "permission", "permissions", "delete password", "access"],
+  },
+  {
     key: "diagnostics",
     title: "Diagnostics",
     aliases: ["cloud", "row count", "local storage", "debug", "diagnostic"],
@@ -377,6 +385,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   smsTemplates: false,
   emailSettings: false,
   admin: false,
+  adminAccess: false,
   subscription: false,
   backup: false,
   recovery: false,
@@ -5417,6 +5426,16 @@ export default function SettingsPage() {
       <ModuleVisibilitySection />
 
       <TeamSettingsSection />
+
+      <CollapsibleSection
+        description="Roles, what Managers can see and delete, and the delete password."
+        hidden={!showSection("adminAccess")}
+        isOpen={sectionIsOpen("adminAccess")}
+        onToggle={() => toggleSection("adminAccess")}
+        title="Admin Access"
+      >
+        <AdminAccessSection />
+      </CollapsibleSection>
 
       <MarketingVisitTypesSection />
 

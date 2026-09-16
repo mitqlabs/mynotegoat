@@ -26,8 +26,12 @@ export const MEMBER_LOCKABLE_SECTIONS = patientPagePanelKeys.map((key) => ({
 export type AccessLevel = "none" | "view" | "edit";
 
 export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
-  /** Elevate this member to office-admin (full access + Settings/Team). */
+  /** Elevate this member to office-admin (full access + Settings/Team).
+   *  Kept for existing members; "admin" in roleTier means the same thing. */
   officeAdmin?: boolean;
+  /** Role: "admin" (everything), "manager" (configurable in Settings →
+   *  Admin Access) or "staff" (per-section grants only). */
+  roleTier?: "admin" | "manager" | "staff";
   /** Patient-page sub-panels hidden for this member (panel keys). */
   hiddenSections?: string[];
   /** Deactivated — the member keeps their record but can no longer log in. */
@@ -129,6 +133,9 @@ export function normalizePermissions(value: unknown): MemberPermissions {
   const raw = value as Record<string, unknown>;
   const out: MemberPermissions = {};
   if (raw.officeAdmin === true) out.officeAdmin = true;
+  if (raw.roleTier === "admin" || raw.roleTier === "manager" || raw.roleTier === "staff") {
+    out.roleTier = raw.roleTier;
+  }
   if (raw.disabled === true) out.disabled = true;
   if (typeof raw.mainLocationId === "string" && raw.mainLocationId) {
     out.mainLocationId = raw.mainLocationId;

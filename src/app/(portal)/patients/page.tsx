@@ -1,5 +1,6 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -2192,7 +2193,7 @@ export default function PatientsPage() {
                           <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => startEditingTask(task)} type="button">Edit</button>
                         </>
                       )}
-                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { if (!window.confirm("Remove this task?")) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); }} type="button">Remove</button>
+                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!window.confirm("Remove this task?")) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
                     </div>
                   </div>
                 </article>

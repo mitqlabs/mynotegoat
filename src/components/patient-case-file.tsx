@@ -98,6 +98,7 @@ import {
 } from "@/lib/file-storage";
 import { loadEmailSettings, renderEmailTemplate } from "@/lib/email-settings";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
@@ -3835,7 +3836,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
-  const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const handleDeleteAppointment = async (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = toUsDate(appointment.date);
     const timeLabel = formatTimeLabel(appointment.startTime);
     // Look for an encounter linked to this appointment by patient + date.
@@ -3887,6 +3888,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       if (!proceed) {
         return;
       }
+      if (!(await ensureDeleteAllowed("notes"))) return;
       deleteEncounter(linkedEncounter.id);
       // Cascade: drop any cash payment entries linked to this
       // encounter so we don't leak orphans into the Cash Payments
@@ -3910,6 +3912,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     if (!confirmed) {
       return;
     }
+    if (!(await ensureDeleteAllowed("appointments"))) return;
     removeAppointment(appointment.id);
     setEncounterMessage(`Appointment on ${dateLabel} at ${timeLabel} deleted.`);
   };
@@ -4347,7 +4350,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     router.push(`/patients?saved=${encodeURIComponent(patient.fullName)}`);
   };
 
-  const handleDeletePatient = () => {
+  const handleDeletePatient = async () => {
+    // Role gate first (Settings → Admin Access), then the existing password.
+    if (!(await ensureDeleteAllowed("patients"))) {
+      setShowDeleteModal(false);
+      return;
+    }
     const settings = loadOfficeSettings();
     if (!settings.deletePassword) {
       setDeleteError("No delete password is set. Go to Settings → Office to set one first.");
@@ -6069,7 +6077,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               {appointment ? (
                                 <button
                                   className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
-                                  onClick={() => handleDeleteAppointment(appointment)}
+                                  onClick={() => void handleDeleteAppointment(appointment)}
                                   title="Delete appointment"
                                   type="button"
                                 >

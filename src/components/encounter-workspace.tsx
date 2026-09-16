@@ -1,5 +1,6 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PatientFilesPreviewPanel } from "@/components/patient-files-preview-panel";
@@ -3415,13 +3416,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                       className="rounded p-0.5 text-[10px] text-red-400 hover:bg-red-50 hover:text-red-600 active:scale-90"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (window.confirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`)) {
+                                        void (async () => {
+                                          if (!window.confirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`)) return;
+                                          if (!(await ensureDeleteAllowed("notes"))) return;
                                           deleteEncounter(linked.id);
                                           if (resolvedEncounterId === linked.id) {
                                             setSelectedEncounterId("");
                                           }
                                           setMessage(`Encounter for ${dateUs} deleted.`);
-                                        }
+                                        })();
                                       }}
                                       title="Delete encounter"
                                       type="button"

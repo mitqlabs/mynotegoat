@@ -15,6 +15,7 @@ import {
 import type { PortalFeature } from "@/lib/plan-access";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import { roleTierOf, type RoleTier } from "@/lib/admin-access";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -293,8 +294,10 @@ export function TeamSettingsSection() {
   const saveMemberPerms = async (member: Member, nextPerms: MemberPermissions) => {
     const before = member.permissions;
     const changes: string[] = [];
-    if (Boolean(before.officeAdmin) !== Boolean(nextPerms.officeAdmin)) {
-      changes.push(nextPerms.officeAdmin ? "made Office Admin" : "removed Office Admin");
+    if ((before.roleTier ?? "") !== (nextPerms.roleTier ?? "")) {
+      changes.push(`role set to ${nextPerms.roleTier ?? "staff"}`);
+    } else if (Boolean(before.officeAdmin) !== Boolean(nextPerms.officeAdmin)) {
+      changes.push(nextPerms.officeAdmin ? "made Admin" : "removed Admin");
     }
     if (Boolean(before.disabled) !== Boolean(nextPerms.disabled)) {
       changes.push(nextPerms.disabled ? "deactivated" : "reactivated");
@@ -325,9 +328,23 @@ export function TeamSettingsSection() {
     }
   };
 
-  const setMemberOfficeAdmin = (member: Member, on: boolean) => {
-    const next = { ...member.permissions };
-    if (on) next.officeAdmin = true;
+  /** Role for a member row: stored roleTier, else the legacy officeAdmin flag. */
+  const memberRole = (member: Member): Exclude<RoleTier, "owner"> => {
+    const tier = roleTierOf({
+      isMember: true,
+      officeAdmin: Boolean(member.permissions.officeAdmin),
+      permissions: member.permissions,
+    });
+    return tier === "owner" ? "admin" : tier;
+  };
+
+  const setMemberRole = (member: Member, role: Exclude<RoleTier, "owner">) => {
+    // Only the owner may hand out or take away Admin.
+    if (!isOwner && (role === "admin" || memberRole(member) === "admin")) return;
+    const next = { ...member.permissions, roleTier: role };
+    // officeAdmin stays in step so existing checks (and the SQL policy that
+    // reads permissions->officeAdmin) keep agreeing with the role.
+    if (role === "admin") next.officeAdmin = true;
     else delete next.officeAdmin;
     void saveMemberPerms(member, next);
   };
@@ -679,23 +696,39 @@ export function TeamSettingsSection() {
 
                     <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] px-2 py-1.5">
                       <span className="text-xs font-semibold">
-                        Office Admin{" "}
+                        Role{" "}
                         <span className="font-normal text-[var(--text-muted)]">
-                          — full access incl. Settings &amp; Team
+                          — Admin is everything; Manager is set in Admin Access
                         </span>
                       </span>
-                      <ToggleSwitch
-                        checked={Boolean(member.permissions.officeAdmin)}
-                        onChange={(on) => setMemberOfficeAdmin(member, on)}
-                        ariaLabel="Office Admin"
-                      />
+                      <select
+                        aria-label="Role"
+                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs disabled:opacity-60"
+                        disabled={!isOwner && (memberRole(member) === "admin")}
+                        onChange={(e) => setMemberRole(member, e.target.value as Exclude<RoleTier, "owner">)}
+                        value={memberRole(member)}
+                      >
+                        {(isOwner || memberRole(member) === "admin") && <option value="admin">Admin</option>}
+                        <option value="manager">Manager</option>
+                        <option value="staff">Staff</option>
+                      </select>
                     </label>
-                    {member.permissions.officeAdmin ? (
+                    {!isOwner && memberRole(member) === "admin" && (
                       <p className="text-[11px] text-[var(--text-muted)]">
-                        Full owner-level access. Turn off Office Admin to set specific permissions.
+                        Only the owner account can add or remove Admins.
+                      </p>
+                    )}
+                    {memberRole(member) === "admin" ? (
+                      <p className="text-[11px] text-[var(--text-muted)]">
+                        Full owner-level access. Change the role to set specific permissions.
                       </p>
                     ) : (
                       <>
+                        {memberRole(member) === "manager" && (
+                          <p className="text-[11px] text-[var(--text-muted)]">
+                            Manager: the access below, plus whatever Settings → Admin Access allows.
+                          </p>
+                        )}
                         <div className="grid gap-1.5">
                           {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
                             const featureOn = isFeatureEnabled(feature);

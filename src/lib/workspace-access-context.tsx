@@ -23,11 +23,14 @@ import {
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import type { PortalFeature } from "@/lib/plan-access";
 import type { WorkspaceMembership } from "@/lib/workspace-membership";
+import { isAdminTier, roleTierOf, type RoleTier } from "@/lib/admin-access";
 
 export interface WorkspaceAccessValue {
   isOwner: boolean;
   isMember: boolean;
   officeAdmin: boolean;
+  /** owner | admin | manager | staff — see src/lib/admin-access.ts. */
+  roleTier: RoleTier;
   /** Effective access level for a feature (module cap + member grant). */
   access: (feature: PortalFeature) => AccessLevel;
   /** Can the user open/read this feature at all? */
@@ -45,6 +48,7 @@ const OWNER_FULL: Omit<
   isOwner: true,
   isMember: false,
   officeAdmin: false,
+  roleTier: "owner",
 };
 
 const Ctx = createContext<WorkspaceAccessValue | null>(null);
@@ -60,8 +64,9 @@ export function WorkspaceAccessProvider({
   const value = useMemo<WorkspaceAccessValue>(() => {
     const isMember = membership?.isMember ?? false;
     const officeAdmin = membership?.officeAdmin ?? false;
-    // Owner OR office-admin = full access. Regular member = their grants.
-    const fullAccess = !isMember || officeAdmin;
+    const roleTier = roleTierOf(membership);
+    // Owner OR admin = full access. Manager/staff get their grants.
+    const fullAccess = isAdminTier(roleTier);
     const perms = membership?.permissions ?? {};
     const hidden = new Set(perms.hiddenSections ?? []);
     const access = (feature: PortalFeature): AccessLevel =>
@@ -70,6 +75,7 @@ export function WorkspaceAccessProvider({
       isOwner: !isMember,
       isMember,
       officeAdmin,
+      roleTier,
       access,
       canView: (f) => access(f) !== "none",
       canEdit: (f) => access(f) === "edit",

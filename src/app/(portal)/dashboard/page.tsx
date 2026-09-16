@@ -4,6 +4,13 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
 import { ActivityLogPanel } from "@/components/activity-log-panel";
+import { useAdminAccess } from "@/hooks/use-admin-access";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import {
+  MANAGER_DASHBOARD_SECTIONS,
+  canSeeDashboardSection,
+  type ManagerDashboardSection,
+} from "@/lib/admin-access";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
@@ -276,7 +283,7 @@ function DashboardSection({
   title,
   children,
 }: {
-  id: string;
+  id: ManagerDashboardSection;
   title: string;
   children: React.ReactNode;
 }) {
@@ -316,6 +323,8 @@ function DashboardSection({
 }
 
 export default function DashboardPage() {
+  const { roleTier } = useWorkspaceAccess();
+  const { adminAccess } = useAdminAccess();
   const { caseStatuses } = useCaseStatuses();
   // Live patient-billing records. The patient page writes paid amount
   // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
@@ -784,6 +793,12 @@ export default function DashboardPage() {
     });
   }, [filteredPatients, getPatientBillingRecord]);
 
+  // Role gate: admins see everything; a manager sees what Settings →
+  // Admin Access allows; staff see nothing (the nav hides the page too).
+  const canSee = (section: ManagerDashboardSection) =>
+    canSeeDashboardSection(roleTier, section, adminAccess);
+  const visibleSections = MANAGER_DASHBOARD_SECTIONS.filter((s) => canSee(s.key)).length;
+
   const sortedAttorneyStats = useMemo(() => {
     const compareBy = (
       a: (typeof attorneyStats)[number],
@@ -822,18 +837,30 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {visibleSections === 0 && (
+        <section className="panel-card p-4 text-sm text-[var(--text-muted)]">
+          Your role doesn&apos;t include any Dashboard sections. An admin can change that in Settings → Admin Access.
+        </section>
+      )}
+      {canSee("weeklySummary") && (
       <DashboardSection id="weeklySummary" title="Weekly Summary">
         <WeeklySummary />
       </DashboardSection>
+      )}
 
+      {canSee("reviews") && (
       <DashboardSection id="reviews" title="Reviews">
         <ReviewsSummary />
       </DashboardSection>
+      )}
 
+      {canSee("activityLog") && (
       <DashboardSection id="activityLog" title="Activity Log">
         <ActivityLogPanel />
       </DashboardSection>
+      )}
 
+      {canSee("statistics") && (
       <DashboardSection id="statistics" title="Statistics">
     <div className="space-y-5">
       <section className="panel-card p-4">
@@ -1236,6 +1263,7 @@ export default function DashboardPage() {
       </div>
     </div>
       </DashboardSection>
+      )}
     </div>
   );
 }
