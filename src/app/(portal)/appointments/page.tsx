@@ -1,5 +1,6 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
@@ -2459,6 +2460,7 @@ export default function AppointmentsPage() {
               <button
                 className="rounded-xl border border-[rgba(201,66,58,0.4)] bg-[rgba(201,66,58,0.08)] px-4 py-2 font-semibold text-[#b43b34]"
                 onClick={() => {
+                  void (async () => {
                   if (!selectedAppointment) {
                     return;
                   }
@@ -2480,6 +2482,8 @@ export default function AppointmentsPage() {
                     if (!proceed) {
                       return;
                     }
+                    if (!(await ensureDeleteAllowed("notes"))) return;
+                    if (!(await ensureDeleteAllowed("appointments"))) return;
                     deleteEncounter(linkedEncounter.id);
                     removeAppointment(selectedAppointment.id);
                     setScheduleAlert(
@@ -2497,11 +2501,13 @@ export default function AppointmentsPage() {
                   if (!confirmed) {
                     return;
                   }
+                  if (!(await ensureDeleteAllowed("appointments"))) return;
                   removeAppointment(selectedAppointment.id);
                   setScheduleAlert(
                     `Appointment for ${selectedAppointment.patientName} on ${dateLabel} deleted.`,
                   );
                   setSelectedAppointmentId(null);
+                  })();
                 }}
                 type="button"
               >

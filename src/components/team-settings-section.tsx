@@ -5,15 +5,10 @@ import { logActivity } from "@/lib/activity-log";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import {
-  accessLevelsForFeature,
-  PERMISSIONABLE_FEATURES,
   MEMBER_LOCKABLE_SECTIONS,
   normalizePermissions,
-  type AccessLevel,
   type MemberPermissions,
 } from "@/lib/team-permissions";
-import type { PortalFeature } from "@/lib/plan-access";
-import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { roleTierOf, type RoleTier } from "@/lib/admin-access";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
@@ -26,12 +21,6 @@ type Member = {
   email: string | null;
   label: string;
   permissions: MemberPermissions;
-};
-
-const ACCESS_LABEL: Record<AccessLevel, string> = {
-  none: "No access",
-  view: "View only",
-  edit: "Full",
 };
 
 const EMPTY_PERMS: MemberPermissions = {};
@@ -71,7 +60,6 @@ function applyMemberOrder(list: Member[], order: string[]): Member[] {
 export function TeamSettingsSection() {
   // Owner's module visibility — a feature the office has turned off can't be
   // granted to anyone, so those rows show "Off" instead of an access picker.
-  const { isFeatureEnabled } = useModuleVisibility();
   const { officeSettings, updateOfficeSettings } = useOfficeSettings();
   // Only the actual account OWNER controls the master switch and appears as
   // the "Admin (You)" card. An office-admin member can still manage the
@@ -108,6 +96,8 @@ export function TeamSettingsSection() {
   const [lastName, setLastName] = useState("");
   const [role, setRole] = useState("");
   const [draftPerms, setDraftPerms] = useState<MemberPermissions>(EMPTY_PERMS);
+  // New members start as Staff; what a role can reach lives in Admin Access.
+  const [draftRole, setDraftRole] = useState<Exclude<RoleTier, "owner">>("staff");
   const [busy, setBusy] = useState(false);
 
   const loadMembers = useCallback(async () => {
@@ -188,6 +178,8 @@ export function TeamSettingsSection() {
     const label = composedName || role.trim() || "Team Member";
     const permsWithIdentity: MemberPermissions = {
       ...draftPerms,
+      roleTier: draftRole,
+      ...(draftRole === "admin" ? { officeAdmin: true } : {}),
       ...(first ? { firstName: first } : {}),
       ...(last ? { lastName: last } : {}),
       ...(role.trim() ? { role: role.trim() } : {}),
@@ -206,7 +198,7 @@ export function TeamSettingsSection() {
     logActivity({
       category: "team",
       action: "team.member_added",
-      summary: `Added team member ${label} (${email})${permsWithIdentity.officeAdmin ? " as Office Admin" : ""}`,
+      summary: `Added team member ${label} (${email}) as ${draftRole}`,
     });
     setShowAdd(false);
     setEmail("");
@@ -215,6 +207,7 @@ export function TeamSettingsSection() {
     setLastName("");
     setRole("");
     setDraftPerms(EMPTY_PERMS);
+    setDraftRole("staff");
     void loadMembers();
   };
 
@@ -402,34 +395,6 @@ export function TeamSettingsSection() {
     if (set.size) next.hiddenSections = [...set];
     else delete next.hiddenSections;
     void saveMemberPerms(member, next);
-  };
-
-  const setMemberAccess = async (member: Member, feature: PortalFeature, level: AccessLevel) => {
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
-    const nextPerms: MemberPermissions = { ...member.permissions };
-    if (level === "none") delete nextPerms[feature];
-    else nextPerms[feature] = level;
-    const previous = member.permissions[feature] ?? "none";
-    if (previous !== level) {
-      logActivity({
-        category: "team",
-        action: "team.access_changed",
-        summary: `${member.label}: ${feature} access ${previous} → ${level}`,
-      });
-    }
-    // Optimistic.
-    setMembers((cur) =>
-      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),
-    );
-    const { error: uErr } = await supabase
-      .from("workspace_members")
-      .update({ permissions: nextPerms, updated_at: new Date().toISOString() })
-      .eq("member_user_id", member.member_user_id);
-    if (uErr) {
-      setError(uErr.message);
-      void loadMembers();
-    }
   };
 
   return (
@@ -724,46 +689,11 @@ export function TeamSettingsSection() {
                       </p>
                     ) : (
                       <>
-                        {memberRole(member) === "manager" && (
-                          <p className="text-[11px] text-[var(--text-muted)]">
-                            Manager: the access below, plus whatever Settings → Admin Access allows.
-                          </p>
-                        )}
-                        <div className="grid gap-1.5">
-                          {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
-                            const featureOn = isFeatureEnabled(feature);
-                            return (
-                              <div
-                                key={feature}
-                                className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1"
-                              >
-                                <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
-                                  {fLabel}
-                                </span>
-                                {featureOn ? (
-                                  <select
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                    onChange={(e) => setMemberAccess(member, feature, e.target.value as AccessLevel)}
-                                    value={member.permissions[feature] ?? "none"}
-                                  >
-                                    {accessLevelsForFeature(viewOnly).map((lvl) => (
-                                      <option key={lvl} value={lvl}>
-                                        {ACCESS_LABEL[lvl]}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
-                                    title="This module is turned off for the whole office (Settings → Module Visibility)."
-                                  >
-                                    Off · office-wide
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <p className="rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-[11px] text-[var(--text-muted)]">
+                          Which pages {memberRole(member) === "manager" ? "Managers" : "Staff"} can open — and what
+                          they can delete — is set once for the whole role in Settings → Admin Access, so it doesn&apos;t
+                          have to be repeated on every person&apos;s card.
+                        </p>
                         <div>
                           <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                             Patient-page sections — flip OFF to hide from this member
@@ -862,50 +792,21 @@ export function TeamSettingsSection() {
                   </label>
                 </div>
               </div>
-              <p className="mt-3 text-xs font-semibold text-[var(--text-muted)]">Access</p>
-              <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
-                {PERMISSIONABLE_FEATURES.map(({ feature, label: fLabel, viewOnly }) => {
-                  const featureOn = isFeatureEnabled(feature);
-                  return (
-                    <div
-                      key={feature}
-                      className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1"
-                    >
-                      <span className={`text-xs ${featureOn ? "" : "text-[var(--text-muted)]"}`}>
-                        {fLabel}
-                      </span>
-                      {featureOn ? (
-                        <select
-                          className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                          onChange={(e) => {
-                            const level = e.target.value as AccessLevel;
-                            setDraftPerms((cur) => {
-                              const next = { ...cur };
-                              if (level === "none") delete next[feature];
-                              else next[feature] = level;
-                              return next;
-                            });
-                          }}
-                          value={draftPerms[feature] ?? "none"}
-                        >
-                          {accessLevelsForFeature(viewOnly).map((lvl) => (
-                            <option key={lvl} value={lvl}>
-                              {ACCESS_LABEL[lvl]}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span
-                          className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]"
-                          title="This module is turned off for the whole office (Settings → Module Visibility)."
-                        >
-                          Off · office-wide
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <label className="mt-3 grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Access role</span>
+                <select
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                  onChange={(e) => setDraftRole(e.target.value as Exclude<RoleTier, "owner">)}
+                  value={draftRole}
+                >
+                  {isOwner && <option value="admin">Admin — everything</option>}
+                  <option value="manager">Manager — runs the office</option>
+                  <option value="staff">Staff — day-to-day</option>
+                </select>
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  What each role can open and delete is set in Settings → Admin Access.
+                </span>
+              </label>
               <div className="mt-3 flex items-center gap-2">
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"

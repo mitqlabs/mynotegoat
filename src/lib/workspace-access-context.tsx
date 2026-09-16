@@ -23,7 +23,18 @@ import {
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import type { PortalFeature } from "@/lib/plan-access";
 import type { WorkspaceMembership } from "@/lib/workspace-membership";
-import { isAdminTier, roleTierOf, type RoleTier } from "@/lib/admin-access";
+import {
+  deleteRuleFor,
+  isAdminTier,
+  pageAccessFor,
+  roleTierOf,
+  type AdminAccessSettings,
+  type DeletableKind,
+  type DeleteRule,
+  type RoleTier,
+} from "@/lib/admin-access";
+import { useAdminAccess } from "@/hooks/use-admin-access";
+import { defaultAdminAccess } from "@/lib/admin-access";
 
 export interface WorkspaceAccessValue {
   isOwner: boolean;
@@ -39,11 +50,15 @@ export interface WorkspaceAccessValue {
   canEdit: (feature: PortalFeature) => boolean;
   /** Is this patient-page sub-panel hidden for this member? (never for owner) */
   sectionHidden: (sectionKey: string) => boolean;
+  /** "allowed" | "password" | "never" for this role, from Admin Access. */
+  deleteRule: (kind: DeletableKind) => DeleteRule;
+  /** The Admin Access settings behind the checks above. */
+  adminAccess: AdminAccessSettings;
 }
 
 const OWNER_FULL: Omit<
   WorkspaceAccessValue,
-  "access" | "canView" | "canEdit" | "sectionHidden"
+  "access" | "canView" | "canEdit" | "sectionHidden" | "deleteRule" | "adminAccess"
 > = {
   isOwner: true,
   isMember: false,
@@ -61,6 +76,7 @@ export function WorkspaceAccessProvider({
   children: ReactNode;
 }) {
   const { visibility } = useModuleVisibility();
+  const { adminAccess } = useAdminAccess();
   const value = useMemo<WorkspaceAccessValue>(() => {
     const isMember = membership?.isMember ?? false;
     const officeAdmin = membership?.officeAdmin ?? false;
@@ -69,8 +85,17 @@ export function WorkspaceAccessProvider({
     const fullAccess = isAdminTier(roleTier);
     const perms = membership?.permissions ?? {};
     const hidden = new Set(perms.hiddenSections ?? []);
-    const access = (feature: PortalFeature): AccessLevel =>
-      effectiveAccessLevel(visibility, perms, fullAccess, feature);
+    // Access comes from the ROLE now (Settings → Admin Access), capped by
+    // what the office has switched on office-wide. The old per-member
+    // grants are still read for members who have them and haven't been
+    // given a role yet, so nobody's access changes until the role is set.
+    const access = (feature: PortalFeature): AccessLevel => {
+      const cap = effectiveAccessLevel(visibility, perms, true, feature);
+      if (cap === "none") return "none";
+      if (fullAccess) return cap;
+      const byRole = pageAccessFor(roleTier, feature, adminAccess);
+      return cap === "view" && byRole === "edit" ? "view" : byRole;
+    };
     return {
       isOwner: !isMember,
       isMember,
@@ -82,8 +107,10 @@ export function WorkspaceAccessProvider({
       // Owners/office-admins see every section; a regular member hides the
       // panels the owner switched off for them.
       sectionHidden: (sectionKey) => (fullAccess ? false : hidden.has(sectionKey)),
+      deleteRule: (kind) => deleteRuleFor(roleTier, kind, adminAccess),
+      adminAccess,
     };
-  }, [membership, visibility]);
+  }, [membership, visibility, adminAccess]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
@@ -97,5 +124,7 @@ export function useWorkspaceAccess(): WorkspaceAccessValue {
     canView: () => true,
     canEdit: () => true,
     sectionHidden: () => false,
+    deleteRule: () => "allowed",
+    adminAccess: defaultAdminAccess(),
   };
 }

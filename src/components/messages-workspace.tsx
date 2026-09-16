@@ -74,7 +74,8 @@ function relativeLabel(iso: string) {
 }
 
 export function MessagesWorkspace() {
-  const { canEdit, isOwner } = useWorkspaceAccess();
+  const { canEdit, isOwner, deleteRule } = useWorkspaceAccess();
+  const canDeleteAnyThread = deleteRule("messages") !== "never";
   const canPost = canEdit("messages");
   const { messages, loading, notReady, currentUserId, supportsPrivateThreads, postMessage, deleteMessage, deleteThread } =
     useWorkspaceMessages();
@@ -709,8 +710,13 @@ export function MessagesWorkspace() {
                           const threadReplies = messages.filter(
                             (other) => other.id !== m.id && other.threadRootId === m.id,
                           ).length;
+                          // The starter can clear their own thread; admins and
+                          // managers can clear any, per Settings → Admin Access.
                           const canDeleteThread =
-                            supportsPrivateThreads && mine && !m.replyToId && threadReplies > 0;
+                            supportsPrivateThreads &&
+                            (mine || canDeleteAnyThread) &&
+                            !m.replyToId &&
+                            threadReplies > 0;
                           rows.push(
                             <div className="flex gap-3" key={m.id}>
                               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] text-xs font-bold text-[var(--text-muted)]">

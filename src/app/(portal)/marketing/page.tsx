@@ -1,5 +1,7 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { logActivity } from "@/lib/activity-log";
 import { useMemo, useState } from "react";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useMarketing } from "@/hooks/use-marketing";
@@ -425,13 +427,22 @@ export default function MarketingPage() {
                         <button
                           className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700"
                           onClick={() => {
-                            if (
-                              window.confirm(
-                                `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
-                              )
-                            ) {
+                            void (async () => {
+                              if (
+                                !window.confirm(
+                                  `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
+                                )
+                              ) {
+                                return;
+                              }
+                              if (!(await ensureDeleteAllowed("marketing"))) return;
                               removeActivity(row.contact.id, a.id);
-                            }
+                              logActivity({
+                                category: "team",
+                                action: "marketing.deleted",
+                                summary: `Deleted marketing activity for ${row.contact.name} on ${a.date}`,
+                              });
+                            })();
                           }}
                           type="button"
                         >

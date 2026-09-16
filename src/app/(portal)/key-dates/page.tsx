@@ -1,5 +1,7 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { logActivity } from "@/lib/activity-log";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useKeyDateDismissals } from "@/hooks/use-key-date-dismissals";
@@ -238,12 +240,13 @@ export default function KeyDatesPage() {
     }
   };
 
-  const handleDeleteAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const handleDeleteAppointment = async (appointment: ScheduleAppointmentRecord) => {
     const confirmed = window.confirm(
       `Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
         "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard.",
     );
     if (!confirmed) return;
+    if (!(await ensureDeleteAllowed("appointments"))) return;
     removeAppointment(appointment.id);
     // The row disappears automatically once scheduleAppointments updates,
     // but tidy up any stale dismissal just in case.
@@ -491,8 +494,16 @@ export default function KeyDatesPage() {
                           <button
                             className="rounded-lg bg-[#b43b34] px-3 py-1 font-semibold text-white"
                             onClick={() => {
-                              void removeKeyDate(row.id);
-                              setPendingDeleteId(null);
+                              void (async () => {
+                                if (!(await ensureDeleteAllowed("keyDates"))) return;
+                                await removeKeyDate(row.id);
+                                setPendingDeleteId(null);
+                                logActivity({
+                                  category: "keyDates",
+                                  action: "keyDate.deleted",
+                                  summary: `Deleted key date ${row.startDate}${row.endDate && row.endDate !== row.startDate ? ` – ${row.endDate}` : ""} (${row.reason || row.officeStatus})`,
+                                });
+                              })();
                             }}
                             type="button"
                           >

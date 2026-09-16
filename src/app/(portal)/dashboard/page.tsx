@@ -9,7 +9,7 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import {
   MANAGER_DASHBOARD_SECTIONS,
   canSeeDashboardSection,
-  type ManagerDashboardSection,
+  type DashboardSection,
 } from "@/lib/admin-access";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { patients } from "@/lib/mock-data";
@@ -283,7 +283,7 @@ function DashboardSection({
   title,
   children,
 }: {
-  id: ManagerDashboardSection;
+  id: DashboardSection;
   title: string;
   children: React.ReactNode;
 }) {
@@ -795,9 +795,10 @@ export default function DashboardPage() {
 
   // Role gate: admins see everything; a manager sees what Settings →
   // Admin Access allows; staff see nothing (the nav hides the page too).
-  const canSee = (section: ManagerDashboardSection) =>
+  const canSee = (section: DashboardSection) =>
     canSeeDashboardSection(roleTier, section, adminAccess);
-  const visibleSections = MANAGER_DASHBOARD_SECTIONS.filter((s) => canSee(s.key)).length;
+  const visibleSections =
+    MANAGER_DASHBOARD_SECTIONS.filter((s) => canSee(s.key)).length + (canSee("statistics") ? 1 : 0);
 
   const sortedAttorneyStats = useMemo(() => {
     const compareBy = (

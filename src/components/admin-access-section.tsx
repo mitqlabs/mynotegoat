@@ -5,8 +5,11 @@ import { useAdminAccess } from "@/hooks/use-admin-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { logActivity } from "@/lib/activity-log";
 import { ToggleSwitch } from "@/components/toggle-switch";
+import type { AccessLevel } from "@/lib/team-permissions";
 import {
+  CONFIGURABLE_ROLES,
   DELETABLE_KINDS,
+  ROLE_PAGES,
   MANAGER_DASHBOARD_SECTIONS,
   hashDeletePassword,
   isAdminTier,
@@ -64,10 +67,65 @@ export function AdminAccessSection() {
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
+      <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4 xl:col-span-2">
+        <h3 className="text-sm font-semibold">Pages</h3>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          Which pages each role can open. Admins (and you, the owner) always get everything, and Settings is
+          always admins only.
+        </p>
+        <div className="mt-3 grid gap-1.5">
+          <div className="grid grid-cols-[1fr_7rem_7rem] items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            <span />
+            {CONFIGURABLE_ROLES.map((role) => (
+              <span className="text-center" key={role.key}>
+                {role.label}
+              </span>
+            ))}
+          </div>
+          {ROLE_PAGES.map((page) => (
+            <div
+              className="grid grid-cols-[1fr_7rem_7rem] items-center gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5"
+              key={page.feature}
+            >
+              <span className="text-xs font-semibold">
+                {page.label}
+                {page.feature === "statistics" && (
+                  <span className="font-normal text-[var(--text-muted)]"> — Statistics inside is admins only</span>
+                )}
+              </span>
+              {CONFIGURABLE_ROLES.map((role) => (
+                <select
+                  aria-label={`${role.label} — ${page.label}`}
+                  className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                  key={role.key}
+                  onChange={(e) =>
+                    update({
+                      rolePages: {
+                        ...adminAccess.rolePages,
+                        [role.key]: {
+                          ...adminAccess.rolePages[role.key],
+                          [page.feature]: e.target.value as AccessLevel,
+                        },
+                      },
+                    })
+                  }
+                  value={adminAccess.rolePages[role.key][page.feature] ?? "none"}
+                >
+                  <option value="none">No access</option>
+                  <option value="view">View only</option>
+                  <option value="edit">Full</option>
+                </select>
+              ))}
+            </div>
+          ))}
+        </div>
+      </article>
+
       <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
         <h3 className="text-sm font-semibold">What Managers can see</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Dashboard sections. Admins always see everything.
+          Dashboard sections. Statistics — the business numbers — is admins only and can&apos;t be switched on
+          here. Managers never see what an admin did in the Activity Log.
         </p>
         <div className="mt-3 grid gap-1.5">
           {MANAGER_DASHBOARD_SECTIONS.map((section) => (
@@ -89,33 +147,51 @@ export function AdminAccessSection() {
       </article>
 
       <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
-        <h3 className="text-sm font-semibold">What Managers can delete</h3>
+        <h3 className="text-sm font-semibold">Who can delete what</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Staff can never delete. “With password” asks for the delete password below.
+          Admins can always delete. “With password” asks for the delete password below.
         </p>
         <div className="mt-3 grid gap-1.5">
+          <div className="grid grid-cols-[1fr_7rem_7rem] items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            <span />
+            {CONFIGURABLE_ROLES.map((role) => (
+              <span className="text-center" key={role.key}>
+                {role.label}
+              </span>
+            ))}
+          </div>
           {DELETABLE_KINDS.map((kind) => (
-            <label
-              className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5"
+            <div
+              className="grid grid-cols-[1fr_7rem_7rem] items-center gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5"
               key={kind.key}
             >
               <span className="text-xs font-semibold">{kind.label}</span>
-              <select
-                className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                onChange={(e) =>
-                  update({
-                    managerDeletes: { ...adminAccess.managerDeletes, [kind.key]: e.target.value as DeleteRule },
-                  })
-                }
-                value={adminAccess.managerDeletes[kind.key]}
-              >
-                {(["never", "password", "allowed"] as DeleteRule[]).map((rule) => (
-                  <option key={rule} value={rule}>
-                    {RULE_LABEL[rule]}
-                  </option>
-                ))}
-              </select>
-            </label>
+              {CONFIGURABLE_ROLES.map((role) => (
+                <select
+                  aria-label={`${role.label} — delete ${kind.label}`}
+                  className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                  key={role.key}
+                  onChange={(e) =>
+                    update({
+                      roleDeletes: {
+                        ...adminAccess.roleDeletes,
+                        [role.key]: {
+                          ...adminAccess.roleDeletes[role.key],
+                          [kind.key]: e.target.value as DeleteRule,
+                        },
+                      },
+                    })
+                  }
+                  value={adminAccess.roleDeletes[role.key][kind.key]}
+                >
+                  {(["never", "password", "allowed"] as DeleteRule[]).map((rule) => (
+                    <option key={rule} value={rule}>
+                      {RULE_LABEL[rule]}
+                    </option>
+                  ))}
+                </select>
+              ))}
+            </div>
           ))}
         </div>
       </article>

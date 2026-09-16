@@ -1,5 +1,9 @@
 "use client";
 
+import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { logActivity } from "@/lib/activity-log";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import { isAdminTier } from "@/lib/admin-access";
 import { useMemo, useState } from "react";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -131,6 +135,11 @@ function normalizeLookupValue(value: string) {
 export default function ContactsPage() {
   const { categories, subCategories } = useContactCategories();
   const { contacts, addContact, updateContact, removeContact } = useContactDirectory();
+  // Everyone can add a contact. Editing an existing one is for managers and
+  // admins; deleting is set per role in Settings → Admin Access.
+  const { roleTier, deleteRule } = useWorkspaceAccess();
+  const canEditContacts = isAdminTier(roleTier) || roleTier === "manager";
+  const canDeleteContacts = deleteRule("contacts") !== "never";
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
   const defaultCategory = useMemo<ContactRecord["category"]>(() => "Attorney", []);
@@ -216,11 +225,12 @@ export default function ContactsPage() {
     setEditContactForm(createBlankContactForm(defaultCategory));
   };
 
-  const handleDeleteContact = (contact: ContactRecord) => {
+  const handleDeleteContact = async (contact: ContactRecord) => {
     const confirmed = window.confirm(
       `Delete contact "${contact.name}"? This cannot be undone.`,
     );
     if (!confirmed) return;
+    if (!(await ensureDeleteAllowed("contacts"))) return;
     const result = removeContact(contact.id);
     if (!result.removed) {
       window.alert(result.reason);
@@ -231,6 +241,11 @@ export default function ContactsPage() {
       setEditContactError("");
       setEditContactForm(createBlankContactForm(defaultCategory));
     }
+    logActivity({
+      category: "patients",
+      action: "contact.deleted",
+      summary: `Deleted contact ${contact.name}`,
+    });
   };
 
   const openAddModal = () => {
@@ -346,20 +361,24 @@ export default function ContactsPage() {
                 <h4 className="text-lg font-semibold">{contact.name}</h4>
                 {!isEditing && (
                   <div className="flex shrink-0 gap-2">
-                    <button
-                      className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
-                      onClick={() => startEditing(contact)}
-                      type="button"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="rounded-lg border border-[#b43b34] px-3 py-1 text-sm font-semibold text-[#b43b34] hover:bg-[#b43b34] hover:text-white"
-                      onClick={() => handleDeleteContact(contact)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
+                    {canEditContacts && (
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                        onClick={() => startEditing(contact)}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {canDeleteContacts && (
+                      <button
+                        className="rounded-lg border border-[#b43b34] px-3 py-1 text-sm font-semibold text-[#b43b34] hover:bg-[#b43b34] hover:text-white"
+                        onClick={() => void handleDeleteContact(contact)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
