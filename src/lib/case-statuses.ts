@@ -43,7 +43,9 @@ const defaultStatusColorByName: Record<string, string> = {
 };
 const defaultClosedStatusNames = new Set(["dropped", "paid"]);
 const defaultLienLabel: LienLabel = "Lien";
-const defaultLienOptions = ["Not Set", "Not Sent", "Requested", "Received"];
+// "Pending" leads: a brand-new case has a lien nobody has chased yet, and
+// that's what a new patient starts on (see createNewPatient).
+const defaultLienOptions = ["Pending", "Not Set", "Not Sent", "Requested", "Received"];
 const defaultReviewOptions = ["Not Requested", "Requested", "Received"];
 
 function normalizeStatusName(value: unknown) {

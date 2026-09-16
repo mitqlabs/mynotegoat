@@ -8,7 +8,12 @@ import type {
 import type { PatientRecord } from "@/lib/mock-data";
 import type { PatientFollowUpOverrideMap } from "@/lib/patient-follow-up-overrides";
 
-export type FollowUpCategory = "X-Ray" | "MRI / CT" | "Specialist" | "Lien / LOP";
+export type FollowUpCategory =
+  | "Initial Visit"
+  | "X-Ray"
+  | "MRI / CT"
+  | "Specialist"
+  | "Lien / LOP";
 
 export type FollowUpItem = {
   id: string;
@@ -29,6 +34,10 @@ export type FollowUpQueueOptions = {
   includeMriCt?: boolean;
   includeSpecialist?: boolean;
   includeLienLop?: boolean;
+  /** "Schedule Initial Visit" — on until the patient has a visit booked. */
+  includeInitialVisit?: boolean;
+  /** Patient ids that already have an appointment on the books. */
+  patientIdsWithVisit?: Set<string>;
   xrayAppearAuto?: boolean;
   mriAppearMode?: MriAppearMode;
   mriAppearDays?: number;
@@ -240,6 +249,8 @@ export function buildFollowUpItems(
   const includeMriCt = options.includeMriCt ?? true;
   const includeSpecialist = options.includeSpecialist ?? true;
   const includeLienLop = options.includeLienLop ?? true;
+  const includeInitialVisit = options.includeInitialVisit ?? true;
+  const patientIdsWithVisit = options.patientIdsWithVisit ?? new Set<string>();
 
   const xrayAppearAuto = options.xrayAppearAuto ?? true;
   const mriAppearMode: MriAppearMode = options.mriAppearMode ?? "auto";
@@ -365,6 +376,26 @@ export function buildFollowUpItems(
     const initialExamRaw = matrix.initialExam ?? "";
 
     const patientOverrides = followUpOverrides[patient.id];
+
+    // --- Initial Visit ---
+    // A new case with nothing on the schedule yet. Clears the moment any
+    // visit is booked (a canceled one doesn't count as booked).
+    if (includeInitialVisit && !lienClearedByStatus && !patientIdsWithVisit.has(patient.id)) {
+      const anchorDate = toUsDateCanonical(patient.dateOfLoss);
+      rows.push({
+        id: `${patient.id}-initial-visit`,
+        patientId: patient.id,
+        patientName: patient.fullName,
+        caseNumber,
+        attorney: cleanAttorneyLabel(patient.attorney),
+        caseStatus: patient.caseStatus,
+        category: "Initial Visit",
+        stage: "Schedule Initial Visit",
+        anchorDate,
+        daysFromAnchor: getDaysFromToday(anchorDate),
+        note: "",
+      });
+    }
 
     // --- X-Ray ---
     if (includeXray && !xrayClearedByStatus) {
