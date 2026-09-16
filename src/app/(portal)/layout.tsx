@@ -101,6 +101,10 @@ export default function PortalLayout({
   const [showSavedFlash, setShowSavedFlash] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapErrorDetail, setBootstrapErrorDetail] = useState<string | null>(null);
+  // Set when someone chooses "Open Anyway". Staff were clicking through it
+  // and carrying on for hours without telling anyone, so it stays on screen
+  // for the life of the tab — it can't be dismissed.
+  const [offlineMode, setOfflineMode] = useState(false);
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null);
   const [syncBlocked, setSyncBlocked] = useState<{ localSize: number; remoteSize: number } | null>(null);
 
@@ -422,8 +426,10 @@ export default function PortalLayout({
             <button
               type="button"
               onClick={() => {
+                console.warn("[Layout] Opening in offline mode after a bootstrap failure.");
                 setBootstrapError(null);
                 setBootstrapErrorDetail(null);
+                setOfflineMode(true);
                 setMounted(true);
               }}
               className="rounded-lg border border-amber-400/60 bg-amber-900/30 px-4 py-2 font-semibold text-amber-100 hover:bg-amber-900/50"
@@ -533,6 +539,20 @@ export default function PortalLayout({
               type="button"
               onClick={() => window.location.reload()}
               className="ml-2 underline"
+            >
+              Reload now
+            </button>
+          </div>
+        )}
+        {offlineMode && (
+          <div className="fixed inset-x-0 top-0 z-[60] bg-amber-600 px-4 py-2 text-center text-sm font-semibold text-white shadow-lg">
+            ⚠ Offline Mode — this tab opened without confirming it had the latest data.
+            Notes, appointments and patient changes still save to the cloud, but{" "}
+            <strong>reload as soon as you can</strong> and tell whoever runs the office.{" "}
+            <button
+              className="ml-1 rounded bg-white/20 px-2 py-0.5 font-semibold hover:bg-white/30"
+              onClick={() => window.location.reload()}
+              type="button"
             >
               Reload now
             </button>
