@@ -1069,13 +1069,26 @@ export default function PatientsPage() {
 
   // Who already has a visit on the books. A canceled or no-showed
   // appointment doesn't count — those patients still need booking.
+  const normalizeName = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+
   const patientIdsWithVisit = useMemo(() => {
     const ids = new Set<string>();
+    // Legacy appointments (pre-dating the patientId field) carry only a
+    // name. Resolve those too, or those patients look unbooked forever.
+    const bookedNames = new Set<string>();
     for (const appointment of scheduleAppointments) {
       if (appointment.status === "Canceled" || appointment.status === "No Show") continue;
-      ids.add(appointment.patientId);
+      if (appointment.patientId) ids.add(appointment.patientId);
+      else if (appointment.patientName) bookedNames.add(normalizeName(appointment.patientName));
+    }
+    if (bookedNames.size > 0) {
+      for (const patient of patients) {
+        if (bookedNames.has(normalizeName(patient.fullName))) ids.add(patient.id);
+      }
     }
     return ids;
+    // `patients` is a module-level list, not React state — it can't be a
+    // dependency. The appointment list changing is what re-runs this.
   }, [scheduleAppointments]);
 
   const followUpItems = useMemo(() => {

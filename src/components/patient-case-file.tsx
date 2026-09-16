@@ -1345,10 +1345,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setCompletedPriorCareAsync,
     setNotNeededAsync,
   } = usePatientFollowUpOverrides();
-  const patientFlowItems = useMemo(
-    () => buildFollowUpItems([patient], { followUpOverrides: followUpOverridesByPatientId }),
-    [patient, followUpOverridesByPatientId],
-  );
   const patientBillingRecord = getPatientBillingRecord(patient.id);
   const currentPlanTier = usePlanTier();
   const isCompletePlan = currentPlanTier === "complete";
@@ -2258,6 +2254,27 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         return right.startTime.localeCompare(left.startTime);
       });
   }, [firstName, lastName, patient.fullName, patient.id, scheduleAppointments]);
+  // Case Flow for this one patient. It sits below patientAppointmentRecords
+  // deliberately: that list is what decides whether the patient has ever
+  // been booked, and it handles legacy appointments that carry a name but
+  // no patient id. Passing the appointment set matters — without it every
+  // patient is told to "Schedule Initial Visit", booked or not.
+  const patientFlowItems = useMemo(
+    () =>
+      buildFollowUpItems([patient], {
+        followUpOverrides: followUpOverridesByPatientId,
+        // Canceled and no-showed visits don't count as booked.
+        patientIdsWithVisit: new Set(
+          patientAppointmentRecords
+            .filter(
+              (appointment) =>
+                appointment.status !== "Canceled" && appointment.status !== "No Show",
+            )
+            .map(() => patient.id),
+        ),
+      }),
+    [patient, followUpOverridesByPatientId, patientAppointmentRecords],
+  );
   const appointmentRows = useMemo(
     () => {
       type AppointmentEncounterRow = {

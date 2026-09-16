@@ -34,9 +34,14 @@ export type FollowUpQueueOptions = {
   includeMriCt?: boolean;
   includeSpecialist?: boolean;
   includeLienLop?: boolean;
-  /** "Schedule Initial Visit" — on until the patient has a visit booked. */
+  /** "Schedule Initial Visit" — on until the patient has a visit booked.
+   *  Only ever produced when patientIdsWithVisit is supplied: without the
+   *  appointment list there is no way to tell a patient with no visits
+   *  from a caller that didn't pass any, and guessing tells every patient
+   *  to book an initial visit. */
   includeInitialVisit?: boolean;
-  /** Patient ids that already have an appointment on the books. */
+  /** Patient ids that already have an appointment on the books. Omit when
+   *  the caller has no appointment data — the row is then skipped. */
   patientIdsWithVisit?: Set<string>;
   xrayAppearAuto?: boolean;
   mriAppearMode?: MriAppearMode;
@@ -249,8 +254,8 @@ export function buildFollowUpItems(
   const includeMriCt = options.includeMriCt ?? true;
   const includeSpecialist = options.includeSpecialist ?? true;
   const includeLienLop = options.includeLienLop ?? true;
-  const includeInitialVisit = options.includeInitialVisit ?? true;
-  const patientIdsWithVisit = options.patientIdsWithVisit ?? new Set<string>();
+  const patientIdsWithVisit = options.patientIdsWithVisit;
+  const includeInitialVisit = (options.includeInitialVisit ?? true) && Boolean(patientIdsWithVisit);
 
   const xrayAppearAuto = options.xrayAppearAuto ?? true;
   const mriAppearMode: MriAppearMode = options.mriAppearMode ?? "auto";
@@ -380,7 +385,7 @@ export function buildFollowUpItems(
     // --- Initial Visit ---
     // A new case with nothing on the schedule yet. Clears the moment any
     // visit is booked (a canceled one doesn't count as booked).
-    if (includeInitialVisit && !lienClearedByStatus && !patientIdsWithVisit.has(patient.id)) {
+    if (includeInitialVisit && !lienClearedByStatus && !patientIdsWithVisit?.has(patient.id)) {
       const anchorDate = toUsDateCanonical(patient.dateOfLoss);
       rows.push({
         id: `${patient.id}-initial-visit`,
