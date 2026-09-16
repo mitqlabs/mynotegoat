@@ -19,7 +19,10 @@ export type PatientPagePanelKey =
   | "letters"
   | "narrative"
   | "patientFiles"
-  | "additionalDetails";
+  | "additionalDetails"
+  // The money half of Additional Details. Its own key so a member can be
+  // given the panel (discharge dates, R&B sent) without the figures.
+  | "billingFigures";
 
 export const patientPagePanelKeys: PatientPagePanelKey[] = [
   "notes",
@@ -32,6 +35,7 @@ export const patientPagePanelKeys: PatientPagePanelKey[] = [
   "narrative",
   "patientFiles",
   "additionalDetails",
+  "billingFigures",
 ];
 
 /** Display labels — match what the user actually sees on the patient
@@ -47,6 +51,7 @@ export const patientPagePanelLabels: Record<PatientPagePanelKey, string> = {
   narrative: "Reports",
   patientFiles: "Patient Files",
   additionalDetails: "Additional Details",
+  billingFigures: "Additional Details — billed / paid figures",
 };
 
 /** Three-way per-section display mode:
@@ -77,6 +82,7 @@ export function getDefaultPatientPagePrefs(): PatientPagePrefs {
       narrative: "show",
       patientFiles: "show",
       additionalDetails: "show",
+      billingFigures: "show",
     },
   };
 }

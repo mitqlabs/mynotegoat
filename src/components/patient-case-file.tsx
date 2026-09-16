@@ -114,7 +114,10 @@ type SectionPanelKey =
   | "letters"
   | "narrative"
   | "patientFiles"
-  | "additionalDetails";
+  | "additionalDetails"
+  // Not a panel of its own — the money fields inside Additional Details,
+  // so they can be hidden from a member who still needs the panel.
+  | "billingFigures";
 type PopupAnchor = {
   x: number;
   y: number;
@@ -1555,6 +1558,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       narrative: startOpen("narrative"),
       patientFiles: startOpen("patientFiles"),
       additionalDetails: startOpen("additionalDetails"),
+      // Not a collapsible panel — it rides along inside Additional Details.
+      billingFigures: true,
     };
   });
   const quickTaskButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -6997,12 +7002,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           const paidAmountFilled = paidNumeric > 0;
           const billingMissing = !dischargeFilled || !rbSentFilled || !billedFilled;
           const paidMissing = !paidDateFilled || !paidAmountFilled;
-          const headerColor = billingMissing
+          // Someone who can't see the figures shouldn't read them off the
+          // header colour or badge either.
+          const showsMoney = !hiddenStyle("billingFigures");
+          const headerColor = !showsMoney
+            ? "bg-[#6db5c8]"
+            : billingMissing
             ? "bg-[#c93b1d]" // red — billing not yet complete
             : paidMissing
               ? "bg-[#d4a017]" // amber/yellow — billed but unpaid
               : "bg-[#6db5c8]"; // teal — fully closed out
-          const statusBadge = billingMissing
+          const statusBadge = !showsMoney
+            ? null
+            : billingMissing
             ? "Needs billing"
             : paidMissing
               ? "Awaiting payment"
@@ -7085,6 +7097,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   value={rbSentDate}
                 />
               </label>
+              {/* The money: billed, paid date, paid amount. Hidden from
+                  anyone whose role doesn't include the billing figures
+                  (Settings → Team, patient-page sections) — an inline
+                  style, like the panels, so Tailwind still extracts the
+                  grid classes. */}
+              <div className="contents" style={hiddenStyle("billingFigures")}>
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">
                   $ Billed
@@ -7125,9 +7143,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   value={paidFocused ? paidAmount : paidAmount.trim() ? formatUsdCurrency(Number.parseFloat(paidAmount) || 0) : ""}
                 />
               </label>
+              </div>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-[1.8fr_1fr] xl:grid-cols-1">
+            <div
+              className="mt-4 grid gap-4 md:grid-cols-[1.8fr_1fr] xl:grid-cols-1"
+              style={hiddenStyle("billingFigures")}
+            >
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3">
                 <dl className="space-y-2 text-sm sm:text-base">
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
