@@ -141,6 +141,7 @@ export default function ContactsPage() {
   const canEditContacts = isAdminTier(roleTier) || roleTier === "manager";
   const canDeleteContacts = deleteRule("contacts") !== "never";
   const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
   const defaultCategory = useMemo<ContactRecord["category"]>(() => "Attorney", []);
 
@@ -169,12 +170,52 @@ export default function ContactsPage() {
       : "ALL";
   }, [categoryOptions, selectedCategory]);
 
+  // Sub-categories offered for the chosen category: the ones set up in
+  // Settings, plus anything already typed onto a contact, so a one-off
+  // sub-category still shows up here.
+  const subCategoryOptions = useMemo(() => {
+    if (resolvedSelectedCategory === "ALL") return [];
+    const inUse = contacts
+      .filter(
+        (contact) =>
+          normalizeLookupValue(contact.category) === normalizeLookupValue(resolvedSelectedCategory),
+      )
+      .map((contact) => (contact.subCategory ?? "").trim())
+      .filter(Boolean);
+    const configured =
+      subCategories[resolvedSelectedCategory as ContactRecord["category"]] ?? [];
+    const seen = new Map<string, string>();
+    for (const value of [...configured, ...inUse]) {
+      const key = normalizeLookupValue(value);
+      if (!seen.has(key)) seen.set(key, value);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [contacts, resolvedSelectedCategory, subCategories]);
+
+  const resolvedSelectedSubCategory = useMemo(
+    () =>
+      subCategoryOptions.some(
+        (entry) => normalizeLookupValue(entry) === normalizeLookupValue(selectedSubCategory),
+      )
+        ? selectedSubCategory
+        : "ALL",
+    [subCategoryOptions, selectedSubCategory],
+  );
+
   const filteredContacts = useMemo(() => {
-    const list =
+    const byCategory =
       resolvedSelectedCategory === "ALL"
         ? contacts
         : contacts.filter(
             (contact) => normalizeLookupValue(contact.category) === normalizeLookupValue(resolvedSelectedCategory),
+          );
+    const list =
+      resolvedSelectedSubCategory === "ALL"
+        ? byCategory
+        : byCategory.filter(
+            (contact) =>
+              normalizeLookupValue(contact.subCategory ?? "") ===
+              normalizeLookupValue(resolvedSelectedSubCategory),
           );
     const query = normalizeLookupValue(contactSearch);
     const searched = query
@@ -182,6 +223,9 @@ export default function ContactsPage() {
           const haystack = [
             contact.name,
             contact.category,
+            // Sub-category is how a specialist is actually found ("pain
+            // management", "orthopedic"), so it belongs in the search.
+            contact.subCategory ?? "",
             contact.phone,
             contact.fax ?? "",
             toDisplayEmails(contact)
@@ -195,7 +239,7 @@ export default function ContactsPage() {
         })
       : list;
     return [...searched].sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts, resolvedSelectedCategory, contactSearch]);
+  }, [contacts, resolvedSelectedCategory, resolvedSelectedSubCategory, contactSearch]);
 
   const startEditing = (contact: ContactRecord) => {
     setEditingContactId(contact.id);
@@ -293,7 +337,7 @@ export default function ContactsPage() {
               <input
                 className="w-64 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 onChange={(event) => setContactSearch(event.target.value)}
-                placeholder="Search name, phone, email..."
+                placeholder="Search name, specialist, category, phone, email…"
                 type="text"
                 value={contactSearch}
               />
@@ -304,7 +348,10 @@ export default function ContactsPage() {
               </span>
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                onChange={(event) => setSelectedCategory(event.target.value)}
+                onChange={(event) => {
+                  setSelectedCategory(event.target.value);
+                  setSelectedSubCategory("ALL");
+                }}
                 value={resolvedSelectedCategory}
               >
                 <option value="ALL">All Categories</option>
@@ -315,6 +362,28 @@ export default function ContactsPage() {
                 ))}
               </select>
             </label>
+
+            {/* Only worth showing once a category is chosen and that
+                category actually has sub-categories to pick between. */}
+            {subCategoryOptions.length > 0 && (
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  {resolvedSelectedCategory === "Specialist" ? "Specialty" : "Sub-category"}
+                </span>
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setSelectedSubCategory(event.target.value)}
+                  value={resolvedSelectedSubCategory}
+                >
+                  <option value="ALL">All</option>
+                  {subCategoryOptions.map((entry) => (
+                    <option key={entry} value={entry}>
+                      {entry}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-muted)] transition-all hover:text-[var(--brand-primary)] active:scale-[0.97] active:shadow-inner"

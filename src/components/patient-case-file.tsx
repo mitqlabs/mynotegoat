@@ -1388,10 +1388,31 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [contacts],
   );
-  const specialistContacts = useMemo(
-    () => specialistContactDirectory.map((contact) => contact.name),
-    [specialistContactDirectory],
-  );
+  // Specialists grouped by what they actually do (the contact's
+  // sub-category), each group A-Z, groups A-Z, so the referral picker
+  // reads as sections instead of one long alphabetical run.
+  const specialistContactsBySpecialty = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const contact of specialistContactDirectory) {
+      const specialty = (contact.subCategory ?? "").trim() || "Other";
+      const list = groups.get(specialty) ?? [];
+      list.push(contact.name);
+      groups.set(specialty, list);
+    }
+    return [...groups.entries()]
+      .map(([specialty, names]) => ({
+        specialty,
+        names: [...names].sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) =>
+        // "Other" last; everything else alphabetical.
+        a.specialty === "Other"
+          ? 1
+          : b.specialty === "Other"
+            ? -1
+            : a.specialty.localeCompare(b.specialty),
+      );
+  }, [specialistContactDirectory]);
 
   const [firstName, setFirstName] = useState(names.firstName);
   const [lastName, setLastName] = useState(names.lastName);
@@ -5433,6 +5454,32 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     placeholder="Select or type specialist"
                     value={specialistDraft.specialist}
                   />
+                  {/* Typing stays free-form; this is the browse-by-specialty
+                      route, which a plain datalist can't do — browsers don't
+                      render groups inside one. */}
+                  {specialistContactsBySpecialty.length > 0 && (
+                    <select
+                      aria-label="Pick a specialist by specialty"
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                      onChange={(event) => {
+                        const picked = event.target.value;
+                        if (!picked) return;
+                        setSpecialistDraft((current) => ({ ...current, specialist: picked }));
+                      }}
+                      value=""
+                    >
+                      <option value="">Browse by specialty…</option>
+                      {specialistContactsBySpecialty.map((group) => (
+                        <optgroup key={group.specialty} label={group.specialty}>
+                          {group.names.map((name) => (
+                            <option key={`${group.specialty}-${name}`} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  )}
                 </label>
                 <label className="grid gap-1.5">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Sent Date</span>
@@ -8510,8 +8557,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         ))}
       </datalist>
       <datalist id="specialist-contacts">
-        {specialistContacts.map((name) => (
-          <option key={name} value={name} />
+        {/* The specialty rides along as the option label, so typing a name
+            still shows what that person does. */}
+        {specialistContactDirectory.map((contact) => (
+          <option key={contact.id} label={(contact.subCategory ?? "").trim() || undefined} value={contact.name} />
         ))}
       </datalist>
 
