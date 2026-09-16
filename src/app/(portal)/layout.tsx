@@ -227,9 +227,26 @@ export default function PortalLayout({
           error instanceof CloudBootstrapError
             ? error.message
             : "Could not load your data from the cloud. Refusing to open the app to protect your records.";
+        // A Supabase/PostgREST failure arrives as a plain object, not an
+        // Error, so the old `cause instanceof Error` check printed nothing
+        // and the screen showed only the generic wrapper — useless for
+        // working out what actually broke on someone else's machine.
+        const describeCause = (cause: unknown): string => {
+          if (!cause) return "";
+          if (cause instanceof Error) return `${cause.name}: ${cause.message}`;
+          if (typeof cause === "object") {
+            const c = cause as Record<string, unknown>;
+            const parts = ["message", "code", "details", "hint", "status"]
+              .map((key) => (c[key] ? `${key}=${String(c[key])}` : ""))
+              .filter(Boolean);
+            return parts.length ? parts.join(" · ") : JSON.stringify(cause).slice(0, 400);
+          }
+          return String(cause);
+        };
+        const causeText = error instanceof Error ? describeCause(error.cause) : "";
         const detail =
           error instanceof Error
-            ? `${error.name}: ${error.message}${error.cause instanceof Error ? ` — caused by: ${error.cause.message}` : ""}`
+            ? `${error.name}: ${error.message}${causeText ? ` — caused by: ${causeText}` : ""}`
             : String(error);
         console.error("[Layout] Bootstrap error detail:", error);
         setBootstrapError(message);
@@ -378,6 +395,23 @@ export default function PortalLayout({
             cloud.
           </p>
           <div className="flex flex-wrap gap-2">
+            {bootstrapErrorDetail && (
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(`${bootstrapError ?? ""}\n${bootstrapErrorDetail}`)
+                    .catch((copyErr) => {
+                      // Clipboard can be blocked; the text is on screen
+                      // either way, so just say so in the console.
+                      console.warn("[Layout] Could not copy error details:", copyErr);
+                    });
+                }}
+                className="rounded-lg border border-red-400/60 px-4 py-2 font-semibold text-red-100 hover:bg-red-900/40"
+              >
+                Copy error details
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.location.reload()}

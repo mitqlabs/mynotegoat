@@ -530,9 +530,19 @@ export async function prepareCloudStateBeforeMount() {
       return;
     }
 
-    // Remote is empty but local has data — push local to remote (first-time bootstrap)
+    // Remote is empty but local has data — push local to remote (first-time
+    // bootstrap). A failure here must NOT lock the app: the danger this
+    // whole guard exists for is mounting on STALE local data and letting it
+    // overwrite the cloud. Here the cloud is empty and local is the truth,
+    // so opening is safe — and a team member whose account can't write the
+    // workspace row would otherwise be locked out of the app entirely. The
+    // failure still surfaces through the normal sync-error pill.
     if (localHasData) {
-      await upsertRemoteSnapshot(authed.workspaceId, localSnapshot);
+      try {
+        await upsertRemoteSnapshot(authed.workspaceId, localSnapshot);
+      } catch (pushError) {
+        console.error("[Cloud Sync] First-time push failed (opening anyway):", pushError);
+      }
     }
 
   } catch (error) {
