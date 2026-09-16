@@ -267,6 +267,9 @@ function buildPatientNameLookupSet(fullName: string, firstName: string, lastName
   return set;
 }
 
+/** Sentinel for "not in Contacts — I'll type the name". */
+const SPECIALIST_OTHER = "__type-a-name__";
+
 function isSpecialistReferralContactCategory(category: string) {
   // Only the fixed "Specialist" top-level category is a specialist.
   // Attorneys and Imaging Centers are categorically different; the
@@ -1388,6 +1391,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [contacts],
   );
+  const specialistNameSet = useMemo(
+    () => new Set(specialistContactDirectory.map((contact) => contact.name)),
+    [specialistContactDirectory],
+  );
+  // Set when the user chooses "Someone else" so the free-text box appears
+  // even before they've typed anything into it.
+  const [specialistDraftTyping, setSpecialistDraftTyping] = useState(false);
+  const [editingSpecialistTyping, setEditingSpecialistTyping] = useState(false);
   // Specialists grouped by what they actually do (the contact's
   // sub-category), each group A-Z, groups A-Z, so the referral picker
   // reads as sections instead of one long alphabetical run.
@@ -2960,6 +2971,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       specialist: "",
       sentDate: "",
     });
+    setSpecialistDraftTyping(false);
     setSpecialistMessage(`${specialistName} added. Use Edit to update scheduling/report status.`);
     autoSavePatientFile({ specialistReferrals: nextSpecialists });
     // Contact gap check: if this specialist isn't already in contacts, offer to add them.
@@ -2975,6 +2987,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const openSpecialistEditor = (entry: SpecialistReferral, event?: MouseEvent<HTMLElement>) => {
     setEditingSpecialist({ ...entry });
+    // Start the editor on the dropdown unless this name isn't in Contacts.
+    setEditingSpecialistTyping(false);
     setSpecialistEditorAnchor(event ? getPopupAnchorFromEvent(event) : null);
   };
 
@@ -5445,40 +5459,50 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <label className="grid gap-1.5 sm:col-span-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Specialist</span>
-                  <input
+                  {/* One dropdown: the specialty is the heading, the
+                      providers sit under it. Someone not in Contacts is
+                      still typed by hand — "Someone else" opens the box. */}
+                  <select
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="specialist-contacts"
-                    onChange={(event) =>
-                      setSpecialistDraft((current) => ({ ...current, specialist: event.target.value }))
+                    onChange={(event) => {
+                      const picked = event.target.value;
+                      if (picked === SPECIALIST_OTHER) {
+                        setSpecialistDraftTyping(true);
+                        setSpecialistDraft((current) => ({ ...current, specialist: "" }));
+                        return;
+                      }
+                      setSpecialistDraftTyping(false);
+                      setSpecialistDraft((current) => ({ ...current, specialist: picked }));
+                    }}
+                    value={
+                      specialistDraftTyping || (specialistDraft.specialist && !specialistNameSet.has(specialistDraft.specialist))
+                        ? SPECIALIST_OTHER
+                        : specialistDraft.specialist
                     }
-                    placeholder="Select or type specialist"
-                    value={specialistDraft.specialist}
-                  />
-                  {/* Typing stays free-form; this is the browse-by-specialty
-                      route, which a plain datalist can't do — browsers don't
-                      render groups inside one. */}
-                  {specialistContactsBySpecialty.length > 0 && (
-                    <select
-                      aria-label="Pick a specialist by specialty"
-                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      onChange={(event) => {
-                        const picked = event.target.value;
-                        if (!picked) return;
-                        setSpecialistDraft((current) => ({ ...current, specialist: picked }));
-                      }}
-                      value=""
-                    >
-                      <option value="">Browse by specialty…</option>
-                      {specialistContactsBySpecialty.map((group) => (
-                        <optgroup key={group.specialty} label={group.specialty}>
-                          {group.names.map((name) => (
-                            <option key={`${group.specialty}-${name}`} value={name}>
-                              {name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                  >
+                    <option value="">Select specialist</option>
+                    {specialistContactsBySpecialty.map((group) => (
+                      <optgroup key={group.specialty} label={group.specialty}>
+                        {group.names.map((name) => (
+                          <option key={`${group.specialty}-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <option value={SPECIALIST_OTHER}>Someone else — type a name</option>
+                  </select>
+                  {(specialistDraftTyping ||
+                    (specialistDraft.specialist && !specialistNameSet.has(specialistDraft.specialist))) && (
+                    <input
+                      autoFocus
+                      className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      onChange={(event) =>
+                        setSpecialistDraft((current) => ({ ...current, specialist: event.target.value }))
+                      }
+                      placeholder="Type the specialist's name"
+                      value={specialistDraft.specialist}
+                    />
                   )}
                 </label>
                 <label className="grid gap-1.5">
@@ -8010,16 +8034,50 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="space-y-3">
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Specialist</span>
-                <input
+                <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  list="specialist-contacts"
-                  onChange={(event) =>
-                    setEditingSpecialist((current) =>
-                      current ? { ...current, specialist: event.target.value } : current,
-                    )
+                  onChange={(event) => {
+                    const picked = event.target.value;
+                    if (picked === SPECIALIST_OTHER) {
+                      setEditingSpecialistTyping(true);
+                      setEditingSpecialist((current) => (current ? { ...current, specialist: "" } : current));
+                      return;
+                    }
+                    setEditingSpecialistTyping(false);
+                    setEditingSpecialist((current) => (current ? { ...current, specialist: picked } : current));
+                  }}
+                  value={
+                    editingSpecialistTyping ||
+                    (editingSpecialist.specialist && !specialistNameSet.has(editingSpecialist.specialist))
+                      ? SPECIALIST_OTHER
+                      : editingSpecialist.specialist
                   }
-                  value={editingSpecialist.specialist}
-                />
+                >
+                  <option value="">Select specialist</option>
+                  {specialistContactsBySpecialty.map((group) => (
+                    <optgroup key={group.specialty} label={group.specialty}>
+                      {group.names.map((name) => (
+                        <option key={`edit-${group.specialty}-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  <option value={SPECIALIST_OTHER}>Someone else — type a name</option>
+                </select>
+                {(editingSpecialistTyping ||
+                  (editingSpecialist.specialist && !specialistNameSet.has(editingSpecialist.specialist))) && (
+                  <input
+                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(event) =>
+                      setEditingSpecialist((current) =>
+                        current ? { ...current, specialist: event.target.value } : current,
+                      )
+                    }
+                    placeholder="Type the specialist's name"
+                    value={editingSpecialist.specialist}
+                  />
+                )}
               </label>
 
               <div className="grid grid-cols-2 gap-2">
@@ -8554,13 +8612,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <datalist id="attorney-contacts">
         {attorneyContacts.map((contact) => (
           <option key={contact.id} value={contact.name} />
-        ))}
-      </datalist>
-      <datalist id="specialist-contacts">
-        {/* The specialty rides along as the option label, so typing a name
-            still shows what that person does. */}
-        {specialistContactDirectory.map((contact) => (
-          <option key={contact.id} label={(contact.subCategory ?? "").trim() || undefined} value={contact.name} />
         ))}
       </datalist>
 
