@@ -513,10 +513,14 @@ export default function PatientsPage() {
   // applies when a specific Year is chosen.
   const [fromMon, setFromMon] = useState("");
   const [toMon, setToMon] = useState("");
-  const [yearDraft, setYearDraft] = useState("ALL");
+  // The list opens on the current year so it isn't the entire history
+  // every time. Searching ignores the year (see filteredPatients), so an
+  // older case is still one search away.
+  const currentYear = String(new Date().getFullYear());
+  const [yearDraft, setYearDraft] = useState(currentYear);
   const [attorneyDraft, setAttorneyDraft] = useState("ALL");
   const [statusDraft, setStatusDraft] = useState("ALL");
-  const [year, setYear] = useState("ALL");
+  const [year, setYear] = useState(currentYear);
   const [attorney, setAttorney] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   // Review follow-up filter (Not Requested / Requested / Received).
@@ -747,16 +751,20 @@ export default function PatientsPage() {
 
   const years = useMemo(
     () => {
-      const collected = new Set<string>();
+      // Always offer this year, even before anyone has been seen in it —
+      // it's the default, so it has to be in the list.
+      const collected = new Set<string>([currentYear]);
       for (const patient of patients) {
-        const y = extractYearFromDateString(patient.matrix?.initialExam);
+        const y =
+          extractYearFromDateString(patient.matrix?.initialExam) ||
+          extractYearFromDateString(patient.dateOfLoss);
         if (y) collected.add(y);
       }
       // Newest year first so the dropdown opens to recent years
       const sorted = Array.from(collected).sort((a, b) => Number(b) - Number(a));
       return ["ALL", ...sorted];
     },
-    [patients],
+    [patients, currentYear],
   );
 
   const attorneyOptions = useMemo(() => {
@@ -861,8 +869,12 @@ export default function PatientsPage() {
       const matchesSearch =
         !q || qWords.every((word) => haystack.includes(word));
 
-      // Filter by INITIAL EXAM date (year + optional month range within it).
-      const examYm = extractYearMonthNumber(patient.matrix?.initialExam);
+      // Filter by INITIAL EXAM date (year + optional month range within
+      // it), falling back to the date of injury — a patient taken in today
+      // has no initial exam yet and must not drop out of this year's list.
+      const examYm =
+        extractYearMonthNumber(patient.matrix?.initialExam) ||
+        extractYearMonthNumber(patient.dateOfLoss);
       const matchesYear =
         year === "ALL" ||
         (examYm > 0 && String(Math.floor(examYm / 100)) === year);
@@ -891,8 +903,11 @@ export default function PatientsPage() {
       const matchesLocation =
         !multiLocation || !selectedLocationId || patient.locationId === selectedLocationId;
 
+      // A search looks across every year — the year filter is about what
+      // the list opens on, not a wall around what can be found.
+      const withinDates = q ? true : matchesYear && matchesMonthRange;
       return (
-        matchesSearch && matchesYear && matchesMonthRange && matchesAttorney && matchesStatus && matchesReview && matchesLocation
+        matchesSearch && withinDates && matchesAttorney && matchesStatus && matchesReview && matchesLocation
       );
     });
 
@@ -1636,8 +1651,12 @@ export default function PatientsPage() {
                 reviewFilter !== "ALL"
                   ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}`
                   : "",
-                year !== "ALL" ? `Initial exam: ${year}` : "",
-                searchDraft.trim() ? `Search: “${searchDraft.trim()}”` : "",
+                // While searching, the year is not applied — say so rather
+                // than listing a filter that isn't doing anything.
+                year !== "ALL" && !searchDraft.trim() ? `Year: ${year}` : "",
+                searchDraft.trim()
+                  ? `Search: “${searchDraft.trim()}” · all years`
+                  : "",
               ].filter(Boolean);
               return active.length ? (
                 <span className="text-[var(--text-muted)]">{active.join(" · ")}</span>

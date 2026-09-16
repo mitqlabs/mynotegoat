@@ -50,7 +50,7 @@ export type DeleteRule = "never" | "password" | "allowed";
 
 /** Pages whose access is set per role. Settings is admin-only, never here. */
 export const ROLE_PAGES: { feature: PortalFeature; label: string }[] = [
-  { feature: "patients", label: "Patients" },
+  { feature: "patients", label: "Patient List" },
   { feature: "statistics", label: "Dashboard" },
   { feature: "contacts", label: "Contacts" },
   { feature: "appointments", label: "Schedule" },

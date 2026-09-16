@@ -21,7 +21,9 @@ export type PortalNavItem = {
 };
 
 export const portalNavItems: PortalNavItem[] = [
-  { href: "/patients", label: "Patients", feature: "patients" },
+  // "Patient List" is the whole list; an individual case file is the
+  // "patient page". Keeping the two named apart avoids a lot of confusion.
+  { href: "/patients", label: "Patient List", feature: "patients" },
   { href: "/dashboard", label: "Dashboard", feature: "statistics" },
   { href: "/contacts", label: "Contacts", feature: "contacts" },
   { href: "/appointments", label: "Schedule", feature: "appointments" },

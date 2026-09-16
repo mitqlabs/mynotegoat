@@ -55,7 +55,7 @@ export const PERMISSIONABLE_FEATURES: {
   /** Read-only section (nothing to edit) — offer only None / View. */
   viewOnly?: boolean;
 }[] = [
-  { feature: "patients", label: "Patients" },
+  { feature: "patients", label: "Patient List" },
   { feature: "contacts", label: "Contacts" },
   { feature: "appointments", label: "Schedule" },
   { feature: "encounters", label: "Encounters" },
