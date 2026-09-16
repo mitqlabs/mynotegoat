@@ -440,7 +440,18 @@ export async function prepareCloudStateBeforeMount() {
   const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
-    const authed = await getAuthedConfig();
+    // Reading the session can itself fail (an expired or rotated refresh
+    // token throws rather than returning null). That's a sign-in problem,
+    // not a data-safety problem, so treat it as "not signed in" and let
+    // the caller send them to the login page — locking the whole app
+    // behind a data-loss warning helps nobody.
+    let authed: Awaited<ReturnType<typeof getAuthedConfig>> = null;
+    try {
+      authed = await getAuthedConfig();
+    } catch (authError) {
+      console.error("[Cloud Sync] Could not read the session:", authError);
+      return;
+    }
     if (!authed) {
       // Not signed in yet — nothing to bootstrap. Caller should redirect.
       return;
@@ -453,19 +464,33 @@ export async function prepareCloudStateBeforeMount() {
     const workspaceSwitched =
       previousWorkspaceId && previousWorkspaceId !== authed.workspaceId;
 
-    if (workspaceSwitched) {
-      backupLocalWorkspaceData();
-      clearLocalWorkspaceData();
-      window.localStorage.removeItem(getSyncAtKey(previousWorkspaceId));
+    // Local housekeeping — backing up and clearing the previous
+    // workspace's cache. None of it is a reason to refuse to open: the
+    // cloud read below is what decides whether we can trust what we have.
+    try {
+      if (workspaceSwitched) {
+        backupLocalWorkspaceData();
+        clearLocalWorkspaceData();
+        window.localStorage.removeItem(getSyncAtKey(previousWorkspaceId));
+      }
+      setActiveWorkspaceId(authed.workspaceId);
+    } catch (housekeepingError) {
+      console.error("[Cloud Sync] Local housekeeping failed (continuing):", housekeepingError);
     }
-
-    setActiveWorkspaceId(authed.workspaceId);
 
     if (controller.signal.aborted) {
       throw new CloudBootstrapError("Cloud bootstrap timed out");
     }
 
-    const localSnapshot = readLocalSnapshot();
+    // A browser that refuses localStorage (private mode, blocked site
+    // data) throws here. Treat it as "no local data" — the cloud read is
+    // still ahead of us, and that is what actually matters.
+    let localSnapshot: LocalSnapshot = {};
+    try {
+      localSnapshot = readLocalSnapshot();
+    } catch (readError) {
+      console.error("[Cloud Sync] Could not read local data (treating as empty):", readError);
+    }
     const localHasData = hasMeaningfulLocalData(localSnapshot);
 
     let remote: Awaited<ReturnType<typeof fetchRemoteSnapshot>> = null;
@@ -517,7 +542,11 @@ export async function prepareCloudStateBeforeMount() {
       // If local has NO sync timestamp (fresh browser / cleared cache), always accept remote.
       // If remote is genuinely newer, accept it but always backup first.
       if (localHasData) {
-        backupLocalWorkspaceData();
+        try {
+          backupLocalWorkspaceData();
+        } catch (backupError) {
+          console.error("[Cloud Sync] Safety backup failed (continuing):", backupError);
+        }
         console.info("[Cloud Sync] Remote data is newer — pulling from cloud (local backed up).");
       }
       writeLocalSnapshot(remote!.snapshot as Record<string, unknown>);
