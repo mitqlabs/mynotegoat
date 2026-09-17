@@ -456,14 +456,21 @@ function getAnchoredModalStyle(
   // editors) we use minWidth instead of width so the user-applied inline
   // width from the bottom-right resize handle isn't clobbered on every
   // React re-render. Same for height: minHeight instead of maxHeight.
+  //
+  // These can be dragged taller than the viewport, and the page behind is
+  // scroll-locked, so a modal anchored part-way down the screen put its
+  // own bottom — Save included — out of reach. They're pinned to the top
+  // instead: the full screen height is available and the content scrolls
+  // inside the modal.
   if (options.resizable) {
+    const hardMaxHeight = Math.max(320, viewportHeight - margin * 2);
     return {
       position: "absolute",
       left,
-      top,
+      top: margin,
       minWidth: width,
       minHeight: Math.min(maxHeight, 480),
-      maxHeight: "calc(100vh - 32px)",
+      maxHeight: hardMaxHeight,
       maxWidth: viewportWidth - margin * 2,
     };
   }
