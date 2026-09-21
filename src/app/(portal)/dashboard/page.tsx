@@ -179,10 +179,35 @@ type ReferralPatient = {
   id: string;
   name: string;
   caseStatus: string;
-  /** e.g. ["X-Ray x2", "MRI/CT x1"] — empty for specialists. */
-  detail: string[];
+  /** Study counts at this facility. Both 0 for a specialist referral. */
+  xray: number;
+  mri: number;
   sentDate: string;
 };
+
+const REFERRAL_CHECKS_KEY = "casemate.referral-checked.v1";
+
+/** Ticked-off patients, as "<place>::<patientId>" keys. Per browser. */
+function loadReferralChecks(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(REFERRAL_CHECKS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveReferralChecks(checks: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REFERRAL_CHECKS_KEY, JSON.stringify([...checks]));
+  } catch (err) {
+    // A full quota shouldn't break the list — the ticks just won't persist.
+    console.warn("[dashboard] Could not save referral ticks:", err);
+  }
+}
 
 /** "MM/DD/YYYY" or "YYYY-MM-DD" → a string that sorts chronologically. */
 function sortableDate(value: string): string {
@@ -364,10 +389,15 @@ export default function DashboardPage() {
   const { adminAccess } = useAdminAccess();
   // Clicking a facility / specialist row opens the list of who was sent there.
   const [referralDrill, setReferralDrill] = useState<{
+    kind: "imaging" | "specialist";
     title: string;
     subtitle: string;
     patients: ReferralPatient[];
   } | null>(null);
+  // Ticked-off patients, remembered per place so a half-worked list
+  // survives closing the panel. Per browser, on purpose — this is a
+  // personal "who have I called" marker, not shared office state.
+  const [referralChecked, setReferralChecked] = useState<Set<string>>(() => loadReferralChecks());
   const { caseStatuses } = useCaseStatuses();
   // Live patient-billing records. The patient page writes paid amount
   // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
@@ -685,10 +715,12 @@ export default function DashboardPage() {
         id: patient.id,
         name: patient.fullName,
         caseStatus: patient.caseStatus,
-        detail: [] as string[],
+        xray: 0,
+        mri: 0,
         sentDate: "",
       };
-      row.detail.push(type === "xray" ? `X-Ray x${count}` : `MRI/CT x${count}`);
+      if (type === "xray") row.xray += count;
+      else row.mri += count;
       // Keep the most recent send date for this patient at this facility.
       if (sentDate && (!row.sentDate || sortableDate(sentDate) > sortableDate(row.sentDate))) {
         row.sentDate = sentDate;
@@ -781,7 +813,8 @@ export default function DashboardPage() {
             id: patient.id,
             name: patient.fullName,
             caseStatus: patient.caseStatus,
-            detail: [],
+            xray: 0,
+            mri: 0,
             sentDate: refSentDate(ref),
           });
         }
@@ -798,7 +831,8 @@ export default function DashboardPage() {
           id: patient.id,
           name: patient.fullName,
           caseStatus: patient.caseStatus,
-          detail: [],
+          xray: 0,
+          mri: 0,
           sentDate: patient.matrix?.specialistSent ?? "",
         });
       }
@@ -1231,9 +1265,8 @@ export default function DashboardPage() {
             <div className="border-b border-[var(--line-soft)] p-4">
               <h4 className="text-lg font-semibold">Referral Totals</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Click a facility or specialist to see the patients sent there. Imaging: Cases =
-                distinct patients per facility; Xrays / MRIs = one per imaged region (a bilateral
-                BL extremity counts as two). Specialists: case counts only.
+                Imaging: Cases = distinct patients per facility; Xrays / MRIs = one per imaged
+                region (a bilateral BL extremity counts as two). Specialists: case counts only.
               </p>
             </div>
             <div className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -1254,19 +1287,19 @@ export default function DashboardPage() {
                   {imagingFacilityStats.map((row) => (
                     <tr
                       key={row.facility}
-                      className="cursor-pointer border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.06)]"
+                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
                       onClick={() =>
                         setReferralDrill({
+                          kind: "imaging",
                           title: row.facility,
                           subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
                           patients: row.patients,
                         })
                       }
-                      title={`See the patients sent to ${row.facility}`}
                     >
-                      <td className="px-4 py-3 font-semibold text-[var(--brand-primary)] underline decoration-dotted underline-offset-4">
-                        {row.facility}
-                      </td>
+                      {/* Deliberately styled as plain text: the office didn't
+                          want the drill-down advertised on the page. */}
+                      <td className="px-4 py-3 font-semibold">{row.facility}</td>
                       <td className="px-4 py-3">{row.cases}</td>
                       <td className="px-4 py-3">{row.xray}</td>
                       <td className="px-4 py-3">{row.mri}</td>
@@ -1299,19 +1332,17 @@ export default function DashboardPage() {
                   {specialistReferralStats.map((row) => (
                     <tr
                       key={row.specialist}
-                      className="cursor-pointer border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.06)]"
+                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
                       onClick={() =>
                         setReferralDrill({
+                          kind: "specialist",
                           title: row.specialist,
                           subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
                           patients: row.patients,
                         })
                       }
-                      title={`See the patients sent to ${row.specialist}`}
                     >
-                      <td className="px-4 py-3 font-semibold text-[var(--brand-primary)] underline decoration-dotted underline-offset-4">
-                        {row.specialist}
-                      </td>
+                      <td className="px-4 py-3 font-semibold">{row.specialist}</td>
                       <td className="px-4 py-3">{row.cases}</td>
                     </tr>
                   ))}
@@ -1423,33 +1454,77 @@ export default function DashboardPage() {
                   <tr>
                     <th className="px-3 py-2">Patient</th>
                     <th className="px-3 py-2">Sent</th>
-                    <th className="px-3 py-2">Studies</th>
+                    {referralDrill.kind === "imaging" && (
+                      <>
+                        <th className="px-3 py-2">XR</th>
+                        <th className="px-3 py-2">MR</th>
+                      </>
+                    )}
                     <th className="px-3 py-2">Case Status</th>
+                    <th className="w-10 px-3 py-2 text-center" title="Tick off patients as you work the list">
+                      ✓
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {referralDrill.patients.map((row) => (
-                    <tr className="border-t border-[var(--line-soft)]" key={row.id}>
-                      <td className="px-3 py-2 font-semibold">
-                        <Link
-                          className="text-[var(--brand-primary)] hover:underline"
-                          href={`/patients/${row.id}`}
-                        >
-                          {row.name}
-                        </Link>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
-                        {row.sentDate || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-[var(--text-muted)]">
-                        {row.detail.length ? row.detail.join(" · ") : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-[var(--text-muted)]">{row.caseStatus}</td>
-                    </tr>
-                  ))}
+                  {referralDrill.patients.map((row) => {
+                    const checkKey = `${referralDrill.title.toLowerCase()}::${row.id}`;
+                    const ticked = referralChecked.has(checkKey);
+                    return (
+                      <tr
+                        className="border-t border-[var(--line-soft)]"
+                        key={row.id}
+                        style={
+                          ticked
+                            ? {
+                                backgroundColor: "var(--row-tint-complete)",
+                                boxShadow: "inset 4px 0 0 var(--row-edge-complete)",
+                              }
+                            : undefined
+                        }
+                      >
+                        <td className="px-3 py-2 font-semibold">
+                          <Link className="hover:underline" href={`/patients/${row.id}`}>
+                            {row.name}
+                          </Link>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
+                          {row.sentDate || "—"}
+                        </td>
+                        {referralDrill.kind === "imaging" && (
+                          <>
+                            <td className="px-3 py-2 tabular-nums text-[var(--text-muted)]">
+                              {row.xray || "—"}
+                            </td>
+                            <td className="px-3 py-2 tabular-nums text-[var(--text-muted)]">
+                              {row.mri || "—"}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-3 py-2 text-[var(--text-muted)]">{row.caseStatus}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            aria-label={`Mark ${row.name} as done`}
+                            checked={ticked}
+                            className="h-4 w-4"
+                            onChange={() =>
+                              setReferralChecked((current) => {
+                                const next = new Set(current);
+                                if (next.has(checkKey)) next.delete(checkKey);
+                                else next.add(checkKey);
+                                saveReferralChecks(next);
+                                return next;
+                              })
+                            }
+                            type="checkbox"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {referralDrill.patients.length === 0 && (
                     <tr>
-                      <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={4}>
+                      <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={6}>
                         No patients on this row for the current filters.
                       </td>
                     </tr>
@@ -1460,6 +1535,7 @@ export default function DashboardPage() {
             <p className="mt-2 text-[11px] text-[var(--text-muted)]">
               {referralDrill.patients.length} patient
               {referralDrill.patients.length === 1 ? "" : "s"} · follows the filters set above.
+              Ticks are yours alone — they stay in this browser and nobody else sees them.
             </p>
           </div>
         </div>
