@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { ScrollLock } from "@/components/scroll-lock";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
 import { ActivityLogPanel } from "@/components/activity-log-panel";
 import { useAdminAccess } from "@/hooks/use-admin-access";
@@ -173,6 +174,42 @@ function cleanAttorneyLabel(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
 
+/** One patient inside a referral drill-down (click a facility / specialist). */
+type ReferralPatient = {
+  id: string;
+  name: string;
+  caseStatus: string;
+  /** e.g. ["X-Ray x2", "MRI/CT x1"] — empty for specialists. */
+  detail: string[];
+  sentDate: string;
+};
+
+/** "MM/DD/YYYY" or "YYYY-MM-DD" → a string that sorts chronologically. */
+function sortableDate(value: string): string {
+  const raw = (value ?? "").trim();
+  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+  return raw;
+}
+
+/** The send date off a referral record, whatever it happens to be called. */
+function refSentDate(ref: Record<string, unknown>): string {
+  const value = ref.sentDate ?? ref.dateSent ?? ref.sent;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/** Newest referral first; undated last; ties broken by name. */
+function sortReferralPatients(rows: ReferralPatient[]): ReferralPatient[] {
+  return [...rows].sort((a, b) => {
+    const aDate = sortableDate(a.sentDate);
+    const bDate = sortableDate(b.sentDate);
+    if (aDate && bDate && aDate !== bDate) return bDate.localeCompare(aDate);
+    if (aDate && !bDate) return -1;
+    if (!aDate && bDate) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function extractSpecialistLabel(value: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed === "-") {
@@ -325,6 +362,12 @@ function DashboardSection({
 export default function DashboardPage() {
   const { roleTier } = useWorkspaceAccess();
   const { adminAccess } = useAdminAccess();
+  // Clicking a facility / specialist row opens the list of who was sent there.
+  const [referralDrill, setReferralDrill] = useState<{
+    title: string;
+    subtitle: string;
+    patients: ReferralPatient[];
+  } | null>(null);
   const { caseStatuses } = useCaseStatuses();
   // Live patient-billing records. The patient page writes paid amount
   // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
@@ -608,17 +651,49 @@ export default function DashboardPage() {
   }, [filteredPatients]);
 
   const imagingFacilityStats = useMemo(() => {
-    type FacilityRow = { facility: string; xray: number; mri: number; casePatientIds: Set<string> };
+    type FacilityRow = {
+      facility: string;
+      xray: number;
+      mri: number;
+      casePatientIds: Set<string>;
+      // Who was sent there, so the row can open the actual list of names.
+      patients: Map<string, ReferralPatient>;
+    };
     const grouped: Record<string, FacilityRow> = {};
 
     // Cases = distinct patients sent to the facility (any modality). Xrays/MRIs
     // = total studies (one per imaged region; a bilateral extremity = two).
-    const addReferral = (patientId: string, facility: string, type: "xray" | "mri", count: number) => {
+    const addReferral = (
+      patient: { id: string; fullName: string; caseStatus: string },
+      facility: string,
+      type: "xray" | "mri",
+      count: number,
+      sentDate: string,
+    ) => {
       const key = facility.toLowerCase();
       if (!grouped[key]) {
-        grouped[key] = { facility, xray: 0, mri: 0, casePatientIds: new Set<string>() };
+        grouped[key] = {
+          facility,
+          xray: 0,
+          mri: 0,
+          casePatientIds: new Set<string>(),
+          patients: new Map<string, ReferralPatient>(),
+        };
       }
-      grouped[key].casePatientIds.add(patientId);
+      grouped[key].casePatientIds.add(patient.id);
+      const row = grouped[key].patients.get(patient.id) ?? {
+        id: patient.id,
+        name: patient.fullName,
+        caseStatus: patient.caseStatus,
+        detail: [] as string[],
+        sentDate: "",
+      };
+      row.detail.push(type === "xray" ? `X-Ray x${count}` : `MRI/CT x${count}`);
+      // Keep the most recent send date for this patient at this facility.
+      if (sentDate && (!row.sentDate || sortableDate(sentDate) > sortableDate(row.sentDate))) {
+        row.sentDate = sentDate;
+      }
+      grouped[key].patients.set(patient.id, row);
       if (type === "xray") {
         grouped[key].xray += count;
       } else {
@@ -649,7 +724,7 @@ export default function DashboardPage() {
           const ref = raw as Record<string, unknown>;
           const center = typeof ref.center === "string" ? ref.center.trim() : "";
           if (!center) continue;
-          addReferral(patient.id, center, "xray", countStudies(ref));
+          addReferral(patient, center, "xray", countStudies(ref), refSentDate(ref));
         }
       }
       // MRI / CT referrals
@@ -658,7 +733,7 @@ export default function DashboardPage() {
           const ref = raw as Record<string, unknown>;
           const center = typeof ref.center === "string" ? ref.center.trim() : "";
           if (!center) continue;
-          addReferral(patient.id, center, "mri", countStudies(ref));
+          addReferral(patient, center, "mri", countStudies(ref), refSentDate(ref));
         }
       }
     });
@@ -670,12 +745,27 @@ export default function DashboardPage() {
         xray: row.xray,
         mri: row.mri,
         total: row.xray + row.mri,
+        patients: sortReferralPatients([...row.patients.values()]),
       }))
       .sort((a, b) => b.total - a.total);
   }, [filteredPatients]);
 
   const specialistReferralStats = useMemo(() => {
-    const grouped: Record<string, { specialist: string; casePatientIds: Set<string> }> = {};
+    const grouped: Record<
+      string,
+      { specialist: string; casePatientIds: Set<string>; patients: Map<string, ReferralPatient> }
+    > = {};
+    const bucket = (name: string) => {
+      const key = name.toLowerCase();
+      if (!grouped[key]) {
+        grouped[key] = {
+          specialist: name,
+          casePatientIds: new Set<string>(),
+          patients: new Map<string, ReferralPatient>(),
+        };
+      }
+      return grouped[key];
+    };
 
     filteredPatients.forEach((patient) => {
       // Read from specialistReferrals array (the actual saved data)
@@ -685,11 +775,15 @@ export default function DashboardPage() {
           const name = typeof ref.specialist === "string" ? ref.specialist.trim() : "";
           if (!name || name === "-") continue;
 
-          const key = name.toLowerCase();
-          if (!grouped[key]) {
-            grouped[key] = { specialist: name, casePatientIds: new Set<string>() };
-          }
-          grouped[key].casePatientIds.add(patient.id);
+          const entry = bucket(name);
+          entry.casePatientIds.add(patient.id);
+          entry.patients.set(patient.id, {
+            id: patient.id,
+            name: patient.fullName,
+            caseStatus: patient.caseStatus,
+            detail: [],
+            sentDate: refSentDate(ref),
+          });
         }
       }
 
@@ -698,11 +792,15 @@ export default function DashboardPage() {
         const specialist = extractSpecialistLabel(patient.matrix?.specialistSent ?? "");
         if (!specialist) return;
 
-        const key = specialist.toLowerCase();
-        if (!grouped[key]) {
-          grouped[key] = { specialist, casePatientIds: new Set<string>() };
-        }
-        grouped[key].casePatientIds.add(patient.id);
+        const entry = bucket(specialist);
+        entry.casePatientIds.add(patient.id);
+        entry.patients.set(patient.id, {
+          id: patient.id,
+          name: patient.fullName,
+          caseStatus: patient.caseStatus,
+          detail: [],
+          sentDate: patient.matrix?.specialistSent ?? "",
+        });
       }
     });
 
@@ -710,6 +808,7 @@ export default function DashboardPage() {
       .map((row) => ({
         specialist: row.specialist,
         cases: row.casePatientIds.size,
+        patients: sortReferralPatients([...row.patients.values()]),
       }))
       .sort((a, b) => b.cases - a.cases);
   }, [filteredPatients]);
@@ -1132,8 +1231,9 @@ export default function DashboardPage() {
             <div className="border-b border-[var(--line-soft)] p-4">
               <h4 className="text-lg font-semibold">Referral Totals</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Imaging: Cases = distinct patients per facility; Xrays / MRIs = one per imaged
-                region (a bilateral BL extremity counts as two). Specialists: case counts only.
+                Click a facility or specialist to see the patients sent there. Imaging: Cases =
+                distinct patients per facility; Xrays / MRIs = one per imaged region (a bilateral
+                BL extremity counts as two). Specialists: case counts only.
               </p>
             </div>
             <div className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -1152,8 +1252,21 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {imagingFacilityStats.map((row) => (
-                    <tr key={row.facility} className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-3 font-semibold">{row.facility}</td>
+                    <tr
+                      key={row.facility}
+                      className="cursor-pointer border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.06)]"
+                      onClick={() =>
+                        setReferralDrill({
+                          title: row.facility,
+                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
+                          patients: row.patients,
+                        })
+                      }
+                      title={`See the patients sent to ${row.facility}`}
+                    >
+                      <td className="px-4 py-3 font-semibold text-[var(--brand-primary)] underline decoration-dotted underline-offset-4">
+                        {row.facility}
+                      </td>
                       <td className="px-4 py-3">{row.cases}</td>
                       <td className="px-4 py-3">{row.xray}</td>
                       <td className="px-4 py-3">{row.mri}</td>
@@ -1184,8 +1297,21 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {specialistReferralStats.map((row) => (
-                    <tr key={row.specialist} className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-3 font-semibold">{row.specialist}</td>
+                    <tr
+                      key={row.specialist}
+                      className="cursor-pointer border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.06)]"
+                      onClick={() =>
+                        setReferralDrill({
+                          title: row.specialist,
+                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
+                          patients: row.patients,
+                        })
+                      }
+                      title={`See the patients sent to ${row.specialist}`}
+                    >
+                      <td className="px-4 py-3 font-semibold text-[var(--brand-primary)] underline decoration-dotted underline-offset-4">
+                        {row.specialist}
+                      </td>
                       <td className="px-4 py-3">{row.cases}</td>
                     </tr>
                   ))}
@@ -1264,6 +1390,79 @@ export default function DashboardPage() {
       </div>
     </div>
       </DashboardSection>
+      )}
+
+      {referralDrill && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8"
+          onClick={() => setReferralDrill(null)}
+        >
+          <ScrollLock />
+          {/* Stop the backdrop's close handler from firing on clicks inside. */}
+          <div
+            className="panel-card mx-auto w-full max-w-2xl p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-xl font-semibold">{referralDrill.title}</h3>
+                <p className="text-sm text-[var(--text-muted)]">{referralDrill.subtitle}</p>
+              </div>
+              <button
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                onClick={() => setReferralDrill(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-3 max-h-[60vh] overflow-auto rounded-xl border border-[var(--line-soft)]">
+              <table className="min-w-full border-collapse text-sm">
+                <thead className="sticky top-0 bg-[var(--bg-soft)] text-left">
+                  <tr>
+                    <th className="px-3 py-2">Patient</th>
+                    <th className="px-3 py-2">Sent</th>
+                    <th className="px-3 py-2">Studies</th>
+                    <th className="px-3 py-2">Case Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {referralDrill.patients.map((row) => (
+                    <tr className="border-t border-[var(--line-soft)]" key={row.id}>
+                      <td className="px-3 py-2 font-semibold">
+                        <Link
+                          className="text-[var(--brand-primary)] hover:underline"
+                          href={`/patients/${row.id}`}
+                        >
+                          {row.name}
+                        </Link>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
+                        {row.sentDate || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--text-muted)]">
+                        {row.detail.length ? row.detail.join(" · ") : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--text-muted)]">{row.caseStatus}</td>
+                    </tr>
+                  ))}
+                  {referralDrill.patients.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={4}>
+                        No patients on this row for the current filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+              {referralDrill.patients.length} patient
+              {referralDrill.patients.length === 1 ? "" : "s"} · follows the filters set above.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
