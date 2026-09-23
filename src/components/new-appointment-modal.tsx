@@ -73,6 +73,26 @@ interface NewAppointmentDraft {
    *  the toggle visible while leaving per-day values blank (which means
    *  that day falls back to startTime). */
   usePerDayTimes: boolean;
+  /** Follow-on stretches of the same plan, e.g. "Mon/Wed/Thu until 08/01,
+   *  then Mon/Wed for 8 visits". Each one books on its own and carries its
+   *  own series id, so cancelling one stretch leaves the others alone.
+   *  Empty (the normal case) means a single series, exactly as before. */
+  extraSeries: ExtraSeries[];
+}
+
+/** One follow-on stretch. Everything not named here (patient, provider,
+ *  type, room, duration, note) comes from the main draft. */
+interface ExtraSeries {
+  id: string;
+  recurDays: number[];
+  startTime: string;
+  usePerDayTimes: boolean;
+  perDayTimes: Record<number, string>;
+  endMode: RecurrenceEndMode;
+  endDate: string;
+  visitCount: number;
+  /** Blank = start the day after the previous stretch's last visit. */
+  startDateOverride: string;
 }
 
 const dayToggleOptions = [
@@ -279,7 +299,92 @@ function createInitialDraft(
     overrideOfficeHours: false,
     perDayTimes: {},
     usePerDayTimes: false,
+    extraSeries: [],
   };
+}
+
+/** A follow-on stretch, pre-filled from what the user already set up. */
+function createExtraSeries(
+  previousDays: number[],
+  previousTime: string,
+  previousEndMode: RecurrenceEndMode,
+  /** Where this stretch will start — used to seed a sensible end date. */
+  chainStart: string,
+): ExtraSeries {
+  return {
+    id: createAppointmentId(),
+    recurDays: [...previousDays],
+    startTime: previousTime,
+    usePerDayTimes: false,
+    perDayTimes: {},
+    endMode: previousEndMode,
+    // A month out, so the row reads as a real stretch the moment it's
+    // added rather than "0 visits" until an end date is typed.
+    endDate: chainStart ? addDays(chainStart, 30) : "",
+    visitCount: 8,
+    startDateOverride: "",
+  };
+}
+
+/** Turn a follow-on stretch into a full draft the date generator can run. */
+function draftForExtraSeries(
+  base: NewAppointmentDraft,
+  series: ExtraSeries,
+  startDate: string,
+): NewAppointmentDraft {
+  return {
+    ...base,
+    startDate,
+    startTime: series.startTime || base.startTime,
+    isRecurring: true,
+    recurUnit: "weeks",
+    recurInterval: 1,
+    recurDays: series.recurDays,
+    recurrenceEndMode: series.endMode,
+    recurEndDate: series.endDate,
+    recurVisitCount: series.visitCount,
+    usePerDayTimes: series.usePerDayTimes,
+    perDayTimes: series.perDayTimes,
+    extraSeries: [],
+  };
+}
+
+/**
+ * Every stretch, resolved into the dates it books.
+ *
+ * Stretch 2 starts the day after stretch 1's last visit unless the user
+ * typed a start date of their own — that chaining is the whole point of
+ * the feature, so nobody has to work out the date by hand.
+ */
+function buildSeriesPlans(
+  draft: NewAppointmentDraft,
+  openDays: Set<number>,
+): { draft: NewAppointmentDraft; dates: string[]; label: string }[] {
+  const plans: { draft: NewAppointmentDraft; dates: string[]; label: string }[] = [];
+  const main =
+    draft.isRecurring && draft.recurUnit === "weeks"
+      ? { ...draft, recurDays: draft.recurDays.filter((day) => openDays.has(day)) }
+      : draft;
+  plans.push({ draft: main, dates: getDatesForDraft(main), label: "Series 1" });
+
+  if (!draft.isRecurring) return plans;
+
+  draft.extraSeries.forEach((series, index) => {
+    const previous = plans[plans.length - 1];
+    const previousLast = previous.dates[previous.dates.length - 1] ?? previous.draft.startDate;
+    const startDate = series.startDateOverride || addDays(previousLast, 1);
+    const seriesDraft = draftForExtraSeries(
+      draft,
+      { ...series, recurDays: series.recurDays.filter((day) => openDays.has(day)) },
+      startDate,
+    );
+    plans.push({
+      draft: seriesDraft,
+      dates: getDatesForDraft(seriesDraft),
+      label: `Series ${index + 2}`,
+    });
+  });
+  return plans;
 }
 
 /**
@@ -655,6 +760,21 @@ export function NewAppointmentModal({
     };
   }, [draft, openRecurringDays, keyDates]);
 
+  // Every stretch resolved to real dates — drives each row's summary and
+  // the running total at the bottom.
+  const seriesPlans = useMemo(
+    () => (draft.isRecurring ? buildSeriesPlans(draft, openRecurringDays) : []),
+    [draft, openRecurringDays],
+  );
+  const totalPlannedVisits = useMemo(
+    () => seriesPlans.reduce((sum, plan) => sum + plan.dates.length, 0),
+    [seriesPlans],
+  );
+  const plannedLastDate = useMemo(() => {
+    const all = seriesPlans.flatMap((plan) => plan.dates);
+    return all.length ? all.slice().sort()[all.length - 1] : "";
+  }, [seriesPlans]);
+
   const handlePatientSearchChange = (value: string) => {
     if (lockedPatientId) {
       return;
@@ -823,8 +943,52 @@ export function NewAppointmentModal({
 
     const durationMin = getDurationMinutes(sanitizedDraft.durationHours, sanitizedDraft.durationMinutes);
     const caseLabel = sanitizedDraft.caseLabel.trim() || buildCaseLabelFromPatient(selectedPatient);
-    let scheduleDates = getDatesForDraft(sanitizedDraft);
-    if (!scheduleDates.length) {
+
+    // Each stretch books separately, with its own time rules and its own
+    // series id. From here on the checks work on entries (date + time +
+    // stretch) rather than bare dates, because two stretches can want
+    // different times on the same weekday.
+    const plans = buildSeriesPlans(sanitizedDraft, openRecurringDays);
+    for (const [index, plan] of plans.entries()) {
+      if (index === 0) continue;
+      if (plan.draft.recurDays.length === 0) {
+        setError(`${plan.label}: pick at least one open office day.`);
+        return;
+      }
+      if (plan.draft.recurrenceEndMode === "visits" && plan.draft.recurVisitCount < 1) {
+        setError(`${plan.label}: visits must be at least 1.`);
+        return;
+      }
+      if (
+        plan.draft.recurrenceEndMode === "date" &&
+        (!plan.draft.recurEndDate || plan.draft.recurEndDate < plan.draft.startDate)
+      ) {
+        setError(
+          `${plan.label}: end date must be on or after ${formatUsDateFromIso(plan.draft.startDate)}.`,
+        );
+        return;
+      }
+    }
+
+    type PlannedVisit = { dateIso: string; startTime: string; seriesId?: string };
+    const seenDates = new Set<string>();
+    let scheduleEntries: PlannedVisit[] = [];
+    for (const plan of plans) {
+      const seriesId = sanitizedDraft.isRecurring ? createAppointmentId() : undefined;
+      for (const dateIso of plan.dates) {
+        // Two stretches overlapping on one day: the earlier one wins,
+        // rather than double-booking the patient.
+        if (seenDates.has(dateIso)) continue;
+        seenDates.add(dateIso);
+        scheduleEntries.push({
+          dateIso,
+          startTime: resolveTimeForDate(plan.draft, dateIso),
+          seriesId,
+        });
+      }
+    }
+    scheduleEntries.sort((a, b) => a.dateIso.localeCompare(b.dateIso));
+    if (!scheduleEntries.length) {
       setError("Recurring rule did not generate any appointment dates.");
       return;
     }
@@ -844,20 +1008,16 @@ export function NewAppointmentModal({
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const overbookedDates = overrideActive
       ? []
-      : scheduleDates.filter((dateIso) => {
-          const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
+      : scheduleEntries.filter((planned) => {
           const countAtSlot = scheduleAppointments.filter(
-            (entry) => entry.date === dateIso && entry.startTime === startTimeForDate,
+            (entry) => entry.date === planned.dateIso && entry.startTime === planned.startTime,
           ).length;
           return countAtSlot >= slotCapacity;
         });
     if (overbookedDates.length) {
       const detail = overbookedDates
         .slice(0, 5)
-        .map((dateIso) => {
-          const t = resolveTimeForDate(sanitizedDraft, dateIso);
-          return `${formatUsDateFromIso(dateIso)} @ ${formatTimeLabel(t)}`;
-        })
+        .map((planned) => `${formatUsDateFromIso(planned.dateIso)} @ ${formatTimeLabel(planned.startTime)}`)
         .join(", ");
       setError(
         `Time slot full (max ${slotCapacity}) on: ${detail}${
@@ -867,14 +1027,17 @@ export function NewAppointmentModal({
       return;
     }
 
-    const closedDates = scheduleDates.filter((dateIso) => Boolean(findClosedKeyDateForDate(keyDates, dateIso)));
+    const closedDates = scheduleEntries.filter((planned) =>
+      Boolean(findClosedKeyDateForDate(keyDates, planned.dateIso)),
+    );
     if (closedDates.length > 0) {
-      const openDates = scheduleDates.filter((dateIso) => !closedDates.includes(dateIso));
+      const closedSet = new Set(closedDates.map((planned) => planned.dateIso));
+      const openDates = scheduleEntries.filter((planned) => !closedSet.has(planned.dateIso));
       const closedList = closedDates
-        .map((dateIso) => {
-          const entry = findClosedKeyDateForDate(keyDates, dateIso);
+        .map((planned) => {
+          const entry = findClosedKeyDateForDate(keyDates, planned.dateIso);
           const reason = entry?.reason ? ` (${entry.reason})` : "";
-          return `${formatUsDateFromIso(dateIso)}${reason}`;
+          return `${formatUsDateFromIso(planned.dateIso)}${reason}`;
         })
         .join("\n  • ");
 
@@ -888,8 +1051,8 @@ export function NewAppointmentModal({
       );
       if (!skipConfirmed) return;
 
-      // Replace scheduleDates with only the open dates
-      scheduleDates = openDates;
+      // Keep only the dates the office is actually open.
+      scheduleEntries = openDates;
     }
 
     // Duplicate-day detection: prevent scheduling this patient on a day they already have an appointment
@@ -903,12 +1066,12 @@ export function NewAppointmentModal({
         )
         .map((entry) => entry.date),
     );
-    const duplicateDates = scheduleDates.filter((dateIso) => patientExistingDates.has(dateIso));
+    const duplicateDates = scheduleEntries.filter((planned) => patientExistingDates.has(planned.dateIso));
     if (duplicateDates.length > 0) {
-      const nonDupDates = scheduleDates.filter((dateIso) => !patientExistingDates.has(dateIso));
+      const nonDupDates = scheduleEntries.filter((planned) => !patientExistingDates.has(planned.dateIso));
       const dupList = duplicateDates
         .slice(0, 5)
-        .map((dateIso) => formatUsDateFromIso(dateIso))
+        .map((planned) => formatUsDateFromIso(planned.dateIso))
         .join(", ");
 
       if (nonDupDates.length === 0) {
@@ -917,37 +1080,35 @@ export function NewAppointmentModal({
       }
 
       const skipConfirmed = window.confirm(
-        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((d) => formatUsDateFromIso(d)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupDates.length} appointment${nonDupDates.length === 1 ? "" : "s"}?`,
+        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupDates.length} appointment${nonDupDates.length === 1 ? "" : "s"}?`,
       );
       if (!skipConfirmed) return;
 
-      scheduleDates = nonDupDates;
+      scheduleEntries = nonDupDates;
     }
 
     if (scheduleSettings.enforceOfficeHours) {
-      const outsideOfficeHoursDate = scheduleDates.find((dateIso) => {
-        const startTimeForDate = resolveTimeForDate(sanitizedDraft, dateIso);
-        return !isAppointmentWithinOfficeHours(
-          scheduleSettings,
-          dateIso,
-          startTimeForDate,
-          durationMin,
-        );
-      });
+      const outsideOfficeHoursDate = scheduleEntries.find(
+        (planned) =>
+          !isAppointmentWithinOfficeHours(
+            scheduleSettings,
+            planned.dateIso,
+            planned.startTime,
+            durationMin,
+          ),
+      );
       if (
         outsideOfficeHoursDate &&
         (!scheduleSettings.allowOverride || !sanitizedDraft.overrideOfficeHours)
       ) {
-        const t = resolveTimeForDate(sanitizedDraft, outsideOfficeHoursDate);
         setError(
-          `Outside office hours on ${formatUsDateFromIso(outsideOfficeHoursDate)} @ ${formatTimeLabel(t)}. Enable override or adjust office hours.`,
+          `Outside office hours on ${formatUsDateFromIso(outsideOfficeHoursDate.dateIso)} @ ${formatTimeLabel(outsideOfficeHoursDate.startTime)}. Enable override or adjust office hours.`,
         );
         return;
       }
     }
 
-    const seriesId = sanitizedDraft.isRecurring ? createAppointmentId() : undefined;
-    const records: ScheduleAppointmentRecord[] = scheduleDates.map((dateIso) => ({
+    const records: ScheduleAppointmentRecord[] = scheduleEntries.map((planned) => ({
       id: createAppointmentId(),
       patientId: selectedPatient.id,
       patientName: selectedPatient.fullName,
@@ -956,23 +1117,22 @@ export function NewAppointmentModal({
       appointmentType: sanitizedDraft.appointmentType.trim(),
       caseLabel,
       room: sanitizedDraft.room.trim(),
-      date: dateIso,
-      // Per-day override time if set, else the single startTime. For
-      // one-off and daily-recurrence appointments this resolves to
-      // sanitizedDraft.startTime unchanged.
-      startTime: resolveTimeForDate(sanitizedDraft, dateIso),
+      date: planned.dateIso,
+      // Resolved per stretch already: a per-day override if one was set,
+      // otherwise that stretch's own time.
+      startTime: planned.startTime,
       durationMin,
       status: "Scheduled",
       note: sanitizedDraft.note.trim(),
       overrideOfficeHours: Boolean(sanitizedDraft.overrideOfficeHours),
-      recurringSeriesId: seriesId,
+      recurringSeriesId: planned.seriesId,
     }));
 
     addAppointments(records);
     onSaved?.(records);
 
-    const coveredDates = scheduleDates.filter((dateIso) =>
-      findKeyDatesForDate(keyDates, dateIso).some((row) => row.officeStatus === "Covered"),
+    const coveredDates = scheduleEntries.filter((planned) =>
+      findKeyDatesForDate(keyDates, planned.dateIso).some((row) => row.officeStatus === "Covered"),
     );
     if (coveredDates.length) {
       // Surface a soft warning via the error slot in inverse color? Just close.
@@ -1708,6 +1868,81 @@ export function NewAppointmentModal({
                     ) : null}
                   </div>
                 )}
+
+                {/* Follow-on stretches. A treatment plan is rarely one
+                    rhythm all the way through — "Mon/Wed/Thu until August,
+                    then Mon/Wed for 8 visits" is the normal shape. Each
+                    stretch starts the day after the previous one's last
+                    visit unless a date is typed, so nobody has to count
+                    weeks by hand. */}
+                <div className="mt-4 border-t border-[var(--line-soft)] pt-3">
+                  {draft.extraSeries.map((series, index) => {
+                    const plan = seriesPlans[index + 1];
+                    return (
+                      <SeriesEditor
+                        key={series.id}
+                        index={index}
+                        label={`Series ${index + 2}`}
+                        openDays={openRecurringDays}
+                        mainStartTime={draft.startTime}
+                        series={series}
+                        startsOn={plan?.draft.startDate ?? ""}
+                        visits={plan?.dates.length ?? 0}
+                        lastDate={plan?.dates[plan.dates.length - 1] ?? ""}
+                        intervalMin={scheduleSettings.appointmentIntervalMin}
+                        onChange={(next) =>
+                          setDraft((current) => ({
+                            ...current,
+                            extraSeries: current.extraSeries.map((entry) =>
+                              entry.id === series.id ? next : entry,
+                            ),
+                          }))
+                        }
+                        onRemove={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            extraSeries: current.extraSeries.filter((entry) => entry.id !== series.id),
+                          }))
+                        }
+                      />
+                    );
+                  })}
+                  <button
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)]"
+                    onClick={() =>
+                      setDraft((current) => {
+                        const last = current.extraSeries[current.extraSeries.length - 1];
+                        const lastPlan = seriesPlans[seriesPlans.length - 1];
+                        const lastDate = lastPlan?.dates[lastPlan.dates.length - 1] ?? current.startDate;
+                        return {
+                          ...current,
+                          extraSeries: [
+                            ...current.extraSeries,
+                            createExtraSeries(
+                              last ? last.recurDays : current.recurDays,
+                              last ? last.startTime : current.startTime,
+                              last ? last.endMode : current.recurrenceEndMode,
+                              lastDate ? addDays(lastDate, 1) : current.startDate,
+                            ),
+                          ],
+                        };
+                      })
+                    }
+                    type="button"
+                  >
+                    + Add series
+                  </button>
+                  <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                    For a plan that changes rhythm — e.g. Mon/Wed/Thu until August, then Mon/Wed.
+                    Each series is booked on its own, so cancelling one leaves the rest alone.
+                  </p>
+                  {draft.extraSeries.length > 0 && (
+                    <p className="mt-2 rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm font-semibold">
+                      {totalPlannedVisits} visit{totalPlannedVisits === 1 ? "" : "s"} in total
+                      {plannedLastDate ? ` · last on ${formatUsDateFromIso(plannedLastDate)}` : ""}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1873,6 +2108,237 @@ function DayScheduleHint({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+
+/**
+ * One follow-on stretch: the same controls as the main recurrence block,
+ * scoped to this stretch. Collapsed to a summary line until opened, so a
+ * three-stretch plan doesn't turn the modal into a wall of day circles.
+ */
+function SeriesEditor({
+  index,
+  label,
+  series,
+  openDays,
+  mainStartTime,
+  startsOn,
+  visits,
+  lastDate,
+  intervalMin,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  label: string;
+  series: ExtraSeries;
+  openDays: Set<number>;
+  mainStartTime: string;
+  startsOn: string;
+  visits: number;
+  lastDate: string;
+  intervalMin: number;
+  onChange: (next: ExtraSeries) => void;
+  onRemove: () => void;
+}) {
+  // A freshly added stretch opens straight away; later ones stay closed
+  // until clicked.
+  const [open, setOpen] = useState(series.recurDays.length === 0);
+  const dayNames = series.recurDays
+    .slice()
+    .sort((a, b) => a - b)
+    .map((day) => weekdayLabels[day]?.slice(0, 3))
+    .join(" ");
+  const endsLabel =
+    series.endMode === "date"
+      ? series.endDate
+        ? `ends ${formatUsDateFromIso(series.endDate)}`
+        : "no end date yet"
+      : `ends after ${series.visitCount} visit${series.visitCount === 1 ? "" : "s"}`;
+
+  return (
+    <div className="mb-2 rounded-xl border border-[var(--line-soft)] bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          <span className="text-sm font-semibold">{label}</span>
+          <span className="truncate text-sm text-[var(--text-muted)]">
+            {dayNames || "no days picked"} · {formatTimeLabel(series.startTime || mainStartTime)} ·{" "}
+            {endsLabel}
+          </span>
+        </button>
+        <span className="whitespace-nowrap text-xs font-semibold text-[var(--text-muted)]">
+          {visits} visit{visits === 1 ? "" : "s"}
+          {lastDate ? ` · to ${formatUsDateFromIso(lastDate)}` : ""}
+        </span>
+        <button
+          className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          {open ? "Done" : "Edit"}
+        </button>
+        <button
+          className="rounded-lg border border-[rgba(201,66,58,0.4)] px-2 py-1 text-xs font-semibold text-[#b43b34]"
+          onClick={onRemove}
+          title={`Remove ${label}`}
+          type="button"
+        >
+          ✕
+        </button>
+      </div>
+
+      {open && (
+        <div className="border-t border-[var(--line-soft)] px-3 py-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
+              <input
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                onChange={(event) => onChange({ ...series, startDateOverride: event.target.value })}
+                type="date"
+                value={series.startDateOverride || startsOn}
+              />
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {series.startDateOverride
+                  ? "Your own start date."
+                  : `Follows ${index === 0 ? "Series 1" : `Series ${index + 1}`} — the day after its last visit.`}
+              </span>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Time</span>
+              <input
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                onChange={(event) => onChange({ ...series, startTime: event.target.value })}
+                step={intervalMin * 60}
+                type="time"
+                value={series.startTime || mainStartTime}
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {dayToggleOptions.map((option) => {
+              const isOpenDay = openDays.has(option.day);
+              const isSelected = isOpenDay && series.recurDays.includes(option.day);
+              return (
+                <button
+                  className={`flex h-9 min-w-9 items-center justify-center rounded-full border px-2 text-sm font-semibold ${
+                    isSelected
+                      ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                      : isOpenDay
+                        ? "border-[var(--line-soft)] bg-[#dce4ea] text-[var(--text-main)]"
+                        : "cursor-not-allowed border-[var(--line-soft)] bg-[#eef2f5] text-[#9ca9b5]"
+                  }`}
+                  disabled={!isOpenDay}
+                  key={`series-${series.id}-day-${option.day}`}
+                  onClick={() =>
+                    onChange({
+                      ...series,
+                      recurDays: series.recurDays.includes(option.day)
+                        ? series.recurDays.filter((day) => day !== option.day)
+                        : [...series.recurDays, option.day],
+                    })
+                  }
+                  title={
+                    isOpenDay
+                      ? weekdayLabels[option.day]
+                      : `${weekdayLabels[option.day]} (closed in office hours)`
+                  }
+                  type="button"
+                >
+                  {option.short}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Ends By</span>
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                onChange={(event) =>
+                  onChange({ ...series, endMode: event.target.value as RecurrenceEndMode })
+                }
+                value={series.endMode}
+              >
+                <option value="date">End date</option>
+                <option value="visits">Number of visits</option>
+              </select>
+            </label>
+            {series.endMode === "date" ? (
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">End Date</span>
+                <input
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                  onChange={(event) => onChange({ ...series, endDate: event.target.value })}
+                  type="date"
+                  value={series.endDate}
+                />
+              </label>
+            ) : (
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Visits</span>
+                <input
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                  min={1}
+                  onChange={(event) =>
+                    onChange({ ...series, visitCount: Math.max(1, Number(event.target.value) || 1) })
+                  }
+                  type="number"
+                  value={series.visitCount}
+                />
+              </label>
+            )}
+          </div>
+
+          {series.recurDays.length > 1 && (
+            <div className="mt-3 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
+              <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                <input
+                  checked={series.usePerDayTimes}
+                  onChange={(event) =>
+                    onChange({ ...series, usePerDayTimes: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+                Different time per day
+              </label>
+              {series.usePerDayTimes && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {series.recurDays
+                    .slice()
+                    .sort((a, b) => a - b)
+                    .map((day) => (
+                      <label className="grid gap-1" key={`series-${series.id}-time-${day}`}>
+                        <span className="text-[10px] font-semibold text-[var(--text-muted)]">
+                          {weekdayLabels[day]}
+                        </span>
+                        <input
+                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                          onChange={(event) =>
+                            onChange({
+                              ...series,
+                              perDayTimes: { ...series.perDayTimes, [day]: event.target.value },
+                            })
+                          }
+                          type="time"
+                          value={series.perDayTimes[day] ?? ""}
+                        />
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
