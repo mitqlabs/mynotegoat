@@ -462,13 +462,12 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                       key={t}
                                       className={`rounded-full border px-2 py-0.5 text-xs ${
                                         on
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
-                                          : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                          : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                       }`}
                                       onClick={() => toggleTreatment(t)}
                                       type="button"
                                     >
-                                      {on ? "✓ " : ""}
                                       {t}
                                     </button>
                                   );
@@ -492,8 +491,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             key={opt}
                                             className={`rounded-full border px-2 py-0.5 text-xs ${
                                               on
-                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
-                                                : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                                : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                             }`}
                                             onClick={() =>
                                               toggleAnswer(
@@ -504,8 +503,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             }
                                             type="button"
                                           >
-                                            {on ? "✓ " : ""}
-                                            {opt}
+                                                  {opt}
                                           </button>
                                         );
                                       })}
@@ -579,8 +577,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         const chip = (on: boolean) =>
                           `rounded-full border px-2 py-0.5 text-xs ${
                             on
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
-                              : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
+                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                              : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                           }`;
                         const decompOpen = expandedDecompIds.has(plan.id);
                         const toggleDecompOpen = () =>
@@ -645,8 +643,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                         onClick={() => toggleSegment(t)}
                                         type="button"
                                       >
-                                        {on ? "✓ " : ""}
-                                        {t}
+                                          {t}
                                       </button>
                                     );
                                   })}
@@ -677,8 +674,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                           }
                                           type="button"
                                         >
-                                          {on ? "✓ " : ""}
-                                          {opt}
+                                              {opt}
                                         </button>
                                       );
                                     })}
