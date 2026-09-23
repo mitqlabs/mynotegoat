@@ -102,6 +102,65 @@ function rewriteMacroRunIds(html: string): { html: string; idMap: Map<string, st
  *   formatChargeDelta(["Laser"], ["Massage"]) === " Charges added: Laser. Charges removed: Massage."
  *   formatChargeDelta([], []) === ""
  */
+/**
+ * Body-region macro buttons (Head, Cervical, Knee…) get their own row
+ * under the question-style ones (MVC HX, Vitals, Chief Complaints…).
+ * The doctor reaches for one of each per note, and mixing them in a
+ * single wrapped row meant hunting for the region every time.
+ */
+const BODY_REGION_WORDS = new Set([
+  "head",
+  "tmj",
+  "jaw",
+  "neck",
+  "cervical",
+  "thoracic",
+  "lumbar",
+  "sacral",
+  "sacroiliac",
+  "si",
+  "coccyx",
+  "pelvis",
+  "chest",
+  "rib",
+  "ribs",
+  "shoulder",
+  "arm",
+  "elbow",
+  "forearm",
+  "wrist",
+  "hand",
+  "finger",
+  "hip",
+  "thigh",
+  "knee",
+  "leg",
+  "ankle",
+  "foot",
+  "toe",
+  "extremity",
+  "spine",
+]);
+
+function isBodyRegionMacroName(name: string): boolean {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return false;
+  return words.some((word) => BODY_REGION_WORDS.has(word));
+}
+
+/** [question macros, body-region macros] — the second row is dropped when
+ *  empty, so a section with no region macros looks exactly as it did. */
+function splitMacrosByKind<T extends { buttonName: string }>(macros: T[]): T[][] {
+  const general = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
+  const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
+  return [general, regions].filter((row) => row.length > 0);
+}
+
 function formatChargeDelta(added: string[], removed: string[]): string {
   const parts: string[] = [];
   if (added.length > 0) {
@@ -3840,9 +3899,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               {group.folder}
                             </button>
                           )}
-                          {!isCollapsed && (
-                            <div className="flex flex-wrap gap-2">
-                              {group.macros.map((macro) => {
+                          {!isCollapsed &&
+                            splitMacrosByKind(group.macros).map((macroRow, rowIndex) => (
+                            <div className="flex flex-wrap gap-2 [&+div]:mt-2" key={`macro-row-${rowIndex}`}>
+                              {macroRow.map((macro) => {
                                 // Native HTML5 drag-and-drop. Making the
                                 // button itself `draggable` still lets
                                 // clicks fire normally (browsers only
@@ -3890,7 +3950,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 );
                               })}
                             </div>
-                          )}
+                          ))}
                         </div>
                       );
                     })}
