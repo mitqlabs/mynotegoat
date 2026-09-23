@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { logActivity } from "@/lib/activity-log";
 import {
   GENERAL_DIAGNOSIS_FOLDER_ID,
   getDefaultBillingMacroLibrary,
@@ -15,6 +16,22 @@ import {
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Record a deletion from the billing-macro library, with a copy of what
+ * was removed in the details. Deleting a diagnosis code used to leave no
+ * trace at all — the Activity Log couldn't say who removed it, and there
+ * was nothing to retype it from. The copy makes the log itself the
+ * recovery path.
+ */
+function logMacroDelete(action: string, summary: string, removed: unknown) {
+  logActivity({
+    category: "billing",
+    action,
+    summary,
+    details: { copy: JSON.stringify(removed) },
+  });
 }
 
 export function useBillingMacros() {
@@ -97,10 +114,20 @@ export function useBillingMacros() {
 
   const removeTreatment = useCallback(
     (id: string) => {
-      updateLibrary((current) => ({
-        ...current,
-        treatments: current.treatments.filter((entry) => entry.id !== id),
-      }));
+      updateLibrary((current) => {
+        const removed = current.treatments.find((entry) => entry.id === id);
+        if (removed) {
+          logMacroDelete(
+            "billing.treatment_deleted",
+            `Deleted treatment "${removed.name}" (${removed.procedureCode})`,
+            removed,
+          );
+        }
+        return {
+          ...current,
+          treatments: current.treatments.filter((entry) => entry.id !== id),
+        };
+      });
     },
     [updateLibrary],
   );
@@ -275,6 +302,17 @@ export function useBillingMacros() {
         const fallbackFolderId =
           current.diagnosisFolders.find((entry) => entry.id !== id)?.id ??
           GENERAL_DIAGNOSIS_FOLDER_ID;
+        const removedFolder = current.diagnosisFolders.find((entry) => entry.id === id);
+        if (removedFolder) {
+          const moved = current.diagnoses.filter((entry) => entry.folderId === id);
+          logMacroDelete(
+            "billing.diagnosis_folder_deleted",
+            `Deleted diagnosis folder "${removedFolder.name}"${
+              moved.length ? ` — ${moved.length} code${moved.length === 1 ? "" : "s"} moved out` : ""
+            }`,
+            { folder: removedFolder, diagnoses: moved },
+          );
+        }
         return {
           ...current,
           diagnosisFolders: current.diagnosisFolders.filter((entry) => entry.id !== id),
@@ -289,14 +327,27 @@ export function useBillingMacros() {
 
   const removeDiagnosis = useCallback(
     (id: string) => {
-      updateLibrary((current) => ({
-        ...current,
-        diagnoses: current.diagnoses.filter((entry) => entry.id !== id),
-        bundles: current.bundles.map((bundle) => ({
-          ...bundle,
-          diagnosisIds: bundle.diagnosisIds.filter((entry) => entry !== id),
-        })),
-      }));
+      updateLibrary((current) => {
+        const removed = current.diagnoses.find((entry) => entry.id === id);
+        if (removed) {
+          const folder = current.diagnosisFolders.find((f) => f.id === removed.folderId);
+          logMacroDelete(
+            "billing.diagnosis_deleted",
+            `Deleted diagnosis ${removed.code}${removed.description ? ` — ${removed.description}` : ""}${
+              folder ? ` (${folder.name})` : ""
+            }`,
+            removed,
+          );
+        }
+        return {
+          ...current,
+          diagnoses: current.diagnoses.filter((entry) => entry.id !== id),
+          bundles: current.bundles.map((bundle) => ({
+            ...bundle,
+            diagnosisIds: bundle.diagnosisIds.filter((entry) => entry !== id),
+          })),
+        };
+      });
     },
     [updateLibrary],
   );
@@ -366,10 +417,16 @@ export function useBillingMacros() {
 
   const removeBundle = useCallback(
     (id: string) => {
-      updateLibrary((current) => ({
-        ...current,
-        bundles: current.bundles.filter((entry) => entry.id !== id),
-      }));
+      updateLibrary((current) => {
+        const removed = current.bundles.find((entry) => entry.id === id);
+        if (removed) {
+          logMacroDelete("billing.bundle_deleted", `Deleted bundle "${removed.name}"`, removed);
+        }
+        return {
+          ...current,
+          bundles: current.bundles.filter((entry) => entry.id !== id),
+        };
+      });
     },
     [updateLibrary],
   );
@@ -601,7 +658,13 @@ export function useBillingMacros() {
   );
 
   const resetToDefaults = useCallback(() => {
+    const previous = loadBillingMacroLibrary();
     const defaults = getDefaultBillingMacroLibrary();
+    logMacroDelete(
+      "billing.macros_reset",
+      `Reset billing macros to defaults (${previous.diagnoses.length} diagnoses, ${previous.treatments.length} treatments replaced)`,
+      previous,
+    );
     setBillingMacros(defaults);
     saveBillingMacroLibrary(defaults);
   }, []);
