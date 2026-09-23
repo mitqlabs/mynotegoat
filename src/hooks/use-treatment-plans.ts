@@ -28,6 +28,65 @@ export function useTreatmentPlans() {
     loadTreatmentPlans(),
   );
   const selfWriteCountRef = useRef(0);
+  // Written but not yet saved. Toggling a treatment chip used to save the
+  // whole plan map — stringify, localStorage, cloud write, then a notify
+  // that re-read and re-rendered — all before React could paint the chip,
+  // which is what made a click light up, drop, then light up again.
+  // Now the click only sets state; this holds what still needs writing.
+  const pendingSaveRef = useRef<TreatmentPlansByPatient | null>(null);
+  // Mirror of state, so a change can be computed without waiting for a
+  // render. Kept in sync below rather than during render.
+  const plansRef = useRef<TreatmentPlansByPatient>(plansByPatient);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    pendingSaveRef.current = null;
+    saveTreatmentPlans(pending);
+    selfWriteCountRef.current++;
+    notifyChange(STORAGE_KEY_TREATMENT_PLANS);
+  }, []);
+
+  const scheduleSave = useCallback(
+    (map: TreatmentPlansByPatient, immediate: boolean) => {
+      pendingSaveRef.current = map;
+      if (immediate) {
+        flushSave();
+        return;
+      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      // Long enough to coalesce a run of chip taps, short enough that a
+      // normal pause writes before the user moves on.
+      saveTimerRef.current = setTimeout(flushSave, 400);
+    },
+    [flushSave],
+  );
+
+  // Nothing unsaved may outlive the page: flush on unmount, and on the
+  // way out of the tab (pagehide covers refresh, close and back/forward).
+  // The listener effect holds a ref, never a dependency, so it registers
+  // once and its cleanup removes the exact handler it added.
+  const flushRef = useRef(flushSave);
+  useEffect(() => {
+    flushRef.current = flushSave;
+  }, [flushSave]);
+  useEffect(() => {
+    const onHide = () => flushRef.current();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      flushRef.current();
+    };
+  }, []);
+
+  useEffect(() => {
+    plansRef.current = plansByPatient;
+  }, [plansByPatient]);
 
   useEffect(() => {
     return onLocalChange(STORAGE_KEY_TREATMENT_PLANS, () => {
@@ -35,28 +94,38 @@ export function useTreatmentPlans() {
         selfWriteCountRef.current--;
         return;
       }
+      // Our own unwritten edits are newer than whatever is on disk —
+      // reloading here would drop the chip the user just tapped.
+      if (pendingSaveRef.current) return;
       setPlansByPatient(loadTreatmentPlans());
     });
   }, []);
 
   const updatePatientList = useCallback(
-    (patientId: string, updater: (current: TreatmentPlan[]) => TreatmentPlan[]) => {
+    (
+      patientId: string,
+      updater: (current: TreatmentPlan[]) => TreatmentPlan[],
+      /** Chip taps debounce; adding or deleting a plan writes at once. */
+      options: { immediate?: boolean } = {},
+    ) => {
       const key = patientId.trim();
       if (!key) return;
-      setPlansByPatient((current) => {
-        const existing = current[key] ?? [];
-        const next = updater(existing);
-        if (next === existing) return current;
-        const map: TreatmentPlansByPatient = { ...current };
-        if (next.length === 0) delete map[key];
-        else map[key] = next;
-        saveTreatmentPlans(map);
-        selfWriteCountRef.current++;
-        notifyChange(STORAGE_KEY_TREATMENT_PLANS);
-        return map;
-      });
+      // Build the next map here rather than inside the state updater: an
+      // updater must be pure (React may run it more than once), and the
+      // save has to know exactly what changed. A queued-but-unwritten map
+      // wins over state, so two quick taps both land.
+      const currentMap = pendingSaveRef.current ?? plansRef.current;
+      const existing = currentMap[key] ?? [];
+      const next = updater(existing);
+      if (next === existing) return;
+      const map: TreatmentPlansByPatient = { ...currentMap };
+      if (next.length === 0) delete map[key];
+      else map[key] = next;
+      plansRef.current = map;
+      setPlansByPatient(map);
+      scheduleSave(map, options.immediate ?? false);
     },
-    [],
+    [scheduleSave],
   );
 
   const getPlansForPatient = useCallback(
@@ -79,7 +148,7 @@ export function useTreatmentPlans() {
         createdAt: ts,
         updatedAt: ts,
       };
-      updatePatientList(key, (current) => [plan, ...current]);
+      updatePatientList(key, (current) => [plan, ...current], { immediate: true });
       logPlan(key, "plan.created", `Created treatment plan ${plan.startDate} – ${plan.endDate}`);
       return plan;
     },
@@ -101,8 +170,10 @@ export function useTreatmentPlans() {
           logPlan(patientId, patch.active ? "plan.activated" : "plan.deactivated", `${patch.active ? "Activated" : "Deactivated"} treatment plan ${before.startDate} – ${before.endDate}`);
         }
       }
-      updatePatientList(patientId, (current) =>
-        current.map((p) => (p.id === planId ? { ...p, ...patch, updatedAt: nowIso() } : p)),
+      updatePatientList(
+        patientId,
+        (current) => current.map((p) => (p.id === planId ? { ...p, ...patch, updatedAt: nowIso() } : p)),
+        { immediate: true },
       );
     },
     [updatePatientList, plansByPatient],
@@ -112,7 +183,11 @@ export function useTreatmentPlans() {
     (patientId: string, planId: string) => {
       const removed = (plansByPatient[patientId.trim()] ?? []).find((p) => p.id === planId);
       if (removed) logPlan(patientId, "plan.deleted", `Deleted treatment plan ${removed.startDate} – ${removed.endDate}`);
-      updatePatientList(patientId, (current) => current.filter((p) => p.id !== planId));
+      updatePatientList(
+        patientId,
+        (current) => current.filter((p) => p.id !== planId),
+        { immediate: true },
+      );
     },
     [updatePatientList, plansByPatient],
   );
