@@ -166,11 +166,34 @@ function findLateralityQuestion<T extends { label: string; options?: string[] }>
  * their own words; falls back to plain text when they never added one —
  * the same as typing into the question's Other box.
  */
-function lateralityAnswerFor(side: "both" | "left" | "right", options: string[]): string {
+function lateralityAnswerFor(side: "left" | "right", options: string[]): string {
   const match = (test: RegExp) => options.find((option) => test.test(option.trim()));
   if (side === "left") return match(/^left\b|^l$|^\(l\)$/i) ?? "Left";
-  if (side === "right") return match(/^right\b|^r$|^\(r\)$/i) ?? "Right";
-  return match(/bilat|^both\b|^bl$/i) ?? "Bilateral";
+  return match(/^right\b|^r$|^\(r\)$/i) ?? "Right";
+}
+
+/**
+ * Drop an unanswered prompt pill from rendered macro text.
+ *
+ * A bilateral line has no side to state — the plural region name says it.
+ * Left in place, the empty pill renders as a stray blank the user has to
+ * delete by hand, which is exactly what it was doing.
+ */
+function removeEmptyPromptSpan(html: string, promptId: string): string {
+  const id = promptId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return html
+    .replace(
+      new RegExp(
+        `<span class="macro-prompt"[^>]*data-prompt-id="${id}"[^>]*>(?:&nbsp;|\\s)*</span>`,
+        "g",
+      ),
+      "",
+    )
+    // Tidy what the pill left behind: a doubled space, or a space before
+    // the colon that followed it.
+    .replace(/ {2,}/g, " ")
+    .replace(/(<p>|<div>|^)\s+/g, "$1")
+    .replace(/\s+:/g, ":");
 }
 
 /** Nouns whose plural isn't just "+s". Small on purpose — body parts. */
@@ -2148,7 +2171,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       }
       // Answer the side question for this group — only when the day
       // actually uses sides, so existing plans keep their own pick.
-      if (lateralityQuestion && region.sideTreatments) {
+      // Only a one-sided line names a side. Bilateral says it with the
+      // plural region name instead, so the side pill stays empty and is
+      // stripped below.
+      if (lateralityQuestion && region.sideTreatments && group.side !== "both") {
         answers[lateralityQuestion.id] = [
           lateralityAnswerFor(group.side, lateralityQuestion.options ?? []),
         ];
@@ -2170,7 +2196,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         snippetId,
       );
       const html = stripBlankWrappers(
-        isBilateral ? pluralizeRegionInHtml(rendered, macro.buttonName) : rendered,
+        isBilateral
+          ? removeEmptyPromptSpan(
+              pluralizeRegionInHtml(rendered, macro.buttonName),
+              lateralityQuestion?.id ?? "",
+            )
+          : rendered,
       );
       if (!html) continue;
       prepared.push({ snippetId, macro, answers, html });
