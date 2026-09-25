@@ -26,6 +26,17 @@ export interface WeekdayRegion {
    * everything else lives here so auto-apply fills the note completely.
    */
   answers?: Record<string, string[]>;
+  /**
+   * Treatments that apply to ONE side only. `treatments` above stays the
+   * shared list — what's done to both sides (or to a region with no sides
+   * at all). A day can therefore say "EMS and LLLT to both knees, plus
+   * shockwave to the right one" without repeating the region.
+   *
+   * Absent on every plan written before per-side existed, which is the
+   * same as "nothing side-specific" — those plans behave exactly as they
+   * always did.
+   */
+  sideTreatments?: { left: string[]; right: string[] };
 }
 
 /**
@@ -139,10 +150,19 @@ function normalizeRegion(value: unknown): WeekdayRegion | null {
   const macroId = normalizeText((value as { macroId?: unknown }).macroId);
   if (!macroId) return null;
   const answers = normalizeAnswers((value as { answers?: unknown }).answers);
+  const rawSides = (value as { sideTreatments?: unknown }).sideTreatments;
+  const sides =
+    rawSides && typeof rawSides === "object"
+      ? {
+          left: normalizeStringArray((rawSides as { left?: unknown }).left),
+          right: normalizeStringArray((rawSides as { right?: unknown }).right),
+        }
+      : null;
   return {
     macroId,
     treatments: normalizeStringArray((value as { treatments?: unknown }).treatments),
     ...(answers ? { answers } : {}),
+    ...(sides && (sides.left.length || sides.right.length) ? { sideTreatments: sides } : {}),
   };
 }
 

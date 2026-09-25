@@ -142,6 +142,37 @@ const BODY_REGION_WORDS = new Set([
   "spine",
 ]);
 
+/**
+ * The macro question that asks which side — "LEFT/RIGHT", "Side",
+ * "Laterality". A treatment-plan day can set treatments per side, and each
+ * side is emitted as its own line with this question answered for it.
+ */
+function findLateralityQuestion<T extends { label: string; options?: string[] }>(
+  questions: T[],
+): T | undefined {
+  return questions.find((question) => {
+    const label = question.label.toLowerCase();
+    return (
+      /\blateral/.test(label) ||
+      /\bside\b/.test(label) ||
+      (/\bleft\b/.test(label) && /\bright\b/.test(label))
+    );
+  });
+}
+
+/**
+ * The wording to answer that question with. Prefers an option the office
+ * actually configured ("Bilateral", "BL", "Left"), so the note reads in
+ * their own words; falls back to plain text when they never added one —
+ * the same as typing into the question's Other box.
+ */
+function lateralityAnswerFor(side: "both" | "left" | "right", options: string[]): string {
+  const match = (test: RegExp) => options.find((option) => test.test(option.trim()));
+  if (side === "left") return match(/^left\b|^l$|^\(l\)$/i) ?? "Left";
+  if (side === "right") return match(/^right\b|^r$|^\(r\)$/i) ?? "Right";
+  return match(/bilat|^both\b|^bl$/i) ?? "Bilateral";
+}
+
 function isBodyRegionMacroName(name: string): boolean {
   const words = name
     .toLowerCase()
@@ -1990,6 +2021,25 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     for (const region of orderedRegions) {
       const macro = macroLibraryById.get(region.macroId);
       if (!macro || !macro.active) continue;
+      // A region can carry treatments for both sides plus extras for one
+      // side only. Each non-empty group becomes its own line in the note,
+      // which is what makes "EMS and LLLT to both knees, shockwave to the
+      // right" read correctly instead of collapsing into one list.
+      const lateralityQuestion = findLateralityQuestion(macro.questions);
+      const sideGroups: Array<{ side: "both" | "left" | "right"; treatments: string[] }> = (
+        [
+          { side: "both" as const, treatments: region.treatments },
+          { side: "left" as const, treatments: region.sideTreatments?.left ?? [] },
+          { side: "right" as const, treatments: region.sideTreatments?.right ?? [] },
+        ]
+      ).filter(
+        (group, index) =>
+          // The shared group still emits when empty but the region uses no
+          // sides at all — a plain region with nothing ticked, exactly as
+          // it behaved before per-side existed.
+          group.treatments.length > 0 || (index === 0 && !region.sideTreatments),
+      );
+      for (const group of sideGroups) {
       // The treatments question is the charge-linked multi-select (same
       // resolution the Treatment Plan editor uses to list the options).
       const treatmentsQuestion =
@@ -2010,7 +2060,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         const optionOrder = new Map(
           (treatmentsQuestion.options ?? []).map((opt, i) => [opt, i]),
         );
-        answers[treatmentsQuestion.id] = [...region.treatments].sort((a, b) => {
+        answers[treatmentsQuestion.id] = [...group.treatments].sort((a, b) => {
           const ai = optionOrder.has(a) ? (optionOrder.get(a) as number) : Number.MAX_SAFE_INTEGER;
           const bi = optionOrder.has(b) ? (optionOrder.get(b) as number) : Number.MAX_SAFE_INTEGER;
           return ai - bi;
@@ -2030,6 +2080,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           answers[cyclesQ.id] = [decompConfig.cycles.trim()];
         }
       }
+      // Answer the side question for this group — only when the day
+      // actually uses sides, so existing plans keep their own pick.
+      if (lateralityQuestion && region.sideTreatments) {
+        answers[lateralityQuestion.id] = [
+          lateralityAnswerFor(group.side, lateralityQuestion.options ?? []),
+        ];
+      }
       const snippetId = createEncounterMacroRunId();
       const rendered = renderMacroTemplateWithPromptSpans(
         macro.body,
@@ -2040,6 +2097,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       const html = stripBlankWrappers(rendered);
       if (!html) continue;
       prepared.push({ snippetId, macro, answers, html });
+      }
     }
     return prepared;
   };

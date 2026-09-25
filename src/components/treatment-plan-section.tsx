@@ -38,6 +38,16 @@ function usDateWeekday(us: string): number | null {
   return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2])).getDay();
 }
 
+/** True for the macro question that asks which side (LEFT/RIGHT, Side…). */
+function isLateralityQuestionLabel(label: string): boolean {
+  const text = label.toLowerCase();
+  return (
+    /\blateral/.test(text) ||
+    /\bside\b/.test(text) ||
+    (/\bleft\b/.test(text) && /\bright\b/.test(text))
+  );
+}
+
 type PlanRegion = {
   macroId: string;
   name: string;
@@ -69,6 +79,10 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
   // Which plans have the Spinal Decompression card expanded (default collapsed).
   const [expandedDecompIds, setExpandedDecompIds] = useState<Set<string>>(new Set());
+  // Regions showing their Left / Right rows. A region that already has
+  // side-specific treatments opens on its own; this tracks the ones the
+  // user has opened by hand.
+  const [openSideRegions, setOpenSideRegions] = useState<Set<string>>(new Set());
   const [activeDay, setActiveDay] = useState(1); // Monday
 
   // Only offer the office's open days (from Schedule Settings → office hours).
@@ -415,6 +429,29 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                             ),
                           );
                         };
+                        // Tick a treatment for ONE side only. The shared list
+                        // above stays what's done to both; these are the
+                        // extras — shockwave to the right knee and nothing to
+                        // the left. Empty side lists are dropped so the region
+                        // goes back to behaving like a plain one.
+                        const toggleSideTreatment = (side: "left" | "right", t: string) => {
+                          setDay(
+                            dayRegions.map((r) => {
+                              if (r.macroId !== region.macroId) return r;
+                              const sides = {
+                                left: [...(r.sideTreatments?.left ?? [])],
+                                right: [...(r.sideTreatments?.right ?? [])],
+                              };
+                              sides[side] = sides[side].includes(t)
+                                ? sides[side].filter((x) => x !== t)
+                                : [...sides[side], t];
+                              const next = { ...r };
+                              if (sides.left.length || sides.right.length) next.sideTreatments = sides;
+                              else delete next.sideTreatments;
+                              return next;
+                            }),
+                          );
+                        };
                         // Toggle an answer to a non-treatment question (e.g.
                         // Left/Right). Single-select questions replace; multi
                         // toggle. Empty selection drops the key.
@@ -453,29 +490,93 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 {region.treatmentsLabel}
                               </div>
                             )}
-                            {included && region.treatments.length > 0 && (
-                              <div className="mt-1.5 flex flex-wrap gap-1.5 pl-6">
-                                {region.treatments.map((t) => {
-                                  const on = onDay?.treatments.includes(t) ?? false;
-                                  return (
+                            {included && region.treatments.length > 0 && (() => {
+                              const hasSides = region.otherQuestions.some((question) =>
+                                isLateralityQuestionLabel(question.label),
+                              );
+                              const sideKey = `${plan.id}:${activeDay}:${region.macroId}`;
+                              const usingSides =
+                                Boolean(onDay?.sideTreatments) || openSideRegions.has(sideKey);
+                              const chip = (on: boolean) =>
+                                `rounded-full border px-2 py-0.5 text-xs ${
+                                  on
+                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                    : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
+                                }`;
+                              return (
+                                <div className="mt-1.5 pl-6">
+                                  {usingSides && (
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                                      Both sides
+                                    </div>
+                                  )}
+                                  <div className="mt-1 flex flex-wrap gap-1.5">
+                                    {region.treatments.map((t) => (
+                                      <button
+                                        key={t}
+                                        className={chip(onDay?.treatments.includes(t) ?? false)}
+                                        onClick={() => toggleTreatment(t)}
+                                        type="button"
+                                      >
+                                        {t}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  {hasSides && !usingSides && (
                                     <button
-                                      key={t}
-                                      className={`rounded-full border px-2 py-0.5 text-xs ${
-                                        on
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
-                                          : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
-                                      }`}
-                                      onClick={() => toggleTreatment(t)}
+                                      className="mt-1.5 text-[11px] font-semibold text-[var(--brand-primary)] hover:underline"
+                                      onClick={() =>
+                                        setOpenSideRegions((current) => {
+                                          const next = new Set(current);
+                                          next.add(sideKey);
+                                          return next;
+                                        })
+                                      }
                                       type="button"
                                     >
-                                      {t}
+                                      + Different for left / right?
                                     </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                                  )}
+
+                                  {hasSides &&
+                                    usingSides &&
+                                    (["left", "right"] as const).map((side) => (
+                                      <div className="mt-2" key={`${sideKey}-${side}`}>
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                                          {side === "left" ? "Left only" : "Right only"}
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                          {region.treatments.map((t) => (
+                                            <button
+                                              key={`${side}-${t}`}
+                                              className={chip(
+                                                (onDay?.sideTreatments?.[side] ?? []).includes(t),
+                                              )}
+                                              onClick={() => toggleSideTreatment(side, t)}
+                                              type="button"
+                                            >
+                                              {t}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                </div>
+                              );
+                            })()}
                             {included &&
                               region.otherQuestions.map((question) => {
+                                // Once a region uses per-side treatments, the
+                                // side is decided by which row a treatment
+                                // sits in — asking again here would let the
+                                // two disagree.
+                                if (
+                                  onDay?.sideTreatments &&
+                                  isLateralityQuestionLabel(question.label)
+                                ) {
+                                  return null;
+                                }
                                 const selected = onDay?.answers?.[question.id] ?? [];
                                 return (
                                   <div key={question.id} className="mt-1.5 pl-6">
