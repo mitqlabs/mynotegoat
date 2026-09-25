@@ -38,6 +38,26 @@ function usDateWeekday(us: string): number | null {
   return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2])).getDay();
 }
 
+/** "Knee" → "Knees", "Ankle/Foot" → "Ankles/Feet". Mirrors what the note
+ *  does when a day is bilateral, so the hint shows the real wording. */
+const IRREGULAR_REGION_PLURALS: Record<string, string> = {
+  foot: "feet",
+  calf: "calves",
+};
+
+function pluralizeRegionName(name: string): string {
+  return name.replace(/[A-Za-z]+/g, (word) => {
+    if (word.length <= 2) return word;
+    const lower = word.toLowerCase();
+    const plural =
+      IRREGULAR_REGION_PLURALS[lower] ??
+      (/(s|x|z|ch|sh)$/i.test(lower) ? `${lower}es` : `${lower}s`);
+    return word[0] === word[0]?.toUpperCase()
+      ? plural.charAt(0).toUpperCase() + plural.slice(1)
+      : plural;
+  });
+}
+
 /** True for the macro question that asks which side (LEFT/RIGHT, Side…). */
 function isLateralityQuestionLabel(label: string): boolean {
   const text = label.toLowerCase();
@@ -601,6 +621,12 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                       {question.label}
                                       {question.multiSelect ? "" : " (pick one)"}
                                     </div>
+                                    {isLateralityQuestionLabel(question.label) && (
+                                      <p className="mt-0.5 text-[10px] font-normal normal-case text-[var(--text-muted)]">
+                                        Leave unpicked for both sides — the note reads{" "}
+                                        {pluralizeRegionName(region.name)}.
+                                      </p>
+                                    )}
                                     <div className="mt-1 flex flex-wrap gap-1.5">
                                       {question.options.map((opt) => {
                                         const on = selected.includes(opt);

@@ -726,6 +726,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "A greyed-out weekday has no appointments booked inside the plan's dates. Configuring a day with no visits does nothing — book the visits first, or move the treatments to a day that has them.",
       },
       {
+        heading: "Both sides, same treatment",
+        steps: [
+          "Tick the region and its treatments as normal.",
+          "Leave the LEFT/RIGHT question unpicked.",
+        ],
+        why: "Unpicked means both. The note writes the region in the plural — Knee becomes Knees, Ankle/Foot becomes Ankles/Feet — so it reads as one bilateral line instead of the same sentence twice.",
+        watchOut:
+          "Only the region word changes. A macro that says 'the knee was treated' becomes 'the knees was treated', so write those templates in the singular or around the verb.",
+      },
+      {
         heading: "Different treatments for the left and the right",
         steps: [
           "Tick the region, then press the 'Left / right separately' pill under it.",

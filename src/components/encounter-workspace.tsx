@@ -173,6 +173,59 @@ function lateralityAnswerFor(side: "both" | "left" | "right", options: string[])
   return match(/bilat|^both\b|^bl$/i) ?? "Bilateral";
 }
 
+/** Nouns whose plural isn't just "+s". Small on purpose — body parts. */
+const IRREGULAR_PLURALS: Record<string, string> = {
+  foot: "feet",
+  hand: "hands",
+  thumb: "thumbs",
+  calf: "calves",
+  vertebra: "vertebrae",
+};
+
+function pluralizeWord(word: string): string {
+  const lower = word.toLowerCase();
+  const irregular = IRREGULAR_PLURALS[lower];
+  const plural = irregular ?? (/(s|x|z|ch|sh)$/i.test(lower) ? `${lower}es` : `${lower}s`);
+  // Keep the original capitalisation: Knee → Knees, KNEE → KNEES.
+  if (word === word.toUpperCase()) return plural.toUpperCase();
+  if (word[0] === word[0]?.toUpperCase()) return plural.charAt(0).toUpperCase() + plural.slice(1);
+  return plural;
+}
+
+/**
+ * Both sides treated the same reads better as "Knees" than "Knee". When a
+ * plan day is bilateral, the region's own name is pluralised wherever it
+ * appears in the rendered text — "Ankle/Foot" becomes "Ankles/Feet".
+ *
+ * Only the words of the region's own name are touched, only outside HTML
+ * tags (so span ids and attributes are never rewritten). The surrounding
+ * grammar is left alone: a template that says "the knee was treated"
+ * becomes "the knees was treated", so word templates in the singular
+ * rather than writing around it.
+ */
+function pluralizeRegionInHtml(html: string, regionName: string): string {
+  const words = regionName
+    .split(/[^A-Za-z]+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 2);
+  if (words.length === 0) return html;
+  // Split on tags so replacements only ever hit visible text.
+  return html
+    .split(/(<[^>]*>)/)
+    .map((segment) => {
+      if (segment.startsWith("<")) return segment;
+      let out = segment;
+      for (const word of words) {
+        out = out.replace(
+          new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"),
+          (match) => pluralizeWord(match),
+        );
+      }
+      return out;
+    })
+    .join("");
+}
+
 function isBodyRegionMacroName(name: string): boolean {
   const words = name
     .toLowerCase()
@@ -2100,6 +2153,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           lateralityAnswerFor(group.side, lateralityQuestion.options ?? []),
         ];
       }
+      // Bilateral, two ways: the day ticks both sides identically, or the
+      // region has a side question that was deliberately left unpicked —
+      // "pick one, bilateral if not picked". Either way the region reads
+      // in the plural: Knee becomes Knees, Ankle/Foot becomes Ankles/Feet.
+      const unpickedSide =
+        Boolean(lateralityQuestion) &&
+        !region.sideTreatments &&
+        (answers[lateralityQuestion!.id] ?? []).length === 0;
+      const isBilateral = group.side === "both" && (Boolean(region.sideTreatments) || unpickedSide);
       const snippetId = createEncounterMacroRunId();
       const rendered = renderMacroTemplateWithPromptSpans(
         macro.body,
@@ -2107,7 +2169,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         context,
         snippetId,
       );
-      const html = stripBlankWrappers(rendered);
+      const html = stripBlankWrappers(
+        isBilateral ? pluralizeRegionInHtml(rendered, macro.buttonName) : rendered,
+      );
       if (!html) continue;
       prepared.push({ snippetId, macro, answers, html });
       }
