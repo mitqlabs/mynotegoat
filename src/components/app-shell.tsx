@@ -234,6 +234,18 @@ export function AppShell({
                           </Link>
                         );
                       })}
+                      <Link
+                        href="/handbook"
+                        className={classNames(
+                          "mt-2 flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold transition",
+                          pathname === "/handbook"
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "text-[#d5ebf8] hover:bg-white/10",
+                        )}
+                      >
+                        <span aria-hidden>📖</span>
+                        <span>Handbook</span>
+                      </Link>
                     </nav>
 
                     <div className="mt-8 rounded-xl border border-white/20 bg-white/10 p-3">
@@ -295,6 +307,18 @@ export function AppShell({
                           </Link>
                         );
                       })}
+                      <Link
+                        href="/handbook"
+                        className={classNames(
+                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                          pathname === "/handbook"
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "text-[#d5ebf8] hover:bg-white/10",
+                        )}
+                        title="Handbook"
+                      >
+                        📖
+                      </Link>
                     </nav>
 
                     {/* Sign out icon */}
