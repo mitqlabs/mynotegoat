@@ -2026,19 +2026,32 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       // which is what makes "EMS and LLLT to both knees, shockwave to the
       // right" read correctly instead of collapsing into one list.
       const lateralityQuestion = findLateralityQuestion(macro.questions);
-      const sideGroups: Array<{ side: "both" | "left" | "right"; treatments: string[] }> = (
-        [
-          { side: "both" as const, treatments: region.treatments },
-          { side: "left" as const, treatments: region.sideTreatments?.left ?? [] },
-          { side: "right" as const, treatments: region.sideTreatments?.right ?? [] },
-        ]
-      ).filter(
-        (group, index) =>
-          // The shared group still emits when empty but the region uses no
-          // sides at all — a plain region with nothing ticked, exactly as
-          // it behaved before per-side existed.
-          group.treatments.length > 0 || (index === 0 && !region.sideTreatments),
-      );
+      const left = region.sideTreatments?.left ?? [];
+      const right = region.sideTreatments?.right ?? [];
+      // Both sides getting exactly the same treatments IS bilateral — so it
+      // reads as one line rather than the same sentence twice. Ticking the
+      // sides differently is what splits it in two. Nothing to switch on:
+      // the shape of the day decides the shape of the note.
+      const sameBothSides =
+        left.length > 0 &&
+        left.length === right.length &&
+        left.every((treatment) => right.includes(treatment));
+      const sideGroups: Array<{ side: "both" | "left" | "right"; treatments: string[] }> =
+        sameBothSides
+          ? [{ side: "both", treatments: left }]
+          : (
+              [
+                { side: "both" as const, treatments: region.treatments },
+                { side: "left" as const, treatments: left },
+                { side: "right" as const, treatments: right },
+              ]
+            ).filter(
+              (group, index) =>
+                // The shared group still emits when empty but the region uses
+                // no sides at all — a plain region with nothing ticked,
+                // exactly as it behaved before per-side existed.
+                group.treatments.length > 0 || (index === 0 && !region.sideTreatments),
+            );
       for (const group of sideGroups) {
       // The treatments question is the charge-linked multi-select (same
       // resolution the Treatment Plan editor uses to list the options).

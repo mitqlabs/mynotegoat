@@ -728,12 +728,12 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "Different treatments for the left and the right",
         steps: [
-          "Tick the region, then press '+ Different for left / right' under it.",
+          "Tick the region, then press the 'Left / right separately' pill under it.",
           "The chips split into Left and Right. Whatever you had ticked is copied to both sides, so nothing is lost.",
           "Tick what each side gets — e.g. EMS and LLLT on both, shockwave on the right only.",
-          "'- Same treatments both sides' puts it back to one list.",
+          "'One list for the region' puts it back to a single list.",
         ],
-        why: "Each side becomes its own line in the note, so the visit reads 'left knee: EMS, LLLT' and 'right knee: EMS, LLLT, shockwave'. Billing is unaffected — a treatment is charged once per visit however many regions or sides it covers.",
+        why: "Tick the SAME treatments on both sides and the note writes one bilateral line. Tick them differently and it writes a line per side — 'left knee: EMS, LLLT' and 'right knee: EMS, LLLT, shockwave'. Nothing to switch on: the shape of the day decides the shape of the note. Billing is unaffected — a treatment is charged once per visit however many regions or sides it covers.",
         watchOut:
           "While a region is in per-side mode its own Left/Right question disappears — the side comes from which row you ticked, so the two can never disagree.",
       },

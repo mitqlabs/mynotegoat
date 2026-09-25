@@ -637,25 +637,44 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 const sideKey = `${plan.id}:${activeDay}:${region.macroId}`;
                                 const usingSides =
                                   Boolean(onDay?.sideTreatments) || openSideRegions.has(sideKey);
+                                const left = onDay?.sideTreatments?.left ?? [];
+                                const right = onDay?.sideTreatments?.right ?? [];
+                                // Identical ticks on both sides are written as
+                                // one bilateral line, so say so here rather
+                                // than letting it be a surprise in the note.
+                                const readsBilateral =
+                                  usingSides &&
+                                  left.length > 0 &&
+                                  left.length === right.length &&
+                                  left.every((treatment) => right.includes(treatment));
                                 return (
-                                  <button
-                                    className="mt-1.5 pl-6 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:underline"
-                                    onClick={() => {
-                                      setOpenSideRegions((current) => {
-                                        const next = new Set(current);
-                                        if (usingSides) next.delete(sideKey);
-                                        else next.add(sideKey);
-                                        return next;
-                                      });
-                                      if (usingSides) stopSides();
-                                      else startSides();
-                                    }}
-                                    type="button"
-                                  >
-                                    {usingSides
-                                      ? "− Same treatments both sides"
-                                      : "+ Different for left / right"}
-                                  </button>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+                                    <button
+                                      className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${
+                                        usingSides
+                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                          : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
+                                      }`}
+                                      onClick={() => {
+                                        setOpenSideRegions((current) => {
+                                          const next = new Set(current);
+                                          if (usingSides) next.delete(sideKey);
+                                          else next.add(sideKey);
+                                          return next;
+                                        });
+                                        if (usingSides) stopSides();
+                                        else startSides();
+                                      }}
+                                      type="button"
+                                    >
+                                      {usingSides ? "One list for the region" : "Left / right separately"}
+                                    </button>
+                                    {readsBilateral && (
+                                      <span className="text-[11px] text-[var(--text-muted)]">
+                                        Same both sides — writes one bilateral line.
+                                      </span>
+                                    )}
+                                  </div>
                                 );
                               })()}
                           </div>
