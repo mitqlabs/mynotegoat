@@ -872,6 +872,33 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       .sort((a, b) => a.localeCompare(b));
   }, [allContacts]);
 
+  // The same list grouped by what each one actually does (the contact's
+  // sub-category), so the picker reads as Pain Management / Neurologist /
+  // … rather than one long alphabetical run. Groups A-Z, names A-Z inside,
+  // and anything with no specialty set collects under "Other" at the end.
+  const specialistContactsBySpecialty = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const contact of allContacts) {
+      if (contact.category.toLowerCase() !== "specialist") continue;
+      const specialty = (contact.subCategory ?? "").trim() || "Other";
+      const list = groups.get(specialty) ?? [];
+      list.push(contact.name);
+      groups.set(specialty, list);
+    }
+    return [...groups.entries()]
+      .map(([specialty, names]) => ({
+        specialty,
+        names: names.sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) =>
+        a.specialty === "Other"
+          ? 1
+          : b.specialty === "Other"
+            ? -1
+            : a.specialty.localeCompare(b.specialty),
+      );
+  }, [allContacts]);
+
   const initialEncounterSearchValue = useMemo(() => {
     if (!initialPatientId) {
       return "";
@@ -4507,24 +4534,33 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     </span>
                   </p>
                   {specialistContactNames.length > 0 ? (
-                    <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
-                      {specialistContactNames.map((name) => (
-                        <label
-                          key={`spec-pick-${name}`}
-                          className="mb-2 flex w-full items-center gap-2 break-inside-avoid rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        >
-                          <input
-                            checked={runMacroAnswers.__specialist_referred__ === name}
-                            onChange={() =>
-                              setRunMacroAnswers((current) => ({
-                                ...current,
-                                __specialist_referred__: name,
-                              }))
-                            }
-                            type="radio"
-                          />
-                          {name}
-                        </label>
+                    <div className="mt-2 space-y-2">
+                      {specialistContactsBySpecialty.map((group) => (
+                        <div key={`spec-group-${group.specialty}`}>
+                          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                            {group.specialty}
+                          </p>
+                          <div style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
+                            {group.names.map((name) => (
+                              <label
+                                key={`spec-pick-${name}`}
+                                className="mb-2 flex w-full items-center gap-2 break-inside-avoid rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                              >
+                                <input
+                                  checked={runMacroAnswers.__specialist_referred__ === name}
+                                  onChange={() =>
+                                    setRunMacroAnswers((current) => ({
+                                      ...current,
+                                      __specialist_referred__: name,
+                                    }))
+                                  }
+                                  type="radio"
+                                />
+                                {name}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   ) : (
