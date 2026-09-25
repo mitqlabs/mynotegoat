@@ -11,7 +11,11 @@
  */
 
 import { useMemo, useState } from "react";
-import { handbookChapters } from "@/lib/handbook-content";
+import {
+  handbookChapters,
+  handbookChaptersClinical,
+  handbookChaptersOffice,
+} from "@/lib/handbook-content";
 import { isAdminTier } from "@/lib/admin-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
@@ -30,12 +34,14 @@ export default function HandbookPage() {
   const chapters = useMemo(() => {
     const admin = isAdminTier(roleTier);
     const manager = admin || roleTier === "manager";
-    return handbookChapters.filter((chapter) => {
+    return [...handbookChapters, ...handbookChaptersClinical, ...handbookChaptersOffice].filter(
+      (chapter) => {
       if (chapter.audience === "admin" && !admin) return false;
       if (chapter.audience === "manager" && !manager) return false;
       if (chapter.feature && !canView(chapter.feature)) return false;
       return true;
-    });
+      },
+    );
   }, [roleTier, canView]);
 
   const visible = useMemo(() => {
