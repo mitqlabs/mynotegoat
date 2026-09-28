@@ -17,6 +17,17 @@ const DEFAULT_SUBCATEGORIES: ContactSubCategoryMap = {
   "Imaging Center": [],
   Specialist: ["Pain Management", "Orthopedic", "Neurologist", "Mental Health"],
   "Acute Care": ["Hospital", "Emergency Room", "Urgent Care"],
+  // The carrier an agent works for. Seeded with the common ones; the
+  // office adds their own in Settings → Templates → Contact Categories.
+  "Insurance Agent": [
+    "State Farm",
+    "Allstate",
+    "Farmers",
+    "Geico",
+    "Progressive",
+    "Mercury",
+    "AAA",
+  ],
 };
 
 function normalizeText(value: unknown): string {
@@ -95,6 +106,7 @@ export function getDefaultContactSubCategories(): ContactSubCategoryMap {
     "Imaging Center": [...DEFAULT_SUBCATEGORIES["Imaging Center"]],
     Specialist: [...DEFAULT_SUBCATEGORIES.Specialist],
     "Acute Care": [...DEFAULT_SUBCATEGORIES["Acute Care"]],
+    "Insurance Agent": [...DEFAULT_SUBCATEGORIES["Insurance Agent"]],
   };
 }
 

@@ -107,9 +107,18 @@ export default function MarketingPage() {
     return counts;
   }, [settings, caseStatuses]);
 
+  // Marketing covers the people who send cases: attorneys, and now
+  // insurance agents. Case counts match on the patient's attorney field,
+  // so an agent shows no cases — that's honest, not a gap.
+  const [audience, setAudience] = useState<"all" | "Attorney" | "Insurance Agent">("all");
   const attorneys = useMemo(
-    () => contacts.filter((c) => c.category === "Attorney"),
-    [contacts],
+    () =>
+      contacts.filter((c) =>
+        audience === "all"
+          ? c.category === "Attorney" || c.category === "Insurance Agent"
+          : c.category === audience,
+      ),
+    [contacts, audience],
   );
 
   type Row = {
@@ -214,7 +223,10 @@ export default function MarketingPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-4 lg:p-6">
       {/* Dashboard tiles */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryTile label="Attorneys" value={String(attorneys.length)} />
+        <SummaryTile
+          label={audience === "Insurance Agent" ? "Insurance agents" : "Firms & agents"}
+          value={String(attorneys.length)}
+        />
         <SummaryTile label="Active cases" value={String(totalActiveCases)} accent="emerald" />
         <SummaryTile label="Total cases" value={String(totalCases)} accent="blue" />
         <SummaryTile label="Activities this month" value={String(activitiesThisMonth)} />
@@ -228,6 +240,16 @@ export default function MarketingPage() {
           placeholder="Search…"
           value={search}
         />
+        <select
+          aria-label="Who to show"
+          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+          onChange={(e) => setAudience(e.target.value as typeof audience)}
+          value={audience}
+        >
+          <option value="all">Everyone</option>
+          <option value="Attorney">Attorneys</option>
+          <option value="Insurance Agent">Insurance agents</option>
+        </select>
         {view === "list" && (
           <select
             className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
@@ -261,7 +283,8 @@ export default function MarketingPage() {
       {attorneys.length === 0 && (
         <div className="rounded-2xl border border-dashed border-[var(--line-soft)] bg-white p-8 text-center">
           <p className="text-sm text-[var(--text-muted)]">
-            No attorneys yet. Add contacts under the <strong>Attorney</strong> category in{" "}
+            Nobody to market to yet. Add contacts under the <strong>Attorney</strong> or{" "}
+            <strong>Insurance Agent</strong> category in{" "}
             <a className="font-semibold text-[var(--brand-primary)] underline" href="/contacts">
               Contacts
             </a>{" "}

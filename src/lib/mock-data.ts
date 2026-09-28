@@ -132,13 +132,17 @@ export type ContactCategory =
   | "Attorney"
   | "Imaging Center"
   | "Specialist"
-  | "Acute Care";
+  | "Acute Care"
+  | "Insurance Agent";
 
 export const CONTACT_CATEGORIES: ContactCategory[] = [
   "Attorney",
   "Imaging Center",
   "Specialist",
   "Acute Care",
+  // Marketed to like attorneys are. The sub-category holds the carrier —
+  // State Farm, Allstate — so one agent is filed under their company.
+  "Insurance Agent",
 ];
 
 export interface ContactEmail {

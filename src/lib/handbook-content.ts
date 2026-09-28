@@ -175,7 +175,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Sub-Category: for a Specialist this is what they do — Pain Management, Orthopedic, Neurologist. Type it or pick a suggestion.",
           "Phone, fax, any email rows, address → Save Contact.",
         ],
-        why: "Sub-category is how people get found later. The search box covers it, and the referral pickers on the patient page and in SOAP macros group specialists under it. A specialist with no sub-category lands under \u201cOther\u201d.",
+        why: "For an Insurance Agent the sub-category is their company — State Farm, Allstate, Farmers — so the field is labelled Insurance Company. Sub-category is how people get found later. The search box covers it, and the referral pickers on the patient page and in SOAP macros group specialists under it. A specialist with no sub-category lands under \u201cOther\u201d.",
       },
       {
         heading: "Find someone by what they do",
@@ -313,14 +313,15 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         watchOut: "Rooms themselves aren't created here — an admin adds them in Settings → Office Settings → Schedule.",
       },
       {
-        heading: "Log an attorney visit",
+        heading: "Log a marketing visit",
         steps: [
-          "Marketing → find the firm.",
+          "Marketing → pick Everyone, Attorneys or Insurance agents at the top.",
+          "Find the firm or agent.",
           "Pick the date and the type — Visit, Lunch Drop-off, Call, Email, Gift, Meeting, Event, Other.",
           "Add notes and save.",
         ],
         watchOut:
-          "Only contacts in the Attorney category appear here, and case counts match on the attorney name written on each patient. A firm spelled two ways shows split numbers — that's what Consolidate Attorneys fixes.",
+          "Only Attorney and Insurance Agent contacts appear here. Case counts match on the attorney name written on each patient, so insurance agents show none — that's expected, not a gap. A firm spelled two ways shows split numbers; that's what Consolidate Attorneys fixes.",
       },
     ],
   },

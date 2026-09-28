@@ -368,7 +368,11 @@ export default function ContactsPage() {
             {subCategoryOptions.length > 0 && (
               <label className="grid gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  {resolvedSelectedCategory === "Specialist" ? "Specialty" : "Sub-category"}
+                  {resolvedSelectedCategory === "Specialist"
+                    ? "Specialty"
+                    : resolvedSelectedCategory === "Insurance Agent"
+                      ? "Insurance Company"
+                      : "Sub-category"}
                 </span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
@@ -551,7 +555,9 @@ export default function ContactsPage() {
                         ? "Sub-category (Pain Management, Orthopedic, …)"
                         : editContactForm.category === "Acute Care"
                           ? "Sub-category (Hospital, Emergency Room, Urgent Care)"
-                          : "Sub-category (optional)"
+                          : editContactForm.category === "Insurance Agent"
+                            ? "Insurance company (State Farm, Allstate, Farmers…)"
+                            : "Sub-category (optional)"
                     }
                     value={editContactForm.subCategory}
                   />
@@ -682,7 +688,11 @@ export default function ContactsPage() {
 
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">
-                  Sub-Category (optional)
+                  {addContactForm.category === "Insurance Agent"
+                    ? "Insurance Company"
+                    : addContactForm.category === "Specialist"
+                      ? "Specialty (optional)"
+                      : "Sub-Category (optional)"}
                 </span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -698,7 +708,9 @@ export default function ContactsPage() {
                       ? "Pain Management, Orthopedic, Neurologist…"
                       : addContactForm.category === "Acute Care"
                         ? "Hospital, Emergency Room, Urgent Care"
-                        : "Optional"
+                        : addContactForm.category === "Insurance Agent"
+                          ? "State Farm, Allstate, Farmers…"
+                          : "Optional"
                   }
                   value={addContactForm.subCategory}
                 />

@@ -3000,7 +3000,13 @@ export default function SettingsPage() {
   // Per-top-level sub-category input drafts
   const [subCategoryDrafts, setSubCategoryDrafts] = useState<
     Record<ContactCategory, string>
-  >({ Attorney: "", "Imaging Center": "", Specialist: "", "Acute Care": "" });
+  >({
+    Attorney: "",
+    "Imaging Center": "",
+    Specialist: "",
+    "Acute Care": "",
+    "Insurance Agent": "",
+  });
   const [contactCategoryError, setContactCategoryError] = useState("");
   const [officeSettingsMessage, setOfficeSettingsMessage] = useState("");
   const [deletePasswordDraft, setDeletePasswordDraft] = useState("");
