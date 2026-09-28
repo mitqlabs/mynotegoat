@@ -1,5 +1,6 @@
 "use client";
 
+import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -46,7 +47,7 @@ import {
   weekdayLabels,
 } from "@/lib/schedule-settings";
 
-type AppointmentMode = "schedule" | "patient-flow";
+type AppointmentMode = "schedule" | "patient-flow" | "reminders";
 type RecurrenceUnit = "days" | "weeks";
 type RecurrenceEndMode = "date" | "visits";
 
@@ -1202,6 +1203,15 @@ export default function AppointmentsPage() {
           >
             Patient Flow View
           </button>
+          <button
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+              mode === "reminders" ? "bg-[var(--brand-primary)] text-white" : "bg-[var(--bg-soft)]"
+            }`}
+            onClick={() => setMode("reminders")}
+            type="button"
+          >
+            Text Reminders
+          </button>
         </div>
 
         <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
@@ -1404,6 +1414,10 @@ export default function AppointmentsPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {mode === "reminders" && (
+        <SmsRemindersPanel appointments={scheduleAppointments} todayIso={getTodayIsoDate()} />
       )}
 
       {mode === "patient-flow" && (

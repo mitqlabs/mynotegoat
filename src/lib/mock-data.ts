@@ -71,6 +71,12 @@ export interface PatientRecord {
   isCashPatient?: boolean;
   /** Which office location this patient treats at (OfficeLocation.id). Multi-location only. */
   locationId?: string;
+  /**
+   * This patient has asked not to get appointment text reminders — set from
+   * their file, or by them replying STOP once texting is automated. Absent
+   * means they still get them.
+   */
+  textRemindersOff?: boolean;
 }
 
 export interface CashPaymentEntry {
@@ -372,6 +378,7 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
     mriReferrals: Array.isArray(value.mriReferrals) ? value.mriReferrals : undefined,
     specialistReferrals: Array.isArray(value.specialistReferrals) ? value.specialistReferrals : undefined,
     locationId: cleanString(value.locationId) || undefined,
+    textRemindersOff: value.textRemindersOff === true ? true : undefined,
   };
 }
 
@@ -721,7 +728,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }

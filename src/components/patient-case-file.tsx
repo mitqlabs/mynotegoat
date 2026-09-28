@@ -1450,6 +1450,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [dateOfLoss, setDateOfLoss] = useState(toUsDate(patient.dateOfLoss));
   const [initialExam, setInitialExam] = useState(toUsDate(patient.matrix?.initialExam ?? ""));
   const [patientPhone, setPatientPhone] = useState(formatUsPhoneInput(patient.phone));
+  const [textRemindersOff, setTextRemindersOff] = useState(Boolean(patient.textRemindersOff));
   const [patientEmail, setPatientEmail] = useState(patient.email ?? "");
   const [patientAddress, setPatientAddress] = useState(patient.address ?? "");
   const [lienStatus, setLienStatus] = useState(() => {
@@ -4250,6 +4251,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     relatedCases?: RelatedCaseEntry[];
     locationId?: string;
     review?: string;
+    textRemindersOff?: boolean;
   } = {}): UpdatePatientRecordPatch => {
     const effectiveSpecialists = overrides.specialistReferrals ?? specialistReferrals;
     const effectiveXrays = overrides.xrayReferrals ?? xrayReferrals;
@@ -4264,6 +4266,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         : patient.fullName;
 
     return {
+      textRemindersOff: overrides.textRemindersOff ?? textRemindersOff,
       fullName: nextFullName,
       dob: toIsoDateFromUsDate(patientDob),
       sex: patientSex || undefined,
@@ -4371,6 +4374,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const handleReviewStatusChange = (next: string) => {
     setReviewStatus(next);
     autoSavePatientFile({ review: next });
+  };
+
+  // Whether this patient gets appointment text reminders. Saves the moment
+  // it changes — a patient who asks not to be texted must stop being
+  // texted now, not when someone remembers to press Save.
+  const handleTextRemindersChange = (off: boolean) => {
+    setTextRemindersOff(off);
+    autoSavePatientFile({ textRemindersOff: off });
   };
 
   // Loud, awaitable wrapper for the Patient Refused / Completed Prior
@@ -4748,6 +4759,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   label="Text"
                   phone={patientPhone}
                 />
+              )}
+              {patientPhone.replace(/\D/g, "").length > 0 && (
+                <label
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]"
+                  title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
+                >
+                  <input
+                    checked={textRemindersOff}
+                    onChange={(event) => handleTextRemindersChange(event.target.checked)}
+                    type="checkbox"
+                  />
+                  No reminder texts
+                </label>
               )}
               <button
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
