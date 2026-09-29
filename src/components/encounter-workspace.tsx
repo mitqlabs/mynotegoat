@@ -4249,42 +4249,53 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   // time.
                   <SplitPane
                     bottom={
-                      <div className="grid gap-1">
+                      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-1">
                         <span className="text-sm font-semibold text-[var(--text-muted)]">
                           Previous note ({saltSourceEncounter.encounterDate})
                         </span>
-                        <div className="rounded-xl border border-[var(--line-soft)] bg-white">
+                        {/* Four columns across, not a stack: the whole prior
+                            visit at a glance, in the same left-to-right order
+                            as the tabs above. Drops to two columns on a
+                            narrower screen and one on a phone. */}
+                        <div className="grid h-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
                           {encounterSections.map((section) => {
                             const body = saltSourceEncounter.soap[section].trim();
+                            const isActive = section === activeSection;
                             return (
                               <div
-                                className="border-b border-[var(--line-soft)] px-3 py-2 last:border-b-0"
+                                className={`flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white ${
+                                  isActive
+                                    ? "border-[var(--brand-primary)]"
+                                    : "border-[var(--line-soft)]"
+                                }`}
                                 key={`prev-${section}`}
                               >
                                 <div
-                                  className={`text-[11px] font-bold uppercase tracking-wide ${
-                                    section === activeSection
-                                      ? "text-[var(--brand-primary)]"
-                                      : "text-[var(--text-muted)]"
+                                  className={`border-b px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ${
+                                    isActive
+                                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
+                                      : "border-[var(--line-soft)] text-[var(--text-muted)]"
                                   }`}
                                 >
                                   {sectionLabels[section]}
                                 </div>
-                                {body ? (
-                                  <div
-                                    className="rich-text-editor mt-1 text-sm"
-                                    // Prior notes are stored as HTML (bold,
-                                    // underline, macro pills), normalized so
-                                    // the spacing matches the live editor.
-                                    dangerouslySetInnerHTML={{
-                                      __html: normalizeEditorBlocks(saltSourceEncounter.soap[section]),
-                                    }}
-                                  />
-                                ) : (
-                                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                                    Nothing written in this section.
-                                  </p>
-                                )}
+                                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+                                  {body ? (
+                                    <div
+                                      className="rich-text-editor text-sm"
+                                      // Prior notes are stored as HTML (bold,
+                                      // underline, macro pills), normalized so
+                                      // the spacing matches the live editor.
+                                      dangerouslySetInnerHTML={{
+                                        __html: normalizeEditorBlocks(saltSourceEncounter.soap[section]),
+                                      }}
+                                    />
+                                  ) : (
+                                    <p className="text-sm text-[var(--text-muted)]">
+                                      Nothing written in this section.
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}

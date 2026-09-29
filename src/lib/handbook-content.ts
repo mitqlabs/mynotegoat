@@ -629,7 +629,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Read the last visit while you write",
         steps: [
           "Pick a previous visit in Copy From.",
-          "The whole of that note appears underneath — Subjective, Objective, Assessment and Plan together, with the section you're typing highlighted.",
+          "The whole of that note appears underneath in four columns — Subjective, Objective, Assessment, Plan — with the one you're typing outlined.",
           "Drag the grey divider between the two to give whichever half you need the room.",
         ],
         why: "Where you leave the divider is remembered on that computer, so it opens the way you left it. Each half scrolls on its own rather than pushing the page down.",
