@@ -697,6 +697,17 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Check the patients in first. 'It did nothing' is almost always a row still sitting at Scheduled. The summary afterwards names what it skipped and why — read it.",
       },
       {
+        heading: "After a re-exam, bring the rest of the plan up to date",
+        steps: [
+          "Write the re-exam note with the new findings.",
+          "Press Fill Treatment Plan on it.",
+          "It asks whether to replace the Subjective, Objective and Assessment on the later visits that already have notes. Say yes.",
+        ],
+        why: "A long plan is usually filled once from the first visit. When the findings change at a re-exam, those later visits already have notes, so they'd otherwise keep reading like the old ones. Their Plan and charges are left alone — only S, O and A are replaced.",
+        watchOut:
+          "Anything typed by hand into S, O or A on those later visits is replaced. If a visit has something specific written on it, fix that one afterwards.",
+      },
+      {
         heading: "Before you press it",
         steps: [
           "It runs immediately — there is no preview.",

@@ -408,6 +408,9 @@ type FillRow = {
   action: FillRowAction;
   reason: string;
   selected: boolean;
+  /** Set when the visit was skipped because a note already exists — the
+   *  note that can be refreshed from a newer source (a re-exam). */
+  existingNoteId?: string;
 };
 
 // Visit types that need their own exam, never a copy of a treatment note.
@@ -2344,7 +2347,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         if (a.status === "No Show") return skip("No Show");
         if (a.status === "Check Out") return skip("Checked Out — note already finished");
         if (a.status !== "Check In") return skip(`${base.statusLabel} — not checked in`);
-        if (findNoteForAppointment(knownNotes, a, dateUs)) return skip("Already has a note");
+        const existing = findNoteForAppointment(knownNotes, a, dateUs);
+        if (existing) return { ...skip("Already has a note"), existingNoteId: existing.id };
         const dayTypeKey = `${a.date}|${a.appointmentType.toLowerCase()}`;
         if (claimedDayType.has(dayTypeKey)) return skip("Second visit of this type the same day");
         claimedDayType.add(dayTypeKey);
@@ -2536,9 +2540,76 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         }
       }
 
+      // A three-month plan is usually filled once from the first visit, and
+      // then the findings change at a re-exam. Re-running the fill from that
+      // re-exam has to be able to bring the later notes up to date — they all
+      // "already have a note", so without this the new findings stop at the
+      // re-exam and every later visit still reads like the old one.
+      let refreshed = 0;
+      let refreshBlocked = 0;
+      const refreshable = rows.filter((row) => row.existingNoteId);
+      if (refreshable.length > 0) {
+        const proceed = window.confirm(
+          `${refreshable.length} later visit${refreshable.length === 1 ? "" : "s"} already ${
+            refreshable.length === 1 ? "has a note" : "have notes"
+          }.\n\n` +
+            "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
+            "Their Plan and charges are left exactly as they are. Anything typed by hand into S, O or A on those visits is replaced.",
+        );
+        if (proceed) {
+          for (const row of refreshable) {
+            const target = encountersByNewest.find((entry) => entry.id === row.existingNoteId);
+            if (!target) {
+              // Only in the cloud, not on this device — editing it here would
+              // silently do nothing, so say so instead.
+              refreshBlocked += 1;
+              continue;
+            }
+            const wasSigned = target.signed;
+            if (wasSigned) setSigned(target.id, false);
+            for (const section of ["subjective", "objective", "assessment"] as const) {
+              // Drop the old runs for this section first, or the Inserted
+              // Macro Inputs list keeps pills that no longer exist in the text.
+              target.macroRuns
+                .filter((run) => run.section === section)
+                .forEach((run) => removeMacroRun(target.id, run.id));
+              const sourceText = source.soap[section].trim();
+              if (!sourceText) {
+                setSoapSection(target.id, section, "");
+                continue;
+              }
+              const { html, idMap } = rewriteMacroRunIds(sourceText);
+              setSoapSection(target.id, section, html);
+              idMap.forEach((newRunId, oldRunId) => {
+                const run = source.macroRuns.find((entry) => entry.id === oldRunId);
+                if (!run) return;
+                addMacroRun(target.id, {
+                  id: newRunId,
+                  section,
+                  macroId: run.macroId,
+                  macroName: run.macroName,
+                  body: run.body,
+                  answers: { ...run.answers },
+                  generatedText: run.generatedText.replace(
+                    new RegExp(`data-macro-run-id=["']${oldRunId}["']`, "g"),
+                    `data-macro-run-id="${newRunId}"`,
+                  ),
+                });
+              });
+            }
+            if (wasSigned) setSigned(target.id, true);
+            refreshed += 1;
+          }
+        }
+      }
+
       const extras = [
         examSkipped.length ? `skipped exam visits ${examSkipped.join(", ")}` : "",
-        hadNote ? `${hadNote} already had a note` : "",
+        refreshed ? `updated ${refreshed} existing note${refreshed === 1 ? "" : "s"}` : "",
+        refreshBlocked
+          ? `couldn't update ${refreshBlocked} not loaded on this device — open the patient's encounters and run it again`
+          : "",
+        hadNote && !refreshed && !refreshBlocked ? `${hadNote} already had a note` : "",
         leftOpenNoCharges.length
           ? `left ${leftOpenNoCharges.join(", ")} open (no plan charges)`
           : "",
@@ -2546,7 +2617,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       const extraText = extras.length ? ` (${extras.join("; ")})` : "";
 
       if (!createdIds.length) {
-        setMessage(`Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan${extraText}.`);
+        setMessage(
+          refreshed
+            ? `Updated ${refreshed} existing note${refreshed === 1 ? "" : "s"} from ${source.encounterDate}${extraText}.`
+            : `Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan${extraText}.`,
+        );
         return;
       }
       const n = createdIds.length;
