@@ -1,5 +1,6 @@
 "use client";
 
+import { SplitPane } from "@/components/split-pane";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -4240,55 +4241,77 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 </div>
 
                 {saltSourceEncounter ? (
-                  <div className="mt-3 grid gap-3">
-                    <div className="grid gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">
-                        {sectionLabels[activeSection]} Note
-                      </span>
-                      <RichTextTemplateEditor
-                        ref={soapEditorRef}
-                        value={selectedEncounter.soap[activeSection]}
-                        readOnly={selectedEncounter.signed}
-                        onChange={(nextValue) =>
-                          setSoapSection(selectedEncounter.id, activeSection, nextValue)
-                        }
-                        minHeightClassName="min-h-64"
-                        placeholder="Type directly here, use macros, or mix both."
-                        onElementClick={handleSoapEditorElementClick}
-                        draftKey={draftKeyFor(selectedEncounter.id, activeSection)}
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">
-                        Previous {sectionLabels[activeSection]} ({saltSourceEncounter.encounterDate})
-                      </span>
-                      {saltSourceEncounter.soap[activeSection].trim() ? (
-                        <div
-                          className="rich-text-editor min-h-64 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                          // Prior encounter notes are stored as HTML so they can
-                          // contain bold/underline/macro pills. Render the markup
-                          // instead of showing the raw tags. The raw saved HTML
-                          // goes through normalizeEditorBlocks first so the
-                          // spacing matches the live editor — without it, older
-                          // encounters that saved stray top-level inline content
-                          // (e.g. <strong>Cervical</strong> not wrapped in <p>)
-                          // render with section headers glued onto the end of the
-                          // previous region's line. The normalizer wraps those
-                          // strays in their own <p> and collapses runs of empty
-                          // blocks to a single canonical <p><br></p> separator,
-                          // so the Previous view stays visually identical to
-                          // what's in the editor on the left.
-                          dangerouslySetInnerHTML={{
-                            __html: normalizeEditorBlocks(saltSourceEncounter.soap[activeSection]),
-                          }}
-                        />
-                      ) : (
-                        <div className="min-h-64 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)]">
-                          No text in this section for selected prior encounter.
+                  // Editor over the whole previous note, with a divider the
+                  // user drags to give whichever half they need the room.
+                  // The previous pane shows ALL FOUR sections rather than
+                  // only the one being typed — a re-exam is written by
+                  // reading the last visit end to end, not a section at a
+                  // time.
+                  <SplitPane
+                    bottom={
+                      <div className="grid gap-1">
+                        <span className="text-sm font-semibold text-[var(--text-muted)]">
+                          Previous note ({saltSourceEncounter.encounterDate})
+                        </span>
+                        <div className="rounded-xl border border-[var(--line-soft)] bg-white">
+                          {encounterSections.map((section) => {
+                            const body = saltSourceEncounter.soap[section].trim();
+                            return (
+                              <div
+                                className="border-b border-[var(--line-soft)] px-3 py-2 last:border-b-0"
+                                key={`prev-${section}`}
+                              >
+                                <div
+                                  className={`text-[11px] font-bold uppercase tracking-wide ${
+                                    section === activeSection
+                                      ? "text-[var(--brand-primary)]"
+                                      : "text-[var(--text-muted)]"
+                                  }`}
+                                >
+                                  {sectionLabels[section]}
+                                </div>
+                                {body ? (
+                                  <div
+                                    className="rich-text-editor mt-1 text-sm"
+                                    // Prior notes are stored as HTML (bold,
+                                    // underline, macro pills), normalized so
+                                    // the spacing matches the live editor.
+                                    dangerouslySetInnerHTML={{
+                                      __html: normalizeEditorBlocks(saltSourceEncounter.soap[section]),
+                                    }}
+                                  />
+                                ) : (
+                                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                                    Nothing written in this section.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    }
+                    storageKey="casemate.soap-split-height.v1"
+                    top={
+                      <div className="grid gap-1">
+                        <span className="text-sm font-semibold text-[var(--text-muted)]">
+                          {sectionLabels[activeSection]} Note
+                        </span>
+                        <RichTextTemplateEditor
+                          ref={soapEditorRef}
+                          value={selectedEncounter.soap[activeSection]}
+                          readOnly={selectedEncounter.signed}
+                          onChange={(nextValue) =>
+                            setSoapSection(selectedEncounter.id, activeSection, nextValue)
+                          }
+                          minHeightClassName="min-h-48"
+                          placeholder="Type directly here, use macros, or mix both."
+                          onElementClick={handleSoapEditorElementClick}
+                          draftKey={draftKeyFor(selectedEncounter.id, activeSection)}
+                        />
+                      </div>
+                    }
+                  />
                 ) : (
                   <div className="mt-3 grid gap-1">
                     <span className="text-sm font-semibold text-[var(--text-muted)]">
