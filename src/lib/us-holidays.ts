@@ -92,3 +92,13 @@ export function formatHolidayShortDate(dateIso: string) {
   if (!month || !day) return dateIso;
   return `${shortMonths[month - 1]} ${day}`;
 }
+
+const shortWeekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "2026-11-26" → "Thu, Nov 26". */
+export function formatHolidayWeekdayDate(dateIso: string) {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  if (!year || !month || !day) return dateIso;
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return `${shortWeekdays[weekday]}, ${formatHolidayShortDate(dateIso)}`;
+}
