@@ -20,6 +20,7 @@ import {
   findKeyDatesForDate,
   formatUsDateFromIso,
 } from "@/lib/key-dates";
+import { formatHolidayShortDate, getUsFederalHolidaysInRange } from "@/lib/us-holidays";
 import {
   createAppointmentId,
   defaultScheduleLocation,
@@ -756,9 +757,46 @@ export function NewAppointmentModal({
     return {
       visits: bookable.length,
       closedCount: closed.length,
+      // Last day of the series range: the typed end date in "date" mode,
+      // the projected last visit in "visits" mode.
+      rangeEndIso: draft.recurrenceEndMode === "date" ? draft.recurEndDate : lastIso,
       endLabel: `${lastDay != null ? weekdayLabels[lastDay] : ""} ${formatUsDateFromIso(lastIso)}`.trim(),
     };
   }, [draft, openRecurringDays, keyDates]);
+
+  // Holidays inside the series range (start date → projected end date,
+  // inclusive), so the user knows a visit might be skipped. Sources:
+  //   1. The office's own CLOSED Key Dates (Key Dates page) — the
+  //      configurable office-closure list, labelled with its reason.
+  //   2. US federal holidays, computed by rule for any year.
+  // When both fall on the same day the office's own label wins.
+  const recurrenceHolidayLabels = useMemo(() => {
+    if (!recurrenceProjection) return [];
+    const startIso = draft.startDate;
+    const endIso = recurrenceProjection.rangeEndIso;
+    if (!startIso || !endIso || endIso < startIso) return [];
+    const spansYears = startIso.slice(0, 4) !== endIso.slice(0, 4);
+    const shortDate = (iso: string) =>
+      spansYears ? `${formatHolidayShortDate(iso)}, ${iso.slice(0, 4)}` : formatHolidayShortDate(iso);
+    const entries: { sortKey: string; label: string }[] = [];
+    const coveredByClosure = (iso: string) =>
+      keyDates.some((row) => row.officeStatus === "Closed" && iso >= row.startDate && iso <= row.endDate);
+    keyDates.forEach((row) => {
+      if (row.officeStatus !== "Closed") return;
+      if (row.endDate < startIso || row.startDate > endIso) return;
+      const name = row.reason.trim() || "Office closed";
+      const when =
+        row.startDate === row.endDate
+          ? shortDate(row.startDate)
+          : `${shortDate(row.startDate)} – ${shortDate(row.endDate)}`;
+      entries.push({ sortKey: row.startDate, label: `${name} (${when})` });
+    });
+    getUsFederalHolidaysInRange(startIso, endIso).forEach((holiday) => {
+      if (coveredByClosure(holiday.date)) return;
+      entries.push({ sortKey: holiday.date, label: `${holiday.name} (${shortDate(holiday.date)})` });
+    });
+    return entries.sort((left, right) => left.sortKey.localeCompare(right.sortKey)).map((entry) => entry.label);
+  }, [recurrenceProjection, draft.startDate, keyDates]);
 
   // Every stretch resolved to real dates — drives each row's summary and
   // the running total at the bottom.
@@ -1723,6 +1761,11 @@ export function NewAppointmentModal({
                       : recurrenceProjection.endLabel
                     : "—"}
                 </div>
+                {recurrenceHolidayLabels.length > 0 && (
+                  <span className="text-xs font-semibold text-[#b43b34]">
+                    Holidays in this range: {recurrenceHolidayLabels.join(", ")}
+                  </span>
+                )}
                 {recurrenceProjection && recurrenceProjection.closedCount > 0 && (
                   <span className="text-xs text-amber-700">
                     {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be skipped
