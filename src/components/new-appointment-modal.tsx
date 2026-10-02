@@ -11,6 +11,7 @@ import { RecurrenceHolidayTable, type RecurrenceHolidayRow } from "@/components/
 import { addClosedKeyDatesToCloud, cloudKeyDatesQueryKey } from "@/hooks/use-cloud-key-dates";
 import { useQueryClient } from "@tanstack/react-query";
 import { holidayPromptName, loadPromptedHolidayNames, markHolidayNamesPrompted } from "@/lib/holiday-keydate-prompts";
+import { addKeptHolidayNames, loadKeptHolidayNames, removeKeptHolidayName } from "@/lib/holiday-keep-schedule";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import {
   ContactGapPrompt,
@@ -547,17 +548,22 @@ export function NewAppointmentModal({
   // Federal-holiday dates (ISO) whose "Keep Schedule" box is ticked:
   // booked as normal visits instead of Canceled placeholders.
   const [keepScheduleDates, setKeepScheduleDates] = useState<string[]>([]);
+  // Holiday names the office chose to keep on schedule in an earlier
+  // booking (persisted; see holiday-keep-schedule.ts). Loaded on open.
+  const [keptHolidayNames, setKeptHolidayNames] = useState<Set<string>>(() => new Set());
   const holidayCancelRule = useCallback<HolidayCancelRule>(
     (dateIso) => {
       const name = getUsFederalHolidayName(dateIso);
       if (!name) return null;
       if (keepScheduleDates.includes(dateIso)) return null;
+      // Remembered as a normal workday — booked like any other day.
+      if (keptHolidayNames.has(holidayPromptName(name))) return null;
       // Already a CLOSED key date → the existing closure behaviour
       // (amber line + confirm-to-skip) applies, not the holiday one.
       if (findClosedKeyDateForDate(keyDates, dateIso)) return null;
       return name;
     },
-    [keepScheduleDates, keyDates],
+    [keepScheduleDates, keptHolidayNames, keyDates],
   );
 
   const defaultAppointmentType = useMemo(
@@ -712,6 +718,7 @@ export function NewAppointmentModal({
     }
     setDraft(initial);
     setKeepScheduleDates([]);
+    setKeptHolidayNames(loadKeptHolidayNames());
     setStartDateDisplay(isoDateToUs(initial.startDate));
     const initial12h = split12hFrom24h(initial.startTime);
     setStartTimeDisplay(initial12h.display);
@@ -851,9 +858,10 @@ export function NewAppointmentModal({
         name: holiday.name,
         dateLabel: `${formatHolidayWeekdayDate(holiday.date)}, ${holiday.date.slice(0, 4)}`,
         officeClosed: Boolean(findClosedKeyDateForDate(keyDates, holiday.date)),
+        remembered: keptHolidayNames.has(holidayPromptName(holiday.name)),
       }),
     );
-  }, [recurrenceProjection, draft.startDate, keyDates]);
+  }, [recurrenceProjection, draft.startDate, keyDates, keptHolidayNames]);
 
   // Every stretch resolved to real dates — drives each row's summary and
   // the running total at the bottom.
@@ -1253,6 +1261,19 @@ export function NewAppointmentModal({
 
     addAppointments(records);
     onSaved?.(records);
+
+    // Remember holidays saved with "Keep Schedule" ticked, so future
+    // bookings treat them as normal workdays. Only on save — an abandoned
+    // modal persists nothing. Closed key dates are excluded (closure wins).
+    if (sanitizedDraft.isRecurring) {
+      const keptNames = recurrenceHolidayLabels
+        .filter(
+          (holiday) =>
+            !holiday.officeClosed && !holiday.remembered && keepScheduleDates.includes(holiday.date),
+        )
+        .map((holiday) => holiday.name);
+      if (keptNames.length) setKeptHolidayNames(addKeptHolidayNames(keptNames));
+    }
 
     // Offer to add the holidays that were just booked as Canceled to Key
     // Dates as Closed days — skipping any date already in Key Dates and
@@ -1890,6 +1911,17 @@ export function NewAppointmentModal({
             <RecurrenceHolidayTable
               holidays={recurrenceHolidayLabels}
               keepScheduleDates={keepScheduleDates}
+              onUndoRemembered={(name) => {
+                // Takes effect right away: the row's checkbox comes back
+                // (unchecked) and the date is booked as Canceled again.
+                setKeepScheduleDates((current) =>
+                  current.filter((dateIso) => {
+                    const holidayName = getUsFederalHolidayName(dateIso);
+                    return !holidayName || holidayPromptName(holidayName) !== holidayPromptName(name);
+                  }),
+                );
+                setKeptHolidayNames(removeKeptHolidayName(name));
+              }}
               onToggleKeepSchedule={(dateIso, keep) =>
                 setKeepScheduleDates((current) =>
                   keep

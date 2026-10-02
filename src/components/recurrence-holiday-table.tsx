@@ -9,12 +9,16 @@ export type RecurrenceHolidayRow = {
   dateLabel: string;
   /** Already a CLOSED key date: follows the closure behaviour, no checkbox. */
   officeClosed: boolean;
+  /** Kept on schedule in an earlier booking (remembered by name). */
+  remembered: boolean;
 };
 
 type RecurrenceHolidayTableProps = {
   holidays: RecurrenceHolidayRow[];
   keepScheduleDates: string[];
   onToggleKeepSchedule: (dateIso: string, keep: boolean) => void;
+  /** Forget a remembered holiday (the checkbox comes back). */
+  onUndoRemembered: (name: string) => void;
 };
 
 /**
@@ -27,6 +31,7 @@ export function RecurrenceHolidayTable({
   holidays,
   keepScheduleDates,
   onToggleKeepSchedule,
+  onUndoRemembered,
 }: RecurrenceHolidayTableProps) {
   if (!holidays.length) return null;
   return (
@@ -47,6 +52,18 @@ export function RecurrenceHolidayTable({
             <span className="whitespace-nowrap sm:justify-self-end">
               {holiday.officeClosed ? (
                 <span className="text-[var(--text-muted)]">Office closed (Key Date)</span>
+              ) : holiday.remembered ? (
+                <span className="inline-flex items-center gap-2 text-[var(--text-muted)]">
+                  Kept on schedule
+                  <button
+                    className="text-[11px] font-semibold text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                    onClick={() => onUndoRemembered(holiday.name)}
+                    title={`Stop keeping ${holiday.name} on schedule`}
+                    type="button"
+                  >
+                    Undo
+                  </button>
+                </span>
               ) : (
                 <label className="inline-flex cursor-pointer items-center gap-1.5 text-[var(--text-muted)]">
                   <input
