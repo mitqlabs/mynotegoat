@@ -38,6 +38,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
+import { notifyChange } from "@/lib/local-sync";
 import {
   createKeyDateId,
   normalizeKeyDates,
@@ -120,6 +121,45 @@ async function writeKeyDatesToCloud(records: KeyDateRecord[]): Promise<void> {
 
 const keyDateLabel = (k: { startDate: string; endDate: string; officeStatus: string; reason: string }) =>
   `${activityDate(k.startDate)}${k.endDate && k.endDate !== k.startDate ? ` – ${activityDate(k.endDate)}` : ""} ${k.officeStatus}${k.reason ? ` (${k.reason})` : ""}`;
+
+/**
+ * Add several CLOSED key dates in ONE cloud read-modify-write, using the
+ * same workspace_kv row the Key Dates page reads. For callers outside the
+ * Key Dates page (e.g. the New Appointment modal offering to close the
+ * office on a federal holiday) that don't want this hook's realtime
+ * subscription. Also mirrors the result into the localStorage cache the
+ * scheduling modals read (`useKeyDates`), WITHOUT a second cloud write.
+ * Callers should invalidate `cloudKeyDatesQueryKey` afterwards.
+ */
+export async function addClosedKeyDatesToCloud(
+  entries: { date: string; reason: string }[],
+): Promise<KeyDateRecord[]> {
+  if (!entries.length) return [];
+  const current = await fetchKeyDatesFromCloud();
+  const added: KeyDateRecord[] = entries.map((entry) => ({
+    id: createKeyDateId(),
+    startDate: entry.date,
+    endDate: entry.date,
+    officeStatus: "Closed",
+    reason: normalizeReason(entry.reason),
+  }));
+  const next = [...current, ...added];
+  await writeKeyDatesToCloud(next);
+  added.forEach((record) =>
+    logActivity({ category: "keyDates", action: "keydate.added", summary: `Added key date ${keyDateLabel(record)}` }),
+  );
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeKeyDates(next)));
+      notifyChange(STORAGE_KEY);
+    } catch {
+      // Quota — the cloud row is the source of truth and rehydrates on boot.
+    }
+  }
+  return added;
+}
+
+export const cloudKeyDatesQueryKey = QUERY_KEY;
 
 export function useCloudKeyDates() {
   const queryClient = useQueryClient();
