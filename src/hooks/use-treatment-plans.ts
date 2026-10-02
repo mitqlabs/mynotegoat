@@ -134,7 +134,17 @@ export function useTreatmentPlans() {
   );
 
   const addPlan = useCallback(
-    (patientId: string, input: { startDate: string; endDate: string }): TreatmentPlan | null => {
+    (
+      patientId: string,
+      input: {
+        startDate: string;
+        endDate: string;
+        /** Pre-filled content (e.g. copied from the last plan). Deep-copy it first. */
+        content?: Pick<TreatmentPlan, "days" | "decompression">;
+        /** For the activity log only: the plan the content came from. */
+        copiedFrom?: Pick<TreatmentPlan, "startDate" | "endDate">;
+      },
+    ): TreatmentPlan | null => {
       const key = patientId.trim();
       if (!key) return null;
       const ts = nowIso();
@@ -143,13 +153,20 @@ export function useTreatmentPlans() {
         patientId: key,
         startDate: input.startDate.trim(),
         endDate: input.endDate.trim(),
-        days: {},
+        days: input.content?.days ?? {},
+        ...(input.content?.decompression ? { decompression: input.content.decompression } : {}),
         active: true,
         createdAt: ts,
         updatedAt: ts,
       };
       updatePatientList(key, (current) => [plan, ...current], { immediate: true });
-      logPlan(key, "plan.created", `Created treatment plan ${plan.startDate} – ${plan.endDate}`);
+      logPlan(
+        key,
+        "plan.created",
+        `Created treatment plan ${plan.startDate} – ${plan.endDate}${
+          input.copiedFrom ? ` (copied from plan ${input.copiedFrom.startDate} – ${input.copiedFrom.endDate})` : ""
+        }`,
+      );
       return plan;
     },
     [updatePatientList],
