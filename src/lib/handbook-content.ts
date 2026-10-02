@@ -592,7 +592,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "Days the office is closed",
         steps: [
-          "Key Dates → fill the date, pick Closed or Covered, give a reason, Add Key Date.",
+          "Key Dates → fill the date, pick Closed, Covered, or Open (a day the office works even though it would normally be off, e.g. a holiday), give a reason, Add Key Date.",
           "The list underneath shows appointments already booked on those days.",
           "Use Cancel Appointment there, or Clear to dismiss a row you have dealt with.",
         ],

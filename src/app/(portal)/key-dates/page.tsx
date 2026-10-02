@@ -118,7 +118,10 @@ export default function KeyDatesPage() {
       ) {
         return;
       }
-      const matches = findKeyDatesForDate(keyDates, appointment.date);
+      // OPEN key dates are normal days — never a conflict to resolve.
+      const matches = findKeyDatesForDate(keyDates, appointment.date).filter(
+        (entry) => entry.officeStatus !== "Open",
+      );
       if (!matches.length) {
         return;
       }
@@ -201,7 +204,8 @@ export default function KeyDatesPage() {
     return patientIdByName.get(appointment.patientName.toLowerCase()) ?? null;
   };
 
-  // Cancel an appointment that collides with a Closed/Covered key date, and
+  // Cancel an appointment that collides with a Closed/Covered key date (Open
+  // key dates never produce a warning row, so they never offer this), and
   // (optionally) delete any encounter charted for that day so a closed day is
   // left with no visit note. The appointment stays on record as "Canceled"
   // (not deleted). Encounter removal reuses the same delete + cash-payment
@@ -376,6 +380,7 @@ export default function KeyDatesPage() {
             >
               <option value="Closed">Closed</option>
               <option value="Covered">Covered</option>
+              <option value="Open">Open</option>
             </select>
           </label>
 
@@ -450,7 +455,9 @@ export default function KeyDatesPage() {
                       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                         row.officeStatus === "Closed"
                           ? "bg-[rgba(201,66,58,0.15)] text-[#b43b34]"
-                          : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
+                          : row.officeStatus === "Open"
+                            ? "bg-[rgba(46,155,93,0.14)] text-[#257a49]"
+                            : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
                       }`}
                     >
                       {row.officeStatus}

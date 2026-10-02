@@ -994,7 +994,11 @@ function mapLegacyKeyDates(rows: unknown[]) {
       id,
       startDate,
       endDate: endDate >= startDate ? endDate : startDate,
-      officeStatus: status.toLowerCase().includes("cover") ? "Covered" : "Closed",
+      officeStatus: status.toLowerCase().includes("cover")
+        ? "Covered"
+        : status.trim().toLowerCase() === "open"
+          ? "Open"
+          : "Closed",
       reason,
     });
   });

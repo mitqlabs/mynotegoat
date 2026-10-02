@@ -123,7 +123,7 @@ const keyDateLabel = (k: { startDate: string; endDate: string; officeStatus: str
   `${activityDate(k.startDate)}${k.endDate && k.endDate !== k.startDate ? ` – ${activityDate(k.endDate)}` : ""} ${k.officeStatus}${k.reason ? ` (${k.reason})` : ""}`;
 
 /**
- * Add several CLOSED key dates in ONE cloud read-modify-write, using the
+ * Add several key dates (any status) in ONE cloud read-modify-write, using the
  * same workspace_kv row the Key Dates page reads. For callers outside the
  * Key Dates page (e.g. the New Appointment modal offering to close the
  * office on a federal holiday) that don't want this hook's realtime
@@ -131,8 +131,8 @@ const keyDateLabel = (k: { startDate: string; endDate: string; officeStatus: str
  * scheduling modals read (`useKeyDates`), WITHOUT a second cloud write.
  * Callers should invalidate `cloudKeyDatesQueryKey` afterwards.
  */
-export async function addClosedKeyDatesToCloud(
-  entries: { date: string; reason: string }[],
+export async function addKeyDatesToCloud(
+  entries: { date: string; reason: string; officeStatus: KeyDateOfficeStatus }[],
 ): Promise<KeyDateRecord[]> {
   if (!entries.length) return [];
   const current = await fetchKeyDatesFromCloud();
@@ -140,7 +140,7 @@ export async function addClosedKeyDatesToCloud(
     id: createKeyDateId(),
     startDate: entry.date,
     endDate: entry.date,
-    officeStatus: "Closed",
+    officeStatus: entry.officeStatus,
     reason: normalizeReason(entry.reason),
   }));
   const next = [...current, ...added];
@@ -157,6 +157,11 @@ export async function addClosedKeyDatesToCloud(
     }
   }
   return added;
+}
+
+/** Single-day CLOSED key dates — see addKeyDatesToCloud. */
+export function addClosedKeyDatesToCloud(entries: { date: string; reason: string }[]) {
+  return addKeyDatesToCloud(entries.map((entry) => ({ ...entry, officeStatus: "Closed" as const })));
 }
 
 export const cloudKeyDatesQueryKey = QUERY_KEY;

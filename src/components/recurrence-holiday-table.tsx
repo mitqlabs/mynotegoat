@@ -9,29 +9,31 @@ export type RecurrenceHolidayRow = {
   dateLabel: string;
   /** Already a CLOSED key date: follows the closure behaviour, no checkbox. */
   officeClosed: boolean;
-  /** Kept on schedule in an earlier booking (remembered by name). */
-  remembered: boolean;
+  /** Already an OPEN key date: a normal day, no choice. */
+  officeOpen: boolean;
+  /** Weekday the office is normally closed (Office Hours): no choice. */
+  regularDayOff: boolean;
+  /** Non-canceled appointments already on this date (all patients). */
+  bookedCount: number;
 };
 
 type RecurrenceHolidayTableProps = {
   holidays: RecurrenceHolidayRow[];
   keepScheduleDates: string[];
-  onToggleKeepSchedule: (dateIso: string, keep: boolean) => void;
-  /** Forget a remembered holiday (the checkbox comes back). */
-  onUndoRemembered: (name: string) => void;
+  /** Keep (true) = book normally; Closed (false, default) = cancel + close. */
+  onChooseKeep: (dateIso: string, keep: boolean) => void;
 };
 
 /**
  * Federal holidays inside a recurring series' range, shown full-width
  * under the Ends By / End Date / Projected row of the New Appointment
- * modal: name | date | "Keep Schedule" checkbox (or "Office closed").
+ * modal: name | date | Keep / Closed toggle (or a status label).
  * Fixed grid columns on sm+ so rows line up; stacks on narrow screens.
  */
 export function RecurrenceHolidayTable({
   holidays,
   keepScheduleDates,
-  onToggleKeepSchedule,
-  onUndoRemembered,
+  onChooseKeep,
 }: RecurrenceHolidayTableProps) {
   if (!holidays.length) return null;
   return (
@@ -43,41 +45,82 @@ export function RecurrenceHolidayTable({
         {holidays.map((holiday) => (
           <li
             key={holiday.key}
-            className="grid grid-cols-1 gap-x-4 gap-y-0.5 border-t border-[rgba(201,66,58,0.12)] min-h-7 px-3 py-1 first:border-t-0 even:bg-[rgba(201,66,58,0.03)] sm:grid-cols-[minmax(0,1fr)_9.5rem_9.5rem] sm:items-center"
+            className="grid grid-cols-1 gap-x-4 gap-y-0.5 border-t border-[rgba(201,66,58,0.12)] min-h-7 px-3 py-1 first:border-t-0 even:bg-[rgba(201,66,58,0.03)] sm:grid-cols-[minmax(0,1fr)_9.5rem_7rem_12rem] sm:items-center"
           >
             <span className="truncate font-semibold text-[#b43b34]" title={holiday.name}>
               {holiday.name}
             </span>
             <span className="whitespace-nowrap tabular-nums text-[#b43b34]">{holiday.dateLabel}</span>
+            {/* Already-booked count, open workdays only: many = the office
+                was open that day; a few = special overrides. */}
+            <span className="whitespace-nowrap tabular-nums text-[var(--text-muted)]">
+              {holiday.regularDayOff
+                ? ""
+                : holiday.bookedCount === 0
+                  ? "No appointments"
+                  : `${holiday.bookedCount} appointment${holiday.bookedCount === 1 ? "" : "s"}`}
+            </span>
             <span className="whitespace-nowrap sm:justify-self-end">
               {holiday.officeClosed ? (
                 <span className="text-[var(--text-muted)]">Office closed (Key Date)</span>
-              ) : holiday.remembered ? (
-                <span className="inline-flex items-center gap-2 text-[var(--text-muted)]">
-                  Kept on schedule
-                  <button
-                    className="text-[11px] font-semibold text-[var(--brand-primary)] underline-offset-2 hover:underline"
-                    onClick={() => onUndoRemembered(holiday.name)}
-                    title={`Stop keeping ${holiday.name} on schedule`}
-                    type="button"
-                  >
-                    Undo
-                  </button>
-                </span>
+              ) : holiday.officeOpen ? (
+                <span className="font-semibold text-[#257a49]">Open (Key Date)</span>
+              ) : holiday.regularDayOff ? (
+                <span className="text-[var(--text-muted)]">Office closed (regular day off)</span>
               ) : (
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-[var(--text-muted)]">
-                  <input
-                    checked={keepScheduleDates.includes(holiday.date)}
-                    onChange={(event) => onToggleKeepSchedule(holiday.date, event.target.checked)}
-                    type="checkbox"
-                  />
-                  Keep Schedule
-                </label>
+                <KeepClosedToggle
+                  keep={keepScheduleDates.includes(holiday.date)}
+                  label={holiday.name}
+                  onChange={(keep) => onChooseKeep(holiday.date, keep)}
+                />
               )}
             </span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Compact two-option segmented control: Keep | Closed. */
+function KeepClosedToggle({
+  keep,
+  label,
+  onChange,
+}: {
+  keep: boolean;
+  label: string;
+  onChange: (keep: boolean) => void;
+}) {
+  const base = "px-2.5 py-0 text-[11px] font-semibold leading-[18px] transition-colors";
+  return (
+    <span
+      aria-label={`${label}: keep on schedule or close the office`}
+      className="inline-flex overflow-hidden rounded-full border border-[var(--line-soft)] bg-white"
+      role="radiogroup"
+    >
+      <button
+        aria-checked={keep}
+        className={`${base} ${
+          keep ? "bg-[var(--brand-primary)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+        }`}
+        onClick={() => onChange(true)}
+        role="radio"
+        type="button"
+      >
+        Keep
+      </button>
+      <button
+        aria-checked={!keep}
+        className={`${base} border-l border-[var(--line-soft)] ${
+          !keep ? "bg-[#b43b34] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+        }`}
+        onClick={() => onChange(false)}
+        role="radio"
+        type="button"
+      >
+        Closed
+      </button>
+    </span>
   );
 }

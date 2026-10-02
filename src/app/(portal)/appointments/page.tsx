@@ -1297,7 +1297,9 @@ export default function AppointmentsPage() {
               className={`mt-2 rounded-xl border px-3 py-2 text-sm ${
                 selectedDateClosedKeyDate
                   ? "border-[rgba(201,66,58,0.5)] bg-[rgba(201,66,58,0.11)] text-[#9f2f2a]"
-                  : "border-[rgba(13,121,191,0.45)] bg-[rgba(13,121,191,0.1)] text-[#0f5d92]"
+                  : selectedDateKeyDates.every((entry) => entry.officeStatus === "Open")
+                    ? "border-[rgba(46,155,93,0.45)] bg-[rgba(46,155,93,0.1)] text-[#257a49]"
+                    : "border-[rgba(13,121,191,0.45)] bg-[rgba(13,121,191,0.1)] text-[#0f5d92]"
               }`}
             >
               <span className="font-semibold">Key Date Notice:</span>{" "}

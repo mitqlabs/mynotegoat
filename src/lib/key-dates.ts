@@ -1,4 +1,12 @@
-export type KeyDateOfficeStatus = "Closed" | "Covered";
+/**
+ * Closed  — office closed; scheduling on it is blocked / skipped.
+ * Covered — another provider covers; bookable, with a soft notice.
+ * Open    — explicitly open (e.g. a federal holiday the office works);
+ *           a normal day. Never treated as closed anywhere.
+ */
+export type KeyDateOfficeStatus = "Closed" | "Covered" | "Open";
+
+export const keyDateOfficeStatusOptions: KeyDateOfficeStatus[] = ["Closed", "Covered", "Open"];
 
 export interface KeyDateRecord {
   id: string;
@@ -29,6 +37,9 @@ function normalizeDate(value: unknown, fallback = "") {
 function normalizeOfficeStatus(value: unknown): KeyDateOfficeStatus {
   if (value === "Covered") {
     return "Covered";
+  }
+  if (value === "Open") {
+    return "Open";
   }
   return "Closed";
 }
@@ -120,6 +131,11 @@ export function findKeyDatesForDate(rows: KeyDateRecord[], dateIso: string) {
   return rows.filter((row) => isDateInRange(dateIso, row.startDate, row.endDate));
 }
 
+/** An OPEN key date covering this date, or null. */
+export function findOpenKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
+  return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Open") ?? null;
+}
+
 export function findClosedKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
   return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Closed") ?? null;
 }
@@ -136,4 +152,24 @@ export function formatKeyDateRange(row: Pick<KeyDateRecord, "startDate" | "endDa
   const start = formatUsDateFromIso(row.startDate);
   const end = formatUsDateFromIso(row.endDate);
   return row.startDate === row.endDate ? start : `${start} - ${end}`;
+}
+
+/**
+ * True when a CLOSED key date exists only because of the federal holiday
+ * on that day — a single-day closure whose reason names that holiday ("Veterans Day",
+ * "Independence Day (observed)", …). Holiday-sourced closures are booked
+ * like a Closed holiday (Canceled placeholder + make-up visit) rather than
+ * dropped like other closures.
+ */
+export function isHolidaySourcedKeyDate(row: KeyDateRecord, holidayName: string) {
+  if (row.officeStatus !== "Closed" || row.startDate !== row.endDate) return false;
+  const base = (value: string) => value.replace(/\s*\(observed\)\s*$/i, "").trim().toLowerCase();
+  const reason = base(row.reason);
+  if (!reason) return false;
+  return holidayName
+    .split(" / ")
+    .some((name) => {
+      const holiday = base(name);
+      return Boolean(holiday) && (reason === holiday || reason.includes(holiday));
+    });
 }
