@@ -7,9 +7,11 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
+import { RecurrenceHolidayTable, type RecurrenceHolidayRow } from "@/components/recurrence-holiday-table";
 import { addClosedKeyDatesToCloud, cloudKeyDatesQueryKey } from "@/hooks/use-cloud-key-dates";
 import { useQueryClient } from "@tanstack/react-query";
 import { holidayPromptName, loadPromptedHolidayNames, markHolidayNamesPrompted } from "@/lib/holiday-keydate-prompts";
+import { addKeptHolidayNames, loadKeptHolidayNames, removeKeptHolidayName } from "@/lib/holiday-keep-schedule";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import {
   ContactGapPrompt,
@@ -546,17 +548,22 @@ export function NewAppointmentModal({
   // Federal-holiday dates (ISO) whose "Keep Schedule" box is ticked:
   // booked as normal visits instead of Canceled placeholders.
   const [keepScheduleDates, setKeepScheduleDates] = useState<string[]>([]);
+  // Holiday names the office chose to keep on schedule in an earlier
+  // booking (persisted; see holiday-keep-schedule.ts). Loaded on open.
+  const [keptHolidayNames, setKeptHolidayNames] = useState<Set<string>>(() => new Set());
   const holidayCancelRule = useCallback<HolidayCancelRule>(
     (dateIso) => {
       const name = getUsFederalHolidayName(dateIso);
       if (!name) return null;
       if (keepScheduleDates.includes(dateIso)) return null;
+      // Remembered as a normal workday — booked like any other day.
+      if (keptHolidayNames.has(holidayPromptName(name))) return null;
       // Already a CLOSED key date → the existing closure behaviour
       // (amber line + confirm-to-skip) applies, not the holiday one.
       if (findClosedKeyDateForDate(keyDates, dateIso)) return null;
       return name;
     },
-    [keepScheduleDates, keyDates],
+    [keepScheduleDates, keptHolidayNames, keyDates],
   );
 
   const defaultAppointmentType = useMemo(
@@ -711,6 +718,7 @@ export function NewAppointmentModal({
     }
     setDraft(initial);
     setKeepScheduleDates([]);
+    setKeptHolidayNames(loadKeptHolidayNames());
     setStartDateDisplay(isoDateToUs(initial.startDate));
     const initial12h = split12hFrom24h(initial.startTime);
     setStartTimeDisplay(initial12h.display);
@@ -843,17 +851,17 @@ export function NewAppointmentModal({
     const startIso = draft.startDate;
     const endIso = recurrenceProjection.rangeEndIso;
     if (!startIso || !endIso || endIso < startIso) return [];
-    const spansYears = startIso.slice(0, 4) !== endIso.slice(0, 4);
-    return getUsFederalHolidaysInRange(startIso, endIso).map((holiday) => {
-      const when = formatHolidayWeekdayDate(holiday.date);
-      return {
+    return getUsFederalHolidaysInRange(startIso, endIso).map(
+      (holiday): RecurrenceHolidayRow => ({
         key: `${holiday.date}-${holiday.name}`,
         date: holiday.date,
-        label: `${holiday.name}: ${spansYears ? `${when}, ${holiday.date.slice(0, 4)}` : when}`,
+        name: holiday.name,
+        dateLabel: `${formatHolidayWeekdayDate(holiday.date)}, ${holiday.date.slice(0, 4)}`,
         officeClosed: Boolean(findClosedKeyDateForDate(keyDates, holiday.date)),
-      };
-    });
-  }, [recurrenceProjection, draft.startDate, keyDates]);
+        remembered: keptHolidayNames.has(holidayPromptName(holiday.name)),
+      }),
+    );
+  }, [recurrenceProjection, draft.startDate, keyDates, keptHolidayNames]);
 
   // Every stretch resolved to real dates — drives each row's summary and
   // the running total at the bottom.
@@ -1253,6 +1261,19 @@ export function NewAppointmentModal({
 
     addAppointments(records);
     onSaved?.(records);
+
+    // Remember holidays saved with "Keep Schedule" ticked, so future
+    // bookings treat them as normal workdays. Only on save — an abandoned
+    // modal persists nothing. Closed key dates are excluded (closure wins).
+    if (sanitizedDraft.isRecurring) {
+      const keptNames = recurrenceHolidayLabels
+        .filter(
+          (holiday) =>
+            !holiday.officeClosed && !holiday.remembered && keepScheduleDates.includes(holiday.date),
+        )
+        .map((holiday) => holiday.name);
+      if (keptNames.length) setKeptHolidayNames(addKeptHolidayNames(keptNames));
+    }
 
     // Offer to add the holidays that were just booked as Canceled to Key
     // Dates as Closed days — skipping any date already in Key Dates and
@@ -1803,7 +1824,9 @@ export function NewAppointmentModal({
 
         {draft.isRecurring && (
           <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-            <div className="grid gap-3 md:grid-cols-3">
+            {/* items-start: the boxes in this row keep their own height —
+                the holiday table and amber note live below the row. */}
+            <div className="grid items-start gap-3 md:grid-cols-3">
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Ends By</span>
                 <select
@@ -1882,45 +1905,37 @@ export function NewAppointmentModal({
                     </span>
                   )}
                 </div>
-                {recurrenceHolidayLabels.length > 0 && (
-                  <div className="text-xs font-semibold text-[#b43b34]">
-                    <p>Holidays in this range:</p>
-                    <ul className="grid gap-0.5">
-                      {recurrenceHolidayLabels.map((holiday) => (
-                        <li key={holiday.key} className="flex flex-wrap items-center gap-x-2">
-                          <span>{holiday.label}</span>
-                          {holiday.officeClosed ? (
-                            <span className="font-normal text-[var(--text-muted)]">(office closed: Key Date)</span>
-                          ) : (
-                            <label className="inline-flex items-center gap-1 font-normal text-[var(--text-muted)]">
-                              <input
-                                checked={keepScheduleDates.includes(holiday.date)}
-                                onChange={(event) => {
-                                  const checked = event.target.checked;
-                                  setKeepScheduleDates((current) =>
-                                    checked
-                                      ? [...current.filter((entry) => entry !== holiday.date), holiday.date]
-                                      : current.filter((entry) => entry !== holiday.date),
-                                  );
-                                }}
-                                type="checkbox"
-                              />
-                              Keep Schedule
-                            </label>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {recurrenceProjection && recurrenceProjection.closedCount > 0 && (
-                  <span className="text-xs text-amber-700">
-                    {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be skipped
-                    {draft.recurrenceEndMode === "visits" ? ", so fewer visits get booked" : ""}.
-                  </span>
-                )}
               </div>
             </div>
+
+            <RecurrenceHolidayTable
+              holidays={recurrenceHolidayLabels}
+              keepScheduleDates={keepScheduleDates}
+              onUndoRemembered={(name) => {
+                // Takes effect right away: the row's checkbox comes back
+                // (unchecked) and the date is booked as Canceled again.
+                setKeepScheduleDates((current) =>
+                  current.filter((dateIso) => {
+                    const holidayName = getUsFederalHolidayName(dateIso);
+                    return !holidayName || holidayPromptName(holidayName) !== holidayPromptName(name);
+                  }),
+                );
+                setKeptHolidayNames(removeKeptHolidayName(name));
+              }}
+              onToggleKeepSchedule={(dateIso, keep) =>
+                setKeepScheduleDates((current) =>
+                  keep
+                    ? [...current.filter((entry) => entry !== dateIso), dateIso]
+                    : current.filter((entry) => entry !== dateIso),
+                )
+              }
+            />
+            {recurrenceProjection && recurrenceProjection.closedCount > 0 && (
+              <p className="mt-2 text-xs text-amber-700">
+                {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be skipped
+                {draft.recurrenceEndMode === "visits" ? ", so fewer visits get booked" : ""}.
+              </p>
+            )}
 
             {draft.recurUnit === "weeks" && (
               <div className="mt-3">
