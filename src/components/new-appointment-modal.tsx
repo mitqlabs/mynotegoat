@@ -20,7 +20,11 @@ import {
   findKeyDatesForDate,
   formatUsDateFromIso,
 } from "@/lib/key-dates";
-import { formatHolidayWeekdayDate, getUsFederalHolidaysInRange } from "@/lib/us-holidays";
+import {
+  formatHolidayWeekdayDate,
+  getUsFederalHolidayName,
+  getUsFederalHolidaysInRange,
+} from "@/lib/us-holidays";
 import {
   createAppointmentId,
   defaultScheduleLocation,
@@ -408,6 +412,29 @@ function resolveTimeForDate(draft: NewAppointmentDraft, dateIso: string): string
   return override && override.trim() ? override : draft.startTime;
 }
 
+/** Dates that will be booked as active (non-holiday) visits. */
+function countActiveDates(draft: NewAppointmentDraft, dates: string[]) {
+  return dates.filter((dateIso) => !getSeriesHolidayName(draft, dateIso)).length;
+}
+
+/**
+ * Federal holiday on a date of a RECURRING series, or null. Recurring
+ * dates that land on a holiday are booked as Canceled placeholders and do
+ * not count toward the visit total (see getDatesForDraft). One-off
+ * appointments are never affected.
+ */
+function getSeriesHolidayName(draft: NewAppointmentDraft, dateIso: string) {
+  return draft.isRecurring ? getUsFederalHolidayName(dateIso) : null;
+}
+
+/**
+ * Every date a draft generates, in order. For a recurring series this
+ * INCLUDES dates on US federal holidays, but those don't count toward the
+ * "Visits" limit — so 26 visits with Thanksgiving in range yields 27
+ * dates (26 active + 1 holiday, which the save path books as Canceled),
+ * and the series runs one step longer. In "date" mode the end date is
+ * still the hard stop.
+ */
 function getDatesForDraft(draft: NewAppointmentDraft) {
   if (!draft.isRecurring) {
     return [draft.startDate];
@@ -422,6 +449,11 @@ function getDatesForDraft(draft: NewAppointmentDraft) {
   }
 
   const dates: string[] = [];
+  let activeCount = 0;
+  const pushDate = (dateIso: string) => {
+    dates.push(dateIso);
+    if (!getSeriesHolidayName(draft, dateIso)) activeCount += 1;
+  };
   const interval = Math.max(1, Math.round(draft.recurInterval));
 
   if (draft.recurUnit === "days") {
@@ -430,8 +462,8 @@ function getDatesForDraft(draft: NewAppointmentDraft) {
       if (stopByDate && current > draft.recurEndDate) {
         break;
       }
-      dates.push(current);
-      if (stopByVisits && dates.length >= visitLimit) {
+      pushDate(current);
+      if (stopByVisits && activeCount >= visitLimit) {
         break;
       }
       current = addDays(current, interval);
@@ -465,8 +497,8 @@ function getDatesForDraft(draft: NewAppointmentDraft) {
     const weekIndex = Math.floor(diffDays / 7);
 
     if (daySet.has(dayOfWeek) && weekIndex % interval === 0) {
-      dates.push(current);
-      if (stopByVisits && dates.length >= visitLimit) {
+      pushDate(current);
+      if (stopByVisits && activeCount >= visitLimit) {
         break;
       }
     }
@@ -750,12 +782,19 @@ export function NewAppointmentModal({
     if (projectedDraft.recurUnit === "weeks" && projectedDraft.recurDays.length === 0) return null;
     const dates = getDatesForDraft(projectedDraft);
     if (!dates.length) return null;
-    const closed = dates.filter((dateIso) => Boolean(findClosedKeyDateForDate(keyDates, dateIso)));
-    const bookable = dates.filter((dateIso) => !closed.includes(dateIso));
+    // Holiday dates are booked as Canceled (not skipped), and win over a
+    // CLOSED key date on the same day — so they're excluded from both the
+    // active count and the closed-key-date count.
+    const holidays = dates.filter((dateIso) => Boolean(getSeriesHolidayName(projectedDraft, dateIso)));
+    const closed = dates.filter(
+      (dateIso) => !holidays.includes(dateIso) && Boolean(findClosedKeyDateForDate(keyDates, dateIso)),
+    );
+    const bookable = dates.filter((dateIso) => !closed.includes(dateIso) && !holidays.includes(dateIso));
     const lastIso = (bookable.length ? bookable : dates)[(bookable.length ? bookable : dates).length - 1];
     const lastDay = parseIsoDate(lastIso)?.getUTCDay();
     return {
       visits: bookable.length,
+      holidayCount: holidays.length,
       closedCount: closed.length,
       // Last day of the series range: the typed end date in "date" mode,
       // the projected last visit in "visits" mode.
@@ -790,7 +829,7 @@ export function NewAppointmentModal({
     [draft, openRecurringDays],
   );
   const totalPlannedVisits = useMemo(
-    () => seriesPlans.reduce((sum, plan) => sum + plan.dates.length, 0),
+    () => seriesPlans.reduce((sum, plan) => sum + countActiveDates(plan.draft, plan.dates), 0),
     [seriesPlans],
   );
   const plannedLastDate = useMemo(() => {
@@ -993,7 +1032,10 @@ export function NewAppointmentModal({
       }
     }
 
-    type PlannedVisit = { dateIso: string; startTime: string; seriesId?: string };
+    // holidayName set → this date lands on a US federal holiday and is
+    // booked with the app's normal "Canceled" status, as a placeholder that
+    // doesn't count toward the visit total.
+    type PlannedVisit = { dateIso: string; startTime: string; seriesId?: string; holidayName?: string };
     const seenDates = new Set<string>();
     let scheduleEntries: PlannedVisit[] = [];
     for (const plan of plans) {
@@ -1007,6 +1049,7 @@ export function NewAppointmentModal({
           dateIso,
           startTime: resolveTimeForDate(plan.draft, dateIso),
           seriesId,
+          holidayName: getSeriesHolidayName(plan.draft, dateIso) ?? undefined,
         });
       }
     }
@@ -1032,6 +1075,8 @@ export function NewAppointmentModal({
     const overbookedDates = overrideActive
       ? []
       : scheduleEntries.filter((planned) => {
+          // A canceled holiday placeholder doesn't take a slot.
+          if (planned.holidayName) return false;
           const countAtSlot = scheduleAppointments.filter(
             (entry) => entry.date === planned.dateIso && entry.startTime === planned.startTime,
           ).length;
@@ -1050,8 +1095,11 @@ export function NewAppointmentModal({
       return;
     }
 
-    const closedDates = scheduleEntries.filter((planned) =>
-      Boolean(findClosedKeyDateForDate(keyDates, planned.dateIso)),
+    // Holiday placeholders are already booked as Canceled, so a holiday
+    // that is ALSO a closed key date follows the holiday behaviour and is
+    // left out of the skip prompt.
+    const closedDates = scheduleEntries.filter(
+      (planned) => !planned.holidayName && Boolean(findClosedKeyDateForDate(keyDates, planned.dateIso)),
     );
     if (closedDates.length > 0) {
       const closedSet = new Set(closedDates.map((planned) => planned.dateIso));
@@ -1064,13 +1112,14 @@ export function NewAppointmentModal({
         })
         .join("\n  • ");
 
-      if (openDates.length === 0) {
+      if (!openDates.some((planned) => !planned.holidayName)) {
         setError(`Cannot schedule — all dates fall on CLOSED key dates:\n  • ${closedList}`);
         return;
       }
 
+      const openActiveCount = openDates.filter((planned) => !planned.holidayName).length;
       const skipConfirmed = window.confirm(
-        `Cannot schedule on CLOSED key date(s):\n  • ${closedList}\n\nWould you like to skip ${closedDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${openDates.length} appointment${openDates.length === 1 ? "" : "s"}?`,
+        `Cannot schedule on CLOSED key date(s):\n  • ${closedList}\n\nWould you like to skip ${closedDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${openActiveCount} appointment${openActiveCount === 1 ? "" : "s"}?`,
       );
       if (!skipConfirmed) return;
 
@@ -1089,6 +1138,11 @@ export function NewAppointmentModal({
         )
         .map((entry) => entry.date),
     );
+    // A holiday placeholder on a day the patient is already booked adds
+    // nothing but clutter — drop it quietly instead of asking about it.
+    scheduleEntries = scheduleEntries.filter(
+      (planned) => !(planned.holidayName && patientExistingDates.has(planned.dateIso)),
+    );
     const duplicateDates = scheduleEntries.filter((planned) => patientExistingDates.has(planned.dateIso));
     if (duplicateDates.length > 0) {
       const nonDupDates = scheduleEntries.filter((planned) => !patientExistingDates.has(planned.dateIso));
@@ -1097,13 +1151,14 @@ export function NewAppointmentModal({
         .map((planned) => formatUsDateFromIso(planned.dateIso))
         .join(", ");
 
-      if (nonDupDates.length === 0) {
+      if (!nonDupDates.some((planned) => !planned.holidayName)) {
         setError(`${selectedPatient.fullName} already has an appointment on ${dupList}. Cannot create duplicate.`);
         return;
       }
 
+      const nonDupActiveCount = nonDupDates.filter((planned) => !planned.holidayName).length;
       const skipConfirmed = window.confirm(
-        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupDates.length} appointment${nonDupDates.length === 1 ? "" : "s"}?`,
+        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupActiveCount} appointment${nonDupActiveCount === 1 ? "" : "s"}?`,
       );
       if (!skipConfirmed) return;
 
@@ -1113,6 +1168,7 @@ export function NewAppointmentModal({
     if (scheduleSettings.enforceOfficeHours) {
       const outsideOfficeHoursDate = scheduleEntries.find(
         (planned) =>
+          !planned.holidayName &&
           !isAppointmentWithinOfficeHours(
             scheduleSettings,
             planned.dateIso,
@@ -1131,6 +1187,12 @@ export function NewAppointmentModal({
       }
     }
 
+    // Never book a series made only of canceled holiday placeholders.
+    if (!scheduleEntries.some((planned) => !planned.holidayName)) {
+      setError("Every date in this series falls on a federal holiday — no visits to book.");
+      return;
+    }
+
     const records: ScheduleAppointmentRecord[] = scheduleEntries.map((planned) => ({
       id: createAppointmentId(),
       patientId: selectedPatient.id,
@@ -1145,8 +1207,13 @@ export function NewAppointmentModal({
       // otherwise that stretch's own time.
       startTime: planned.startTime,
       durationMin,
-      status: "Scheduled",
-      note: sanitizedDraft.note.trim(),
+      // Holiday dates use the app's ordinary "Canceled" status (the same
+      // value the schedule's status menu sets), with the holiday recorded
+      // in the note since appointments have no separate cancel-reason field.
+      status: planned.holidayName ? "Canceled" : "Scheduled",
+      note: planned.holidayName
+        ? [`Holiday: ${planned.holidayName}`, sanitizedDraft.note.trim()].filter(Boolean).join(" — ")
+        : sanitizedDraft.note.trim(),
       overrideOfficeHours: Boolean(sanitizedDraft.overrideOfficeHours),
       recurringSeriesId: planned.seriesId,
     }));
@@ -1745,6 +1812,11 @@ export function NewAppointmentModal({
                       ? `${recurrenceProjection.visits} visit${recurrenceProjection.visits === 1 ? "" : "s"}`
                       : recurrenceProjection.endLabel
                     : "—"}
+                  {recurrenceProjection && recurrenceProjection.holidayCount > 0 && (
+                    <span className="ml-1 text-xs font-normal text-[var(--text-muted)]">
+                      (+{recurrenceProjection.holidayCount} canceled for holiday)
+                    </span>
+                  )}
                 </div>
                 {recurrenceHolidayLabels.length > 0 && (
                   <div className="text-xs font-semibold text-[#b43b34]">
@@ -1920,7 +1992,7 @@ export function NewAppointmentModal({
                         mainStartTime={draft.startTime}
                         series={series}
                         startsOn={plan?.draft.startDate ?? ""}
-                        visits={plan?.dates.length ?? 0}
+                        visits={plan ? countActiveDates(plan.draft, plan.dates) : 0}
                         lastDate={plan?.dates[plan.dates.length - 1] ?? ""}
                         intervalMin={scheduleSettings.appointmentIntervalMin}
                         onChange={(next) =>
