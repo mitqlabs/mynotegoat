@@ -137,3 +137,23 @@ export function formatKeyDateRange(row: Pick<KeyDateRecord, "startDate" | "endDa
   const end = formatUsDateFromIso(row.endDate);
   return row.startDate === row.endDate ? start : `${start} - ${end}`;
 }
+
+/**
+ * True when a CLOSED key date exists only because of the federal holiday
+ * on that day — a single-day closure whose reason names that holiday ("Veterans Day",
+ * "Independence Day (observed)", …). Holiday-sourced closures are booked
+ * like a Closed holiday (Canceled placeholder + make-up visit) rather than
+ * dropped like other closures.
+ */
+export function isHolidaySourcedKeyDate(row: KeyDateRecord, holidayName: string) {
+  if (row.officeStatus !== "Closed" || row.startDate !== row.endDate) return false;
+  const base = (value: string) => value.replace(/\s*\(observed\)\s*$/i, "").trim().toLowerCase();
+  const reason = base(row.reason);
+  if (!reason) return false;
+  return holidayName
+    .split(" / ")
+    .some((name) => {
+      const holiday = base(name);
+      return Boolean(holiday) && (reason === holiday || reason.includes(holiday));
+    });
+}
