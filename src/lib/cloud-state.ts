@@ -812,6 +812,9 @@ async function bootstrapTableBackedEntities() {
           "casemate.email-settings.v1",
           "casemate.case-statuses.v1",
           "casemate.key-dates.v1",
+          // Which federal holidays the New Appointment modal has already
+          // offered to add to Key Dates (see holiday-keydate-prompts.ts).
+          "casemate.holiday-keydate-prompts.v1",
           "casemate.dashboard-priority-rules.v1",
           "casemate.files.v1",
           "casemate.case-notes.v1",

@@ -92,3 +92,39 @@ export function formatHolidayShortDate(dateIso: string) {
   if (!month || !day) return dateIso;
   return `${shortMonths[month - 1]} ${day}`;
 }
+
+const shortWeekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "2026-11-26" → "Thu, Nov 26". */
+export function formatHolidayWeekdayDate(dateIso: string) {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  if (!year || !month || !day) return dateIso;
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return `${shortWeekdays[weekday]}, ${formatHolidayShortDate(dateIso)}`;
+}
+
+const holidayNamesByYear = new Map<number, Map<string, string>>();
+
+function holidayNamesForYear(year: number) {
+  let names = holidayNamesByYear.get(year);
+  if (!names) {
+    names = new Map();
+    for (const holiday of getUsFederalHolidays(year)) {
+      const existing = names.get(holiday.date);
+      names.set(holiday.date, existing ? `${existing} / ${holiday.name}` : holiday.name);
+    }
+    holidayNamesByYear.set(year, names);
+  }
+  return names;
+}
+
+/**
+ * The US federal holiday (actual or observed) on an ISO date, or null.
+ * Checks the following year too, so an observed New Year's Day that
+ * lands on Dec 31 is found.
+ */
+export function getUsFederalHolidayName(dateIso: string): string | null {
+  const year = Number(dateIso.slice(0, 4));
+  if (!Number.isInteger(year)) return null;
+  return holidayNamesForYear(year).get(dateIso) ?? holidayNamesForYear(year + 1).get(dateIso) ?? null;
+}

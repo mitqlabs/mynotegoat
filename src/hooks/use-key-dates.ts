@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { onLocalChange } from "@/lib/local-sync";
 import {
   createKeyDateId,
   getDefaultKeyDates,
@@ -41,6 +42,10 @@ function normalizeReason(value: string) {
 
 export function useKeyDates() {
   const [keyDates, setKeyDates] = useState<KeyDateRecord[]>(() => loadKeyDates());
+
+  // Re-read when another writer updates the cached list (the cloud
+  // bootstrap, or the New Appointment modal adding holiday closures).
+  useEffect(() => onLocalChange("casemate.key-dates.v1", () => setKeyDates(loadKeyDates())), []);
 
   const updateKeyDates = useCallback((updater: (current: KeyDateRecord[]) => KeyDateRecord[]) => {
     setKeyDates((current) => {
