@@ -252,3 +252,131 @@ export function saveTreatmentPlans(map: TreatmentPlansByPatient) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "billing", map));
 }
+
+// ── Carry-over: start a new plan from the patient's last one ───────────────
+
+/** US MM/DD/YYYY → UTC Date, or null if malformed. */
+function parseUsDateUtc(us: string): Date | null {
+  const m = us.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const date = new Date(Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2])));
+  return date.getUTCMonth() === Number(m[1]) - 1 ? date : null;
+}
+
+function formatUsDateUtc(date: Date): string {
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${mm}/${dd}/${date.getUTCFullYear()}`;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The plan a new plan should be copied from: the one with the LATEST end
+ * date (ties → later start date, then most recently edited). Plans without
+ * a valid end date sort by start date. Inactive plans count too — "the last
+ * plan" is about time, not the on/off switch.
+ */
+export function pickCarryoverSourcePlan(plans: TreatmentPlan[]): TreatmentPlan | null {
+  const stamp = (us: string) => parseUsDateUtc(us)?.getTime() ?? -Infinity;
+  let best: TreatmentPlan | null = null;
+  for (const plan of plans) {
+    if (!best) {
+      best = plan;
+      continue;
+    }
+    const a = [stamp(plan.endDate) === -Infinity ? stamp(plan.startDate) : stamp(plan.endDate), stamp(plan.startDate), plan.updatedAt];
+    const b = [stamp(best.endDate) === -Infinity ? stamp(best.startDate) : stamp(best.endDate), stamp(best.startDate), best.updatedAt];
+    if (a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : String(a[2]) > String(b[2])) best = plan;
+  }
+  return best;
+}
+
+/**
+ * The weekdays (0=Sun … 6=Sat) the plan's weekly pattern actually uses:
+ * every weekday with at least one region that has a macro picked.
+ */
+export function planPatternWeekdays(plan: TreatmentPlan): number[] {
+  return Object.entries(plan.days)
+    .filter(([, regions]) => regions.some((r) => r.macroId))
+    .map(([day]) => Number(day))
+    .filter((day) => day >= 0 && day <= 6)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Suggested dates for a plan continuing from `source`.
+ *
+ * Start: the first date AFTER the source's last date that falls on the
+ * FIRST weekday of the source's weekly pattern, so the copied schedule
+ * lines up from the top of the week instead of starting mid-pattern
+ * (e.g. pattern Mon/Wed/Thu, last date Thu 08/27 → Mon 08/31).
+ * "First" follows the app's weekday order (Sun=0 … Sat=6, same order as the
+ * weekday tabs), so in practice Monday unless the pattern starts later.
+ * No weekday pattern (empty days) → the next office-open day after the
+ * last date (`openDays`, falling back to the very next day).
+ *
+ * End: keeps the source plan's length (start→end span), or "" if unknown.
+ * Missing/invalid source end date → empty strings (caller falls back).
+ */
+export function carryoverDates(
+  source: TreatmentPlan,
+  openDays: number[] = [0, 1, 2, 3, 4, 5, 6],
+): { startDate: string; endDate: string } {
+  const start = parseUsDateUtc(source.startDate);
+  const end = parseUsDateUtc(source.endDate);
+  if (!end) return { startDate: "", endDate: "" };
+  const pattern = planPatternWeekdays(source);
+  const targets = pattern.length ? [pattern[0]] : openDays.length ? openDays : [0, 1, 2, 3, 4, 5, 6];
+  let nextStart = new Date(end.getTime() + DAY_MS);
+  for (let i = 0; i < 7 && !targets.includes(nextStart.getUTCDay()); i++) {
+    nextStart = new Date(nextStart.getTime() + DAY_MS);
+  }
+  const lengthDays = start && start <= end ? Math.round((end.getTime() - start.getTime()) / DAY_MS) : null;
+  return {
+    startDate: formatUsDateUtc(nextStart),
+    endDate: lengthDays !== null ? formatUsDateUtc(new Date(nextStart.getTime() + lengthDays * DAY_MS)) : "",
+  };
+}
+
+function cloneRegion(region: WeekdayRegion): WeekdayRegion {
+  return {
+    macroId: region.macroId,
+    treatments: [...region.treatments],
+    ...(region.answers
+      ? { answers: Object.fromEntries(Object.entries(region.answers).map(([k, v]) => [k, [...v]])) }
+      : {}),
+    ...(region.sideTreatments
+      ? { sideTreatments: { left: [...region.sideTreatments.left], right: [...region.sideTreatments.right] } }
+      : {}),
+  };
+}
+
+/**
+ * The CONTENT of a plan, deep-copied for a new plan: the weekday regions
+ * (treatments, answers, per-side picks) and the decompression settings.
+ * Never the id, patient, dates, active flag or timestamps.
+ */
+export function cloneTreatmentPlanContent(
+  source: TreatmentPlan,
+): Pick<TreatmentPlan, "days" | "decompression"> {
+  const days: Record<number, WeekdayRegion[]> = {};
+  for (const [day, regions] of Object.entries(source.days)) {
+    if (regions.length) days[Number(day)] = regions.map(cloneRegion);
+  }
+  const d = source.decompression;
+  return {
+    days,
+    ...(d
+      ? {
+          decompression: {
+            startWeight: d.startWeight,
+            increase: d.increase,
+            cycles: d.cycles,
+            ...(d.maxWeight !== undefined ? { maxWeight: d.maxWeight } : {}),
+            ...(d.region ? { region: cloneRegion(d.region) } : {}),
+          },
+        }
+      : {}),
+  };
+}

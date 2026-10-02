@@ -9,7 +9,10 @@ import { UsDateInput, formatUsDateInput, isoToUsDate } from "@/components/us-dat
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { MacroQuestion } from "@/lib/macro-templates";
 import {
+  carryoverDates,
+  cloneTreatmentPlanContent,
   isDecompressionMacroName,
+  pickCarryoverSourcePlan,
   type WeekdayRegion,
   type DecompressionProgression,
 } from "@/lib/treatment-plans";
@@ -179,10 +182,38 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
     return rows.sort((x, y) => x.iso.localeCompare(y.iso));
   }, [appointments]);
 
+  // New plans start from the patient's LAST plan (latest end date): same
+  // weekday regions / treatments / decompression settings, starting on the
+  // first weekday of its pattern after it ends (see carryoverDates) and
+  // running the same length. "Start blank" opts
+  // out. Nothing is written until Create Plan.
+  const carryoverSource = useMemo(() => pickCarryoverSourcePlan(plans), [plans]);
+  const [startBlank, setStartBlank] = useState(false);
+  const copyingFrom = startBlank ? null : carryoverSource;
+
+  const resetAddDrafts = (source: typeof carryoverSource) => {
+    const suggested = source ? carryoverDates(source, openDays) : null;
+    setStartDraft(suggested?.startDate || getTodayUsDate());
+    setEndDraft(suggested?.endDate ?? "");
+  };
+
+  const openAddForm = () => {
+    setStartBlank(false);
+    resetAddDrafts(carryoverSource);
+    setShowAdd(true);
+  };
+
   const handleAdd = () => {
     if (!startDraft.trim() || !endDraft.trim()) return;
-    const plan = addPlan(patientId, { startDate: startDraft, endDate: endDraft });
+    const plan = addPlan(patientId, {
+      startDate: startDraft,
+      endDate: endDraft,
+      ...(copyingFrom
+        ? { content: cloneTreatmentPlanContent(copyingFrom), copiedFrom: copyingFrom }
+        : {}),
+    });
     setShowAdd(false);
+    setStartBlank(false);
     setStartDraft(getTodayUsDate());
     setEndDraft("");
     if (plan) setExpandedPlanId(plan.id);
@@ -918,6 +949,41 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
 
           {showAdd ? (
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+              {carryoverSource && (
+                <p className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-[var(--text-muted)]">
+                  {copyingFrom ? (
+                    <>
+                      <span>
+                        Copied from plan dated {copyingFrom.startDate || "—"} – {copyingFrom.endDate || "—"}
+                      </span>
+                      <button
+                        className="font-semibold text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                        onClick={() => {
+                          setStartBlank(true);
+                          resetAddDrafts(null);
+                        }}
+                        type="button"
+                      >
+                        Start blank
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span>Starting blank.</span>
+                      <button
+                        className="font-semibold text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                        onClick={() => {
+                          setStartBlank(false);
+                          resetAddDrafts(carryoverSource);
+                        }}
+                        type="button"
+                      >
+                        Copy last plan ({carryoverSource.startDate || "—"} – {carryoverSource.endDate || "—"})
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="grid gap-1">
                   <span className="text-xs font-semibold text-[var(--text-muted)]">Start date</span>
@@ -985,7 +1051,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
           ) : (
             <button
               className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97]"
-              onClick={() => setShowAdd(true)}
+              onClick={openAddForm}
               type="button"
             >
               + Treatment Plan
