@@ -9,12 +9,12 @@ export type RecurrenceHolidayRow = {
   dateLabel: string;
   /** Already a CLOSED key date: follows the closure behaviour, no checkbox. */
   officeClosed: boolean;
+  /** Already an OPEN key date: a normal day, no choice. */
+  officeOpen: boolean;
   /** Weekday the office is normally closed (Office Hours): no choice. */
   regularDayOff: boolean;
   /** Non-canceled appointments already on this date (all patients). */
   bookedCount: number;
-  /** This exact date was kept on schedule in an earlier booking. */
-  remembered: boolean;
 };
 
 type RecurrenceHolidayTableProps = {
@@ -22,8 +22,6 @@ type RecurrenceHolidayTableProps = {
   keepScheduleDates: string[];
   /** Keep (true) = book normally; Closed (false, default) = cancel + close. */
   onChooseKeep: (dateIso: string, keep: boolean) => void;
-  /** Forget a remembered date (the Keep / Closed choice comes back). */
-  onUndoRemembered: (dateIso: string) => void;
 };
 
 /**
@@ -36,7 +34,6 @@ export function RecurrenceHolidayTable({
   holidays,
   keepScheduleDates,
   onChooseKeep,
-  onUndoRemembered,
 }: RecurrenceHolidayTableProps) {
   if (!holidays.length) return null;
   return (
@@ -66,20 +63,10 @@ export function RecurrenceHolidayTable({
             <span className="whitespace-nowrap sm:justify-self-end">
               {holiday.officeClosed ? (
                 <span className="text-[var(--text-muted)]">Office closed (Key Date)</span>
+              ) : holiday.officeOpen ? (
+                <span className="font-semibold text-[#257a49]">Open (Key Date)</span>
               ) : holiday.regularDayOff ? (
                 <span className="text-[var(--text-muted)]">Office closed (regular day off)</span>
-              ) : holiday.remembered ? (
-                <span className="inline-flex items-center gap-2 text-[var(--text-muted)]">
-                  Kept on schedule
-                  <button
-                    className="text-[11px] font-semibold text-[var(--brand-primary)] underline-offset-2 hover:underline"
-                    onClick={() => onUndoRemembered(holiday.date)}
-                    title={`Stop keeping ${holiday.dateLabel} on schedule`}
-                    type="button"
-                  >
-                    Undo
-                  </button>
-                </span>
               ) : (
                 <KeepClosedToggle
                   keep={keepScheduleDates.includes(holiday.date)}

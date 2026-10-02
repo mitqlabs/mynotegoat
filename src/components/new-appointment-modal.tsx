@@ -9,9 +9,8 @@ import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { useLocationView } from "@/hooks/use-location-view";
 import { RecurrenceHolidayTable, type RecurrenceHolidayRow } from "@/components/recurrence-holiday-table";
-import { addClosedKeyDatesToCloud, cloudKeyDatesQueryKey } from "@/hooks/use-cloud-key-dates";
+import { addKeyDatesToCloud, cloudKeyDatesQueryKey } from "@/hooks/use-cloud-key-dates";
 import { useQueryClient } from "@tanstack/react-query";
-import { addKeptHolidayDates, loadKeptHolidayDates, removeKeptHolidayDate } from "@/lib/holiday-keep-schedule";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import {
   ContactGapPrompt,
@@ -23,6 +22,7 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 import {
   findClosedKeyDateForDate,
   findKeyDatesForDate,
+  findOpenKeyDateForDate,
   isHolidaySourcedKeyDate,
   formatUsDateFromIso,
 } from "@/lib/key-dates";
@@ -547,13 +547,11 @@ export function NewAppointmentModal({
   const { officeSettings } = useOfficeSettings();
   const queryClient = useQueryClient();
   const { multiLocation, selectedLocationId } = useLocationView();
-  // Federal-holiday dates (ISO) set to "Keep" in this modal. Every other
-  // holiday row defaults to "Closed": booked as a Canceled placeholder
-  // (+ make-up visit) and added to Key Dates as a Closed day on save.
+  // Federal-holiday dates (ISO) set to "Keep" in this modal: booked
+  // normally and saved to Key Dates as OPEN days. Every other holiday row
+  // defaults to "Closed": booked as a Canceled placeholder (+ make-up
+  // visit) and saved to Key Dates as a CLOSED day.
   const [keepScheduleDates, setKeepScheduleDates] = useState<string[]>([]);
-  // Holiday DATES kept on schedule in an earlier booking (persisted; see
-  // holiday-keep-schedule.ts). Loaded on open.
-  const [keptHolidayDates, setKeptHolidayDates] = useState<Set<string>>(() => new Set());
   const holidayCancelRule = useCallback<HolidayCancelRule>(
     (dateIso) => {
       const name = getUsFederalHolidayName(dateIso);
@@ -565,10 +563,13 @@ export function NewAppointmentModal({
         // Any other closure keeps the existing skip behaviour.
         return closedRows.some((row) => isHolidaySourcedKeyDate(row, name)) ? name : null;
       }
-      if (keptHolidayDates.has(dateIso) || keepScheduleDates.includes(dateIso)) return null;
+      // An OPEN key date (e.g. "Juneteenth (open)" from an earlier Keep)
+      // makes the holiday a normal day.
+      if (findOpenKeyDateForDate(keyDates, dateIso)) return null;
+      if (keepScheduleDates.includes(dateIso)) return null;
       return name;
     },
-    [keepScheduleDates, keptHolidayDates, keyDates],
+    [keepScheduleDates, keyDates],
   );
 
   const defaultAppointmentType = useMemo(
@@ -723,7 +724,6 @@ export function NewAppointmentModal({
     }
     setDraft(initial);
     setKeepScheduleDates([]);
-    setKeptHolidayDates(loadKeptHolidayDates());
     setStartDateDisplay(isoDateToUs(initial.startDate));
     const initial12h = split12hFrom24h(initial.startTime);
     setStartTimeDisplay(initial12h.display);
@@ -902,10 +902,10 @@ export function NewAppointmentModal({
         name: holiday.name,
         dateLabel: `${formatHolidayWeekdayDate(holiday.date)}, ${holiday.date.slice(0, 4)}`,
         officeClosed: Boolean(findClosedKeyDateForDate(keyDates, holiday.date)),
+        officeOpen: Boolean(findOpenKeyDateForDate(keyDates, holiday.date)),
         // Falls on a weekday the office is normally closed (Office Hours):
         // no choice to make — it's closed and goes to Key Dates on save.
         regularDayOff: !openRecurringDays.has(parseIsoDate(holiday.date)?.getUTCDay() ?? -1),
-        remembered: keptHolidayDates.has(holiday.date),
         bookedCount: bookedByDate.get(holiday.date) ?? 0,
       }),
     );
@@ -915,25 +915,25 @@ export function NewAppointmentModal({
     draft.extraSeries.length,
     plannedLastDate,
     keyDates,
-    keptHolidayDates,
     openRecurringDays,
     scheduleAppointments,
     bookingLocationId,
   ]);
 
-  // Closed-choice holidays (not already Key Dates) that saving will add to
-  // Key Dates — drives the note under the table.
-  const holidaysToCloseOnSave = useMemo(
-    () =>
-      recurrenceHolidayLabels.filter(
-        (holiday) =>
-          !holiday.officeClosed &&
-          (holiday.regularDayOff ||
-            (!holiday.remembered && !keepScheduleDates.includes(holiday.date))) &&
-          findKeyDatesForDate(keyDates, holiday.date).length === 0,
-      ),
-    [recurrenceHolidayLabels, keepScheduleDates, keyDates],
-  );
+  // Holidays (not already in Key Dates) that saving will add to Key Dates:
+  // Closed choices and regular days off as CLOSED, Keep choices as OPEN.
+  // Drives the note under the table and the save path.
+  const holidayKeyDatesOnSave = useMemo(() => {
+    const pending = recurrenceHolidayLabels.filter(
+      (holiday) => findKeyDatesForDate(keyDates, holiday.date).length === 0,
+    );
+    const keep = (holiday: RecurrenceHolidayRow) =>
+      !holiday.regularDayOff && keepScheduleDates.includes(holiday.date);
+    return {
+      closed: pending.filter((holiday) => !keep(holiday)),
+      open: pending.filter(keep),
+    };
+  }, [recurrenceHolidayLabels, keepScheduleDates, keyDates]);
 
   const handlePatientSearchChange = (value: string) => {
     if (lockedPatientId) {
@@ -1320,41 +1320,34 @@ export function NewAppointmentModal({
     onSaved?.(records);
 
     if (sanitizedDraft.isRecurring) {
-      // "Keep" rows: remember that specific date, so a later booking on the
-      // same day treats it as a normal workday. Only on save — an abandoned
-      // modal persists nothing.
-      const keptDates = recurrenceHolidayLabels
-        .filter(
-          (holiday) =>
-            !holiday.officeClosed &&
-            !holiday.regularDayOff &&
-            !holiday.remembered &&
-            keepScheduleDates.includes(holiday.date),
-        )
-        .map((holiday) => holiday.date);
-      if (keptDates.length) setKeptHolidayDates(addKeptHolidayDates(keptDates));
-
-      // "Closed" rows: add to Key Dates as Closed days automatically — every
-      // Closed holiday in the series range, whether or not it hit a visit
-      // day (the office is closed regardless), plus any holiday a visit was
-      // booked as Canceled on. Dates already in Key Dates are skipped.
-      const toClose = new Map<string, string>();
-      holidaysToCloseOnSave.forEach((holiday) => toClose.set(holiday.date, holiday.name));
+      // Save the holiday choices as Key Dates, automatically (no prompt),
+      // in one cloud write. Dates already in Key Dates are skipped.
+      //  - "Keep" rows → OPEN, reason "<holiday> (open)": later bookings see
+      //    an Open Key Date and treat the day as normal.
+      //  - "Closed" rows and regular days off → CLOSED, reason "<holiday>":
+      //    every one in the series range, whether or not it hit a visit day
+      //    (the office is closed regardless), plus any holiday a follow-on
+      //    visit was booked as Canceled on.
+      const toAdd = new Map<string, { date: string; reason: string; officeStatus: "Closed" | "Open" }>();
+      holidayKeyDatesOnSave.open.forEach((holiday) =>
+        toAdd.set(holiday.date, { date: holiday.date, reason: `${holiday.name} (open)`, officeStatus: "Open" }),
+      );
+      holidayKeyDatesOnSave.closed.forEach((holiday) =>
+        toAdd.set(holiday.date, { date: holiday.date, reason: holiday.name, officeStatus: "Closed" }),
+      );
       scheduleEntries.forEach((planned) => {
-        if (!planned.holidayName || toClose.has(planned.dateIso)) return;
+        if (!planned.holidayName || toAdd.has(planned.dateIso)) return;
         if (findKeyDatesForDate(keyDates, planned.dateIso).length > 0) return;
-        toClose.set(planned.dateIso, planned.holidayName);
+        toAdd.set(planned.dateIso, { date: planned.dateIso, reason: planned.holidayName, officeStatus: "Closed" });
       });
-      if (toClose.size > 0) {
-        const entries = Array.from(toClose.entries())
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([date, reason]) => ({ date, reason }));
-        addClosedKeyDatesToCloud(entries)
+      if (toAdd.size > 0) {
+        const entries = Array.from(toAdd.values()).sort((left, right) => left.date.localeCompare(right.date));
+        addKeyDatesToCloud(entries)
           .then(() => queryClient.invalidateQueries({ queryKey: cloudKeyDatesQueryKey }))
           .catch((keyDateError: unknown) => {
             console.error("[new-appointment] adding holiday key dates failed", keyDateError);
             window.alert(
-              "The appointments were saved, but the closed holidays could not be added to Key Dates. Please add them on the Key Dates page.",
+              "The appointments were saved, but the holidays could not be added to Key Dates. Please add them on the Key Dates page.",
             );
           });
       }
@@ -1965,12 +1958,6 @@ export function NewAppointmentModal({
             <RecurrenceHolidayTable
               holidays={recurrenceHolidayLabels}
               keepScheduleDates={keepScheduleDates}
-              onUndoRemembered={(dateIso) => {
-                // Takes effect right away: the row's Keep / Closed choice
-                // comes back (on the default, Closed).
-                setKeepScheduleDates((current) => current.filter((entry) => entry !== dateIso));
-                setKeptHolidayDates(removeKeptHolidayDate(dateIso));
-              }}
               onChooseKeep={(dateIso, keep) =>
                 setKeepScheduleDates((current) =>
                   keep
@@ -1979,10 +1966,20 @@ export function NewAppointmentModal({
                 )
               }
             />
-            {holidaysToCloseOnSave.length > 0 && (
+            {holidayKeyDatesOnSave.closed.length + holidayKeyDatesOnSave.open.length > 0 && (
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                Saving adds {holidaysToCloseOnSave.length} Closed holiday
-                {holidaysToCloseOnSave.length === 1 ? "" : "s"} to Key Dates.
+                Saving adds{" "}
+                {[
+                  holidayKeyDatesOnSave.closed.length > 0
+                    ? `${holidayKeyDatesOnSave.closed.length} Closed`
+                    : "",
+                  holidayKeyDatesOnSave.open.length > 0 ? `${holidayKeyDatesOnSave.open.length} Open` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" and ")}{" "}
+                holiday
+                {holidayKeyDatesOnSave.closed.length + holidayKeyDatesOnSave.open.length === 1 ? "" : "s"} to Key
+                Dates.
               </p>
             )}
             {recurrenceProjection && recurrenceProjection.closedCount > 0 && (

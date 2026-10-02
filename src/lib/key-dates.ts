@@ -1,4 +1,12 @@
-export type KeyDateOfficeStatus = "Closed" | "Covered";
+/**
+ * Closed  — office closed; scheduling on it is blocked / skipped.
+ * Covered — another provider covers; bookable, with a soft notice.
+ * Open    — explicitly open (e.g. a federal holiday the office works);
+ *           a normal day. Never treated as closed anywhere.
+ */
+export type KeyDateOfficeStatus = "Closed" | "Covered" | "Open";
+
+export const keyDateOfficeStatusOptions: KeyDateOfficeStatus[] = ["Closed", "Covered", "Open"];
 
 export interface KeyDateRecord {
   id: string;
@@ -29,6 +37,9 @@ function normalizeDate(value: unknown, fallback = "") {
 function normalizeOfficeStatus(value: unknown): KeyDateOfficeStatus {
   if (value === "Covered") {
     return "Covered";
+  }
+  if (value === "Open") {
+    return "Open";
   }
   return "Closed";
 }
@@ -118,6 +129,11 @@ export function isDateInRange(dateIso: string, startDate: string, endDate: strin
 
 export function findKeyDatesForDate(rows: KeyDateRecord[], dateIso: string) {
   return rows.filter((row) => isDateInRange(dateIso, row.startDate, row.endDate));
+}
+
+/** An OPEN key date covering this date, or null. */
+export function findOpenKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
+  return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Open") ?? null;
 }
 
 export function findClosedKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
