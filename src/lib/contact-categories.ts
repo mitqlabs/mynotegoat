@@ -69,6 +69,10 @@ export function migrateLegacyCategory(
 
   if (normalized === "specialist") return { category: "Specialist" };
 
+  if (normalized === "insurance agent" || normalized === "insurance agents") {
+    return { category: "Insurance Agent" };
+  }
+
   if (
     normalized === "acute care" ||
     normalized === "hospital" ||
