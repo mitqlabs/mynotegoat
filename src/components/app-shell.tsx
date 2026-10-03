@@ -392,6 +392,21 @@ export function AppShell({
                     </Link>
                   );
                 })}
+                {/* Mobile-only sign out, icon at the end of the pill row. The
+                    desktop sidebar (which holds Sign Out) is hidden below lg.
+                    Same handler as the sidebar button. */}
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  aria-label="Sign out"
+                  title="Sign out"
+                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-main)] transition hover:bg-[var(--line-soft)] disabled:opacity-50"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                  </svg>
+                </button>
               </nav>
 
               <main className="p-4 lg:p-7">
