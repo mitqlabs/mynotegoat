@@ -2357,10 +2357,20 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         });
       });
 
+      // Chronological (oldest first): date, then start time, then type.
+      // Encounter-only rows have no time and sort after that day's
+      // appointments. Array.prototype.sort is stable, so full ties keep
+      // their build order.
       rows.sort((left, right) => {
-        const byDate = toSortStampFromUsDate(right.dateLabel) - toSortStampFromUsDate(left.dateLabel);
+        const byDate = toSortStampFromUsDate(left.dateLabel) - toSortStampFromUsDate(right.dateLabel);
         if (byDate !== 0) {
           return byDate;
+        }
+        const leftTime = left.appointment?.startTime || "99:99";
+        const rightTime = right.appointment?.startTime || "99:99";
+        const byTime = leftTime.localeCompare(rightTime);
+        if (byTime !== 0) {
+          return byTime;
         }
         return left.typeLabel.localeCompare(right.typeLabel);
       });

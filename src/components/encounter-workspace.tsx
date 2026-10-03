@@ -1037,7 +1037,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
   const [openChargesPanel, setOpenChargesPanel] = useState(false);
   const [chargeSearch, setChargeSearch] = useState("");
-  const [aptDateSort, setAptDateSort] = useState<"newest" | "oldest">("newest");
+  const [aptDateSort, setAptDateSort] = useState<"newest" | "oldest">("oldest"); // chronological by default; ↓ flips to newest first
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showPriorChargesPreview, setShowPriorChargesPreview] = useState(false);
 
@@ -3808,9 +3808,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 )}
 
                 {/* Encounter Warnings */}
-                {filteredEncounterList.length > 0 && (() => {
+                {filteredEncounterListByOldest.length > 0 && (() => {
                   const warnings: Array<{ encId: string; date: string; issues: string[] }> = [];
-                  for (const enc of filteredEncounterList) {
+                  for (const enc of filteredEncounterListByOldest) {
                     const issues: string[] = [];
                     if (!enc.soap.subjective.trim()) issues.push("S");
                     if (!enc.soap.objective.trim()) issues.push("O");
