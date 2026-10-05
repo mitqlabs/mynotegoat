@@ -48,6 +48,7 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { QuickGlance } from "@/components/quick-glance";
@@ -1037,7 +1038,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
   const [openChargesPanel, setOpenChargesPanel] = useState(false);
   const [chargeSearch, setChargeSearch] = useState("");
-  const [aptDateSort, setAptDateSort] = useState<"newest" | "oldest">("oldest"); // chronological by default; ↓ flips to newest first
+  // Date order of the Appointments list. Saved per page (separately from the
+  // patient page); defaults to oldest first (chronological).
+  const { direction: aptDateSort, toggle: toggleAptDateSort } = useDateSortPreference(
+    DATE_SORT_KEYS.encountersPage,
+    "oldest",
+  );
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showPriorChargesPreview, setShowPriorChargesPreview] = useState(false);
 
@@ -3504,14 +3510,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           />
                           Hide completed
                         </label>
-                        <button
-                          className="rounded border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold hover:bg-[var(--bg-soft)]"
-                          onClick={() => setAptDateSort((prev) => (prev === "newest" ? "oldest" : "newest"))}
-                          title={`Sort by date: ${aptDateSort === "newest" ? "Newest first" : "Oldest first"}`}
-                          type="button"
-                        >
-                          {aptDateSort === "newest" ? "↓" : "↑"}
-                        </button>
                       </div>
                     </div>
                     <div className="mt-1.5 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
@@ -3519,7 +3517,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <thead>
                           <tr className="bg-[var(--bg-soft)] text-left">
                             <th className="w-6 px-1 py-1"></th>
-                            <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Date</th>
+                            <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                              {/* One tap flips date order; the choice is saved for this page. */}
+                              <button
+                                type="button"
+                                onClick={toggleAptDateSort}
+                                className="inline-flex items-center gap-0.5 uppercase tracking-wide hover:text-[var(--text-main)]"
+                                title={`Date: ${aptDateSort === "newest" ? "newest first" : "oldest first"}. Tap to flip.`}
+                                aria-label={`Sort by date, currently ${aptDateSort === "newest" ? "newest first" : "oldest first"}. Tap to flip.`}
+                              >
+                                Date
+                                <span aria-hidden className="text-[11px] leading-none">{aptDateSort === "newest" ? "↓" : "↑"}</span>
+                              </button>
+                            </th>
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Type</th>
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Status</th>
                             <th className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Enc.</th>
