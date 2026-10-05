@@ -6,6 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
+import { PrimoPanel } from "@/components/primo-panel";
+import type { PrimoContext, PrimoSection } from "@/lib/primo";
+import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
+import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { normalizeReviewStatus, reviewSelectOptionsFor, reviewStatusTone } from "@/lib/review-status";
 import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -1566,7 +1570,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // isn't shown. hiddenStyle() drops a "hide" panel from layout while its
   // logic stays mounted (so background linkages keep working).
   const sectionModes = useMemo(() => loadPatientPagePrefs().mode, []);
-  const { sectionHidden, canEdit } = useWorkspaceAccess();
+  const { sectionHidden, canEdit, canView } = useWorkspaceAccess();
   // View-only members can read but not edit this patient. The page content is
   // made inert by ReadOnlyContentGuard; we start every panel expanded so they
   // can still read sections that would otherwise need a (now-blocked) click.
@@ -2474,6 +2478,142 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setBilledAmount(encounterChargesTotal.toFixed(2));
   }
   const currentBillTotal = Number.parseFloat(billedAmount) || 0;
+
+  // ── Primo ─────────────────────────────────────────────────────────────
+  // A plain snapshot of what this page shows, for Primo's lookups (see
+  // src/lib/primo.ts). Sections hidden for this team member are passed as
+  // null so Primo can't read them; SOAP text also needs Encounters access.
+  const { getPlansForPatient } = useTreatmentPlans();
+  const { macroLibrary: primoMacroLibrary } = useMacroTemplates();
+  const primoContext = useMemo<PrimoContext>(() => {
+    const isHidden = (key: SectionPanelKey) => Boolean(hiddenStyle(key));
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const macroName = (id: string) => primoMacroLibrary.templates.find((m) => m.id === id)?.buttonName ?? "";
+    const toImaging = (r: ImagingReferral) => ({
+      modality: r.modalityLabel,
+      center: r.center ?? "",
+      regions: r.regions ?? [],
+      sentDate: r.sentDate ?? "",
+      scheduledDate: r.scheduledDate ?? "",
+      doneDate: r.doneDate ?? "",
+      reportReceivedDate: r.reportReceivedDate ?? "",
+      reportReviewedDate: r.reportReviewedDate ?? "",
+      findings: r.findings ?? "",
+      refused: r.patientRefused === true,
+    });
+    return {
+      today,
+      patientName: [lastName, firstName].filter(Boolean).join(", ") || patient.fullName,
+      dob: patientDob,
+      phone: patientPhone,
+      email: patientEmail,
+      address: patientAddress,
+      alerts: patientAlerts,
+      attorney,
+      caseStatus,
+      lien: lienStatus,
+      review: reviewStatus,
+      isCashPatient,
+      doi: dateOfLoss,
+      initialExam,
+      priorCare,
+      xrayFindings,
+      mriFindings: mriCtFindings,
+      specialistRecommendations,
+      imaging: [...xrayReferrals, ...mriReferrals].map(toImaging),
+      specialists: specialistReferrals.map((r) => ({
+        name: r.specialist ?? "",
+        sentDate: r.sentDate ?? "",
+        scheduledDate: r.scheduledDate ?? "",
+        completedDate: r.completedDate ?? "",
+        reportReceivedDate: r.reportReceivedDate ?? "",
+        reportReviewedDate: r.reportReviewedDate ?? "",
+        recommendations: r.recommendations ?? "",
+        refused: r.patientRefused === true,
+      })),
+      notes: isHidden("notes") ? null : patientNotes,
+      appointments: isHidden("appointments")
+        ? null
+        : patientAppointmentRecords.map((a) => ({
+            date: a.date,
+            startTime: a.startTime,
+            type: a.appointmentType,
+            status: a.status,
+          })),
+      encounters:
+        isHidden("appointments") || !canView("encounters")
+          ? null
+          : patientEncounterRecords.map((e) => ({
+              date: e.encounterDate,
+              type: e.appointmentType,
+              signed: e.signed,
+              soap: {
+                subjective: e.soap.subjective ?? "",
+                objective: e.soap.objective ?? "",
+                assessment: e.soap.assessment ?? "",
+                plan: e.soap.plan ?? "",
+              },
+            })),
+      plans: isHidden("treatmentPlan")
+        ? null
+        : getPlansForPatient(patient.id).map((plan) => ({
+            startDate: plan.startDate,
+            endDate: plan.endDate,
+            active: plan.active,
+            weekdays: Object.entries(plan.days)
+              .filter(([, regions]) => regions.length > 0)
+              .map(([day]) => weekdayNames[Number(day)] ?? "")
+              .filter(Boolean),
+            regions: [
+              ...new Set(
+                [
+                  ...Object.values(plan.days).flat().map((r) => macroName(r.macroId)),
+                  plan.decompression?.region ? macroName(plan.decompression.region.macroId) : "",
+                ].filter(Boolean),
+              ),
+            ],
+          })),
+      diagnoses: isHidden("diagnosis")
+        ? null
+        : patientDiagnoses.map((d) => ({ code: d.code, description: d.description })),
+      details: isHidden("additionalDetails") ? null : { discharge: dischargeDate },
+      billing:
+        isHidden("additionalDetails") || isHidden("billingFigures")
+          ? null
+          : { billed: billedAmount, paid: paidAmount, paidDate, rbSent: rbSentDate },
+    };
+  }, [
+    hiddenStyle, canView, primoMacroLibrary.templates, getPlansForPatient, patient.id, patient.fullName,
+    lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
+    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, initialExam, priorCare, xrayFindings,
+    mriCtFindings, specialistRecommendations, xrayReferrals, mriReferrals, specialistReferrals, patientNotes,
+    patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, dischargeDate, billedAmount,
+    paidAmount, paidDate, rbSentDate,
+  ]);
+
+  // "Go to" from a Primo answer: open the panel if it's collapsed, then scroll.
+  const jumpToPrimoSection = useCallback((section: PrimoSection) => {
+    if (section === "xray" || section === "mri" || section === "specialist") {
+      setImagingPanelsOpen((current) => ({ ...current, [section]: true }));
+    } else if (
+      section === "notes" ||
+      section === "appointments" ||
+      section === "diagnosis"
+    ) {
+      setSectionPanelsOpen((current) => ({ ...current, [section]: true }));
+    } else if (section === "details") {
+      setSectionPanelsOpen((current) => ({ ...current, additionalDetails: true }));
+    }
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-primo-section="${section}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.classList.add("ring-2", "ring-[var(--brand-primary)]");
+      window.setTimeout(() => el.classList.remove("ring-2", "ring-[var(--brand-primary)]"), 1600);
+    }, 60);
+  }, []);
 
   // Non-PI (cash) billing rollup for the Additional Details box. PI
   // patients bill through insurance milestones (R&B, Paid Date, cycle
@@ -4718,7 +4858,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       </section>
 
-      <section className="panel-card overflow-hidden">
+      <section className="panel-card overflow-hidden" data-primo-section="info">
         <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
           {/* Field order is deliberate, four to a row on xl:
                 1. Last Name | First Name | DOB | Phone
@@ -5052,9 +5192,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           Settings → Patient Page Sections; Notes ships on by default
           so a free-form note left by the front desk never gets
           missed during a visit. */}
-      {/* Notes and Quick Glance share a row on wide screens. */}
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <section className="panel-card p-4" style={hiddenStyle("notes")}>
+      {/* Notes | Quick Glance | Primo: equal thirds on wide screens; Notes and
+          Quick Glance pair up (Primo full width under them) on medium; all
+          stack on small screens. */}
+      <div className="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
+        <section className="panel-card p-4" style={hiddenStyle("notes")} data-primo-section="notes">
           <button
             className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("notes")}
@@ -5088,6 +5230,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           specialistReferrals={specialistReferrals}
           xrayReferrals={xrayReferrals}
         />
+
+        <div className="lg:col-span-2 xl:col-span-1">
+          <PrimoPanel context={primoContext} onJump={jumpToPrimoSection} />
+        </div>
       </div>
 
       {/* X-Ray / MRI / Specialist now live in their own top-level
@@ -5096,7 +5242,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           stack on smaller widths. Each panel keeps its own toggle
           state via imagingPanelsOpen.* */}
       <section className="grid items-start gap-5 xl:grid-cols-3">
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-primo-section="xray">
             <button
               className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("xray")}
@@ -5302,7 +5448,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-primo-section="mri">
             <button
               className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("mri")}
@@ -5516,7 +5662,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-primo-section="specialist">
             <button
               className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("specialist")}
@@ -5759,7 +5905,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           (spans 2 cols) · Patient Files; row 3: Diagnosis · Reports ·
           Additional Details. */}
       <section className="grid gap-4 xl:grid-cols-6 items-start">
-        <section className="panel-card p-4 order-4 xl:col-span-2" style={hiddenStyle("appointments")}>
+        <section className="panel-card p-4 order-4 xl:col-span-2" style={hiddenStyle("appointments")} data-primo-section="appointments">
         <button
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
@@ -6571,7 +6717,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </>
         )}
       </section>
-      <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("diagnosis")}>
+      <section className="panel-card p-4 order-7 xl:col-span-2" style={hiddenStyle("diagnosis")} data-primo-section="diagnosis">
         <button
           // Bar turns red when no diagnoses are on file — visible
           // warning that the patient is missing dx codes (which break
@@ -6887,7 +7033,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         )}
       </section>
       {/* ── Patient Files ──────────────────────────────────────────────── */}
-      <div className="order-5 xl:col-span-2" style={hiddenStyle("treatmentPlan")}>
+      <div className="order-5 xl:col-span-2" style={hiddenStyle("treatmentPlan")} data-primo-section="treatmentPlan">
         <TreatmentPlanSection
           patientId={patient.id}
           appointments={patientAppointmentRecords}
@@ -7117,7 +7263,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         )}
       </section>
-      <section className="panel-card p-4 order-9 xl:col-span-2" style={hiddenStyle("additionalDetails")}>
+      <section className="panel-card p-4 order-9 xl:col-span-2" style={hiddenStyle("additionalDetails")} data-primo-section="details">
         {(() => {
           // Non-PI (cash) patients have no insurance billing milestones,
           // so their bar is a plain teal header with no status coloring.
