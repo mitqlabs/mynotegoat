@@ -1,5 +1,5 @@
 /**
- * G.O.A.T. (Guided Office Answer Tool) — "ask about this patient".
+ * G.O.A.T. — "ask about this patient".
  *
  * Answers questions by looking things up in what is already on the patient
  * page. There is no AI and no network call here: every answer is read directly

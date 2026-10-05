@@ -49,7 +49,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 }
 
 /**
- * G.O.A.T. (Guided Office Answer Tool) — a question box for this patient.
+ * G.O.A.T. — a question box for this patient.
  * Answers come from the patient file's own
  * data via askGoat (rule-based lookups + text search). Nothing is sent
  * anywhere; see src/lib/goat.ts.
@@ -123,10 +123,7 @@ export function GoatPanel({
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
-        <span className="flex min-w-0 items-baseline gap-2" title="G.O.A.T. — Guided Office Answer Tool">
-          <span>G.O.A.T.</span>
-          <span className="truncate text-xs font-normal text-white/85">Guided Office Answer Tool</span>
-        </span>
+        <span>G.O.A.T.</span>
         <span className="text-xl">{open ? "−" : "+"}</span>
       </button>
       {open && (

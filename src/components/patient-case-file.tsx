@@ -2480,7 +2480,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   }
   const currentBillTotal = Number.parseFloat(billedAmount) || 0;
 
-  // ── G.O.A.T. (Guided Office Answer Tool) ───────────────────────────────
+  // ── G.O.A.T. ──────────────────────────────────────────────────────────
   // A plain snapshot of what this page shows, for G.O.A.T.'s lookups (see
   // src/lib/goat.ts). Sections hidden for this team member are passed as
   // null so G.O.A.T. can't read them; SOAP text also needs Encounters access.
