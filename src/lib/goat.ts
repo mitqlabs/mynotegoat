@@ -1,22 +1,22 @@
 /**
- * Primo — "ask about this patient".
+ * G.O.A.T. (Guided Office Answer Tool) — "ask about this patient".
  *
  * Answers questions by looking things up in what is already on the patient
  * page. There is no AI and no network call here: every answer is read directly
  * off a field, a list or a note, and each one says which section it came from.
- * If the page does not contain the answer, Primo says so rather than guessing.
+ * If the page does not contain the answer, G.O.A.T. says so rather than guessing.
  *
  * Modelled on CaseMate's Lexi (keyword topics + a plain-text search), adapted
- * to NoteGoat's clinical data. The caller builds a PrimoContext from the page's
+ * to NoteGoat's clinical data. The caller builds a GoatContext from the page's
  * live state; a section the signed-in member cannot see is passed as `null`
- * and Primo will not read it.
+ * and G.O.A.T. will not read it.
  */
 
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
 
-export type PrimoSection =
+export type GoatSection =
   | "info"
   | "notes"
   | "xray"
@@ -27,7 +27,7 @@ export type PrimoSection =
   | "diagnosis"
   | "details";
 
-export interface PrimoAppointment {
+export interface GoatAppointment {
   /** ISO YYYY-MM-DD */
   date: string;
   /** HH:MM (24h) */
@@ -36,7 +36,7 @@ export interface PrimoAppointment {
   status: string;
 }
 
-export interface PrimoEncounter {
+export interface GoatEncounter {
   /** MM/DD/YYYY */
   date: string;
   type: string;
@@ -44,7 +44,7 @@ export interface PrimoEncounter {
   soap: { subjective: string; objective: string; assessment: string; plan: string };
 }
 
-export interface PrimoImaging {
+export interface GoatImaging {
   modality: string; // "X-Ray" | "MRI" | "CT"
   center: string;
   regions: string[];
@@ -57,7 +57,7 @@ export interface PrimoImaging {
   refused: boolean;
 }
 
-export interface PrimoSpecialist {
+export interface GoatSpecialist {
   name: string;
   sentDate: string;
   scheduledDate: string;
@@ -68,7 +68,7 @@ export interface PrimoSpecialist {
   refused: boolean;
 }
 
-export interface PrimoPlan {
+export interface GoatPlan {
   startDate: string;
   endDate: string;
   active: boolean;
@@ -76,7 +76,7 @@ export interface PrimoPlan {
   regions: string[];
 }
 
-export interface PrimoContext {
+export interface GoatContext {
   /** ISO YYYY-MM-DD, local. */
   today: string;
   patientName: string;
@@ -96,13 +96,13 @@ export interface PrimoContext {
   xrayFindings: string;
   mriFindings: string;
   specialistRecommendations: string;
-  imaging: PrimoImaging[];
-  specialists: PrimoSpecialist[];
+  imaging: GoatImaging[];
+  specialists: GoatSpecialist[];
   /** null = section hidden for this member. */
   notes: string | null;
-  appointments: PrimoAppointment[] | null;
-  encounters: PrimoEncounter[] | null;
-  plans: PrimoPlan[] | null;
+  appointments: GoatAppointment[] | null;
+  encounters: GoatEncounter[] | null;
+  plans: GoatPlan[] | null;
   diagnoses: Array<{ code: string; description: string }> | null;
   details: { discharge: string } | null;
   billing: { billed: string; paid: string; paidDate: string; rbSent: string } | null;
@@ -112,34 +112,34 @@ export interface PrimoContext {
 // Output
 // ---------------------------------------------------------------------------
 
-export interface PrimoAnswer {
+export interface GoatAnswer {
   title: string;
   lines: string[];
   /** Where the answer was read from, in words. */
   source: string;
-  section: PrimoSection;
+  section: GoatSection;
   /** Something worth a second look, e.g. a gap or an unreviewed report. */
   flag?: string;
 }
 
-export interface PrimoHit {
+export interface GoatHit {
   kind: "Note" | "SOAP" | "X-Ray findings" | "MRI/CT findings" | "Specialist" | "Prior care" | "Alert";
   title: string;
   snippet: string;
   date: string | null;
-  section: PrimoSection;
+  section: GoatSection;
   score: number;
 }
 
-export interface PrimoResult {
-  answers: PrimoAnswer[];
-  hits: PrimoHit[];
+export interface GoatResult {
+  answers: GoatAnswer[];
+  hits: GoatHit[];
   /** Words searched for, for highlighting. */
   terms: string[];
 }
 
 /** Breaks between visits shorter than this are normal scheduling. */
-export const PRIMO_GAP_DAYS = 14;
+export const GOAT_GAP_DAYS = 14;
 
 // ---------------------------------------------------------------------------
 // Dates
@@ -250,7 +250,7 @@ function norm(status: string): string {
 }
 
 /** Unique days the patient was actually seen: checked-in/out appointments plus encounters. */
-function attendedDays(ctx: PrimoContext): number[] {
+function attendedDays(ctx: GoatContext): number[] {
   const days = new Set<number>();
   for (const a of ctx.appointments ?? []) {
     if (!ATTENDED.has(norm(a.status))) continue;
@@ -264,13 +264,13 @@ function attendedDays(ctx: PrimoContext): number[] {
   return [...days].sort((a, b) => a - b);
 }
 
-function upcoming(ctx: PrimoContext, today: number): PrimoAppointment[] {
+function upcoming(ctx: GoatContext, today: number): GoatAppointment[] {
   return (ctx.appointments ?? [])
     .filter((a) => UPCOMING.has(norm(a.status)) && (dayStamp(a.date) ?? -1) >= today)
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 }
 
-function hidden(title: string, section: PrimoSection): PrimoAnswer {
+function hidden(title: string, section: GoatSection): GoatAnswer {
   return {
     title,
     lines: ["That section is hidden for your account, so I can't read it."],
@@ -285,7 +285,7 @@ const APPTS_SOURCE = "Appointments / Encounters";
 // Topic answers
 // ---------------------------------------------------------------------------
 
-function visitsAnswer(ctx: PrimoContext, today: number, focus: "next" | "last" | "first" | null): PrimoAnswer {
+function visitsAnswer(ctx: GoatContext, today: number, focus: "next" | "last" | "first" | null): GoatAnswer {
   if (ctx.appointments === null) return hidden("Visits", "appointments");
   const appts = ctx.appointments;
   const counts = { attended: 0, upcoming: 0, canceled: 0, noShow: 0, pastUnmarked: 0 };
@@ -350,22 +350,22 @@ function visitsAnswer(ctx: PrimoContext, today: number, focus: "next" | "last" |
   };
 }
 
-function gapsAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
+function gapsAnswer(ctx: GoatContext, today: number): GoatAnswer {
   if (ctx.appointments === null) return hidden("Gaps in care", "appointments");
   const days = attendedDays(ctx).filter((d) => d <= today);
   const lines: string[] = [];
   const doi = dayStamp(ctx.doi);
-  if (doi !== null && days.length && days[0] - doi > PRIMO_GAP_DAYS) {
+  if (doi !== null && days.length && days[0] - doi > GOAT_GAP_DAYS) {
     lines.push(`First visit was ${days[0] - doi} days after the date of injury (${fmtDay(doi)} → ${fmtDay(days[0])}).`);
   }
   for (let i = 1; i < days.length; i++) {
     const span = days[i] - days[i - 1];
-    if (span > PRIMO_GAP_DAYS) {
+    if (span > GOAT_GAP_DAYS) {
       lines.push(`${span} days with no visit: ${fmtDay(days[i - 1])} → ${fmtDay(days[i])}.`);
     }
   }
   const last = days[days.length - 1];
-  if (last !== undefined && !upcoming(ctx, today).length && today - last > PRIMO_GAP_DAYS) {
+  if (last !== undefined && !upcoming(ctx, today).length && today - last > GOAT_GAP_DAYS) {
     lines.push(`${today - last} days since the last visit (${fmtDay(last)}), and nothing is scheduled.`);
   }
   if (!days.length) {
@@ -378,14 +378,14 @@ function gapsAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
   }
   return {
     title: "Gaps in care",
-    lines: lines.length ? lines : [`No breaks longer than ${PRIMO_GAP_DAYS} days across ${days.length} visits.`],
+    lines: lines.length ? lines : [`No breaks longer than ${GOAT_GAP_DAYS} days across ${days.length} visits.`],
     source: `${APPTS_SOURCE} (checked-in/out visits and encounters)`,
     section: "appointments",
-    flag: lines.length ? `Breaks longer than ${PRIMO_GAP_DAYS} days are listed.` : undefined,
+    flag: lines.length ? `Breaks longer than ${GOAT_GAP_DAYS} days are listed.` : undefined,
   };
 }
 
-function datesAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
+function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
   const doi = dayStamp(ctx.doi);
   const ie = dayStamp(ctx.initialExam);
   const lines = [
@@ -416,7 +416,7 @@ function clip(text: string, max = 600): string {
   return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t;
 }
 
-function imagingAnswer(ctx: PrimoContext, which: "xray" | "mri"): PrimoAnswer {
+function imagingAnswer(ctx: GoatContext, which: "xray" | "mri"): GoatAnswer {
   const list = ctx.imaging.filter((i) => (which === "xray" ? i.modality === "X-Ray" : i.modality !== "X-Ray"));
   const label = which === "xray" ? "X-Ray" : "MRI / CT";
   const lines: string[] = [];
@@ -442,7 +442,7 @@ function imagingAnswer(ctx: PrimoContext, which: "xray" | "mri"): PrimoAnswer {
   };
 }
 
-function specialistAnswer(ctx: PrimoContext): PrimoAnswer {
+function specialistAnswer(ctx: GoatContext): GoatAnswer {
   const lines: string[] = [];
   const flags: string[] = [];
   for (const s of ctx.specialists) {
@@ -464,7 +464,7 @@ function specialistAnswer(ctx: PrimoContext): PrimoAnswer {
   };
 }
 
-function planAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
+function planAnswer(ctx: GoatContext, today: number): GoatAnswer {
   if (ctx.plans === null) return hidden("Treatment plan", "treatmentPlan");
   if (!ctx.plans.length) {
     return { title: "Treatment plan", lines: ["No treatment plan set up yet."], source: "Treatment Plan", section: "treatmentPlan" };
@@ -491,7 +491,7 @@ function planAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
   return { title: "Treatment plan", lines, source: "Treatment Plan", section: "treatmentPlan" };
 }
 
-function diagnosisAnswer(ctx: PrimoContext): PrimoAnswer {
+function diagnosisAnswer(ctx: GoatContext): GoatAnswer {
   if (ctx.diagnoses === null) return hidden("Diagnoses", "diagnosis");
   return {
     title: "Diagnoses",
@@ -503,7 +503,7 @@ function diagnosisAnswer(ctx: PrimoContext): PrimoAnswer {
   };
 }
 
-function billingAnswer(ctx: PrimoContext): PrimoAnswer {
+function billingAnswer(ctx: GoatContext): GoatAnswer {
   if (ctx.billing === null) return hidden("Billing", "details");
   const b = ctx.billing;
   const lines = [
@@ -514,7 +514,7 @@ function billingAnswer(ctx: PrimoContext): PrimoAnswer {
   return { title: "Billing", lines, source: "Additional Details", section: "details" };
 }
 
-function caseAnswer(ctx: PrimoContext): PrimoAnswer {
+function caseAnswer(ctx: GoatContext): GoatAnswer {
   return {
     title: "Case",
     lines: [
@@ -529,7 +529,7 @@ function caseAnswer(ctx: PrimoContext): PrimoAnswer {
   };
 }
 
-function contactAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
+function contactAnswer(ctx: GoatContext, today: number): GoatAnswer {
   const dob = dayStamp(ctx.dob);
   let age = "";
   if (dob !== null) {
@@ -552,7 +552,7 @@ function contactAnswer(ctx: PrimoContext, today: number): PrimoAnswer {
   };
 }
 
-function notesAnswer(ctx: PrimoContext): PrimoAnswer {
+function notesAnswer(ctx: GoatContext): GoatAnswer {
   if (ctx.notes === null) return hidden("Case notes", "notes");
   return {
     title: "Case notes",
@@ -562,7 +562,7 @@ function notesAnswer(ctx: PrimoContext): PrimoAnswer {
   };
 }
 
-function priorCareAnswer(ctx: PrimoContext): PrimoAnswer {
+function priorCareAnswer(ctx: GoatContext): GoatAnswer {
   return {
     title: "Prior care",
     lines: [ctx.priorCare.trim() ? clip(ctx.priorCare) : "Nothing entered for prior care."],
@@ -592,10 +592,10 @@ function scoreText(text: string, terms: string[]): number {
   return terms.reduce((n, t) => (lower.includes(t) ? n + 1 : n), 0);
 }
 
-function searchPage(ctx: PrimoContext, terms: string[]): PrimoHit[] {
+function searchPage(ctx: GoatContext, terms: string[]): GoatHit[] {
   if (!terms.length) return [];
-  const hits: PrimoHit[] = [];
-  const add = (kind: PrimoHit["kind"], title: string, text: string, date: string | null, section: PrimoSection) => {
+  const hits: GoatHit[] = [];
+  const add = (kind: GoatHit["kind"], title: string, text: string, date: string | null, section: GoatSection) => {
     if (!text?.trim()) return;
     const score = scoreText(text, terms);
     if (score > 0) hits.push({ kind, title, snippet: snippetAround(text, terms), date, section, score });
@@ -630,12 +630,12 @@ function searchPage(ctx: PrimoContext, terms: string[]): PrimoHit[] {
 
 // ---------------------------------------------------------------------------
 
-export function askPrimo(ctx: PrimoContext, question: string): PrimoResult {
+export function askGoat(ctx: GoatContext, question: string): GoatResult {
   const tokens = tokenize(question);
   const text = question.toLowerCase();
   const today = dayStamp(ctx.today) ?? Math.floor(Date.now() / 86_400_000);
-  const answers: PrimoAnswer[] = [];
-  const push = (a: PrimoAnswer) => {
+  const answers: GoatAnswer[] = [];
+  const push = (a: GoatAnswer) => {
     if (!answers.some((x) => x.title === a.title)) answers.push(a);
   };
 

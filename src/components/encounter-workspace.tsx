@@ -52,6 +52,7 @@ import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-pre
 import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { QuickGlance } from "@/components/quick-glance";
+import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
 import {
@@ -3871,6 +3872,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
               notes={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
               patient={selectedPatient}
+            />
+          )}
+          {/* G.O.A.T. — ask about this patient while charting. Same engine as the
+              patient page, reading the stored patient file; answers open the
+              patient file in a new tab so this encounter stays put. */}
+          {selectedPatient && (
+            <EncounterGoat
+              appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
+              billingRecord={getPatientBillingRecord(selectedPatient.id)}
+              encounters={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
+              patient={selectedPatient}
+              plans={getPlansForPatient(selectedPatient.id)}
             />
           )}
           {/* Case Notes — mirrors the patient page's Notes box (shared store).

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { askPrimo, type PrimoContext, type PrimoResult, type PrimoSection } from "@/lib/primo";
+import { askGoat, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
 
 const SUGGESTIONS = [
   "When is the next visit?",
@@ -12,7 +12,7 @@ const SUGGESTIONS = [
   "Diagnoses?",
 ];
 
-const SECTION_LABEL: Record<PrimoSection, string> = {
+const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
   notes: "Notes",
   xray: "X-Ray",
@@ -48,24 +48,32 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 }
 
 /**
- * Primo — a question box for this patient. Answers come from the page's own
- * data via askPrimo (rule-based lookups + text search). Nothing is sent
- * anywhere; see src/lib/primo.ts.
+ * G.O.A.T. (Guided Office Answer Tool) — a question box for this patient.
+ * Answers come from the patient file's own
+ * data via askGoat (rule-based lookups + text search). Nothing is sent
+ * anywhere; see src/lib/goat.ts.
  */
-export function PrimoPanel({
+export function GoatPanel({
   context,
   onJump,
+  fileHref,
+  scope = "page",
 }: {
-  context: PrimoContext;
-  onJump?: (section: PrimoSection) => void;
+  context: GoatContext;
+  /** Patient page: scroll to the section an answer came from. */
+  onJump?: (section: GoatSection) => void;
+  /** Elsewhere (Encounters): open the patient file in a new tab instead. */
+  fileHref?: string;
+  /** Wording only: "page" on the patient page, "file" elsewhere. */
+  scope?: "page" | "file";
 }) {
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
 
   // Recomputed from live page data, so an answer updates as the page is edited.
-  const result: PrimoResult | null = useMemo(
-    () => (asked ? askPrimo(context, asked) : null),
+  const result: GoatResult | null = useMemo(
+    () => (asked ? askGoat(context, asked) : null),
     [asked, context],
   );
 
@@ -79,7 +87,8 @@ export function PrimoPanel({
   const nothing = result !== null && result.answers.length === 0 && result.hits.length === 0;
   const firstName = context.patientName.split(",").pop()?.trim() || "this patient";
 
-  const jumpButton = (section: PrimoSection) =>
+  const where = scope === "page" ? "this patient's page" : "this patient's file";
+  const jumpButton = (section: GoatSection) =>
     onJump ? (
       <button
         type="button"
@@ -88,16 +97,29 @@ export function PrimoPanel({
       >
         Go to {SECTION_LABEL[section]} →
       </button>
+    ) : fileHref ? (
+      <a
+        className="shrink-0 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+        href={fileHref}
+        rel="noopener"
+        target="_blank"
+        title={`Opens the patient file (${SECTION_LABEL[section]}) in a new tab`}
+      >
+        Patient file ↗
+      </a>
     ) : null;
 
   return (
-    <article className="panel-card p-3" data-primo-section="primo">
+    <article className="panel-card p-3" data-goat-section="goat">
       <button
         className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
-        <span>Primo</span>
+        <span className="flex min-w-0 items-baseline gap-2" title="G.O.A.T. — Guided Office Answer Tool">
+          <span>G.O.A.T.</span>
+          <span className="truncate text-xs font-normal text-white/85">Guided Office Answer Tool</span>
+        </span>
         <span className="text-xl">{open ? "−" : "+"}</span>
       </button>
       {open && (
@@ -110,7 +132,7 @@ export function PrimoPanel({
             }}
           >
             <input
-              aria-label="Ask Primo about this patient"
+              aria-label="Ask G.O.A.T. about this patient"
               className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={`Ask me about ${firstName}…`}
@@ -129,8 +151,8 @@ export function PrimoPanel({
           {!result && (
             <>
               <p className="mt-3 text-sm text-[var(--text-muted)]">
-                Hi! I can look things up on this patient&apos;s page: visits, gaps, imaging, the plan,
-                diagnoses, billing and notes. Try one:
+                Hi! I can look things up in {where}: visits, gaps, imaging, the plan, diagnoses,
+                billing and notes. Try one:
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {SUGGESTIONS.map((s) => (
@@ -190,7 +212,7 @@ export function PrimoPanel({
               {result.hits.length > 0 && (
                 <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
                   <div className="text-sm font-semibold">
-                    {result.answers.length ? "Also mentioned on this page" : "Mentioned on this page"} ({result.hits.length})
+                    {result.answers.length ? "Also mentioned" : "Mentioned"} in {scope === "page" ? "this page" : "the patient file"} ({result.hits.length})
                   </div>
                   <ul className="mt-1 space-y-2">
                     {result.hits.map((h, i) => (
@@ -212,8 +234,8 @@ export function PrimoPanel({
 
               {nothing && (
                 <p className="rounded-xl bg-[var(--bg-soft)] p-2.5 text-sm">
-                  I couldn&apos;t find that on this patient&apos;s page. I only read what&apos;s here and I
-                  won&apos;t guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
+                  I couldn&apos;t find that in {where}. I only read what&apos;s there and I won&apos;t
+                  guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
                   diagnoses, billing or notes.
                 </p>
               )}
@@ -221,7 +243,7 @@ export function PrimoPanel({
           )}
 
           <p className="mt-3 text-[11px] text-[var(--text-muted)]">
-            Primo reads only this patient&apos;s page. Nothing leaves NoteGoat. Uploaded files aren&apos;t read yet.
+            G.O.A.T. reads only {where}. Nothing leaves NoteGoat. Uploaded files aren&apos;t read yet.
           </p>
         </div>
       )}
