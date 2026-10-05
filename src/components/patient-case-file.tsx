@@ -5874,18 +5874,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 layout where this section is already half-width. */}
             <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-base font-semibold">Scheduled Appointments</h4>
-                  <button
-                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold hover:bg-[var(--bg-soft)]"
-                    onClick={toggleAppointmentDateSort}
-                    title={`Sorted ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
-                    aria-label={`Sort by date: ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
-                    type="button"
-                  >
-                    {appointmentDateSort === "newest" ? "Newest first ↓" : "Oldest first ↑"}
-                  </button>
-                </div>
+                <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full table-fixed border-collapse text-sm">
                     <thead>
@@ -5899,7 +5888,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             columns on purpose and overlay the row while open
                             (see the editing spans below) rather than making
                             the columns reserve space they only need mid-edit. */}
-                        <th className="w-[6.5rem] px-2 py-2">Date</th>
+                        <th className="w-[6.5rem] px-2 py-2">
+                          {/* One tap flips date order; the choice is saved for this page. */}
+                          <button
+                            type="button"
+                            onClick={toggleAppointmentDateSort}
+                            className="inline-flex items-center gap-1 font-semibold hover:text-[var(--brand-primary)]"
+                            title={`Date: ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Tap to flip.`}
+                            aria-label={`Sort by date, currently ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Tap to flip.`}
+                          >
+                            Date
+                            <span aria-hidden className="text-xs leading-none">{appointmentDateSort === "newest" ? "↓" : "↑"}</span>
+                          </button>
+                        </th>
                         <th className="w-[2.5rem] px-1 py-2">Day</th>
                         <th className="w-[6.5rem] px-2 py-2">Time</th>
                         <th className="px-2 py-2">Type</th>
