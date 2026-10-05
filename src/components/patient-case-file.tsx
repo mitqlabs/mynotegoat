@@ -11,6 +11,7 @@ import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotes } from "@/hooks/use-case-notes";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
@@ -2379,6 +2380,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     },
     [patientAppointmentRecords, patientEncounterRecords],
   );
+  // Display order for the Scheduled Appointments table. appointmentRows stays
+  // chronological for other uses (e.g. the re-link dropdown); this only flips
+  // what's shown. Saved per page, separately from the Encounters page;
+  // defaults to newest first (most recent appointment on top).
+  const { direction: appointmentDateSort, toggle: toggleAppointmentDateSort } =
+    useDateSortPreference(DATE_SORT_KEYS.patientAppointments, "newest");
+  const displayedAppointmentRows = useMemo(
+    () => (appointmentDateSort === "newest" ? [...appointmentRows].reverse() : appointmentRows),
+    [appointmentRows, appointmentDateSort],
+  );
   const checkedInCount = useMemo(
     () => patientAppointmentRecords.filter((entry) => entry.status === "Check In").length,
     [patientAppointmentRecords],
@@ -4008,11 +4019,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // Open the time editor on the next appointment row (used to "run through" a
   // series of time changes with Enter — type, Enter, type, Enter …).
   const advanceToNextTimeEdit = (currentAppointmentId: string) => {
-    const idx = appointmentRows.findIndex(
+    // Walk the rows in the order they're shown, so Enter always moves to the
+    // row below whichever date order is selected.
+    const idx = displayedAppointmentRows.findIndex(
       (r) => r.appointment?.id === currentAppointmentId,
     );
     if (idx < 0) return;
-    const next = appointmentRows.slice(idx + 1).find((r) => r.appointment);
+    const next = displayedAppointmentRows.slice(idx + 1).find((r) => r.appointment);
     if (next?.appointment) beginQuickTimeEdit(next.appointment);
     else cancelQuickTimeEdit();
   };
@@ -5861,7 +5874,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 layout where this section is already half-width. */}
             <div className="mt-3">
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                <h4 className="text-base font-semibold">Scheduled Appointments</h4>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-base font-semibold">Scheduled Appointments</h4>
+                  <button
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold hover:bg-[var(--bg-soft)]"
+                    onClick={toggleAppointmentDateSort}
+                    title={`Sorted ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
+                    aria-label={`Sort by date: ${appointmentDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
+                    type="button"
+                  >
+                    {appointmentDateSort === "newest" ? "Newest first ↓" : "Oldest first ↑"}
+                  </button>
+                </div>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full table-fixed border-collapse text-sm">
                     <thead>
@@ -5885,7 +5909,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {appointmentRows.map((row) => {
+                      {displayedAppointmentRows.map((row) => {
                         const linkedEncounter = row.linkedEncounter;
                         const appointment = row.appointment;
                         // "Day" column: short weekday abbreviation

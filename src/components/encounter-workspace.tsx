@@ -48,6 +48,7 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { QuickGlance } from "@/components/quick-glance";
@@ -1037,7 +1038,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
   const [openChargesPanel, setOpenChargesPanel] = useState(false);
   const [chargeSearch, setChargeSearch] = useState("");
-  const [aptDateSort, setAptDateSort] = useState<"newest" | "oldest">("oldest"); // chronological by default; ↓ flips to newest first
+  // Date order of the Appointments list. Saved per page (separately from the
+  // patient page); defaults to oldest first (chronological).
+  const { direction: aptDateSort, toggle: toggleAptDateSort } = useDateSortPreference(
+    DATE_SORT_KEYS.encountersPage,
+    "oldest",
+  );
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showPriorChargesPreview, setShowPriorChargesPreview] = useState(false);
 
@@ -3505,12 +3511,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           Hide completed
                         </label>
                         <button
-                          className="rounded border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold hover:bg-[var(--bg-soft)]"
-                          onClick={() => setAptDateSort((prev) => (prev === "newest" ? "oldest" : "newest"))}
-                          title={`Sort by date: ${aptDateSort === "newest" ? "Newest first" : "Oldest first"}`}
+                          className="whitespace-nowrap rounded border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[10px] font-semibold hover:bg-[var(--bg-soft)]"
+                          onClick={toggleAptDateSort}
+                          title={`Sorted ${aptDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
+                          aria-label={`Sort by date: ${aptDateSort === "newest" ? "newest first" : "oldest first"}. Click to switch.`}
                           type="button"
                         >
-                          {aptDateSort === "newest" ? "↓" : "↑"}
+                          {aptDateSort === "newest" ? "Newest first ↓" : "Oldest first ↑"}
                         </button>
                       </div>
                     </div>
