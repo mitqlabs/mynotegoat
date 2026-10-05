@@ -10,6 +10,7 @@ const SUGGESTIONS = [
   "X-ray findings?",
   "What's the treatment plan?",
   "Diagnoses?",
+  "How many decompression sessions?",
 ];
 
 const SECTION_LABEL: Record<GoatSection, string> = {
@@ -57,6 +58,8 @@ export function GoatPanel({
   context,
   onJump,
   fileHref,
+  onOpenEncounter,
+  currentEncounterId,
   scope = "page",
 }: {
   context: GoatContext;
@@ -64,6 +67,10 @@ export function GoatPanel({
   onJump?: (section: GoatSection) => void;
   /** Elsewhere (Encounters): open the patient file in a new tab instead. */
   fileHref?: string;
+  /** Open the encounter note a SOAP snippet came from. */
+  onOpenEncounter?: (encounterId: string) => void;
+  /** The note already open (Encounters page), so its snippets say "This note". */
+  currentEncounterId?: string;
   /** Wording only: "page" on the patient page, "file" elsewhere. */
   scope?: "page" | "file";
 }) {
@@ -221,7 +228,22 @@ export function GoatPanel({
                           <span className="min-w-0 truncate">
                             <span className="font-semibold text-[var(--text-main)]">{h.kind}</span> · {h.title}
                           </span>
-                          {jumpButton(h.section)}
+                          {h.encounterId && onOpenEncounter ? (
+                            h.encounterId === currentEncounterId ? (
+                              <span className="shrink-0 text-xs font-semibold">This note</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="shrink-0 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+                                onClick={() => onOpenEncounter(h.encounterId as string)}
+                                title={`Open the ${h.date ?? ""} encounter note`}
+                              >
+                                Open note →
+                              </button>
+                            )
+                          ) : (
+                            jumpButton(h.section)
+                          )}
                         </div>
                         <p className="mt-0.5">
                           <Highlight text={h.snippet} terms={result.terms} />

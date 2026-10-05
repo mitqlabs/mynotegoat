@@ -25,6 +25,8 @@ export function EncounterGoat({
   encounters,
   plans,
   billingRecord,
+  currentEncounterId,
+  onOpenEncounter,
 }: {
   patient: PatientRecord;
   appointments: ScheduleAppointmentRecord[];
@@ -32,6 +34,10 @@ export function EncounterGoat({
   plans: TreatmentPlan[];
   /** Stored billing record, if any (usePatientBilling). */
   billingRecord: { billedAmount: number; paidAmount: number; paidDate: string } | null | undefined;
+  /** The note open in the workspace; snippets from it say "This note". */
+  currentEncounterId?: string;
+  /** Switch the workspace to another of this patient's notes. */
+  onOpenEncounter?: (encounterId: string) => void;
 }) {
   const { notes } = useCaseNotes(patient.id, patient.matrix?.notes ?? "");
   const { entries: diagnoses } = usePatientDiagnoses(patient.id);
@@ -69,5 +75,13 @@ export function EncounterGoat({
     });
   }, [patient, appointments, encounters, notes, diagnoses, plans, macroLibrary.templates, billingRecord, sectionModes, sectionHidden, canView]);
 
-  return <GoatPanel context={context} fileHref={`/patients/${encodeURIComponent(patient.id)}`} scope="file" />;
+  return (
+    <GoatPanel
+      context={context}
+      currentEncounterId={currentEncounterId}
+      fileHref={`/patients/${encodeURIComponent(patient.id)}`}
+      onOpenEncounter={onOpenEncounter}
+      scope="file"
+    />
+  );
 }

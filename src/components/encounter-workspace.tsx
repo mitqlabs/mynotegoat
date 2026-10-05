@@ -3881,7 +3881,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             <EncounterGoat
               appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
               billingRecord={getPatientBillingRecord(selectedPatient.id)}
+              currentEncounterId={selectedEncounter?.id}
               encounters={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
+              onOpenEncounter={setSelectedEncounterId}
               patient={selectedPatient}
               plans={getPlansForPatient(selectedPatient.id)}
             />

@@ -37,11 +37,18 @@ export interface GoatAppointment {
 }
 
 export interface GoatEncounter {
+  /** Encounter note id, so a hit can open that note. */
+  id: string;
   /** MM/DD/YYYY */
   date: string;
   type: string;
   signed: boolean;
+  /** Stored as editor HTML; G.O.A.T. reads it as plain text. */
   soap: { subjective: string; objective: string; assessment: string; plan: string };
+  /** Macros run in the note (e.g. "Spinal Decompression") with their picked answers ("L5-S1"). */
+  treatments: Array<{ name: string; answers: string[] }>;
+  /** Charge names and codes only (no amounts). */
+  charges: Array<{ name: string; code: string }>;
 }
 
 export interface GoatImaging {
@@ -128,6 +135,8 @@ export interface GoatHit {
   snippet: string;
   date: string | null;
   section: GoatSection;
+  /** SOAP hits: the note it came from. */
+  encounterId?: string;
   score: number;
 }
 
@@ -411,8 +420,35 @@ function imagingStatus(i: { sentDate: string; scheduledDate: string; reportRecei
   return { text: "no dates entered" };
 }
 
+const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "#39": "'" };
+
+/**
+ * Editor HTML (SOAP notes, macro output) → readable plain text. Block ends and
+ * <br> become line breaks, every other tag is dropped, entities are decoded.
+ * Plain text passes through unchanged.
+ */
+export function plainText(value: string): string {
+  const s = value ?? "";
+  if (!/[<&]/.test(s)) return s;
+  return s
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr|ul|ol)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+\d*);/gi, (m, code: string) => {
+      const c = code.toLowerCase();
+      if (c in ENTITIES) return ENTITIES[c];
+      if (c.startsWith("#x")) return String.fromCodePoint(Number.parseInt(c.slice(2), 16) || 32);
+      if (c.startsWith("#")) return String.fromCodePoint(Number(c.slice(1)) || 32);
+      return m;
+    })
+    .replace(/[ \t\u00a0]+/g, " ")
+    .replace(/ *\n[\s]*/g, "\n")
+    .trim();
+}
+
 function clip(text: string, max = 600): string {
-  const t = text.trim();
+  const t = plainText(text).trim();
   return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t;
 }
 
@@ -572,6 +608,201 @@ function priorCareAnswer(ctx: GoatContext): GoatAnswer {
 }
 
 // ---------------------------------------------------------------------------
+// Decompression sessions
+// ---------------------------------------------------------------------------
+
+export type DecompRegion = "Lumbar" | "Cervical" | "Thoracic";
+const DECOMP_REGIONS: DecompRegion[] = ["Lumbar", "Cervical", "Thoracic"];
+
+/** A decompression treatment, appointment type or charge, but not "Begin decompression" style plan notes. */
+export function isDecompression(name: string): boolean {
+  return /decompress/i.test(name ?? "") && !/\b(begin|start|recommend|consider|consult|eval|discuss)/i.test(name ?? "");
+}
+
+/** Regions named in a type, answer or charge: "Lumbar (flat)", "L5-S1", "Spinal Decompression - C/S", … */
+export function decompRegions(value: string): DecompRegion[] {
+  const s = value ?? "";
+  const out: DecompRegion[] = [];
+  if (/lumbar|lumbo|low(er)? back|\bl\/s\b|\bL[1-5]\s*[-/]\s*(L[1-5]|S1)\b/i.test(s)) out.push("Lumbar");
+  if (/cervical|neck|\bc\/s\b|\bC[1-7]\s*[-/]\s*(C[1-7]|T1)\b/i.test(s)) out.push("Cervical");
+  if (/thoracic|mid[- ]?back|\bt\/s\b|\bT\d{1,2}\s*[-/]\s*(T\d{1,2}|L1)\b/i.test(s)) out.push("Thoracic");
+  return out;
+}
+
+interface DecompDay {
+  stamp: number;
+  regions: Set<DecompRegion>;
+  /** Picked levels / programs as written, e.g. "L5-S1", "Lumbar (flat)". */
+  details: Set<string>;
+  sources: Set<string>;
+}
+
+interface DecompData {
+  done: DecompDay[];
+  upcoming: Array<{ stamp: number; regions: DecompRegion[]; time: string }>;
+  /** Appointments that didn't happen (or weren't marked), with their regions. */
+  missed: Array<{ kind: "canceled" | "noShow" | "pastUnmarked"; regions: DecompRegion[] }>;
+}
+
+function collectDecompression(ctx: GoatContext, today: number): DecompData {
+  const days = new Map<number, DecompDay>();
+  const day = (stamp: number) => {
+    let d = days.get(stamp);
+    if (!d) {
+      d = { stamp, regions: new Set(), details: new Set(), sources: new Set() };
+      days.set(stamp, d);
+    }
+    return d;
+  };
+  for (const e of ctx.encounters ?? []) {
+    const stamp = dayStamp(e.date);
+    if (stamp === null) continue;
+    const typeHit = isDecompression(e.type);
+    const runs = e.treatments.filter((t) => isDecompression(t.name));
+    const charges = e.charges.filter((c) => c.code.trim().toUpperCase() === "S9090" || isDecompression(c.name));
+    if (!typeHit && !runs.length && !charges.length) continue;
+    const d = day(stamp);
+    if (typeHit) {
+      d.sources.add("encounter type");
+      decompRegions(e.type).forEach((r) => d.regions.add(r));
+    }
+    for (const run of runs) {
+      d.sources.add(`${run.name} in the note`);
+      decompRegions(run.name).forEach((r) => d.regions.add(r));
+      for (const answer of run.answers) {
+        const found = decompRegions(answer);
+        if (found.length) {
+          found.forEach((r) => d.regions.add(r));
+          // Short picks ("L5-S1", "Lumbar (flat)") are shown; long free text isn't.
+          if (answer.trim().length <= 40) d.details.add(answer.trim());
+        }
+      }
+    }
+    for (const c of charges) {
+      d.sources.add(c.code ? `${c.code} charge` : "charge");
+      decompRegions(c.name).forEach((r) => d.regions.add(r));
+    }
+  }
+  const out: DecompData = { done: [], upcoming: [], missed: [] };
+  for (const a of ctx.appointments ?? []) {
+    if (!isDecompression(a.type)) continue;
+    const stamp = dayStamp(a.date);
+    if (stamp === null) continue;
+    const status = norm(a.status);
+    if (ATTENDED.has(status)) {
+      const d = day(stamp);
+      d.sources.add("appointment");
+      decompRegions(a.type).forEach((r) => d.regions.add(r));
+    } else if (status === "canceled" || status === "cancelled") {
+      out.missed.push({ kind: "canceled", regions: decompRegions(a.type) });
+    } else if (status === "no show") {
+      out.missed.push({ kind: "noShow", regions: decompRegions(a.type) });
+    } else if (UPCOMING.has(status)) {
+      if (stamp >= today) out.upcoming.push({ stamp, regions: decompRegions(a.type), time: a.startTime });
+      else if (!days.has(stamp)) out.missed.push({ kind: "pastUnmarked", regions: decompRegions(a.type) });
+    }
+  }
+  out.done = [...days.values()].sort((a, b) => a.stamp - b.stamp);
+  out.upcoming.sort((a, b) => a.stamp - b.stamp || a.time.localeCompare(b.time));
+  return out;
+}
+
+/** One session per region per day (cervical + lumbar on one day = 2); a day with no region named = 1. */
+function sessionsOn(d: DecompDay, region: DecompRegion | null): number {
+  if (region) return d.regions.has(region) ? 1 : 0;
+  return Math.max(1, d.regions.size);
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function decompressionAnswer(ctx: GoatContext, today: number, region: DecompRegion | null): GoatAnswer {
+  const title = region ? `${region} decompression` : "Decompression sessions";
+  if (ctx.appointments === null && ctx.encounters === null) return hidden(title, "appointments");
+  const data = collectDecompression(ctx, today);
+  const label = region ? `${region.toLowerCase()} decompression` : "decompression";
+  const days = data.done.filter((d) => sessionsOn(d, region) > 0);
+  const total = days.reduce((n, d) => n + sessionsOn(d, region), 0);
+  const lines: string[] = [];
+  const flags: string[] = [];
+
+  if (!total) {
+    lines.push(`No ${label} sessions found in the appointments or encounter notes.`);
+  } else {
+    const first = days[0].stamp;
+    const last = days[days.length - 1].stamp;
+    lines.push(
+      `${plural(total, `${label} session`)} done${region ? "" : ` on ${plural(days.length, "day")}`}: first ${fmtDay(first)}, last ${fmtDay(last)} (${relative(last, today)}).`,
+    );
+  }
+  if (!region && total) {
+    const parts = DECOMP_REGIONS.map((r) => [r, data.done.filter((d) => d.regions.has(r)).length] as const)
+      .filter(([, n]) => n > 0)
+      .map(([r, n]) => `${r} ${n}`);
+    const unknown = data.done.filter((d) => d.regions.size === 0).length;
+    if (unknown) parts.push(`region not recorded ${unknown}`);
+    if (parts.length) lines.push(`By region: ${parts.join(" · ")}.`);
+  }
+  if (region) {
+    const others = DECOMP_REGIONS.filter((r) => r !== region)
+      .map((r) => [r, data.done.filter((d) => d.regions.has(r)).length] as const)
+      .filter(([, n]) => n > 0)
+      .map(([r, n]) => `${r.toLowerCase()} ${n}`);
+    const unknown = data.done.filter((d) => d.regions.size === 0).length;
+    if (others.length) lines.push(`Also on file: ${others.join(", ")}.`);
+    if (unknown) {
+      lines.push(`${plural(unknown, "other decompression day")} ${unknown === 1 ? "doesn't" : "don't"} say which region, so ${unknown === 1 ? "it isn't" : "they aren't"} counted here.`);
+    }
+  }
+  const upcoming = data.upcoming.filter((u) => !region || u.regions.includes(region));
+  if (upcoming.length) {
+    const next = upcoming[0];
+    lines.push(
+      `${upcoming.length} more scheduled; next ${fmtDay(next.stamp)}${next.time ? ` at ${fmtTime(next.time)}` : ""} (${relative(next.stamp, today)}).`,
+    );
+  }
+  const missed = data.missed.filter((m) => !region || m.regions.includes(region));
+  const canceled = missed.filter((m) => m.kind === "canceled").length;
+  const noShow = missed.filter((m) => m.kind === "noShow").length;
+  const pastUnmarked = missed.filter((m) => m.kind === "pastUnmarked").length;
+  if (canceled || noShow) {
+    lines.push(`Not counted: ${[canceled ? `${canceled} canceled` : "", noShow ? `${noShow} no-show` : ""].filter(Boolean).join(", ")} ${label} appointment${canceled + noShow === 1 ? "" : "s"}.`);
+  }
+  if (pastUnmarked) flags.push(`${plural(pastUnmarked, `past ${label} appointment`)} still marked Scheduled.`);
+  if (!total && ctx.plans?.some((p) => p.regions.some(isDecompression))) {
+    lines.push("The treatment plan includes decompression, but no sessions are recorded yet.");
+  }
+  if (days.length) {
+    const MAX = 12;
+    const recent = days.slice(-MAX).reverse();
+    const rows = recent.map((d) => {
+      // "Lumbar L5-S1", "Cervical (flat)": the region plus whatever was picked for it.
+      const regions =
+        [...d.regions]
+          .map((r) => {
+            const extras = [...d.details]
+              .filter((x) => decompRegions(x).includes(r) && x.toLowerCase() !== r.toLowerCase())
+              .map((x) => (x.toLowerCase().startsWith(r.toLowerCase()) ? x.slice(r.length).trim() : x));
+            return extras.length ? `${r} ${extras.join(", ")}` : r;
+          })
+          .join(" + ") || "region not recorded";
+      return `• ${fmtDay(d.stamp)}: ${regions}. From: ${[...d.sources].join(", ")}`;
+    });
+    if (days.length > MAX) rows.push(`…and ${plural(days.length - MAX, "earlier day")}.`);
+    lines.push(`Dates, newest first:\n${rows.join("\n")}`);
+  }
+  if (ctx.encounters === null) lines.push("Encounter notes are hidden for your account, so this counts appointments only.");
+  return {
+    title,
+    lines,
+    source: "Appointments / Encounters (appointment type, decompression macro, S9090 charge)",
+    section: "appointments",
+    flag: flags.join(" ") || undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Searching the page's own text
 // ---------------------------------------------------------------------------
 
@@ -595,10 +826,19 @@ function scoreText(text: string, terms: string[]): number {
 function searchPage(ctx: GoatContext, terms: string[]): GoatHit[] {
   if (!terms.length) return [];
   const hits: GoatHit[] = [];
-  const add = (kind: GoatHit["kind"], title: string, text: string, date: string | null, section: GoatSection) => {
-    if (!text?.trim()) return;
+  const add = (
+    kind: GoatHit["kind"],
+    title: string,
+    raw: string,
+    date: string | null,
+    section: GoatSection,
+    encounterId?: string,
+  ) => {
+    // Match and show readable text only; tags and attributes never count.
+    const text = plainText(raw ?? "");
+    if (!text.trim()) return;
     const score = scoreText(text, terms);
-    if (score > 0) hits.push({ kind, title, snippet: snippetAround(text, terms), date, section, score });
+    if (score > 0) hits.push({ kind, title, snippet: snippetAround(text, terms), date, section, encounterId, score });
   };
   if (ctx.notes !== null) add("Note", "Case notes", ctx.notes, null, "notes");
   for (const a of ctx.alerts) add("Alert", "Patient alert", a, null, "info");
@@ -622,7 +862,7 @@ function searchPage(ctx: GoatContext, terms: string[]): GoatHit[] {
       ["P", e.soap.plan],
     ];
     for (const [letter, text] of sections) {
-      add("SOAP", `${e.date} · ${letter}${e.type ? ` · ${e.type}` : ""}`, text, e.date, "appointments");
+      add("SOAP", `${e.date} · ${letter}${e.type ? ` · ${e.type}` : ""}`, text, e.date, "appointments", e.id || undefined);
     }
   }
   return hits.sort((a, b) => b.score - a.score || (dayStamp(b.date ?? "") ?? 0) - (dayStamp(a.date ?? "") ?? 0));
@@ -650,8 +890,16 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
         : null;
   const asksCount = text.includes("how many") || text.includes("so far") || has(tokens, ["count", "total"]);
 
+  const asksDecomp = has(tokens, ["decomp", "decompress"]) || text.includes("spinal decompression");
+  if (asksDecomp) {
+    // "lumbar decompression", "L/S decompression", "neck decompression", …
+    const asked = decompRegions(question);
+    if (asked.length) asked.forEach((r) => push(decompressionAnswer(ctx, today, r)));
+    else push(decompressionAnswer(ctx, today, null));
+  }
+
   if (asksGap) push(gapsAnswer(ctx, today));
-  if (!asksGap && (visitWords || (focus && !has(tokens, ["xray", "mri", "specialist", "plan"])) || (asksCount && !has(tokens, ["bill", "diagnos"])))) {
+  if (!asksGap && !(asksDecomp && !visitWords) && (visitWords || (focus && !has(tokens, ["xray", "mri", "specialist", "plan"])) || (asksCount && !has(tokens, ["bill", "diagnos"])))) {
     push(visitsAnswer(ctx, today, focus));
   }
   if (has(tokens, ["doi", "injur", "accident", "loss", "crash", "initial", "ie", "exam", "discharg"]) || text.includes("date of")) {
@@ -665,7 +913,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   if (has(tokens, ["specialist", "referr", "refer", "consult", "pm", "ortho", "neuro", "recommend"]) || text.includes("pain management")) {
     push(specialistAnswer(ctx));
   }
-  if (has(tokens, ["plan", "frequency", "weekly", "week", "regions", "decompress"]) || text.includes("treatment plan")) push(planAnswer(ctx, today));
+  if (has(tokens, ["plan", "frequency", "weekly", "week", "regions"]) || text.includes("treatment plan")) push(planAnswer(ctx, today));
   if (has(tokens, ["diagnos", "dx", "icd", "code", "codes"])) push(diagnosisAnswer(ctx));
   if (has(tokens, ["bill", "charge", "balance", "paid", "payment", "owe", "money", "cost", "amount", "rb", "reduction"])) push(billingAnswer(ctx));
   if (has(tokens, ["attorney", "lawyer", "firm", "law", "lien", "review", "cash"]) || text.includes("case status") || text.includes("status of the case")) {

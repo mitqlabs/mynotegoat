@@ -10,7 +10,7 @@
  * Encounters access.
  */
 
-import type { GoatContext, GoatImaging, GoatPlan } from "@/lib/goat";
+import type { GoatContext, GoatEncounter, GoatImaging, GoatPlan } from "@/lib/goat";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { EncounterNoteRecord } from "@/lib/encounter-notes";
@@ -80,8 +80,22 @@ export function planToGoat(plan: TreatmentPlan, macroName: (id: string) => strin
   };
 }
 
-export function encounterToGoat(e: EncounterNoteRecord) {
+export function encounterToGoat(e: EncounterNoteRecord): GoatEncounter {
+  const answerText = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : [value])
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim())
+      .filter(Boolean);
   return {
+    id: e.id,
+    // Which macros were run (e.g. Spinal Decompression) and what was picked in
+    // them (e.g. "L5-S1"), so G.O.A.T. can count treatments by region.
+    treatments: (e.macroRuns ?? []).map((run) => ({
+      name: run.macroName ?? "",
+      answers: Object.values(run.answers ?? {}).flatMap(answerText),
+    })),
+    // Names and codes only; amounts stay out.
+    charges: (e.charges ?? []).map((c) => ({ name: c.name ?? "", code: c.procedureCode ?? "" })),
     date: e.encounterDate,
     type: e.appointmentType,
     signed: e.signed,

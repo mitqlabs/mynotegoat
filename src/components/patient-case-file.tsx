@@ -5183,7 +5183,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         />
 
         <div className="lg:col-span-2 xl:col-span-1">
-          <GoatPanel context={goatContext} onJump={jumpToGoatSection} />
+          <GoatPanel context={goatContext} onJump={jumpToGoatSection} onOpenEncounter={canView("encounters") ? openEncounterEditor : undefined} />
         </div>
       </div>
 
