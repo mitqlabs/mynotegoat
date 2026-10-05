@@ -3,16 +3,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { askGoat, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
 
-const SUGGESTIONS = [
-  "When is the next visit?",
-  "How many visits so far?",
-  "Any gaps in care?",
-  "X-ray findings?",
-  "What's the treatment plan?",
-  "Diagnoses?",
-  "How many decompression sessions?",
-];
-
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
   notes: "Notes",
@@ -153,24 +143,10 @@ export function GoatPanel({
           </form>
 
           {!result && (
-            <>
-              <p className="mt-3 text-sm text-[var(--text-muted)]">
-                Hi! I can look things up in {where}: visits, gaps, imaging, the plan, diagnoses,
-                billing and notes. Try one:
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    className="rounded-full bg-[var(--bg-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--line-soft)]"
-                    onClick={() => ask(s)}
-                    type="button"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </>
+            <p className="mt-3 text-sm text-[var(--text-muted)]">
+              Hi! I can look things up in {where}: visits, gaps, imaging, the plan, decompression,
+              diagnoses, billing and notes.
+            </p>
           )}
 
           {result && (
