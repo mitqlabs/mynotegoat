@@ -109,7 +109,7 @@ import { loadOfficeSettings } from "@/lib/office-settings";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
-import { localTodayIso, resolveDischargeDate } from "@/lib/discharge-date";
+import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -2243,7 +2243,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       });
   }, [firstName, lastName, patient.fullName, patient.id, scheduleAppointments]);
   // Discharge date as shown everywhere (Additional Details, Quick Glance,
-  // G.O.A.T., durations, reports): the typed date when there is one, else the
+  // G.O.A.T., durations, reports): the saved date when there is one, else the
   // latest attended Discharge visit. Derived at display time — never saved.
   const dischargeInfo = useMemo(
     () => resolveDischargeDate(dischargeDate, patientAppointmentRecords, localTodayIso()),
@@ -2268,7 +2268,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         s.name.toLowerCase() === caseStatus.toLowerCase() && s.isCaseClosed,
     );
     if (!closedConfig) return;
-    // If the user already typed a discharge date, respect it — but
+    // If the Discharge box already has a saved date, respect it — but
     // mark as handled so a later state churn doesn't try to clobber.
     if (dischargeDate.trim()) {
       dischargeAutoFilledRef.current = true;
@@ -4702,19 +4702,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
-  const initialExamDateValue = parseUsDate(initialExam);
-  const dischargeDateValue = parseUsDate(effectiveDischargeDate);
   const rbSentDateValue = parseUsDate(rbSentDate);
   const paidDateValue = parseUsDate(paidDate);
 
-  const initialToDischarge = formatMonthDayDiff(
-    initialExamDateValue && dischargeDateValue
-      ? getMonthDayDiff(initialExamDateValue, dischargeDateValue)
-      : null,
-  );
-  const dischargeToRb = formatMonthDayDiff(
-    dischargeDateValue && rbSentDateValue ? getMonthDayDiff(dischargeDateValue, rbSentDateValue) : null,
-  );
+  // Same span calculation the Patients list uses (lib/discharge-date).
+  const initialToDischarge = formatMonthDaySpan(monthDaySpan(initialExam, effectiveDischargeDate));
+  const dischargeToRb = formatMonthDaySpan(monthDaySpan(effectiveDischargeDate, rbSentDate));
   const rbToPaid = formatMonthDayDiff(
     rbSentDateValue && paidDateValue ? getMonthDayDiff(rbSentDateValue, paidDateValue) : null,
   );
@@ -7358,8 +7351,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="grid gap-1">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Discharge</span>
-                  {/* Empty field + an attended Discharge visit → its date is shown
-                      (in blue) without being saved. Typing a date overrides it. */}
+                  {/* Empty box + an attended Discharge visit → its date is shown
+                      (in blue) without being saved. A date entered here wins. */}
                   <input
                     className={`rounded-xl border px-3 py-2 ${
                       dischargeInfo.source === "visit"
@@ -7375,7 +7368,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     style={dischargeInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
                     title={
                       dischargeInfo.source === "visit"
-                        ? "From the Discharge visit on the schedule. Type a date to override it."
+                        ? `From the Discharge visit (${dischargeInfo.visit?.status ?? "Checked Out"})`
                         : undefined
                     }
                     value={dischargeInfo.source === "visit" ? dischargeInfo.date : dischargeDate}
@@ -7383,12 +7376,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </label>
                 {dischargeInfo.source === "visit" && dischargeInfo.visit && (
                   <span className="text-xs text-[var(--text-muted)]">
-                    From the Discharge visit ({dischargeInfo.visit.status}). Type a date to override.
+                    From the Discharge visit ({dischargeInfo.visit.status})
                   </span>
                 )}
                 {dischargeInfo.source === "manual" && dischargeInfo.differsFromVisit && dischargeInfo.visit && (
                   <span className="text-xs text-[#9a5b00]">
-                    Entered by hand. The Discharge visit was {dischargeInfo.visit.date} ({dischargeInfo.visit.status}).{" "}
+                    The Discharge box says {dischargeInfo.date} but the Discharge visit was {dischargeInfo.visit.date} (
+                    {dischargeInfo.visit.status}).{" "}
                     <button
                       className="font-semibold text-[var(--brand-primary)] hover:underline"
                       onClick={() => setDischargeDate("")}

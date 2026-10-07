@@ -115,7 +115,7 @@ export interface GoatContext {
   encounters: GoatEncounter[] | null;
   plans: GoatPlan[] | null;
   diagnoses: Array<{ code: string; description: string }> | null;
-  /** discharge: MM/DD/YYYY as shown on the page (typed, or from the Discharge visit). */
+  /** discharge: MM/DD/YYYY as the Discharge box shows it (saved, or from the Discharge visit). */
   details: { discharge: string; dischargeInfo?: DischargeInfo } | null;
   billing: { billed: string; paid: string; paidDate: string; rbSent: string } | null;
   /** The office's words & synonym groups (Settings → G.O.A.T.). */
@@ -422,7 +422,7 @@ function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
         info?.source === "visit" && info.visit
           ? ` (date of the Discharge visit, ${info.visit.status.toLowerCase()})`
           : info?.differsFromVisit && info.visit
-            ? ` (entered in Additional Details; the Discharge visit was ${info.visit.date})`
+            ? ` (from the Discharge box, but the Discharge visit was ${info.visit.date})`
             : "";
       lines.push(`Discharged: ${fmtDay(dc)}${from}.`);
     } else if (info?.scheduled) {

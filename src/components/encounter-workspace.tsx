@@ -1,7 +1,7 @@
 "use client";
 
 import { SplitPane } from "@/components/split-pane";
-import { localTodayIso, resolveDischargeDate } from "@/lib/discharge-date";
+import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -959,6 +959,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleAppointments, updateAppointment } = useScheduleAppointments();
+  // Discharge visits across the schedule — the Discharge box date (lib/discharge-date).
+  const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   const {
     encountersByNewest,
     createEncounter,
@@ -3873,6 +3875,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             <EncounterQuickGlance
               billedFallback={getPatientBillingRecord(selectedPatient.id)?.billedAmount ?? 0}
               appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
+              dischargeIndex={dischargeIndex}
               notes={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
               patient={selectedPatient}
             />
@@ -3885,6 +3888,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               appointments={scheduleAppointments.filter((a) => a.patientId === selectedPatient.id)}
               billingRecord={getPatientBillingRecord(selectedPatient.id)}
               currentEncounterId={selectedEncounter?.id}
+              dischargeIndex={dischargeIndex}
               encounters={encountersByNewest.filter((e) => e.patientId === selectedPatient.id)}
               onOpenEncounter={setSelectedEncounterId}
               patient={selectedPatient}
@@ -5127,8 +5131,11 @@ function EncounterQuickGlance({
   notes,
   billedFallback,
   appointments,
+  dischargeIndex,
 }: {
   patient: {
+    id: string;
+    fullName: string;
     dateOfLoss?: string;
     xrayReferrals?: unknown[];
     mriReferrals?: unknown[];
@@ -5138,16 +5145,21 @@ function EncounterQuickGlance({
   notes: Array<{ charges: Array<{ unitPrice: number; units: number }> }>;
   billedFallback: number;
   appointments: Array<{ appointmentType: string; status: string; date: string }>;
+  dischargeIndex: DischargeIndex;
 }) {
   // Same visibility as the patient page's Additional Details section.
   const { sectionHidden } = useWorkspaceAccess();
   const dischargeHidden =
     (loadPatientPagePrefs().mode as Record<string, string | undefined>).additionalDetails === "hide" ||
     sectionHidden("additionalDetails");
-  const discharge = resolveDischargeDate(
-    typeof patient.matrix?.discharge === "string" ? patient.matrix.discharge : "",
-    appointments,
-    localTodayIso(),
+  // The date in the Discharge box, same as every other page.
+  const discharge = patientDischargeInfo(
+    {
+      id: patient.id,
+      fullName: patient.fullName,
+      matrix: { discharge: typeof patient.matrix?.discharge === "string" ? patient.matrix.discharge : "" },
+    },
+    dischargeIndex,
   );
   const chargesTotal = notes.reduce(
     (sum, note) => sum + note.charges.reduce((s2, c) => s2 + c.unitPrice * c.units, 0),

@@ -18,7 +18,7 @@ import type { EncounterNoteRecord } from "@/lib/encounter-notes";
 import type { TreatmentPlan } from "@/lib/treatment-plans";
 import type { PatientDiagnosisEntry } from "@/lib/patient-diagnoses";
 import { normalizeReviewStatus } from "@/lib/review-status";
-import { localTodayIso, resolveDischargeDate } from "@/lib/discharge-date";
+import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -146,6 +146,8 @@ export function goatContextFromRecords(input: {
   billing: { billed: string; paid: string; paidDate: string };
   isHidden: (sectionKey: string) => boolean;
   canViewEncounters: boolean;
+  /** The whole schedule's Discharge visits, so the Discharge box date matches every other page. */
+  dischargeIndex?: DischargeIndex;
 }): GoatContext {
   const { patient: p, isHidden } = input;
   const m = (p.matrix ?? {}) as Record<string, string | undefined>;
@@ -186,8 +188,8 @@ export function goatContextFromRecords(input: {
     details: isHidden("additionalDetails")
       ? null
       : (() => {
-          // Same rule as the patient page: typed date, else the attended Discharge visit.
-          const dischargeInfo = resolveDischargeDate(m.discharge ?? "", input.appointments, localTodayIso());
+          // The date in the Discharge box: saved, else the attended Discharge visit.
+          const dischargeInfo = patientDischargeInfo(p, input.dischargeIndex ?? buildDischargeIndex(input.appointments));
           return { discharge: dischargeInfo.date, dischargeInfo };
         })(),
     billing:

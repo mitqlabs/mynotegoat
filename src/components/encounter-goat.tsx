@@ -1,5 +1,6 @@
 "use client";
 
+import type { DischargeIndex } from "@/lib/discharge-date";
 import { useMemo } from "react";
 import { GoatPanel } from "@/components/goat-panel";
 import { goatContextFromRecords, goatPeople } from "@/lib/goat-context";
@@ -30,6 +31,7 @@ export function EncounterGoat({
   billingRecord,
   currentEncounterId,
   onOpenEncounter,
+  dischargeIndex,
 }: {
   patient: PatientRecord;
   appointments: ScheduleAppointmentRecord[];
@@ -41,6 +43,8 @@ export function EncounterGoat({
   currentEncounterId?: string;
   /** Switch the workspace to another of this patient's notes. */
   onOpenEncounter?: (encounterId: string) => void;
+  /** Schedule-wide Discharge visits (lib/discharge-date) for the Discharge box date. */
+  dischargeIndex?: DischargeIndex;
 }) {
   const { notes } = useCaseNotes(patient.id, patient.matrix?.notes ?? "");
   const { entries: diagnoses } = usePatientDiagnoses(patient.id);
@@ -81,6 +85,7 @@ export function EncounterGoat({
       },
       isHidden: (key) => sectionModes[key] === "hide" || sectionHidden(key),
       canViewEncounters: canView("encounters"),
+      dischargeIndex,
     });
     return {
       ...base,
@@ -91,7 +96,7 @@ export function EncounterGoat({
       ),
       files: goatFiles.enabled ? goatFiles.files : null,
     };
-  }, [patient, appointments, encounters, notes, diagnoses, plans, macroLibrary.templates, billingRecord, sectionModes, sectionHidden, canView, termGroups, contacts, canSeeContacts, goatFiles.enabled, goatFiles.files]);
+  }, [patient, appointments, dischargeIndex, encounters, notes, diagnoses, plans, macroLibrary.templates, billingRecord, sectionModes, sectionHidden, canView, termGroups, contacts, canSeeContacts, goatFiles.enabled, goatFiles.files]);
 
   return (
     <GoatPanel

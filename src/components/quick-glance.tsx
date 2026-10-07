@@ -86,7 +86,7 @@ export function QuickGlance({
 }: {
   doi: string;
   ie: string;
-  /** Discharge date by the shared rule (lib/discharge-date): typed, else the attended Discharge visit. */
+  /** The Discharge box date (lib/discharge-date): saved, else the attended Discharge visit. */
   discharge?: DischargeInfo;
   billed: number;
   xrayReferrals?: unknown[];
@@ -217,7 +217,7 @@ export function QuickGlance({
                 title={
                   discharge.source === "visit" && discharge.visit
                     ? `Date of the Discharge visit (${discharge.visit.status})`
-                    : "Entered in Additional Details"
+                    : "From the Discharge box (Additional Details)"
                 }
               >
                 {discharge.date}
