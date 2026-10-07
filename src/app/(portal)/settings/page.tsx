@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
 import { forceSyncNow } from "@/lib/storage-sync-interceptor";
@@ -93,7 +94,9 @@ type SettingsSectionKey =
   | "recovery"
   | "security"
   | "account"
-  | "diagnostics";
+  | "diagnostics"
+  // G.O.A.T. words & abbreviations — the editor lives on /settings/goat.
+  | "goat";
 
 /**
  * Smart-search catalog for the Settings page. Each entry tells the
@@ -194,6 +197,12 @@ const settingsSearchCatalog: Array<{
       "section",
     ],
     parent: "officeSettings",
+  },
+  {
+    key: "goat",
+    title: "G.O.A.T.",
+    description: "Words, abbreviations and synonym groups G.O.A.T. uses",
+    aliases: ["goat", "g.o.a.t.", "ask", "abbreviation", "abbreviations", "synonym", "synonyms", "words", "terms", "rom", "pm", "pain management"],
   },
   // Macros wrapper + children
   { key: "macros", title: "Macros" },
@@ -392,6 +401,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   security: false,
   account: false,
   diagnostics: false,
+  goat: false,
 };
 
 type BackupModuleId =
@@ -5178,6 +5188,30 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <TreatmentPlanSettingsSection />
+        </div>
+      </CollapsibleSection>
+
+      {/* G.O.A.T. words & abbreviations: its own page (/settings/goat). */}
+      <CollapsibleSection
+        description="Words, abbreviations and synonym groups G.O.A.T. uses when you ask about a patient."
+        hidden={!showSection("goat")}
+        isOpen={sectionIsOpen("goat")}
+        onToggle={() => toggleSection("goat")}
+        title="G.O.A.T."
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
+          <p className="min-w-0 flex-1">
+            Teach G.O.A.T. your office&apos;s words: ROM = range of motion = flexion = extension, PM = pain
+            management, C/S = cervical = neck, and so on. Shared by everyone in the office.
+          </p>
+          <Link
+            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold hover:opacity-90"
+            href="/settings/goat"
+            // globals.css "a { color: inherit }" outranks Tailwind's layered text-white.
+            style={{ color: "#fff" }}
+          >
+            Open G.O.A.T. settings →
+          </Link>
         </div>
       </CollapsibleSection>
 

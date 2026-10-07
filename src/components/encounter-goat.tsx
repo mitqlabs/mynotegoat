@@ -2,7 +2,10 @@
 
 import { useMemo } from "react";
 import { GoatPanel } from "@/components/goat-panel";
-import { goatContextFromRecords } from "@/lib/goat-context";
+import { goatContextFromRecords, goatPeople } from "@/lib/goat-context";
+import { useGoatTerms } from "@/hooks/use-goat-terms";
+import { useGoatFiles } from "@/hooks/use-goat-files";
+import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useCaseNotes } from "@/hooks/use-case-notes";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
@@ -44,6 +47,12 @@ export function EncounterGoat({
   const { macroLibrary } = useMacroTemplates();
   const { sectionHidden, canView } = useWorkspaceAccess();
   const sectionModes = useMemo(() => loadPatientPagePrefs().mode as Record<string, string | undefined>, []);
+  const { groups: termGroups } = useGoatTerms();
+  const { contacts } = useContactDirectory();
+  // Same rule as the patient page: no Patient Files section, no file reading.
+  const filesHidden = sectionModes.patientFiles === "hide" || sectionHidden("patientFiles");
+  const goatFiles = useGoatFiles(patient.id, !filesHidden);
+  const canSeeContacts = canView("contacts");
 
   const context = useMemo(() => {
     const chargesTotal = encounters.reduce(
@@ -57,7 +66,7 @@ export function EncounterGoat({
     const storedBilled = billingRecord ? billingRecord.billedAmount : fromMatrix(matrix.billed);
     const paid = billingRecord ? billingRecord.paidAmount : fromMatrix(matrix.paidAmount);
     const billed = chargesTotal > 0 ? chargesTotal : storedBilled;
-    return goatContextFromRecords({
+    const base = goatContextFromRecords({
       patient,
       appointments,
       encounters,
@@ -73,12 +82,22 @@ export function EncounterGoat({
       isHidden: (key) => sectionModes[key] === "hide" || sectionHidden(key),
       canViewEncounters: canView("encounters"),
     });
-  }, [patient, appointments, encounters, notes, diagnoses, plans, macroLibrary.templates, billingRecord, sectionModes, sectionHidden, canView]);
+    return {
+      ...base,
+      termGroups,
+      people: goatPeople(
+        base.specialists.map((s) => ({ name: s.name, sentDate: s.sentDate })),
+        canSeeContacts ? contacts : [],
+      ),
+      files: goatFiles.enabled ? goatFiles.files : null,
+    };
+  }, [patient, appointments, encounters, notes, diagnoses, plans, macroLibrary.templates, billingRecord, sectionModes, sectionHidden, canView, termGroups, contacts, canSeeContacts, goatFiles.enabled, goatFiles.files]);
 
   return (
     <GoatPanel
       context={context}
       currentEncounterId={currentEncounterId}
+      files={goatFiles}
       fileHref={`/patients/${encodeURIComponent(patient.id)}`}
       onOpenEncounter={onOpenEncounter}
       scope="file"

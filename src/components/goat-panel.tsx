@@ -1,7 +1,10 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { askGoat, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
+import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
+import { makeMatcher } from "@/lib/goat-terms";
+import type { GoatFilesController } from "@/hooks/use-goat-files";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -15,26 +18,182 @@ const SECTION_LABEL: Record<GoatSection, string> = {
   details: "Additional Details",
 };
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Mark the searched words (and their synonyms) inside a snippet — whole words only. */
+function Highlight({ text, terms }: { text: string; terms: string[] }) {
+  const matcher = useMemo(() => makeMatcher(terms), [terms]);
+  if (!terms.length) return <>{text}</>;
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const [start, end] of matcher.ranges(text)) {
+    if (start > at) parts.push(<Fragment key={`t${at}`}>{text.slice(at, start)}</Fragment>);
+    parts.push(
+      <mark key={`m${start}`} className="rounded bg-[#fff2b3] px-0.5 text-inherit">
+        {text.slice(start, end)}
+      </mark>,
+    );
+    at = end;
+  }
+  if (at < text.length) parts.push(<Fragment key={`t${at}`}>{text.slice(at)}</Fragment>);
+  return <>{parts}</>;
 }
 
-/** Bold the searched words inside a snippet. */
-function Highlight({ text, terms }: { text: string; terms: string[] }) {
-  if (!terms.length) return <>{text}</>;
-  const re = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+const DOC_BADGE: Record<GoatFileMatch["docType"], { label: string; className: string }> = {
+  report: { label: "Report", className: "bg-emerald-50 text-emerald-800" },
+  referral: { label: "Referral", className: "bg-amber-50 text-amber-800" },
+  other: { label: "Document", className: "bg-slate-100 text-slate-700" },
+};
+
+/** One file's quoted lines (first few, "Show all" for the rest). */
+function FileMatchBlock({
+  match,
+  highlight,
+  onOpen,
+}: {
+  match: GoatFileMatch;
+  highlight: string[];
+  onOpen?: (fileId: string, page?: number) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? match.lines : match.lines.slice(0, GOAT_LINES_PER_FILE);
+  const badge = DOC_BADGE[match.docType];
   return (
-    <>
-      {text.split(re).map((part, i) =>
-        i % 2 === 1 ? (
-          <mark key={i} className="rounded bg-[#fff2b3] px-0.5 text-inherit">
-            {part}
-          </mark>
-        ) : (
-          <Fragment key={i}>{part}</Fragment>
-        ),
+    <li className="rounded-lg border border-[var(--line-soft)] p-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold" title={match.name}>
+            {match.name}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span className={`rounded px-1.5 py-px font-semibold ${badge.className}`}>{badge.label}</span>
+            {match.date && (
+              <span>
+                {match.dateLabel === "dated" ? "Dated" : "Uploaded"} {match.date}
+              </span>
+            )}
+            {match.who.length > 0 && <span>· {match.who.join(", ")}</span>}
+          </div>
+        </div>
+        {onOpen && (
+          <button
+            className="shrink-0 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+            onClick={() => onOpen(match.fileId, match.lines[0]?.page)}
+            title="Opens the file in a new tab"
+            type="button"
+          >
+            Open file ↗
+          </button>
+        )}
+      </div>
+      <ul className="mt-1.5 space-y-1 text-sm">
+        {shown.map((line, i) => (
+          <li key={i} className={`flex gap-2 ${line.inSection && !line.heading ? "pl-3" : ""}`}>
+            <span className="w-8 shrink-0 pt-px text-[11px] text-[var(--text-muted)]">p.{line.page}</span>
+            {line.heading ? (
+              <span className="min-w-0 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                <Highlight text={line.text} terms={highlight} />
+              </span>
+            ) : (
+              <span className="min-w-0">
+                &ldquo;<Highlight text={line.text} terms={highlight} />&rdquo;
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {match.lines.length > GOAT_LINES_PER_FILE && (
+        <button
+          className="mt-1 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+          onClick={() => setAll((v) => !v)}
+          type="button"
+        >
+          {all ? "Show fewer" : `Show all ${match.lines.length} lines`}
+        </button>
       )}
-    </>
+    </li>
+  );
+}
+
+function FilesCard({ files, onOpen }: { files: GoatFilesResult; onOpen?: (fileId: string, page?: number) => void }) {
+  return (
+    <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+      <div className="text-sm font-semibold">From patient files</div>
+      {files.notes.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-[var(--text-muted)]">
+          {files.notes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ul>
+      )}
+      {files.matches.length > 0 && (
+        <ul className="mt-2 space-y-2">
+          {files.matches.map((m) => (
+            <FileMatchBlock key={m.fileId} highlight={files.highlight} match={m} onOpen={onOpen} />
+          ))}
+        </ul>
+      )}
+      {files.moreFiles > 0 && (
+        <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+          …and {files.moreFiles} more file{files.moreFiles === 1 ? "" : "s"} mention this. Ask about something more specific to narrow it down.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** "8 of 10 files read" + Read files / progress / Stop. */
+function FilesStatus({ files }: { files: GoatFilesController }) {
+  const { counts, reader } = files;
+  if (!files.enabled || counts.total === 0) return null;
+  const readable = counts.total - counts.other;
+  const toRead = counts.waiting + counts.scanned + counts.failed;
+  const cur = reader.current;
+  let progress = "";
+  if (reader.running && cur) {
+    const step =
+      cur.step === "downloading"
+        ? "opening"
+        : cur.step === "ocr"
+          ? `reading scanned page ${cur.page} of ${cur.pages}${cur.pageProgress ? ` (${Math.round(cur.pageProgress * 100)}%)` : ""}`
+          : `page ${cur.page} of ${cur.pages}`;
+    progress = `Reading ${cur.fileName}: ${step}`;
+  }
+  const pct = reader.total ? Math.round(((reader.done + (cur?.pages ? cur.page / cur.pages : 0)) / reader.total) * 100) : 0;
+  return (
+    <div className="mt-2 rounded-xl bg-[var(--bg-soft)] px-2.5 py-2 text-xs text-[var(--text-muted)]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0">
+          Patient files: {counts.read} of {readable} read
+          {counts.scanned > 0 && ` · ${counts.scanned} scanned file${counts.scanned === 1 ? " needs" : "s need"} OCR`}
+          {counts.failed > 0 && ` · ${counts.failed} couldn't be read`}
+        </span>
+        {reader.running ? (
+          <button className="shrink-0 font-semibold text-[var(--text-main)] hover:underline" onClick={files.stop} type="button">
+            Stop
+          </button>
+        ) : (
+          toRead > 0 && (
+            <button
+              className="shrink-0 font-semibold text-[var(--brand-primary)] hover:underline"
+              onClick={files.readAll}
+              title="Reads this patient's files here in your browser, including scanned pages"
+              type="button"
+            >
+              Read files
+            </button>
+          )
+        )}
+      </div>
+      {reader.running && (
+        <>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
+            <div className="h-full rounded-full bg-[#72bdcf] transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+          </div>
+          <div className="mt-1 truncate">
+            {progress} {reader.total > 1 && `(${Math.min(reader.done + 1, reader.total)} of ${reader.total})`}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -51,8 +210,11 @@ export function GoatPanel({
   onOpenEncounter,
   currentEncounterId,
   scope = "page",
+  files,
 }: {
   context: GoatContext;
+  /** Patient Files reader (status, Read files, Open file). Omitted → files aren't offered. */
+  files?: GoatFilesController;
   /** Patient page: scroll to the section an answer came from. */
   onJump?: (section: GoatSection) => void;
   /** Elsewhere (Encounters): open the patient file in a new tab instead. */
@@ -81,7 +243,13 @@ export function GoatPanel({
     setAsked(trimmed);
   };
 
-  const nothing = result !== null && result.answers.length === 0 && result.hits.length === 0;
+  const fileResult = result?.files ?? null;
+  const filesOn = Boolean(files?.enabled);
+  const nothing =
+    result !== null &&
+    result.answers.length === 0 &&
+    result.hits.length === 0 &&
+    !(fileResult && (fileResult.matches.length || fileResult.notes.length));
   const firstName = context.patientName.split(",").pop()?.trim() || "this patient";
 
   const where = scope === "page" ? "this patient's page" : "this patient's file";
@@ -145,7 +313,7 @@ export function GoatPanel({
           {!result && (
             <p className="mt-3 text-sm text-[var(--text-muted)]">
               Hi! I can look things up in {where}: visits, gaps, imaging, the plan, decompression,
-              diagnoses, billing and notes.
+              diagnoses, billing and notes{filesOn ? ", plus what's written in uploaded Patient Files" : ""}.
             </p>
           )}
 
@@ -166,6 +334,10 @@ export function GoatPanel({
                   Clear
                 </button>
               </div>
+
+              {fileResult && fileResult.matches.length > 0 && (
+                <FilesCard files={fileResult} onOpen={files?.openFile} />
+              )}
 
               {result.answers.map((a) => (
                 <div key={a.title} className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
@@ -227,18 +399,26 @@ export function GoatPanel({
                 </div>
               )}
 
+              {fileResult && fileResult.matches.length === 0 && fileResult.notes.length > 0 && (
+                <FilesCard files={fileResult} onOpen={files?.openFile} />
+              )}
+
               {nothing && (
                 <p className="rounded-xl bg-[var(--bg-soft)] p-2.5 text-sm">
                   I couldn&apos;t find that in {where}. I only read what&apos;s there and I won&apos;t
                   guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
-                  diagnoses, billing or notes.
+                  diagnoses, billing, notes{filesOn ? " or what a report says" : ""}.
                 </p>
               )}
             </div>
           )}
 
+          {files && <FilesStatus files={files} />}
+
           <p className="mt-3 text-[11px] text-[var(--text-muted)]">
-            G.O.A.T. reads only {where}. Nothing leaves NoteGoat. Uploaded files aren&apos;t read yet.
+            {filesOn
+              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser. Nothing leaves NoteGoat.`
+              : `G.O.A.T. reads only ${where}. Nothing leaves NoteGoat.`}
           </p>
         </div>
       )}

@@ -8,7 +8,9 @@ import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
 import { GoatPanel } from "@/components/goat-panel";
 import type { GoatContext, GoatSection } from "@/lib/goat";
-import { encounterToGoat, goatToday, imagingToGoat, planToGoat, specialistToGoat } from "@/lib/goat-context";
+import { encounterToGoat, goatPeople, goatToday, imagingToGoat, planToGoat, specialistToGoat } from "@/lib/goat-context";
+import { useGoatTerms } from "@/hooks/use-goat-terms";
+import { useGoatFiles } from "@/hooks/use-goat-files";
 import { useTreatmentPlans } from "@/hooks/use-treatment-plans";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { normalizeReviewStatus, reviewSelectOptionsFor, reviewStatusTone } from "@/lib/review-status";
@@ -2486,6 +2488,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // null so G.O.A.T. can't read them; SOAP text also needs Encounters access.
   const { getPlansForPatient } = useTreatmentPlans();
   const { macroLibrary: goatMacroLibrary } = useMacroTemplates();
+  // G.O.A.T. reads Patient Files only when that section is visible to this member.
+  const { groups: goatTermGroups } = useGoatTerms();
+  const goatFiles = useGoatFiles(patient.id, !hiddenStyle("patientFiles"));
+  const goatContacts = canView("contacts") ? contacts : null;
+
   const goatContext = useMemo<GoatContext>(() => {
     const isHidden = (key: SectionPanelKey) => Boolean(hiddenStyle(key));
     const macroName = (id: string) => goatMacroLibrary.templates.find((m) => m.id === id)?.buttonName ?? "";
@@ -2534,8 +2541,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         isHidden("additionalDetails") || isHidden("billingFigures")
           ? null
           : { billed: billedAmount, paid: paidAmount, paidDate, rbSent: rbSentDate },
+      termGroups: goatTermGroups,
+      people: goatPeople(
+        specialistReferrals.map((r) => ({ name: r.specialist, sentDate: r.sentDate })),
+        goatContacts ?? [],
+      ),
+      files: goatFiles.enabled ? goatFiles.files : null,
     };
   }, [
+    goatTermGroups, goatContacts, goatFiles.enabled, goatFiles.files,
     hiddenStyle, canView, goatMacroLibrary.templates, getPlansForPatient, patient.id, patient.fullName,
     lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
     caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, initialExam, priorCare, xrayFindings,
@@ -5183,7 +5197,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         />
 
         <div className="lg:col-span-2 xl:col-span-1">
-          <GoatPanel context={goatContext} onJump={jumpToGoatSection} onOpenEncounter={canView("encounters") ? openEncounterEditor : undefined} />
+          <GoatPanel context={goatContext} files={goatFiles} onJump={jumpToGoatSection} onOpenEncounter={canView("encounters") ? openEncounterEditor : undefined} />
         </div>
       </div>
 

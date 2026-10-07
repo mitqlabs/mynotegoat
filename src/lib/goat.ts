@@ -12,6 +12,9 @@
  * and G.O.A.T. will not read it.
  */
 
+import { answerFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
+
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
@@ -113,6 +116,12 @@ export interface GoatContext {
   diagnoses: Array<{ code: string; description: string }> | null;
   details: { discharge: string } | null;
   billing: { billed: string; paid: string; paidDate: string; rbSent: string } | null;
+  /** The office's words & synonym groups (Settings → G.O.A.T.). */
+  termGroups?: GoatTermGroup[];
+  /** Referred specialists + Specialist contacts, for "PM" → the doctor. */
+  people?: GoatPerson[];
+  /** Uploaded Patient Files with their text once read; null = hidden for this member; undefined = not available here. */
+  files?: GoatFile[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +152,10 @@ export interface GoatHit {
 export interface GoatResult {
   answers: GoatAnswer[];
   hits: GoatHit[];
-  /** Words searched for, for highlighting. */
+  /** Words searched for (synonyms included), for highlighting. */
   terms: string[];
+  /** Quotes from uploaded Patient Files, or null when files weren't asked about/available. */
+  files: GoatFilesResult | null;
 }
 
 /** Breaks between visits shorter than this are normal scheduling. */
@@ -806,24 +817,23 @@ function decompressionAnswer(ctx: GoatContext, today: number, region: DecompRegi
 // Searching the page's own text
 // ---------------------------------------------------------------------------
 
-function snippetAround(text: string, terms: string[]): string {
-  const lower = text.toLowerCase();
+function snippetAround(text: string, matchers: TermMatcher[]): string {
   let at = -1;
-  for (const t of terms) {
-    const i = lower.indexOf(t);
-    if (i >= 0 && (at < 0 || i < at)) at = i;
+  for (const m of matchers) {
+    const first = m.ranges(text)[0];
+    if (first && (at < 0 || first[0] < at)) at = first[0];
   }
   const start = Math.max(0, at - 70);
   const end = Math.min(text.length, (at < 0 ? 0 : at) + 110);
   return `${start > 0 ? "…" : ""}${text.slice(start, end).replace(/\s+/g, " ").trim()}${end < text.length ? "…" : ""}`;
 }
 
-function scoreText(text: string, terms: string[]): number {
-  const lower = text.toLowerCase();
-  return terms.reduce((n, t) => (lower.includes(t) ? n + 1 : n), 0);
+/** One point per word / synonym group found (whole words only). */
+function scoreText(text: string, matchers: TermMatcher[]): number {
+  return matchers.reduce((n, m) => (m.test(text) ? n + 1 : n), 0);
 }
 
-function searchPage(ctx: GoatContext, terms: string[]): GoatHit[] {
+function searchPage(ctx: GoatContext, terms: TermMatcher[]): GoatHit[] {
   if (!terms.length) return [];
   const hits: GoatHit[] = [];
   const add = (
@@ -907,12 +917,22 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   }
   const asksXray = has(tokens, ["xray", "radiograph"]);
   const asksMri = has(tokens, ["mri", "ct", "scan"]);
-  const asksImaging = has(tokens, ["imaging", "radiology", "findings"]);
+  // Synonym groups the question uses (Settings → G.O.A.T.): "ROM" brings in
+  // flexion/extension/…, "PM" brings in pain management and the PM doctor.
+  const groups = ctx.termGroups ?? [];
+  const asked = groupsInQuestion(question, groups);
+  const people = ctx.people ?? [];
+  const askedTerms = asked.flatMap((g) => g.terms);
+  const isFindingsGroup = (g: GoatTermGroup) => g.terms.some((t) => /^(findings|impression)$/i.test(t));
+  const isImagingGroup = (g: GoatTermGroup) => g.terms.some((t) => /^(x-?ray|mri|ct|imaging)$/i.test(t));
+  const specialistWords =
+    has(tokens, ["specialist", "referr", "refer", "consult", "pm", "ortho", "neuro", "recommend"]) || text.includes("pain management");
+  // "Findings" means imaging only when nothing else is named ("PM findings", "ROM findings" aren't imaging).
+  const otherTopic = specialistWords || asked.some((g) => !isFindingsGroup(g) && !isImagingGroup(g));
+  const asksImaging = has(tokens, ["imaging", "radiology"]) || (has(tokens, ["findings"]) && !otherTopic);
   if (asksXray || (asksImaging && !asksMri)) push(imagingAnswer(ctx, "xray"));
   if (asksMri || (asksImaging && !asksXray)) push(imagingAnswer(ctx, "mri"));
-  if (has(tokens, ["specialist", "referr", "refer", "consult", "pm", "ortho", "neuro", "recommend"]) || text.includes("pain management")) {
-    push(specialistAnswer(ctx));
-  }
+  if (specialistWords) push(specialistAnswer(ctx));
   if (has(tokens, ["plan", "frequency", "weekly", "week", "regions"]) || text.includes("treatment plan")) push(planAnswer(ctx, today));
   if (has(tokens, ["diagnos", "dx", "icd", "code", "codes"])) push(diagnosisAnswer(ctx));
   if (has(tokens, ["bill", "charge", "balance", "paid", "payment", "owe", "money", "cost", "amount", "rb", "reduction"])) push(billingAnswer(ctx));
@@ -923,6 +943,18 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   if (has(tokens, ["note", "notes"])) push(notesAnswer(ctx));
   if (has(tokens, ["prior", "before", "history"])) push(priorCareAnswer(ctx));
 
-  const terms = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
-  return { answers, hits: searchPage(ctx, terms).slice(0, 8), terms };
+  // Search terms: each asked group as one unit (any synonym counts), plus the
+  // question's other words. "Findings" words only count when nothing else is asked.
+  const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
+  const searchGroups = asked.filter((g) => !isFindingsGroup(g) || asked.length === 1);
+  const covered = new Set(askedTerms.flatMap((t) => tokenize(t)));
+  const leftovers = words.filter((w) => !covered.has(w));
+  const matchers = [...searchGroups.map((g) => makeMatcher(g.terms)), ...leftovers.map((w) => makeMatcher([w]))];
+  const terms = [...new Set([...searchGroups.flatMap((g) => g.terms), ...leftovers])];
+
+  const files =
+    ctx.files && ctx.files.length
+      ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people })
+      : null;
+  return { answers, hits: searchPage(ctx, matchers).slice(0, 8), terms, files };
 }
