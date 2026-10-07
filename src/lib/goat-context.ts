@@ -18,6 +18,7 @@ import type { EncounterNoteRecord } from "@/lib/encounter-notes";
 import type { TreatmentPlan } from "@/lib/treatment-plans";
 import type { PatientDiagnosisEntry } from "@/lib/patient-diagnoses";
 import { normalizeReviewStatus } from "@/lib/review-status";
+import { localTodayIso, resolveDischargeDate } from "@/lib/discharge-date";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -182,7 +183,13 @@ export function goatContextFromRecords(input: {
     encounters: isHidden("appointments") || !input.canViewEncounters ? null : input.encounters.map(encounterToGoat),
     plans: isHidden("treatmentPlan") ? null : input.plans.map((plan) => planToGoat(plan, input.macroName)),
     diagnoses: isHidden("diagnosis") ? null : input.diagnoses.map((d) => ({ code: d.code, description: d.description })),
-    details: isHidden("additionalDetails") ? null : { discharge: usDate(m.discharge) },
+    details: isHidden("additionalDetails")
+      ? null
+      : (() => {
+          // Same rule as the patient page: typed date, else the attended Discharge visit.
+          const dischargeInfo = resolveDischargeDate(m.discharge ?? "", input.appointments, localTodayIso());
+          return { discharge: dischargeInfo.date, dischargeInfo };
+        })(),
     billing:
       isHidden("additionalDetails") || isHidden("billingFigures")
         ? null

@@ -1,6 +1,9 @@
 "use client";
 
 import { SplitPane } from "@/components/split-pane";
+import { localTodayIso, resolveDischargeDate } from "@/lib/discharge-date";
+import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -5134,8 +5137,18 @@ function EncounterQuickGlance({
   };
   notes: Array<{ charges: Array<{ unitPrice: number; units: number }> }>;
   billedFallback: number;
-  appointments: Array<{ appointmentType: string; status: string }>;
+  appointments: Array<{ appointmentType: string; status: string; date: string }>;
 }) {
+  // Same visibility as the patient page's Additional Details section.
+  const { sectionHidden } = useWorkspaceAccess();
+  const dischargeHidden =
+    (loadPatientPagePrefs().mode as Record<string, string | undefined>).additionalDetails === "hide" ||
+    sectionHidden("additionalDetails");
+  const discharge = resolveDischargeDate(
+    typeof patient.matrix?.discharge === "string" ? patient.matrix.discharge : "",
+    appointments,
+    localTodayIso(),
+  );
   const chargesTotal = notes.reduce(
     (sum, note) => sum + note.charges.reduce((s2, c) => s2 + c.unitPrice * c.units, 0),
     0,
@@ -5151,6 +5164,7 @@ function EncounterQuickGlance({
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
       ie={typeof initialExamRaw === "string" ? initialExamRaw : ""}
+      discharge={dischargeHidden ? undefined : discharge}
       mriReferrals={patient.mriReferrals}
       specialistReferrals={patient.specialistReferrals}
       xrayReferrals={patient.xrayReferrals}

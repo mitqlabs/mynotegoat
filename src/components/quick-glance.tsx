@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import type { DischargeInfo } from "@/lib/discharge-date";
 import { toUsDateCanonical } from "@/lib/follow-up-queue";
 
 const QUICK_GLANCE_OPEN_KEY = "casemate.quick-glance.open.v1";
@@ -75,6 +76,7 @@ function readRegionsList(entry: ImagingSummaryEntry): string {
 export function QuickGlance({
   doi,
   ie,
+  discharge,
   billed,
   xrayReferrals,
   mriReferrals,
@@ -84,6 +86,8 @@ export function QuickGlance({
 }: {
   doi: string;
   ie: string;
+  /** Discharge date by the shared rule (lib/discharge-date): typed, else the attended Discharge visit. */
+  discharge?: DischargeInfo;
   billed: number;
   xrayReferrals?: unknown[];
   mriReferrals?: unknown[];
@@ -195,7 +199,7 @@ export function QuickGlance({
       <div className="@container mt-3">
       <div className="grid gap-5 @xl:grid-cols-[minmax(0,1fr)_minmax(17rem,24rem)] @xl:gap-6">
       <div className="min-w-0">
-      <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-xs">
+      <div className={`grid ${discharge ? "grid-cols-4" : "grid-cols-3"} gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-xs`}>
         <div>
           <div className="font-semibold text-[var(--text-muted)]">DOI</div>
           <div className="font-semibold tabular-nums">{doiLabel || dash}</div>
@@ -204,6 +208,36 @@ export function QuickGlance({
           <div className="font-semibold text-[var(--text-muted)]">IE</div>
           <div className="font-semibold tabular-nums">{ieLabel || dash}</div>
         </div>
+        {discharge && (
+          <div data-quick-glance="discharge">
+            <div className="font-semibold text-[var(--text-muted)]">DC</div>
+            {discharge.date ? (
+              <div
+                className="font-semibold tabular-nums"
+                title={
+                  discharge.source === "visit" && discharge.visit
+                    ? `Date of the Discharge visit (${discharge.visit.status})`
+                    : "Entered in Additional Details"
+                }
+              >
+                {discharge.date}
+              </div>
+            ) : discharge.scheduled ? (
+              <div
+                className="tabular-nums text-[var(--text-muted)]"
+                title={
+                  discharge.scheduled.past
+                    ? "Discharge visit still marked Scheduled (not checked in or out)"
+                    : "Discharge visit scheduled"
+                }
+              >
+                Sched. {discharge.scheduled.date}
+              </div>
+            ) : (
+              <div className="font-semibold">{dash}</div>
+            )}
+          </div>
+        )}
         <div>
           <div className="font-semibold text-[var(--text-muted)]">Billed</div>
           <div className="font-semibold tabular-nums">
