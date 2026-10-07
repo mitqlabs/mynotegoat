@@ -1,6 +1,7 @@
 "use client";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { forgetGoatText, goatSidecarPath, readUploadedFile } from "@/lib/goat-files";
 
 const BUCKET_NAME = "user-files";
 
@@ -45,6 +46,10 @@ export async function uploadFileToStorage(
     return { storagePath: "", error: error.message };
   }
 
+  // G.O.A.T.: read the new file's text in the background, in this browser,
+  // from the bytes we already have (PDF text layer, OCR for scans/images).
+  readUploadedFile(file, storagePath);
+
   return { storagePath, error: null };
 }
 
@@ -73,6 +78,19 @@ export async function getSignedUrl(
 // Delete a file from Supabase Storage
 // ---------------------------------------------------------------------------
 
+/**
+ * The file plus G.O.A.T.'s extracted-text sidecar (if one was ever written).
+ * Removing a sidecar that doesn't exist is a no-op for Storage.
+ */
+function withGoatSidecars(paths: string[]): string[] {
+  const out = [...paths];
+  for (const p of paths) {
+    const side = goatSidecarPath(p);
+    if (side) out.push(side);
+  }
+  return out;
+}
+
 export async function deleteFileFromStorage(
   storagePath: string,
 ): Promise<{ error: string | null }> {
@@ -81,7 +99,8 @@ export async function deleteFileFromStorage(
 
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
-    .remove([storagePath]);
+    .remove(withGoatSidecars([storagePath]));
+  void forgetGoatText([storagePath]);
 
   return { error: error?.message ?? null };
 }
@@ -100,7 +119,8 @@ export async function deleteFilesFromStorage(
 
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
-    .remove(storagePaths);
+    .remove(withGoatSidecars(storagePaths));
+  void forgetGoatText(storagePaths);
 
   return { error: error?.message ?? null };
 }

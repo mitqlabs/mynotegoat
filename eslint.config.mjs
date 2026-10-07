@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored G.O.A.T. engines copied by scripts/copy-goat-assets.mjs.
+    "public/goat/**",
   ]),
 ]);
 

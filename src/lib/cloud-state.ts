@@ -108,6 +108,19 @@ export function wipeLocalWorkspaceForSignOut() {
   // data from the prior account.
   clearAllWorkspaceCaches();
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  clearGoatTextCache();
+}
+
+/**
+ * G.O.A.T. keeps text it read from Patient Files in this browser's
+ * IndexedDB (see goat-files.ts). Drop it with the rest of the workspace.
+ */
+function clearGoatTextCache() {
+  try {
+    window.indexedDB?.deleteDatabase("notegoat-goat-text");
+  } catch (err) {
+    console.warn("[cloud-state] couldn't clear G.O.A.T. text cache:", err);
+  }
 }
 
 export function ensureWorkspaceForUser(expectedWorkspaceId: string) {
@@ -123,6 +136,7 @@ export function ensureWorkspaceForUser(expectedWorkspaceId: string) {
     // but the foreign-only variant lets us keep the new workspace's own
     // entries if they were pre-bootstrapped (none today, but future-proof).
     clearForeignWorkspaceCaches(expectedWorkspaceId);
+    clearGoatTextCache();
     window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, expectedWorkspaceId);
   }
 }
@@ -828,6 +842,8 @@ async function bootstrapTableBackedEntities() {
           // it. Listing the key makes SMS templates cloud-as-truth like
           // every other synced key.
           "casemate.sms-templates.v1",
+          // G.O.A.T. words & synonym groups (Settings → G.O.A.T.).
+          "casemate.goat-settings.v1",
         ],
       };
 

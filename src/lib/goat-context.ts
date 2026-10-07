@@ -11,6 +11,7 @@
  */
 
 import type { GoatContext, GoatEncounter, GoatImaging, GoatPlan } from "@/lib/goat";
+import type { GoatPerson } from "@/lib/goat-docs";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { EncounterNoteRecord } from "@/lib/encounter-notes";
@@ -187,4 +188,37 @@ export function goatContextFromRecords(input: {
         ? null
         : { ...input.billing, rbSent: usDate(m.rbSent) },
   };
+}
+
+/**
+ * Who's who for G.O.A.T.: this patient's referred specialists plus the
+ * office's Specialist contacts, each with a specialty when one is known
+ * (contact sub-category, e.g. "Pain Management", or "(Pain Management)"
+ * typed after the name on the referral). Lets "PM" find the PM doctor.
+ */
+export function goatPeople(
+  referrals: Array<{ name: string; sentDate?: string }>,
+  contacts: Array<{ name: string; category: string; subCategory?: string }>,
+): GoatPerson[] {
+  const key = (n: string) => n.toLowerCase().replace(/\(.*?\)/g, " ").replace(/[^a-z]+/g, " ").trim();
+  const byName = new Map(contacts.map((c) => [key(c.name), c]));
+  const out = new Map<string, GoatPerson>();
+  for (const r of referrals) {
+    const raw = (r.name ?? "").trim();
+    if (!raw) continue;
+    const contact = byName.get(key(raw));
+    const paren = /\(([^)]+)\)/.exec(raw)?.[1]?.trim() ?? "";
+    const name = contact?.name ?? raw.replace(/\s*\(.*?\)\s*/g, " ").trim();
+    out.set(key(name), {
+      name,
+      specialty: contact?.subCategory?.trim() || paren,
+      referred: true,
+      referralSent: usDate(r.sentDate) || undefined,
+    });
+  }
+  for (const c of contacts) {
+    if (c.category !== "Specialist" || !c.name.trim() || out.has(key(c.name))) continue;
+    out.set(key(c.name), { name: c.name.trim(), specialty: c.subCategory?.trim() ?? "", referred: false });
+  }
+  return [...out.values()];
 }
