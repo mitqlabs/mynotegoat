@@ -267,7 +267,8 @@ function isBodyRegionMacroName(name: string): boolean {
 }
 
 /** [question macros, body-region macros] — the second row is dropped when
- *  empty, so a section with no region macros looks exactly as it did. */
+ *  empty, so a section with no region macros looks exactly as it did.
+ *  Not used for Subjective, which shows one row in saved order. */
 function splitMacrosByKind<T extends { buttonName: string }>(macros: T[]): T[][] {
   const general = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
   const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
@@ -4201,7 +4202,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            splitMacrosByKind(group.macros).map((macroRow, rowIndex) => (
+                            // Subjective: one wrapping row in saved order (no
+                            // general-vs-body-region split). Other sections
+                            // keep the two-row split.
+                            (activeSection === "subjective"
+                              ? [group.macros].filter((row) => row.length > 0)
+                              : splitMacrosByKind(group.macros)
+                            ).map((macroRow, rowIndex) => (
                             <div className="flex flex-wrap gap-2 [&+div]:mt-2" key={`macro-row-${rowIndex}`}>
                               {macroRow.map((macro) => {
                                 // Native HTML5 drag-and-drop. Making the

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { askGoat, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
+import { askGoat, type GoatAnswerGroup, type GoatBlock, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
 import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
 import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
@@ -43,17 +43,66 @@ const DOC_BADGE: Record<GoatFileMatch["docType"], { label: string; className: st
   other: { label: "Document", className: "bg-slate-100 text-slate-700" },
 };
 
-/** One file's quoted lines (first few, "Show all" for the rest). */
+/** One region's findings: a subheading, then each item on its own line, in full. */
+function FindingsBlock({ block, highlight }: { block: GoatBlock; highlight: string[] }) {
+  const [all, setAll] = useState(false);
+  const focused = block.focus && block.focus.length < block.items.length && !all;
+  const shown = focused ? block.items.filter((_, i) => block.focus!.includes(i)) : block.items;
+  return (
+    <div className="mt-1.5">
+      {block.heading && (
+        <div className="text-xs font-semibold uppercase tracking-wide text-[#2f7f93]">{block.heading}</div>
+      )}
+      <ul className="mt-0.5 space-y-1 text-sm leading-snug">
+        {shown.map((item, i) => (
+          <li key={i} className="whitespace-pre-line">
+            <Highlight text={item} terms={highlight} />
+          </li>
+        ))}
+      </ul>
+      {block.focus && block.focus.length < block.items.length && (
+        <button
+          className="mt-0.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+          onClick={() => setAll((v) => !v)}
+          type="button"
+        >
+          {all ? "Show less" : `Show all ${block.items.length}${block.heading ? ` ${block.heading}` : ""} findings`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** An answer's records (e.g. each MRI) with their findings by region. */
+function AnswerGroups({ groups, highlight }: { groups: GoatAnswerGroup[]; highlight: string[] }) {
+  return (
+    <div className="space-y-2.5">
+      {groups.map((g, i) => (
+        <div key={i} className={i ? "border-t border-[var(--line-soft)] pt-2" : ""}>
+          <p className="text-sm">{g.lead}</p>
+          {g.note && <p className="text-xs text-[var(--text-muted)]">{g.note}</p>}
+          {g.blocks.map((b, j) => (
+            <FindingsBlock key={j} block={b} highlight={highlight} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One file's quoted lines (first few, "Show all" for the rest — or all of them when expanded). */
 function FileMatchBlock({
   match,
   highlight,
   onOpen,
+  expanded = false,
 }: {
   match: GoatFileMatch;
   highlight: string[];
   onOpen?: (fileId: string, page?: number) => void;
+  expanded?: boolean;
 }) {
-  const [all, setAll] = useState(false);
+  const [all, setAll] = useState(expanded);
   const shown = all ? match.lines : match.lines.slice(0, GOAT_LINES_PER_FILE);
   const badge = DOC_BADGE[match.docType];
   return (
@@ -116,7 +165,15 @@ function FileMatchBlock({
 function FilesCard({ files, onOpen }: { files: GoatFilesResult; onOpen?: (fileId: string, page?: number) => void }) {
   return (
     <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
-      <div className="text-sm font-semibold">From patient files</div>
+      <div className="text-sm font-semibold">
+        {files.title ? (
+          <>
+            {files.title} <span className="font-normal text-[var(--text-muted)]">· from patient files</span>
+          </>
+        ) : (
+          "From patient files"
+        )}
+      </div>
       {files.notes.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-xs text-[var(--text-muted)]">
           {files.notes.map((n, i) => (
@@ -127,7 +184,7 @@ function FilesCard({ files, onOpen }: { files: GoatFilesResult; onOpen?: (fileId
       {files.matches.length > 0 && (
         <ul className="mt-2 space-y-2">
           {files.matches.map((m) => (
-            <FileMatchBlock key={m.fileId} highlight={files.highlight} match={m} onOpen={onOpen} />
+            <FileMatchBlock key={m.fileId} expanded={files.expanded} highlight={files.highlight} match={m} onOpen={onOpen} />
           ))}
         </ul>
       )}
@@ -229,6 +286,8 @@ export function GoatPanel({
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
+  // "Also mentioned" open/closed, per question (flipped from its default).
+  const [hitsFlipped, setHitsFlipped] = useState("");
 
   // Recomputed from live page data, so an answer updates as the page is edited.
   const result: GoatResult | null = useMemo(
@@ -250,6 +309,10 @@ export function GoatPanel({
     result.answers.length === 0 &&
     result.hits.length === 0 &&
     !(fileResult && (fileResult.matches.length || fileResult.notes.length));
+  const hasFileMatches = Boolean(fileResult && fileResult.matches.length);
+  const hitsDefaultOpen = Boolean(result && !result.answers.length && !hasFileMatches);
+  const hitsOpen = hitsDefaultOpen !== (hitsFlipped === asked && asked !== "");
+  const filesCard = hasFileMatches && fileResult ? <FilesCard files={fileResult} onOpen={files?.openFile} /> : null;
   const firstName = context.patientName.split(",").pop()?.trim() || "this patient";
 
   const where = scope === "page" ? "this patient's page" : "this patient's file";
@@ -318,7 +381,7 @@ export function GoatPanel({
           )}
 
           {result && (
-            <div className="mt-3 max-h-[30rem] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 max-h-[42rem] space-y-2 overflow-y-auto pr-1">
               <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
                 <span className="min-w-0 truncate">
                   {nothing ? "Hmm," : "Here's what I found for"} <strong>&ldquo;{asked}&rdquo;</strong>
@@ -335,20 +398,25 @@ export function GoatPanel({
                 </button>
               </div>
 
-              {fileResult && fileResult.matches.length > 0 && (
-                <FilesCard files={fileResult} onOpen={files?.openFile} />
-              )}
+              {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
                 <div key={a.title} className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
                   <div className="text-sm font-semibold">{a.title}</div>
-                  <ul className="mt-1 space-y-0.5 text-sm">
-                    {a.lines.map((line, i) => (
-                      <li key={i} className="whitespace-pre-line">
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
+                  {a.lines.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-sm">
+                      {a.lines.map((line, i) => (
+                        <li key={i} className="whitespace-pre-line">
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {a.groups && a.groups.length > 0 && (
+                    <div className="mt-1">
+                      <AnswerGroups groups={a.groups} highlight={result.highlight} />
+                    </div>
+                  )}
                   {a.flag && (
                     <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
                       {a.flag}
@@ -361,11 +429,22 @@ export function GoatPanel({
                 </div>
               ))}
 
+              {!result.filesFirst && filesCard}
+
               {result.hits.length > 0 && (
                 <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
-                  <div className="text-sm font-semibold">
-                    {result.answers.length ? "Also mentioned" : "Mentioned"} in {scope === "page" ? "this page" : "the patient file"} ({result.hits.length})
-                  </div>
+                  <button
+                    aria-expanded={hitsOpen}
+                    className="flex w-full items-center justify-between gap-2 text-left text-sm font-semibold"
+                    onClick={() => setHitsFlipped((v) => (v === asked ? "" : asked))}
+                    type="button"
+                  >
+                    <span>
+                      {result.answers.length || hasFileMatches ? "Also mentioned" : "Mentioned"} in {scope === "page" ? "this page" : "the patient file"} ({result.hits.length})
+                    </span>
+                    <span className="text-xs font-semibold text-[var(--brand-primary)]">{hitsOpen ? "Hide" : "Show"}</span>
+                  </button>
+                  {hitsOpen && (
                   <ul className="mt-1 space-y-2">
                     {result.hits.map((h, i) => (
                       <li key={i} className="text-sm">
@@ -391,11 +470,12 @@ export function GoatPanel({
                           )}
                         </div>
                         <p className="mt-0.5">
-                          <Highlight text={h.snippet} terms={result.terms} />
+                          <Highlight text={h.snippet} terms={[...result.terms, ...result.highlight]} />
                         </p>
                       </li>
                     ))}
                   </ul>
+                  )}
                 </div>
               )}
 

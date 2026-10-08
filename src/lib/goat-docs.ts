@@ -9,6 +9,17 @@
  */
 
 import { cleanTerms, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
+import {
+  isRegionGroup,
+  joinWrapped,
+  levelHighlightTerms,
+  levelsIn,
+  regionsNamedIn,
+  splitNumbered,
+  type BodyRegion,
+  type Modality,
+  type RegionQuery,
+} from "@/lib/goat-regions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +81,10 @@ export interface GoatFilesResult {
   highlight: string[];
   /** Files not read yet (unread / needs OCR / reading). */
   unread: number;
+  /** Card title when the answer is a specific report section, e.g. "MRI report · Lumbar". */
+  title?: string;
+  /** Show every line (an imaging report's sections for the asked region) instead of the first few. */
+  expanded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,23 +131,13 @@ function head(file: GoatFile, chars = 4000): string {
 export function isHeading(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 60) return false;
+  // Numbered items and sentences aren't headings (all-caps reports are common).
+  if (/^\(?\d{1,2}[.)]\s/.test(t) || /[.;,!?]$/.test(t)) return false;
+  // "L5-S1: 4 MM …", "C4-5 …" and "… 3 mm …" are findings, not headings.
+  if (/^[CTL]\d{1,2}\b/.test(t) || /\d\s?(mm|cm)\b/i.test(t) || /:\s*\S/.test(t)) return false;
   if (/:\s*$/.test(t)) return true;
   const letters = t.replace(/[^A-Za-z]/g, "");
-  return letters.length >= 3 && letters === letters.toUpperCase() && t.split(/\s+/).length <= 7;
-}
-
-/** Pages → lines (long lines split into sentences), with page numbers. */
-export function fileLines(file: GoatFile): GoatFileLine[] {
-  const out: GoatFileLine[] = [];
-  (file.pages ?? []).forEach((pageText, i) => {
-    for (const raw of pageText.split(/\n+/)) {
-      const line = raw.replace(/\s+/g, " ").trim();
-      if (!line) continue;
-      const pieces = line.length > 220 ? line.split(/(?<=[.;])\s+(?=[A-Z(])/) : [line];
-      for (const p of pieces) if (p.trim()) out.push({ text: p.trim(), page: i + 1 });
-    }
-  });
-  return out;
+  return letters.length >= 3 && letters === letters.toUpperCase() && !t.includes(",") && t.split(/\s+/).length <= 7;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +181,7 @@ export function classifyDoc(file: GoatFile): GoatDocType {
   return "other";
 }
 
-const DOC_DATE = /\b(?:date of (?:service|exam|examination|visit|evaluation|consultation|report)|dos|exam date|visit date|report date)\s*[:#-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i;
+const DOC_DATE = /\b(?:date of (?:service|exam|examination|visit|evaluation|consultation|report|study)|dos|exam date|study date|visit date|report date)\s*[:#-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i;
 
 export function docDate(file: GoatFile): { date: string; label: "dated" | "uploaded" } {
   const m = DOC_DATE.exec(head(file, 6000));
@@ -249,7 +254,7 @@ export function resolveWho(question: string, asked: GoatTermGroup[], people: Goa
 // ---------------------------------------------------------------------------
 
 const FILE_WORDS = new Set(
-  "file files pdf pdfs document documents doc docs report reports note notes say says said show find found findings result results from for about any what which does did patient pt dr doctor".split(" "),
+  "file files pdf pdfs document documents doc docs report reports note notes say says said show find found findings result results from for about any what which does did patient pt dr doctor panel card section box".split(" "),
 );
 
 export interface FilesQuery {
@@ -259,105 +264,288 @@ export interface FilesQuery {
   asked: GoatTermGroup[];
   allGroups: GoatTermGroup[];
   people: GoatPerson[];
+  /** Regions / levels / imaging types the question names (goat-regions.ts). */
+  region?: RegionQuery;
 }
 
 const PER_FILE_DEFAULT = 12;
 
+// ---------------------------------------------------------------------------
+// A document as readable units (sentences / numbered items), with the report
+// section and body region each one belongs to.
+// ---------------------------------------------------------------------------
+
+export type DocSection = "header" | "impression" | "findings" | "boiler" | "other";
+
+export interface DocUnit {
+  text: string;
+  page: number;
+  heading: boolean;
+  section: DocSection;
+  region: BodyRegion | null;
+}
+
+const SECTION_IMPRESSION = /^(impressions?|conclusions?|opinions?|summary|final (impression|diagnosis)|diagnos[ie]s|assessment)\b/i;
+const SECTION_FINDINGS = /^(findings|results?|observations?)\b/i;
+const SECTION_BOILER = /^(technique|protocol|comparison|procedure|sequences|contrast|dose|radiation|study( description)?|exam(ination)? (info|information|details))\b/i;
+const SECTION_OTHER = /^(history|clinical (history|information|indication)|indication|reason for (exam|study)|chief complaint|plan|recommendations?|physical exam(ination)?|history of present illness|past medical history|medications?)\b/i;
+/** "Patient: …", "DOB: …", "Study Description : MRI LT/KNEE", "Accession #…" — report header boilerplate. */
+const META_LABEL =
+  /^(patient( name)?|name|dob|d\.o\.b\.?|date of birth|mrn|med(ical)? rec(ord)?( no| #| number)?|account|acct|accession|referring( (physician|doctor|provider))?|ordering( (physician|doctor|provider))?|physician|provider|facility|location|phone|tel|fax|address|sex|gender|age|study description|study date|study|exam date|date of (exam|study|service)|exam|procedure|technique|comparison|reason for exam|signed|electronically signed( by)?|dictated( by)?|transcribed( by)?|read by|radiologist|page \d+)\s*[:#]/i;
+const MODALITY_WORD: Record<Modality, RegExp> = {
+  MRI: /(?<![A-Za-z])(MRI|MR|magnetic resonance)(?![A-Za-z])/i,
+  CT: /(?<![A-Za-z])(CT|computed tomography|CAT scan)(?![A-Za-z])/,
+  "X-Ray": /(?<![A-Za-z])(x-?rays?|radiographs?|XR)(?![A-Za-z])/i,
+};
+
+function sectionOfHeading(text: string): DocSection | null {
+  const t = text.replace(/[:\s]+$/, "").trim();
+  if (SECTION_IMPRESSION.test(t)) return "impression";
+  if (SECTION_FINDINGS.test(t)) return "findings";
+  if (SECTION_BOILER.test(t)) return "boiler";
+  if (SECTION_OTHER.test(t)) return "other";
+  return null;
+}
+
+/** "IMPRESSION: 1. …" on one line → heading + text, so the heading is recognised. */
+function splitInlineLabel(line: string): string[] {
+  const m = /^([A-Za-z][A-Za-z /&()-]{1,40}?)\s*:\s+(\S.*)$/.exec(line);
+  if (m && !META_LABEL.test(line) && sectionOfHeading(m[1])) return [`${m[1].trim()}:`, m[2]];
+  return [line];
+}
+
+const docUnitCache = new WeakMap<GoatFile, DocUnit[]>();
+
+export function docUnits(file: GoatFile): DocUnit[] {
+  const cached = docUnitCache.get(file);
+  if (cached) return cached;
+  const out: DocUnit[] = [];
+  let section: DocSection = "header";
+  let region: BodyRegion | null = null;
+  (file.pages ?? []).forEach((pageText, i) => {
+    const raw = pageText.split(/\n+/).flatMap((l) => splitInlineLabel(l.replace(/\s+/g, " ").trim())).filter(Boolean);
+    let n = 0;
+    for (const text of joinWrapped(raw, isHeading).flatMap(splitNumbered)) {
+      n += 1;
+      const heading = isHeading(text);
+      const named = regionsNamedIn(text);
+      const meta = META_LABEL.test(text);
+      if (heading) {
+        const kind = sectionOfHeading(text);
+        if (kind) section = kind;
+        // A letterhead repeated at the top of each page ends the previous page's section.
+        else if (n <= 3 && !named.length) section = "header";
+        // "CERVICAL SPINE:", "MRI LUMBAR SPINE WITHOUT CONTRAST", "LEFT KNEE"
+        if (named.length === 1) region = named[0];
+        out.push({ text, page: i + 1, heading: true, section: kind ?? section, region });
+        continue;
+      }
+      if (meta) {
+        // "Study Description : MRI LT/KNEE" — boilerplate, but it tells which region follows.
+        if (named.length === 1 && Object.values(MODALITY_WORD).some((re) => re.test(text))) region = named[0];
+        section = "boiler";
+        out.push({ text, page: i + 1, heading: false, section: "boiler", region });
+        continue;
+      }
+      // "Lumbar: …", "2. Left knee: …" at the start of an item names its region.
+      const lead = /^(?:\(?\d{1,2}[.)]\s*)?([A-Za-z][A-Za-z /()-]{0,30}?)\s*:/.exec(text);
+      const leadRegions = lead ? regionsNamedIn(lead[1]) : [];
+      const byLevel = [...new Set(levelsIn(text).map((l) => (l[0] === "C" ? "Cervical" : l[0] === "T" ? "Thoracic" : "Lumbar") as BodyRegion))];
+      let unitRegion = region;
+      if (leadRegions.length === 1) unitRegion = region = leadRegions[0];
+      else if (byLevel.length === 1) {
+        unitRegion = byLevel[0];
+        if (!region || ["Cervical", "Thoracic", "Lumbar", "Sacrum"].includes(region)) region = byLevel[0];
+      }
+      out.push({ text, page: i + 1, heading: false, section: section === "header" ? "header" : section, region: unitRegion });
+    }
+  });
+  docUnitCache.set(file, out);
+  return out;
+}
+
+/** An imaging report of one of these types (file name, or its title / study lines). */
+export function isImagingReport(file: GoatFile, modalities: Modality[]): boolean {
+  const kinds = modalities.length ? modalities : (Object.keys(MODALITY_WORD) as Modality[]);
+  if (kinds.some((k) => MODALITY_WORD[k].test(file.name.replace(/[_.-]+/g, " ")))) return true;
+  const titleish = docUnits(file)
+    .slice(0, 40)
+    .filter((u) => u.heading || u.section === "boiler" || u.section === "header")
+    .filter((u) => u.text.length <= 120)
+    .map((u) => u.text);
+  return titleish.some((t) => kinds.some((k) => MODALITY_WORD[k].test(t)) && (regionsNamedIn(t).length > 0 || /exam|study|procedure|impression|spine/i.test(t)));
+}
+
+function regionMatches(u: DocUnit, rq: RegionQuery | undefined): boolean {
+  if (!rq || (!rq.regions.length && !rq.levels.length)) return true;
+  const levels = levelsIn(u.text);
+  if (rq.levels.length) return levels.some((l) => rq.levels.includes(l));
+  if (u.region) return rq.regions.includes(u.region);
+  return regionsNamedIn(u.text).some((r) => rq.regions.includes(r));
+}
+
+// ---------------------------------------------------------------------------
+// The answer
+// ---------------------------------------------------------------------------
+
 export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResult | null {
   const who = resolveWho(q.question, q.asked, q.people);
+  const rq = q.region;
   const findingsGroup =
     q.allGroups.find((g) => g.terms.some((t) => /^(findings|impression)$/i.test(t))) ?? null;
   const wantsReferral = /\b(referral|referred|refer|order|authori[sz]ation|request)\b/i.test(q.question);
   const wantsFindings =
     /\b(finding|findings|found|result|results|impression|assessment|conclusion|report|exam|examination)\b/i.test(q.question) ||
     (findingsGroup !== null && q.asked.includes(findingsGroup));
+  const wantsImpressionOnly = /\b(impressions?|conclusions?|opinion)\b/i.test(q.question);
+  const regionAsked = Boolean(rq && (rq.regions.length || rq.levels.length));
+  // "lumbar MRI", or "low back findings" (a region + findings, nothing else) → imaging reports.
+  const onlyFindingsAsked =
+    regionAsked &&
+    !rq?.levels.length &&
+    /\b(findings?|impressions?|results?)\b/i.test(q.question) &&
+    q.asked.every((g) => g === findingsGroup || isRegionGroup(g));
+  const imagingMode = Boolean(rq && (rq.modalities.length || onlyFindingsAsked));
 
-  // Topics: asked groups that aren't the "who", plus leftover words.
-  let topics = q.asked.filter((g) => !who.specialtyGroups.includes(g));
-  if (topics.length > 1 && findingsGroup) topics = topics.filter((g) => g !== findingsGroup);
+  // Topics: asked groups that aren't the "who", a body region or an imaging
+  // type (those filter instead), plus leftover words.
+  const modalityGroup = (g: GoatTermGroup) => g.terms.some((t) => /^(x-?ray|mri|ct)$/i.test(t));
+  let topics = q.asked.filter((g) => !who.specialtyGroups.includes(g) && !isRegionGroup(g) && !modalityGroup(g));
+  if ((topics.length > 1 || imagingMode) && findingsGroup) topics = topics.filter((g) => g !== findingsGroup);
   const covered = new Set(
     [...q.asked.flatMap((g) => g.terms), ...who.people.map((p) => p.name)]
       .flatMap((t) => t.toLowerCase().split(/[^a-z0-9]+/))
       .filter(Boolean),
   );
-  const leftovers = q.words.filter((w) => w.length >= 3 && !covered.has(w) && !FILE_WORDS.has(w));
+  const leftovers = q.words.filter(
+    (w) => w.length >= 3 && !covered.has(w) && !FILE_WORDS.has(w) && !regionsNamedIn(w).length && !/^(mri|mris|xray|xrays|ct|scan|scans|imaging|spine)$/.test(w),
+  );
   const topicMatchers: Array<{ label: string; m: TermMatcher }> = [
     ...topics.map((g) => ({ label: g.terms[0], m: makeMatcher(g.terms) })),
     ...leftovers.map((w) => ({ label: w, m: makeMatcher([w]) })),
   ];
+  // A level ("L5-S1") is its own topic when nothing else is asked.
+  if (!topicMatchers.length && rq?.levels.length && !imagingMode) {
+    topicMatchers.push({ label: rq.levels.join(", "), m: makeMatcher(levelHighlightTerms(rq.levels)) });
+  }
   const hasWho = who.specialtyGroups.length > 0 || who.people.length > 0;
-  if (!topicMatchers.length && !hasWho) return null;
-  if (!topicMatchers.length) {
+  // "lumbar" alone: search for the region's words, as before.
+  if (!topicMatchers.length && !hasWho && !imagingMode && rq?.regions.length) {
+    const regionTerms = q.asked.filter(isRegionGroup).flatMap((g) => g.terms);
+    topicMatchers.push({ label: rq.regions.join(", ").toLowerCase(), m: makeMatcher(regionTerms.length ? regionTerms : rq.regions) });
+  }
+  if (!topicMatchers.length && !hasWho && !imagingMode) return null;
+  if (!topicMatchers.length && !imagingMode) {
     // "PM report?" — show the conclusions of their report.
     const g = findingsGroup ?? { id: "f", terms: ["impression", "assessment", "findings"], updatedAt: "" };
     topicMatchers.push({ label: g.terms[0], m: makeMatcher(g.terms) });
   }
+  const regionFilterInText = regionAsked && !(topicMatchers.length === 1 && !imagingMode && rq?.regions.length && !rq.levels.length && topicMatchers[0].label === rq.regions.join(", ").toLowerCase());
 
   const whoMatchers = who.people.map((p) => ({ person: p, m: makeMatcher(cleanTerms([p.name, surnameOf(p.name)])) }));
   const specialtyMatcher = makeMatcher(who.specialtyGroups.flatMap((g) => g.terms).filter((t) => t.length > 3));
   const readFiles = files.filter((f) => f.status === "read" && f.pages);
   const unread = files.filter((f) => f.status === "unread" || f.status === "needsOcr" || f.status === "reading").length;
   const scannedUnread = files.filter((f) => f.status === "needsOcr").length;
+  const notes = [...who.notes];
 
   type Scored = GoatFileMatch & { whoScore: number; topicScore: number; ts: number };
   const scored: Scored[] = [];
+  const regionWord = rq ? (rq.levels.length ? rq.levels.join(", ") : rq.regions.join(", ").toLowerCase()) : "";
+
   for (const f of readFiles) {
     const text = (f.pages ?? []).join("\n");
     const whoNames = whoMatchers.filter(({ m }) => m.test(text) || m.test(f.name)).map(({ person }) => person.name);
     const whoScore = whoNames.length ? 2 : hasWho && specialtyMatcher.terms.length && (specialtyMatcher.test(text) || specialtyMatcher.test(f.name)) ? 1 : 0;
     const docType = classifyDoc(f);
-    const lines = fileLines(f);
+    const units = docUnits(f);
+    const { date, label } = docDate(f);
     const hits: GoatFileLine[] = [];
-    let groupsHit = 0;
-    const hitIdx = new Set<number>();
-    for (const { m } of topicMatchers) {
-      let any = false;
-      lines.forEach((line, i) => {
-        if (!m.test(line.text)) return;
-        any = true;
-        hitIdx.add(i);
-        // A matching heading brings the lines under it (until the next heading).
-        if (isHeading(line.text)) {
-          for (let j = i + 1; j < lines.length && j <= i + 10 && !isHeading(lines[j].text); j++) hitIdx.add(-(j + 1));
+    let topicScore = 0;
+
+    if (imagingMode && rq) {
+      // "lumbar MRI": the report's IMPRESSION / FINDINGS for that region, in full.
+      if (!isImagingReport(f, rq.modalities)) continue;
+      const key = units.filter((u) => !u.heading && (u.section === "impression" || u.section === "findings"));
+      let chosen = key.filter((u) => regionMatches(u, rq));
+      if (topicMatchers.length) chosen = chosen.filter((u) => topicMatchers.some(({ m }) => m.test(u.text)));
+      if (wantsImpressionOnly && chosen.some((u) => u.section === "impression")) chosen = chosen.filter((u) => u.section === "impression");
+      if (!chosen.length) {
+        if (regionAsked && key.length) {
+          const covers = [...new Set(key.map((u) => u.region).filter(Boolean))].join(", ");
+          notes.push(`${f.name} has no ${regionWord} ${wantsImpressionOnly ? "impression" : "findings"}${covers ? ` (it covers ${covers.toLowerCase()})` : ""}.`);
+        } else if (!key.length) {
+          notes.push(`${f.name} looks like an imaging report, but I couldn't find an Impression or Findings section in it.`);
         }
-      });
-      if (any) groupsHit += 1;
-    }
-    // Nearest heading above each match (within a few lines) gives it context.
-    const context = new Set<number>();
-    for (const i of hitIdx) {
-      if (i < 0 || isHeading(lines[i].text)) continue;
-      for (let j = i - 1; j >= 0 && j >= i - 8 && lines[j].page === lines[i].page; j--) {
-        if (isHeading(lines[j].text)) {
-          if (!hitIdx.has(j)) context.add(j);
-          break;
+        continue;
+      }
+      // Impression first, then findings; a small heading whenever section or region changes.
+      const ordered = [...chosen.filter((u) => u.section === "impression"), ...chosen.filter((u) => u.section === "findings")];
+      let lastHead = "";
+      for (const u of ordered) {
+        const head = `${u.section === "impression" ? "Impression" : "Findings"}${u.region ? ` · ${u.region}` : ""}`;
+        if (head !== lastHead) {
+          hits.push({ text: head, page: u.page, heading: true });
+          lastHead = head;
+        }
+        hits.push({ text: u.text, page: u.page });
+      }
+      topicScore = 1000 + ordered.length;
+    } else {
+      let groupsHit = 0;
+      const hitIdx = new Set<number>();
+      for (const { m } of topicMatchers) {
+        let any = false;
+        units.forEach((u, i) => {
+          if (!m.test(u.text)) return;
+          if (regionFilterInText && !u.heading && !regionMatches(u, rq)) return;
+          any = true;
+          hitIdx.add(i);
+          // A matching heading brings the units under it (until the next heading).
+          if (u.heading) {
+            for (let j = i + 1; j < units.length && j <= i + 10 && !units[j].heading; j++) {
+              if (!regionFilterInText || regionMatches(units[j], rq)) hitIdx.add(-(j + 1));
+            }
+          }
+        });
+        if (any) groupsHit += 1;
+      }
+      // Header / technique boilerplate only counts when nothing better matched.
+      const isBoiler = (i: number) => {
+        const u = units[i < 0 ? -i - 1 : i];
+        return u.section === "boiler" || (u.section === "header" && !u.heading && META_LABEL.test(u.text));
+      };
+      if ([...hitIdx].some((i) => !isBoiler(i))) for (const i of [...hitIdx]) if (isBoiler(i)) hitIdx.delete(i);
+      // Nearest heading above each match (within a few units) gives it context.
+      const context = new Set<number>();
+      for (const i of hitIdx) {
+        if (i < 0 || units[i].heading) continue;
+        for (let j = i - 1; j >= 0 && j >= i - 8 && units[j].page === units[i].page; j--) {
+          if (units[j].heading) {
+            if (!hitIdx.has(j)) context.add(j);
+            break;
+          }
         }
       }
+      const idx = [...new Set([...[...hitIdx].map((i) => (i < 0 ? -i - 1 : i)), ...context])].sort((a, b) => a - b);
+      for (const i of idx) {
+        const u = units[i];
+        if (context.has(i) && !hitIdx.has(i) && !hitIdx.has(-(i + 1))) hits.push({ text: u.text, page: u.page, heading: true });
+        else hits.push({ text: u.text, page: u.page, inSection: !hitIdx.has(i), ...(u.heading ? { heading: true } : {}) });
+      }
+      // A heading whose lines were all filtered out says nothing on its own.
+      for (let k = hits.length - 1; k >= 0; k--) {
+        if (hits[k].heading && (k === hits.length - 1 || hits[k + 1].heading)) hits.splice(k, 1);
+      }
+      topicScore = groupsHit * 100 + Math.min(hitIdx.size, 50);
     }
-    const idx = [...new Set([...[...hitIdx].map((i) => (i < 0 ? -i - 1 : i)), ...context])].sort((a, b) => a - b);
-    for (const i of idx) {
-      if (context.has(i) && !hitIdx.has(i) && !hitIdx.has(-(i + 1))) hits.push({ ...lines[i], heading: true });
-      else hits.push({ ...lines[i], inSection: !hitIdx.has(i), ...(isHeading(lines[i].text) ? { heading: true } : {}) });
-    }
-    const { date, label } = docDate(f);
-    scored.push({
-      fileId: f.id,
-      name: f.name,
-      date,
-      dateLabel: label,
-      docType,
-      who: whoNames,
-      lines: hits,
-      whoScore,
-      topicScore: groupsHit * 100 + Math.min(hitIdx.size, 50),
-      ts: stamp(date),
-    });
+    scored.push({ fileId: f.id, name: f.name, date, dateLabel: label, docType, who: whoNames, lines: hits, whoScore, topicScore, ts: stamp(date) });
   }
 
-  const notes = [...who.notes];
   const highlight = cleanTerms([
     ...topicMatchers.flatMap((t) => t.m.terms),
     ...who.people.flatMap((p) => [p.name, surnameOf(p.name)]),
+    ...(rq ? levelHighlightTerms(rq.levels) : []),
   ]);
 
   // Who-matching files only, when the question names a doctor/specialty.
@@ -375,7 +563,7 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
   // Findings (and "what did the PM doctor say") come from reports, never from
   // a referral form. A plain word search still shows referrals, ranked last.
   const referrals = pool.filter((s) => s.docType === "referral");
-  if (!wantsReferral && (wantsFindings || hasWho)) {
+  if (!wantsReferral && (wantsFindings || hasWho || imagingMode)) {
     const reports = pool.filter((s) => s.docType !== "referral");
     if ((wantsFindings || topics.length) && referrals.length && !reports.some((s) => s.lines.length)) {
       const r = referrals[0];
@@ -385,21 +573,27 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
           ? `There's a referral to ${who1} on file (${r.name}, ${r.dateLabel} ${r.date}), but their report doesn't mention ${topicMatchers.map((t) => t.label).join(" or ")}.`
           : `Only a referral to ${who1} is on file (${r.name}, ${r.dateLabel} ${r.date}). There's no report from them yet, so there are no findings to show.`,
       );
-    } else if (referrals.length) {
-      notes.push(`Skipped ${referrals.length === 1 ? "a referral form" : `${referrals.length} referral forms`} (${referrals.map((r) => r.name).join(", ")}): findings come from reports.`);
+    } else if (referrals.some((r) => r.lines.length)) {
+      const shown = referrals.filter((r) => r.lines.length);
+      notes.push(`Skipped ${shown.length === 1 ? "a referral form" : `${shown.length} referral forms`} (${shown.map((r) => r.name).join(", ")}): findings come from reports.`);
     }
     pool = reports;
   }
 
   const withLines = pool.filter((s) => s.lines.length > 0);
-  if (pool.length && !withLines.length && !notes.some((n) => n.startsWith("Only a referral") || n.startsWith("There's a referral"))) {
+  if (imagingMode && rq && !withLines.length && !notes.some((n) => n.includes(" has no ") || n.includes("looks like an imaging report"))) {
+    const kind = rq.modalities.join("/");
+    notes.push(`No ${kind} report among the files I've read${unread ? " so far" : ""}.`);
+  }
+  if (!imagingMode && pool.length && !withLines.length && !notes.some((n) => n.startsWith("Only a referral") || n.startsWith("There's a referral"))) {
     const names = pool.slice(0, 3).map((s) => s.name).join(", ");
-    notes.push(`${names} ${pool.length === 1 ? "doesn't" : "don't"} mention ${topicMatchers.map((t) => t.label).join(" or ")}.`);
+    notes.push(`${names} ${pool.length === 1 ? "doesn't" : "don't"} mention ${topicMatchers.map((t) => t.label).join(" or ")}${regionFilterInText ? ` for ${regionWord}` : ""}.`);
   }
   withLines.sort(
     (a, b) =>
       b.whoScore - a.whoScore ||
       Number(b.docType === "report") - Number(a.docType === "report") ||
+      (imagingMode ? b.ts - a.ts : 0) ||
       b.topicScore - a.topicScore ||
       b.ts - a.ts,
   );
@@ -410,7 +604,7 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     );
   }
   // Questions that aren't about files ("next visit?") only get a files card when a file matches.
-  const aboutFiles = hasWho || topics.length > 0 || /\b(files?|pdfs?|documents?|reports?|records?)\b/i.test(q.question);
+  const aboutFiles = hasWho || topics.length > 0 || imagingMode || /\b(files?|pdfs?|documents?|reports?|records?)\b/i.test(q.question);
   if (!withLines.length && (!aboutFiles || !notes.length)) return null;
   const MAX_FILES = 5;
   return {
@@ -427,6 +621,12 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     moreFiles: Math.max(0, withLines.length - MAX_FILES),
     highlight,
     unread,
+    ...(imagingMode && rq
+      ? {
+          title: `${rq.modalities.length ? rq.modalities.join(" / ") : "Imaging"} report${regionAsked ? ` · ${rq.levels.length ? rq.levels.join(", ") : rq.regions.join(", ")}` : ""}`,
+          expanded: true,
+        }
+      : {}),
   };
 }
 
