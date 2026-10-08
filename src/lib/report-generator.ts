@@ -96,6 +96,11 @@ export interface NarrativeReportBuildInput {
     specialistPatientRefused?: boolean;
   };
   promptValues?: Record<string, string>;
+  /** Set when the report covers one treatment period (MM/DD/YYYY; end may
+   *  be "" while the period is open). Adds PERIOD_START_DATE /
+   *  PERIOD_END_DATE. Absent for "All visits", which leaves the output
+   *  exactly as before. The caller has already limited `encounters`. */
+  period?: { startDate: string; endDate: string };
 }
 
 /**
@@ -732,6 +737,12 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
       context[`${typeKey}_${n}_DATE`] = toUsDate(enc.encounterDate);
       context[`${typeKey}_${n}_TYPE`] = enc.appointmentType;
     }
+  }
+
+  // ── Treatment period (only when the report covers one period) ──
+  if (input.period) {
+    context.PERIOD_START_DATE = toUsDate(input.period.startDate);
+    context.PERIOD_END_DATE = toUsDate(input.period.endDate);
   }
 
   // ── Decompression Treatment Summary ──
