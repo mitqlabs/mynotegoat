@@ -12,8 +12,23 @@
  * and G.O.A.T. will not read it.
  */
 
-import { answerFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, surnameOf, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
+import type { DischargeInfo } from "@/lib/discharge-date";
+import {
+  isRegionGroup,
+  levelHighlightTerms,
+  levelsIn as levelsInText,
+  regionOfLevel,
+  parseRegionQuery,
+  pickSections,
+  regionOfWord,
+  regionsNamedIn,
+  splitFindings,
+  splitItems,
+  type RegionQuery,
+  type RegionSection,
+} from "@/lib/goat-regions";
 
 // ---------------------------------------------------------------------------
 // Input
@@ -114,7 +129,8 @@ export interface GoatContext {
   encounters: GoatEncounter[] | null;
   plans: GoatPlan[] | null;
   diagnoses: Array<{ code: string; description: string }> | null;
-  details: { discharge: string } | null;
+  /** discharge: MM/DD/YYYY as the Discharge box shows it (saved, or from the Discharge visit). */
+  details: { discharge: string; dischargeInfo?: DischargeInfo } | null;
   billing: { billed: string; paid: string; paidDate: string; rbSent: string } | null;
   /** The office's words & synonym groups (Settings → G.O.A.T.). */
   termGroups?: GoatTermGroup[];
@@ -128,9 +144,26 @@ export interface GoatContext {
 // Output
 // ---------------------------------------------------------------------------
 
+/** A titled list of complete items, e.g. "Lumbar" → its numbered findings. */
+export interface GoatBlock {
+  heading: string;
+  items: string[];
+  /** Items the question pointed at (e.g. a level); the rest show behind "Show all". */
+  focus?: number[];
+}
+
+/** One record (an MRI referral, a specialist) with its findings as blocks. */
+export interface GoatAnswerGroup {
+  lead: string;
+  blocks: GoatBlock[];
+  note?: string;
+}
+
 export interface GoatAnswer {
   title: string;
   lines: string[];
+  /** Structured findings (rendered after `lines`), shown in full. */
+  groups?: GoatAnswerGroup[];
   /** Where the answer was read from, in words. */
   source: string;
   section: GoatSection;
@@ -156,6 +189,10 @@ export interface GoatResult {
   terms: string[];
   /** Quotes from uploaded Patient Files, or null when files weren't asked about/available. */
   files: GoatFilesResult | null;
+  /** Show the files card before the answers (a doctor's report was asked for, or nothing else answered). */
+  filesFirst: boolean;
+  /** Extra words to highlight in answers (e.g. a spinal level asked about). */
+  highlight: string[];
 }
 
 /** Breaks between visits shorter than this are normal scheduling. */
@@ -237,7 +274,7 @@ const STOPWORDS = new Set(
 
 /** Words that only pick a topic — poor search terms on their own. */
 const STEERING = new Set(
-  "visit visits appointment appointments appt appts next last first recent previous upcoming gap gaps count times total date dates status plan treatment findings report reports".split(
+  "visit visits appointment appointments appt appts next last first recent previous upcoming gap gaps count times total date dates status plan treatment findings report reports panel card section box".split(
     " ",
   ),
 );
@@ -414,7 +451,22 @@ function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
   ];
   if (ctx.details) {
     const dc = dayStamp(ctx.details.discharge);
-    if (dc !== null) lines.push(`Discharged: ${fmtDay(dc)}.`);
+    const info = ctx.details.dischargeInfo;
+    if (dc !== null) {
+      const from =
+        info?.source === "visit" && info.visit
+          ? ` (date of the Discharge visit, ${info.visit.status.toLowerCase()})`
+          : info?.differsFromVisit && info.visit
+            ? ` (from the Discharge box, but the Discharge visit was ${info.visit.date})`
+            : "";
+      lines.push(`Discharged: ${fmtDay(dc)}${from}.`);
+    } else if (info?.scheduled) {
+      lines.push(
+        info.scheduled.past
+          ? `Discharge: the Discharge visit on ${info.scheduled.date} is still marked Scheduled (not checked in or out), so there's no discharge date yet.`
+          : `Discharge visit scheduled for ${info.scheduled.date}; not discharged yet.`,
+      );
+    }
   }
   return { title: "Key dates", lines, source: "Patient info", section: "info" };
 }
@@ -458,53 +510,114 @@ export function plainText(value: string): string {
     .trim();
 }
 
-function clip(text: string, max = 600): string {
-  const t = plainText(text).trim();
-  return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t;
+function regionOfLevelName(level: string, regions: string[]): boolean {
+  const r = regionOfLevel(level);
+  return Boolean(r && regions.includes(r));
 }
 
-function imagingAnswer(ctx: GoatContext, which: "xray" | "mri"): GoatAnswer {
-  const list = ctx.imaging.filter((i) => (which === "xray" ? i.modality === "X-Ray" : i.modality !== "X-Ray"));
+/** Text → blocks by body region, filtered to what the question asked. Nothing is shortened. */
+function regionBlocks(text: string, recordRegions: string[], rq: RegionQuery | null): GoatBlock[] {
+  const sections = splitFindings(plainText(text), recordRegions);
+  const picked: Array<RegionSection & { focus?: number[] }> = rq ? pickSections(sections, rq) : sections;
+  return picked.map((sec) => ({ heading: sec.label, items: sec.items, ...(sec.focus ? { focus: sec.focus } : {}) }));
+}
+
+function regionLabel(rq: RegionQuery | null): string {
+  if (!rq) return "";
+  if (rq.levels.length) return rq.levels.join(", ");
+  return rq.regions.join(", ");
+}
+
+/**
+ * X-ray or MRI/CT. With a region ("lumbar MRI") only that region's findings
+ * are shown, in full; without one, every region under its own heading.
+ * `onlyIfFound`: return null unless something matches (level-only questions).
+ */
+function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery | null = null, onlyIfFound = false): GoatAnswer | null {
+  let list = ctx.imaging.filter((i) => (which === "xray" ? i.modality === "X-Ray" : i.modality !== "X-Ray"));
+  if (which === "mri" && rq && rq.modalities.length === 1 && (rq.modalities[0] === "MRI" || rq.modalities[0] === "CT")) {
+    const only = list.filter((i) => i.modality === rq.modalities[0]);
+    if (only.length) list = only;
+  }
   const label = which === "xray" ? "X-Ray" : "MRI / CT";
+  const narrowed = Boolean(rq && (rq.regions.length || rq.levels.length));
+  const only = narrowed ? rq : null;
+  const where = regionLabel(rq);
   const lines: string[] = [];
+  const groups: GoatAnswerGroup[] = [];
+  const elsewhere: string[] = [];
   const flags: string[] = [];
   for (const i of list) {
-    const where = [i.center, i.regions.length ? i.regions.join(", ") : ""].filter(Boolean).join(" · ");
+    const place = [i.center, i.regions.length ? i.regions.join(", ") : ""].filter(Boolean).join(" · ");
     const status = imagingStatus(i, i.doneDate);
+    const lead = `${i.modality}${place ? ` (${place})` : ""}: ${status.text}.`;
+    const blocks = i.findings.trim() ? regionBlocks(i.findings, i.regions, only) : [];
+    if (narrowed && !blocks.length) {
+      const covers = i.regions.some((r) => rq!.regions.includes(regionOfWord(r) ?? regionsNamedIn(r)[0] ?? ("" as never)));
+      elsewhere.push(
+        covers
+          ? `${lead} Its findings have no ${where} section.`
+          : `${i.modality}${place ? ` (${place})` : ""}: doesn't cover ${where}.`,
+      );
+      continue;
+    }
     if (status.flag) flags.push(status.flag);
-    lines.push(`${i.modality}${where ? ` (${where})` : ""}: ${status.text}.`);
-    if (i.findings.trim()) lines.push(`Findings: ${clip(i.findings)}`);
+    groups.push({ lead, blocks, ...(!i.findings.trim() ? { note: "No findings entered yet." } : {}) });
   }
   const panelFindings = which === "xray" ? ctx.xrayFindings : ctx.mriFindings;
   if (panelFindings.trim() && !list.some((i) => i.findings.trim() === panelFindings.trim())) {
-    lines.push(`Findings: ${clip(panelFindings)}`);
+    const recordsHaveFindings = list.some((i) => i.findings.trim());
+    const short = plainText(panelFindings).trim();
+    if (recordsHaveFindings && short.length <= 80) {
+      // The case-matrix summary ("Cerv/Lumb/Knee"): one line, and only when no region was asked.
+      if (!narrowed) lines.push(`Panel summary: ${short}`);
+    } else {
+      const blocks = regionBlocks(panelFindings, [], only);
+      if (blocks.length) groups.push({ lead: `${label} findings (panel):`, blocks });
+      else if (!narrowed) groups.push({ lead: `${label} findings (panel):`, blocks: [{ heading: "", items: splitItems(short) }] });
+    }
   }
-  if (!lines.length) lines.push(`No ${label} referrals or findings on file.`);
+  if (onlyIfFound && !groups.some((g) => g.blocks.length)) return null;
+  if (narrowed && !groups.length) {
+    lines.unshift(list.length ? `No ${where} findings in the ${label} panel.` : `No ${label} referrals or findings on file.`);
+  } else if (!groups.length && !lines.length) {
+    lines.push(`No ${label} referrals or findings on file.`);
+  }
+  if (elsewhere.length) lines.push(...(groups.length ? [`Also on file: ${elsewhere.join(" ")}`] : elsewhere));
   return {
-    title: label,
+    title: narrowed ? `${label} · ${where}` : label,
     lines,
+    groups: groups.length ? groups : undefined,
     source: `${label} panel`,
     section: which,
     flag: [...new Set(flags)].join(" ") || undefined,
   };
 }
 
+function recommendationBlocks(text: string): GoatBlock[] {
+  return regionBlocks(text, [], null).map((b) => ({ ...b, heading: b.heading || "Recommendations" }));
+}
+
 function specialistAnswer(ctx: GoatContext): GoatAnswer {
   const lines: string[] = [];
+  const groups: GoatAnswerGroup[] = [];
   const flags: string[] = [];
   for (const s of ctx.specialists) {
     const status = imagingStatus(s, s.completedDate);
     if (status.flag) flags.push(status.flag);
-    lines.push(`${s.name || "Specialist"}: ${status.text.replace("done", "seen")}.`);
-    if (s.recommendations.trim()) lines.push(`Recommendations: ${clip(s.recommendations)}`);
+    groups.push({
+      lead: `${s.name || "Specialist"}: ${status.text.replace("done", "seen")}.`,
+      blocks: s.recommendations.trim() ? recommendationBlocks(s.recommendations) : [],
+    });
   }
   if (ctx.specialistRecommendations.trim() && !ctx.specialists.some((s) => s.recommendations.trim() === ctx.specialistRecommendations.trim())) {
-    lines.push(`Recommendations: ${clip(ctx.specialistRecommendations)}`);
+    groups.push({ lead: "Recommendations (panel):", blocks: recommendationBlocks(ctx.specialistRecommendations) });
   }
-  if (!lines.length) lines.push("No specialist referrals on file.");
+  if (!groups.length) lines.push("No specialist referrals on file.");
   return {
     title: "Specialist referrals",
     lines,
+    groups: groups.length ? groups : undefined,
     source: "Specialist panel",
     section: "specialist",
     flag: [...new Set(flags)].join(" ") || undefined,
@@ -603,7 +716,7 @@ function notesAnswer(ctx: GoatContext): GoatAnswer {
   if (ctx.notes === null) return hidden("Case notes", "notes");
   return {
     title: "Case notes",
-    lines: [ctx.notes.trim() ? clip(ctx.notes, 800) : "No case notes yet."],
+    lines: [ctx.notes.trim() ? plainText(ctx.notes).trim() : "No case notes yet."],
     source: "Notes",
     section: "notes",
   };
@@ -612,7 +725,7 @@ function notesAnswer(ctx: GoatContext): GoatAnswer {
 function priorCareAnswer(ctx: GoatContext): GoatAnswer {
   return {
     title: "Prior care",
-    lines: [ctx.priorCare.trim() ? clip(ctx.priorCare) : "Nothing entered for prior care."],
+    lines: [ctx.priorCare.trim() ? plainText(ctx.priorCare).trim() : "Nothing entered for prior care."],
     source: "Patient info",
     section: "info",
   };
@@ -817,15 +930,19 @@ function decompressionAnswer(ctx: GoatContext, today: number, region: DecompRegi
 // Searching the page's own text
 // ---------------------------------------------------------------------------
 
+/** The complete sentence(s) / numbered item(s) that match — never cut mid-sentence. */
 function snippetAround(text: string, matchers: TermMatcher[]): string {
-  let at = -1;
-  for (const m of matchers) {
-    const first = m.ranges(text)[0];
-    if (first && (at < 0 || first[0] < at)) at = first[0];
+  const units: string[] = [];
+  for (const u of splitItems(text)) {
+    const prev = units[units.length - 1];
+    // A bare label ("Lumbar:") goes with the item after it.
+    if (prev !== undefined && prev.length <= 60 && /:$/.test(prev)) units[units.length - 1] = `${prev} ${u}`;
+    else units.push(...(u.length > 320 ? u.split(/(?<=[.;!?])\s+(?=[A-Z0-9(])/) : [u]));
   }
-  const start = Math.max(0, at - 70);
-  const end = Math.min(text.length, (at < 0 ? 0 : at) + 110);
-  return `${start > 0 ? "…" : ""}${text.slice(start, end).replace(/\s+/g, " ").trim()}${end < text.length ? "…" : ""}`;
+  const hit = units.filter((u) => matchers.some((m) => m.test(u)));
+  const shown = (hit.length ? hit : units).slice(0, 2);
+  const more = hit.length > 2 ? ` (+${hit.length - 2} more)` : "";
+  return `${shown.join(" ")}${more}`;
 }
 
 /** One point per word / synonym group found (whole words only). */
@@ -928,10 +1045,30 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   const specialistWords =
     has(tokens, ["specialist", "referr", "refer", "consult", "pm", "ortho", "neuro", "recommend"]) || text.includes("pain management");
   // "Findings" means imaging only when nothing else is named ("PM findings", "ROM findings" aren't imaging).
-  const otherTopic = specialistWords || asked.some((g) => !isFindingsGroup(g) && !isImagingGroup(g));
-  const asksImaging = has(tokens, ["imaging", "radiology"]) || (has(tokens, ["findings"]) && !otherTopic);
-  if (asksXray || (asksImaging && !asksMri)) push(imagingAnswer(ctx, "xray"));
-  if (asksMri || (asksImaging && !asksXray)) push(imagingAnswer(ctx, "mri"));
+  // Body regions / levels ("lumbar", "C/S", "L5-S1") narrow imaging answers.
+  const rq = parseRegionQuery(question, asked);
+  const narrowed = rq.regions.length > 0 || rq.levels.length > 0;
+  // A doctor named in the question ("Haroutunian impression") means their report, not imaging.
+  const personNamed = people.some((p) => {
+    const surname = surnameOf(p.name);
+    return surname.length >= 3 && makeMatcher([surname]).test(question);
+  });
+  const otherTopic =
+    specialistWords || personNamed || asked.some((g) => !isFindingsGroup(g) && !isImagingGroup(g) && !isRegionGroup(g));
+  const asksImaging = has(tokens, ["imaging", "radiology"]) || (has(tokens, ["findings", "impression"]) && !otherTopic);
+  const xrayAsked = asksXray || rq.modalities.includes("X-Ray");
+  const mriAsked = asksMri || rq.modalities.includes("MRI") || rq.modalities.includes("CT");
+  const ask = (which: "xray" | "mri", onlyIfFound: boolean) => {
+    const a = imagingAnswer(ctx, which, rq, onlyIfFound);
+    if (a) push(a);
+  };
+  if (xrayAsked || (asksImaging && !mriAsked)) ask("xray", false);
+  if (mriAsked || (asksImaging && !xrayAsked)) ask("mri", false);
+  // "L5-S1?" / "lumbar disc" (no imaging word): show imaging cards that mention it.
+  if (!xrayAsked && !mriAsked && !asksImaging && narrowed && !specialistWords && (rq.levels.length || !asked.some((g) => !isRegionGroup(g)))) {
+    ask("mri", true);
+    ask("xray", true);
+  }
   if (specialistWords) push(specialistAnswer(ctx));
   if (has(tokens, ["plan", "frequency", "weekly", "week", "regions"]) || text.includes("treatment plan")) push(planAnswer(ctx, today));
   if (has(tokens, ["diagnos", "dx", "icd", "code", "codes"])) push(diagnosisAnswer(ctx));
@@ -947,6 +1084,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   // question's other words. "Findings" words only count when nothing else is asked.
   const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
   const searchGroups = asked.filter((g) => !isFindingsGroup(g) || asked.length === 1);
+  if (rq.levels.length) searchGroups.push({ id: "level", terms: levelHighlightTerms(rq.levels), updatedAt: "" });
   const covered = new Set(askedTerms.flatMap((t) => tokenize(t)));
   const leftovers = words.filter((w) => !covered.has(w));
   const matchers = [...searchGroups.map((g) => makeMatcher(g.terms)), ...leftovers.map((w) => makeMatcher([w]))];
@@ -954,7 +1092,18 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
 
   const files =
     ctx.files && ctx.files.length
-      ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people })
+      ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq })
       : null;
-  return { answers, hits: searchPage(ctx, matchers).slice(0, 8), terms, files };
+  // "Also mentioned": skip what an answer card above already shows in full.
+  const shownSections = new Set(answers.filter((a) => a.groups?.length).map((a) => a.section));
+  // A region question only wants mentions of that region ("knee MRI" → not a lumbar note about the MRI).
+  const regionMatcher = rq.regions.length
+    ? makeMatcher([...asked.filter(isRegionGroup).flatMap((g) => g.terms), ...rq.regions, ...levelHighlightTerms(rq.levels)])
+    : null;
+  const hits = searchPage(ctx, matchers)
+    .filter((h) => !(shownSections.has(h.section) && h.kind !== "SOAP" && h.kind !== "Note"))
+    .filter((h) => !regionMatcher || regionMatcher.test(h.snippet) || levelsInText(h.snippet).some((l) => rq.levels.includes(l) || regionOfLevelName(l, rq.regions)))
+    .slice(0, 5);
+  const filesFirst = Boolean(files && files.matches.length && (files.matches.some((m) => m.who.length) || !answers.length));
+  return { answers, hits, terms, files, filesFirst, highlight: levelHighlightTerms(rq.levels) };
 }

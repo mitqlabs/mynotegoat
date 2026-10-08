@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import {
   REVIEW_RECEIVED,
@@ -109,8 +110,10 @@ export function WeeklySummary() {
     const newPatients = activePatients.filter((p) =>
       inRange(parseAnyDate(p.matrix?.initialExam), weekStart, weekEnd),
     ).length;
+    // The date in each patient's Discharge box (saved, or the checked-in/out Discharge visit).
+    const dischargeIndex = buildDischargeIndex(scheduleAppointments);
     const discharged = activePatients.filter((p) =>
-      inRange(parseAnyDate(p.matrix?.discharge), weekStart, weekEnd),
+      inRange(parseAnyDate(patientDischargeIso(p, dischargeIndex)), weekStart, weekEnd),
     ).length;
 
     let paidTotal = 0;

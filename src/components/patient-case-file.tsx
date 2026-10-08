@@ -120,6 +120,7 @@ import { loadOfficeSettings } from "@/lib/office-settings";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
+import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -2240,35 +2241,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   }, [cloudPatientNotes, encountersByNewest, patient.id]);
 
-  // Auto-fill the Discharge date when the case moves to a closed
-  // status (Discharged / Settled / Reduced / etc.) and the user
-  // hasn't already entered one. The most-recent encounter date is the
-  // sensible default — that's the actual last visit on file.
-  //
-  // Once we auto-fill (or detect a manual value at close-time), we
-  // flip a ref and never auto-fill again on this mount, so a manual
-  // clear / edit from the user always wins. Reloading the patient
-  // file resets the ref and we re-evaluate.
-  const dischargeAutoFilledRef = useRef(false);
-  useEffect(() => {
-    if (dischargeAutoFilledRef.current) return;
-    if (!caseStatus.trim()) return;
-    const closedConfig = caseStatuses.find(
-      (s) =>
-        s.name.toLowerCase() === caseStatus.toLowerCase() && s.isCaseClosed,
-    );
-    if (!closedConfig) return;
-    // If the user already typed a discharge date, respect it — but
-    // mark as handled so a later state churn doesn't try to clobber.
-    if (dischargeDate.trim()) {
-      dischargeAutoFilledRef.current = true;
-      return;
-    }
-    const mostRecentEncounterDate = patientEncounterRecords[0]?.encounterDate;
-    if (!mostRecentEncounterDate) return;
-    setDischargeDate(mostRecentEncounterDate);
-    dischargeAutoFilledRef.current = true;
-  }, [caseStatus, caseStatuses, dischargeDate, patientEncounterRecords]);
   // openPatientEncounterRecords memo used to live here for the
   // "Open Encounters" sidebar inside Appointments / Encounters. The
   // sidebar was removed per user request — open encounters surface in
@@ -2328,6 +2300,48 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return rows.sort((x, y) => x.iso.localeCompare(y.iso));
   }, [patientAppointmentRecords]);
+  // Discharge date as shown everywhere (Additional Details, Quick Glance,
+  // G.O.A.T., durations, reports): the saved date when there is one, else the
+  // latest attended Discharge visit. Derived at display time — never saved.
+  const dischargeInfo = useMemo(
+    () => resolveDischargeDate(dischargeDate, patientAppointmentRecords, localTodayIso()),
+    [dischargeDate, patientAppointmentRecords],
+  );
+  const effectiveDischargeDate = dischargeInfo.date;
+  // Auto-fill the Discharge date when the case moves to a closed
+  // status (Discharged / Settled / Reduced / etc.) and the user
+  // hasn't already entered one. The most-recent encounter date is the
+  // sensible default — that's the actual last visit on file.
+  //
+  // Once we auto-fill (or detect a manual value at close-time), we
+  // flip a ref and never auto-fill again on this mount, so a manual
+  // clear / edit from the user always wins. Reloading the patient
+  // file resets the ref and we re-evaluate.
+  const dischargeAutoFilledRef = useRef(false);
+  useEffect(() => {
+    if (dischargeAutoFilledRef.current) return;
+    if (!caseStatus.trim()) return;
+    const closedConfig = caseStatuses.find(
+      (s) =>
+        s.name.toLowerCase() === caseStatus.toLowerCase() && s.isCaseClosed,
+    );
+    if (!closedConfig) return;
+    // If the Discharge box already has a saved date, respect it — but
+    // mark as handled so a later state churn doesn't try to clobber.
+    if (dischargeDate.trim()) {
+      dischargeAutoFilledRef.current = true;
+      return;
+    }
+    // An attended Discharge visit already gives the date (shown, not saved).
+    if (dischargeInfo.visit) {
+      dischargeAutoFilledRef.current = true;
+      return;
+    }
+    const mostRecentEncounterDate = patientEncounterRecords[0]?.encounterDate;
+    if (!mostRecentEncounterDate) return;
+    setDischargeDate(mostRecentEncounterDate);
+    dischargeAutoFilledRef.current = true;
+  }, [caseStatus, caseStatuses, dischargeDate, dischargeInfo.visit, patientEncounterRecords]);
   // Case Flow for this one patient. It sits below patientAppointmentRecords
   // deliberately: that list is what decides whether the patient has ever
   // been booked, and it handles legacy appointments that carry a name but
@@ -2594,7 +2608,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       diagnoses: isHidden("diagnosis")
         ? null
         : patientDiagnoses.map((d) => ({ code: d.code, description: d.description })),
-      details: isHidden("additionalDetails") ? null : { discharge: dischargeDate },
+      details: isHidden("additionalDetails") ? null : { discharge: effectiveDischargeDate, dischargeInfo },
       billing:
         isHidden("additionalDetails") || isHidden("billingFigures")
           ? null
@@ -2612,7 +2626,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
     caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, initialExam, priorCare, xrayFindings,
     mriCtFindings, specialistRecommendations, xrayReferrals, mriReferrals, specialistReferrals, patientNotes,
-    patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, dischargeDate, billedAmount,
+    patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, effectiveDischargeDate, dischargeInfo, billedAmount,
     paidAmount, paidDate, rbSentDate,
   ]);
 
@@ -3554,15 +3568,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const reportDiagnoses = excludedDxIds.size
       ? patientDiagnoses.filter((entry) => !excludedDxIds.has(entry.id))
       : patientDiagnoses;
-    // For one period: that period's Discharge visit, else the saved date if it
-    // falls inside the period, else blank (it belongs to another course).
+    // All visits: the Discharge date as shown everywhere (saved date, else the
+    // latest attended Discharge visit). One period: that period's Discharge
+    // visit, else that date if it falls inside the period, else blank (it
+    // belongs to another course).
     const reportDischargeDate = period
       ? period.dischargeIso
         ? periodIsoToUs(period.dischargeIso)
-        : dischargeDate && isInPeriod(dischargeDate, period.range)
-          ? dischargeDate
+        : effectiveDischargeDate && isInPeriod(effectiveDischargeDate, period.range)
+          ? effectiveDischargeDate
           : ""
-      : dischargeDate;
+      : effectiveDischargeDate;
     const { context, rawHtmlTokens } = buildNarrativeReportContext({
       office: {
         officeName: officeSettings.officeName,
@@ -4846,19 +4862,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
-  const initialExamDateValue = parseUsDate(initialExam);
-  const dischargeDateValue = parseUsDate(dischargeDate);
   const rbSentDateValue = parseUsDate(rbSentDate);
   const paidDateValue = parseUsDate(paidDate);
 
-  const initialToDischarge = formatMonthDayDiff(
-    initialExamDateValue && dischargeDateValue
-      ? getMonthDayDiff(initialExamDateValue, dischargeDateValue)
-      : null,
-  );
-  const dischargeToRb = formatMonthDayDiff(
-    dischargeDateValue && rbSentDateValue ? getMonthDayDiff(dischargeDateValue, rbSentDateValue) : null,
-  );
+  // Same span calculation the Patients list uses (lib/discharge-date).
+  const initialToDischarge = formatMonthDaySpan(monthDaySpan(initialExam, effectiveDischargeDate));
+  const dischargeToRb = formatMonthDaySpan(monthDaySpan(effectiveDischargeDate, rbSentDate));
   const rbToPaid = formatMonthDayDiff(
     rbSentDateValue && paidDateValue ? getMonthDayDiff(rbSentDateValue, paidDateValue) : null,
   );
@@ -5349,6 +5358,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           billed={currentBillTotal}
           doi={dateOfLoss}
           ie={initialExam}
+          discharge={hiddenStyle("additionalDetails") ? undefined : dischargeInfo}
           mriReferrals={mriReferrals}
           specialistReferrals={specialistReferrals}
           xrayReferrals={xrayReferrals}
@@ -7497,7 +7507,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           // encounter charges, so the "$ Billed" check follows that.
           const billingTotalNumeric = currentBillTotal;
           const paidNumeric = Number.parseFloat(paidAmount) || 0;
-          const dischargeFilled = dischargeDate.trim().length > 0;
+          const dischargeFilled = effectiveDischargeDate.trim().length > 0;
           const rbSentFilled = rbSentDate.trim().length > 0;
           const billedFilled = billingTotalNumeric > 0;
           const paidDateFilled = paidDate.trim().length > 0;
@@ -7576,18 +7586,59 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           ) : (
           <>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold text-[var(--text-muted)]">Discharge</span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  inputMode="numeric"
-                  maxLength={10}
-                  onChange={(event) => setDischargeDate(formatUsDateInput(event.target.value))}
-                  placeholder="MM/DD/YYYY"
-                  value={dischargeDate}
-                />
-              </label>
+            <div className="mt-4 grid items-start gap-3 sm:grid-cols-2">
+              <div className="grid gap-1">
+                <label className="grid gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Discharge</span>
+                  {/* Empty box + an attended Discharge visit → its date is shown
+                      (in blue) without being saved. A date entered here wins. */}
+                  <input
+                    className={`rounded-xl border px-3 py-2 ${
+                      dischargeInfo.source === "visit"
+                        ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
+                        : "border-[var(--line-soft)] bg-white"
+                    }`}
+                    data-discharge-source={dischargeInfo.source}
+                    inputMode="numeric"
+                    maxLength={10}
+                    onChange={(event) => setDischargeDate(formatUsDateInput(event.target.value))}
+                    placeholder="MM/DD/YYYY"
+                    // Inline: global input styles out-rank Tailwind's text colour utilities.
+                    style={dischargeInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
+                    title={
+                      dischargeInfo.source === "visit"
+                        ? `From the Discharge visit (${dischargeInfo.visit?.status ?? "Checked Out"})`
+                        : undefined
+                    }
+                    value={dischargeInfo.source === "visit" ? dischargeInfo.date : dischargeDate}
+                  />
+                </label>
+                {dischargeInfo.source === "visit" && dischargeInfo.visit && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    From the Discharge visit ({dischargeInfo.visit.status})
+                  </span>
+                )}
+                {dischargeInfo.source === "manual" && dischargeInfo.differsFromVisit && dischargeInfo.visit && (
+                  <span className="text-xs text-[#9a5b00]">
+                    The Discharge box says {dischargeInfo.date} but the Discharge visit was {dischargeInfo.visit.date} (
+                    {dischargeInfo.visit.status}).{" "}
+                    <button
+                      className="font-semibold text-[var(--brand-primary)] hover:underline"
+                      onClick={() => setDischargeDate("")}
+                      type="button"
+                    >
+                      Use the visit date
+                    </button>
+                  </span>
+                )}
+                {dischargeInfo.source === "none" && dischargeInfo.scheduled && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {dischargeInfo.scheduled.past
+                      ? `The Discharge visit on ${dischargeInfo.scheduled.date} is still marked Scheduled. Check it in or out on the schedule to use its date.`
+                      : `Discharge visit scheduled for ${dischargeInfo.scheduled.date}. Its date fills in here once it's checked in or out.`}
+                  </span>
+                )}
+              </div>
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">R&B Sent</span>
                 <input
