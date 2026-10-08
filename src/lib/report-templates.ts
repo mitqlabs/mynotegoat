@@ -97,6 +97,10 @@ export const narrativeReportAutoFields: NarrativeReportAutoField[] = [
   { token: "FIRST_ENCOUNTER_DATE", label: "First Encounter Date" },
   { token: "LATEST_ENCOUNTER_DATE", label: "Latest Encounter Date" },
   { token: "ENCOUNTER_COUNT", label: "Encounter Count" },
+  // Filled only when the report is run for one treatment period (Reports →
+  // Treatment period); blank for "All visits".
+  { token: "PERIOD_START_DATE", label: "Treatment Period Start" },
+  { token: "PERIOD_END_DATE", label: "Treatment Period End" },
   { token: "FIRST_SUBJECTIVE", label: "First Subjective" },
   { token: "FIRST_OBJECTIVE", label: "First Objective" },
   { token: "FIRST_ASSESSMENT", label: "First Assessment" },

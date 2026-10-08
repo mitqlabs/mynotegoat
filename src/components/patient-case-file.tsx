@@ -51,6 +51,17 @@ import { createEncounterMacroRunId, encounterSections } from "@/lib/encounter-no
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { buildNarrativeReportContext, renderNarrativeReportBody } from "@/lib/report-generator";
 import {
+  detectTreatmentPeriods,
+  dischargeVisitInPeriod,
+  filterNotesToPeriod,
+  hasMultipleTreatmentPeriods,
+  isInPeriod,
+  periodIsoToUs,
+  toPeriodIso,
+  type PeriodRange,
+} from "@/lib/treatment-periods";
+import { UsDateInput } from "@/components/us-date-input";
+import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
   formatTimeLabel,
@@ -202,6 +213,19 @@ type NarrativePreviewState = {
   fontFamily: string;
   headerHtml: string;
   bodyHtml: string;
+  /** What the preview was built from, so the diagnosis checklist can rebuild it. */
+  templateId?: string;
+  promptValues?: Record<string, string>;
+  /** The treatment period this report covers; null/absent = All visits. */
+  period?: ReportPeriodSelection | null;
+};
+
+/** One treatment period chosen in Reports (lib/treatment-periods). */
+type ReportPeriodSelection = {
+  range: PeriodRange;
+  label: string;
+  /** The Discharge visit inside the period (YYYY-MM-DD), or "". */
+  dischargeIso: string;
 };
 
 const imagingRegions: ImagingRegionOption[] = [
@@ -1728,6 +1752,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [showNarrativePreviewModal, setShowNarrativePreviewModal] = useState(false);
   const [narrativeAttachedEncounterIds, setNarrativeAttachedEncounterIds] = useState<Set<string>>(new Set());
   const [narrativeAttachBilling, setNarrativeAttachBilling] = useState(false);
+  // Reports → Treatment period (only offered to patients with 2+ courses of
+  // care). "all" keeps the report exactly as before. Nothing here is saved.
+  const [reportPeriodChoice, setReportPeriodChoice] = useState("all"); // "all" | "custom" | period id
+  const [reportCustomStart, setReportCustomStart] = useState("");
+  const [reportCustomEnd, setReportCustomEnd] = useState("");
+  // Diagnoses unticked in the preview — this report only, never saved.
+  const [narrativeExcludedDxIds, setNarrativeExcludedDxIds] = useState<Set<string>>(new Set());
+  const narrativePreviewEditedRef = useRef(false);
   const [encounterMessage, setEncounterMessage] = useState("");
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [rescheduleAppointmentId, setRescheduleAppointmentId] = useState<string | null>(null);
@@ -2242,6 +2274,32 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         return right.startTime.localeCompare(left.startTime);
       });
   }, [firstName, lastName, patient.fullName, patient.id, scheduleAppointments]);
+  // Treatment periods for Reports (lib/treatment-periods): each attended New
+  // Patient visit → the next Discharge visit. The period picker and the
+  // diagnosis checklist only appear for patients with 2+ courses of care.
+  const treatmentPeriods = useMemo(
+    () => detectTreatmentPeriods(patientAppointmentRecords, patientEncounterRecords),
+    [patientAppointmentRecords, patientEncounterRecords],
+  );
+  const showReportPeriods = useMemo(
+    () => hasMultipleTreatmentPeriods(patientAppointmentRecords, patientEncounterRecords, treatmentPeriods),
+    [patientAppointmentRecords, patientEncounterRecords, treatmentPeriods],
+  );
+  // Visit dates for the custom range quick-pick — same as the treatment plan picker.
+  const reportVisitDateOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: { value: string; label: string; iso: string }[] = [];
+    for (const a of patientAppointmentRecords) {
+      const us = periodIsoToUs(toPeriodIso(a.date));
+      if (!us) continue;
+      const type = (a.appointmentType || "").trim();
+      const k = `${us}|${type}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      rows.push({ value: us, label: type ? `${us} — ${type}` : us, iso: toPeriodIso(a.date) });
+    }
+    return rows.sort((x, y) => x.iso.localeCompare(y.iso));
+  }, [patientAppointmentRecords]);
   // Discharge date as shown everywhere (Additional Details, Quick Glance,
   // G.O.A.T., durations, reports): the saved date when there is one, else the
   // latest attended Discharge visit. Derived at display time — never saved.
@@ -3452,10 +3510,75 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setLetterMessage(`Generated ${selectedLetterTemplate.name}. Use Save as PDF in the print dialog.`);
   };
 
+  // The treatment period picked in Reports. null = All visits (also for every
+  // patient with a single course, who never sees the picker).
+  const resolveReportPeriod = (): { period: ReportPeriodSelection | null; error: string } => {
+    if (!showReportPeriods || reportPeriodChoice === "all") return { period: null, error: "" };
+    if (reportPeriodChoice === "custom") {
+      const startText = reportCustomStart.trim();
+      const endText = reportCustomEnd.trim();
+      if (!startText && !endText) return { period: null, error: "Enter a start date, an end date, or both." };
+      if ((startText && !parseUsDate(startText)) || (endText && !parseUsDate(endText))) {
+        return { period: null, error: "Use MM/DD/YYYY for the treatment period dates." };
+      }
+      const range = { startIso: toPeriodIso(startText), endIso: toPeriodIso(endText) };
+      if (range.startIso && range.endIso && range.startIso > range.endIso) {
+        return { period: null, error: "The treatment period starts after it ends." };
+      }
+      return {
+        period: {
+          range,
+          label: `${startText || "…"} – ${endText || "…"} · Custom dates`,
+          dischargeIso: dischargeVisitInPeriod(patientAppointmentRecords, patientEncounterRecords, range),
+        },
+        error: "",
+      };
+    }
+    const match = treatmentPeriods.find((entry) => entry.id === reportPeriodChoice);
+    if (!match) return { period: null, error: "" };
+    const range = { startIso: match.startIso, endIso: match.endIso };
+    return {
+      period: {
+        range,
+        label: match.label,
+        dischargeIso:
+          match.dischargeIso || dischargeVisitInPeriod(patientAppointmentRecords, patientEncounterRecords, range),
+      },
+      error: "",
+    };
+  };
+
+  // What the open preview covers: its period's notes, and the diagnoses still
+  // ticked. With All visits and every diagnosis ticked these are the same
+  // lists as before, so the report is unchanged.
+  const narrativeReportEncounters = narrativePreview?.period
+    ? filterNotesToPeriod(patientEncounterRecords, narrativePreview.period.range)
+    : patientEncounterRecords;
+  const narrativeReportDiagnoses = narrativeExcludedDxIds.size
+    ? patientDiagnoses.filter((entry) => !narrativeExcludedDxIds.has(entry.id))
+    : patientDiagnoses;
+
   const buildNarrativePreview = (
     template: NonNullable<typeof selectedNarrativeTemplate>,
     promptValues: Record<string, string>,
-  ) => {
+    period: ReportPeriodSelection | null = null,
+    excludedDxIds: Set<string> = new Set(),
+  ): NarrativePreviewState => {
+    const reportEncounters = period ? filterNotesToPeriod(patientEncounterRecords, period.range) : patientEncounterRecords;
+    const reportDiagnoses = excludedDxIds.size
+      ? patientDiagnoses.filter((entry) => !excludedDxIds.has(entry.id))
+      : patientDiagnoses;
+    // All visits: the Discharge date as shown everywhere (saved date, else the
+    // latest attended Discharge visit). One period: that period's Discharge
+    // visit, else that date if it falls inside the period, else blank (it
+    // belongs to another course).
+    const reportDischargeDate = period
+      ? period.dischargeIso
+        ? periodIsoToUs(period.dischargeIso)
+        : effectiveDischargeDate && isInPeriod(effectiveDischargeDate, period.range)
+          ? effectiveDischargeDate
+          : ""
+      : effectiveDischargeDate;
     const { context, rawHtmlTokens } = buildNarrativeReportContext({
       office: {
         officeName: officeSettings.officeName,
@@ -3500,15 +3623,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         hisHer: patientSex.toLowerCase() === "male" ? "His" : patientSex.toLowerCase() === "female" ? "Her" : "Their",
       },
       additional: {
-        dischargeDate: effectiveDischargeDate,
+        dischargeDate: reportDischargeDate,
         rbSentDate,
         paidDate,
         billedAmount: currentBillTotal.toFixed(2),
         paidAmount,
         reviewStatus,
       },
-      encounters: patientEncounterRecords,
-      diagnoses: patientDiagnoses.map((entry) => ({
+      encounters: reportEncounters,
+      diagnoses: reportDiagnoses.map((entry) => ({
         code: entry.code,
         description: entry.description,
       })),
@@ -3555,6 +3678,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         specialistPatientRefused: specialistFollowUpOverride.patientRefused,
       },
       promptValues,
+      ...(period
+        ? { period: { startDate: periodIsoToUs(period.range.startIso), endDate: periodIsoToUs(period.range.endIso) } }
+        : {}),
     });
 
     const renderedHeader = documentTemplates.header.active
@@ -3566,7 +3692,31 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       fontFamily: template.fontFamily,
       headerHtml: renderedHeader,
       bodyHtml: renderedBody,
+      templateId: template.id,
+      promptValues,
+      period,
     };
+  };
+
+  // Diagnoses for this report: re-render the text when the template uses the
+  // diagnosis tokens (the billing statement reads the ticks at print time).
+  const applyNarrativeDxExclusion = (next: Set<string>) => {
+    if (!narrativePreview) return;
+    const template = reportTemplates.templates.find((entry) => entry.id === narrativePreview.templateId);
+    const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
+    if (template && /DIAGNOSIS_/.test(`${template.body}\n${headerBody}`)) {
+      if (
+        narrativePreviewEditedRef.current &&
+        !window.confirm("Update the report text with these diagnoses? Edits made in the preview will be lost.")
+      ) {
+        return;
+      }
+      setNarrativePreview(
+        buildNarrativePreview(template, narrativePreview.promptValues ?? {}, narrativePreview.period ?? null, next),
+      );
+      narrativePreviewEditedRef.current = false;
+    }
+    setNarrativeExcludedDxIds(next);
   };
 
   const startNarrativeGeneration = () => {
@@ -3576,6 +3726,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       if (shouldCreate) {
         openReportTemplateSettings();
       }
+      return;
+    }
+    const periodCheck = resolveReportPeriod();
+    if (periodCheck.error) {
+      setNarrativeMessage(periodCheck.error);
       return;
     }
 
@@ -3594,7 +3749,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const preview = buildNarrativePreview(selectedNarrativeTemplate, {});
+    const preview = buildNarrativePreview(selectedNarrativeTemplate, {}, periodCheck.period);
+    setNarrativeExcludedDxIds(new Set());
+    narrativePreviewEditedRef.current = false;
     setNarrativePreview(preview);
     setShowNarrativePreviewModal(true);
     setNarrativeMessage(`Generated ${selectedNarrativeTemplate.name} preview. Review and print when ready.`);
@@ -3614,7 +3771,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const preview = buildNarrativePreview(narrativePromptTemplate, narrativePromptValues);
+    const preview = buildNarrativePreview(narrativePromptTemplate, narrativePromptValues, resolveReportPeriod().period);
+    setNarrativeExcludedDxIds(new Set());
+    narrativePreviewEditedRef.current = false;
     setNarrativePreview(preview);
     setShowNarrativePromptModal(false);
     setShowNarrativePreviewModal(true);
@@ -3639,7 +3798,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const liveHtml = narrativeEditableRef.current?.innerHTML ?? narrativePreview.bodyHtml;
 
     // Build encounter pages for attached encounters (sorted oldest first)
-    const attachedEncounters = patientEncounterRecords
+    const attachedEncounters = narrativeReportEncounters
       .filter((entry) => narrativeAttachedEncounterIds.has(entry.id))
       .sort(
         (a, b) =>
@@ -3668,7 +3827,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     if (narrativeAttachBilling) {
       // Collect all encounter charge lines sorted oldest → newest
       // (matches the Print Bill order in the billing page).
-      const allCharges = [...patientEncounterRecords]
+      const allCharges = [...narrativeReportEncounters]
         .sort((a, b) => toSortStampFromUsDate(a.encounterDate) - toSortStampFromUsDate(b.encounterDate))
         .flatMap((enc) =>
           enc.charges.map((ch) => ({
@@ -3694,7 +3853,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           attorneyName: attorney,
           attorneyPhone: matchedAttorneyContact?.phone ?? "",
           providerName: officeSettings.doctorName,
-          diagnoses: patientDiagnoses.map((d) => ({ code: d.code, description: d.description })),
+          diagnoses: narrativeReportDiagnoses.map((d) => ({ code: d.code, description: d.description })),
           charges: allCharges,
           total: allCharges.reduce((sum, c) => sum + c.lineTotal, 0),
         });
@@ -3739,6 +3898,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setNarrativePreview(null);
     setNarrativeAttachedEncounterIds(new Set());
     setNarrativeAttachBilling(false);
+    setNarrativeExcludedDxIds(new Set());
   };
 
   const addReExam = () => {
@@ -6999,6 +7159,85 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </button>
             </div>
 
+            {/* Treatment period — only for patients with 2+ courses of care
+                (2+ New Patient and 2+ Discharge visits). Everyone else sees
+                the Reports box exactly as before. Nothing here is saved. */}
+            {showReportPeriods && (
+              <div className="mt-3 grid min-w-0 gap-2" data-report-period-picker>
+                <label className="grid min-w-0 gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Treatment period</span>
+                  <select
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(event) => {
+                      setReportPeriodChoice(event.target.value);
+                      setNarrativeMessage("");
+                    }}
+                    value={
+                      reportPeriodChoice === "custom" || treatmentPeriods.some((entry) => entry.id === reportPeriodChoice)
+                        ? reportPeriodChoice
+                        : "all"
+                    }
+                  >
+                    <option value="all">All visits</option>
+                    {treatmentPeriods.map((entry) => {
+                      const noteCount = filterNotesToPeriod(patientEncounterRecords, entry).length;
+                      return (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.label} ({noteCount} note{noteCount === 1 ? "" : "s"})
+                        </option>
+                      );
+                    })}
+                    <option value="custom">Custom dates…</option>
+                  </select>
+                </label>
+                {reportPeriodChoice === "custom" && (
+                  <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                    {(
+                      [
+                        ["Start date", reportCustomStart, setReportCustomStart],
+                        ["End date", reportCustomEnd, setReportCustomEnd],
+                      ] as const
+                    ).map(([label, value, setValue]) => (
+                      <label className="grid min-w-0 gap-1" key={label}>
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">{label}</span>
+                        <UsDateInput
+                          className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                          onChange={(v) => {
+                            setValue(v);
+                            setNarrativeMessage("");
+                          }}
+                          value={value}
+                        />
+                        {reportVisitDateOptions.length > 0 && (
+                          <select
+                            className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                            onChange={(e) => {
+                              if (!e.target.value) return;
+                              setValue(e.target.value);
+                              setNarrativeMessage("");
+                            }}
+                            value=""
+                          >
+                            <option value="">…or pick a visit date</option>
+                            {reportVisitDateOptions.map((o, i) => (
+                              <option key={`${o.value}-${i}`} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-[var(--text-muted)]">
+                  {reportPeriodChoice === "all"
+                    ? "This patient has more than one course of care. Pick one to report on only its visits."
+                    : "The report uses only the notes, charges and Discharge visit in this period. X-ray, MRI and specialist referrals are always included."}
+                </p>
+              </div>
+            )}
+
             {narrativeMessage && (
               <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{narrativeMessage}</p>
             )}
@@ -7730,6 +7969,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <div>
                   <h3 className="text-xl font-semibold">Narrative Preview</h3>
                   <p className="text-sm text-[var(--text-muted)]">{narrativePreview.title} — click anywhere to edit before printing</p>
+                  {narrativePreview.period && (
+                    <p className="mt-0.5 text-sm font-semibold text-[var(--brand-primary)]" data-report-period-covers>
+                      Covers {narrativePreview.period.label} — {narrativeReportEncounters.length} of{" "}
+                      {patientEncounterRecords.length} notes
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -7750,7 +7995,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </div>
 
               {/* Attach encounters selector */}
-              {patientEncounterRecords.length > 0 && (
+              {narrativeReportEncounters.length > 0 && (
                 <div className="mb-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold">
@@ -7766,7 +8011,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                         onClick={() =>
                           setNarrativeAttachedEncounterIds(
-                            new Set(patientEncounterRecords.map((e) => e.id)),
+                            new Set(narrativeReportEncounters.map((e) => e.id)),
                           )
                         }
                         type="button"
@@ -7783,7 +8028,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </div>
                   </div>
                   <div className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
-                    {[...patientEncounterRecords]
+                    {[...narrativeReportEncounters]
                       .sort(
                         (a, b) =>
                           toSortStampFromUsDate(a.encounterDate) -
@@ -7841,8 +8086,70 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </label>
               </div>
 
+              {/* Diagnoses for this report — same 2+ courses gate as the period
+                  picker. Unticking drops a code from this report's diagnosis
+                  tokens and billing statement only; the patient's list is
+                  never changed. */}
+              {showReportPeriods && patientDiagnoses.length > 0 && (
+                <div
+                  className="mb-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3"
+                  data-report-diagnoses
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                      Diagnoses for this report
+                      <span className="ml-1.5 text-xs font-normal text-[var(--text-muted)]">
+                        ({narrativeReportDiagnoses.length} of {patientDiagnoses.length} — this report only; the
+                        patient&apos;s list isn&apos;t changed)
+                      </span>
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                        onClick={() => applyNarrativeDxExclusion(new Set())}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button
+                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                        onClick={() => applyNarrativeDxExclusion(new Set(patientDiagnoses.map((entry) => entry.id)))}
+                        type="button"
+                      >
+                        None
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
+                    {patientDiagnoses.map((entry) => (
+                      <label
+                        key={entry.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1 text-sm hover:bg-white/60 select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 accent-[var(--brand-primary)]"
+                          checked={!narrativeExcludedDxIds.has(entry.id)}
+                          onChange={(e) => {
+                            const next = new Set(narrativeExcludedDxIds);
+                            if (e.target.checked) next.delete(entry.id);
+                            else next.add(entry.id);
+                            applyNarrativeDxExclusion(next);
+                          }}
+                        />
+                        <span className="font-medium">{entry.code}</span>
+                        <span className="text-xs leading-5 text-[var(--text-muted)]">{entry.description}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <article className="rounded-xl border border-[var(--line-soft)] bg-white p-6">
                 <div
+                  onInput={() => {
+                    narrativePreviewEditedRef.current = true;
+                  }}
                   ref={narrativeEditableRef}
                   className="narrative-editable-preview space-y-4 whitespace-pre-wrap break-words leading-7 focus:outline-none"
                   contentEditable
