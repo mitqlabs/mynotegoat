@@ -37,6 +37,7 @@ import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { UsDateInput } from "@/components/us-date-input";
 import { ScrollLock } from "@/components/scroll-lock";
+import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischargeIso } from "@/lib/discharge-date";
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
   const trimmed = fullName.trim();
@@ -414,7 +415,7 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
   return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
 }
 
-function getDetailValue(patient: PatientRecord, key: DetailRow["key"]) {
+function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string) {
   if (key === "attorney") {
     return cleanAttorneyLabel(patient.attorney) || "-";
   }
@@ -426,6 +427,17 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"]) {
   }
   if (key === "contact") {
     return patient.matrix?.contact || patient.phone || "-";
+  }
+  // Discharge and its spans: whatever date is in the patient's Discharge box
+  // (saved, or the latest checked-in/out Discharge visit) — lib/discharge-date.
+  if (key === "discharge") {
+    return dischargeIso ? formatLeadingDateDisplay(dischargeIso) : "-";
+  }
+  if (key === "initialToDischarge") {
+    return formatMonthDaySpan(monthDaySpan(patient.matrix?.initialExam ?? "", dischargeIso));
+  }
+  if (key === "dischargeToRb") {
+    return formatMonthDaySpan(monthDaySpan(dischargeIso, patient.matrix?.rbSent ?? ""));
   }
   const value = patient.matrix?.[key] || "-";
   if (dateMatrixFields.has(key)) {
@@ -460,6 +472,8 @@ export default function PatientsPage() {
 
   const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
   const { scheduleAppointments } = useScheduleAppointments();
+  // Discharge dates as the patient page's Discharge box shows them.
+  const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   const { contacts, addContact } = useContactDirectory();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
@@ -1832,7 +1846,7 @@ export default function PatientsPage() {
                     </td>
                     {filteredPatients.map((patient) => (
                       <td key={`${row.label}-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3">
-                        {getDetailValue(patient, row.key)}
+                        {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex))}
                       </td>
                     ))}
                   </tr>

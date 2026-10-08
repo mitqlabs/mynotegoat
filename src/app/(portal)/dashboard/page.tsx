@@ -18,6 +18,8 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -386,6 +388,9 @@ function DashboardSection({
 
 export default function DashboardPage() {
   const { roleTier } = useWorkspaceAccess();
+  // Discharge dates as the patient page's Discharge box shows them.
+  const { scheduleAppointments } = useScheduleAppointments();
+  const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   const { adminAccess } = useAdminAccess();
   // Clicking a facility / specialist row opens the list of who was sent there.
   const [referralDrill, setReferralDrill] = useState<{
@@ -665,8 +670,10 @@ export default function DashboardPage() {
       // Compute from the actual saved milestone DATES (the precomputed
       // matrix.initialToDischarge/dischargeToRb/rbToPaid fields are never
       // written by the app, so they were empty/garbage).
-      const itd = daysBetween(m?.initialExam, m?.discharge);
-      const dtr = daysBetween(m?.discharge, m?.rbSent);
+      // Discharge = the date in the patient's Discharge box (lib/discharge-date).
+      const discharge = patientDischargeIso(patient, dischargeIndex);
+      const itd = daysBetween(m?.initialExam, discharge);
+      const dtr = daysBetween(discharge, m?.rbSent);
       const rtp = daysBetween(m?.rbSent, m?.paidDate);
       if (itd !== null) initialToDischargeValues.push(itd);
       if (dtr !== null) dischargeToRbValues.push(dtr);
@@ -678,7 +685,7 @@ export default function DashboardPage() {
       dischargeToRb: average(dischargeToRbValues),
       rbToPaid: average(rbToPaidValues),
     };
-  }, [filteredPatients]);
+  }, [dischargeIndex, filteredPatients]);
 
   const imagingFacilityStats = useMemo(() => {
     type FacilityRow = {
@@ -907,7 +914,7 @@ export default function DashboardPage() {
         : parseDollar(patient.matrix?.paidAmount);
 
       // Timeline from the saved milestone dates (completed spans only).
-      const dtr = daysBetween(patient.matrix?.discharge, patient.matrix?.rbSent);
+      const dtr = daysBetween(patientDischargeIso(patient, dischargeIndex), patient.matrix?.rbSent);
       const rtp = daysBetween(patient.matrix?.rbSent, patient.matrix?.paidDate);
       if (dtr !== null) row.timeToRbValues.push(dtr);
       if (rtp !== null) row.timeToPaidValues.push(rtp);
@@ -924,7 +931,7 @@ export default function DashboardPage() {
         percentPaid,
       };
     });
-  }, [filteredPatients, getPatientBillingRecord]);
+  }, [dischargeIndex, filteredPatients, getPatientBillingRecord]);
 
   // Role gate: admins see everything; a manager sees what Settings →
   // Admin Access allows; staff see nothing (the nav hides the page too).

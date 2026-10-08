@@ -14,6 +14,7 @@
 
 import { answerFromFiles, surnameOf, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
+import type { DischargeInfo } from "@/lib/discharge-date";
 import {
   isRegionGroup,
   levelHighlightTerms,
@@ -128,7 +129,8 @@ export interface GoatContext {
   encounters: GoatEncounter[] | null;
   plans: GoatPlan[] | null;
   diagnoses: Array<{ code: string; description: string }> | null;
-  details: { discharge: string } | null;
+  /** discharge: MM/DD/YYYY as the Discharge box shows it (saved, or from the Discharge visit). */
+  details: { discharge: string; dischargeInfo?: DischargeInfo } | null;
   billing: { billed: string; paid: string; paidDate: string; rbSent: string } | null;
   /** The office's words & synonym groups (Settings → G.O.A.T.). */
   termGroups?: GoatTermGroup[];
@@ -449,7 +451,22 @@ function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
   ];
   if (ctx.details) {
     const dc = dayStamp(ctx.details.discharge);
-    if (dc !== null) lines.push(`Discharged: ${fmtDay(dc)}.`);
+    const info = ctx.details.dischargeInfo;
+    if (dc !== null) {
+      const from =
+        info?.source === "visit" && info.visit
+          ? ` (date of the Discharge visit, ${info.visit.status.toLowerCase()})`
+          : info?.differsFromVisit && info.visit
+            ? ` (from the Discharge box, but the Discharge visit was ${info.visit.date})`
+            : "";
+      lines.push(`Discharged: ${fmtDay(dc)}${from}.`);
+    } else if (info?.scheduled) {
+      lines.push(
+        info.scheduled.past
+          ? `Discharge: the Discharge visit on ${info.scheduled.date} is still marked Scheduled (not checked in or out), so there's no discharge date yet.`
+          : `Discharge visit scheduled for ${info.scheduled.date}; not discharged yet.`,
+      );
+    }
   }
   return { title: "Key dates", lines, source: "Patient info", section: "info" };
 }
