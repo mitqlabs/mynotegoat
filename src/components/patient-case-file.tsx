@@ -121,6 +121,7 @@ import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
+import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -2308,6 +2309,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [dischargeDate, patientAppointmentRecords],
   );
   const effectiveDischargeDate = dischargeInfo.date;
+  // Initial Exam date as shown everywhere (Patient Info, Case Flow, Quick
+  // Glance, G.O.A.T., reports, durations): the saved date when there is one,
+  // else the earliest attended New Patient visit. Derived — never saved.
+  const initialExamInfo = useMemo(
+    () => resolveInitialExamDate(initialExam, patientAppointmentRecords, patientEncounterRecords, localTodayIso()),
+    [initialExam, patientAppointmentRecords, patientEncounterRecords],
+  );
+  const effectiveInitialExam = initialExamInfo.date;
   // Auto-fill the Discharge date when the case moves to a closed
   // status (Discharged / Settled / Reduced / etc.) and the user
   // hasn't already entered one. The most-recent encounter date is the
@@ -2342,15 +2351,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setDischargeDate(mostRecentEncounterDate);
     dischargeAutoFilledRef.current = true;
   }, [caseStatus, caseStatuses, dischargeDate, dischargeInfo.visit, patientEncounterRecords]);
-  // Case Flow for this one patient. It sits below patientAppointmentRecords
-  // deliberately: that list is what decides whether the patient has ever
-  // been booked, and it handles legacy appointments that carry a name but
-  // no patient id. Passing the appointment set matters — without it every
-  // patient is told to "Schedule Initial Visit", booked or not.
+  // Case Flow for this one patient. The Initial Visit step is checked off by
+  // the Initial Exam date in Patient Info (effectiveInitialExam), not by the
+  // appointments. The booked-visit set below only picks its wording
+  // ("Initial Exam Pending" once a visit is booked); it handles legacy
+  // appointments that carry a name but no patient id.
   const patientFlowItems = useMemo(
     () =>
       buildFollowUpItems([patient], {
         followUpOverrides: followUpOverridesByPatientId,
+        effectiveInitialExam: () => effectiveInitialExam,
         // Canceled and no-showed visits don't count as booked.
         patientIdsWithVisit: new Set(
           patientAppointmentRecords
@@ -2361,7 +2371,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             .map(() => patient.id),
         ),
       }),
-    [patient, followUpOverridesByPatientId, patientAppointmentRecords],
+    [patient, followUpOverridesByPatientId, patientAppointmentRecords, effectiveInitialExam],
   );
   const appointmentRows = useMemo(
     () => {
@@ -2582,7 +2592,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       review: reviewStatus,
       isCashPatient,
       doi: dateOfLoss,
-      initialExam,
+      initialExam: effectiveInitialExam,
       priorCare,
       xrayFindings,
       mriFindings: mriCtFindings,
@@ -2624,7 +2634,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     goatTermGroups, goatContacts, goatFiles.enabled, goatFiles.files,
     hiddenStyle, canView, goatMacroLibrary.templates, getPlansForPatient, patient.id, patient.fullName,
     lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
-    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, initialExam, priorCare, xrayFindings,
+    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, effectiveInitialExam, priorCare, xrayFindings,
     mriCtFindings, specialistRecommendations, xrayReferrals, mriReferrals, specialistReferrals, patientNotes,
     patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, effectiveDischargeDate, dischargeInfo, billedAmount,
     paidAmount, paidDate, rbSentDate,
@@ -3573,7 +3583,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         fullName: `${firstName} ${lastName}`.trim(),
         dob: patientDob,
         dateOfLoss,
-        initialExam,
+        initialExam: effectiveInitialExam,
         phone: patientPhone,
         email: patientEmail,
         caseNumber,
@@ -4845,7 +4855,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const paidDateValue = parseUsDate(paidDate);
 
   // Same span calculation the Patients list uses (lib/discharge-date).
-  const initialToDischarge = formatMonthDaySpan(monthDaySpan(initialExam, effectiveDischargeDate));
+  const initialToDischarge = formatMonthDaySpan(monthDaySpan(effectiveInitialExam, effectiveDischargeDate));
   const dischargeToRb = formatMonthDaySpan(monthDaySpan(effectiveDischargeDate, rbSentDate));
   const rbToPaid = formatMonthDayDiff(
     rbSentDateValue && paidDateValue ? getMonthDayDiff(rbSentDateValue, paidDateValue) : null,
@@ -5119,7 +5129,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -5133,7 +5143,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -5145,7 +5155,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1">
+            <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -5159,21 +5169,61 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1">
-              {/* Kept: this drives the initial-to-discharge duration on the
-                  Statistics page and the Initial Exam column on the patient
-                  list. Nothing derives it automatically, so removing the input
-                  would leave both permanently blank for new patients. */}
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                inputMode="numeric"
-                maxLength={10}
-                onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
-                placeholder="MM/DD/YYYY"
-                value={initialExam}
-              />
-            </label>
+            <div className="grid content-start gap-1">
+              <label className="grid gap-1">
+                {/* Drives Case Flow's Initial Visit step, the initial-to-discharge
+                    duration and the Initial Exam column on the patient list.
+                    Empty box + an attended New Patient visit → the earliest
+                    one's date is shown (in blue) without being saved
+                    (lib/initial-exam-date). A date entered here wins. */}
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
+                <input
+                  className={`rounded-xl border px-3 py-2 ${
+                    initialExamInfo.source === "visit"
+                      ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
+                      : "border-[var(--line-soft)] bg-white"
+                  }`}
+                  data-initial-exam-source={initialExamInfo.source}
+                  inputMode="numeric"
+                  maxLength={10}
+                  onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
+                  placeholder="MM/DD/YYYY"
+                  // Inline: global input styles out-rank Tailwind's text colour utilities.
+                  style={initialExamInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
+                  title={
+                    initialExamInfo.source === "visit"
+                      ? `From the first New Patient visit (${initialExamInfo.visit?.status ?? "Checked Out"})`
+                      : undefined
+                  }
+                  value={initialExamInfo.source === "visit" ? initialExamInfo.date : initialExam}
+                />
+              </label>
+              {initialExamInfo.source === "visit" && initialExamInfo.visit && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  From the first New Patient visit ({initialExamInfo.visit.status})
+                </span>
+              )}
+              {initialExamInfo.source === "manual" && initialExamInfo.differsFromVisit && initialExamInfo.visit && (
+                <span className="text-xs text-[#9a5b00]" data-initial-exam-mismatch>
+                  The Initial Exam box says {initialExamInfo.date} but the first New Patient visit was{" "}
+                  {initialExamInfo.visit.date} ({initialExamInfo.visit.status}).{" "}
+                  <button
+                    className="font-semibold text-[var(--brand-primary)] hover:underline"
+                    onClick={() => setInitialExam("")}
+                    type="button"
+                  >
+                    Use the visit date
+                  </button>
+                </span>
+              )}
+              {initialExamInfo.source === "none" && initialExamInfo.scheduled && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  {initialExamInfo.scheduled.past
+                    ? `The New Patient visit on ${initialExamInfo.scheduled.date} is still marked Scheduled. Check it in or out on the schedule to use its date.`
+                    : `New Patient visit scheduled for ${initialExamInfo.scheduled.date}. Its date fills in here once it's checked in or out.`}
+                </span>
+              )}
+            </div>
           )}
 
           <div className="md:col-span-2 xl:col-span-4">
@@ -5336,7 +5386,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           legacyReviewed={{ xray: patient.matrix?.xrayReviewed, mri: patient.matrix?.mriReviewed }}
           billed={currentBillTotal}
           doi={dateOfLoss}
-          ie={initialExam}
+          ie={effectiveInitialExam}
           discharge={hiddenStyle("additionalDetails") ? undefined : dischargeInfo}
           mriReferrals={mriReferrals}
           specialistReferrals={specialistReferrals}

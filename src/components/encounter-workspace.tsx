@@ -2,6 +2,7 @@
 
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
+import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -5149,7 +5150,7 @@ function EncounterQuickGlance({
     specialistReferrals?: unknown[];
     matrix?: Record<string, unknown>;
   };
-  notes: Array<{ charges: Array<{ unitPrice: number; units: number }> }>;
+  notes: Array<{ charges: Array<{ unitPrice: number; units: number }>; appointmentType: string; encounterDate: string }>;
   billedFallback: number;
   appointments: Array<{ appointmentType: string; status: string; date: string }>;
   dischargeIndex: DischargeIndex;
@@ -5173,6 +5174,13 @@ function EncounterQuickGlance({
     0,
   );
   const initialExamRaw = patient.matrix?.initialExam;
+  // The date in the Initial Exam box, same as the patient page: saved, else
+  // the earliest attended New Patient visit (lib/initial-exam-date).
+  const initialExam = resolveInitialExamDate(
+    typeof initialExamRaw === "string" ? initialExamRaw : "",
+    appointments,
+    notes,
+  ).date;
   return (
     <QuickGlance
       appointments={appointments}
@@ -5182,7 +5190,7 @@ function EncounterQuickGlance({
       }}
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
-      ie={typeof initialExamRaw === "string" ? initialExamRaw : ""}
+      ie={initialExam}
       discharge={dischargeHidden ? undefined : discharge}
       mriReferrals={patient.mriReferrals}
       specialistReferrals={patient.specialistReferrals}

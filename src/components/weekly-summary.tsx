@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
+import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import {
   REVIEW_RECEIVED,
@@ -107,8 +108,15 @@ export function WeeklySummary() {
       (a) => a.status === "Scheduled" && inRange(parseAnyDate(a.date), weekEnd, nextWeekEnd),
     ).length;
 
+    // The date in each patient's Initial Exam box (saved, or the earliest
+    // checked-in/out New Patient visit) — lib/initial-exam-date.
+    const initialExamIndex = buildInitialExamIndex(scheduleAppointments);
     const newPatients = activePatients.filter((p) =>
-      inRange(parseAnyDate(p.matrix?.initialExam), weekStart, weekEnd),
+      inRange(
+        parseAnyDate((p.matrix?.initialExam ?? "").trim() ? p.matrix?.initialExam : patientInitialExamIso(p, initialExamIndex)),
+        weekStart,
+        weekEnd,
+      ),
     ).length;
     // The date in each patient's Discharge box (saved, or the checked-in/out Discharge visit).
     const dischargeIndex = buildDischargeIndex(scheduleAppointments);

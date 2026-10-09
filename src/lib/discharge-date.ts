@@ -134,7 +134,7 @@ export interface DischargeScheduleEntry extends DischargeAppointment {
 }
 
 /** Same name matching as the patient page (legacy appointments without a patient id). */
-function normalizeName(value: string): string {
+export function normalizeName(value: string): string {
   return (value ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
@@ -142,7 +142,7 @@ function normalizeName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function nameKeys(fullName: string): string[] {
+export function nameKeys(fullName: string): string[] {
   const [lastName = "", firstName = ""] = (fullName ?? "").split(",").map((v) => v.trim());
   const keys = [fullName];
   if (firstName || lastName) {
