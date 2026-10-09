@@ -1146,7 +1146,7 @@ export function NewAppointmentModal({
       return;
     }
 
-    const durationMin = getDurationMinutes(sanitizedDraft.durationHours, sanitizedDraft.durationMinutes);
+    // Duration is resolved per stretch below (planned.durationMin).
     const caseLabel = sanitizedDraft.caseLabel.trim() || buildCaseLabelFromPatient(selectedPatient);
 
     // Each stretch books separately, with its own time rules and its own
