@@ -92,9 +92,13 @@ interface NewAppointmentDraft {
 }
 
 /** One follow-on stretch. Everything not named here (patient, provider,
- *  type, room, duration, note) comes from the main draft. */
+ *  room, note) comes from the main draft. */
 interface ExtraSeries {
   id: string;
+  /** Blank = follow the main Appointment Type (and its duration), so a
+   *  change to the main type carries through. Set only once the user picks
+   *  a different type for this stretch. */
+  appointmentType: string;
   recurDays: number[];
   startTime: string;
   usePerDayTimes: boolean;
@@ -324,6 +328,7 @@ function createExtraSeries(
 ): ExtraSeries {
   return {
     id: createAppointmentId(),
+    appointmentType: "",
     recurDays: [...previousDays],
     startTime: previousTime,
     usePerDayTimes: false,
@@ -337,14 +342,47 @@ function createExtraSeries(
   };
 }
 
+/** Default duration (minutes) of an appointment type, by name. */
+type TypeDurationLookup = (typeName: string) => number | undefined;
+
+/**
+ * Type + duration a follow-on stretch books with. Blank or same-as-main
+ * type → exactly the main draft's type and duration. A different type uses
+ * that type's default duration, but only when the main duration is still
+ * the main type's default; a duration the user typed by hand is kept.
+ */
+function resolveSeriesTypeAndDuration(
+  base: NewAppointmentDraft,
+  series: Pick<ExtraSeries, "appointmentType">,
+  typeDuration?: TypeDurationLookup,
+): { appointmentType: string; durationHours: number; durationMinutes: number } {
+  const own = series.appointmentType.trim();
+  const keep = {
+    appointmentType: base.appointmentType,
+    durationHours: base.durationHours,
+    durationMinutes: base.durationMinutes,
+  };
+  if (!own || own.toLowerCase() === base.appointmentType.trim().toLowerCase()) return keep;
+  const mainDefault = typeDuration?.(base.appointmentType);
+  const ownDefault = typeDuration?.(own);
+  const mainIsDefault =
+    mainDefault != null && getDurationMinutes(base.durationHours, base.durationMinutes) === Math.max(5, Math.round(mainDefault));
+  if (mainIsDefault && ownDefault != null) {
+    return { appointmentType: own, ...toDurationParts(ownDefault) };
+  }
+  return { ...keep, appointmentType: own };
+}
+
 /** Turn a follow-on stretch into a full draft the date generator can run. */
 function draftForExtraSeries(
   base: NewAppointmentDraft,
   series: ExtraSeries,
   startDate: string,
+  typeDuration?: TypeDurationLookup,
 ): NewAppointmentDraft {
   return {
     ...base,
+    ...resolveSeriesTypeAndDuration(base, series, typeDuration),
     startDate,
     startTime: series.startTime || base.startTime,
     isRecurring: true,
@@ -371,6 +409,7 @@ function buildSeriesPlans(
   draft: NewAppointmentDraft,
   openDays: Set<number>,
   rule?: HolidayCancelRule,
+  typeDuration?: TypeDurationLookup,
 ): { draft: NewAppointmentDraft; dates: string[]; label: string }[] {
   const plans: { draft: NewAppointmentDraft; dates: string[]; label: string }[] = [];
   const main =
@@ -389,6 +428,7 @@ function buildSeriesPlans(
       draft,
       { ...series, recurDays: series.recurDays.filter((day) => openDays.has(day)) },
       startDate,
+      typeDuration,
     );
     plans.push({
       draft: seriesDraft,
@@ -584,6 +624,11 @@ export function NewAppointmentModal({
     });
     return map;
   }, [appointmentTypes]);
+
+  const typeDuration = useCallback<TypeDurationLookup>(
+    (typeName) => appointmentTypeByName.get(typeName.trim().toLowerCase())?.durationMin,
+    [appointmentTypeByName],
+  );
 
   // When the modal is opened WITHOUT an explicit initialDate (e.g. "Schedule future
    // appointments" from a patient case file), default to the next working business day
@@ -850,8 +895,8 @@ export function NewAppointmentModal({
   // Every stretch resolved to real dates — drives each row's summary and
   // the running total at the bottom.
   const seriesPlans = useMemo(
-    () => (draft.isRecurring ? buildSeriesPlans(draft, openRecurringDays, holidayCancelRule) : []),
-    [draft, openRecurringDays, holidayCancelRule],
+    () => (draft.isRecurring ? buildSeriesPlans(draft, openRecurringDays, holidayCancelRule, typeDuration) : []),
+    [draft, openRecurringDays, holidayCancelRule, typeDuration],
   );
   const totalPlannedVisits = useMemo(
     () => seriesPlans.reduce((sum, plan) => sum + countActiveDates(plan.draft, plan.dates, holidayCancelRule), 0),
@@ -1108,7 +1153,7 @@ export function NewAppointmentModal({
     // series id. From here on the checks work on entries (date + time +
     // stretch) rather than bare dates, because two stretches can want
     // different times on the same weekday.
-    const plans = buildSeriesPlans(sanitizedDraft, openRecurringDays, holidayCancelRule);
+    const plans = buildSeriesPlans(sanitizedDraft, openRecurringDays, holidayCancelRule, typeDuration);
     for (const [index, plan] of plans.entries()) {
       if (index === 0) continue;
       if (plan.draft.recurDays.length === 0) {
@@ -1133,7 +1178,16 @@ export function NewAppointmentModal({
     // holidayName set → this date lands on a US federal holiday and is
     // booked with the app's normal "Canceled" status, as a placeholder that
     // doesn't count toward the visit total.
-    type PlannedVisit = { dateIso: string; startTime: string; seriesId?: string; holidayName?: string };
+    // appointmentType / durationMin are per stretch: a follow-on series can
+    // book a different type (e.g. Lumbar after Cervical decompression).
+    type PlannedVisit = {
+      dateIso: string;
+      startTime: string;
+      appointmentType: string;
+      durationMin: number;
+      seriesId?: string;
+      holidayName?: string;
+    };
     const seenDates = new Set<string>();
     let scheduleEntries: PlannedVisit[] = [];
     for (const plan of plans) {
@@ -1146,6 +1200,8 @@ export function NewAppointmentModal({
         scheduleEntries.push({
           dateIso,
           startTime: resolveTimeForDate(plan.draft, dateIso),
+          appointmentType: plan.draft.appointmentType.trim(),
+          durationMin: getDurationMinutes(plan.draft.durationHours, plan.draft.durationMinutes),
           seriesId,
           holidayName: getSeriesHolidayName(plan.draft, dateIso, holidayCancelRule) ?? undefined,
         });
@@ -1271,7 +1327,7 @@ export function NewAppointmentModal({
             scheduleSettings,
             planned.dateIso,
             planned.startTime,
-            durationMin,
+            planned.durationMin,
           ),
       );
       if (
@@ -1297,14 +1353,14 @@ export function NewAppointmentModal({
       patientName: selectedPatient.fullName,
       provider: sanitizedDraft.provider.trim(),
       location: sanitizedDraft.location.trim(),
-      appointmentType: sanitizedDraft.appointmentType.trim(),
+      appointmentType: planned.appointmentType,
       caseLabel,
       room: sanitizedDraft.room.trim(),
       date: planned.dateIso,
       // Resolved per stretch already: a per-day override if one was set,
       // otherwise that stretch's own time.
       startTime: planned.startTime,
-      durationMin,
+      durationMin: planned.durationMin,
       // Holiday dates use the app's ordinary "Canceled" status (the same
       // value the schedule's status menu sets), with the holiday recorded
       // in the note since appointments have no separate cancel-reason field.
@@ -2142,6 +2198,14 @@ export function NewAppointmentModal({
                         label={`Series ${index + 2}`}
                         openDays={openRecurringDays}
                         mainStartTime={draft.startTime}
+                        mainAppointmentType={draft.appointmentType}
+                        effectiveAppointmentType={plan?.draft.appointmentType ?? draft.appointmentType}
+                        effectiveDurationMin={
+                          plan
+                            ? getDurationMinutes(plan.draft.durationHours, plan.draft.durationMinutes)
+                            : getDurationMinutes(draft.durationHours, draft.durationMinutes)
+                        }
+                        typeOptions={visibleAppointmentTypes}
                         series={series}
                         startsOn={plan?.draft.startDate ?? ""}
                         visits={plan ? countActiveDates(plan.draft, plan.dates, holidayCancelRule) : 0}
@@ -2381,6 +2445,10 @@ function SeriesEditor({
   series,
   openDays,
   mainStartTime,
+  mainAppointmentType,
+  effectiveAppointmentType,
+  effectiveDurationMin,
+  typeOptions,
   startsOn,
   visits,
   lastDate,
@@ -2393,6 +2461,11 @@ function SeriesEditor({
   series: ExtraSeries;
   openDays: Set<number>;
   mainStartTime: string;
+  mainAppointmentType: string;
+  /** Type this stretch will actually book (its own, else the main one). */
+  effectiveAppointmentType: string;
+  effectiveDurationMin: number;
+  typeOptions: { id: string; name: string }[];
   startsOn: string;
   visits: number;
   lastDate: string;
@@ -2425,6 +2498,7 @@ function SeriesEditor({
         >
           <span className="text-sm font-semibold">{label}</span>
           <span className="truncate text-sm text-[var(--text-muted)]">
+            {effectiveAppointmentType ? `${effectiveAppointmentType} · ` : ""}
             {dayNames || "no days picked"} · {formatTimeLabel(series.startTime || mainStartTime)} ·{" "}
             {endsLabel}
           </span>
@@ -2452,6 +2526,51 @@ function SeriesEditor({
 
       {open && (
         <div className="border-t border-[var(--line-soft)] px-3 py-3">
+          <label className="mb-3 grid gap-1">
+            <span className="text-xs font-semibold text-[var(--text-muted)]">Appointment Type</span>
+            <select
+              className="min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+              onChange={(event) => {
+                const next = event.target.value;
+                // Picking the main type again = follow the main type.
+                onChange({
+                  ...series,
+                  appointmentType:
+                    next.trim().toLowerCase() === mainAppointmentType.trim().toLowerCase() ? "" : next,
+                });
+              }}
+              value={series.appointmentType || mainAppointmentType}
+            >
+              {series.appointmentType &&
+                !typeOptions.some(
+                  (type) => type.name.toLowerCase() === series.appointmentType.toLowerCase(),
+                ) && <option value={series.appointmentType}>{series.appointmentType}</option>}
+              {!typeOptions.some(
+                (type) => type.name.toLowerCase() === mainAppointmentType.toLowerCase(),
+              ) && <option value={mainAppointmentType}>{mainAppointmentType}</option>}
+              {typeOptions.map((type) => (
+                <option key={`series-${series.id}-type-${type.id}`} value={type.name}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-[10px] text-[var(--text-muted)]">
+              {series.appointmentType ? (
+                <>
+                  Own type · {formatDurationMinutes(effectiveDurationMin)} each.{" "}
+                  <button
+                    className="font-semibold text-[var(--brand-primary)] underline"
+                    onClick={() => onChange({ ...series, appointmentType: "" })}
+                    type="button"
+                  >
+                    Use Series 1&apos;s type
+                  </button>
+                </>
+              ) : (
+                "Same as Series 1 — follows it if you change the main Appointment Type."
+              )}
+            </span>
+          </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1">
               <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
