@@ -555,7 +555,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Switch to Recurring Series.",
           "Tap the weekday circles, set the time, then Ends By — an end date or a number of visits.",
           "Press + Add series for the next stretch. It starts the day after the last one ends.",
-          "Change the days for that stretch (e.g. drop Thursday), set its end, and repeat.",
+          "Change the days for that stretch (e.g. drop Thursday), set its end, and repeat. A stretch can also book a different Appointment Type (e.g. Lumbar instead of Cervical decompression) — it follows Series 1's type until you pick another.",
           "Check the total — 'N visits in total · last on …' — then Save Appointment.",
         ],
         why: "Each stretch books as its own series, so cancelling one later leaves the others alone. If two stretches both want the same day, it books once.",
