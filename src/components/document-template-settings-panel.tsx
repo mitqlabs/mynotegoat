@@ -10,6 +10,8 @@ import {
   documentFontOptions,
   documentTemplateFields,
   documentTemplateFieldGroups,
+  getDocumentTemplatePromptIds,
+  humanizeTemplatePromptId,
   renderDocumentTemplate,
   type DocumentTemplate,
   type DocumentTemplateScope,
@@ -187,20 +189,39 @@ export function DocumentTemplateSettingsPanel({
     ],
   );
 
+  // Input fields ([[Work_Order]] tokens) in the selected template, in the
+  // order they first appear. Each becomes a labelled text box when the
+  // letter is generated for a patient.
+  const usedInputFieldIds = useMemo(
+    () => (selectedTemplate ? getDocumentTemplatePromptIds(selectedTemplate.body) : []),
+    [selectedTemplate],
+  );
+
+  // The preview shows each input field as "[Work Order]" so you can see where
+  // the typed value will print. Templates without input fields: unchanged.
+  const previewInputAnswers = useMemo(() => {
+    const ids = [
+      ...usedInputFieldIds,
+      ...(documentTemplates.header.active ? getDocumentTemplatePromptIds(documentTemplates.header.body) : []),
+    ];
+    if (ids.length === 0) return undefined;
+    return Object.fromEntries(ids.map((id) => [id, `[${humanizeTemplatePromptId(id)}]`]));
+  }, [documentTemplates.header.active, documentTemplates.header.body, usedInputFieldIds]);
+
   const previewBody = useMemo(() => {
     if (!selectedTemplate) {
       return "";
     }
-    const rendered = renderDocumentTemplate(selectedTemplate.body, previewContext);
+    const rendered = renderDocumentTemplate(selectedTemplate.body, previewContext, undefined, previewInputAnswers);
     return applyLabelValueHangingIndent(stripHtmlIndentation(rendered));
-  }, [previewContext, selectedTemplate]);
+  }, [previewContext, previewInputAnswers, selectedTemplate]);
 
   const previewHeader = useMemo(() => {
     if (!documentTemplates.header.active) {
       return "";
     }
-    return renderDocumentTemplate(documentTemplates.header.body, previewContext);
-  }, [documentTemplates.header.active, documentTemplates.header.body, previewContext]);
+    return renderDocumentTemplate(documentTemplates.header.body, previewContext, undefined, previewInputAnswers);
+  }, [documentTemplates.header.active, documentTemplates.header.body, previewContext, previewInputAnswers]);
 
   const usedFieldTokens = useMemo(() => {
     if (!selectedTemplate) {
@@ -294,21 +315,21 @@ export function DocumentTemplateSettingsPanel({
     updateTemplate(selectedTemplate.id, { body: `${selectedTemplate.body}${token}` });
   };
 
-  /** Turn a free-text label like "Work Order Number" into a token id
-   *  the renderer can pick up: lowercase, underscores between words,
-   *  no punctuation. Empty / pure-symbol input → empty string. */
+  /** Turn a free-text label like "Work Order" into a token id the
+   *  renderer can pick up: underscores between words, no punctuation,
+   *  capitals kept so the text box label reads the same ("PO Number"
+   *  stays "PO Number"). Empty / pure-symbol input → empty string. */
   const slugifyPromptLabel = (label: string): string => {
     return label
       .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/[^A-Za-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
   };
 
-  const insertPromptToken = () => {
-    const id = slugifyPromptLabel(promptLabelDraft);
+  const insertPromptToken = (existingId?: string) => {
+    const id = existingId ?? slugifyPromptLabel(promptLabelDraft);
     if (!id) {
-      setError("Type a label for the prompt (e.g. \"Work Order Number\").");
+      setError("Type a label for the input field (e.g. \"Work Order\").");
       return;
     }
     setError("");
@@ -533,6 +554,59 @@ export function DocumentTemplateSettingsPanel({
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   Click any field to insert it at the current cursor position.
                 </p>
+                {/* Input field: a fill-in text box. Type a label and
+                    click Insert; the panel drops a [[Work_Order]] token
+                    at the cursor. When the letter is generated for a
+                    patient, each input field becomes a labelled text
+                    box (same label twice = one box, fills both spots);
+                    the typed value prints in its place, blank prints
+                    nothing. Same [[token]] syntax as typing by hand. */}
+                <div className="mt-3 rounded-lg border border-dashed border-[var(--line-soft)] bg-white p-2" data-input-field-helper>
+                  <p className="text-xs font-semibold text-[var(--text-main)]">
+                    Input field (fill-in text box)
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                    Adds a text box you fill in each time you generate this letter — e.g. &quot;Work Order&quot; on a subpoena invoice or &quot;Days Off&quot; on a school note. What you type prints in its place; left blank, it prints nothing.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      aria-label="Input field label"
+                      className="min-w-0 flex-1 basis-40 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                      onChange={(event) => setPromptLabelDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          insertPromptToken();
+                        }
+                      }}
+                      placeholder="Label, e.g. Work Order"
+                      value={promptLabelDraft}
+                    />
+                    <button
+                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white"
+                      onClick={() => insertPromptToken()}
+                      type="button"
+                    >
+                      + Insert Input Field
+                    </button>
+                  </div>
+                  {usedInputFieldIds.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-[var(--text-muted)]">In this template:</span>
+                      {usedInputFieldIds.map((id) => (
+                        <button
+                          className="rounded-lg border border-[var(--brand-primary)] bg-[#e9f4fb] px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]"
+                          key={`template-input-field-${id}`}
+                          onClick={() => insertPromptToken(id)}
+                          title={`Insert [[${id}]] again — the same text box fills every spot`}
+                          type="button"
+                        >
+                          ✓ {humanizeTemplatePromptId(id)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 {/* Conditional wrap toggle. When on, the auto-field
                     buttons stop inserting plain {{TOKEN}} text and
                     start wrapping the editor's current selection in
@@ -554,42 +628,6 @@ export function DocumentTemplateSettingsPanel({
                   <p className="mt-1 text-[11px] text-amber-900">
                     When ON, clicking a field below wraps your selected text in <code className="font-mono">{`{{#if FIELD}}...{{/if}}`}</code> instead of inserting the token. The paragraph will only appear in the generated PDF when that field has a value. Useful for "second re-exam" sentences that should drop when the patient never had one.
                   </p>
-                </div>
-                {/* Runtime-prompt insert helper. Click + Insert
-                    Prompt with a label, and the panel snake-cases it
-                    into a [[token]] dropped at the cursor. On PDF
-                    generation the body is scanned for [[...]] and a
-                    small modal pops up asking for each value. Same
-                    behavior as typing the [[token]] by hand, just
-                    discoverable for non-power users. */}
-                <div className="mt-3 rounded-lg border border-dashed border-[var(--line-soft)] bg-white p-2">
-                  <p className="text-xs font-semibold text-[var(--text-main)]">
-                    Fill-in-the-Blank Prompt
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                    Insert a placeholder that pops a question when you generate the PDF — e.g. &quot;Work Order Number&quot; on a subpoena invoice or &quot;Days Off&quot; on a school note.
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <input
-                      className="min-w-[200px] flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                      onChange={(event) => setPromptLabelDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          insertPromptToken();
-                        }
-                      }}
-                      placeholder="e.g. Work Order Number"
-                      value={promptLabelDraft}
-                    />
-                    <button
-                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white"
-                      onClick={insertPromptToken}
-                      type="button"
-                    >
-                      + Insert Prompt
-                    </button>
-                  </div>
                 </div>
                 <div className="mt-3 space-y-3">
                   {documentTemplateFieldGroups.map((group) => (

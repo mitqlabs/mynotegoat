@@ -38,7 +38,7 @@ import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import {
-  getDocumentTemplatePromptIds,
+  collectDocumentTemplatePromptIds,
   humanizeTemplatePromptId,
   renderDocumentTemplate,
   type DocumentTemplateScope,
@@ -3256,14 +3256,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
     if (!promptAnswers) {
       const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
-      const seen = new Set<string>();
-      const promptIds: string[] = [];
-      for (const id of getDocumentTemplatePromptIds(specialistReferralTemplate.body)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
-      for (const id of getDocumentTemplatePromptIds(headerBody)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
+      const promptIds = collectDocumentTemplatePromptIds(specialistReferralTemplate.body, headerBody);
       if (promptIds.length > 0) {
         setDocPromptState({
           title: `Generate ${specialistReferralTemplate.name}`,
@@ -3377,14 +3370,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
     if (!promptAnswers) {
       const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
-      const seen = new Set<string>();
-      const promptIds: string[] = [];
-      for (const id of getDocumentTemplatePromptIds(imagingRequestTemplate.body)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
-      for (const id of getDocumentTemplatePromptIds(headerBody)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
+      const promptIds = collectDocumentTemplatePromptIds(imagingRequestTemplate.body, headerBody);
       if (promptIds.length > 0) {
         setDocPromptState({
           title: `Generate ${imagingRequestTemplate.name}`,
@@ -3461,14 +3447,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     // function with the answers once the user fills them in.
     if (!promptAnswers) {
       const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
-      const seen = new Set<string>();
-      const promptIds: string[] = [];
-      for (const id of getDocumentTemplatePromptIds(selectedLetterTemplate.body)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
-      for (const id of getDocumentTemplatePromptIds(headerBody)) {
-        if (!seen.has(id)) { seen.add(id); promptIds.push(id); }
-      }
+      const promptIds = collectDocumentTemplatePromptIds(selectedLetterTemplate.body, headerBody);
       if (promptIds.length > 0) {
         setDocPromptState({
           title: `Generate ${selectedLetterTemplate.name}`,
@@ -7805,7 +7784,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </button>
             </div>
             <p className="mb-3 text-sm text-[var(--text-muted)]">
-              Fill in the values used by this template, then click Generate.
+              Fill in the values used by this template, then click Generate. Anything left blank prints as nothing.
             </p>
             <div className="grid gap-3">
               {docPromptState.promptIds.map((id) => (
