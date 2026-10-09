@@ -506,7 +506,7 @@ export function renderDocumentTemplate(
   // PASS 3: Runtime prompt tokens.
   result = result.replace(/\[\[\s*([a-zA-Z0-9_]+)\s*\]\]/g, (_match, idRaw: string) => {
     const id = idRaw.trim();
-    const value = promptAnswers?.[id];
+    const value = lookupPromptAnswer(promptAnswers, id);
     return typeof value === "string" && value ? escapeHtml(value) : "";
   });
   return result;
@@ -516,16 +516,38 @@ export function renderDocumentTemplate(
  *  body. Returns unique ids in first-seen order so the prompt modal
  *  can render its inputs in the same sequence the user typed them. */
 export function getDocumentTemplatePromptIds(body: string): string[] {
+  return collectDocumentTemplatePromptIds(body);
+}
+
+/** Unique [[prompt_id]] tokens across several bodies (e.g. letter body +
+ *  active header), first-seen order. Ids match case-insensitively, so
+ *  [[Work_Order]] and [[work_order]] share one box and one answer. */
+export function collectDocumentTemplatePromptIds(...bodies: string[]): string[] {
   const seen = new Set<string>();
   const order: string[] = [];
-  const matches = body.matchAll(/\[\[\s*([a-zA-Z0-9_]+)\s*\]\]/g);
-  for (const m of matches) {
-    const id = m[1].trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    order.push(id);
+  for (const body of bodies) {
+    if (!body) continue;
+    const matches = body.matchAll(/\[\[\s*([a-zA-Z0-9_]+)\s*\]\]/g);
+    for (const m of matches) {
+      const id = m[1].trim();
+      const key = id.toLowerCase();
+      if (!id || seen.has(key)) continue;
+      seen.add(key);
+      order.push(id);
+    }
   }
   return order;
+}
+
+/** Answer for a [[prompt_id]]: exact id first, then case-insensitive. */
+function lookupPromptAnswer(answers: Record<string, string> | undefined, id: string): string | undefined {
+  if (!answers) return undefined;
+  if (typeof answers[id] === "string") return answers[id];
+  const key = id.toLowerCase();
+  for (const [answerId, value] of Object.entries(answers)) {
+    if (answerId.toLowerCase() === key) return value;
+  }
+  return undefined;
 }
 
 /** Turn a token id like "work_order_number" into a human label like
