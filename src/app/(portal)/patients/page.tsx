@@ -38,6 +38,15 @@ import { loadOfficeSettings } from "@/lib/office-settings";
 import { UsDateInput } from "@/components/us-date-input";
 import { ScrollLock } from "@/components/scroll-lock";
 import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischargeIso } from "@/lib/discharge-date";
+import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } from "@/lib/initial-exam-date";
+
+/** The Initial Exam box as the patient page shows it: the saved value (as
+ *  stored, so existing rows display exactly as before), else the earliest
+ *  attended New Patient visit on the schedule (lib/initial-exam-date). */
+function initialExamOf(patient: PatientRecord, index: InitialExamIndex): string {
+  const saved = patient.matrix?.initialExam ?? "";
+  return saved.trim() ? saved : patientInitialExamIso(patient, index);
+}
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
   const trimmed = fullName.trim();
@@ -415,7 +424,7 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
   return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
 }
 
-function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string) {
+function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string, initialExam: string) {
   if (key === "attorney") {
     return cleanAttorneyLabel(patient.attorney) || "-";
   }
@@ -434,12 +443,12 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"], discharge
     return dischargeIso ? formatLeadingDateDisplay(dischargeIso) : "-";
   }
   if (key === "initialToDischarge") {
-    return formatMonthDaySpan(monthDaySpan(patient.matrix?.initialExam ?? "", dischargeIso));
+    return formatMonthDaySpan(monthDaySpan(initialExam, dischargeIso));
   }
   if (key === "dischargeToRb") {
     return formatMonthDaySpan(monthDaySpan(dischargeIso, patient.matrix?.rbSent ?? ""));
   }
-  const value = patient.matrix?.[key] || "-";
+  const value = (key === "initialExam" ? initialExam : patient.matrix?.[key]) || "-";
   if (dateMatrixFields.has(key)) {
     return formatLeadingDateDisplay(value);
   }
@@ -474,6 +483,8 @@ export default function PatientsPage() {
   const { scheduleAppointments } = useScheduleAppointments();
   // Discharge dates as the patient page's Discharge box shows them.
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
+  // Initial Exam dates as the patient page's Initial Exam box shows them.
+  const initialExamIndex = useMemo(() => buildInitialExamIndex(scheduleAppointments), [scheduleAppointments]);
   const { contacts, addContact } = useContactDirectory();
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
@@ -770,7 +781,7 @@ export default function PatientsPage() {
       const collected = new Set<string>([currentYear]);
       for (const patient of patients) {
         const y =
-          extractYearFromDateString(patient.matrix?.initialExam) ||
+          extractYearFromDateString(initialExamOf(patient, initialExamIndex)) ||
           extractYearFromDateString(patient.dateOfLoss);
         if (y) collected.add(y);
       }
@@ -778,7 +789,7 @@ export default function PatientsPage() {
       const sorted = Array.from(collected).sort((a, b) => Number(b) - Number(a));
       return ["ALL", ...sorted];
     },
-    [patients, currentYear],
+    [patients, currentYear, initialExamIndex],
   );
 
   const attorneyOptions = useMemo(() => {
@@ -887,7 +898,7 @@ export default function PatientsPage() {
       // it), falling back to the date of injury — a patient taken in today
       // has no initial exam yet and must not drop out of this year's list.
       const examYm =
-        extractYearMonthNumber(patient.matrix?.initialExam) ||
+        extractYearMonthNumber(initialExamOf(patient, initialExamIndex)) ||
         extractYearMonthNumber(patient.dateOfLoss);
       const matchesYear =
         year === "ALL" ||
@@ -983,7 +994,7 @@ export default function PatientsPage() {
         cmp = compareUsDates(a.dateOfLoss, b.dateOfLoss);
         datesNeutral = true;
       } else if (sortColumn === "initialExam") {
-        cmp = compareUsDates(a.matrix?.initialExam, b.matrix?.initialExam);
+        cmp = compareUsDates(initialExamOf(a, initialExamIndex), initialExamOf(b, initialExamIndex));
         datesNeutral = true;
       } else if (sortColumn === "status") {
         cmp = a.caseStatus.localeCompare(b.caseStatus);
@@ -996,11 +1007,11 @@ export default function PatientsPage() {
         // of asc/desc so empty rows never bubble to the top.
         const aMissing =
           sortColumn === "initialExam"
-            ? usDateToSortKey(a.matrix?.initialExam) < 0
+            ? usDateToSortKey(initialExamOf(a, initialExamIndex)) < 0
             : usDateToSortKey(a.dateOfLoss) < 0;
         const bMissing =
           sortColumn === "initialExam"
-            ? usDateToSortKey(b.matrix?.initialExam) < 0
+            ? usDateToSortKey(initialExamOf(b, initialExamIndex)) < 0
             : usDateToSortKey(b.dateOfLoss) < 0;
         if (aMissing !== bMissing) {
           return aMissing ? 1 : -1;
@@ -1010,7 +1021,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId]);
+  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, initialExamIndex]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1108,6 +1119,8 @@ export default function PatientsPage() {
   const followUpItems = useMemo(() => {
     return buildFollowUpItems(filteredPatients, {
       patientIdsWithVisit,
+      // Initial Visit is checked off by the Patient Info Initial Exam date.
+      effectiveInitialExam: (patient) => initialExamOf(patient, initialExamIndex),
       includeXray: followUpSettings.includeXray,
       includeMriCt: followUpSettings.includeMriCt,
       includeSpecialist: followUpSettings.includeSpecialist,
@@ -1135,6 +1148,7 @@ export default function PatientsPage() {
     closedCaseStatuses,
     filteredPatients,
     patientIdsWithVisit,
+    initialExamIndex,
     followUpSettings.includeLienLop,
     followUpSettings.includeMriCt,
     followUpSettings.includeSpecialist,
@@ -1752,7 +1766,7 @@ export default function PatientsPage() {
                         );
                       }
                       if (colId === "initialExam") {
-                        return <td key={colId} className="px-4 py-3">{formatLeadingDateDisplay(patient.matrix?.initialExam || "-")}</td>;
+                        return <td key={colId} className="px-4 py-3">{formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-")}</td>;
                       }
                       if (colId === "dateOfLoss") {
                         return <td key={colId} className="px-4 py-3">{formatUsDateDisplay(patient.dateOfLoss)}</td>;
@@ -1846,7 +1860,7 @@ export default function PatientsPage() {
                     </td>
                     {filteredPatients.map((patient) => (
                       <td key={`${row.label}-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3">
-                        {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex))}
+                        {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex), initialExamOf(patient, initialExamIndex))}
                       </td>
                     ))}
                   </tr>

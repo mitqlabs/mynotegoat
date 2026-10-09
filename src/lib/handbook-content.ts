@@ -147,7 +147,7 @@ export const handbookChapters: HandbookChapter[] = [
       {
         heading: "What clears each row",
         steps: [
-          "Schedule Initial Visit — clears as soon as the patient has any appointment booked. A canceled or no-showed one doesn't count.",
+          "Schedule Initial Visit — checked off once Patient Info has an Initial Exam date: the date typed in the box, or else the earliest New Patient visit that was checked in or out (or has a note). While a visit is booked but not attended yet it shows as Initial Exam Pending. A canceled or no-showed one doesn't count.",
           "Lien / LOP — clears when the lien status moves on from the one the office marks as outstanding.",
           "X-Ray — Needs Referral clears when a referral is added; the follow-up clears when the report is received.",
           "MRI / CT and Specialist — Needs Referral → Appt Not Scheduled → Report Not Received, each clearing when that date is filled in.",
@@ -576,7 +576,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Canceled — they told us. Faint red.",
           "No Show — they did not come and did not call. Purple.",
         ],
-        why: "They are counted separately everywhere — the weekly summary, the patient page chips, Quick Glance. Neither counts as a booked visit, so cancelling the only visit brings 'Schedule Initial Visit' back onto Case Flow.",
+        why: "They are counted separately everywhere — the weekly summary, the patient page chips, Quick Glance. Neither counts as a booked visit, so cancelling the only visit before the Initial Exam turns 'Initial Exam Pending' back into 'Schedule Initial Visit' on Case Flow.",
       },
       {
         heading: "The warnings when you save",

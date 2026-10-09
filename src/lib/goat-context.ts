@@ -19,6 +19,7 @@ import type { TreatmentPlan } from "@/lib/treatment-plans";
 import type { PatientDiagnosisEntry } from "@/lib/patient-diagnoses";
 import { normalizeReviewStatus } from "@/lib/review-status";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
+import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -166,7 +167,8 @@ export function goatContextFromRecords(input: {
     review: normalizeReviewStatus(m.review),
     isCashPatient: Boolean(p.isCashPatient),
     doi: usDate(p.dateOfLoss),
-    initialExam: usDate(m.initialExam),
+    // The date in the Initial Exam box: saved, else the earliest attended New Patient visit.
+    initialExam: usDate(resolveInitialExamDate(m.initialExam ?? "", input.appointments, input.encounters).date),
     priorCare: m.priorCare ?? "",
     xrayFindings: m.xrayFindings ?? "",
     mriFindings: m.mriCtFindings ?? "",

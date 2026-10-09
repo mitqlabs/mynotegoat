@@ -43,6 +43,11 @@ export type FollowUpQueueOptions = {
   /** Patient ids that already have an appointment on the books. Omit when
    *  the caller has no appointment data — the row is then skipped. */
   patientIdsWithVisit?: Set<string>;
+  /** The date in the patient's Patient Info → Initial Exam box (saved, else
+   *  the earliest attended New Patient visit — lib/initial-exam-date). When
+   *  given, the Initial Visit row is checked off by THIS date, not by the
+   *  appointments: it stays until the patient has an Initial Exam date. */
+  effectiveInitialExam?: (patient: PatientRecord) => string;
   xrayAppearAuto?: boolean;
   mriAppearMode?: MriAppearMode;
   mriAppearDays?: number;
@@ -255,7 +260,9 @@ export function buildFollowUpItems(
   const includeSpecialist = options.includeSpecialist ?? true;
   const includeLienLop = options.includeLienLop ?? true;
   const patientIdsWithVisit = options.patientIdsWithVisit;
-  const includeInitialVisit = (options.includeInitialVisit ?? true) && Boolean(patientIdsWithVisit);
+  const effectiveInitialExam = options.effectiveInitialExam;
+  const includeInitialVisit =
+    (options.includeInitialVisit ?? true) && Boolean(patientIdsWithVisit || effectiveInitialExam);
 
   const xrayAppearAuto = options.xrayAppearAuto ?? true;
   const mriAppearMode: MriAppearMode = options.mriAppearMode ?? "auto";
@@ -383,9 +390,16 @@ export function buildFollowUpItems(
     const patientOverrides = followUpOverrides[patient.id];
 
     // --- Initial Visit ---
-    // A new case with nothing on the schedule yet. Clears the moment any
-    // visit is booked (a canceled one doesn't count as booked).
-    if (includeInitialVisit && !lienClearedByStatus && !patientIdsWithVisit?.has(patient.id)) {
+    // With effectiveInitialExam: checked off once Patient Info has an
+    // Initial Exam date (saved, or the earliest attended New Patient visit).
+    // A booked-but-not-yet-attended visit keeps the row, as "Initial Exam
+    // Pending". Without it (legacy callers): clears the moment any visit is
+    // booked (a canceled one doesn't count as booked).
+    const hasBookedVisit = Boolean(patientIdsWithVisit?.has(patient.id));
+    const initialVisitDone = effectiveInitialExam
+      ? Boolean(effectiveInitialExam(patient).trim())
+      : hasBookedVisit;
+    if (includeInitialVisit && !lienClearedByStatus && !initialVisitDone) {
       const anchorDate = toUsDateCanonical(patient.dateOfLoss);
       rows.push({
         id: `${patient.id}-initial-visit`,
@@ -395,7 +409,7 @@ export function buildFollowUpItems(
         attorney: cleanAttorneyLabel(patient.attorney),
         caseStatus: patient.caseStatus,
         category: "Initial Visit",
-        stage: "Schedule Initial Visit",
+        stage: effectiveInitialExam && hasBookedVisit ? "Initial Exam Pending" : "Schedule Initial Visit",
         anchorDate,
         daysFromAnchor: getDaysFromToday(anchorDate),
         note: "",

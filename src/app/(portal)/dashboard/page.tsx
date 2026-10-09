@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ScrollLock } from "@/components/scroll-lock";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
@@ -13,13 +13,14 @@ import {
   type DashboardSection,
 } from "@/lib/admin-access";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
-import { patients } from "@/lib/mock-data";
+import { patients, type PatientRecord } from "@/lib/mock-data";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
+import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -391,6 +392,16 @@ export default function DashboardPage() {
   // Discharge dates as the patient page's Discharge box shows them.
   const { scheduleAppointments } = useScheduleAppointments();
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
+  // The date in each patient's Initial Exam box: saved (as stored), else the
+  // earliest checked-in/out New Patient visit — lib/initial-exam-date.
+  const initialExamIndex = useMemo(() => buildInitialExamIndex(scheduleAppointments), [scheduleAppointments]);
+  const initialExamOf = useCallback(
+    (patient: PatientRecord) => {
+      const saved = patient.matrix?.initialExam ?? "";
+      return saved.trim() ? saved : patientInitialExamIso(patient, initialExamIndex);
+    },
+    [initialExamIndex],
+  );
   const { adminAccess } = useAdminAccess();
   // Clicking a facility / specialist row opens the list of who was sent there.
   const [referralDrill, setReferralDrill] = useState<{
@@ -643,7 +654,7 @@ export default function DashboardPage() {
     ) as Record<string, number>;
 
     filteredPatients.forEach((patient) => {
-      const parsed = parseFlexibleDate(patient.matrix?.initialExam);
+      const parsed = parseFlexibleDate(initialExamOf(patient));
       if (!parsed) return;
       if (year !== "ALL" && parsed.year.toString() !== year) return;
       counts[parsed.monthName] += 1;
@@ -653,7 +664,7 @@ export default function DashboardPage() {
       month: monthName,
       count: counts[monthName],
     }));
-  }, [filteredPatients, year]);
+  }, [filteredPatients, year, initialExamOf]);
 
   const totalCasesAcrossMonths = monthCounts.reduce((sum, entry) => sum + entry.count, 0);
   const monthsWithCases = monthCounts.filter((entry) => entry.count > 0).length;
@@ -672,7 +683,7 @@ export default function DashboardPage() {
       // written by the app, so they were empty/garbage).
       // Discharge = the date in the patient's Discharge box (lib/discharge-date).
       const discharge = patientDischargeIso(patient, dischargeIndex);
-      const itd = daysBetween(m?.initialExam, discharge);
+      const itd = daysBetween(initialExamOf(patient), discharge);
       const dtr = daysBetween(discharge, m?.rbSent);
       const rtp = daysBetween(m?.rbSent, m?.paidDate);
       if (itd !== null) initialToDischargeValues.push(itd);
@@ -685,7 +696,7 @@ export default function DashboardPage() {
       dischargeToRb: average(dischargeToRbValues),
       rbToPaid: average(rbToPaidValues),
     };
-  }, [dischargeIndex, filteredPatients]);
+  }, [dischargeIndex, filteredPatients, initialExamOf]);
 
   const imagingFacilityStats = useMemo(() => {
     type FacilityRow = {
