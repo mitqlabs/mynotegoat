@@ -46,6 +46,19 @@ export async function fetchKvValue<T = unknown>(key: string): Promise<T | null> 
  * pull everything in one round-trip.
  */
 export async function fetchAllKvValues(): Promise<Map<string, unknown> | null> {
+  const rows = await fetchAllKvRows();
+  if (!rows) return null;
+  const map = new Map<string, unknown>();
+  rows.forEach((row, key) => map.set(key, row.value));
+  return map;
+}
+
+/**
+ * Same single round-trip as fetchAllKvValues, plus each row's updated_at
+ * (when any device last saved it). Read-only. The bootstrap uses the
+ * timestamp to merge the To-Do list per item instead of whole-list.
+ */
+export async function fetchAllKvRows(): Promise<Map<string, { value: unknown; updatedAt: string | null }> | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
   const workspaceId = getActiveWorkspaceOrNull();
@@ -53,7 +66,7 @@ export async function fetchAllKvValues(): Promise<Map<string, unknown> | null> {
 
   const { data, error } = await supabase
     .from("workspace_kv")
-    .select("key, value")
+    .select("key, value, updated_at")
     .eq("workspace_id", workspaceId);
 
   if (error) {
@@ -61,9 +74,12 @@ export async function fetchAllKvValues(): Promise<Map<string, unknown> | null> {
     return null;
   }
 
-  const map = new Map<string, unknown>();
+  const map = new Map<string, { value: unknown; updatedAt: string | null }>();
   for (const row of data ?? []) {
-    map.set(row.key, row.value);
+    map.set(row.key, {
+      value: row.value,
+      updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+    });
   }
   return map;
 }

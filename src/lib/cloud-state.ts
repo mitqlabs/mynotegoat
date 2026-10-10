@@ -4,6 +4,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
 import { notifyChange } from "@/lib/local-sync";
 import { mergeFileManagerStates } from "@/lib/file-manager";
+import { mergeTaskLists } from "@/lib/tasks-merge";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 
 /** The files/folders index. Its state is a { folders, files } wrapper, so the
@@ -11,6 +12,8 @@ import { getCurrentMembershipSync } from "@/lib/workspace-membership";
  *  local — silently dropping freshly uploaded files. Everywhere we'd write
  *  this key from cloud, we MERGE by id instead so no record is ever lost. */
 const FILES_INDEX_KEY = "casemate.files.v1";
+/** To-Do list key; merged per item at bootstrap (see tasks-merge.ts). */
+const TASKS_KEY = "casemate.tasks.v1";
 
 function mergeFilesIndexIntoLocal(cloudValue: unknown) {
   if (typeof window === "undefined") return;
@@ -798,7 +801,7 @@ async function bootstrapTableBackedEntities() {
     isCloudEntityEnabled("tasks");
 
   if (anyKvFlagOn) {
-    const { isKvTableReady, fetchAllKvValues, bulkUpsertKvValues } =
+    const { isKvTableReady, fetchAllKvRows, bulkUpsertKvValues, upsertKvValue } =
       await import("@/lib/kv-cloud");
 
     const kvReady = await isKvTableReady();
@@ -878,7 +881,10 @@ async function bootstrapTableBackedEntities() {
       }
 
       // Fetch all kv values in one query.
-      const remoteKv = await fetchAllKvValues();
+      const remoteKvRows = await fetchAllKvRows();
+      const remoteKv: Map<string, unknown> | null = remoteKvRows
+        ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
+        : null;
       if (remoteKv !== null) {
         if (remoteKv.size === 0) {
           // First-run migration: push all enabled localStorage keys to the table.
@@ -950,6 +956,43 @@ async function bootstrapTableBackedEntities() {
               if (key === FILES_INDEX_KEY) {
                 mergeFilesIndexIntoLocal(value);
                 replacedCount += 1;
+                continue;
+              }
+              // To-Do list: per-item merge using the cloud row's updated_at
+              // (see tasks-merge.ts). The entry-count guard below kept a
+              // stale device's longer list forever, so deletions made on
+              // another computer never showed — and the next edit there
+              // would have pushed the old list back up.
+              if (key === TASKS_KEY && localRaw) {
+                let localParsed: unknown = null;
+                try {
+                  localParsed = JSON.parse(localRaw);
+                } catch {
+                  localParsed = null;
+                }
+                const result = mergeTaskLists(localParsed, value, remoteKvRows?.get(key)?.updatedAt ?? null);
+                try {
+                  window.localStorage.setItem(key, JSON.stringify(result.merged));
+                  replacedCount += 1;
+                  notifyChange(key);
+                } catch (storageErr) {
+                  console.warn(`[Cloud Sync] Could not write "${key}" to localStorage (quota?):`, storageErr);
+                  continue;
+                }
+                if (result.droppedLocalOnly > 0 || result.keptLocalOnly > 0 || result.localNewerEdits > 0) {
+                  console.info(
+                    `[Cloud Sync] Merged to-dos: ${result.merged.length} kept, ` +
+                      `${result.droppedLocalOnly} removed (deleted on another device), ` +
+                      `${result.keptLocalOnly} new + ${result.localNewerEdits} newer edit(s) from this device.`,
+                  );
+                }
+                // Upload only when this device really has something the
+                // cloud lacks; a stale device never pushes its old list.
+                if (result.needsUpload) {
+                  void upsertKvValue(key, result.merged).catch((uploadErr: unknown) =>
+                    console.error("[Cloud Sync] Uploading merged to-dos failed:", uploadErr),
+                  );
+                }
                 continue;
               }
               if (localRaw) {

@@ -14,7 +14,8 @@ export interface TaskRecord {
   assignee?: string;
 }
 
-const STORAGE_KEY = "casemate.tasks.v1";
+export const TASKS_STORAGE_KEY = "casemate.tasks.v1";
+const STORAGE_KEY = TASKS_STORAGE_KEY;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const prioritySet = new Set<TaskPriority>(["Low", "Medium", "High", "Urgent"]);
 
