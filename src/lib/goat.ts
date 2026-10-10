@@ -12,7 +12,7 @@
  * and G.O.A.T. will not read it.
  */
 
-import { answerFromFiles, personNamedIn, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import {
@@ -171,6 +171,8 @@ export interface GoatAnswer {
   section: GoatSection;
   /** Something worth a second look, e.g. a gap or an unreviewed report. */
   flag?: string;
+  /** Plain text for the Copy button (e.g. recommendations, ready for the Specialist box). */
+  copyText?: string;
 }
 
 export interface GoatHit {
@@ -1090,6 +1092,33 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
       } else {
         push({ title: `Range of motion${regionsAsked}`, lines: rom.notes, source: "Patient Files", section: "specialist" });
       }
+    }
+  }
+  // A doctor's recommendations from their report: "what did dr armen recommend".
+  const asksRecs = /\b(recommend\w*|suggest\w*|advis\w*|orders?|planned interventions?|next steps?|treatment options?|alternatives?)\b/i.test(question);
+  if (asksRecs && ctx.files && ctx.files.length) {
+    const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
+    const rec = recommendationsFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq });
+    if (rec) {
+      if (rec.file && rec.blocks.length) romShown = true; // structured answer first, raw file lines after
+      push(
+        rec.file && rec.blocks.length
+          ? {
+              title: "Recommendations",
+              lines: [],
+              groups: [
+                {
+                  lead: `${rec.who.length ? `${rec.who.join(" / ")} — ` : ""}${rec.file.name}`,
+                  blocks: rec.blocks.map((b) => ({ ...b, plain: true })),
+                  note: rec.notes.join(" ") || undefined,
+                },
+              ],
+              source: `Patient Files — ${rec.file.name} (${rec.file.dateLabel} ${rec.file.date || "—"})`,
+              section: "specialist",
+              copyText: rec.text,
+            }
+          : { title: "Recommendations", lines: rec.notes, source: "Patient Files", section: "specialist" },
+      );
     }
   }
   if (xrayAsked || (asksImaging && !mriAsked)) ask("xray", false);
