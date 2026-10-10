@@ -9,6 +9,7 @@
  */
 
 import { cleanTerms, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
+import { extractRom, formatRomMeasure, romHeading, type RomRegion } from "@/lib/goat-rom";
 import {
   isRegionGroup,
   joinWrapped,
@@ -109,6 +110,34 @@ export function surnameOf(name: string): string {
   }
   const all = words(cleaned);
   return all[all.length - 1] ?? "";
+}
+
+/** "Dr. Armen Haroutunian" → "Armen"; "Haroutunian, Armen" → "Armen". */
+export function firstNameOf(name: string): string {
+  const cleaned = (name ?? "").replace(/\(.*?\)/g, " ").replace(/,\s*(md|do|dc|pa|np|phd|pa-c|dpm)\.?\s*$/i, "").trim();
+  const words = (s: string) =>
+    s
+      .split(/\s+/)
+      .map((p) => p.replace(/[^A-Za-z'-]/g, ""))
+      .filter((p) => p.length >= 2 && !TITLE_WORDS.has(p.toLowerCase()));
+  if (cleaned.includes(",")) return words(cleaned.split(",")[1] ?? "")[0] ?? "";
+  const all = words(cleaned);
+  return all.length >= 2 ? all[0] : "";
+}
+
+/**
+ * Does the question name this person? Surname ("Haroutunian"), or first name
+ * the way people talk about doctors: "dr armen" / "doctor armen", or the first
+ * name alone when it's at least 5 letters ("armen's report"). Case-insensitive.
+ */
+export function personNamedIn(question: string, person: Pick<GoatPerson, "name">): boolean {
+  const q = (question ?? "").toLowerCase();
+  const word = (w: string) => w.toLowerCase().replace(/[^a-z'-]/g, "");
+  const s = word(surnameOf(person.name));
+  if (s.length >= 4 && new RegExp(`(?<![a-z])${s}(?![a-z])`).test(q)) return true;
+  const f = word(firstNameOf(person.name));
+  if (f.length >= 3 && new RegExp(`(?<![a-z])(?:dr|doctor)\\.?\\s+${f}(?![a-z])`).test(q)) return true;
+  return f.length >= 5 && new RegExp(`(?<![a-z])${f}(?![a-z])`).test(q);
 }
 
 function usDate(iso: string): string {
@@ -240,11 +269,9 @@ export function resolveWho(question: string, asked: GoatTermGroup[], people: Goa
       );
     }
   }
-  // A doctor named in the question ("Haroutunian findings").
-  const q = question.toLowerCase();
+  // A doctor named in the question ("Haroutunian findings", "from dr armen").
   for (const p of people) {
-    const s = surnameOf(p.name).toLowerCase();
-    if (s.length >= 4 && new RegExp(`\\b${s.replace(/[^a-z'-]/g, "")}\\b`).test(q)) found.set(p.name.toLowerCase(), p);
+    if (personNamedIn(question, p)) found.set(p.name.toLowerCase(), p);
   }
   return { specialtyGroups, people: [...found.values()], notes };
 }
@@ -631,3 +658,115 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
 }
 
 export const GOAT_LINES_PER_FILE = PER_FILE_DEFAULT;
+
+// ---------------------------------------------------------------------------
+// Range of motion out of a specialist's report
+// ---------------------------------------------------------------------------
+
+export interface GoatRomAnswer {
+  /** The report the values came from (newest first when there are several). */
+  file?: { id: string; name: string; date: string; dateLabel: "dated" | "uploaded"; docType: GoatDocType };
+  /** Doctor(s) the question named and the report matched. */
+  who: string[];
+  regions: RomRegion[];
+  /** One line per region: "Cervical ROM" + "30° anterior flexion (with pain)" … */
+  blocks: Array<{ heading: string; items: string[] }>;
+  /** Other reports with ROM (newest first, after the one shown). */
+  others: Array<{ id: string; name: string; date: string }>;
+  notes: string[];
+  /** The sentences the values came from (for highlighting). */
+  quotes: string[];
+}
+
+/**
+ * "what was the range of motion for cervical and lumbar from dr armen":
+ * the doctor's REPORT (referral forms skipped), its ROM values by region in the
+ * order written. With no doctor named, any report with ROM (newest first).
+ */
+export function romFromFiles(files: GoatFile[], q: FilesQuery): GoatRomAnswer | null {
+  const who = resolveWho(q.question, q.asked, q.people);
+  const hasWho = who.people.length > 0 || who.specialtyGroups.length > 0;
+  const whoMatchers = who.people.map((p) => ({ person: p, m: makeMatcher(cleanTerms([p.name, surnameOf(p.name)])) }));
+  const specialtyMatcher = makeMatcher(who.specialtyGroups.flatMap((g) => g.terms).filter((t) => t.length > 3));
+  // Regions in the order the question names them ("lumbar and cervical").
+  const ends = [...q.question.matchAll(/\S+/g)].map((m) => (m.index ?? 0) + m[0].length);
+  const firstAt = (r: BodyRegion) => ends.find((e) => regionsNamedIn(q.question.slice(0, e)).includes(r)) ?? Infinity;
+  const wanted = [...(q.region?.regions ?? [])].sort((x, y) => firstAt(x) - firstAt(y));
+  const readFiles = files.filter((f) => f.status === "read" && f.pages);
+  const pending = files.filter((f) => f.status === "unread" || f.status === "needsOcr" || f.status === "reading").length;
+  const notes: string[] = [];
+  const whoLabel = who.people.length ? who.people.map((p) => p.name).join(" / ") : who.specialtyGroups.map((g) => g.terms[0]).join(" / ");
+  // "from dr smith" with no Dr. Smith on file: say so rather than pass someone else's report off as theirs.
+  const askedDr = /(?<![a-z])(?:dr|doctor)\.?\s+([a-z][a-z'-]{2,})/i.exec(q.question);
+  if (askedDr && !who.people.length) {
+    notes.push(`I don't have a "Dr. ${askedDr[1].charAt(0).toUpperCase()}${askedDr[1].slice(1)}" among this patient's specialists or Contacts, so this is the latest report with range of motion from anyone.`);
+  }
+
+  type Found = { file: GoatFile; names: string[]; regions: RomRegion[]; ts: number; date: string; label: "dated" | "uploaded"; docType: GoatDocType };
+  const found: Found[] = [];
+  let referralsSkipped = 0;
+  let theirFiles = 0;
+  for (const f of readFiles) {
+    const text = (f.pages ?? []).join("\n");
+    const names = whoMatchers.filter(({ m }) => m.test(text) || m.test(f.name)).map(({ person }) => person.name);
+    const bySpecialty = !names.length && !who.people.length && specialtyMatcher.terms.length > 0 && (specialtyMatcher.test(text) || specialtyMatcher.test(f.name));
+    if (hasWho && !names.length && !bySpecialty) continue;
+    theirFiles += 1;
+    const docType = classifyDoc(f);
+    if (docType === "referral") {
+      referralsSkipped += 1;
+      continue;
+    }
+    const all = extractRom(docUnits(f).map((u) => ({ text: u.text, contextRegion: u.region, heading: u.heading })));
+    if (!all.length) continue;
+    const regions = wanted.length ? all.filter((r) => r.body && wanted.includes(r.body)) : all;
+    const { date, label } = docDate(f);
+    found.push({ file: f, names, regions, ts: stamp(date), date, label, docType });
+  }
+
+  if (hasWho && !theirFiles) {
+    notes.push(`No file I've read mentions ${whoLabel}.`);
+  } else if (!found.length) {
+    notes.push(
+      hasWho
+        ? `I found ${theirFiles} file${theirFiles === 1 ? "" : "s"} from ${whoLabel}, but no range-of-motion values in ${theirFiles === 1 ? "it" : "them"}${referralsSkipped ? ` (${referralsSkipped} referral form${referralsSkipped === 1 ? "" : "s"} skipped)` : ""}.`
+        : "No range-of-motion values in the files I've read.",
+    );
+  }
+  if (pending) notes.push(`${pending} file${pending === 1 ? " isn't" : "s aren't"} read yet — open Patient Files to read ${pending === 1 ? "it" : "them"}, then ask again.`);
+  if (!found.length) return notes.length ? { who: who.people.map((p) => p.name), regions: [], blocks: [], others: [], notes, quotes: [] } : null;
+
+  // Newest report first; among those, one that has the regions asked.
+  found.sort((a, b) => b.ts - a.ts);
+  const best = found.find((x) => x.regions.length) ?? found[0];
+  const others = found.filter((x) => x !== best);
+  // Asked order ("cervical and lumbar"), else the report's order.
+  const regions = wanted.length
+    ? wanted.flatMap((w) => best.regions.filter((r) => r.body === w))
+    : best.regions;
+  for (const w of wanted) {
+    if (!best.regions.some((r) => r.body === w)) {
+      const elsewhere = others.find((x) => x.regions.some((r) => r.body === w));
+      notes.push(
+        `No ${w.toLowerCase()} range of motion in this report${elsewhere ? ` — ${elsewhere.file.name} (${elsewhere.label} ${elsewhere.date || "—"}) has it` : ""}.`,
+      );
+    }
+  }
+  if (others.length) {
+    notes.push(
+      `${others.length} other report${others.length === 1 ? "" : "s"}${hasWho ? ` from ${whoLabel}` : ""} also ${others.length === 1 ? "has" : "have"} range of motion: ${others
+        .slice(0, 3)
+        .map((x) => `${x.file.name} (${x.label} ${x.date || "—"})`)
+        .join("; ")}${others.length > 3 ? "; …" : ""}.`,
+    );
+  }
+  return {
+    file: { id: best.file.id, name: best.file.name, date: best.date, dateLabel: best.label, docType: best.docType },
+    who: best.names,
+    regions,
+    blocks: regions.map((r) => ({ heading: romHeading(r), items: r.measures.map(formatRomMeasure) })),
+    others: others.map((x) => ({ id: x.file.id, name: x.file.name, date: x.date })),
+    notes,
+    quotes: [...new Set(regions.flatMap((r) => r.quotes))],
+  };
+}
