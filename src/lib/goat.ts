@@ -15,6 +15,7 @@
 import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
+import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
 import {
   isRegionGroup,
   levelHighlightTerms,
@@ -52,6 +53,8 @@ export interface GoatAppointment {
   startTime: string;
   type: string;
   status: string;
+  /** The appointment's own note (e.g. why it was canceled), when there is one. */
+  note?: string;
 }
 
 export interface GoatEncounter {
@@ -152,6 +155,8 @@ export interface GoatBlock {
   focus?: number[];
   /** Show the heading as written ("Cervical ROM"), not as a small caps label. */
   plain?: boolean;
+  /** What "Show all N …" calls the items (default "findings"). */
+  more?: string;
 }
 
 /** One record (an MRI referral, a specialist) with its findings as blocks. */
@@ -176,7 +181,7 @@ export interface GoatAnswer {
 }
 
 export interface GoatHit {
-  kind: "Note" | "SOAP" | "X-Ray findings" | "MRI/CT findings" | "Specialist" | "Prior care" | "Alert";
+  kind: "Note" | "SOAP" | "Appointment" | "X-Ray findings" | "MRI/CT findings" | "Specialist" | "Prior care" | "Alert";
   title: string;
   snippet: string;
   date: string | null;
@@ -739,23 +744,8 @@ function priorCareAnswer(ctx: GoatContext): GoatAnswer {
 // Decompression sessions
 // ---------------------------------------------------------------------------
 
-export type DecompRegion = "Lumbar" | "Cervical" | "Thoracic";
+export { decompRegions, isDecompression, type DecompRegion };
 const DECOMP_REGIONS: DecompRegion[] = ["Lumbar", "Cervical", "Thoracic"];
-
-/** A decompression treatment, appointment type or charge, but not "Begin decompression" style plan notes. */
-export function isDecompression(name: string): boolean {
-  return /decompress/i.test(name ?? "") && !/\b(begin|start|recommend|consider|consult|eval|discuss)/i.test(name ?? "");
-}
-
-/** Regions named in a type, answer or charge: "Lumbar (flat)", "L5-S1", "Spinal Decompression - C/S", … */
-export function decompRegions(value: string): DecompRegion[] {
-  const s = value ?? "";
-  const out: DecompRegion[] = [];
-  if (/lumbar|lumbo|low(er)? back|\bl\/s\b|\bL[1-5]\s*[-/]\s*(L[1-5]|S1)\b/i.test(s)) out.push("Lumbar");
-  if (/cervical|neck|\bc\/s\b|\bC[1-7]\s*[-/]\s*(C[1-7]|T1)\b/i.test(s)) out.push("Cervical");
-  if (/thoracic|mid[- ]?back|\bt\/s\b|\bT\d{1,2}\s*[-/]\s*(T\d{1,2}|L1)\b/i.test(s)) out.push("Thoracic");
-  return out;
-}
 
 interface DecompDay {
   stamp: number;
@@ -985,6 +975,9 @@ function searchPage(ctx: GoatContext, terms: TermMatcher[]): GoatHit[] {
   }
   for (const s of ctx.specialists) add("Specialist", s.name || "Specialist", s.recommendations, s.completedDate || s.sentDate || null, "specialist");
   add("Specialist", "Specialist recommendations", ctx.specialistRecommendations, null, "specialist");
+  for (const a of ctx.appointments ?? []) {
+    if (a.note?.trim()) add("Appointment", `${shown(a.date)}${a.type ? ` · ${a.type}` : ""} · ${a.status}`, a.note, a.date, "appointments");
+  }
   for (const e of ctx.encounters ?? []) {
     const sections: Array<[string, string]> = [
       ["S", e.soap.subjective],
@@ -1028,6 +1021,10 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     if (asked.length) asked.forEach((r) => push(decompressionAnswer(ctx, today, r)));
     else push(decompressionAnswer(ctx, today, null));
   }
+
+  // One by one: "when did they cancel", "which were no-shows", "last Discharge", "list new patient visits".
+  const apptList = appointmentListAnswer(ctx.appointments, question, today, { groups: ctx.termGroups ?? [], visitWords });
+  if (apptList) push(apptList);
 
   if (asksGap) push(gapsAnswer(ctx, today));
   if (!asksGap && !(asksDecomp && !visitWords) && (visitWords || (focus && !has(tokens, ["xray", "mri", "specialist", "plan"])) || (asksCount && !has(tokens, ["bill", "diagnos"])))) {
