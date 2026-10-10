@@ -1,6 +1,7 @@
 import { encounters as seedEncounters } from "@/lib/mock-data";
 import { type MacroAnswerMap } from "@/lib/macro-templates";
 import { notifyChange } from "@/lib/local-sync";
+import { createNoteWriteQueue, type NoteWriteQueue } from "@/lib/note-write-queue";
 
 export const encounterSections = [
   "subjective",
@@ -523,7 +524,7 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // reportCloudWriteError pipeline so the user sees the red pill.
   // Pass `safeRecords` (post-guard) so the cloud write also skips
   // any record we refused to wipe.
-  dualWriteEncounterNotesToCloud(safeRecords, previousNotesById).catch((err) => {
+  dualWriteEncounterNotesToCloud(safeRecords).catch((err) => {
     // Lazy-import to avoid a circular dep between encounter-notes and
     // storage-sync-interceptor. The reportCloudWriteError helper flips
     // the sync-status indicator to "error" and logs the message.
@@ -569,6 +570,7 @@ export async function forceSaveAllEncountersToCloud(
     const { bulkUpsertEncounterNotesToTable } = await import("@/lib/encounter-notes-cloud");
     const result = await bulkUpsertEncounterNotesToTable(records);
     if (result.ok) {
+      noteCloudQueue.setConfirmed(records);
       reportCloudWriteSuccess("Save Encounters");
     } else {
       reportCloudWriteError("Save Encounters", new Error(result.error ?? "Unknown error"));
@@ -585,152 +587,142 @@ export async function forceSaveAllEncountersToCloud(
   }
 }
 
-// ── Single-writer queue for the encounter dual-write ──
-// Before this guard, rapid SOAP edits triggered overlapping cloud
-// pushes that contested the navigator.locks auth lock used by
-// supabase-js's getUser(). The losing op died with
-//   "Lock broken by another request with the 'steal' option"
-// and the user saw the blue "saving" pill stuck forever while
-// nothing actually persisted. We collapse concurrent writes here:
-// at most one push runs at a time; if a new one comes in mid-flight,
-// it replaces any earlier queued args (since the latest snapshot
-// supersedes anything in the middle), and runs as soon as the in-
-// flight one settles. End result: same data ends up in the cloud,
-// no lock contention, no stuck pill.
-let dualWriteInFlight: Promise<void> | null = null;
-let dualWritePending: {
-  records: EncounterNoteRecord[];
-  prevById: Map<string, EncounterNoteRecord>;
-} | null = null;
-
-async function runDualWriteSerialized(
-  records: EncounterNoteRecord[],
-  prevById: Map<string, EncounterNoteRecord>,
-): Promise<void> {
-  if (dualWriteInFlight) {
-    // Replace any previously queued args with the latest snapshot.
-    dualWritePending = { records, prevById };
-    return dualWriteInFlight;
+// ── Cloud write queue for encounter notes ──
+// One batch at a time (avoids the navigator.locks "Lock broken by another
+// request with the 'steal' option" contention that rapid overlapping pushes
+// caused), but unlike the old single-slot queue it never DROPS a change:
+//   - saves are merged per note id (latest version wins),
+//   - a note only counts as saved after its upsert succeeds,
+//   - failed upserts are re-queued and retried with backoff.
+// The old version advanced the "last saved" snapshot before the write
+// finished and let a newer save replace a queued one, which is how a
+// Close could show on screen but never reach the cloud.
+type CloudWriteDeps = {
+  upsertEncounterNoteToTable: (note: EncounterNoteRecord) => Promise<void>;
+  reportCloudWriteStart: (label: string) => void;
+  reportCloudWriteSuccess: (label: string) => void;
+  reportCloudWriteError: (label: string, err: unknown) => void;
+};
+let cloudWriteDepsPromise: Promise<CloudWriteDeps> | null = null;
+let cloudWriteDepsOverride: CloudWriteDeps | null = null;
+const loadCloudWriteDeps = (): Promise<CloudWriteDeps> => {
+  if (cloudWriteDepsOverride) return Promise.resolve(cloudWriteDepsOverride);
+  if (!cloudWriteDepsPromise) {
+    cloudWriteDepsPromise = Promise.all([
+      import("@/lib/encounter-notes-cloud"),
+      import("@/lib/storage-sync-interceptor"),
+    ]).then(([cloud, sync]) => ({
+      upsertEncounterNoteToTable: cloud.upsertEncounterNoteToTable,
+      reportCloudWriteStart: sync.reportCloudWriteStart,
+      reportCloudWriteSuccess: sync.reportCloudWriteSuccess,
+      reportCloudWriteError: sync.reportCloudWriteError,
+    }));
   }
-  const startNext = (
-    args: { records: EncounterNoteRecord[]; prevById: Map<string, EncounterNoteRecord> },
-  ): Promise<void> => {
-    return runDualWriteUnserialized(args.records, args.prevById).finally(() => {
-      const next = dualWritePending;
-      dualWritePending = null;
-      if (next) {
-        // Chain the queued run after the current one finishes.
-        dualWriteInFlight = startNext(next);
-      } else {
-        dualWriteInFlight = null;
-      }
+  return cloudWriteDepsPromise;
+};
+
+/** Never let autosave send a BLANK copy over one that had content, or an
+ *  OLDER copy (stale state in another hook instance on this page) over a
+ *  newer one this tab already saved. The age check only applies to copies
+ *  this tab wrote — another device's clock may differ from ours. */
+function shouldSkipCloudWrite(
+  latest: EncounterNoteRecord | undefined,
+  next: EncounterNoteRecord,
+  latestIsLocal: boolean,
+): boolean {
+  if (!latest) return false;
+  if (encounterContentScore(latest) > 0 && encounterContentScore(next) === 0) {
+    console.warn(
+      `[encounter-notes] BLOCKED a blank overwrite of encounter ${next.id} ` +
+        `(${next.encounterDate}) — it had content and the new copy is empty. Keeping the cloud copy.`,
+    );
+    return true;
+  }
+  if (!latestIsLocal) return false;
+  const latestTime = Date.parse(latest.updatedAt) || 0;
+  const nextTime = Date.parse(next.updatedAt) || 0;
+  if (latestTime > 0 && nextTime > 0 && nextTime < latestTime) {
+    console.warn(
+      `[encounter-notes] Skipped an older copy of encounter ${next.id} (${next.updatedAt} < ${latest.updatedAt}).`,
+    );
+    return true;
+  }
+  return false;
+}
+
+const noteCloudQueue: NoteWriteQueue<EncounterNoteRecord> = createNoteWriteQueue<EncounterNoteRecord>({
+  write: async (note) => {
+    const deps = await loadCloudWriteDeps();
+    await deps.upsertEncounterNoteToTable(note);
+  },
+  shouldSkip: shouldSkipCloudWrite,
+  concurrency: 4,
+  onBatchStart: () => {
+    void loadCloudWriteDeps().then((d) => d.reportCloudWriteStart("encounter-notes auto-save"));
+  },
+  onBatchDone: ({ failed, firstError }) => {
+    void loadCloudWriteDeps().then((d) => {
+      if (failed === 0) d.reportCloudWriteSuccess("encounter-notes auto-save");
+      else
+        d.reportCloudWriteError(
+          "encounter-notes dual-write",
+          new Error(
+            `[encounter-notes] ${failed} cloud write(s) failed — will retry. First reason: ${
+              firstError instanceof Error ? firstError.message : String(firstError)
+            }`,
+          ),
+        );
     });
-  };
-  dualWriteInFlight = startNext({ records, prevById });
-  return dualWriteInFlight;
+  },
+});
+
+async function cloudNotesEnabled(): Promise<boolean> {
+  if (cloudWriteDepsOverride) return true;
+  const { isCloudEntityEnabled } = await import("@/lib/feature-flags");
+  return isCloudEntityEnabled("encounterNotes");
+}
+
+/** Queue every note that differs from what the cloud is known to hold. */
+async function dualWriteEncounterNotesToCloud(nextRecords: EncounterNoteRecord[]): Promise<void> {
+  if (!(await cloudNotesEnabled())) return;
+  noteCloudQueue.enqueue(nextRecords);
 }
 
 /**
- * Dual-write changed encounters to the cloud table. Returns a promise that
- * resolves when every upsert/delete has settled. Failures are surfaced via
- * the sync status system AND re-thrown as an aggregate error so the caller
- * can choose to react (e.g., the "Save All Encounters" button can show a
- * toast). Previous behavior was fire-and-forget with silent `console.error`
- * — that's the exact pattern that lost 94 encounters.
- *
- * Public entry point routes through `runDualWriteSerialized` so concurrent
- * callers from rapid SOAP edits don't lock-steal each other.
+ * Save one note to the cloud and resolve once THAT version is confirmed.
+ * Used by Close + Check Out so the appointment is only checked out after the
+ * close has really landed. Resolves true when cloud sync is off (nothing to
+ * wait for).
  */
-function dualWriteEncounterNotesToCloud(
-  nextRecords: EncounterNoteRecord[],
-  prevById: Map<string, EncounterNoteRecord>,
-): Promise<void> {
-  return runDualWriteSerialized(nextRecords, prevById);
+export async function saveEncounterNoteToCloudNow(note: EncounterNoteRecord): Promise<boolean> {
+  if (!(await cloudNotesEnabled())) return true;
+  return noteCloudQueue.saveNow(note);
 }
 
-async function runDualWriteUnserialized(
-  nextRecords: EncounterNoteRecord[],
-  prevById: Map<string, EncounterNoteRecord>,
-): Promise<void> {
-  const [
-    { isCloudEntityEnabled },
-    { upsertEncounterNoteToTable, deleteEncounterNoteFromTable },
-    { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess },
-    { runBatched },
-  ] = await Promise.all([
-    import("@/lib/feature-flags"),
-    import("@/lib/encounter-notes-cloud"),
-    import("@/lib/storage-sync-interceptor"),
-    import("@/lib/cloud-auth"),
-  ]);
-  if (!isCloudEntityEnabled("encounterNotes")) return;
+/**
+ * Ask the cloud whether each note is closed (signed) as expected. Returns the
+ * ids that are NOT, or null if the cloud couldn't be asked.
+ */
+export async function findNotesWithUnsavedSignedState(
+  expected: Array<{ id: string; signed: boolean }>,
+): Promise<string[] | null> {
+  if (expected.length === 0) return [];
+  if (!(await cloudNotesEnabled())) return [];
+  const { fetchEncounterNotesByIds } = await import("@/lib/encounter-notes-cloud");
+  const rows = await fetchEncounterNotesByIds(expected.map((e) => e.id));
+  if (!rows) return null;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return expected.filter((e) => byId.get(e.id)?.signed !== e.signed).map((e) => e.id);
+}
 
-  const nextById = new Map(nextRecords.map((n) => [n.id, n]));
-  // Build TASK FACTORIES (thunks) instead of already-running Promises so
-  // the batched runner can pace them. Firing all 21+ at once is what
-  // caused the "21 of 21 failed / Failed to fetch" bug report — a single
-  // transient network blip took them all down together because each
-  // in-flight call hit the same momentary network drop.
-  const tasks: Array<() => Promise<unknown>> = [];
-  for (const note of nextRecords) {
-    const prev = prevById.get(note.id);
-    if (!prev || JSON.stringify(prev) !== JSON.stringify(note)) {
-      // ── DATA-LOSS GUARD ──
-      // Never let autosave turn a previously non-empty encounter into a BLANK
-      // one in the cloud. A full → totally-empty transition is virtually always
-      // a load/merge race (the encounter flashed empty before it hydrated, then
-      // a save fired), not a real edit — and writing that blank clobbers the
-      // real note for good. Legitimately clearing a visit is done by deleting
-      // the encounter, not by blanking every field. Partial edits (shorter
-      // SOAP, one fewer charge) still sync normally — this only blocks the
-      // catastrophic full→empty write.
-      if (prev && encounterContentScore(prev) > 0 && encounterContentScore(note) === 0) {
-        console.warn(
-          `[encounter-notes] BLOCKED a blank overwrite of encounter ${note.id} ` +
-            `(${note.encounterDate}) — it had content and the new copy is empty. Keeping the cloud copy.`,
-        );
-        continue;
-      }
-      tasks.push(() => upsertEncounterNoteToTable(note));
-    }
-  }
-  // ── Auto-delete REMOVED ──
-  // Previously we issued deletes for any prevById key not in nextRecords.
-  // That assumed nextRecords was always the canonical full set. It isn't:
-  //  - The localStorage cache prunes to the most recent 100 records / 90
-  //    days, so a fresh page load can produce a "next" set that's missing
-  //    older encounters — and the diff would queue deletes for them.
-  //  - forceSaveAll(patientId) intentionally passes a patient-scoped subset.
-  // Either way, an auto-delete here can wipe real data. The user just
-  // got rescued by a network "Failed to fetch" that aborted 22 deletes
-  // mid-flight; without that we'd have lost 22 encounters from cloud.
-  // Real deletions go through the explicit deleteEncounter() user action,
-  // which is wired separately. Leaving stale rows in the cloud is a far
-  // smaller harm than ever auto-deleting one.
-  // ──────────────────────────
-  if (tasks.length === 0) return;
+/** Drop the "already in the cloud" mark so the next save re-sends the note. */
+export function forgetCloudCopy(noteId: string) {
+  noteCloudQueue.invalidate(noteId);
+}
 
-  // Flip UI to "syncing" (blue pill) so the user sees their auto-save
-  // kick off. Every macro click / SOAP edit that triggers a cloud push
-  // shows the pill instead of silently happening in the background.
-  reportCloudWriteStart("encounter-notes auto-save");
-  const results = await runBatched(tasks, 4);
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-  if (failures.length === 0) {
-    // All ops succeeded — flash the green "Cloud Saved ✓" pill so the
-    // user gets positive confirmation that their work made it to cloud.
-    reportCloudWriteSuccess("encounter-notes auto-save");
-    return;
-  }
-
-  // Every individual op already called reportCloudWriteError — this is the
-  // aggregate signal for any caller that wants a single pass/fail answer.
-  const aggregate = new Error(
-    `[encounter-notes] ${failures.length} of ${tasks.length} cloud op(s) failed — ` +
-      `first reason: ${failures[0].reason instanceof Error ? failures[0].reason.message : String(failures[0].reason)}`,
-  );
-  reportCloudWriteError("encounter-notes dual-write", aggregate);
-  throw aggregate;
+/** Test-only: replace the cloud writer + status reporters. */
+export function __setEncounterCloudWriteDepsForTest(deps: CloudWriteDeps | null) {
+  cloudWriteDepsOverride = deps;
 }
 
 /**
@@ -840,6 +832,24 @@ export function replaceEncounterNotesFromCloud(cloudRecords: EncounterNoteRecord
     console.warn("[encounter-notes] localStorage quota exceeded during cloud merge");
   }
   previousNotesById = new Map(deduped.map((n) => [n.id, n]));
+  // The cloud rows are what the cloud holds — that's the write queue's
+  // baseline. A local copy that won the merge (newer than the cloud, e.g. a
+  // Close whose write never landed) is re-sent so the cloud catches up.
+  // Local-only notes are NOT re-sent here: they may have been deleted on
+  // another device, and pushing them would bring them back.
+  noteCloudQueue.setConfirmed(cloudRecords);
+  const localWinners = deduped.filter((n) => {
+    const cloud = cloudById.get(n.id);
+    return cloud !== undefined && cloud !== n;
+  });
+  for (const n of deduped) {
+    if (!cloudById.has(n.id)) noteCloudQueue.setConfirmed([n]);
+  }
+  if (localWinners.length > 0) {
+    void cloudNotesEnabled().then((enabled) => {
+      if (enabled) noteCloudQueue.enqueue(localWinners);
+    });
+  }
   // Notify any mounted useEncounterNotes hook to re-read localStorage.
   // Without this, the hook's React state stays frozen at whatever was
   // cached when the component mounted — cloud-loaded encounters never
