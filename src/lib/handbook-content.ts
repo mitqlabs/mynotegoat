@@ -653,7 +653,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "The × on a macro chip removes that macro's text and any charges it added.",
         ],
         watchOut:
-          "If a decompression prompt asks '…for the rest of this plan?', saying Yes rewrites the treatment plan for every remaining visit. Say No for a one-day change.",
+          "If a decompression prompt asks '…for the rest of this plan?', saying Yes changes the treatment plan for visits not charted yet — notes already written, closed or checked out are never changed. Say No for a one-day change.",
       },
       {
         heading: "Finish the visit",
@@ -680,7 +680,9 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Write one good note for a routine visit.",
           "Press Fill Treatment Plan in the encounter header.",
-          "Every remaining Checked In visit inside the plan is written, closed and checked out.",
+          "It shows what it will do (e.g. 'Will fill 6 upcoming visits (10/02–10/30). Skipping 3 already checked out/closed.') — press OK.",
+          "Every Checked In visit after this note, dated today or later, inside the plan that has no note yet is written, closed and checked out.",
+          "If a PAST visit was checked in but never got a note (rare — usually a mistake), it asks about those separately: OK fills them too, Cancel leaves them alone and the rest still goes ahead.",
         ],
         why: "Subjective, Objective and Assessment are copied from the note you are on. The Plan and the charges come from the treatment plan for each visit's weekday — never copied — so each day bills what it should.",
       },
@@ -688,7 +690,8 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "What it skips, and why nothing happened",
         steps: [
           "Canceled and No Show visits.",
-          "Visits already Checked Out, or that already have a note.",
+          "Visits already Checked Out, and closed notes — that day is done, it is never changed.",
+          "Past visits that already have a note (open or closed).",
           "Visits still marked Scheduled — it only fills Checked In ones.",
           "Exam and re-exam visits, deliberately.",
           "Weekdays with nothing set up in the treatment plan.",
@@ -701,16 +704,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Write the re-exam note with the new findings.",
           "Press Fill Treatment Plan on it.",
-          "It asks whether to replace the Subjective, Objective and Assessment on the later visits that already have notes. Say yes.",
+          "It asks whether to replace the Subjective, Objective and Assessment on upcoming visits that already have an OPEN note. Say yes.",
         ],
         why: "A long plan is usually filled once from the first visit. When the findings change at a re-exam, those later visits already have notes, so they'd otherwise keep reading like the old ones. Their Plan and charges are left alone — only S, O and A are replaced.",
         watchOut:
-          "Anything typed by hand into S, O or A on those later visits is replaced. If a visit has something specific written on it, fix that one afterwards.",
+          "Closed notes, checked-out visits and past days are never replaced. Anything typed by hand into S, O or A on an open upcoming note is replaced — fix that one afterwards.",
       },
       {
         heading: "Before you press it",
         steps: [
-          "It runs immediately — there is no preview.",
+          "It asks once with a short summary, then runs — there is no row-by-row preview.",
           "It only fills forward, never the note you are on or anything before it.",
           "It bills real charges across several dates at once, so check the plan's weekday setup first.",
           "To change one of the filled notes, open it and press Reopen.",
