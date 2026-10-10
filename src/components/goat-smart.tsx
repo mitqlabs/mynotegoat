@@ -236,7 +236,7 @@ function SourceList({ sources, answer }: { sources: AiSource[]; answer: SmartAns
           </li>
         ))}
       </ul>
-      <button className="mt-1 text-xs font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => setOpen((v) => !v)} type="button">
+      <button style={{ fontSize: 12 }} className="mt-1 text-xs font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => setOpen((v) => !v)} type="button">
         {open ? "Hide what G.O.A.T. read" : "Show what G.O.A.T. read"}
       </button>
       {open && (
@@ -249,7 +249,53 @@ function SourceList({ sources, answer }: { sources: AiSource[]; answer: SmartAns
 }
 
 /** The streamed answer text, then checks and sources. */
-export function SmartAnswerBody({ text, answer, working }: { text: string; answer: SmartAnswer | null; working: boolean }) {
+/** Small "Source: file.pdf · p.2" links under an answer (the default; quotes are a setting). */
+function SourceLinks({ answer, onOpenFile }: { answer: SmartAnswer; onOpenFile?: (fileId: string, page?: number) => void }) {
+  const firstPage = new Map<string, number | undefined>();
+  for (const s of answer.check.supports) if (!firstPage.has(s.sourceId)) firstPage.set(s.sourceId, s.page);
+  const all = answer.retrieval.sources;
+  const cited = all.filter((s) => firstPage.has(s.id));
+  const list = cited.length ? cited : all.slice(0, 2);
+  if (!list.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
+      <span>Source{list.length > 1 ? "s" : ""}:</span>
+      {list.map((s) => {
+        const page = firstPage.get(s.id);
+        const label = `${s.kind === "file" ? s.title : s.title.replace(/\s*\(patient page.*$/, "") + " (patient page)"}${page ? ` · p.${page}` : ""}`;
+        return s.kind === "file" && s.fileId && onOpenFile ? (
+          <button
+            key={s.id}
+            className="font-semibold text-[var(--brand-primary)] hover:underline"
+            onClick={() => onOpenFile(s.fileId!, page)}
+            style={{ fontSize: 12 }}
+            title="Open the file"
+            type="button"
+          >
+            {label} ↗
+          </button>
+        ) : (
+          <span key={s.id} className="font-semibold">
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SmartAnswerBody({
+  text,
+  answer,
+  working,
+  onOpenFile,
+}: {
+  text: string;
+  answer: SmartAnswer | null;
+  working: boolean;
+  onOpenFile?: (fileId: string, page?: number) => void;
+}) {
+  const { prefs } = useGoatAnswerPrefs();
   return (
     <>
       <div className="whitespace-pre-line text-sm leading-snug">
@@ -266,7 +312,8 @@ export function SmartAnswerBody({ text, answer, working }: { text: string; answe
           Couldn&apos;t find {answer.check.unverified.map((n) => `"${n}"`).join(", ")} in the sources. Check before using.
         </p>
       )}
-      {answer && !answer.skipped && answer.retrieval.sources.length > 0 && <SourceList answer={answer} sources={answer.retrieval.sources} />}
+      {answer && !answer.skipped && answer.retrieval.sources.length > 0 &&
+        (prefs.showQuotes ? <SourceList answer={answer} sources={answer.retrieval.sources} /> : <SourceLinks answer={answer} onOpenFile={onOpenFile} />)}
       {answer && (
         <div className="mt-1.5 text-[11px] text-[var(--text-muted)]">
           {answer.skipped ? "Nothing in the file matched, so the model wasn't asked." : `Written on this computer in ${(answer.ms / 1000).toFixed(1)} s. Smart mode can make mistakes; check the quotes.`}

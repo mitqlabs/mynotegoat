@@ -39,6 +39,12 @@ export function GoatAnswerPrefsPanel() {
   return (
     <div className="space-y-3">
       <Switch
+        hint="G.O.A.T. always searches the files. On: show the exact matching lines under each Smart answer. Off: just a small link to the file it came from."
+        label="Show matching file quotes"
+        on={prefs.showQuotes}
+        onChange={(showQuotes) => update({ showQuotes })}
+      />
+      <Switch
         hint="Include fees and costs written in reports (e.g. professional fees, surgical center fees, cost per session)."
         label="Show costs / fees"
         on={prefs.showCosts}

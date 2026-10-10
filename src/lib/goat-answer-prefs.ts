@@ -26,6 +26,8 @@ export interface GoatAnswerPrefs {
   /** Lead each answer line with its body region, in `regionOrder`. */
   groupByRegion: boolean;
   regionOrder: string[];
+  /** Show the exact matching lines from files under Smart answers (off: just a small source link). */
+  showQuotes: boolean;
   updatedAt: string;
 }
 
@@ -33,6 +35,7 @@ export const DEFAULT_GOAT_ANSWER_PREFS: GoatAnswerPrefs = {
   showCosts: true,
   groupByRegion: true,
   regionOrder: DEFAULT_GOAT_REGION_ORDER,
+  showQuotes: false,
   updatedAt: "",
 };
 
@@ -47,6 +50,7 @@ export function normalizeGoatAnswerPrefs(value: unknown): GoatAnswerPrefs {
     showCosts: typeof v.showCosts === "boolean" ? v.showCosts : DEFAULT_GOAT_ANSWER_PREFS.showCosts,
     groupByRegion: typeof v.groupByRegion === "boolean" ? v.groupByRegion : DEFAULT_GOAT_ANSWER_PREFS.groupByRegion,
     regionOrder,
+    showQuotes: typeof v.showQuotes === "boolean" ? v.showQuotes : DEFAULT_GOAT_ANSWER_PREFS.showQuotes,
     updatedAt: typeof v.updatedAt === "string" ? v.updatedAt : "",
   };
 }

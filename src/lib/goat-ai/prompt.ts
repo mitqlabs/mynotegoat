@@ -24,7 +24,7 @@ export function buildSystemPrompt(prefs: Prefs, intents: AiIntent[] = [], patien
     "- Copy numbers, degrees, spinal levels (L5/S1, C7/T1), dates, counts and sessions exactly as written.",
   ];
   if (intents.includes("rom")) {
-    rules.push("- Range of motion: a heading line per region like \"Cervical ROM\", then one motion per line: \"- <degrees>° <motion> (<with pain / without pain, as written>)\".");
+    rules.push("- Range of motion: a heading line per region like \"Cervical ROM\", then one motion per line: \"- <degrees>° <motion> (<with pain / without pain, as written>)\". When the report gives no degrees, keep its words (e.g. \"- reduced anterior flexion (with pain)\", \"- within normal limits\"). Cover every region and joint the sources examine (spine, shoulder, extremities).");
   }
   if (intents.includes("recommend")) {
     rules.push(
@@ -142,8 +142,8 @@ function expandRomLines(text: string): string {
     .flatMap((line) => {
       const m = /^-?\s*(Cervical|Thoracic|Lumbar|Shoulder|Hip|Knee|Elbow|Wrist|Ankle)(?: spine)?(?: ROM| range of motion)?\s*:\s*(.+)$/i.exec(line.trim());
       if (!m) return [line];
-      const items = m[2].split(/[,;]\s+(?=\d)/).map((t) => t.trim().replace(/\.$/, "")).filter(Boolean);
-      if (items.length < 2 || !items.every((t) => /\d/.test(t))) return [line];
+      const items = m[2].split(/[,;]\s+/).map((t) => t.trim().replace(/\.$/, "")).filter(Boolean);
+      if (items.length < 2 || !items.every((t) => /\d|\b(flexion|extension|rotation|bending|abduction|adduction)\b/i.test(t))) return [line];
       const region = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
       return [`${region} ROM`, ...items.map((t) => `- ${t}`)];
     })
@@ -180,7 +180,9 @@ export function applyAnswerPrefs(text: string, prefs: Prefs, intents: AiIntent[]
         const sorted = [...b.regions].sort((x, y) => order(x) - order(y));
         const label = sorted.length > 1 ? `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}` : sorted[0];
         const body = b.l.replace(/^-\s*/, "");
-        const already = new RegExp(`^(${sorted.map((r) => r.replace("/", "\\/")).join("|")})( and [A-Za-z/]+)*\\s*:`, "i").test(body);
+        const already = new RegExp(`^(${sorted.map((r) => r.replace("/", "\\/")).join("|")})( and [A-Za-z/]+)*\\s*:`, "i").test(body) ||
+          // "Cervical radiculopathy: Recommend …" already leads with its region.
+          (sorted.length === 1 && new RegExp(`^${sorted[0].split("/")[0]}\\b[^:]{0,40}:`, "i").test(body));
         return { ...b, l: already ? b.l : `- ${label}: ${body}`, key: order(sorted[0]) };
       });
       // Re-order each run of consecutive bullet lines by region; other lines stay where they are.

@@ -47,14 +47,14 @@ export function splitForModel(text: string): string[] {
   text = text.replace(/\s+/g, " ").trim();
   // "Range of motion of the cervical spine is 30 degrees in anterior flexion with pain, 50 degrees …"
   // → a label line, then one motion per line (exact words kept).
-  const rom = /^(.*?\brange of motion\b[^.:]*?)\s+(?:is|was|are|were|:)\s+(.+?\bdegrees?\b.+)$/i.exec(text.trim());
+  const rom = /^(.*?\brange of motion\b[^.:]*?)\s+(?:is|was|are|were|demonstrates|demonstrated|shows|showed|reveals|revealed|:)\s+(.+)$/i.exec(text.trim());
   if (rom && /,/.test(rom[2])) {
     const items = rom[2]
       .replace(/\.$/, "")
       .split(/,\s*(?:and\s+)?|\s+and\s+(?=\d)/)
       .map((t) => t.trim())
       .filter(Boolean);
-    if (items.length >= 2 && items.every((t) => /\d/.test(t))) return [`${rom[1].trim()}:`, ...items.map((t) => `  ${t}`)];
+    if (items.length >= 2 && items.every((t) => /\d|\b(flexion|extension|rotation|bending|abduction|adduction)\b/i.test(t))) return [`${rom[1].trim()}:`, ...items.map((t) => `  ${t}`)];
   }
   if (text.length < 160) return [text];
   return text

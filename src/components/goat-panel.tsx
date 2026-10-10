@@ -427,9 +427,10 @@ export function GoatPanel({
                   {smart.error ? (
                     <p className="text-sm text-amber-800">Smart mode couldn&apos;t answer ({smart.error}). The normal results are below.</p>
                   ) : (
-                    <SmartAnswerBody answer={smart.answer} text={smart.text} working={smart.working} />
+                    <SmartAnswerBody answer={smart.answer} onOpenFile={files?.openFile} text={smart.text} working={smart.working} />
                   )}
                   <button
+                    style={{ fontSize: 12 }}
                     className="mt-1.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
                     onClick={() => setShowNormal((v) => !v)}
                     type="button"

@@ -216,6 +216,7 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const [smartOn, setSmartOn] = useSmartMode();
+  const { prefs: answerPrefs } = useGoatAnswerPrefs();
   const ai = useGoatAiState();
   const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
   const listRef = useRef<HTMLDivElement>(null);
@@ -344,7 +345,7 @@ export function GlobalGoatPopup({
                 )}
               </div>
             </div>
-            <button
+            <button style={{ fontSize: 12 }}
               className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40"
               disabled={!chat.messages.length || Boolean(job)}
               onClick={() => {
@@ -386,7 +387,7 @@ export function GlobalGoatPopup({
                     {m.choices && (
                       <div className="mt-2 space-y-1.5">
                         {m.choices.map((c) => (
-                          <button
+                          <button style={{ fontSize: 12 }}
                             key={c.patientId}
                             className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
                             disabled={Boolean(job)}
@@ -403,7 +404,17 @@ export function GlobalGoatPopup({
                         {w}
                       </p>
                     ))}
-                    {m.quotes && m.quotes.length > 0 && (
+                    {m.quotes && m.quotes.length > 0 && !answerPrefs.showQuotes && (
+                      <div className="mt-1.5 text-xs text-[var(--text-muted)]">
+                        Source{new Set(m.quotes.map((q) => q.title)).size > 1 ? "s" : ""}:{" "}
+                        <span className="font-semibold">
+                          {[...new Map(m.quotes.map((q) => [q.title, q])).values()]
+                            .map((q) => `${q.title.replace(/\s*\(patient page.*$/, " (patient page)")}${q.page ? ` · p.${q.page}` : ""}`)
+                            .join(", ")}
+                        </span>
+                      </div>
+                    )}
+                    {m.quotes && m.quotes.length > 0 && answerPrefs.showQuotes && (
                       <details className="mt-1.5 text-xs">
                         <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Sources ({m.quotes.length})</summary>
                         <ul className="mt-1 space-y-1">
@@ -463,7 +474,7 @@ export function GlobalGoatPopup({
                 placeholder={current ? `Ask about ${displayName(current.fullName)}…` : "Ask about a patient…"}
                 value={input}
               />
-              <button className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job)} type="submit">
+              <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job)} type="submit">
                 Ask
               </button>
             </form>
