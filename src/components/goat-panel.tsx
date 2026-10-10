@@ -52,9 +52,12 @@ function FindingsBlock({ block, highlight }: { block: GoatBlock; highlight: stri
   const shown = focused ? block.items.filter((_, i) => block.focus!.includes(i)) : block.items;
   return (
     <div className="mt-1.5">
-      {block.heading && (
-        <div className="text-xs font-semibold uppercase tracking-wide text-[#2f7f93]">{block.heading}</div>
-      )}
+      {block.heading &&
+        (block.plain ? (
+          <div className="text-sm font-semibold text-[#2f7f93]">{block.heading}</div>
+        ) : (
+          <div className="text-xs font-semibold uppercase tracking-wide text-[#2f7f93]">{block.heading}</div>
+        ))}
       <ul className="mt-0.5 space-y-1 text-sm leading-snug">
         {shown.map((item, i) => (
           <li key={i} className="whitespace-pre-line">

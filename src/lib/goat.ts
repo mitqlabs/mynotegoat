@@ -12,7 +12,7 @@
  * and G.O.A.T. will not read it.
  */
 
-import { answerFromFiles, surnameOf, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, personNamedIn, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import {
@@ -150,6 +150,8 @@ export interface GoatBlock {
   items: string[];
   /** Items the question pointed at (e.g. a level); the rest show behind "Show all". */
   focus?: number[];
+  /** Show the heading as written ("Cervical ROM"), not as a small caps label. */
+  plain?: boolean;
 }
 
 /** One record (an MRI referral, a specialist) with its findings as blocks. */
@@ -1049,10 +1051,8 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   const rq = parseRegionQuery(question, asked);
   const narrowed = rq.regions.length > 0 || rq.levels.length > 0;
   // A doctor named in the question ("Haroutunian impression") means their report, not imaging.
-  const personNamed = people.some((p) => {
-    const surname = surnameOf(p.name);
-    return surname.length >= 3 && makeMatcher([surname]).test(question);
-  });
+  // (surname, or "dr armen" / first name — goat-docs personNamedIn)
+  const personNamed = people.some((p) => personNamedIn(question, p));
   const otherTopic =
     specialistWords || personNamed || asked.some((g) => !isFindingsGroup(g) && !isImagingGroup(g) && !isRegionGroup(g));
   const asksImaging = has(tokens, ["imaging", "radiology"]) || (has(tokens, ["findings", "impression"]) && !otherTopic);
@@ -1062,6 +1062,36 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     const a = imagingAnswer(ctx, which, rq, onlyIfFound);
     if (a) push(a);
   };
+  // Range of motion from a report: "ROM for cervical and lumbar from dr armen".
+  const asksRom =
+    asked.some((g) => g.terms.some((t) => /^(range of motion|rom)$/i.test(t))) ||
+    /\b(range of motion|rom|flexion|extension|lateral bending|lateral rotation)\b/i.test(question);
+  let romShown = false;
+  if (asksRom && ctx.files && ctx.files.length) {
+    const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
+    const rom = romFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq });
+    if (rom) {
+      const regionsAsked = rq.regions.length ? ` · ${rq.regions.join(", ")}` : "";
+      if (rom.file && rom.blocks.length) {
+        romShown = true;
+        push({
+          title: `Range of motion${regionsAsked}`,
+          lines: [],
+          groups: [
+            {
+              lead: `${rom.who.length ? `${rom.who.join(" / ")} — ` : ""}${rom.file.name}`,
+              blocks: rom.blocks.map((b) => ({ ...b, plain: true })),
+              note: rom.notes.join(" ") || undefined,
+            },
+          ],
+          source: `Patient Files — ${rom.file.name} (${rom.file.dateLabel} ${rom.file.date || "—"})`,
+          section: "specialist",
+        });
+      } else {
+        push({ title: `Range of motion${regionsAsked}`, lines: rom.notes, source: "Patient Files", section: "specialist" });
+      }
+    }
+  }
   if (xrayAsked || (asksImaging && !mriAsked)) ask("xray", false);
   if (mriAsked || (asksImaging && !xrayAsked)) ask("mri", false);
   // "L5-S1?" / "lumbar disc" (no imaging word): show imaging cards that mention it.
@@ -1085,7 +1115,10 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
   const searchGroups = asked.filter((g) => !isFindingsGroup(g) || asked.length === 1);
   if (rq.levels.length) searchGroups.push({ id: "level", terms: levelHighlightTerms(rq.levels), updatedAt: "" });
-  const covered = new Set(askedTerms.flatMap((t) => tokenize(t)));
+  const covered = new Set([
+    ...askedTerms.flatMap((t) => tokenize(t)),
+    ...people.filter((p) => personNamedIn(question, p)).flatMap((p) => tokenize(p.name)),
+  ]);
   const leftovers = words.filter((w) => !covered.has(w));
   const matchers = [...searchGroups.map((g) => makeMatcher(g.terms)), ...leftovers.map((w) => makeMatcher([w]))];
   const terms = [...new Set([...searchGroups.flatMap((g) => g.terms), ...leftovers])];
@@ -1104,6 +1137,6 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     .filter((h) => !(shownSections.has(h.section) && h.kind !== "SOAP" && h.kind !== "Note"))
     .filter((h) => !regionMatcher || regionMatcher.test(h.snippet) || levelsInText(h.snippet).some((l) => rq.levels.includes(l) || regionOfLevelName(l, rq.regions)))
     .slice(0, 5);
-  const filesFirst = Boolean(files && files.matches.length && (files.matches.some((m) => m.who.length) || !answers.length));
+  const filesFirst = !romShown && Boolean(files && files.matches.length && (files.matches.some((m) => m.who.length) || !answers.length));
   return { answers, hits, terms, files, filesFirst, highlight: levelHighlightTerms(rq.levels) };
 }
