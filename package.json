@@ -12,6 +12,7 @@
     "sanity": "node scripts/sanity-check.mjs"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.85",
     "@supabase/supabase-js": "^2.100.1",
     "@tanstack/react-query": "^5.101.0",
     "@tesseract.js-data/eng": "^1.0.0",

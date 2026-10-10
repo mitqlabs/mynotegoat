@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { GoatSettingsPanel } from "@/components/goat-settings-panel";
+import { GoatAnswerPrefsPanel } from "@/components/goat-answer-prefs-panel";
+import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 export default function GoatSettingsPage() {
   return (
@@ -20,6 +22,17 @@ export default function GoatSettingsPage() {
           <GoatSettingsPanel />
         </div>
       </section>
+      {GOAT_SMART_AVAILABLE && (
+        <section className="panel-card p-4">
+          <h3 className="text-xl font-semibold">Smart mode answers (beta)</h3>
+          <p className="text-sm text-[var(--text-muted)]">
+            How G.O.A.T.&apos;s Smart mode writes answers. Shared by everyone in the office. Normal G.O.A.T. isn&apos;t affected.
+          </p>
+          <div className="mt-3">
+            <GoatAnswerPrefsPanel />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

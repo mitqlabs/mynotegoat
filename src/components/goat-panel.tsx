@@ -5,6 +5,8 @@ import { askGoat, type GoatAnswerGroup, type GoatBlock, type GoatContext, type G
 import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
 import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
+import { GoatAvatar } from "@/components/goat-avatar";
+import { SmartAnswerBody, SmartModeControl, Spinner, useGoatAiState, useSmartAsk, useSmartMode } from "@/components/goat-smart";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -291,6 +293,12 @@ export function GoatPanel({
   const [asked, setAsked] = useState("");
   // "Also mentioned" open/closed, per question (flipped from its default).
   const [hitsFlipped, setHitsFlipped] = useState("");
+  // Smart mode (beta, preview only): the in-browser model answers instead; normal results stay one click away.
+  const [smartOn, setSmartOn] = useSmartMode();
+  const ai = useGoatAiState();
+  const smart = useSmartAsk();
+  const [showNormal, setShowNormal] = useState(false);
+  const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
 
   // Recomputed from live page data, so an answer updates as the page is edited.
   const result: GoatResult | null = useMemo(
@@ -303,6 +311,8 @@ export function GoatPanel({
     if (!trimmed) return;
     setQuestion(trimmed);
     setAsked(trimmed);
+    setShowNormal(false);
+    if (smartActive) void smart.ask(context, trimmed);
   };
 
   const fileResult = result?.files ?? null;
@@ -347,7 +357,10 @@ export function GoatPanel({
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
-        <span>G.O.A.T.</span>
+        <span className="flex items-center gap-2">
+          <GoatAvatar className="bg-white/80" size={28} />
+          G.O.A.T.
+        </span>
         <span className="text-xl">{open ? "−" : "+"}</span>
       </button>
       {open && (
@@ -375,6 +388,7 @@ export function GoatPanel({
               Ask
             </button>
           </form>
+          <SmartModeControl on={smartOn} setOn={setSmartOn} />
 
           {!result && (
             <p className="mt-3 text-sm text-[var(--text-muted)]">
@@ -394,6 +408,7 @@ export function GoatPanel({
                   onClick={() => {
                     setAsked("");
                     setQuestion("");
+                    smart.reset();
                   }}
                   type="button"
                 >
@@ -401,6 +416,35 @@ export function GoatPanel({
                 </button>
               </div>
 
+              {smartActive && (
+                <div className="rounded-xl border border-[#72bdcf] bg-white p-2.5">
+                  <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
+                    <GoatAvatar size={22} />
+                    <span>Smart answer (beta)</span>
+                    {smart.working && !smart.text && (
+                      <span className="flex items-center gap-1.5 font-normal">
+                        <Spinner /> {ai.status === "loading" ? "Getting Smart mode ready…" : "Searching…"}
+                      </span>
+                    )}
+                  </div>
+                  {smart.error ? (
+                    <p className="text-sm text-amber-800">Smart mode couldn&apos;t answer ({smart.error}). The normal results are below.</p>
+                  ) : (
+                    <SmartAnswerBody answer={smart.answer} onOpenFile={files?.openFile} text={smart.text} working={smart.working} />
+                  )}
+                  <button
+                    style={{ fontSize: 12 }}
+                    className="mt-1.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+                    onClick={() => setShowNormal((v) => !v)}
+                    type="button"
+                  >
+                    {showNormal || smart.error ? "Hide normal G.O.A.T. results" : "Show normal G.O.A.T. results"}
+                  </button>
+                </div>
+              )}
+
+              {(!smartActive || showNormal || Boolean(smart.error)) && (
+              <>
               {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
@@ -493,6 +537,8 @@ export function GoatPanel({
                   diagnoses, billing, notes{filesOn ? " or what a report says" : ""}.
                 </p>
               )}
+              </>
+              )}
             </div>
           )}
 
@@ -500,7 +546,7 @@ export function GoatPanel({
 
           <p className="mt-3 text-[11px] text-[var(--text-muted)]">
             {filesOn
-              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser. Nothing leaves NoteGoat.`
+              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser${smartActive ? ", and Smart mode answers on this computer" : ""}. Nothing leaves NoteGoat.`
               : `G.O.A.T. reads only ${where}. Nothing leaves NoteGoat.`}
           </p>
         </div>
