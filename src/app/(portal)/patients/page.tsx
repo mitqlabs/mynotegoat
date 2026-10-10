@@ -39,6 +39,8 @@ import { UsDateInput } from "@/components/us-date-input";
 import { ScrollLock } from "@/components/scroll-lock";
 import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischargeIso } from "@/lib/discharge-date";
 import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } from "@/lib/initial-exam-date";
+import { buildPrintTableHtml, formatPrintedAt, printHtmlDocument, type PrintCell } from "@/lib/print-table";
+import { usePatientBilling } from "@/hooks/use-patient-billing";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -407,6 +409,42 @@ function getFollowUpBadgeClass(category: FollowUpCategory) {
   return "bg-[rgba(238,139,42,0.16)] text-[#9a5a00]";
 }
 
+// Extra columns the Print "Include" picker can add (even if not on screen).
+type PrintExtraId = "attorneyPhone" | "discharge" | "rbDate" | "billAmount";
+const PRINT_EXTRAS: Array<{ id: PrintExtraId; label: string; hint: string }> = [
+  { id: "attorneyPhone", label: "Attorney #", hint: "Attorney phone from Contacts" },
+  { id: "discharge", label: "Discharge Date", hint: "Discharge box, else latest attended Discharge visit" },
+  { id: "rbDate", label: "R&B Date", hint: "R&B Sent date (Billing)" },
+  { id: "billAmount", label: "Bill Amount", hint: "Billed total so far" },
+];
+// Per-device preference: notegoat.* is never cloud-synced.
+const PRINT_EXTRAS_KEY = "notegoat.patients.print-extras.v1";
+function loadPrintExtras(): PrintExtraId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PRINT_EXTRAS_KEY) ?? "[]");
+    return Array.isArray(parsed) ? PRINT_EXTRAS.map((e) => e.id).filter((id) => parsed.includes(id)) : [];
+  } catch {
+    return [];
+  }
+}
+function savePrintExtras(ids: PrintExtraId[]) {
+  try {
+    window.localStorage.setItem(PRINT_EXTRAS_KEY, JSON.stringify(ids));
+  } catch {
+    /* private mode etc. — the choice just isn't remembered */
+  }
+}
+const printMoney = (value: number) =>
+  value.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+
+/** Case Flow "Age" text — same words on screen and in print. */
+function followUpAgeLabel(days: number | null, staleDaysThreshold: number) {
+  if (days === null) return "No date";
+  if (days < 0) return `In ${Math.abs(days)}d`;
+  return days >= staleDaysThreshold ? `Stale ${days}d` : `${days}d`;
+}
+
 function getAgePillClass(days: number | null, staleDaysThreshold: number) {
   const warningThreshold = Math.max(1, Math.floor(staleDaysThreshold / 2));
   if (days === null) {
@@ -489,6 +527,10 @@ export default function PatientsPage() {
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
   const { tasks, addTask, updateTask, toggleTaskDone, removeTask, clearCompleted } = useTasks();
+  const { getRecord: getPatientBillingRecord } = usePatientBilling();
+  // Print "Include" picker: which view it's for, and the remembered extras.
+  const [printPickerFor, setPrintPickerFor] = useState<"list" | "caseFlow" | null>(null);
+  const [printExtras, setPrintExtras] = useState<PrintExtraId[]>(() => loadPrintExtras());
   const defaultCaseStatus = (caseStatuses[0]?.name ?? "Active") as PatientRecord["caseStatus"];
   const defaultLienOption = lienOptions[0] ?? "Not Set";
   // What a brand-new case starts as. Both prefer the office's own wording
@@ -1228,6 +1270,141 @@ export default function PatientsPage() {
     return items;
   }, [followUpItems, cfSortLevels, cfHiddenCategories]);
 
+  // --- Print (exactly the current view: same filters, sort, columns, all rows) ---
+  const printFilterParts = () => {
+    const q = searchDraft.trim();
+    const monthSpan = (() => {
+      const fromN = Number(fromMon) || 0;
+      const toN = Number(toMon) || 0;
+      const a = fromN || toN;
+      const b = toN || fromN;
+      if (!a || year === "ALL") return "";
+      return a === b ? MONTH_NAMES[a - 1] : `${MONTH_NAMES[a - 1]}–${MONTH_NAMES[b - 1]}`;
+    })();
+    const loc = multiLocation && selectedLocationId ? locations.find((l) => l.id === selectedLocationId) : null;
+    return [
+      section === "nonpi" ? "Non-PI" : "Personal Injury",
+      // While searching, the year is not applied (same as the list).
+      q ? `Search: “${q}” · all years` : year !== "ALL" ? `Initial Exam: ${monthSpan ? `${monthSpan} ` : ""}${year}` : "All years",
+      loc ? `Location: ${locationLabel(loc)}` : "",
+      attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
+      status !== "ALL" ? `Status: ${status}` : "",
+      reviewFilter !== "ALL" ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}` : "",
+    ].filter(Boolean);
+  };
+  const extraCell = (patient: PatientRecord | undefined, id: PrintExtraId): string => {
+    if (!patient) return "-";
+    if (id === "attorneyPhone") {
+      const key = normalizeAttorneyKey(patient.attorney);
+      const contact = key && key !== "self" ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key) : undefined;
+      return contact?.phone || "-";
+    }
+    if (id === "discharge") {
+      const iso = patientDischargeIso(patient, dischargeIndex);
+      return iso ? formatLeadingDateDisplay(iso) : "-";
+    }
+    if (id === "rbDate") return patient.matrix?.rbSent ? formatLeadingDateDisplay(patient.matrix.rbSent) : "-";
+    // Same source the patient page's Billed box loads: billing record, else the saved field.
+    const record = getPatientBillingRecord(patient.id);
+    const raw = record ? record.billedAmount : Number.parseFloat(String(patient.matrix?.billed ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(raw) && (record || String(patient.matrix?.billed ?? "").trim()) ? printMoney(raw) : "-";
+  };
+  /** Screen columns + chosen extras: Attorney # right after Attorney (if shown), the rest at the end. */
+  const withExtras = <T,>(
+    base: Array<{ label: string; cell: (row: T) => string | PrintCell; isAttorney?: boolean }>,
+    patientOf: (row: T) => PatientRecord | undefined,
+    extras: PrintExtraId[],
+  ) => {
+    const cols = [...base];
+    for (const id of extras) {
+      const meta = PRINT_EXTRAS.find((e) => e.id === id)!;
+      const col = { label: meta.label, cell: (row: T) => extraCell(patientOf(row), id) };
+      const at = id === "attorneyPhone" ? cols.findIndex((c) => c.isAttorney) : -1;
+      if (at >= 0) cols.splice(at + 1, 0, col);
+      else cols.push(col);
+    }
+    return cols;
+  };
+  const sortWords = (label: string, asc: boolean, isDate: boolean) =>
+    `${label} (${isDate ? (asc ? "oldest first" : "newest first") : asc ? "A–Z" : "Z–A"})`;
+
+  const handlePrintList = (extras: PrintExtraId[]) => {
+    const locationOf = (patient: PatientRecord) => {
+      const loc = locations.find((l) => l.id === patient.locationId);
+      return loc ? locationLabel(loc) : "Unassigned";
+    };
+    const cellFor = (patient: PatientRecord, colId: ListColumnId): string | PrintCell => {
+      if (colId === "patient") {
+        const name = multiLocation ? `${patient.fullName} · ${locationOf(patient)}` : patient.fullName;
+        return patient.phone ? { text: name, sub: patient.phone } : name;
+      }
+      if (colId === "initialExam") return formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-");
+      if (colId === "dateOfLoss") return formatUsDateDisplay(patient.dateOfLoss);
+      if (colId === "attorney") return cleanAttorneyLabel(patient.attorney);
+      if (colId === "status") return patient.caseStatus;
+      if (colId === "review") return reviewOf(patient);
+      return "";
+    };
+    const isDate = sortColumn === "initialExam" || sortColumn === "dateOfLoss";
+    const cols = withExtras<PatientRecord>(
+      visibleColumns.map((colId) => ({ label: columnLabels[colId], cell: (p) => cellFor(p, colId), isAttorney: colId === "attorney" })),
+      (p) => p,
+      extras,
+    );
+    const html = buildPrintTableHtml({
+      officeName: loadOfficeSettings().officeName,
+      title: "Patients",
+      description: [...printFilterParts(), `Sorted by ${sortWords(columnLabels[sortColumn], sortAsc, isDate)}`].join(" · "),
+      columns: cols.map((c) => c.label),
+      rows: filteredPatients.map((patient) => cols.map((c) => c.cell(patient))),
+      printedAt: formatPrintedAt(),
+      rowNoun: "patient",
+      emptyText: "No patients match the selected filters.",
+    });
+    printHtmlDocument(html);
+  };
+
+  const handlePrintCaseFlow = (extras: PrintExtraId[]) => {
+    const cellFor = (item: (typeof sortedFollowUpItems)[number], colId: CfColumnId): string | PrintCell => {
+      if (colId === "patient") return item.note ? { text: item.patientName, sub: item.note } : item.patientName;
+      if (colId === "caseNumber") return item.caseNumber || "-";
+      if (colId === "attorney") return item.attorney || "-";
+      if (colId === "category") return item.category === "Lien / LOP" ? lienLabel : item.category;
+      if (colId === "followUp") return item.stage;
+      if (colId === "anchorDate") return item.anchorDate ? formatUsDateDisplay(item.anchorDate) : "-";
+      if (colId === "age") return followUpAgeLabel(item.daysFromAnchor, followUpSettings.staleDaysThreshold);
+      return item.caseStatus;
+    };
+    // Same as the "Show:" chips on screen: every category not grayed out.
+    const shown = cfFollowUpCategoryOrder
+      .filter((c) => !cfHiddenCategories.has(c))
+      .map((c) => (c === "Lien / LOP" ? lienLabel : c));
+    const sortText = cfSortLevels
+      .map((l) =>
+        // Age counts days since the date, so a smaller age is newer.
+        sortWords(cfColumnLabels[l.column], l.column === "age" ? !l.asc : l.asc, l.column === "anchorDate" || l.column === "age"),
+      )
+      .join(", then ");
+    type CfItem = (typeof sortedFollowUpItems)[number];
+    const byId = new Map(filteredPatients.map((p) => [p.id, p]));
+    const cols = withExtras<CfItem>(
+      cfColumnOrder.map((colId) => ({ label: cfColumnLabels[colId], cell: (item) => cellFor(item, colId), isAttorney: colId === "attorney" })),
+      (item) => byId.get(item.patientId),
+      extras,
+    );
+    const html = buildPrintTableHtml({
+      officeName: loadOfficeSettings().officeName,
+      title: "Patients — Case Flow",
+      description: [...printFilterParts(), `Showing: ${shown.length ? shown.join(", ") : "none"}`, `Sorted by ${sortText}`].join(" · "),
+      columns: cols.map((c) => c.label),
+      rows: sortedFollowUpItems.map((item) => cols.map((c) => c.cell(item))),
+      printedAt: formatPrintedAt(),
+      rowNoun: "item",
+      emptyText: "No follow-up items in the current filter.",
+    });
+    printHtmlDocument(html);
+  };
+
   // --- To Do helpers ---
   const filteredTasks = useMemo(() => {
     const query = taskSearch.trim().toLowerCase();
@@ -1418,6 +1595,73 @@ export default function PatientsPage() {
 
   return (
     <div className="space-y-5">
+      {printPickerFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
+          onClick={() => setPrintPickerFor(null)}
+          role="presentation"
+        >
+          <div
+            aria-label="Print options"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <h4 className="text-base font-semibold">
+              Print {printPickerFor === "caseFlow" ? "Case Flow" : "patient list"}
+            </h4>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Prints exactly this view: same filters, sort and columns, every matching row.
+            </p>
+            <p className="mt-3 text-sm font-semibold text-[var(--text-muted)]">Include</p>
+            <div className="mt-1 grid gap-1.5">
+              {PRINT_EXTRAS.map((extra) => (
+                <label key={extra.id} className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 hover:bg-[var(--bg-soft)]">
+                  <input
+                    checked={printExtras.includes(extra.id)}
+                    className="mt-1"
+                    onChange={(event) =>
+                      setPrintExtras((prev) =>
+                        PRINT_EXTRAS.map((e) => e.id).filter((id) =>
+                          id === extra.id ? event.target.checked : prev.includes(id),
+                        ),
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span className="text-sm">
+                    <span className="font-semibold">{extra.label}</span>
+                    <span className="block text-xs text-[var(--text-muted)]">{extra.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold"
+                onClick={() => setPrintPickerFor(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white"
+                onClick={() => {
+                  const target = printPickerFor;
+                  savePrintExtras(printExtras);
+                  setPrintPickerFor(null);
+                  if (target === "caseFlow") handlePrintCaseFlow(printExtras);
+                  else handlePrintList(printExtras);
+                }}
+                type="button"
+              >
+                🖨 Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {savedBanner && (
         <div
           className="flex items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-sm"
@@ -1703,6 +1947,14 @@ export default function PatientsPage() {
                 <span className="text-[var(--text-muted)]">{active.join(" · ")}</span>
               ) : null;
             })()}
+            <button
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+              onClick={() => setPrintPickerFor("list")}
+              title="Print this list — same filters, sort and columns, every matching patient"
+              type="button"
+            >
+              <span aria-hidden>🖨</span> Print
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
@@ -1889,7 +2141,15 @@ export default function PatientsPage() {
                   {enabledFollowUpCategories.length ? enabledFollowUpCategories.join(", ") : "None selected"}.
                 </p>
               </div>
-              <div className="grid gap-1 text-right text-sm">
+              <div className="grid justify-items-end gap-1 text-right text-sm">
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+                  onClick={() => setPrintPickerFor("caseFlow")}
+                  title="Print the Case Flow rows shown — same categories, sort and columns"
+                  type="button"
+                >
+                  <span aria-hidden>🖨</span> Print
+                </button>
                 <p>
                   <span className="font-semibold text-[var(--text-main)]">{followUpCounts.total}</span> Total
                 </p>
@@ -2054,13 +2314,7 @@ export default function PatientsPage() {
                                 followUpSettings.staleDaysThreshold,
                               )}`}
                             >
-                              {item.daysFromAnchor === null
-                                ? "No date"
-                                : item.daysFromAnchor < 0
-                                  ? `In ${Math.abs(item.daysFromAnchor)}d`
-                                  : item.daysFromAnchor >= followUpSettings.staleDaysThreshold
-                                    ? `Stale ${item.daysFromAnchor}d`
-                                    : `${item.daysFromAnchor}d`}
+                              {followUpAgeLabel(item.daysFromAnchor, followUpSettings.staleDaysThreshold)}
                             </span>
                           </td>
                         );
