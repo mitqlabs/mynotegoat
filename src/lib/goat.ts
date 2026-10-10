@@ -12,7 +12,7 @@
  * and G.O.A.T. will not read it.
  */
 
-import { answerFromFiles, personNamedIn, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
@@ -176,6 +176,8 @@ export interface GoatAnswer {
   section: GoatSection;
   /** Something worth a second look, e.g. a gap or an unreviewed report. */
   flag?: string;
+  /** Plain text for the Copy button (e.g. recommendations, ready for the Specialist box). */
+  copyText?: string;
 }
 
 export interface GoatHit {
@@ -1089,6 +1091,40 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
       }
     }
   }
+  // A doctor's recommendations from their report: "what did dr armen recommend".
+  // "recs" / "recos" / "the PM plan" count too ("plan" alone is NoteGoat's Treatment Plan unless a doctor is named).
+  const asksRecs =
+    /\b(recommend\w*|recs?|recos?|reccs?|suggest\w*|advis\w*|orders?|planned interventions?|next steps?|treatment options?|alternatives?)\b/i.test(question) ||
+    (/\bplan\b/i.test(question) && !/\btreatment plan\b/i.test(question) && (personNamed || /\b(pm|pain management|specialist|ortho\w*|neuro\w*|dr\.?)\b/i.test(question)));
+  let recsShown = false;
+  if (asksRecs && ctx.files && ctx.files.length) {
+    const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
+    const rec = recommendationsFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq });
+    if (rec) {
+      if (rec.file && rec.blocks.length) {
+        romShown = true; // structured answer first, raw file lines after
+        recsShown = true;
+      }
+      push(
+        rec.file && rec.blocks.length
+          ? {
+              title: "Recommendations",
+              lines: [],
+              groups: [
+                {
+                  lead: `${rec.who.length ? `${rec.who.join(" / ")} — ` : ""}${rec.file.name}`,
+                  blocks: rec.blocks.map((b) => ({ ...b, plain: true })),
+                  note: rec.notes.join(" ") || undefined,
+                },
+              ],
+              source: `Patient Files — ${rec.file.name} (${rec.file.dateLabel} ${rec.file.date || "—"})`,
+              section: "specialist",
+              copyText: rec.text,
+            }
+          : { title: "Recommendations", lines: rec.notes, source: "Patient Files", section: "specialist" },
+      );
+    }
+  }
   if (xrayAsked || (asksImaging && !mriAsked)) ask("xray", false);
   if (mriAsked || (asksImaging && !xrayAsked)) ask("mri", false);
   // "L5-S1?" / "lumbar disc" (no imaging word): show imaging cards that mention it.
@@ -1124,6 +1160,8 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     ctx.files && ctx.files.length
       ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq })
       : null;
+  // Recommendations were found, so a word-search "X doesn't mention recs" would be wrong.
+  if (files && recsShown) files.notes = files.notes.filter((n) => !/\b(?:doesn't|don't) mention\b/.test(n));
   // "Also mentioned": skip what an answer card above already shows in full.
   const shownSections = new Set(answers.filter((a) => a.groups?.length).map((a) => a.section));
   // A region question only wants mentions of that region ("knee MRI" → not a lumbar note about the MRI).
