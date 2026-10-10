@@ -210,6 +210,14 @@ a {
   min-height: 1em;
 }
 
+/* Narrative preview spacing matches the printed PDF (buildPrintableDocumentHtml):
+   gaps come from the report's own blank lines, which the generator
+   normalizes to one between sections. No extra gap between top-level
+   blocks (it used to add 16px between some sections and not others). */
+.narrative-editable-preview p {
+  margin: 0 0 6px 0;
+}
+
 .rich-text-editor ul,
 .rich-text-editor ol,
 .narrative-editable-preview ul,
