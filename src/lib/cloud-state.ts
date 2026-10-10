@@ -109,6 +109,25 @@ export function wipeLocalWorkspaceForSignOut() {
   clearAllWorkspaceCaches();
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
   clearGoatTextCache();
+  clearGoatChats();
+}
+
+/**
+ * The G.O.A.T. popup's chat history (preview: Smart mode) lives only in this
+ * browser under notegoat.goat-chat.v1:* — not a casemate.* key, so the wipe
+ * above doesn't reach it. Drop it on sign-out / workspace change too.
+ */
+function clearGoatChats() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("notegoat.goat-chat.v1:")) keys.push(k);
+    }
+    keys.forEach((k) => window.localStorage.removeItem(k));
+  } catch (err) {
+    console.warn("[cloud-state] couldn't clear G.O.A.T. chat:", err);
+  }
 }
 
 /**
@@ -137,6 +156,7 @@ export function ensureWorkspaceForUser(expectedWorkspaceId: string) {
     // entries if they were pre-bootstrapped (none today, but future-proof).
     clearForeignWorkspaceCaches(expectedWorkspaceId);
     clearGoatTextCache();
+    clearGoatChats();
     window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, expectedWorkspaceId);
   }
 }
@@ -844,6 +864,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.sms-templates.v1",
           // G.O.A.T. words & synonym groups (Settings → G.O.A.T.).
           "casemate.goat-settings.v1",
+          // G.O.A.T. Smart mode (beta) answer preferences (Settings → G.O.A.T.).
+          "casemate.goat-answer-prefs.v1",
         ],
       };
 

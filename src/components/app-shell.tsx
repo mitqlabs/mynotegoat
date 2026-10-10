@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { GlobalGoatButton, GlobalGoatPopup } from "@/components/global-goat";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -246,6 +247,7 @@ export function AppShell({
                         <span aria-hidden>📖</span>
                         <span>Handbook</span>
                       </Link>
+                      <GlobalGoatButton className="mt-2 flex w-full items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-[#d5ebf8] transition hover:bg-white/10" />
                     </nav>
 
                     <div className="mt-8 rounded-xl border border-white/20 bg-white/10 p-3">
@@ -319,6 +321,7 @@ export function AppShell({
                       >
                         📖
                       </Link>
+                      <GlobalGoatButton compact className="flex h-10 w-10 items-center justify-center rounded-xl transition hover:bg-white/10" />
                     </nav>
 
                     {/* Sign out icon */}
@@ -392,6 +395,7 @@ export function AppShell({
                     </Link>
                   );
                 })}
+                <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
                 {/* Mobile-only sign out, icon at the end of the pill row. The
                     desktop sidebar (which holds Sign Out) is hidden below lg.
                     Same handler as the sidebar button. */}
@@ -412,6 +416,7 @@ export function AppShell({
               <main className="p-4 lg:p-7">
                 <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
               </main>
+              <GlobalGoatPopup />
             </section>
           </div>
         </div>
