@@ -59,6 +59,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
+import { decideFillVisit, fillConfirmText, fillDateSpan } from "@/lib/fill-plan-rules";
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -415,9 +416,11 @@ type FillRow = {
   action: FillRowAction;
   reason: string;
   selected: boolean;
-  /** Set when the visit was skipped because a note already exists — the
-   *  note that can be refreshed from a newer source (a re-exam). */
+  /** Set when the visit already has an OPEN note dated today or later — the
+   *  note whose S/O/A can be refreshed from a newer source (a re-exam). */
   existingNoteId?: string;
+  /** Why a skipped visit was skipped (for the confirm summary). */
+  skipKind?: "done" | "past" | "inactive" | "notCheckedIn" | "other";
 };
 
 // Visit types that need their own exam, never a copy of a treatment note.
@@ -2340,6 +2343,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   ): FillRow[] => {
     const sourceIso = usDateToIso(source.encounterDate);
     const endIso = usDateToIso(plan.endDate);
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const claimedDayType = new Set<string>();
     return scheduleAppointments
       .filter((a) => a.patientId === source.patientId && a.date > sourceIso && a.date <= endIso)
@@ -2356,13 +2361,28 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           appointmentType: a.appointmentType,
           statusLabel: formatAppointmentStatusLabel(a.status),
         };
-        const skip = (reason: string): FillRow => ({ ...base, action: "skip", reason, selected: false });
-        if (a.status === "Canceled") return skip("Canceled");
-        if (a.status === "No Show") return skip("No Show");
-        if (a.status === "Check Out") return skip("Checked Out — note already finished");
-        if (a.status !== "Check In") return skip(`${base.statusLabel} — not checked in`);
+        const skip = (reason: string, skipKind: FillRow["skipKind"] = "other"): FillRow => ({
+          ...base,
+          action: "skip",
+          reason,
+          selected: false,
+          skipKind,
+        });
+        // Checked Out visits, closed notes and anything on/before the open
+        // note are never touched (src/lib/fill-plan-rules.ts).
         const existing = findNoteForAppointment(knownNotes, a, dateUs);
-        if (existing) return { ...skip("Already has a note"), existingNoteId: existing.id };
+        const decision = decideFillVisit({
+          dateIso: a.date,
+          sourceIso,
+          todayIso,
+          status: a.status,
+          note: existing ? { signed: Boolean(existing.signed) } : null,
+        });
+        if (!decision) return skip("On or before this note", "other");
+        if (decision.action === "skip") return skip(decision.reason, decision.kind);
+        if (decision.action === "refresh" && existing) {
+          return { ...skip("Already has an open note", "other"), existingNoteId: existing.id };
+        }
         const dayTypeKey = `${a.date}|${a.appointmentType.toLowerCase()}`;
         if (claimedDayType.has(dayTypeKey)) return skip("Second visit of this type the same day");
         claimedDayType.add(dayTypeKey);
@@ -2471,7 +2491,32 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       const rows = buildFillRows(source, plan, known);
       const toFill = rows.filter((row) => row.action === "fill");
       const examSkipped = rows.filter((row) => row.action === "optional").map((row) => row.dateUs);
-      const hadNote = rows.filter((row) => row.reason === "Already has a note").length;
+      const hadNote = rows.filter((row) => row.skipKind === "past").length;
+      const doneCount = rows.filter((row) => row.skipKind === "done").length;
+      const refreshable = rows.filter((row) => row.existingNoteId);
+      if (!toFill.length && !refreshable.length) {
+        setMessage(
+          `Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan` +
+            `${doneCount ? ` (skipped ${doneCount} already checked out/closed)` : ""}.`,
+        );
+        return;
+      }
+      // Say exactly what will happen before anything is written.
+      if (
+        toFill.length &&
+        !window.confirm(
+          fillConfirmText({
+            fillDatesUs: toFill.map((row) => row.dateUs),
+            doneCount,
+            pastWithNoteCount: hadNote,
+            examDatesUs: examSkipped,
+            sourceDateUs: source.encounterDate,
+          }),
+        )
+      ) {
+        setMessage("Fill Treatment Plan canceled. Nothing was changed.");
+        return;
+      }
 
       const planStartT = parseUsDate(plan.startDate)?.getTime() ?? -Infinity;
       const planEndT = parseUsDate(plan.endDate)?.getTime() ?? Infinity;
@@ -2561,26 +2606,27 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       // re-exam and every later visit still reads like the old one.
       let refreshed = 0;
       let refreshBlocked = 0;
-      const refreshable = rows.filter((row) => row.existingNoteId);
       if (refreshable.length > 0) {
+        // Only OPEN notes, dated today or later, on Checked In visits after this
+        // note — closed notes and checked-out days are never offered.
         const proceed = window.confirm(
-          `${refreshable.length} later visit${refreshable.length === 1 ? "" : "s"} already ${
-            refreshable.length === 1 ? "has a note" : "have notes"
+          `${refreshable.length} upcoming visit${refreshable.length === 1 ? "" : "s"} (${fillDateSpan(refreshable.map((row) => row.dateUs))}) already ${
+            refreshable.length === 1 ? "has an open note" : "have open notes"
           }.\n\n` +
             "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
-            "Their Plan and charges are left exactly as they are. Anything typed by hand into S, O or A on those visits is replaced.",
+            "Their Plan and charges are left exactly as they are. Closed notes and checked-out visits are not changed.",
         );
         if (proceed) {
           for (const row of refreshable) {
             const target = encountersByNewest.find((entry) => entry.id === row.existingNoteId);
+            // Re-check at write time: a note closed since the check is left alone.
+            if (target?.signed) continue;
             if (!target) {
               // Only in the cloud, not on this device — editing it here would
               // silently do nothing, so say so instead.
               refreshBlocked += 1;
               continue;
             }
-            const wasSigned = target.signed;
-            if (wasSigned) setSigned(target.id, false);
             for (const section of ["subjective", "objective", "assessment"] as const) {
               // Drop the old runs for this section first, or the Inserted
               // Macro Inputs list keeps pills that no longer exist in the text.
@@ -2611,7 +2657,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 });
               });
             }
-            if (wasSigned) setSigned(target.id, true);
             refreshed += 1;
           }
         }
@@ -2623,7 +2668,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         refreshBlocked
           ? `couldn't update ${refreshBlocked} not loaded on this device — open the patient's encounters and run it again`
           : "",
-        hadNote && !refreshed && !refreshBlocked ? `${hadNote} already had a note` : "",
+        doneCount ? `skipped ${doneCount} already checked out/closed` : "",
+        hadNote ? `left ${hadNote} past visit${hadNote === 1 ? "" : "s"} with a note alone` : "",
         leftOpenNoCharges.length
           ? `left ${leftOpenNoCharges.join(", ")} open (no plan charges)`
           : "",
@@ -2791,6 +2837,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // program), offer to carry that change forward to the rest of the plan by
   // updating the plan's decompression defaults — so they don't have to spin up
   // a new treatment plan. Weight only prompts when LOWERED (sets the new cap).
+  // Saying Yes only changes the treatment plan's decompression settings. No
+  // existing note is edited — closed / checked-out days keep what they say.
+  const CARRY_FORWARD_NOTE =
+    "\n\nThis changes the treatment plan for visits that aren't charted yet. Notes already written (including closed and checked-out ones) are not changed.";
   const maybeCarryForwardDecompression = (
     macro: MacroTemplate,
     newAnswers: MacroAnswerMap,
@@ -2841,7 +2891,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         if (
           formulaWeight != null &&
           newWeight !== formulaWeight &&
-          window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?`)
+          window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?${CARRY_FORWARD_NOTE}`)
         ) {
           nextUpdates.maxWeight = newWeightStr;
         }
@@ -2853,7 +2903,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newCycles &&
         newCycles !== (dc.cycles ?? "").trim() &&
-        window.confirm(`Use ${newCycles} cycles for the rest of this plan?`)
+        window.confirm(`Use ${newCycles} cycles for the rest of this plan?${CARRY_FORWARD_NOTE}`)
       ) {
         nextUpdates.cycles = newCycles;
       }
@@ -2872,7 +2922,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newSeg.length &&
         newSeg.join("|") !== curSeg.join("|") &&
-        window.confirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?`)
+        window.confirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
       ) {
         nextRegion = { ...nextRegion, treatments: newSeg };
         regionChanged = true;
@@ -2884,7 +2934,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newProgram.length &&
         newProgram.join("|") !== curProgram.join("|") &&
-        window.confirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?`)
+        window.confirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
       ) {
         nextRegion = {
           ...nextRegion,
