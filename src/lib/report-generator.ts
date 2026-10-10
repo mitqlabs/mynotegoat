@@ -1,4 +1,5 @@
 import { renderDocumentTemplate } from "@/lib/document-templates";
+import { cleanNarrativeReportHtml, markEmptyTemplateTokens, normalizeMultilineText } from "@/lib/report-html-cleanup";
 import { encounterSections, type EncounterChargeEntry, type EncounterNoteRecord, type EncounterSection } from "@/lib/encounter-notes";
 
 type NarrativeOfficeContext = {
@@ -184,8 +185,10 @@ function formatSoapRollup(encounters: EncounterNoteRecord[], section: EncounterS
     }))
     .filter((entry) => entry.value);
 
+  // Blank (not "-") so a section built around this field disappears
+  // from the report when there's nothing to show.
   if (!rows.length) {
-    return "-";
+    return "";
   }
 
   return rows
@@ -206,7 +209,7 @@ function formatMacroRollup(encounters: EncounterNoteRecord[], section: Encounter
 
   const nonEmpty = rows.filter((entry) => entry.value);
   if (!nonEmpty.length) {
-    return "-";
+    return "";
   }
 
   return nonEmpty.map((entry) => `<b>${entry.date} • ${entry.macroName}</b><br>${entry.value}`).join("<br><br>");
@@ -221,7 +224,7 @@ function formatChargeLine(encounterDate: string, charge: EncounterChargeEntry, i
 
 function formatDiagnosisList(entries: NarrativeDiagnosisEntry[]) {
   if (!entries.length) {
-    return "-";
+    return "";
   }
   return entries
     .map((entry, index) => `${index + 1}. ${entry.code} - ${entry.description}`)
@@ -264,20 +267,29 @@ function formatImagingSummary(
     if (options.patientRefused && options.refusalKind) {
       return imagingRefusalText(options.refusalKind);
     }
-    return "-";
+    // Blank (not "-") so the report's imaging section disappears when
+    // there's no study on file.
+    return "";
   }
-  return entries
-    .map((entry, index) => {
-      const modality = entry.modalityLabel || fallbackLabel;
-      const line = `${index + 1}. ${modality} | Completed: ${toUsDate(entry.doneDate || "-")} | Center: ${entry.center || "-"} | Regions: ${formatImagingRegions(entry)}`;
-      const findings = entry.findings?.trim();
-      // "Findings:" goes on its own line so when the body starts with a
-      // region heading ("Cervical:", "Lumbar:", etc.) the first heading
-      // doesn't get jammed onto the same visual line as the Findings:
-      // label — which read as "Findings: Cervical:" in the rendered report.
-      return findings ? `${line}\n   Findings:\n${findings}` : line;
-    })
-    .join("\n");
+  let anyFindings = false;
+  const blocks = entries.map((entry, index) => {
+    const modality = entry.modalityLabel || fallbackLabel;
+    const line = `${index + 1}. ${modality} | Completed: ${toUsDate(entry.doneDate || "-")} | Center: ${entry.center || "-"} | Regions: ${formatImagingRegions(entry)}`;
+    // Findings are pasted from the radiology report, so they arrive
+    // with stray indentation, trailing spaces and stacked blank lines.
+    // Trim each line and keep at most one blank line; the words stay
+    // as typed.
+    const findings = normalizeMultilineText(entry.findings);
+    if (!findings) return line;
+    anyFindings = true;
+    // "Findings:" sits on its own line, flush left like the region
+    // labels under it ("Cervical:", "Lumbar:"), so the first region
+    // isn't jammed onto the label ("Findings: Cervical:") and the block
+    // doesn't start with a lone indented line.
+    return `${line}\nFindings:\n${findings}`;
+  });
+  // With findings, a blank line between studies keeps each one readable.
+  return blocks.join(anyFindings ? "\n\n" : "\n");
 }
 
 // Split a free-text recommendations block into individual items so they
@@ -300,7 +312,7 @@ function splitRecommendationItems(text: string): string[] {
 
 function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
   if (!entries.length) {
-    return "-";
+    return "";
   }
   return entries
     .map((entry, index) => {
@@ -440,7 +452,9 @@ function buildDecompressionSummary(
     (e) => e.signed && /decompression/i.test(e.appointmentType),
   );
 
-  if (!decomp.length) return "-";
+  // Blank (not "-"): the report's "Spinal Decompression" section is
+  // removed when the patient had no decompression visits.
+  if (!decomp.length) return "";
 
   // Group by appointment type (case-insensitive normalized key)
   const groupMap = new Map<string, EncounterNoteRecord[]>();
@@ -547,7 +561,7 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
 
   const chargeLedger = allCharges.length
     ? allCharges.map((entry, index) => formatChargeLine(entry.encounterDate, entry.charge, index + 1)).join("\n")
-    : "-";
+    : "";
 
   const totalChargeAmount = allCharges.reduce((total, entry) => {
     const unitPrice = Number.isFinite(entry.charge.unitPrice) ? entry.charge.unitPrice : 0;
@@ -574,7 +588,7 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
             }`,
         )
         .join("\n")
-    : "-";
+    : "";
 
   // Tokens whose values are sanitised HTML and must NOT be escaped by
   // renderDocumentTemplate — they keep <b>, <u>, <p> etc. intact.
@@ -627,15 +641,15 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     FIRST_ENCOUNTER_DATE: toUsDate(firstEncounter?.encounterDate ?? "-"),
     LATEST_ENCOUNTER_DATE: toUsDate(latestEncounter?.encounterDate ?? "-"),
 
-    FIRST_SUBJECTIVE: sanitizeSoapHtml(firstEncounter?.soap.subjective ?? "") || "-",
-    FIRST_OBJECTIVE: sanitizeSoapHtml(firstEncounter?.soap.objective ?? "") || "-",
-    FIRST_ASSESSMENT: sanitizeSoapHtml(firstEncounter?.soap.assessment ?? "") || "-",
-    FIRST_PLAN: sanitizeSoapHtml(firstEncounter?.soap.plan ?? "") || "-",
+    FIRST_SUBJECTIVE: sanitizeSoapHtml(firstEncounter?.soap.subjective ?? "") || "",
+    FIRST_OBJECTIVE: sanitizeSoapHtml(firstEncounter?.soap.objective ?? "") || "",
+    FIRST_ASSESSMENT: sanitizeSoapHtml(firstEncounter?.soap.assessment ?? "") || "",
+    FIRST_PLAN: sanitizeSoapHtml(firstEncounter?.soap.plan ?? "") || "",
 
-    LATEST_SUBJECTIVE: sanitizeSoapHtml(latestEncounter?.soap.subjective ?? "") || "-",
-    LATEST_OBJECTIVE: sanitizeSoapHtml(latestEncounter?.soap.objective ?? "") || "-",
-    LATEST_ASSESSMENT: sanitizeSoapHtml(latestEncounter?.soap.assessment ?? "") || "-",
-    LATEST_PLAN: sanitizeSoapHtml(latestEncounter?.soap.plan ?? "") || "-",
+    LATEST_SUBJECTIVE: sanitizeSoapHtml(latestEncounter?.soap.subjective ?? "") || "",
+    LATEST_OBJECTIVE: sanitizeSoapHtml(latestEncounter?.soap.objective ?? "") || "",
+    LATEST_ASSESSMENT: sanitizeSoapHtml(latestEncounter?.soap.assessment ?? "") || "",
+    LATEST_PLAN: sanitizeSoapHtml(latestEncounter?.soap.plan ?? "") || "",
 
     ALL_SUBJECTIVE: formatSoapRollup(encountersAsc, "subjective"),
     ALL_OBJECTIVE: formatSoapRollup(encountersAsc, "objective"),
@@ -668,19 +682,20 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     MRI_SCHEDULED_DATE: toUsDate(input.mriReferrals[0]?.scheduledDate || "-"),
     MRI_COMPLETED_DATE: toUsDate(input.mriReferrals[0]?.doneDate || "-"),
     MRI_REVIEWED_DATE: toUsDate(input.mriReferrals[0]?.reportReviewedDate || "-"),
-    IMAGING_SUMMARY: [
-      "X-Ray:",
-      formatImagingSummary(input.xrayReferrals, "X-Ray", {
+    IMAGING_SUMMARY: (() => {
+      const xray = formatImagingSummary(input.xrayReferrals, "X-Ray", {
         patientRefused: input.followUpOverrides?.xrayPatientRefused,
         refusalKind: "xray",
-      }),
-      "",
-      "MRI/CT:",
-      formatImagingSummary(input.mriReferrals, "MRI/CT", {
+      });
+      const mri = formatImagingSummary(input.mriReferrals, "MRI/CT", {
         patientRefused: input.followUpOverrides?.mriPatientRefused,
         refusalKind: "mri",
-      }),
-    ].join("\n"),
+      });
+      // Nothing on file at all → blank, so an "Imaging" section goes away.
+      // One side missing still reads "-" under its own label.
+      if (!xray && !mri) return "";
+      return ["X-Ray:", xray || "-", "", "MRI/CT:", mri || "-"].join("\n");
+    })(),
     SPECIALIST_SUMMARY: formatSpecialistSummary(input.specialistReferrals),
     SPECIALIST_NAME: (() => {
       const names = input.specialistReferrals
@@ -702,17 +717,17 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     context[`SPECIALIST_${n}_NAME`] = sp?.specialist || "-";
     context[`SPECIALIST_${n}_SENT`] = toUsDate(sp?.sentDate || "-");
     context[`SPECIALIST_${n}_COMPLETED`] = toUsDate(sp?.completedDate || "-");
-    context[`SPECIALIST_${n}_RECOMMENDATIONS`] = sp?.recommendations?.trim() || "-";
+    context[`SPECIALIST_${n}_RECOMMENDATIONS`] = sp?.recommendations?.trim() || "";
   }
 
   // ── Numbered encounter tokens (ENCOUNTER_1_SUBJECTIVE … ENCOUNTER_20_PLAN) ──
   for (let i = 0; i < 20; i++) {
     const n = i + 1;
     const enc = encountersAsc[i] ?? null;
-    context[`ENCOUNTER_${n}_SUBJECTIVE`] = sanitizeSoapHtml(enc?.soap.subjective ?? "") || "-";
-    context[`ENCOUNTER_${n}_OBJECTIVE`] = sanitizeSoapHtml(enc?.soap.objective ?? "") || "-";
-    context[`ENCOUNTER_${n}_ASSESSMENT`] = sanitizeSoapHtml(enc?.soap.assessment ?? "") || "-";
-    context[`ENCOUNTER_${n}_PLAN`] = sanitizeSoapHtml(enc?.soap.plan ?? "") || "-";
+    context[`ENCOUNTER_${n}_SUBJECTIVE`] = sanitizeSoapHtml(enc?.soap.subjective ?? "") || "";
+    context[`ENCOUNTER_${n}_OBJECTIVE`] = sanitizeSoapHtml(enc?.soap.objective ?? "") || "";
+    context[`ENCOUNTER_${n}_ASSESSMENT`] = sanitizeSoapHtml(enc?.soap.assessment ?? "") || "";
+    context[`ENCOUNTER_${n}_PLAN`] = sanitizeSoapHtml(enc?.soap.plan ?? "") || "";
     context[`ENCOUNTER_${n}_DATE`] = toUsDate(enc?.encounterDate ?? "-");
     context[`ENCOUNTER_${n}_TYPE`] = enc?.appointmentType ?? "-";
   }
@@ -730,10 +745,10 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     for (let i = 0; i < Math.min(group.length, 20); i++) {
       const n = i + 1;
       const enc = group[i];
-      context[`${typeKey}_${n}_SUBJECTIVE`] = sanitizeSoapHtml(enc.soap.subjective) || "-";
-      context[`${typeKey}_${n}_OBJECTIVE`] = sanitizeSoapHtml(enc.soap.objective) || "-";
-      context[`${typeKey}_${n}_ASSESSMENT`] = sanitizeSoapHtml(enc.soap.assessment) || "-";
-      context[`${typeKey}_${n}_PLAN`] = sanitizeSoapHtml(enc.soap.plan) || "-";
+      context[`${typeKey}_${n}_SUBJECTIVE`] = sanitizeSoapHtml(enc.soap.subjective) || "";
+      context[`${typeKey}_${n}_OBJECTIVE`] = sanitizeSoapHtml(enc.soap.objective) || "";
+      context[`${typeKey}_${n}_ASSESSMENT`] = sanitizeSoapHtml(enc.soap.assessment) || "";
+      context[`${typeKey}_${n}_PLAN`] = sanitizeSoapHtml(enc.soap.plan) || "";
       context[`${typeKey}_${n}_DATE`] = toUsDate(enc.encounterDate);
       context[`${typeKey}_${n}_TYPE`] = enc.appointmentType;
     }
@@ -754,9 +769,9 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
 
   encounterSections.forEach((section) => {
     context[`FIRST_${section.toUpperCase()}`] =
-      sanitizeSoapHtml(firstEncounter?.soap[section] ?? "") || context[`FIRST_${section.toUpperCase()}`] || "-";
+      sanitizeSoapHtml(firstEncounter?.soap[section] ?? "") || context[`FIRST_${section.toUpperCase()}`] || "";
     context[`LATEST_${section.toUpperCase()}`] =
-      sanitizeSoapHtml(latestEncounter?.soap[section] ?? "") || context[`LATEST_${section.toUpperCase()}`] || "-";
+      sanitizeSoapHtml(latestEncounter?.soap[section] ?? "") || context[`LATEST_${section.toUpperCase()}`] || "";
     context[`ALL_${section.toUpperCase()}`] =
       context[`ALL_${section.toUpperCase()}`] || formatSoapRollup(encountersAsc, section);
     context[`MACRO_${section.toUpperCase()}`] =
@@ -797,10 +812,19 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
   return { context, rawHtmlTokens };
 }
 
+/**
+ * Render a narrative report template, then tidy it:
+ *  - a section whose fields all came out empty (heading included) is
+ *    removed, so e.g. "Spinal Decompression" with nothing under it never
+ *    reaches the PDF;
+ *  - blank-line spacing between sections is made consistent.
+ * Only layout changes; the report's text is untouched.
+ */
 export function renderNarrativeReportBody(
   templateBody: string,
   context: Record<string, string>,
   rawHtmlTokens?: Set<string>,
 ) {
-  return renderDocumentTemplate(templateBody, context, rawHtmlTokens);
+  const marked = markEmptyTemplateTokens(templateBody, context);
+  return cleanNarrativeReportHtml(renderDocumentTemplate(marked, context, rawHtmlTokens));
 }
