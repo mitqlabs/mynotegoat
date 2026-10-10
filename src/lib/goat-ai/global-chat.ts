@@ -78,6 +78,10 @@ export function loadChat(): ChatState {
 export function saveChat(state: ChatState) {
   if (typeof window === "undefined") return;
   try {
+    if (!state.messages.length && !state.patientId) {
+      window.localStorage.removeItem(chatKey());
+      return;
+    }
     window.localStorage.setItem(chatKey(), JSON.stringify({ messages: state.messages.slice(-200), patientId: state.patientId }));
   } catch {
     // storage full: history just isn't kept

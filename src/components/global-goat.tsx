@@ -328,7 +328,7 @@ export function GlobalGoatPopup({
         >
           <header className="flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
+            <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80 object-cover" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
               <div className="text-lg font-semibold leading-tight">G.O.A.T.</div>
               <div className="truncate text-xs text-white/90">
