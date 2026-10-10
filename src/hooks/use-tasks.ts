@@ -1,11 +1,13 @@
 "use client";
 
 import { logActivity } from "@/lib/activity-log";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { markLocalWrite, notifyChange, onLocalChange } from "@/lib/local-sync";
 import {
   createTaskId,
   loadTasks,
   saveTasks,
+  TASKS_STORAGE_KEY,
   type TaskPriority,
   type TaskRecord,
 } from "@/lib/tasks";
@@ -40,6 +42,12 @@ function compareByUpdatedAtDesc(left: TaskRecord, right: TaskRecord) {
 
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskRecord[]>(() => loadTasks());
+
+  // Pick up changes from other screens and other devices: the cloud
+  // bootstrap and the global workspace_kv realtime listener both write
+  // localStorage and fire notifyChange for this key. Without this, a list
+  // edited on another computer only showed after a full reload.
+  useEffect(() => onLocalChange(TASKS_STORAGE_KEY, () => setTasks(loadTasks())), []);
   const logTask = (action: string, summary: string, task: TaskRecord, details?: Record<string, unknown>) =>
     logActivity({
       category: "tasks",
@@ -53,7 +61,11 @@ export function useTasks() {
   const updateTasks = useCallback((updater: (current: TaskRecord[]) => TaskRecord[]) => {
     setTasks((current) => {
       const next = updater(current).sort(compareByUpdatedAtDesc);
+      // Keep a late realtime echo from overwriting this edit, and tell
+      // other mounted To-Do lists on this page.
+      markLocalWrite(TASKS_STORAGE_KEY);
       saveTasks(next);
+      notifyChange(TASKS_STORAGE_KEY);
       return next;
     });
   }, []);
