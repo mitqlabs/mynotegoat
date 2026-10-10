@@ -9,6 +9,7 @@
  * leaves the browser; the model also runs in the browser (see engine.ts).
  */
 
+import { appointmentLinesForAi } from "@/lib/goat-appointments";
 import { askGoat, plainText, type GoatAnswer, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
 import { classifyDoc, docDate, docUnits, isImagingReport, resolveWho, surnameOf, type DocUnit, type GoatDocType, type GoatFile } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type TermMatcher } from "@/lib/goat-terms";
@@ -221,6 +222,27 @@ export function buildAiSources(ctx: GoatContext, question: string, budgetChars =
   }
   for (const { a, lines } of pageAnswers) {
     if (lines.length) add({ title: `${a.title} (patient page · ${a.source})`, kind: "page", section: a.section, lines });
+  }
+
+  // 1b. The appointments one by one, when the question is about visits and the
+  // exact answers above didn't already list them ("did she ever reschedule?").
+  // Same rows the regular G.O.A.T. shows: date (weekday), time, type, status, note.
+  const aboutAppointments =
+    /\b(appt|appts|appointments?|visits?|cancel\w*|cx|cxl|no[\s-]?shows?|missed|resched\w*|scheduled|upcoming|checked[\s-]?(in|out)|discharg\w*|new patient|re-?exam)\b/i.test(question) ||
+    /\bNS\b/.test(question);
+  const listed = result.answers.some((a) => a.source.startsWith("Appointments (each visit"));
+  if (aboutAppointments && !listed && ctx.appointments && ctx.appointments.length) {
+    const rows = appointmentLinesForAi(ctx.appointments);
+    const room = Math.max(800, budgetChars - used - 200);
+    const lines: AiSourceLine[] = [];
+    let size = 0;
+    for (const text of rows) {
+      if (size + text.length + 6 > room) break;
+      lines.push({ text });
+      size += text.length + 6;
+    }
+    if (rows.length > lines.length) lines.push({ text: `(${rows.length - lines.length} older appointments not shown)` });
+    add({ title: `Appointments, newest first (patient page · ${rows.length} on file)`, kind: "page", section: "appointments", lines });
   }
 
   // 2. Patient files: who-matching reports first, referral forms last (unless asked for).
