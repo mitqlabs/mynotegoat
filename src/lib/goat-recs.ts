@@ -38,9 +38,11 @@ export interface RecAlternative {
 }
 
 export interface RecCost {
-  /** What the cost belongs to ("Cervical", "Alternative to Injection Therapy"). */
+  /** What the cost belongs to ("Cervical", "Alternative to Injection Therapy", "Trigger point injection"). */
   owner: string;
   text: string;
+  /** Region of the intervention it belongs to, for ordering when the owner is the procedure's name. */
+  region?: string;
 }
 
 export interface Recommendations {
@@ -64,6 +66,13 @@ export const ALTERNATIVE_RE =
   /\b(alternatives?|(?:another|other|an|additional|further|treatment|conservative|non-?surgical|surgical)\s+options?|options?\s+(?:is|are|include|would be|of)|candidate for|may (?:also )?(?:consider|benefit)|could (?:also )?(?:consider|benefit)|can (?:also )?consider|might (?:also )?benefit|would (?:also )?benefit|in lieu of|instead of|in place of)\b/i;
 
 const RECOMMEND_RE = /\b(recommend(?:s|ed|ing|ation)?|advis(?:e|ed)|suggest(?:s|ed)?|proceed with|plan(?:ned)? (?:to|for)|schedul(?:e|ed) (?:for|the patient for)|will (?:undergo|proceed|schedule|perform)|refer(?:red)? (?:to|for))\b/i;
+/** "Patient may require up to 3 epidurals …" — a note on the intervention before it. */
+const MAY_REQUIRE_RE = /^(?:the\s+)?(?:patient|pt|he|she|they)\s+(may|might|will likely|will probably|could)\s+(require|need)\s+(.+?)(?:\s+(?:to|in order to)\s+(?:optimize|achieve|maximize|improve|obtain|get)\b.*)?\.?$/i;
+/** Plan comments that aren't recommendations: imaging findings, causation / medico-legal opinion, history. */
+const NOT_A_REC_RE =
+  /\b(mri findings|x-?ray findings|disc (?:bulge|protrusion|herniation) (?:measur|of \d)|\d(?:\.\d)?\s*mm\b|it is my (?:medical )?opinion|reasonable degree of medical (?:certainty|probability)|precipitating cause|causation|causally related|has failed conservative|failed conservative|risks and benefits)\b/i;
+/** "Cervical Radiculopathy [M.54.12]" / "Myofascial Pain [M79.18] comment:" — a numbered Plan diagnosis (One Touch EMR and similar). */
+const DIAG_HEAD_RE = /^(.{3,120}?)\s*\[\s*[A-Z]\.?\d{1,2}[\w.]*\s*\](?:\s*(?:comments?|note)\s*:)?\s*/;
 const PROCEDURE_RE =
   /\b(injection|block|ablation|radiofrequency|rfa|epidural|esi|prp|platelet|stem cell|surgery|surgical|fusion|discectomy|laminectomy|decompression|arthroscop\w*|therapy|physical therapy|chiropractic|acupuncture|brace|tens|pens|stimulation|mri|ct|x-?rays?|emg|ncv|ncs|medication|naproxen|ibuprofen|gabapentin|cyclobenzaprine|tramadol|meloxicam)\b/i;
 const SECTION_RE = /^(medications?|meds|imaging|diagnostics?|referrals?|follow[\s-]?up|return(?: to clinic| visit)?|rtc|disposition)\b\s*[:\-–]?\s*(.*)$/i;
@@ -151,15 +160,38 @@ export function regionForRec(text: string, context = ""): string {
 // ---------------------------------------------------------------------------
 
 const PLAN_HEAD = /\b(plan\s*\/\s*orders|plan of care|plan and recommendations|treatment plan|treatment recommendations|recommendations?|plan)\s*:/i;
+/**
+ * A heading on its own line, with or without a colon, as EMRs print them:
+ * "Plan", "Assessment and Plan", "A/P", "Impression/Plan", "Treatment Plan",
+ * "Recommendations", "Orders".
+ */
+const PLAN_LINE =
+  /^[ \t]*(?:\d{1,2}[.)]\s*)?(assessment\s*(?:and|&|\/)\s*plan|a\s*\/\s*p|a\s*&\s*p|impression\s*(?:and|&|\/)\s*plan|plan\s*\/\s*orders|plan of care|plan and recommendations|treatment plan|treatment recommendations|recommendations?|orders|plan)[ \t]*:?[ \t]*$/im;
+
+/** "C6 - C7" / "C6 – 7" → "C6-C7" so a spaced level isn't read as a dash bullet. */
+export function normalizeLevels(text: string): string {
+  return (text ?? "").replace(/\b([CTLS])(\d{1,2})\s*[-–]\s*([CTLS]?)(\d{1,2})\b/g, (_m, a: string, n1: string, b: string, n2: string) => `${a}${n1}-${b || a}${n2}`);
+}
 
 /** The Plan / Recommendations part of a report (whole text when there's no such heading). */
 export function planSection(text: string): string {
-  const flat = (text ?? "").replace(/\r/g, "");
+  const flat = normalizeLevels((text ?? "").replace(/\r/g, ""));
   const m = PLAN_HEAD.exec(flat);
-  let out = m ? flat.slice(m.index + m[0].length) : flat;
+  const line = PLAN_LINE.exec(flat);
+  const start = [m ? { i: m.index, len: m[0].length } : null, line ? { i: line.index, len: line[0].length } : null]
+    .filter((x): x is { i: number; len: number } => x !== null)
+    .sort((a, b) => a.i - b.i)[0];
+  let out = start ? flat.slice(start.i + start.len) : flat;
   const end = END_RE.exec(out);
   if (end) out = out.slice(0, end.index);
   return out;
+}
+
+/** Whole report minus the signature block (for the fallback scan). */
+function wholeReport(text: string): string {
+  const flat = normalizeLevels((text ?? "").replace(/\r/g, ""));
+  const end = END_RE.exec(flat);
+  return end ? flat.slice(0, end.index) : flat;
 }
 
 function segments(plan: string): string[] {
@@ -187,13 +219,29 @@ function sentences(s: string): string[] {
     .filter(Boolean);
 }
 
+/** "Considering MRI findings …, recommend X" → ["Considering MRI findings …", "recommend X"]. */
+function splitLeadIn(s: string): { lead: string; rest: string } {
+  const m = /^([^.]{6,200}?),\s*(?=(?:i |we )?(?:would |also |strongly |therefore )*(?:recommend(?:s|ed)?|advise[sd]?|suggest(?:s|ed)?)\b)/i.exec(s);
+  return m ? { lead: m[1], rest: s.slice(m[0].length) } : { lead: "", rest: s };
+}
+
 function cleanIntervention(s: string): string {
-  let t = s
-    .replace(/^(?:planned interventions?|interventions?|procedures?)\s*:\s*/i, "")
+  let t = splitLeadIn(s)
+    .rest.replace(/^(?:planned interventions?|interventions?|procedures?)\s*:\s*/i, "")
     .replace(/^(?:for (?:the )?(?:patient'?s'?|pt'?s|his|her|their)\s+[^:]{2,80}:\s*)/i, "")
     .replace(/^(?:at this time,?\s*)?(?:i |we )?(?:would |also |strongly |therefore )*(?:recommend(?:s|ed)?|advise[sd]?|suggest(?:s|ed)?)\s+(?:that\s+)?(?:the patient\s+(?:undergo(?:es)?|receive|have|proceed with|get)\s+|(?:he|she|they)\s+(?:undergo|receive|have)\s+)?/i, "");
   t = t.replace(/^(?:a|an)\s+(?=[a-z])/i, "");
+  // "… totaling 3 muscle groups for myofascial pain treatment." → the diagnosis is the heading's job.
+  t = t.replace(/\s+for\s+(?:the\s+)?(?:treatment of\s+)?(?:his|her|their|the patient'?s\s+)?[a-z][a-z\s/-]{2,40}?\s+(?:treatment|management)\.?$/i, "");
   return sentenceCase(t);
+}
+
+/** "Trigger point injection of upper neck …" → "Trigger point injection". */
+function shortName(text: string): string {
+  return text
+    .replace(/\.$/, "")
+    .split(/\s+(?:of|targeting|with|to|at|in|for|under)\s+|,/)[0]
+    .trim();
 }
 
 function altParts(s: string, carriedLabel: string): { label: string; text: string } {
@@ -220,9 +268,18 @@ function altParts(s: string, carriedLabel: string): { label: string; text: strin
  * Read a report's Plan into recommendations.
  */
 export function extractRecommendations(reportText: string): Recommendations {
+  const fromPlan = readRecommendations(planSection(reportText));
+  if (fromPlan.interventions.length || fromPlan.alternatives.length) return fromPlan;
+  // No Plan heading, or a Plan the rules couldn't read: any recommendation sentence anywhere in the report.
+  const whole = readRecommendations(wholeReport(reportText));
+  return whole.interventions.length || whole.alternatives.length ? whole : fromPlan;
+}
+
+function readRecommendations(plan: string): Recommendations {
   const out: Recommendations = { interventions: [], alternatives: [], medications: [], followUp: [], costs: [], unplaced: [] };
-  const plan = planSection(reportText);
   let lastOwner = "";
+  let lastItem: RecItem | null = null;
+  let diagnosis = "";
 
   const addIntervention = (text: string, context: string, quote: string) => {
     if (!text || text.length < 6) return;
@@ -231,11 +288,21 @@ export function extractRecommendations(reportText: string): Recommendations {
     if (dup) {
       if (!dup.region && region) dup.region = region;
       lastOwner = dup.region || lastOwner;
+      lastItem = dup;
       return;
     }
     if (out.alternatives.some((a) => sameItem(a.text, text))) return;
-    out.interventions.push({ region, text, quote });
+    const item = { region, text, quote };
+    out.interventions.push(item);
     lastOwner = region || "Recommendation";
+    lastItem = item;
+  };
+  const addNote = (note: string) => {
+    if (!lastItem) return false;
+    const n = note.replace(/\.$/, "").trim();
+    if (!n || lastItem.text.toLowerCase().includes(n.toLowerCase())) return true;
+    lastItem.text = `${lastItem.text.replace(/\.$/, "")} (${n}).`;
+    return true;
   };
   const addAlternative = (label: string, text: string, quote: string) => {
     if (!text || text.length < 4) return;
@@ -249,18 +316,42 @@ export function extractRecommendations(reportText: string): Recommendations {
     out.interventions = out.interventions.filter((x) => !sameItem(x.text, text));
     out.alternatives.push({ label, text, quote });
     lastOwner = label || "Alternative";
+    lastItem = null;
   };
   const addCost = (text: string) => {
-    const owner = lastOwner || "Costs";
+    let owner = lastOwner || "Costs";
+    let body = text;
+    let region: string | undefined = lastItem?.region || undefined;
+    // "Professional fee for cervical epidural steroid injection is $7000 per injection."
+    const named = /\b(?:fees?|costs?|charges?|expenses?)\s+(?:for|of)\s+(?:the\s+|an?\s+)?([a-z][^$.]{3,80}?)\s+(?:is|are|will be|would be|runs?)\s+(.*\$.*)$/i.exec(text);
+    if (named) {
+      owner = sentenceCase(named[1]).replace(/\.$/, "");
+      body = named[2];
+      const match = out.interventions.find((i) => recKey(i.text).includes(recKey(named[1])));
+      region = match?.region || regionForRec(named[1]) || region;
+    } else if (lastItem && lastItem.region && out.interventions.filter((i) => i.region === lastItem!.region).length > 1) {
+      // Two procedures under one region: say which one the fee is for.
+      owner = shortName(lastItem.text);
+    }
     const prev = out.costs.find((c) => c.owner === owner);
-    const t = sentenceCase(text);
+    const t = sentenceCase(body);
     if (prev) {
       if (!prev.text.includes(t)) prev.text = `${prev.text} ${t}`;
-    } else out.costs.push({ owner, text: t });
+    } else out.costs.push({ owner, text: t, ...(region && owner !== region ? { region } : {}) });
   };
 
   for (const rawSeg of segments(plan)) {
     let seg = rawSeg.replace(SIGNATURE_RE, "").trim();
+    if (!seg) continue;
+    // "Cervical Radiculopathy [M.54.12] comment: …": the diagnosis gives the items under it their region.
+    const diag = DIAG_HEAD_RE.exec(seg);
+    if (diag) {
+      diagnosis = diag[1].trim();
+      lastItem = null;
+      seg = seg.slice(diag[0].length).trim();
+      if (!seg) continue;
+    }
+    seg = seg.replace(/^(?:comments?|note)\s*:\s*/i, "");
     if (!seg) continue;
     // Medications / Imaging / Referrals / Follow up
     const sec = SECTION_RE.exec(seg);
@@ -292,7 +383,7 @@ export function extractRecommendations(reportText: string): Recommendations {
     if (forHead) {
       context = forHead[1];
       seg = seg.slice(forHead[0].length);
-    }
+    } else if (diagnosis) context = diagnosis;
     const altHead = /^(alternatives?(?:\s+(?:to|for)\s+[^:]{2,60})?)\s*:\s*/i.exec(seg);
     if (altHead) {
       const what = /(?:to|for)\s+(.+)$/i.exec(altHead[1]);
@@ -313,6 +404,11 @@ export function extractRecommendations(reportText: string): Recommendations {
         addCost(s);
         continue;
       }
+      const may = MAY_REQUIRE_RE.exec(s);
+      if (may && !ALTERNATIVE_RE.test(s)) {
+        const note = `${may[1].toLowerCase()} ${may[2].toLowerCase()} ${may[3]}`;
+        if (addNote(note)) continue;
+      }
       const altHere = ALTERNATIVE_RE.test(s);
       if (altHead || altHere) {
         // Under an "Alternative to …:" label only the first sentence names it; the rest describe it.
@@ -323,13 +419,15 @@ export function extractRecommendations(reportText: string): Recommendations {
         }
         continue;
       }
-      if (planned || RECOMMEND_RE.test(s)) {
-        if (!placedInSeg || RECOMMEND_RE.test(s)) {
-          addIntervention(cleanIntervention(s), context, s);
+      if (planned || RECOMMEND_RE.test(s) || may) {
+        if (!placedInSeg || RECOMMEND_RE.test(s) || may) {
+          const lead = splitLeadIn(s).lead;
+          addIntervention(cleanIntervention(s), [context, lead].filter(Boolean).join(" "), s);
           placedInSeg = true;
         }
         continue;
       }
+      if (NOT_A_REC_RE.test(s)) continue;
       if (!placedInSeg && PROCEDURE_RE.test(s)) out.unplaced.push(s);
     }
   }
@@ -373,13 +471,13 @@ export function recommendationBlocksFrom(recs: Recommendations, opts: RecFormatO
   if (recs.followUp.length) blocks.push({ heading: "Follow up", items: recs.followUp });
   if (opts.showCosts !== false && recs.costs.length) {
     // Same order as above: regions, then alternatives, then anything else.
-    const rank = (owner: string) => {
-      const r = blocks.findIndex((b) => b.heading === owner);
+    const rank = (c: RecCost) => {
+      const r = blocks.findIndex((b) => b.heading === c.owner || (c.region !== undefined && b.heading === c.region));
       if (r >= 0) return r;
-      const a = recs.alternatives.findIndex((x) => x.label === owner);
+      const a = recs.alternatives.findIndex((x) => x.label === c.owner);
       return a >= 0 ? 100 + a : 200;
     };
-    const costs = [...recs.costs].sort((a, b) => rank(a.owner) - rank(b.owner));
+    const costs = [...recs.costs].sort((a, b) => rank(a) - rank(b));
     blocks.push({ heading: "Costs", items: costs.map((c) => `${c.owner}: ${c.text}`) });
   }
   return blocks;

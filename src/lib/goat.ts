@@ -1095,12 +1095,19 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     }
   }
   // A doctor's recommendations from their report: "what did dr armen recommend".
-  const asksRecs = /\b(recommend\w*|suggest\w*|advis\w*|orders?|planned interventions?|next steps?|treatment options?|alternatives?)\b/i.test(question);
+  // "recs" / "recos" / "the PM plan" count too ("plan" alone is NoteGoat's Treatment Plan unless a doctor is named).
+  const asksRecs =
+    /\b(recommend\w*|recs?|recos?|reccs?|suggest\w*|advis\w*|orders?|planned interventions?|next steps?|treatment options?|alternatives?)\b/i.test(question) ||
+    (/\bplan\b/i.test(question) && !/\btreatment plan\b/i.test(question) && (personNamed || /\b(pm|pain management|specialist|ortho\w*|neuro\w*|dr\.?)\b/i.test(question)));
+  let recsShown = false;
   if (asksRecs && ctx.files && ctx.files.length) {
     const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
     const rec = recommendationsFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq });
     if (rec) {
-      if (rec.file && rec.blocks.length) romShown = true; // structured answer first, raw file lines after
+      if (rec.file && rec.blocks.length) {
+        romShown = true; // structured answer first, raw file lines after
+        recsShown = true;
+      }
       push(
         rec.file && rec.blocks.length
           ? {
@@ -1156,6 +1163,8 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     ctx.files && ctx.files.length
       ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq })
       : null;
+  // Recommendations were found, so a word-search "X doesn't mention recs" would be wrong.
+  if (files && recsShown) files.notes = files.notes.filter((n) => !/\b(?:doesn't|don't) mention\b/.test(n));
   // "Also mentioned": skip what an answer card above already shows in full.
   const shownSections = new Set(answers.filter((a) => a.groups?.length).map((a) => a.section));
   // A region question only wants mentions of that region ("knee MRI" → not a lumbar note about the MRI).
