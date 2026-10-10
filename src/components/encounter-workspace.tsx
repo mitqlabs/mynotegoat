@@ -59,7 +59,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
-import { decideFillVisit, fillConfirmText, fillDateSpan } from "@/lib/fill-plan-rules";
+import { decideFillVisit, fillConfirmText, fillDateSpan, fillPastQuestionText } from "@/lib/fill-plan-rules";
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -419,6 +419,8 @@ type FillRow = {
   /** Set when the visit already has an OPEN note dated today or later — the
    *  note whose S/O/A can be refreshed from a newer source (a re-exam). */
   existingNoteId?: string;
+  /** A "fill" row dated before today — only filled if the user says Yes. */
+  past?: boolean;
   /** Why a skipped visit was skipped (for the confirm summary). */
   skipKind?: "done" | "past" | "inactive" | "notCheckedIn" | "other";
 };
@@ -2392,7 +2394,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         if (FILL_OPTIONAL_TYPE.test(a.appointmentType)) {
           return { ...base, action: "optional", reason: "Exam visit — tick to fill anyway", selected: false };
         }
-        return { ...base, action: "fill", reason: "Will fill", selected: true };
+        // Past checked-in visit with no note: asked about separately.
+        const past = decision.action === "fillPast";
+        return { ...base, action: "fill", reason: past ? "Past visit — asked separately" : "Will fill", selected: !past, past };
       });
   };
 
@@ -2489,15 +2493,31 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         return;
       }
       const rows = buildFillRows(source, plan, known);
-      const toFill = rows.filter((row) => row.action === "fill");
+      const upcoming = rows.filter((row) => row.action === "fill" && !row.past);
+      const pastRows = rows.filter((row) => row.action === "fill" && row.past);
       const examSkipped = rows.filter((row) => row.action === "optional").map((row) => row.dateUs);
       const hadNote = rows.filter((row) => row.skipKind === "past").length;
       const doneCount = rows.filter((row) => row.skipKind === "done").length;
       const refreshable = rows.filter((row) => row.existingNoteId);
-      if (!toFill.length && !refreshable.length) {
+      if (!upcoming.length && !pastRows.length && !refreshable.length) {
         setMessage(
           `Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan` +
             `${doneCount ? ` (skipped ${doneCount} already checked out/closed)` : ""}.`,
+        );
+        return;
+      }
+      // Past checked-in visits with no note are rare / accidental: ask
+      // separately. No leaves them alone and everything else goes ahead.
+      const pastChosen =
+        pastRows.length > 0 && window.confirm(fillPastQuestionText(pastRows.map((row) => row.dateUs)));
+      const pastLeft = pastChosen ? [] : pastRows.map((row) => row.dateUs);
+      const toFill = [...(pastChosen ? pastRows : []), ...upcoming].sort(
+        (a, b) => a.dateIso.localeCompare(b.dateIso),
+      );
+      if (!toFill.length && !refreshable.length) {
+        setMessage(
+          `Nothing to fill — left ${pastLeft.length} past checked-in visit${pastLeft.length === 1 ? "" : "s"} without a note alone (${pastLeft.join(", ")})` +
+            `${doneCount ? `; skipped ${doneCount} already checked out/closed` : ""}.`,
         );
         return;
       }
@@ -2506,7 +2526,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         toFill.length &&
         !window.confirm(
           fillConfirmText({
-            fillDatesUs: toFill.map((row) => row.dateUs),
+            fillDatesUs: upcoming.map((row) => row.dateUs),
+            pastDatesUs: pastChosen ? pastRows.map((row) => row.dateUs) : [],
             doneCount,
             pastWithNoteCount: hadNote,
             examDatesUs: examSkipped,
@@ -2669,6 +2690,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           ? `couldn't update ${refreshBlocked} not loaded on this device — open the patient's encounters and run it again`
           : "",
         doneCount ? `skipped ${doneCount} already checked out/closed` : "",
+        pastLeft.length
+          ? `left ${pastLeft.length} past checked-in visit${pastLeft.length === 1 ? "" : "s"} without a note alone (${pastLeft.join(", ")})`
+          : "",
         hadNote ? `left ${hadNote} past visit${hadNote === 1 ? "" : "s"} with a note alone` : "",
         leftOpenNoCharges.length
           ? `left ${leftOpenNoCharges.join(", ")} open (no plan charges)`

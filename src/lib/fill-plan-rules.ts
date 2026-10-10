@@ -4,9 +4,11 @@
  * "That day is done": a Checked Out visit or a closed note is never changed,
  * and nothing dated on or before the open (source) note is ever looked at.
  *
- *   • New note   — visit dated AFTER the source note, Checked In, no note yet.
- *                  Past dates are allowed here: the patient came and nobody
- *                  charted it yet, which is exactly what Fill is for.
+ *   • New note   — visit dated AFTER the source note, Checked In, no note yet,
+ *                  dated today or later.
+ *   • Past visit (before today) Checked In with no note — rare / accidental,
+ *                  so never filled automatically: Fill asks about these
+ *                  separately ("fillPast"), and No leaves them alone.
  *   • Refresh S/O/A of an existing note (re-exam) — only when the visit is
  *                  Checked In, the note is still open, and it's dated today or
  *                  later. A past day with a note is left alone even if open.
@@ -17,6 +19,7 @@ export type FillVisitStatus = "Scheduled" | "Check In" | "Check Out" | "Canceled
 
 export type FillDecision =
   | { action: "fill" }
+  | { action: "fillPast" }
   | { action: "refresh" }
   | { action: "skip"; kind: "done" | "past" | "inactive" | "notCheckedIn"; reason: string };
 
@@ -37,7 +40,7 @@ export function decideFillVisit(input: {
   if (status === "Check Out") return { action: "skip", kind: "done", reason: "Checked Out — that day is done" };
   if (note?.signed) return { action: "skip", kind: "done", reason: "Note is closed — that day is done" };
   if (status !== "Check In") return { action: "skip", kind: "notCheckedIn", reason: "Not checked in yet" };
-  if (!note) return { action: "fill" };
+  if (!note) return dateIso < todayIso ? { action: "fillPast" } : { action: "fill" };
   if (dateIso < todayIso) return { action: "skip", kind: "past", reason: "Past visit already has a note — open it to edit" };
   return { action: "refresh" };
 }
@@ -52,8 +55,19 @@ export function fillDateSpan(datesUs: string[]): string {
 }
 
 /** The confirm text shown before anything is written. */
+/** The separate question about past Checked In visits with no note. */
+export function fillPastQuestionText(pastDatesUs: string[]): string {
+  const n = pastDatesUs.length;
+  return (
+    `${n} past visit${n === 1 ? " was" : "s were"} checked in but ${n === 1 ? "has" : "have"} no note: ${pastDatesUs.map((d) => d.slice(0, 5)).join(", ")}. Fill ${n === 1 ? "it" : "them"} from the treatment plan?\n\n` +
+    `OK = fill ${n === 1 ? "it" : "them"} too (then closed + checked out). Cancel = leave ${n === 1 ? "it" : "them"} alone; everything else still goes ahead.`
+  );
+}
+
 export function fillConfirmText(input: {
   fillDatesUs: string[];
+  /** Past visits the user said Yes to (listed separately from fillDatesUs). */
+  pastDatesUs?: string[];
   doneCount: number;
   pastWithNoteCount: number;
   examDatesUs: string[];
@@ -61,8 +75,14 @@ export function fillConfirmText(input: {
 }): string {
   const n = input.fillDatesUs.length;
   const lines = [
-    `Will fill ${n} upcoming visit${n === 1 ? "" : "s"}${n ? ` (${fillDateSpan(input.fillDatesUs)})` : ""}. Skipping ${input.doneCount} already checked out/closed.`,
+    n
+      ? `Will fill ${n} upcoming visit${n === 1 ? "" : "s"} (${fillDateSpan(input.fillDatesUs)}). Skipping ${input.doneCount} already checked out/closed.`
+      : `No upcoming visits to fill. Skipping ${input.doneCount} already checked out/closed.`,
   ];
+  if (input.pastDatesUs?.length) {
+    const k = input.pastDatesUs.length;
+    lines.push(`Plus ${k} past checked-in visit${k === 1 ? "" : "s"} you chose to fill: ${input.pastDatesUs.map((d) => d.slice(0, 5)).join(", ")}.`);
+  }
   if (input.pastWithNoteCount) {
     lines.push(`Also skipping ${input.pastWithNoteCount} past visit${input.pastWithNoteCount === 1 ? "" : "s"} that already ${input.pastWithNoteCount === 1 ? "has a note" : "have notes"}.`);
   }
@@ -70,7 +90,7 @@ export function fillConfirmText(input: {
     lines.push(`Exam visits are left for you to chart: ${input.examDatesUs.join(", ")}.`);
   }
   lines.push(
-    `Only visits after ${input.sourceDateUs} that are Checked In are filled, then closed + checked out. Earlier dates, checked-out visits and closed notes are never changed.`,
+    `Only Checked In visits after ${input.sourceDateUs} are filled, then closed + checked out. Earlier dates, checked-out visits and closed notes are never changed.`,
   );
   return lines.join("\n\n");
 }
