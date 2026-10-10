@@ -183,7 +183,7 @@ export function goatContextFromRecords(input: {
     notes: isHidden("notes") ? null : input.notes,
     appointments: isHidden("appointments")
       ? null
-      : input.appointments.map((a) => ({ date: a.date, startTime: a.startTime, type: a.appointmentType, status: a.status })),
+      : input.appointments.map((a) => ({ date: a.date, startTime: a.startTime, type: a.appointmentType, status: a.status, note: a.note ?? "" })),
     encounters: isHidden("appointments") || !input.canViewEncounters ? null : input.encounters.map(encounterToGoat),
     plans: isHidden("treatmentPlan") ? null : input.plans.map((plan) => planToGoat(plan, input.macroName)),
     diagnoses: isHidden("diagnosis") ? null : input.diagnoses.map((d) => ({ code: d.code, description: d.description })),

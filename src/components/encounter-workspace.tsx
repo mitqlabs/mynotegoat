@@ -1,5 +1,6 @@
 "use client";
 
+import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
@@ -784,6 +785,7 @@ function AppointmentsOverview({
   onCreateEncounter,
   onOpenEncounter,
   onStatusChange,
+  onCloseNote,
 }: {
   appointments: Array<{ id: string; patientId: string; patientName: string; appointmentType: string; date: string; startTime: string; status: string }>;
   encounters: Array<{ id: string; patientId: string; encounterDate: string; signed: boolean; patientName: string; appointmentType: string }>;
@@ -793,6 +795,8 @@ function AppointmentsOverview({
   onCreateEncounter: (appointmentId: string, patientId: string, patientName: string, appointmentType: string, date: string) => void;
   onOpenEncounter: (encounterId: string, patientName: string) => void;
   onStatusChange: (appointmentId: string, nextStatus: AppointmentStatus) => void;
+  /** Close a Checked Out visit's open note (note only). */
+  onCloseNote?: (encounterId: string, dateLabel: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -899,6 +903,17 @@ function AppointmentsOverview({
                           {linked.signed ? "View Encounter" : "Open Encounter"}
                         </button>
                       ) : (
+                        null
+                      )}
+                      {linked && !linked.signed && apt.status === "Check Out" && onCloseNote && (
+                        <div>
+                          <NoteOpenTag
+                            dateLabel={linked.encounterDate}
+                            onClose={() => onCloseNote(linked.id, linked.encounterDate)}
+                          />
+                        </div>
+                      )}
+                      {linked ? null : (
                         <button
                           className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
                             canStart
@@ -983,9 +998,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     removeCharge,
     reconcileLinkedCharges,
     setSigned,
+    setSignedAndConfirm,
+    resaveEncountersToCloud,
     deleteEncounter,
     forceSaveAll,
   } = useEncounterNotes();
+  const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
+  const [closeBusy, setCloseBusy] = useState(false);
+
+  /** Close a note only (appointment untouched), waiting for the cloud. */
+  const closeNoteOnly = async (encounterId: string, dateLabel: string) => {
+    const result = await setSignedAndConfirm(encounterId, true);
+    setMessage(
+      result.ok
+        ? `Note for ${dateLabel} closed.`
+        : `Couldn't confirm the note for ${dateLabel} closed in the cloud. ${result.error ?? ""} Try again in a moment.`,
+    );
+  };
 
   const { contacts: allContacts } = useContactDirectory();
   const specialistContactNames = useMemo(() => {
@@ -2433,6 +2462,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     let notesOk = 0;
     let apptsOk = 0;
     let retriedAppts = false;
+    let retriedNotes = false;
     for (const waitMs of [4000, 6000, 10000, 20000]) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       const notes = await fetchEncounterNotesByIds(createdIds);
@@ -2444,6 +2474,16 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (notesOk >= createdIds.length && apptsOk >= closed.length) {
         setMessage(`${summary} All saved to the cloud ✓`);
         return;
+      }
+      // A note that's missing in the cloud, or there but not closed, is
+      // re-sent from this page's copy once (the close can be lost by a failed
+      // or superseded autosave, which is how Checked Out visits kept an open
+      // note).
+      if (!retriedNotes && notesOk < createdIds.length) {
+        retriedNotes = true;
+        const okIds = new Set(notes.filter((n) => !closedIds.has(n.id) || n.signed).map((n) => n.id));
+        const missing = createdIds.filter((id) => !okIds.has(id));
+        if (missing.length) await resaveEncountersToCloud(missing);
       }
       if (!retriedAppts && notesOk >= createdIds.length && apptsOk < closed.length) {
         retriedAppts = true;
@@ -3427,6 +3467,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
   return (
     <div className="space-y-5">
+      {checkoutNoteDialog}
       {message && <p className="text-sm font-semibold text-[var(--brand-primary)]">{message}</p>}
 
       <AppointmentsOverview
@@ -3468,9 +3509,24 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           setSelectedEncounterId(encounterId);
         }}
         onStatusChange={(appointmentId, nextStatus) => {
-          updateAppointment(appointmentId, (current) => ({ ...current, status: nextStatus }));
-          setMessage(`Appointment status updated to ${formatAppointmentStatusLabel(nextStatus)}.`);
+          const apply = () => {
+            updateAppointment(appointmentId, (current) => ({ ...current, status: nextStatus }));
+            setMessage(`Appointment status updated to ${formatAppointmentStatusLabel(nextStatus)}.`);
+          };
+          const target = scheduleAppointments.find((entry) => entry.id === appointmentId);
+          if (target && nextStatus === "Check Out") {
+            void guardCheckout({
+              appointment: target,
+              notes: encountersByNewest,
+              checkOut: apply,
+              closeNote: (noteId) => setSignedAndConfirm(noteId, true),
+              onMessage: setMessage,
+            });
+            return;
+          }
+          apply();
         }}
+        onCloseNote={closeNoteOnly}
       />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(360px,420px)_1fr]">
@@ -3791,6 +3847,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                   >
                                     {formatAppointmentStatusLabel(apt.status)}
                                   </span>
+                                  {apt.status === "Check Out" && linked && !linked.signed && (
+                                    <div>
+                                      <NoteOpenTag
+                                        dateLabel={dateUs}
+                                        onClose={() => closeNoteOnly(linked.id, dateUs)}
+                                      />
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-2 py-1.5">
                                   {linked ? (
@@ -4089,20 +4153,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     ) : (
                       <button
-                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition-all active:scale-[0.97]"
-                        onClick={() => {
+                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition-all active:scale-[0.97] disabled:opacity-60"
+                        disabled={closeBusy}
+                        onClick={async () => {
                           if (selectedEncounter.charges.length === 0) {
                             if (!window.confirm("This encounter has no charges. Close and check out anyway?")) return;
                           }
-                          setSigned(selectedEncounter.id, true);
-                          if (linkedAppointmentForStatus) {
-                            updateAppointment(linkedAppointmentForStatus.id, (current) => ({
-                              ...current,
-                              status: "Check Out",
-                            }));
-                            setMessage(`Encounter closed and ${selectedEncounter.patientName} checked out.`);
-                          } else {
-                            setMessage("Encounter closed. No linked appointment found to check out.");
+                          // Write the close straight to the cloud and wait for it.
+                          // Only check out once the cloud confirms the note is
+                          // closed — checking out on a close that never landed is
+                          // how visits ended up "Checked Out" with an open note.
+                          const encounterId = selectedEncounter.id;
+                          const patientName = selectedEncounter.patientName;
+                          const appointmentId = linkedAppointmentForStatus?.id ?? null;
+                          setCloseBusy(true);
+                          setMessage("Closing note…");
+                          try {
+                            const result = await setSignedAndConfirm(encounterId, true);
+                            if (!result.ok) {
+                              setMessage(
+                                `The cloud didn't confirm the note closed, so it was left open and ${patientName} was NOT checked out. ${
+                                  result.error ?? ""
+                                } Press Close + Check Out again in a moment.`,
+                              );
+                              return;
+                            }
+                            if (appointmentId) {
+                              updateAppointment(appointmentId, (current) => ({
+                                ...current,
+                                status: "Check Out",
+                              }));
+                              setMessage(`Encounter closed and ${patientName} checked out.`);
+                            } else {
+                              setMessage("Encounter closed. No linked appointment found to check out.");
+                            }
+                          } finally {
+                            setCloseBusy(false);
                           }
                         }}
                         title={
@@ -4112,7 +4198,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         }
                         type="button"
                       >
-                        Close + Check Out
+                        {closeBusy ? "Closing…" : "Close + Check Out"}
                       </button>
                     )}
                     {findActivePlanForDate(selectedEncounter.patientId, selectedEncounter.encounterDate) && (

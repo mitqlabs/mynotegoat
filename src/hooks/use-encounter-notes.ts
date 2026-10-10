@@ -13,6 +13,9 @@ import {
   loadEncounterNoteRecords,
   loadEncounterNotesFromCloud,
   saveEncounterNoteRecords,
+  saveEncounterNoteToCloudNow,
+  findNotesWithUnsavedSignedState,
+  forgetCloudCopy,
   type EncounterChargeEntry,
   type EncounterMacroRunRecord,
   type EncounterDiagnosisEntry,
@@ -1205,6 +1208,107 @@ export function useEncounterNotes() {
     [upsertEncounter],
   );
 
+  /**
+   * Close (or reopen) a note AND wait until the cloud really has it.
+   * The plain setSigned only updates local state and lets autosave push it
+   * later; that's fine for typing but not for "Close + Check Out", which
+   * must not check the patient out on a close the cloud never received.
+   * Steps: update local state → write this exact version → read it back →
+   * re-send once if the cloud still disagrees.
+   */
+  const setSignedAndConfirm = useCallback(
+    async (
+      encounterId: string,
+      signed: boolean,
+      /** A copy to use when this hook hasn't loaded the note (e.g. the patient
+       *  page's straight-from-cloud list). */
+      fallback?: EncounterNoteRecord,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const inState = encountersForLogRef.current.find((entry) => entry.id === encounterId);
+      const current = inState ?? (fallback && fallback.id === encounterId ? fallback : undefined);
+      if (!current) return { ok: false, error: "That note isn't loaded on this page." };
+      if (current.signed !== signed) {
+        logActivity({
+          category: "notes",
+          action: signed ? "note.closed" : "note.reopened",
+          summary: `${signed ? "Closed" : "Reopened"} ${current.appointmentType} note for ${current.encounterDate}`,
+          patientId: current.patientId,
+          patientName: current.patientName,
+          details: { encounterId },
+        });
+      }
+      const stamp = nowIso();
+      const signedAt = signed ? stamp : "";
+      const next: EncounterNoteRecord = { ...current, signed, signedAt, updatedAt: stamp };
+      updateRecords((records) =>
+        records.some((entry) => entry.id === encounterId)
+          ? records.map((entry) =>
+              entry.id === encounterId ? { ...entry, signed, signedAt, updatedAt: stamp } : entry,
+            )
+          : [...records, next],
+      );
+      const withTimeout = (p: Promise<boolean>) =>
+        Promise.race([p, new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8000))]);
+      // On failure, put the note back the way it was (with a newer stamp, so
+      // the revert supersedes any retry of the change still queued). The
+      // caller then leaves the appointment alone, so note and appointment
+      // stay in step instead of drifting apart.
+      const revert = () => {
+        const revertStamp = nowIso();
+        updateRecords((records) =>
+          records.map((entry) =>
+            entry.id === encounterId
+              ? { ...entry, signed: current.signed, signedAt: current.signedAt, updatedAt: revertStamp }
+              : entry,
+          ),
+        );
+      };
+      // A transient failure (network blip, auth lock) gets two quick retries
+      // before we give up; the queue also keeps retrying in the background.
+      let saved = false;
+      for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+        saved = await withTimeout(saveEncounterNoteToCloudNow(next));
+      }
+      if (!saved) {
+        revert();
+        return {
+          ok: false,
+          error: "The cloud didn't confirm the change (check the connection).",
+        };
+      }
+      const mismatched = await findNotesWithUnsavedSignedState([{ id: encounterId, signed }]);
+      if (mismatched && mismatched.length > 0) {
+        forgetCloudCopy(encounterId);
+        const latest = encountersForLogRef.current.find((entry) => entry.id === encounterId);
+        const resend: EncounterNoteRecord = { ...(latest ?? next), signed, signedAt, updatedAt: nowIso() };
+        const resent = await withTimeout(saveEncounterNoteToCloudNow(resend));
+        const again = resent ? await findNotesWithUnsavedSignedState([{ id: encounterId, signed }]) : null;
+        if (!resent || (again && again.length > 0)) {
+          revert();
+          return { ok: false, error: "The cloud still shows the old note status after a retry." };
+        }
+      }
+      return { ok: true };
+    },
+    [updateRecords],
+  );
+
+  /**
+   * Re-send notes to the cloud from this page's current copies (used when a
+   * read-back shows the cloud is missing a change). Returns how many landed.
+   */
+  const resaveEncountersToCloud = useCallback(async (encounterIds: string[]): Promise<number> => {
+    let ok = 0;
+    for (const id of encounterIds) {
+      const latest = encountersForLogRef.current.find((entry) => entry.id === id);
+      if (!latest) continue;
+      forgetCloudCopy(id);
+      if (await saveEncounterNoteToCloudNow(latest)) ok++;
+    }
+    return ok;
+  }, []);
+
   const deleteEncounter = useCallback(
     (encounterId: string) => {
       const note = encountersForLogRef.current.find((entry) => entry.id === encounterId);
@@ -1275,6 +1379,8 @@ export function useEncounterNotes() {
     moveCharge,
     reconcileLinkedCharges,
     setSigned,
+    setSignedAndConfirm,
+    resaveEncountersToCloud,
     deleteEncounter,
     forceSaveAll,
   };

@@ -71,7 +71,7 @@ function FindingsBlock({ block, highlight }: { block: GoatBlock; highlight: stri
           onClick={() => setAll((v) => !v)}
           type="button"
         >
-          {all ? "Show less" : `Show all ${block.items.length}${block.heading ? ` ${block.heading}` : ""} findings`}
+          {all ? "Show less" : block.more ? `Show all ${block.items.length} ${block.more}` : `Show all ${block.items.length}${block.heading ? ` ${block.heading}` : ""} findings`}
         </button>
       )}
     </div>
