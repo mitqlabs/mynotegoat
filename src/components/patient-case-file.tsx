@@ -2610,6 +2610,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             startTime: a.startTime,
             type: a.appointmentType,
             status: a.status,
+            note: a.note ?? "",
           })),
       encounters:
         isHidden("appointments") || !canView("encounters")
