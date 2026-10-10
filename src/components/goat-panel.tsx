@@ -263,6 +263,30 @@ function FilesStatus({ files }: { files: GoatFilesController }) {
  * data via askGoat (rule-based lookups + text search). Nothing is sent
  * anywhere; see src/lib/goat.ts.
  */
+/** Copies plain text (e.g. recommendations, ready for the Specialist box). */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className="shrink-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(
+          () => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          },
+          () => undefined,
+        );
+      }}
+      style={{ fontSize: 12 }}
+      title="Copy as plain text"
+      type="button"
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 export function GoatPanel({
   context,
   onJump,
@@ -405,7 +429,10 @@ export function GoatPanel({
 
               {result.answers.map((a) => (
                 <div key={a.title} className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
-                  <div className="text-sm font-semibold">{a.title}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold">{a.title}</div>
+                    {a.copyText && <CopyButton text={a.copyText} />}
+                  </div>
                   {a.lines.length > 0 && (
                     <ul className="mt-1 space-y-0.5 text-sm">
                       {a.lines.map((line, i) => (

@@ -11,6 +11,14 @@
 import { cleanTerms, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import { extractRom, formatRomMeasure, romHeading, type RomRegion } from "@/lib/goat-rom";
 import {
+  extractRecommendations,
+  recommendationBlocksFrom,
+  recommendationsText,
+  type RecBlock,
+  type RecFormatOptions,
+  type Recommendations,
+} from "@/lib/goat-recs";
+import {
   isRegionGroup,
   joinWrapped,
   levelHighlightTerms,
@@ -768,5 +776,78 @@ export function romFromFiles(files: GoatFile[], q: FilesQuery): GoatRomAnswer | 
     others: others.map((x) => ({ id: x.file.id, name: x.file.name, date: x.date })),
     notes,
     quotes: [...new Set(regions.flatMap((r) => r.quotes))],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A doctor's recommendations out of their report's Plan
+// ---------------------------------------------------------------------------
+
+export interface GoatRecsAnswer {
+  file?: { id: string; name: string; date: string; dateLabel: "dated" | "uploaded"; docType: GoatDocType };
+  who: string[];
+  recs: Recommendations | null;
+  blocks: RecBlock[];
+  /** Plain text in the same shape, for Copy (and the Specialist box). */
+  text: string;
+  notes: string[];
+  /** Sentences the items came from (for highlighting). */
+  quotes: string[];
+}
+
+/**
+ * "what did dr armen recommend": the doctor's newest REPORT (referral forms
+ * skipped) with a Plan, read into regions → Alternatives → Medications →
+ * Follow up → Costs. With no doctor named, the newest report with a Plan.
+ */
+export function recommendationsFromFiles(files: GoatFile[], q: FilesQuery, opts: RecFormatOptions = {}): GoatRecsAnswer | null {
+  const who = resolveWho(q.question, q.asked, q.people);
+  const hasWho = who.people.length > 0 || who.specialtyGroups.length > 0;
+  const whoMatchers = who.people.map((p) => ({ person: p, m: makeMatcher(cleanTerms([p.name, surnameOf(p.name)])) }));
+  const specialtyMatcher = makeMatcher(who.specialtyGroups.flatMap((g) => g.terms).filter((t) => t.length > 3));
+  const whoLabel = who.people.length ? who.people.map((p) => p.name).join(" / ") : who.specialtyGroups.map((g) => g.terms[0]).join(" / ");
+  const notes: string[] = [];
+  const pending = files.filter((f) => f.status === "unread" || f.status === "needsOcr" || f.status === "reading").length;
+  type Found = { file: GoatFile; names: string[]; recs: Recommendations; ts: number; date: string; label: "dated" | "uploaded"; docType: GoatDocType };
+  const found: Found[] = [];
+  let theirFiles = 0;
+  for (const f of files.filter((x) => x.status === "read" && x.pages)) {
+    const text = (f.pages ?? []).join("\n");
+    const names = whoMatchers.filter(({ m }) => m.test(text) || m.test(f.name)).map(({ person }) => person.name);
+    const bySpecialty = !names.length && !who.people.length && specialtyMatcher.terms.length > 0 && (specialtyMatcher.test(text) || specialtyMatcher.test(f.name));
+    if (hasWho && !names.length && !bySpecialty) continue;
+    theirFiles += 1;
+    const docType = classifyDoc(f);
+    if (docType === "referral") continue;
+    const recs = extractRecommendations(text);
+    if (!recs.interventions.length && !recs.alternatives.length) continue;
+    const { date, label } = docDate(f);
+    found.push({ file: f, names, recs, ts: stamp(date), date, label, docType });
+  }
+  if (!found.length) {
+    if (!hasWho) return null;
+    notes.push(theirFiles ? `I found ${theirFiles} file${theirFiles === 1 ? "" : "s"} from ${whoLabel}, but no recommendations in a Plan.` : `No file I've read mentions ${whoLabel}.`);
+    if (pending) notes.push(`${pending} file${pending === 1 ? " isn't" : "s aren't"} read yet — open Patient Files to read ${pending === 1 ? "it" : "them"}, then ask again.`);
+    return { who: who.people.map((p) => p.name), recs: null, blocks: [], text: "", notes, quotes: [] };
+  }
+  found.sort((a, b) => b.ts - a.ts);
+  const best = found[0];
+  if (found.length > 1) {
+    notes.push(
+      `${found.length - 1} older report${found.length === 2 ? "" : "s"} also ${found.length === 2 ? "has" : "have"} recommendations: ${found
+        .slice(1, 4)
+        .map((x) => `${x.file.name} (${x.label} ${x.date || "—"})`)
+        .join("; ")}.`,
+    );
+  }
+  const blocks = recommendationBlocksFrom(best.recs, opts);
+  return {
+    file: { id: best.file.id, name: best.file.name, date: best.date, dateLabel: best.label, docType: best.docType },
+    who: best.names,
+    recs: best.recs,
+    blocks,
+    text: recommendationsText(blocks),
+    notes,
+    quotes: [...best.recs.interventions.map((i) => i.quote), ...best.recs.alternatives.map((a) => a.quote)],
   };
 }
