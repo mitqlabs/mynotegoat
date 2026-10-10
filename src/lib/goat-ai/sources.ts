@@ -85,9 +85,9 @@ export type AiIntent = "recommend" | "rom" | "findings";
 const INTENTS: Array<{ name: AiIntent; ask: RegExp; text: RegExp; heading: RegExp }> = [
   {
     name: "recommend",
-    ask: /\b(recommend\w*|plan|plans|orders?|suggest\w*|advis\w*|next steps?|treatment options?|injections?|procedures?|follow[- ]?up)\b/i,
-    text: /\b(recommend\w*|candidate|alternative|planned|plan|orders?|injection|procedure|sessions?|follow[- ]?up|refer\w*|medications?|fees?|cost)\b/i,
-    heading: /\b(plan|orders?|recommendations?|treatment|disposition|discussion|follow[- ]?up)\b/i,
+    ask: /\b(recommend\w*|recs?|recos?|reccs?|plan|plans|orders?|suggest\w*|advis\w*|next steps?|treatment options?|injections?|procedures?|follow[- ]?up)\b/i,
+    text: /\b(recommend\w*|candidate|alternative|planned|plan|orders?|injection|procedure|sessions?|follow[- ]?up|refer\w*|medications?|fees?|cost|may require|advised|proceed with|comments?)\b/i,
+    heading: /\b(plan|orders?|recommendations?|treatment|disposition|discussion|follow[- ]?up|a\s*\/\s*p)\b/i,
   },
   {
     name: "rom",
@@ -317,8 +317,11 @@ export function buildAiSources(ctx: GoatContext, question: string, budgetChars =
   }
 
   // A referral's status line ("report received, not reviewed yet") adds nothing once the report itself is here.
+  // The recommendations G.O.A.T. read out of that report's Plan stay: they're the same text, already in order.
   if (sources.some((x) => x.kind === "file" && x.docType === "report")) {
-    for (let i = sources.length - 1; i >= 0; i--) if (sources[i].kind === "page" && sources[i].section === "specialist") sources.splice(i, 1);
+    for (let i = sources.length - 1; i >= 0; i--) {
+      if (sources[i].kind === "page" && sources[i].section === "specialist" && !sources[i].title.startsWith("Recommendations (")) sources.splice(i, 1);
+    }
     sources.forEach((x, i) => (x.id = `S${i + 1}`));
   }
 

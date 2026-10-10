@@ -811,6 +811,7 @@ export function recommendationsFromFiles(files: GoatFile[], q: FilesQuery, opts:
   type Found = { file: GoatFile; names: string[]; recs: Recommendations; ts: number; date: string; label: "dated" | "uploaded"; docType: GoatDocType };
   const found: Found[] = [];
   let theirFiles = 0;
+  const checked: GoatFile[] = [];
   for (const f of files.filter((x) => x.status === "read" && x.pages)) {
     const text = (f.pages ?? []).join("\n");
     const names = whoMatchers.filter(({ m }) => m.test(text) || m.test(f.name)).map(({ person }) => person.name);
@@ -819,6 +820,7 @@ export function recommendationsFromFiles(files: GoatFile[], q: FilesQuery, opts:
     theirFiles += 1;
     const docType = classifyDoc(f);
     if (docType === "referral") continue;
+    checked.push(f);
     const recs = extractRecommendations(text);
     if (!recs.interventions.length && !recs.alternatives.length) continue;
     const { date, label } = docDate(f);
@@ -826,7 +828,16 @@ export function recommendationsFromFiles(files: GoatFile[], q: FilesQuery, opts:
   }
   if (!found.length) {
     if (!hasWho) return null;
-    notes.push(theirFiles ? `I found ${theirFiles} file${theirFiles === 1 ? "" : "s"} from ${whoLabel}, but no recommendations in a Plan.` : `No file I've read mentions ${whoLabel}.`);
+    if (checked.length) {
+      const list = checked
+        .slice(0, 3)
+        .map((x) => {
+          const d = docDate(x);
+          return `${x.name} (${d.label} ${d.date || "—"})`;
+        })
+        .join("; ");
+      notes.push(`I checked ${list}${checked.length > 3 ? ` and ${checked.length - 3} more` : ""} from ${whoLabel}: no recommendation sentences in ${checked.length === 1 ? "it" : "them"}.`);
+    } else notes.push(theirFiles ? `I found ${theirFiles} file${theirFiles === 1 ? "" : "s"} from ${whoLabel}, but only referral forms, no report.` : `No file I've read mentions ${whoLabel}.`);
     if (pending) notes.push(`${pending} file${pending === 1 ? " isn't" : "s aren't"} read yet — open Patient Files to read ${pending === 1 ? "it" : "them"}, then ask again.`);
     return { who: who.people.map((p) => p.name), recs: null, blocks: [], text: "", notes, quotes: [] };
   }
