@@ -447,6 +447,44 @@ function escapeHtml(value: string) {
  * this for SOAP values that are already sanitised HTML and need to keep
  * their `<b>`, `<u>`, `<p>` formatting intact.
  */
+const VOID_HTML_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr",
+]);
+
+/**
+ * What's left of a `{{#if}}` block whose condition is empty.
+ *
+ * Normally nothing. But a block drawn in the rich-text editor can start
+ * inside one tag and end inside another, e.g.
+ * `<b><u>{{#if X}}Heading</u></b></div><div>{{X}}</div><div>{{/if}}`.
+ * Dropping that whole span would leave an unclosed `<b><u>` (the next
+ * section turns bold + underlined) and stray closing tags. When the
+ * dropped span's tags don't balance, keep just its tags — no text, no
+ * line breaks — so the document structure stays intact; the leftover
+ * empty tags render as nothing.
+ */
+function droppedConditionalRemainder(content: string): string {
+  const tags = content.match(/<\/?[a-zA-Z][^>]*>/g) ?? [];
+  const nonVoid = tags.filter((tag) => {
+    const name = /^<\/?([a-zA-Z0-9]+)/.exec(tag)?.[1]?.toLowerCase() ?? "";
+    return !VOID_HTML_TAGS.has(name) && !/\/>$/.test(tag);
+  });
+  const stack: string[] = [];
+  for (const tag of nonVoid) {
+    const match = /^<(\/?)([a-zA-Z0-9]+)/.exec(tag);
+    if (!match) continue;
+    const name = match[2].toLowerCase();
+    if (!match[1]) {
+      stack.push(name);
+    } else if (stack[stack.length - 1] === name) {
+      stack.pop();
+    } else {
+      return nonVoid.join("");
+    }
+  }
+  return stack.length === 0 ? "" : nonVoid.join("");
+}
+
 export function renderDocumentTemplate(
   body: string,
   context: Record<string, string>,
@@ -493,7 +531,7 @@ export function renderDocumentTemplate(
     const token = tokenRaw.toUpperCase();
     const value = context[token];
     const replacement =
-      typeof value === "string" && value.trim().length > 0 ? content : "";
+      typeof value === "string" && value.trim().length > 0 ? content : droppedConditionalRemainder(content);
     result = result.slice(0, match.index) + replacement + result.slice(match.index + fullMatch.length);
   }
   // PASS 2: Plain auto-field tokens.

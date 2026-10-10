@@ -8293,7 +8293,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     narrativePreviewEditedRef.current = true;
                   }}
                   ref={narrativeEditableRef}
-                  className="narrative-editable-preview space-y-4 whitespace-pre-wrap break-words leading-7 focus:outline-none"
+                  className="narrative-editable-preview whitespace-pre-wrap break-words leading-7 focus:outline-none"
                   contentEditable
                   suppressContentEditableWarning
                   style={{ fontFamily: narrativePreview.fontFamily, minHeight: "500px" }}
