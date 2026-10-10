@@ -39,6 +39,7 @@ import {
   type ScheduleAppointmentRecord,
 } from "@/lib/schedule-appointments";
 import { formatDurationMinutes } from "@/lib/schedule-appointment-types";
+import { useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import {
   getOfficeHoursForDate,
   getOfficeHoursLabel,
@@ -434,7 +435,8 @@ export default function AppointmentsPage() {
     selectedLocationId,
     setLocation,
   } = useLocationView();
-  const { encountersByNewest, createEncounter, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, deleteEncounter, setSignedAndConfirm } = useEncounterNotes();
+  const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleRooms } = useScheduleRooms();
@@ -790,10 +792,24 @@ export default function AppointmentsPage() {
     }
     const target = scheduleAppointments.find((entry) => entry.id === appointmentId);
     if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
-    updateAppointment(appointmentId, (current) => ({
-      ...current,
-      status: nextStatus,
-    }));
+    const apply = () =>
+      updateAppointment(appointmentId, (current) => ({
+        ...current,
+        status: nextStatus,
+      }));
+    if (target && nextStatus === "Check Out") {
+      // Checking out with the note still open used to leave the two out of
+      // step (Checked Out here, "Open" in reports). Ask first.
+      void guardCheckout({
+        appointment: target,
+        notes: encountersByNewest,
+        checkOut: apply,
+        closeNote: (noteId) => setSignedAndConfirm(noteId, true),
+        onMessage: setScheduleAlert,
+      });
+      return;
+    }
+    apply();
   };
 
   const openRescheduleModal = (appointmentId: string) => {
@@ -1054,7 +1070,7 @@ export default function AppointmentsPage() {
     setSelectedDate(records[0]?.date ?? selectedDate);
   };
 
-  const handleSaveAppointmentUpdates = () => {
+  const handleSaveAppointmentUpdates = async () => {
     if (!selectedAppointment) {
       return;
     }
@@ -1106,6 +1122,22 @@ export default function AppointmentsPage() {
       return;
     }
 
+    if (statusDraft === "Check Out" && selectedAppointment.status !== "Check Out") {
+      // Same open-note check as the quick Check Out button. Cancel keeps the
+      // dialog open with the edits intact.
+      let checkedOut = false;
+      const outcome = await guardCheckout({
+        appointment: selectedAppointment,
+        notes: encountersByNewest,
+        checkOut: () => {
+          checkedOut = true;
+        },
+        closeNote: (noteId) => setSignedAndConfirm(noteId, true),
+        onMessage: (message) => setEditError(message.startsWith("Note closed") || message.startsWith("Closing") ? "" : message),
+      });
+      if (!checkedOut || outcome === "canceled" || outcome === "close-failed") return;
+    }
+
     updateAppointment(selectedAppointment.id, (current) => ({
       ...current,
       status: statusDraft,
@@ -1137,6 +1169,7 @@ export default function AppointmentsPage() {
 
   return (
     <div className="space-y-5">
+      {checkoutNoteDialog}
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
@@ -2552,7 +2585,7 @@ export default function AppointmentsPage() {
                 </button>
                 <button
                   className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
-                  onClick={handleSaveAppointmentUpdates}
+                  onClick={() => void handleSaveAppointmentUpdates()}
                   type="button"
                 >
                   Save Status

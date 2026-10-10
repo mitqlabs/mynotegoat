@@ -122,6 +122,7 @@ import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
+import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -1372,7 +1373,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter } = useEncounterNotes();
+  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm } = useEncounterNotes();
+  const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
@@ -1756,6 +1758,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // Reports → Treatment period (only offered to patients with 2+ courses of
   // care). "all" keeps the report exactly as before. Nothing here is saved.
   const [reportPeriodChoice, setReportPeriodChoice] = useState("all"); // "all" | "custom" | period id
+  const [showOpenNoteVisits, setShowOpenNoteVisits] = useState(false);
   const [reportCustomStart, setReportCustomStart] = useState("");
   const [reportCustomEnd, setReportCustomEnd] = useState("");
   // Diagnoses unticked in the preview — this report only, never saved.
@@ -4019,11 +4022,40 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }
     }
     if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
-    updateAppointment(appointmentId, (current) => ({
-      ...current,
-      status: nextStatus,
-    }));
-    setEncounterMessage(`Appointment status updated to ${nextStatus}.`);
+    const apply = () => {
+      updateAppointment(appointmentId, (current) => ({
+        ...current,
+        status: nextStatus,
+      }));
+      setEncounterMessage(`Appointment status updated to ${nextStatus}.`);
+    };
+    if (target && nextStatus === "Check Out") {
+      void guardCheckout({
+        appointment: target,
+        notes: patientEncounterRecords,
+        checkOut: apply,
+        closeNote: closeNoteById,
+        onMessage: setEncounterMessage,
+      });
+      return;
+    }
+    apply();
+  };
+
+  /** Close a note and wait for the cloud to confirm it (appointment untouched). */
+  const closeNoteById = async (noteId: string) => {
+    const fallback = patientEncounterRecords.find((entry) => entry.id === noteId);
+    return setSignedAndConfirm(noteId, true, fallback);
+  };
+
+  const closeNoteOnly = async (noteId: string, dateLabel: string) => {
+    const result = await closeNoteById(noteId);
+    setEncounterMessage(
+      result.ok
+        ? `Note for ${dateLabel} closed.`
+        : `Couldn't confirm the note for ${dateLabel} closed in the cloud. ${result.error ?? ""} Try again in a moment.`,
+    );
+    return result;
   };
 
   const beginQuickTimeEdit = (appointment: ScheduleAppointmentRecord) => {
@@ -4874,8 +4906,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         (Number.isFinite(paidAmountValue) && paidAmountValue >= 0 ? paidAmountValue : 0)
       : null;
 
+  // Visits in the report's range that are Checked Out but whose note is
+  // still open — reports treat those as "Open", which surprised users who
+  // saw "Checked Out" everywhere else.
+  const reportRangeForOpenNotes = resolveReportPeriod().period?.range ?? null;
+  const checkedOutOpenNoteVisits = (() => {
+    const seen = new Set<string>();
+    const out: Array<{ noteId: string; dateLabel: string; typeLabel: string }> = [];
+    for (const row of appointmentRows) {
+      const note = row.linkedEncounter;
+      if (row.appointment?.status !== "Check Out" || !note || note.signed || seen.has(note.id)) continue;
+      if (reportRangeForOpenNotes && !isInPeriod(note.encounterDate, reportRangeForOpenNotes)) continue;
+      seen.add(note.id);
+      out.push({ noteId: note.id, dateLabel: note.encounterDate, typeLabel: row.typeLabel });
+    }
+    return out;
+  })();
+
   return (
     <div className="space-y-5">
+      {checkoutNoteDialog}
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
@@ -6434,6 +6484,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     );
                                   })}
                                 </select>
+                                {appointment.status === "Check Out" &&
+                                  linkedEncounter &&
+                                  !linkedEncounter.signed && (
+                                    <NoteOpenTag
+                                      dateLabel={linkedEncounter.encounterDate}
+                                      onClose={async () => {
+                                        await closeNoteOnly(linkedEncounter.id, linkedEncounter.encounterDate);
+                                      }}
+                                    />
+                                  )}
                                 {/* Cash patients: apply this appointment to a package
                                     (decrements that package's visits, undoable). */}
                                 {isCashPatient && (() => {
@@ -7147,6 +7207,59 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <p className="mt-2 text-sm text-[var(--text-muted)]">
               Build a long-form narrative from patient demographics, encounters, diagnoses, imaging, specialist referrals, and custom prompt inputs.
             </p>
+
+            {checkedOutOpenNoteVisits.length > 0 && (
+              <div
+                className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                data-open-note-warning
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">
+                    {checkedOutOpenNoteVisits.length} visit{checkedOutOpenNoteVisits.length === 1 ? " is" : "s are"} checked
+                    out but {checkedOutOpenNoteVisits.length === 1 ? "its note isn't" : "their notes aren't"} closed
+                  </span>
+                  <button
+                    className="text-xs font-semibold text-[var(--brand-primary)] underline"
+                    onClick={() => setShowOpenNoteVisits((v) => !v)}
+                    type="button"
+                  >
+                    {showOpenNoteVisits ? "Hide" : "Show them"}
+                  </button>
+                </div>
+                <p className="mt-0.5 text-xs">Reports list these visits as Open until the note is closed.</p>
+                {showOpenNoteVisits && (
+                  <ul className="mt-2 grid gap-1">
+                    {checkedOutOpenNoteVisits.map((visit) => (
+                      <li
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1"
+                        key={visit.noteId}
+                      >
+                        <span className="text-xs">
+                          <span className="font-semibold tabular-nums">{visit.dateLabel}</span>
+                          {visit.typeLabel ? ` · ${visit.typeLabel}` : ""}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <button
+                            className="rounded-full border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[10px] font-semibold"
+                            onClick={() => openEncounterEditor(visit.noteId)}
+                            type="button"
+                          >
+                            Open note
+                          </button>
+                          <NoteOpenTag
+                            compact
+                            dateLabel={visit.dateLabel}
+                            onClose={async () => {
+                              await closeNoteOnly(visit.noteId, visit.dateLabel);
+                            }}
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
               <label className="grid gap-1">
