@@ -1,12 +1,14 @@
 "use client";
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { askGoat, type GoatAnswerGroup, type GoatBlock, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
 import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
 import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
-import { SmartAnswerBody, SmartModeControl, Spinner, useGoatAiState, useSmartAsk, useSmartMode } from "@/components/goat-smart";
+import { CopyButton } from "@/components/copy-button";
+import { SmartWorking, useGoatAiState, useSmartAssist, useSmartMode } from "@/components/goat-smart";
+import { goatAiState as goatAiStateNow, loadGoatAi, refreshGoatAiSupport } from "@/lib/goat-ai/engine";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -265,30 +267,6 @@ function FilesStatus({ files }: { files: GoatFilesController }) {
  * data via askGoat (rule-based lookups + text search). Nothing is sent
  * anywhere; see src/lib/goat.ts.
  */
-/** Copies plain text (e.g. recommendations, ready for the Specialist box). */
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      className="shrink-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-0.5 font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(
-          () => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-          },
-          () => undefined,
-        );
-      }}
-      style={{ fontSize: 12 }}
-      title="Copy as plain text"
-      type="button"
-    >
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
-}
-
 export function GoatPanel({
   context,
   onJump,
@@ -317,26 +295,34 @@ export function GoatPanel({
   const [asked, setAsked] = useState("");
   // "Also mentioned" open/closed, per question (flipped from its default).
   const [hitsFlipped, setHitsFlipped] = useState("");
-  // Smart mode (beta, preview only): the in-browser model answers instead; normal results stay one click away.
-  const [smartOn, setSmartOn] = useSmartMode();
+  // Smart mode (beta, preview only; on/off in Settings → G.O.A.T.): the rules answer first and the
+  // in-browser model fills gaps in that same answer (e.g. reads the whole report for recommendations).
+  const [smartOn] = useSmartMode();
   const ai = useGoatAiState();
-  const smart = useSmartAsk();
-  const [showNormal, setShowNormal] = useState(false);
+  const smart = useSmartAssist();
   const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
+  useEffect(() => {
+    if (!smartOn) return;
+    void refreshGoatAiSupport().then(() => {
+      const s = goatAiStateNow();
+      if (s.status === "idle" && s.cached) void loadGoatAi().catch(() => undefined);
+    });
+  }, [smartOn]);
 
   // Recomputed from live page data, so an answer updates as the page is edited.
-  const result: GoatResult | null = useMemo(
+  const ruleResult: GoatResult | null = useMemo(
     () => (asked ? askGoat(context, asked) : null),
     [asked, context],
   );
+  // One answer: Smart mode's version of the regular answer once it's ready.
+  const result: GoatResult | null = smartActive && smart.answer && smart.question === asked ? smart.answer.result : ruleResult;
 
   const ask = (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
     setQuestion(trimmed);
     setAsked(trimmed);
-    setShowNormal(false);
-    if (smartActive) void smart.ask(context, trimmed);
+    if (smartActive) void smart.run(context, trimmed);
   };
 
   const fileResult = result?.files ?? null;
@@ -412,7 +398,6 @@ export function GoatPanel({
               Ask
             </button>
           </form>
-          <SmartModeControl on={smartOn} setOn={setSmartOn} />
 
           {!result && (
             <p className="mt-3 text-sm text-[var(--text-muted)]">
@@ -440,35 +425,16 @@ export function GoatPanel({
                 </button>
               </div>
 
-              {smartActive && (
-                <div className="rounded-xl border border-[#72bdcf] bg-white p-2.5">
-                  <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
-                    <GoatAvatar size={22} />
-                    <span>Smart answer (beta)</span>
-                    {smart.working && !smart.text && (
-                      <span className="flex items-center gap-1.5 font-normal">
-                        <Spinner /> {ai.status === "loading" ? "Getting Smart mode ready…" : "Searching…"}
-                      </span>
-                    )}
-                  </div>
-                  {smart.error ? (
-                    <p className="text-sm text-amber-800">Smart mode couldn&apos;t answer ({smart.error}). The normal results are below.</p>
-                  ) : (
-                    <SmartAnswerBody answer={smart.answer} onOpenFile={files?.openFile} text={smart.text} working={smart.working} />
-                  )}
-                  <button
-                    style={{ fontSize: 12 }}
-                    className="mt-1.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
-                    onClick={() => setShowNormal((v) => !v)}
-                    type="button"
-                  >
-                    {showNormal || smart.error ? "Hide normal G.O.A.T. results" : "Show normal G.O.A.T. results"}
-                  </button>
+              {smartActive && smart.question === asked && <SmartWorking ai={ai} status={smart.status} working={smart.working} />}
+              {smartActive && smart.question === asked && smart.working && smart.text && (
+                <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+                  <div className="text-sm font-semibold">Answer</div>
+                  <p className="mt-1 whitespace-pre-line text-sm">{smart.text}</p>
                 </div>
               )}
-
-              {(!smartActive || showNormal || Boolean(smart.error)) && (
-              <>
+              {smartActive && smart.question === asked && smart.answer?.warnings.map((w) => (
+                <p key={w} className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">{w}</p>
+              ))}
               {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
@@ -497,7 +463,17 @@ export function GoatPanel({
                     </p>
                   )}
                   <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-1.5 text-xs text-[var(--text-muted)]">
-                    <span className="min-w-0">From: {a.source}</span>
+                    <span className="min-w-0">
+                      From: {a.source}
+                      {a.fileId && files?.openFile && (
+                        <>
+                          {" "}
+                          <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => files.openFile(a.fileId!)} style={{ fontSize: 12 }} type="button">
+                            Open file
+                          </button>
+                        </>
+                      )}
+                    </span>
                     {jumpButton(a.section)}
                   </div>
                 </div>
@@ -563,8 +539,6 @@ export function GoatPanel({
                   guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
                   diagnoses, billing, notes{filesOn ? " or what a report says" : ""}.
                 </p>
-              )}
-              </>
               )}
             </div>
           )}

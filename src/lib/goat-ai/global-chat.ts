@@ -45,6 +45,8 @@ export interface ChatMessage {
   warnings?: string[];
   smart?: boolean;
   ms?: number;
+  /** Plain text for Copy (e.g. recommendations in the regular format). */
+  copy?: string;
 }
 
 export interface ChatState {

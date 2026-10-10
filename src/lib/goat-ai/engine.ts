@@ -29,6 +29,16 @@ export const GOAT_AI_LIB_BASE =
 
 export type GoatAiModel = "accurate" | "fast";
 
+/**
+ * Local test harness only (stripped from production builds): replies recorded
+ * from the same model + prompt on a machine without a GPU, so the UI can be
+ * checked end to end. Never set in the app.
+ */
+function devReplay(): ((messages: Array<{ role: string; content: string }>) => string) | null {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") return null;
+  return (window as unknown as { __goatAiReplay?: (m: Array<{ role: string; content: string }>) => string }).__goatAiReplay ?? null;
+}
+
 export const GOAT_AI_MODELS: Record<
   GoatAiModel,
   { label: string; name: string; downloadMb: number; gpuMb: number; thinking: boolean; f16: { model_id: string; model_lib: string }; f32: { model_id: string; model_lib: string } }
@@ -146,6 +156,7 @@ export async function checkGoatAiSupport(
   model: GoatAiModel = goatAiModel(),
 ): Promise<{ ok: boolean; message: string; variant: "f16" | "f32" | null; cached: boolean }> {
   if (typeof window === "undefined") return { ok: false, message: "", variant: null, cached: false };
+  if (devReplay()) return { ok: true, message: "", variant: "f16", cached: true };
   const downloadMb = GOAT_AI_MODELS[model].downloadMb;
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<{ features: Set<string> } | null> } }).gpu;
   if (!gpu) {
@@ -197,6 +208,10 @@ export async function refreshGoatAiSupport(): Promise<void> {
 /** Download (first time) or open from cache, then load onto the GPU. */
 export function loadGoatAi(): Promise<void> {
   if (engine) return Promise.resolve();
+  if (devReplay()) {
+    set({ status: "ready", progress: 1, cached: true });
+    return Promise.resolve();
+  }
   if (loading) return loading;
   loading = (async () => {
     const model = goatAiModel();
@@ -254,6 +269,14 @@ export function runGoatAi(
   opts: { maxTokens?: number } = {},
 ): Promise<GoatAiRun> {
   const job = queue.then(async () => {
+    const replay = devReplay();
+    if (replay) {
+      const t0 = performance.now();
+      await new Promise((r) => setTimeout(r, 600));
+      const text = replay(messages);
+      onText(text);
+      return { text, ms: performance.now() - t0, firstTokenMs: 300, tokens: 0 };
+    }
     await loadGoatAi();
     if (!engine) throw new Error("Smart mode isn't loaded");
     const t0 = performance.now();
@@ -287,4 +310,81 @@ export function runGoatAi(
 
 export function stopGoatAi() {
   void engine?.interruptGenerate();
+}
+
+// ---------------------------------------------------------------------------
+// Removing the downloaded model from this computer
+// ---------------------------------------------------------------------------
+
+async function usageBytes(): Promise<number> {
+  try {
+    return (await navigator.storage?.estimate?.())?.usage ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Which models are downloaded in this browser (either build). */
+export async function downloadedGoatAiModels(): Promise<GoatAiModel[]> {
+  if (typeof window === "undefined") return [];
+  if (devReplay()) return (window as unknown as { __goatAiReplayRemoved?: boolean }).__goatAiReplayRemoved ? [] : [goatAiModel()];
+  try {
+    const { hasModelInCache } = await import("@mlc-ai/web-llm");
+    const out: GoatAiModel[] = [];
+    for (const model of Object.keys(GOAT_AI_MODELS) as GoatAiModel[]) {
+      for (const variant of ["f16", "f32"] as const) {
+        if (await hasModelInCache(GOAT_AI_MODELS[model][variant].model_id, appConfig(model, variant)).catch(() => false)) {
+          out.push(model);
+          break;
+        }
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Delete every Smart mode model file from this browser (weights, runtime,
+ * config: Cache Storage and IndexedDB entries) and unload it. Returns the MB
+ * freed (from the browser's storage estimate; the model sizes when the
+ * browser doesn't report it).
+ */
+export async function removeGoatAiModels(): Promise<{ freedMb: number; removed: GoatAiModel[] }> {
+  const removed = await downloadedGoatAiModels();
+  if (devReplay()) (window as unknown as { __goatAiReplayRemoved?: boolean }).__goatAiReplayRemoved = true;
+  const before = await usageBytes();
+  void engine?.unload().catch(() => undefined);
+  engine = null;
+  worker?.terminate();
+  worker = null;
+  loading = null;
+  try {
+    const { deleteModelAllInfoInCache } = await import("@mlc-ai/web-llm");
+    for (const model of Object.keys(GOAT_AI_MODELS) as GoatAiModel[]) {
+      for (const variant of ["f16", "f32"] as const) {
+        await deleteModelAllInfoInCache(GOAT_AI_MODELS[model][variant].model_id, appConfig(model, variant)).catch(() => undefined);
+      }
+    }
+  } catch {
+    // fall through to the cache sweep
+  }
+  // Anything left under WebLLM's cache names.
+  try {
+    for (const name of await caches.keys()) if (/webllm|mlc/i.test(name)) await caches.delete(name);
+  } catch {
+    // Cache Storage unavailable
+  }
+  try {
+    const dbs = await (indexedDB as IDBFactory & { databases?: () => Promise<Array<{ name?: string }>> }).databases?.();
+    for (const db of dbs ?? []) if (db.name && /webllm|mlc/i.test(db.name)) indexedDB.deleteDatabase(db.name);
+  } catch {
+    // IndexedDB listing unsupported
+  }
+  const after = await usageBytes();
+  const measured = Math.max(0, Math.round((before - after) / (1024 * 1024)));
+  const freedMb = measured || removed.reduce((n, m) => n + GOAT_AI_MODELS[m].downloadMb, 0);
+  set({ status: "idle", progress: 0, progressText: "", message: "", cached: false });
+  return { freedMb, removed };
 }

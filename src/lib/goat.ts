@@ -178,6 +178,8 @@ export interface GoatAnswer {
   flag?: string;
   /** Plain text for the Copy button (e.g. recommendations, ready for the Specialist box). */
   copyText?: string;
+  /** The Patient File it was read from (opens from the answer). */
+  fileId?: string;
 }
 
 export interface GoatHit {

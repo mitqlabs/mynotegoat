@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { GoatSettingsPanel } from "@/components/goat-settings-panel";
 import { GoatAnswerPrefsPanel } from "@/components/goat-answer-prefs-panel";
+import { GoatSmartSettings } from "@/components/goat-smart-settings";
 import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 export default function GoatSettingsPage() {
@@ -22,6 +23,15 @@ export default function GoatSettingsPage() {
           <GoatSettingsPanel />
         </div>
       </section>
+      {GOAT_SMART_AVAILABLE && (
+        <section className="panel-card p-4">
+          <h3 className="text-xl font-semibold">Smart mode (beta)</h3>
+          <p className="text-sm text-[var(--text-muted)]">Turned on per computer: the model is downloaded to, and runs on, this computer only.</p>
+          <div className="mt-3">
+            <GoatSmartSettings />
+          </div>
+        </section>
+      )}
       {GOAT_SMART_AVAILABLE && (
         <section className="panel-card p-4">
           <h3 className="text-xl font-semibold">Smart mode answers (beta)</h3>

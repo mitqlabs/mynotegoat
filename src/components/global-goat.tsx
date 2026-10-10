@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { patients as patientList, type PatientRecord } from "@/lib/mock-data";
 import { askGoat, type GoatContext, type GoatResult } from "@/lib/goat";
 import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
-import { answerSmart } from "@/lib/goat-ai/answer";
+import { assistGoat } from "@/lib/goat-ai/assist";
 import {
   choiceLabel,
   clearChat,
@@ -22,7 +22,8 @@ import {
 import { useGoatPatientContext } from "@/hooks/use-goat-patient-context";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
-import { SmartModeControl, Spinner, useGoatAiState, useSmartMode } from "@/components/goat-smart";
+import { Spinner, useGoatAiState, useSmartMode } from "@/components/goat-smart";
+import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 
 // ---------------------------------------------------------------------------
@@ -70,14 +71,15 @@ export function GlobalGoatButton({ compact = false, className = "" }: { compact?
 // Answers as chat text
 // ---------------------------------------------------------------------------
 
-function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "quotes" | "warnings"> {
+function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "quotes" | "warnings" | "copy"> {
   const parts: string[] = [];
   for (const a of result.answers) {
     const lines = [...a.lines];
     for (const g of a.groups ?? []) {
       lines.push(g.lead);
       for (const b of g.blocks) {
-        if (b.heading) lines.push(`${b.heading}:`);
+        // Plain headings ("Cervical", "Alternatives") stay as written, like the copied text.
+        if (b.heading) lines.push(b.plain ? `${lines.length ? "\n" : ""}${b.heading}` : `${b.heading}:`);
         lines.push(...b.items.map((i) => `- ${i}`));
       }
     }
@@ -88,7 +90,9 @@ function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "qu
   );
   if (!parts.length && quotes.length) parts.push(result.files?.title ? `${result.files.title}:` : "From the patient's files:");
   if (!parts.length && result.hits.length) parts.push(...result.hits.slice(0, 3).map((h) => `${h.kind} · ${h.title}: ${h.snippet}`));
+  const copy = result.answers.find((a) => a.copyText)?.copyText;
   return {
+    copy,
     text: parts.join("\n\n") || "I couldn't find that in this patient's file. I only read what's there and I won't guess.",
     quotes,
     warnings: result.files?.notes.length ? result.files.notes.slice(0, 2) : undefined,
@@ -126,7 +130,7 @@ interface AnswererProps {
   job: Job;
   smart: boolean;
   onPartial: (text: string) => void;
-  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart">) => void;
+  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart" | "copy">) => void;
 }
 
 function PatientAnswerer(props: AnswererProps) {
@@ -165,18 +169,11 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       const ctx = ctxRef.current;
       if (smart) {
         try {
-          const a = await answerSmart({ context: ctx, question: job.question, prefs, previous: job.previous, onText: onPartial });
-          const warnings = [
-            ...a.check.mismatches.map((m) => `Double-check: ${m}`),
-            ...(a.check.unverified.length ? [`Couldn't find ${a.check.unverified.map((n) => `"${n}"`).join(", ")} in the sources. Check before using.`] : []),
-          ];
-          onDone({
-            text: a.text,
-            quotes: a.check.supports.map((s) => ({ title: s.title, page: s.page, quote: s.quote })),
-            warnings: warnings.length ? warnings : undefined,
-            ms: a.ms,
-            smart: !a.skipped,
-          });
+          // Rules first; Smart mode fills gaps in that same answer (one answer, regular format).
+          const a = await assistGoat({ context: ctx, question: job.question, prefs, previous: job.previous, onText: onPartial, onStatus: onPartial });
+          const r = ruleAnswerToMessage(a.result);
+          const warnings = [...(r.warnings ?? []), ...a.warnings].slice(0, 3);
+          onDone({ ...r, warnings: warnings.length ? warnings : undefined, ms: a.ms, smart: a.smartUsed });
           return;
         } catch {
           // fall through to normal G.O.A.T.
@@ -215,7 +212,7 @@ export function GlobalGoatPopup({
     setJobState(j);
   }, []);
   const [partial, setPartial] = useState("");
-  const [smartOn, setSmartOn] = useSmartMode();
+  const [smartOn] = useSmartMode();
   const { prefs: answerPrefs } = useGoatAnswerPrefs();
   const ai = useGoatAiState();
   const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
@@ -300,7 +297,7 @@ export function GlobalGoatPopup({
 
   // Plain functions: they only touch refs and functional state updates, so a stale copy is fine.
   const onPartial = (t: string) => setPartial(t);
-  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart">) => {
+  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart" | "copy">) => {
     const j = jobRef.current;
     if (j) {
       const p = findPatient(patientsOverride, j.patientId);
@@ -368,8 +365,8 @@ export function GlobalGoatPopup({
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
                 <p className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
-                  Hi! Ask me about a patient, like &ldquo;what did Dr. Armen recommend for John Smith?&rdquo; I only read NoteGoat, right here on
-                  this computer. Nothing is sent anywhere.
+                  Hi! Ask me anything about a patient.
+                  <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Everything stays in NoteGoat.</span>
                 </p>
               </div>
             )}
@@ -429,7 +426,10 @@ export function GlobalGoatPopup({
                     )}
                     {m.patientId && (
                       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                        <span>{m.smart ? "Smart answer (beta) · check the sources" : "From NoteGoat"}</span>
+                        <span className="flex items-center gap-2">
+                          {m.smart ? "Smart mode helped · check the sources" : "From NoteGoat"}
+                          {m.copy && <CopyButton text={m.copy} />}
+                        </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
                           Open patient file ↗
                         </Link>
@@ -471,14 +471,13 @@ export function GlobalGoatPopup({
                 aria-label="Ask G.O.A.T."
                 className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={current ? `Ask about ${displayName(current.fullName)}…` : "Ask about a patient…"}
+                placeholder="Ask about a patient…"
                 value={input}
               />
               <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job)} type="submit">
                 Ask
               </button>
             </form>
-            <SmartModeControl on={smartOn} setOn={setSmartOn} />
           </div>
         </section>
       )}

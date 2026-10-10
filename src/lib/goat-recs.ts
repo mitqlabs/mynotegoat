@@ -472,7 +472,7 @@ export function recommendationBlocksFrom(recs: Recommendations, opts: RecFormatO
   if (opts.showCosts !== false && recs.costs.length) {
     // Same order as above: regions, then alternatives, then anything else.
     const rank = (c: RecCost) => {
-      const r = blocks.findIndex((b) => b.heading === c.owner || (c.region !== undefined && b.heading === c.region));
+      const r = blocks.findIndex((b) => b.heading === c.owner || (c.region !== undefined && b.heading === c.region) || c.owner.startsWith(`${b.heading} (`));
       if (r >= 0) return r;
       const a = recs.alternatives.findIndex((x) => x.label === c.owner);
       return a >= 0 ? 100 + a : 200;
