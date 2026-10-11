@@ -30,6 +30,7 @@ import {
   type RegionQuery,
   type RegionSection,
 } from "@/lib/goat-regions";
+import { mvaRoleAnswer } from "@/lib/goat-mva";
 
 // ---------------------------------------------------------------------------
 // Input
@@ -1140,7 +1141,10 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     push(caseAnswer(ctx));
   }
   if (has(tokens, ["phone", "email", "address", "contact", "call", "dob", "birth", "birthday", "age", "old"])) push(contactAnswer(ctx, today));
-  if (has(tokens, ["note", "notes"])) push(notesAnswer(ctx));
+  // "Was the patient the driver or passenger?", seat belt, pedestrian…
+  const mva = mvaRoleAnswer(ctx, question);
+  if (mva) push(mva);
+  if (has(tokens, ["note", "notes"]) && !mva) push(notesAnswer(ctx));
   if (has(tokens, ["prior", "before", "history"])) push(priorCareAnswer(ctx));
 
   // Search terms: each asked group as one unit (any synonym counts), plus the
