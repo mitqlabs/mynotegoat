@@ -31,6 +31,7 @@ import {
   type RegionSection,
 } from "@/lib/goat-regions";
 import { mvaRoleAnswer } from "@/lib/goat-mva";
+import type { RecFormatOptions } from "@/lib/goat-recs";
 
 // ---------------------------------------------------------------------------
 // Input
@@ -142,6 +143,8 @@ export interface GoatContext {
   people?: GoatPerson[];
   /** Uploaded Patient Files with their text once read; null = hidden for this member; undefined = not available here. */
   files?: GoatFile[] | null;
+  /** How recommendations are written (Settings → G.O.A.T.: Show costs / fees, Region order). */
+  recFormat?: RecFormatOptions;
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1103,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
   let recsShown = false;
   if (asksRecs && ctx.files && ctx.files.length) {
     const words = [...new Set(tokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !STEERING.has(t)))];
-    const rec = recommendationsFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq });
+    const rec = recommendationsFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq }, ctx.recFormat);
     if (rec) {
       if (rec.file && rec.blocks.length) {
         romShown = true; // structured answer first, raw file lines after

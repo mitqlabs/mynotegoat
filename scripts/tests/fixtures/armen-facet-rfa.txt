@@ -1,0 +1,80 @@
+Armen Haroutunian MD, INC.
+Patient: John Sample DOB: 02/02/1960 Sex: M
+Provider: Dr. Armen Haroutunian, M.D. Visit: 09/20/2026 09:30AM Chart: SAMPLE000002
+Office: Sample Office Address: 100 Sample Avenue, Suite 1, Sample City, CA,
+90000-0000
+[Page 1 of 4] E-signed by Dr. Armen Haroutunian, M.D. on 09/22/2026 1:10PM PST
+This page was generated at 09/22/2026 1:10PM PST
+Chief Complaint: Neck and low back pain sp MVA
+Follow-up Visit
+John Sample is a sample patient with axial neck pain and axial low back pain following a motor vehicle
+accident. Pain is worse with extension and rotation. Prior epidural injection provided partial relief.
+Imaging
+MRI C-SPINE – Aug 01, 2026
+IMPRESSION:
+C3-C4 and C4-C5: Facet arthropathy without central canal stenosis.
+MRI L-SPINE – Aug 01, 2026
+IMPRESSION:
+L4-L5 and L5-S1: Bilateral facet hypertrophy.
+Armen Haroutunian MD, INC.
+Patient: John Sample DOB: 02/02/1960 Sex: M
+Provider: Dr. Armen Haroutunian, M.D. Visit: 09/20/2026 09:30AM Chart: SAMPLE000002
+Office: Sample Office Address: 100 Sample Avenue, Suite 1, Sample City, CA,
+90000-0000
+[Page 2 of 4] E-signed by Dr. Armen Haroutunian, M.D. on 09/22/2026 1:10PM PST
+This page was generated at 09/22/2026 1:10PM PST
+Physical Exam:
+Cervical: Facet loading is positive bilaterally. Tenderness over the cervical facet joints.
+Lumbar: Facet loading is positive bilaterally. Straight leg raise is negative.
+Assessment:
+John Sample has cervical facet syndrome and lumbar facet syndrome following motor vehicle accident.
+Benefits and alternatives to procedures were discussed as well. All questions were answered.
+Plan/Orders:
+1. Planned intervention:
+-For the patients cervical facet syndrome: Recommend Diagnostic cervical facet medial branch blocks from C3-C5.
+The cost of fluoroscopic guided diagnostic cervical facet medial branch block is approximately $10,000.
+If the diagnostic injection provides >80% relief, then a thermal radiofrequency ablation ensues with a cost estimate of
+approximately $15,000. If performed at an accredited surgical center, the facility fee is between $15,000-20,000.
+-For the patients lumbar facet syndrome: Recommend Diagnostic lumbar facet medial branch blocks from L4-S1.
+Armen Haroutunian MD, INC.
+Patient: John Sample DOB: 02/02/1960 Sex: M
+Provider: Dr. Armen Haroutunian, M.D. Visit: 09/20/2026 09:30AM Chart: SAMPLE000002
+Office: Sample Office Address: 100 Sample Avenue, Suite 1, Sample City, CA,
+90000-0000
+[Page 3 of 4] E-signed by Dr. Armen Haroutunian, M.D. on 09/22/2026 1:10PM PST
+This page was generated at 09/22/2026 1:10PM PST
+The cost of fluoroscopic guided diagnostic lumbar facet medial branch block is approximately $10,000.
+If the diagnostic injection provides >80% relief, then a thermal radiofrequency ablation ensues with a cost estimate of
+approximately $15,000. If performed at an accredited surgical center, the facility fee is between $15,000-20,000.
+-As an alternative to injection therapy, the patient is also a candidate for 4 sessions of cervical and 4 sessions of
+lumbar Biowave percutaneous electrical nerve stimulation (PENS) for amplified pain. Treatment sessions are 30 minutes
+each, for a total of 4 treatment sessions per area. Medical expenses are $1500 per treatment session.
+-As an alternative to pain management procedures, Intermittent Disc Decompression (IDD) therapy was discussed in
+detail with the patient as a conservative approach in the management of the spinal injuries. The protocol treatment
+includes 20 sessions of 30 minutes each over the course of six weeks. The estimated cost is $15,000.
+2. Medications
+Methocarbamol 500 mg tablet One tablet TID
+3. Imaging
+None
+4. Referrals
+None
+5. Follow up
+2-4 weeks
+Thank you for allowing me to participate in the care of your patient. Please do not hesitate to reach out to me with
+any questions.
+Sincerely,
+Armen Haroutunian, M.D. , Q.M.E
+Anesthesiology and Interventional Pain Management
+Armen Haroutunian MD, INC.
+Patient: John Sample DOB: 02/02/1960 Sex: M
+Provider: Dr. Armen Haroutunian, M.D. Visit: 09/20/2026 09:30AM Chart: SAMPLE000002
+Office: Sample Office Address: 100 Sample Avenue, Suite 1, Sample City, CA,
+90000-0000
+[Page 4 of 4] E-signed by Dr. Armen Haroutunian, M.D. on 09/22/2026 1:10PM PST
+This page was generated at 09/22/2026 1:10PM PST
+Type Code Description
+ICD-10-CM Condition M47.812 Spondylosis without myelopathy or radiculopathy, cervical region
+ICD-10-CM Condition M47.816 Spondylosis without myelopathy or radiculopathy, lumbar region
+Medications Prescribed SIG PRN? Indication
+methocarbamol 500 mg tablet One tablet TID
+PRN No
