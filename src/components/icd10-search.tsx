@@ -1,6 +1,7 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
+import { DxSaveToListPanel, type DxSaveToListConfig } from "@/components/dx-save-to-list";
 import {
   ICD10_VERSION,
   buildLocalIndex,
@@ -31,6 +32,7 @@ export function Icd10Search({
   localLabel = "Your codes",
   maxResults = 30,
   ariaLabel,
+  saveToList,
 }: {
   /** Return false to signal the add didn't happen (e.g. duplicate). */
   onPick: (entry: Icd10Code, fromYourCodes: boolean) => boolean | void;
@@ -45,7 +47,13 @@ export function Icd10Search({
   localLabel?: string;
   maxResults?: number;
   ariaLabel?: string;
+  /**
+   * Adds a "+ Dx Code" button to ICD-10 rows (codes not in Your codes) that
+   * saves the code to the office's list via a small panel. Patient box only.
+   */
+  saveToList?: DxSaveToListConfig;
 }) {
+  const [savingCode, setSavingCode] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState<Icd10Index | null>(() => icd10IfLoaded());
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -84,6 +92,56 @@ export function Icd10Search({
 
   const row = (key: string, code: string, description: string, fromYourCodes: boolean, group?: string) => {
     const added = isAdded(code);
+    const canSave = Boolean(saveToList) && !fromYourCodes;
+    const saving = canSave && savingCode !== null && sameCode(savingCode, code);
+    const addButton = (
+      <button
+        className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ${
+          added
+            ? "cursor-default border border-[var(--line-soft)] text-[var(--text-muted)]"
+            : "bg-[var(--brand-primary)] text-white transition-all active:scale-[0.97]"
+        }`}
+        disabled={added}
+        onClick={() => onPick({ code, description }, fromYourCodes)}
+        type="button"
+      >
+        {added ? addedLabel : actionLabel}
+      </button>
+    );
+    if (canSave && saveToList) {
+      return (
+        <Fragment key={key}>
+          <div
+            className={`flex items-start gap-2 px-3 py-1.5 hover:bg-[var(--bg-soft)] ${saving ? "bg-[var(--bg-soft)]" : "border-b border-[var(--line-soft)] last:border-b-0"}`}
+          >
+            <span className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{code}</span>
+            <span className="min-w-0 flex-1 text-sm leading-snug">{description}</span>
+            <span className="flex shrink-0 flex-col items-stretch gap-1 @[26rem]:flex-row @[26rem]:items-start">
+              <button
+                aria-expanded={saving}
+                aria-label={`Save ${code} to your diagnosis codes`}
+                className={`whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-semibold transition-all active:scale-[0.97] ${
+                  saving
+                    ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]"
+                    : "border-[var(--brand-primary)]/50 bg-white text-[var(--brand-primary)]"
+                }`}
+                onClick={() => setSavingCode(saving ? null : code)}
+                title="Save to your diagnosis codes (doesn't add it to this patient)"
+                type="button"
+              >
+                {saveToList.buttonLabel ?? "+ Dx Code"}
+              </button>
+              {addButton}
+            </span>
+          </div>
+          {saving && (
+            <div className="border-b border-[var(--line-soft)] bg-[var(--bg-soft)] last:border-b-0">
+              <DxSaveToListPanel config={saveToList} entry={{ code, description }} onClose={() => setSavingCode(null)} />
+            </div>
+          )}
+        </Fragment>
+      );
+    }
     return (
       <div
         className="flex items-start gap-3 border-b border-[var(--line-soft)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--bg-soft)]"
@@ -98,18 +156,7 @@ export function Icd10Search({
             </span>
           )}
         </span>
-        <button
-          className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ${
-            added
-              ? "cursor-default border border-[var(--line-soft)] text-[var(--text-muted)]"
-              : "bg-[var(--brand-primary)] text-white transition-all active:scale-[0.97]"
-          }`}
-          disabled={added}
-          onClick={() => onPick({ code, description }, fromYourCodes)}
-          type="button"
-        >
-          {added ? addedLabel : actionLabel}
-        </button>
+        {addButton}
       </div>
     );
   };
@@ -137,6 +184,7 @@ export function Icd10Search({
         onChange={(event) => {
           ensureLoaded();
           setQuery(event.target.value);
+          setSavingCode(null);
         }}
         onFocus={ensureLoaded}
         onKeyDown={(event) => {
@@ -151,7 +199,7 @@ export function Icd10Search({
         value={query}
       />
       {q && (
-        <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
+        <div className="@container max-h-80 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
           {localCodes && results.local.length > 0 && (
             <>
               {heading(localLabel, `${results.local.length} match${results.local.length === 1 ? "" : "es"}`)}

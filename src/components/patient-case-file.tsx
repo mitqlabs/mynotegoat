@@ -28,6 +28,8 @@ import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { Icd10Search } from "@/components/icd10-search";
 import { sameCode } from "@/lib/icd10";
 import { DxSuggestions } from "@/components/dx-suggestions";
+import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
+import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
@@ -1357,6 +1359,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
+    updateDiagnosis: updateLibraryDiagnosis,
     updateBundle: updateLibraryBundle,
   } = useBillingMacros();
   const { contacts, addContact } = useContactDirectory();
@@ -2668,6 +2671,35 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const hasMriText = input.imaging.length > 0 || (goatContext.files ?? []).some((f) => f.status === "read");
     return { ...suggestDiagnosesDetailed(input), hasMriText };
   }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses]);
+  // "+ Dx Code" on ICD-10 search rows: save the code to the office's list
+  // (folder + optional bundles, same as Settings → Add a code). Doesn't add it
+  // to the patient; the row then shows under "Your codes" with its folder.
+  const dxSaveToList = useMemo<DxSaveToListConfig>(
+    () => ({
+      folders: billingMacros.diagnosisFolders,
+      bundles: billingMacros.bundles.filter((b) => b.active),
+      guessFolderId: (entry) => guessDiagnosisFolderId(entry.code, entry.description, billingMacros.diagnosisFolders),
+      onSave: (entry, folderId, bundleIds) => {
+        const result = saveCodeToDiagnosisList(
+          {
+            diagnoses: billingMacros.diagnoses,
+            bundles: billingMacros.bundles,
+            folders: billingMacros.diagnosisFolders,
+            addDiagnosis: addLibraryDiagnosis,
+            updateDiagnosis: updateLibraryDiagnosis,
+            updateBundle: updateLibraryBundle,
+          },
+          entry,
+          folderId,
+          bundleIds,
+        );
+        if (!result.ok) return result.error;
+        setDiagnosisMessage(result.message);
+        return null;
+      },
+    }),
+    [billingMacros, addLibraryDiagnosis, updateLibraryDiagnosis, updateLibraryBundle],
+  );
   const addDiagnosisWithMessage = useCallback(
     (code: string, description: string, source: string) => {
       // Check against what's on screen: addDiagnosis's return value comes from a
@@ -7010,6 +7042,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     addDiagnosisWithMessage(entry.code, entry.description, fromYourCodes ? "Diagnosis Macro" : "ICD-10 search")
                   }
                   placeholder="Code or words (headache, lumbar stenosis)…"
+                  saveToList={dxSaveToList}
                 />
                 <div className="mt-3 flex items-center gap-2 border-t border-[var(--line-soft)] pt-3">
                   <label className="shrink-0 text-sm font-semibold" htmlFor="dx-bundle-select">
