@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { GoatSettingsPanel } from "@/components/goat-settings-panel";
+import { GoatAnswerPrefsPanel } from "@/components/goat-answer-prefs-panel";
+import { GoatSmartSettings } from "@/components/goat-smart-settings";
+import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 export default function GoatSettingsPage() {
   return (
@@ -11,6 +14,24 @@ export default function GoatSettingsPage() {
           ← Settings
         </Link>
       </div>
+      <section className="panel-card p-4">
+        <h3 className="text-xl font-semibold">G.O.A.T. answers</h3>
+        <p className="text-sm text-[var(--text-muted)]">How G.O.A.T. writes recommendations, on screen and when you Copy. Shared by everyone in the office.</p>
+        <div className="mt-3">
+          <GoatAnswerPrefsPanel />
+        </div>
+      </section>
+      {GOAT_SMART_AVAILABLE && (
+        <section className="panel-card p-4">
+          <h3 className="text-xl font-semibold">+ mode</h3>
+          <p className="text-sm text-[var(--text-muted)]">
+            A private AI that runs only on this computer and fills in what G.O.A.T.&apos;s rules miss. Set per computer. Off until you turn it on.
+          </p>
+          <div className="mt-3">
+            <GoatSmartSettings />
+          </div>
+        </section>
+      )}
       <section className="panel-card p-4">
         <h3 className="text-xl font-semibold">G.O.A.T. words &amp; abbreviations</h3>
         <p className="text-sm text-[var(--text-muted)]">

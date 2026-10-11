@@ -17,6 +17,7 @@
  */
 
 import type { PortalFeature } from "@/lib/plan-access";
+import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 /** Who a chapter is for. "all" = anyone who can sign in. */
 export type HandbookAudience = "all" | "manager" | "admin";
@@ -653,7 +654,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "The × on a macro chip removes that macro's text and any charges it added.",
         ],
         watchOut:
-          "If a decompression prompt asks '…for the rest of this plan?', saying Yes changes the treatment plan for visits not charted yet — notes already written, closed or checked out are never changed. Say No for a one-day change.",
+          "If a decompression prompt asks '…for the rest of this plan?', saying Yes changes the treatment plan for visits not charted yet, and also updates the Plan of later OPEN notes that still read exactly what the plan filled in (the prompt names them, e.g. 'Also updates 2 open notes (10/15, 10/22).'). A note you edited by hand is named too and left alone, and closed notes and checked-out visits are never changed. Say No for a one-day change.",
       },
       {
         heading: "Finish the visit",
@@ -783,11 +784,10 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "Use the plan in a note",
         steps: [
-          "In the encounter, go to the Plan tab.",
-          "Press Apply <Weekday> Treatment Plan.",
-          "The Plan section and the charges are rebuilt from the plan for that weekday.",
+          "Open the encounter. If its Plan section is empty and a plan covers that date, the Plan and its charges fill in from that weekday's plan automatically.",
+          "To fill many visits at once, use Fill Treatment Plan.",
         ],
-        watchOut: "Applying replaces whatever is already in the Plan section — it does not add to it.",
+        watchOut: "A Plan that already has text is never replaced automatically. Edit it in the note, or change the plan and say Yes to '…for the rest of this plan?' to update open notes you haven't edited.",
       },
     ],
   },
@@ -802,7 +802,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "How charges land on a note",
         steps: [
           "Usually automatically: picking certain macro answers adds the matching charge, and un-picking removes it.",
-          "From the treatment plan, when you apply a weekday or use Fill Treatment Plan.",
+          "From the treatment plan, when a note opens with an empty Plan or you use Fill Treatment Plan.",
           "By hand: Encounter Charges → Open Charges → search by name or CPT → click the treatment.",
           "From the last visit: Copy Charges From Prior.",
         ],
@@ -885,4 +885,43 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       },
     ],
   },
+  // Hidden only if + mode is switched off for everyone (NEXT_PUBLIC_GOAT_PLUS_DISABLED).
+  ...(GOAT_SMART_AVAILABLE
+    ? [
+        {
+          id: "goat-plus",
+          title: "G.O.A.T. + mode",
+          summary: "G.O.A.T. with a private AI that runs on your own computer and fills in what G.O.A.T.'s rules miss. Off until you turn it on.",
+          audience: "all" as const,
+          tasks: [
+            {
+              heading: "Turn + mode on (once per computer)",
+              steps: [
+                "The first time you open G.O.A.T. on a computer, it asks: \"Unlock G.O.A.T.'s full potential: turn on + mode?\" Click Turn on, or Not now.",
+                "Or go to Settings → G.O.A.T. and turn on \"+ mode on this computer\" (you can pick More accurate, about 2.3 GB, or Smaller and faster, about 880 MB).",
+                "The model downloads once and stays on this computer. The G.O.A.T. header shows \"Getting + mode ready…\" with the percent while it loads.",
+              ],
+              why: "The model runs inside this browser on this computer. Questions, patient information and answers are never sent anywhere, so each computer downloads its own copy. Nothing of + mode loads until you turn it on.",
+              watchOut: "It needs a recent Chrome or Edge on a computer with a graphics chip. If it can't run, G.O.A.T. tells you and keeps working the regular way.",
+            },
+            {
+              heading: "What changes in answers",
+              steps: [
+                "Ask G.O.A.T. as usual on the patient page, in Encounters, or from the G.O.A.T. button in the sidebar.",
+                "You still get one answer. G.O.A.T.'s rules answer first (visits, dates, plan, billing…); + mode only fills gaps. For recommendations it reads the doctor's whole report and adds anything the rules missed.",
+                "Check the answer against the report (\"read in full by + mode\" and Open file under the answer), then click Copy to paste it into the Specialist box.",
+              ],
+              watchOut: "+ mode can still miss or misread something. Items it can't find written in the report are left out and flagged, but always check before you rely on it.",
+            },
+            {
+              heading: "Turn it off or free up space",
+              steps: [
+                "Go to Settings → G.O.A.T. and turn + mode off. It asks whether to also remove the downloaded model from this computer.",
+                "Or click Remove downloaded model, then Remove, to delete it. G.O.A.T. shows how much space was freed.",
+              ],
+            },
+          ],
+        },
+      ]
+    : []),
 ];
