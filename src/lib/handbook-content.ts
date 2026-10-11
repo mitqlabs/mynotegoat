@@ -17,6 +17,7 @@
  */
 
 import type { PortalFeature } from "@/lib/plan-access";
+import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 /** Who a chapter is for. "all" = anyone who can sign in. */
 export type HandbookAudience = "all" | "manager" | "admin";
@@ -884,4 +885,43 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       },
     ],
   },
+  // Hidden only if + mode is switched off for everyone (NEXT_PUBLIC_GOAT_PLUS_DISABLED).
+  ...(GOAT_SMART_AVAILABLE
+    ? [
+        {
+          id: "goat-plus",
+          title: "G.O.A.T. + mode",
+          summary: "G.O.A.T. with a private AI that runs on your own computer and fills in what G.O.A.T.'s rules miss. Off until you turn it on.",
+          audience: "all" as const,
+          tasks: [
+            {
+              heading: "Turn + mode on (once per computer)",
+              steps: [
+                "The first time you open G.O.A.T. on a computer, it asks: \"Unlock G.O.A.T.'s full potential: turn on + mode?\" Click Turn on, or Not now.",
+                "Or go to Settings → G.O.A.T. and turn on \"+ mode on this computer\" (you can pick More accurate, about 2.3 GB, or Smaller and faster, about 880 MB).",
+                "The model downloads once and stays on this computer. The G.O.A.T. header shows \"Getting + mode ready…\" with the percent while it loads.",
+              ],
+              why: "The model runs inside this browser on this computer. Questions, patient information and answers are never sent anywhere, so each computer downloads its own copy. Nothing of + mode loads until you turn it on.",
+              watchOut: "It needs a recent Chrome or Edge on a computer with a graphics chip. If it can't run, G.O.A.T. tells you and keeps working the regular way.",
+            },
+            {
+              heading: "What changes in answers",
+              steps: [
+                "Ask G.O.A.T. as usual on the patient page, in Encounters, or from the G.O.A.T. button in the sidebar.",
+                "You still get one answer. G.O.A.T.'s rules answer first (visits, dates, plan, billing…); + mode only fills gaps. For recommendations it reads the doctor's whole report and adds anything the rules missed.",
+                "Check the answer against the report (\"read in full by + mode\" and Open file under the answer), then click Copy to paste it into the Specialist box.",
+              ],
+              watchOut: "+ mode can still miss or misread something. Items it can't find written in the report are left out and flagged, but always check before you rely on it.",
+            },
+            {
+              heading: "Turn it off or free up space",
+              steps: [
+                "Go to Settings → G.O.A.T. and turn + mode off. It asks whether to also remove the downloaded model from this computer.",
+                "Or click Remove downloaded model, then Remove, to delete it. G.O.A.T. shows how much space was freed.",
+              ],
+            },
+          ],
+        },
+      ]
+    : []),
 ];

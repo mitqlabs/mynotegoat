@@ -28,6 +28,8 @@ export interface RecItem {
   text: string;
   /** The sentence it was read from. */
   quote: string;
+  /** Name its fees go under ("Cervical (thermal radiofrequency ablation)"); otherwise worked out from the text. */
+  costLabel?: string;
 }
 
 export interface RecAlternative {
@@ -82,6 +84,24 @@ const SIGNATURE_RE = /\s*(?:\b[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z'-]+)+,?\
 const END_RE = /\b(electronically signed|(?<![-\w])signed by|dictated by|cc:|this report was|thank you for (?:the|this) referral|thank you for (?:allowing|letting) me|please do not hesitate|sincerely)\b/i;
 /** "[Page 5 of 6] E-signed by …", "Page 2 of 6", "This page was generated at …": printed on every page. */
 const PAGE_MARK_RE = /^\s*(?:\[?\s*page\s+\d+\s+(?:of|\/)\s+\d+\s*\]?|this page was (?:generated|printed|created)\b)/i;
+
+/**
+ * A follow-on treatment that depends on the first one working:
+ * "If the diagnostic injection provides >80% relief, then a thermal radiofrequency ablation ensues with a cost estimate of …".
+ * The condition has to be about the result (relief / response / improvement …), so
+ * "If performed in a surgical center then fees are …" is not one.
+ */
+const CONDITIONAL_RE =
+  /^(?:if|should|once|when)\s+(?:the\s+)?([^,]{3,120}?\b(?:relief|response|responds?|improvement|improves?|benefit|positive|successful|effective|helps?|fails?|failed)\b[^,]{0,60}?)\s*,\s*(?:then\s+)?(?:(?:we|i)\s+(?:would|will|can|may|could)\s+(?:recommend|proceed with|consider|perform|schedule)\s+|(?:the patient|patient|he|she|they)\s+(?:would|will|may|could|can)\s+(?:be (?:a )?candidates? for|undergo|proceed with|receive|need)\s+|(?:i |we )?recommend\s+)?(?:a|an|the)?\s*(.+)$/i;
+/** Where the procedure's name ends in that sentence ("… ablation ensues with a cost estimate …" → "… ablation"). */
+const CONDITIONAL_END_RE =
+  /\s+(?:ensues|follows|will|would|can|may|could|should|is|are|to be|was|were|be|with (?:a|an)?\s*(?:estimated )?(?:cost|fee|price)|at (?:a|an)?\s*(?:estimated )?(?:cost|fee)|for (?:a|an)?\s*(?:estimated )?(?:cost|fee)|costing)\b|\s*[,;]|\.\s*$/i;
+/** Never a recommendation: "No specific intervention mentioned.", "Not documented.", "N/A". */
+const FILLER_RE =
+  /^(?:(?:no|none)\b.{0,60}\b(?:mentioned|specified|noted|documented|indicated|stated|given|provided|listed|found|available)|not (?:mentioned|specified|documented|stated|provided|available)|n\/a|unknown|unspecified)\b[.\s]*$/i;
+/** "Medications Prescribed  SIG  PRN?  Indication": the prescription table EMRs print after the signature. */
+const PRESCRIBED_HEAD_RE = /^\s*(?:medications?|meds|prescriptions?)\s+(?:prescribed|ordered|e-?prescribed)\b/i;
+const DRUG_LINE_RE = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|%|units?)\b|\b(?:tablets?|tabs?|capsules?|caps|cream|gel|patch|ointment|solution)\b/i;
 
 const SMALL_WORDS = new Set(["and", "or", "of", "to", "the", "for", "in", "on", "a", "an", "with"]);
 
@@ -280,6 +300,7 @@ function cleanIntervention(s: string): string {
 function shortName(text: string): string {
   return text
     .replace(/\.$/, "")
+    .replace(/\s*\([^)]*\)/g, "")
     .split(/\s+(?:of|targeting|with|to|at|in|for|under)\s+|,/)[0]
     .trim();
 }
@@ -309,10 +330,51 @@ function altParts(s: string, carriedLabel: string): { label: string; text: strin
  */
 export function extractRecommendations(reportText: string): Recommendations {
   const fromPlan = readRecommendations(planSection(reportText));
-  if (fromPlan.interventions.length || fromPlan.alternatives.length) return fromPlan;
-  // No Plan heading, or a Plan the rules couldn't read: any recommendation sentence anywhere in the report.
-  const whole = readRecommendations(wholeReport(reportText));
-  return whole.interventions.length || whole.alternatives.length ? whole : fromPlan;
+  let recs = fromPlan;
+  if (!fromPlan.interventions.length && !fromPlan.alternatives.length) {
+    // No Plan heading, or a Plan the rules couldn't read: any recommendation sentence anywhere in the report.
+    const whole = readRecommendations(wholeReport(reportText));
+    if (whole.interventions.length || whole.alternatives.length) recs = whole;
+  }
+  // The Plan names no medication: the report's own prescription table ("Medications Prescribed  SIG …"), if it has one.
+  if (!recs.medications.length) recs.medications = prescribedMedications(reportText);
+  return withoutFiller(recs);
+}
+
+/** Drop anything that only says there's nothing ("No specific intervention mentioned."). */
+function withoutFiller(recs: Recommendations): Recommendations {
+  const real = (t: string) => !FILLER_RE.test(t.trim());
+  return {
+    ...recs,
+    interventions: recs.interventions.filter((i) => real(i.text)),
+    alternatives: recs.alternatives.filter((a) => real(a.text)),
+    medications: recs.medications.filter(real),
+    followUp: recs.followUp.filter(real),
+  };
+}
+
+/**
+ * Rows of a "Medications Prescribed  SIG  PRN?  Indication" table:
+ * "methocarbamol 500 mg tablet One tablet TID" / "PRN No" → "Methocarbamol 500 mg tablet One tablet TID."
+ */
+export function prescribedMedications(reportText: string): string[] {
+  const lines = stripPageFurniture(reportText ?? "").replace(/\r/g, "").split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!PRESCRIBED_HEAD_RE.test(lines[i])) continue;
+    for (let j = i + 1; j < lines.length && j <= i + 12; j++) {
+      const line = lines[j].replace(/\s+/g, " ").trim();
+      if (!line) break;
+      // The PRN? / Indication columns wrapped onto their own line.
+      if (/^(?:prn\??\s*)?(?:yes|no|y|n)$/i.test(line)) continue;
+      // The next table or section.
+      if (/^(?:type\s+code|icd|cpt|allerg|vitals?|diagnos|procedures?|orders?|plan|assessment)\b/i.test(line) || /^[A-Z][A-Za-z ]{2,40}:\s*$/.test(line)) break;
+      if (!DRUG_LINE_RE.test(line)) continue;
+      const med = sentenceCase(line.replace(/\s+(?:prn\??\s+)?(?:yes|no)$/i, ""));
+      if (med && !out.some((m) => recKey(m) === recKey(med))) out.push(med);
+    }
+  }
+  return out;
 }
 
 function readRecommendations(plan: string): Recommendations {
@@ -320,6 +382,8 @@ function readRecommendations(plan: string): Recommendations {
   let lastOwner = "";
   let lastItem: RecItem | null = null;
   let diagnosis = "";
+  // "2. Medications:" with the drug on the next line(s): those lines belong to it until the next heading.
+  let openSection: "med" | "follow" | null = null;
 
   const addIntervention = (text: string, context: string, quote: string) => {
     if (!text || text.length < 6) return;
@@ -373,6 +437,7 @@ function readRecommendations(plan: string): Recommendations {
       // Two procedures under one region: say which one the fee is for.
       owner = shortName(lastItem.text);
     }
+    if (!named && lastItem?.costLabel) owner = lastItem.costLabel;
     const prev = out.costs.find((c) => c.owner === owner);
     const t = sentenceCase(body);
     if (prev) {
@@ -395,16 +460,28 @@ function readRecommendations(plan: string): Recommendations {
     if (!seg) continue;
     // Medications / Imaging / Referrals / Follow up
     const sec = SECTION_RE.exec(seg);
+    if (!sec && openSection && !/^(?:planned interventions?|interventions?|procedures? planned)\s*:/i.test(seg) && !/\$\s?\d/.test(seg) && !RECOMMEND_RE.test(seg)) {
+      // The line under "Medications:" / "Follow up:".
+      const t = seg.replace(/^(?:comments?|note)\s*:\s*/i, "").trim();
+      if (!NONE_RE.test(t)) {
+        if (openSection === "med") out.medications.push(...t.split(/;\s*/).map(sentenceCase).filter(Boolean));
+        else out.followUp.push(sentenceCase(t));
+      }
+      continue;
+    }
+    openSection = null;
     if (sec) {
       const kind = sec[1].toLowerCase();
       const rest = sec[2].replace(SIGNATURE_RE, "").trim();
       if (/^med/.test(kind)) {
-        if (!NONE_RE.test(rest)) out.medications.push(...rest.split(/;\s*|,\s+(?=[A-Z])/).map(sentenceCase).filter(Boolean));
+        if (!rest) openSection = "med";
+        else if (!NONE_RE.test(rest)) out.medications.push(...rest.split(/;\s*|,\s+(?=[A-Z])/).map(sentenceCase).filter(Boolean));
         continue;
       }
       if (/^(follow|return|rtc)/.test(kind)) {
         const t = rest.replace(/^(?:in|within|after)\s+/i, (m) => m);
-        if (!NONE_RE.test(t)) out.followUp.push(sentenceCase(t));
+        if (!t) openSection = "follow";
+        else if (!NONE_RE.test(t)) out.followUp.push(sentenceCase(t));
         continue;
       }
       // Imaging / Referrals "None": nothing to show; anything else is read as a recommendation below.
@@ -439,6 +516,28 @@ function readRecommendations(plan: string): Recommendations {
         const rest = inSec[2].replace(SIGNATURE_RE, "").trim();
         if (!NONE_RE.test(rest)) (/^med/i.test(inSec[1]) ? out.medications : out.followUp).push(sentenceCase(rest));
         continue;
+      }
+      // "If the diagnostic injection provides >80% relief, then a thermal radiofrequency ablation ensues …":
+      // its own bullet under the same region, with the condition, and its fee under its name.
+      const cond = CONDITIONAL_RE.exec(s);
+      if (cond) {
+        const what = cond[2].split(CONDITIONAL_END_RE)[0].trim();
+        if (what.length >= 6 && PROCEDURE_RE.test(what) && !/\$/.test(what)) {
+          const region = regionForRec(what, lastItem?.region || context || diagnosis);
+          const condition = cond[1].replace(/\s+/g, " ").trim();
+          const text = `${sentenceCase(what).replace(/\.$/, "")} (if ${condition}).`;
+          let item = out.interventions.find((x) => x.region === region && recKey(x.text) === recKey(text)) ?? null;
+          if (!item) {
+            item = { region, text, quote: s, costLabel: region ? `${region} (${what.charAt(0).toLowerCase()}${what.slice(1)})` : sentenceCase(what).replace(/\.$/, "") };
+            out.interventions.push(item);
+          }
+          lastItem = item;
+          lastOwner = region || "Recommendation";
+          const fee = /\b(?:(?:with|at|for)\s+(?:a|an)\s+)?((?:estimated\s+)?(?:cost|fee|price|charge)s?\b.*\$.*)$/i.exec(s);
+          if (fee) addCost(fee[1]);
+          placedInSeg = true;
+          continue;
+        }
       }
       if (/\$\s?\d/.test(s) || /\b(fees?|cost|expenses?|charges?)\b.*\b\d[\d,]{2,}\b/i.test(s)) {
         addCost(s);
@@ -497,7 +596,12 @@ function regionRank(heading: string, order: string[]): number {
 
 /** Recommendations → headed blocks in the fixed order: regions, Alternatives, Medications, Follow up, Costs. */
 export function recommendationBlocksFrom(recs: Recommendations, opts: RecFormatOptions = {}): RecBlock[] {
-  const order = opts.regionOrder?.length ? opts.regionOrder : DEFAULT_REC_REGION_ORDER;
+  let order = opts.regionOrder?.length ? opts.regionOrder : DEFAULT_REC_REGION_ORDER;
+  // The office's order (Settings → G.O.A.T.) has no Sacrum (SI joint): keep it right after Lumbar.
+  if (!order.some((o) => o.toLowerCase() === "sacrum")) {
+    const at = order.findIndex((o) => o.toLowerCase() === "lumbar");
+    order = at >= 0 ? [...order.slice(0, at + 1), "Sacrum", ...order.slice(at + 1)] : order;
+  }
   const byRegion = new Map<string, string[]>();
   for (const it of recs.interventions) {
     const h = it.region || "Other";
@@ -512,7 +616,7 @@ export function recommendationBlocksFrom(recs: Recommendations, opts: RecFormatO
   if (opts.showCosts !== false && recs.costs.length) {
     // Same order as above: regions, then alternatives, then anything else.
     const rank = (c: RecCost) => {
-      const r = blocks.findIndex((b) => b.heading === c.owner || (c.region !== undefined && b.heading === c.region));
+      const r = blocks.findIndex((b) => b.heading === c.owner || (c.region !== undefined && b.heading === c.region) || c.owner.startsWith(`${b.heading} (`));
       if (r >= 0) return r;
       const a = recs.alternatives.findIndex((x) => x.label === c.owner);
       return a >= 0 ? 100 + a : 200;
