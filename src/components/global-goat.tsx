@@ -5,8 +5,6 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { patients as patientList, type PatientRecord } from "@/lib/mock-data";
 import { askGoat, type GoatContext, type GoatResult } from "@/lib/goat";
-import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
-import { assistGoat } from "@/lib/goat-ai/assist";
 import {
   choiceLabel,
   clearChat,
@@ -19,10 +17,12 @@ import {
   type ChatPatient,
   type ChatState,
 } from "@/lib/goat-ai/global-chat";
+import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useGoatPatientContext } from "@/hooks/use-goat-patient-context";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
-import { Spinner, useGoatAiState, useSmartMode } from "@/components/goat-smart";
+import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 
@@ -52,7 +52,8 @@ function useGlobalGoatOpen(): boolean {
 /** Sidebar / mobile-nav button. `compact` = icon only (collapsed sidebar). */
 export function GlobalGoatButton({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
   const open = useGlobalGoatOpen();
-  if (!GOAT_SMART_AVAILABLE) return null;
+  const { canView } = useWorkspaceAccess();
+  if (!canView("patients")) return null;
   return (
     <button
       aria-expanded={open}
@@ -166,10 +167,12 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       const t0 = Date.now();
       await new Promise((r) => setTimeout(r, 400));
       while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
-      const ctx = ctxRef.current;
+      const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
       if (smart) {
         try {
-          // Rules first; Smart mode fills gaps in that same answer (one answer, regular format).
+          // Rules first; + mode fills gaps in that same answer (one answer, regular format).
+          // Its code (and the model) load only when + mode is on.
+          const { assistGoat } = await import("@/lib/goat-ai/assist");
           const a = await assistGoat({ context: ctx, question: job.question, prefs, previous: job.previous, onText: onPartial, onStatus: onPartial });
           const r = ruleAnswerToMessage(a.result);
           const warnings = [...(r.warnings ?? []), ...a.warnings].slice(0, 3);
@@ -202,6 +205,7 @@ export function GlobalGoatPopup({
 } = {}) {
   const open = useGlobalGoatOpen();
   const pathname = usePathname();
+  const { canView } = useWorkspaceAccess();
   // Read once on the client; the popup only renders after a click, so there's no hydration mismatch.
   const [chat, setChat] = useState<ChatState>(() => loadChat());
   const [input, setInput] = useState("");
@@ -213,7 +217,6 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const [smartOn] = useSmartMode();
-  const { prefs: answerPrefs } = useGoatAnswerPrefs();
   const ai = useGoatAiState();
   const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
   const listRef = useRef<HTMLDivElement>(null);
@@ -253,6 +256,12 @@ export function GlobalGoatPopup({
     setJob({ id: newId(), patientId: patient.id, question: q, previous: followUp && q.split(/\s+/).length < 7 ? lastExchange(patient.id) : null });
   };
 
+  /** The question waiting for a patient (a "Which patient?" or "Did you mean" message), if the last G.O.A.T. message has one. */
+  const waitingQuestion = (): string | null => {
+    const last = [...chat.messages].reverse().find((m) => m.role === "goat");
+    return last?.pendingQuestion ?? null;
+  };
+
   const send = (raw: string) => {
     const question = raw.trim();
     if (!question || job) return;
@@ -260,38 +269,43 @@ export function GlobalGoatPopup({
     push({ role: "user", text: question });
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
-    if (found.named && !found.matches.length) {
-      push({ role: "goat", text: `I couldn't find a patient named "${found.named}" in the patient list.` });
+    // A reply that is only a name ("Jane Sample") answers the question that was waiting for a patient.
+    const waiting = waitingQuestion();
+    const justAName = waiting && found.named && question.split(/\s+/).length <= 4;
+    const original = justAName ? waiting : question;
+    if (found.confident) {
+      const p = patientById(found.confident.patient.id);
+      if (p) startAnswer(p, original, p.id === chat.patientId && !justAName);
       return;
     }
-    if (found.matches.length > 1) {
+    if (found.candidates.length) {
       push({
         role: "goat",
-        text: `There are ${found.matches.length} patients named ${displayName(found.matches[0].fullName)}. Which one?`,
-        choices: found.matches.map((p) => ({ patientId: p.id, label: choiceLabel(p) })),
-        pendingQuestion: question,
+        text: "Did you mean:",
+        choices: found.candidates.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
+        pendingQuestion: original,
       });
       return;
     }
-    if (found.matches.length === 1) {
-      const p = patientById(found.matches[0].id);
-      if (p) startAnswer(p, question, p.id === chat.patientId);
+    if (found.named) {
+      push({ role: "goat", text: `I couldn't find a patient named "${found.named}" in the patient list. Type their name and I'll answer "${original}".`, pendingQuestion: original });
       return;
     }
     // No name: stay on the chat's patient, else the patient page that's open.
     const p = current ?? patientById(openPatientId);
     if (!p) {
-      push({ role: "goat", text: "Which patient is this about? Include their name, e.g. \"what did Dr. Armen recommend for John Smith?\"" });
+      push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
       return;
     }
     startAnswer(p, question, Boolean(current));
   };
 
+  // A tapped patient answers the ORIGINAL question; nothing needs retyping.
   const pick = (msg: ChatMessage, patientId: string) => {
     const p = patientById(patientId);
     if (!p || job) return;
-    push({ role: "user", text: choiceLabel(toChatPatient(p)) });
-    setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined } : m)) }));
+    push({ role: "user", text: displayName(p.fullName) });
+    setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined, pendingQuestion: undefined } : m)) }));
     startAnswer(p, msg.pendingQuestion ?? "", false);
   };
 
@@ -310,7 +324,18 @@ export function GlobalGoatPopup({
 
   const jobPatient = job ? patientById(job.patientId) : null;
 
-  if (!GOAT_SMART_AVAILABLE) return null;
+  const lastGoat = [...chat.messages].reverse().find((m) => m.role === "goat");
+  const status: GoatStatus = job
+    ? smartActive && ai.status === "loading"
+      ? "plus"
+      : "searching"
+    : !lastGoat || lastGoat.choices || lastGoat.pendingQuestion
+      ? "ready"
+      : /^I couldn't find/.test(lastGoat.text)
+        ? "notFound"
+        : "found";
+
+  if (!canView("patients")) return null;
   return (
     <>
       {jobPatient && job && (contextOverride ? (
@@ -328,7 +353,9 @@ export function GlobalGoatPopup({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80 object-cover" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
-              <div className="text-lg font-semibold leading-tight">G.O.A.T.</div>
+              <div className="flex items-center gap-2 text-lg font-semibold leading-tight">
+                G.O.A.T. <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
+              </div>
               <div className="truncate text-xs text-white/90">
                 {current ? (
                   <>
@@ -361,6 +388,7 @@ export function GlobalGoatPopup({
           </header>
 
           <div ref={listRef} className="flex-1 space-y-2.5 overflow-y-auto bg-[var(--bg-soft,#f6f9fa)] px-3 py-3">
+            <PlusIntroCard />
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
@@ -401,7 +429,7 @@ export function GlobalGoatPopup({
                         {w}
                       </p>
                     ))}
-                    {m.quotes && m.quotes.length > 0 && !answerPrefs.showQuotes && (
+                    {m.quotes && m.quotes.length > 0 && (
                       <div className="mt-1.5 text-xs text-[var(--text-muted)]">
                         Source{new Set(m.quotes.map((q) => q.title)).size > 1 ? "s" : ""}:{" "}
                         <span className="font-semibold">
@@ -411,23 +439,10 @@ export function GlobalGoatPopup({
                         </span>
                       </div>
                     )}
-                    {m.quotes && m.quotes.length > 0 && answerPrefs.showQuotes && (
-                      <details className="mt-1.5 text-xs">
-                        <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Sources ({m.quotes.length})</summary>
-                        <ul className="mt-1 space-y-1">
-                          {m.quotes.map((q, i) => (
-                            <li key={i}>
-                              <span className="font-semibold">{q.title}</span>
-                              {q.page ? <span className="text-[var(--text-muted)]"> p.{q.page}</span> : null}: &ldquo;{q.quote}&rdquo;
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
                     {m.patientId && (
                       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                         <span className="flex items-center gap-2">
-                          {m.smart ? "G.O.A.T.+ helped · check the sources" : "From NoteGoat"}
+                          {m.smart ? "+ mode helped · check the sources" : "From NoteGoat"}
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
@@ -447,11 +462,10 @@ export function GlobalGoatPopup({
                   {partial ? (
                     <div className="whitespace-pre-line leading-snug">
                       {partial}
-                      <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-[#72bdcf] align-[-2px]" />
                     </div>
                   ) : (
-                    <span className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                      <Spinner /> {smartActive && ai.status === "loading" ? "Getting G.O.A.T.+ ready…" : "Searching…"}
+                    <span className="text-[var(--text-muted)]">
+                      {smartActive && ai.status === "loading" ? `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
                     </span>
                   )}
                 </div>

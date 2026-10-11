@@ -182,6 +182,8 @@ export interface GoatAnswer {
   flag?: string;
   /** Plain text for the Copy button (e.g. recommendations, ready for the Specialist box). */
   copyText?: string;
+  /** The Patient File it was read from (opens from the answer). */
+  fileId?: string;
 }
 
 export interface GoatHit {
@@ -355,6 +357,12 @@ const APPTS_SOURCE = "Appointments / Encounters";
 // Topic answers
 // ---------------------------------------------------------------------------
 
+/** " — Follow-Up Visit": the type of the attended appointment on that day ("" when it has none). */
+function typeOnDay(appts: GoatAppointment[], day: number): string {
+  const a = appts.find((x) => dayStamp(x.date) === day && ATTENDED.has(norm(x.status)) && x.type);
+  return a?.type ? ` — ${a.type}` : "";
+}
+
 function visitsAnswer(ctx: GoatContext, today: number, focus: "next" | "last" | "first" | null): GoatAnswer {
   if (ctx.appointments === null) return hidden("Visits", "appointments");
   const appts = ctx.appointments;
@@ -385,9 +393,11 @@ function visitsAnswer(ctx: GoatContext, today: number, focus: "next" | "last" | 
     ? `${appts.length} appointment${appts.length === 1 ? "" : "s"} on file: ${parts.join(", ")}.`
     : "No appointments on file yet.";
 
-  const lineFirst = past.length ? `First visit: ${fmtDay(past[0])} (${relative(past[0], today)}).` : "";
+  const lineFirst = past.length ? `First visit: ${fmtDay(past[0])} (${relative(past[0], today)})${typeOnDay(appts, past[0])}.` : "";
+  // The visit's type ("Follow-Up Visit"), from the attended appointment on that day.
+  const typeOn = (day: number) => typeOnDay(appts, day);
   const lineLast = past.length
-    ? `Last visit: ${fmtDay(past[past.length - 1])} (${relative(past[past.length - 1], today)}).`
+    ? `Last visit: ${fmtDay(past[past.length - 1])} (${relative(past[past.length - 1], today)})${typeOn(past[past.length - 1])}.`
     : "No visits yet.";
   const lineNext = next
     ? `Next visit: ${fmtDay(dayStamp(next.date)!)}${next.startTime ? ` at ${fmtTime(next.startTime)}` : ""} (${relative(dayStamp(next.date)!, today)})${next.type ? ` — ${next.type}` : ""}.`
@@ -398,18 +408,19 @@ function visitsAnswer(ctx: GoatContext, today: number, focus: "next" | "last" | 
     ? `${enc.length} encounter${enc.length === 1 ? "" : "s"}: ${enc.filter((e) => e.signed).length} signed, ${enc.filter((e) => !e.signed).length} open.`
     : "";
 
+  // Answer what was asked: "last visit" is the last visit (and what's next), not every count on file.
   const ordered =
     focus === "next"
-      ? [lineNext, lineLast, summary, lineFirst]
+      ? [lineNext, lineLast]
       : focus === "last"
-        ? [lineLast, lineNext, summary, lineFirst]
+        ? [lineLast, lineNext]
         : focus === "first"
-          ? [lineFirst, lineLast, lineNext, summary]
-          : [summary, lineFirst, lineLast, lineNext];
+          ? [lineFirst || "No visits yet."]
+          : [summary, lineFirst, lineLast, lineNext, lineEnc];
 
   return {
     title: focus === "next" ? "Next visit" : focus === "last" ? "Last visit" : focus === "first" ? "First visit" : "Visits",
-    lines: [...ordered, lineEnc].filter(Boolean),
+    lines: ordered.filter(Boolean),
     source: APPTS_SOURCE,
     section: "appointments",
     flag: counts.pastUnmarked
