@@ -60,6 +60,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
+import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
@@ -277,6 +278,18 @@ function splitMacrosByKind<T extends { buttonName: string }>(macros: T[]): T[][]
   const general = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
   const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
   return [general, regions].filter((row) => row.length > 0);
+}
+
+/**
+ * The regions a plan prescribes for one weekday: that weekday's regions plus
+ * the plan-wide Spinal Decompression region (applies to every visit).
+ */
+function planRegionsForWeekday(plan: TreatmentPlan, weekday: number): WeekdayRegion[] {
+  const decompRegion = plan.decompression?.region?.macroId ? plan.decompression.region : null;
+  const weekdayRegions = (plan.days[weekday] ?? []).filter(
+    (region) => region.macroId && region.macroId !== decompRegion?.macroId,
+  );
+  return decompRegion ? [...weekdayRegions, decompRegion] : weekdayRegions;
 }
 
 function formatChargeDelta(added: string[], removed: string[]): string {
@@ -1535,14 +1548,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (encTime < start.getTime() || encTime > end.getTime()) continue;
       // Spinal Decompression is configured once per plan and applies to EVERY
       // encounter in the date range (not weekday-bound). Everything else comes
-      // from the weekday config. Filter any stray weekday decompression entry so
-      // it isn't applied twice.
-      const decompRegion =
-        plan.decompression?.region?.macroId ? plan.decompression.region : null;
-      const weekdayRegions = (plan.days[weekday] ?? []).filter(
-        (region) => region.macroId && region.macroId !== decompRegion?.macroId,
-      );
-      const regions = decompRegion ? [...weekdayRegions, decompRegion] : weekdayRegions;
+      // from the weekday config (planRegionsForWeekday).
+      const regions = planRegionsForWeekday(plan, weekday);
       if (!regions.length) continue;
       return { plan, weekday, regions };
     }
@@ -2264,7 +2271,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     return prepared;
   };
 
-  const applyTreatmentPlan = (options?: { replace?: boolean; silent?: boolean }) => {
+  const applyTreatmentPlan = (options?: { silent?: boolean }) => {
     if (!selectedEncounter) return 0;
     if (selectedEncounter.signed) {
       if (!options?.silent) {
@@ -2288,14 +2295,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         setMessage("No treatment regions are configured for this day.");
       }
       return 0;
-    }
-    // Replace mode: clear existing Plan text + drop old Plan macro runs so
-    // reconciliation rebuilds charges cleanly from the plan.
-    if (options?.replace) {
-      selectedEncounter.macroRuns
-        .filter((run) => run.section === "plan")
-        .forEach((run) => removeMacroRun(selectedEncounter.id, run.id));
-      setSoapSection(selectedEncounter.id, "plan", "");
     }
     prepared.forEach(({ snippetId, macro, answers, html }) => {
       appendSoapSection(selectedEncounter.id, "plan", html);
@@ -2744,20 +2743,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     }
   };
 
-  const handleApplyTreatmentPlanClick = () => {
-    if (!selectedEncounter) return;
-    if (
-      treatmentPlanSettings.saltConfirmsReplace &&
-      selectedEncounter.soap.plan.trim().length > 0
-    ) {
-      const ok = window.confirm(
-        "The Plan section already has content. Replace it with this day's treatment plan?",
-      );
-      if (!ok) return;
-    }
-    applyTreatmentPlan({ replace: true });
-  };
-
   // Auto-apply the treatment plan into the Plan section when a fresh encounter
   // is opened whose date falls inside an active plan. Only fills an EMPTY Plan
   // section (never clobbers existing notes). When prior-encounter auto-salt is
@@ -2779,7 +2764,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       return;
     }
     autoAppliedPlanRef.current = selectedEncounter.id;
-    applyTreatmentPlan({ replace: false });
+    applyTreatmentPlan();
     // applyTreatmentPlan is a stable-enough inline closure; re-running only
     // when the encounter/coverage/toggle identity changes is intentional.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2888,10 +2873,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // program), offer to carry that change forward to the rest of the plan by
   // updating the plan's decompression defaults — so they don't have to spin up
   // a new treatment plan. Weight only prompts when LOWERED (sets the new cap).
-  // Saying Yes only changes the treatment plan's decompression settings. No
-  // existing note is edited — closed / checked-out days keep what they say.
-  const CARRY_FORWARD_NOTE =
-    "\n\nThis changes the treatment plan for visits that aren't charted yet. Notes already written (including closed and checked-out ones) are not changed.";
+  // Saying Yes changes the plan's decompression settings AND rebuilds the Plan
+  // of already-open later notes that still read exactly what the plan
+  // prefilled (src/lib/plan-carry-forward.ts). Notes edited by hand, closed
+  // notes, checked-out visits and anything on/before this note never change.
   const maybeCarryForwardDecompression = (
     macro: MacroTemplate,
     newAnswers: MacroAnswerMap,
@@ -2923,6 +2908,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       (q) => (q.options?.length ?? 0) > 0 && q.id !== treatmentsQ?.id,
     );
     const programQ = optionQs.find((q) => /program/i.test(q.label)) ?? optionQs[0];
+
+    // Open later notes in this plan whose Plan the change may rebuild.
+    const patientId = selectedEncounter.patientId;
+    const currentIso = usDateToIso(selectedEncounter.encounterDate);
+    const openCandidates = encountersByNewest
+      .filter((note) => note.patientId === patientId && note.id !== selectedEncounter.id && !note.signed)
+      .flatMap((note) => {
+        const noteCoverage = resolvePlanCoverage(patientId, note.encounterDate);
+        if (!noteCoverage || noteCoverage.plan.id !== coverage.plan.id) return [];
+        const appointment =
+          (note.appointmentId ? scheduleAppointments.find((a) => a.id === note.appointmentId) : undefined) ??
+          scheduleAppointments.find(
+            (a) =>
+              a.patientId === patientId &&
+              toUsDate(a.date) === note.encounterDate &&
+              a.appointmentType === note.appointmentType,
+          );
+        const decompIndex = decompressionVisitIndexFor(noteCoverage.plan, patientId, note.encounterDate);
+        const decision = decideOpenNoteUpdate({
+          dateIso: usDateToIso(note.encounterDate),
+          currentIso,
+          signed: Boolean(note.signed),
+          appointmentStatus: appointment?.status ?? null,
+          planHtml: note.soap.plan,
+          prefilledPlanHtml: buildPlanSnippets(noteCoverage, patientId, decompIndex)
+            .map((snippet) => snippet.html)
+            .join(""),
+        });
+        return decision ? [{ note, weekday: noteCoverage.weekday, decompIndex, decision }] : [];
+      })
+      .sort((a, b) => usDateToIso(a.note.encounterDate).localeCompare(usDateToIso(b.note.encounterDate)));
+    const toUpdate = openCandidates.filter((c) => c.decision === "update");
+    const CARRY_FORWARD_NOTE = carryForwardNoteText(
+      toUpdate.map((c) => c.note.encounterDate),
+      openCandidates.filter((c) => c.decision === "edited").map((c) => c.note.encounterDate),
+    );
 
     const nextUpdates: Partial<DecompressionProgression> = {};
     let regionUpdate: WeekdayRegion | undefined;
@@ -2997,13 +3018,49 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     if (regionChanged) regionUpdate = nextRegion;
 
     if (Object.keys(nextUpdates).length || regionUpdate) {
-      updatePlan(selectedEncounter.patientId, coverage.plan.id, {
-        decompression: {
-          ...dc,
-          ...nextUpdates,
-          ...(regionUpdate ? { region: regionUpdate } : {}),
-        },
-      });
+      const nextDecompression = {
+        ...dc,
+        ...nextUpdates,
+        ...(regionUpdate ? { region: regionUpdate } : {}),
+      };
+      updatePlan(patientId, coverage.plan.id, { decompression: nextDecompression });
+      // Rebuild the untouched open notes' Plan from the UPDATED plan (the
+      // plan state above applies on the next render, so use it directly).
+      const nextPlan: TreatmentPlan = { ...coverage.plan, decompression: nextDecompression };
+      let updated = 0;
+      for (const { note, weekday, decompIndex } of toUpdate) {
+        const snippets = buildPlanSnippets(
+          { plan: nextPlan, weekday, regions: planRegionsForWeekday(nextPlan, weekday) },
+          patientId,
+          decompIndex,
+        );
+        if (!snippets.length) continue;
+        note.macroRuns
+          .filter((run) => run.section === "plan")
+          .forEach((run) => removeMacroRun(note.id, run.id));
+        setSoapSection(note.id, "plan", "");
+        for (const { snippetId, macro, answers, html } of snippets) {
+          appendSoapSection(note.id, "plan", html);
+          addMacroRun(note.id, {
+            id: snippetId,
+            section: "plan",
+            macroId: macro.id,
+            macroName: macro.buttonName,
+            body: macro.body,
+            answers: { ...answers },
+            generatedText: html,
+          });
+        }
+        reconcileLinkedCharges(note.id, macroLibraryById);
+        updated += 1;
+      }
+      if (updated) {
+        setMessage(
+          `Updated the treatment plan and ${updated} open note${updated === 1 ? "" : "s"} (${toUpdate
+            .map((c) => c.note.encounterDate.slice(0, 5))
+            .join(", ")}).`,
+        );
+      }
     }
   };
 
@@ -3169,7 +3226,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     // Make sure the protected Plan section actually holds the treatment plan:
     // if it's still empty, establish it now (charges reconcile inside).
     if (protectPlan && selectedEncounter.soap.plan.trim().length === 0) {
-      applyTreatmentPlan({ replace: false, silent: true });
+      applyTreatmentPlan({ silent: true });
     }
     setMessage(
       protectPlan
@@ -4311,20 +4368,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     )}
                   </div>
-                  {activeSection === "plan" && treatmentPlanCoverage && (
-                    <button
-                      type="button"
-                      onClick={handleApplyTreatmentPlanClick}
-                      className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#5b8f7d] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#4e7c6c]"
-                      title="Apply this day's treatment plan into the Plan section"
-                    >
-                      Apply {WEEKDAY_NAMES[treatmentPlanCoverage.weekday]} Treatment Plan
-                      <span className="text-xs font-normal opacity-90">
-                        ({treatmentPlanCoverage.regions.length} region
-                        {treatmentPlanCoverage.regions.length === 1 ? "" : "s"})
-                      </span>
-                    </button>
-                  )}
                   <div className="mt-2 space-y-2">
                     {sectionMacroFolderGroups.map((group) => {
                       const isUngrouped = group.folder === "";

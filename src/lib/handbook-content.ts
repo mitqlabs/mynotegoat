@@ -653,7 +653,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "The × on a macro chip removes that macro's text and any charges it added.",
         ],
         watchOut:
-          "If a decompression prompt asks '…for the rest of this plan?', saying Yes changes the treatment plan for visits not charted yet — notes already written, closed or checked out are never changed. Say No for a one-day change.",
+          "If a decompression prompt asks '…for the rest of this plan?', saying Yes changes the treatment plan for visits not charted yet, and also updates the Plan of later OPEN notes that still read exactly what the plan filled in (the prompt names them, e.g. 'Also updates 2 open notes (10/15, 10/22).'). A note you edited by hand is named too and left alone, and closed notes and checked-out visits are never changed. Say No for a one-day change.",
       },
       {
         heading: "Finish the visit",
@@ -783,11 +783,10 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "Use the plan in a note",
         steps: [
-          "In the encounter, go to the Plan tab.",
-          "Press Apply <Weekday> Treatment Plan.",
-          "The Plan section and the charges are rebuilt from the plan for that weekday.",
+          "Open the encounter. If its Plan section is empty and a plan covers that date, the Plan and its charges fill in from that weekday's plan automatically.",
+          "To fill many visits at once, use Fill Treatment Plan.",
         ],
-        watchOut: "Applying replaces whatever is already in the Plan section — it does not add to it.",
+        watchOut: "A Plan that already has text is never replaced automatically. Edit it in the note, or change the plan and say Yes to '…for the rest of this plan?' to update open notes you haven't edited.",
       },
     ],
   },
@@ -802,7 +801,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "How charges land on a note",
         steps: [
           "Usually automatically: picking certain macro answers adds the matching charge, and un-picking removes it.",
-          "From the treatment plan, when you apply a weekday or use Fill Treatment Plan.",
+          "From the treatment plan, when a note opens with an empty Plan or you use Fill Treatment Plan.",
           "By hand: Encounter Charges → Open Charges → search by name or CPT → click the treatment.",
           "From the last visit: Copy Charges From Prior.",
         ],

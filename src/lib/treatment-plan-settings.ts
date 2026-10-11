@@ -23,8 +23,8 @@ export interface TreatmentPlanSettings {
   /** When true, an active treatment plan turns off the prior-encounter
    *  auto-salt for that patient (the plan is the source of truth). */
   planOverridesSalt: boolean;
-  /** When true, hitting SALT / re-applying asks to confirm before replacing
-   *  existing Plan-section content. */
+  /** Unused since the "Apply <Weekday> Treatment Plan" button was removed;
+   *  kept so saved settings still load. */
   saltConfirmsReplace: boolean;
 }
 
