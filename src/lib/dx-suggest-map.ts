@@ -17,8 +17,19 @@
  *    instead when the patient's notes support radiculopathy (or myelopathy is
  *    documented) in that region. ICD-10-CM does not allow M54.1- next to a
  *    disc (M50.1-/M51.1-) or spondylosis (M47.2-) radiculopathy code.
- *  - `superiorLevelOnly`: cervical disc codes are coded to the most superior
- *    level (ICD-10-CM note at M50), so only the highest level is suggested.
+ *  - `biomechanical`: the M99.5-/M99.6-/M99.7- codes. ICD-10-CM M99 says
+ *    "This category should not be used if the condition can be classified
+ *    elsewhere", so they're suggested only when the office's own list uses the
+ *    code AND the report's sentence ties the stenosis to its cause (`when`).
+ *    Otherwise stenosis is M48.0- by region.
+ *  - `why`: the "why this code" line shown on the suggestion (ICD-10-CM Index
+ *    path / tabular note). Level and notes support are added to it.
+ *  - Level-specific cervical codes (C4-C5, C5-C6, C6-C7, high cervical) are
+ *    used only when the level is stated in that finding; otherwise the
+ *    unspecified-region code.
+ *  - `EXCLUDES1` (bottom): code pairs ICD-10-CM says are never coded together.
+ *    Suggestions never contain such a pair, or one with a code already on
+ *    the patient.
  *
  * Segments: C2-C3…C6-C7 = Cervical, C7-T1 = Cervicothoracic, T1-T2…T10-T11 =
  * Thoracic, T11-T12/T12-L1 = Thoracolumbar, L1-L2…L4-L5 = Lumbar,
@@ -54,19 +65,23 @@ export type DxCodeMap = Partial<Record<DxKey, DxCode[]>>;
 
 export interface DxRule {
   id: string;
-  /** Shown on the suggestion ("Disc herniation / bulge"). */
+  /** Shown on the suggestion ("Disc herniation / protrusion"). */
   label: string;
   terms: string[];
   codes: DxCodeMap;
+  /** "Why this code": the ICD-10-CM Index path / tabular note for `codes`. */
+  why: string;
   withRadiculopathy?: DxCodeMap;
   withMyelopathy?: DxCodeMap;
-  /** Swap to these codes when the finding's own sentence matches `when` (e.g. bony foraminal narrowing). */
-  variant?: { when: string; codes: DxCodeMap };
+  /**
+   * M99.5-/M99.6-/M99.7- alternatives: used only if the office's list has the
+   * code and the finding's own sentence matches `when` (the cause is stated).
+   */
+  biomechanical?: Array<{ when: string; codes: DxCodeMap; why: string }>;
   /** Lumbar spinal stenosis with neurogenic claudication documented in the notes. */
   withClaudication?: DxCodeMap;
   /** Shown as "other options" (e.g. the M51.36- sixth characters). */
   others?: DxCodeMap;
-  superiorLevelOnly?: boolean;
   /** A disc finding (M50/M51): combines with notes-supported radiculopathy before spondylosis does. */
   disc?: boolean;
   /** Counts as a compressive finding (lets notes-supported radiculopathy be suggested for that region). */
@@ -170,38 +185,60 @@ export const RADICULOPATHY: DxCodeMap = {
 
 // --- Rules (order = display order within a region) --------------------------
 
+const DISPLACEMENT: DxCodeMap = {
+  "C2-C3": c("M50.21", "Other cervical disc displacement, high cervical region"),
+  "C3-C4": c("M50.21", "Other cervical disc displacement, high cervical region"),
+  "C4-C5": c("M50.221", "Other cervical disc displacement at C4-C5 level"),
+  "C5-C6": c("M50.222", "Other cervical disc displacement at C5-C6 level"),
+  "C6-C7": c("M50.223", "Other cervical disc displacement at C6-C7 level"),
+  Cervical: c("M50.20", "Other cervical disc displacement, unspecified cervical region"),
+  Cervicothoracic: c("M50.23", "Other cervical disc displacement, cervicothoracic region"),
+  Thoracic: c("M51.24", "Other intervertebral disc displacement, thoracic region"),
+  Thoracolumbar: c("M51.25", "Other intervertebral disc displacement, thoracolumbar region"),
+  Lumbar: c("M51.26", "Other intervertebral disc displacement, lumbar region"),
+  Lumbosacral: c("M51.27", "Other intervertebral disc displacement, lumbosacral region"),
+};
+
+const SPINAL_STENOSIS: DxCodeMap = {
+  Cervical: c("M48.02", "Spinal stenosis, cervical region"),
+  Cervicothoracic: c("M48.03", "Spinal stenosis, cervicothoracic region"),
+  Thoracic: c("M48.04", "Spinal stenosis, thoracic region"),
+  Thoracolumbar: c("M48.05", "Spinal stenosis, thoracolumbar region"),
+  Lumbar: c("M48.061", "Spinal stenosis, lumbar region without neurogenic claudication"),
+  Lumbosacral: c("M48.07", "Spinal stenosis, lumbosacral region"),
+};
+
+/** The cause has to be stated with a cause word ("due to", "causing"…); "with" alone doesn't count. */
+const CAUSE = String.raw`(?:due to|secondary to|caused by|related to|from|causing|causes|resulting in|results in|producing|produces|which narrows)`;
+const DISC_WORD = String.raw`(?:dis[ck]|herniat\w*|protru\w*|extru\w*|bulg\w*)`;
+const OSSEOUS_WORD = String.raw`(?:osteophyt\w*|spur\w*|uncovertebral|facet\w*|bony|osseous|hypertroph\w*|arthropath\w*|arthros[ie]s|listhesis|spondylolisthesis|anterolisthesis)`;
+const CANAL_WORD = String.raw`(?:canal|thecal sac|central) (?:stenosis|narrowing|compromise)|stenosis of the (?:central|spinal|neural) canal|(?:spinal|canal) stenosis`;
+const FORAMEN_WORD = String.raw`foramin\w* (?:stenosis|narrowing|encroachment|compromise)|(?:stenosis|narrowing|encroachment) of the (?:\w+ )?(?:neural )?foramina?`;
+const causedBy = (finding: string, cause: string) =>
+  String.raw`(?:${finding})[^.;]{0,60}?\b${CAUSE}\b[^.;]{0,40}?${cause}|${cause}[^.;]{0,60}?\b${CAUSE}\b[^.;]{0,40}?(?:${finding})`;
+
 export const DX_RULES: DxRule[] = [
   {
     id: "disc-displacement",
-    label: "Disc herniation / protrusion / extrusion / bulge",
-    terms: [
-      "herniat\\w*",
-      "hnp",
-      "protru\\w*",
-      "extru\\w*",
-      "sequest\\w*",
-      "bulg\\w*",
-      "dis[ck] displacement",
-    ],
-    codes: {
-      "C2-C3": c("M50.21", "Other cervical disc displacement, high cervical region"),
-      "C3-C4": c("M50.21", "Other cervical disc displacement, high cervical region"),
-      "C4-C5": c("M50.221", "Other cervical disc displacement at C4-C5 level"),
-      "C5-C6": c("M50.222", "Other cervical disc displacement at C5-C6 level"),
-      "C6-C7": c("M50.223", "Other cervical disc displacement at C6-C7 level"),
-      Cervical: c("M50.20", "Other cervical disc displacement, unspecified cervical region"),
-      Cervicothoracic: c("M50.23", "Other cervical disc displacement, cervicothoracic region"),
-      Thoracic: c("M51.24", "Other intervertebral disc displacement, thoracic region"),
-      Thoracolumbar: c("M51.25", "Other intervertebral disc displacement, thoracolumbar region"),
-      Lumbar: c("M51.26", "Other intervertebral disc displacement, lumbar region"),
-      Lumbosacral: c("M51.27", "Other intervertebral disc displacement, lumbosacral region"),
-    },
+    label: "Disc herniation / protrusion / extrusion",
+    terms: ["herniat\\w*", "hnp", "protru\\w*", "extru\\w*", "sequest\\w*", "dis[ck] displacement"],
+    codes: DISPLACEMENT,
+    why: "ICD-10-CM Index: Herniation, nucleus pulposus / Protrusion, intervertebral disc → see Displacement, intervertebral disc → M50.2- (cervical) or M51.2- (thoracic/lumbar).",
     withRadiculopathy: DISC_WITH_RADICULOPATHY,
     withMyelopathy: DISC_WITH_MYELOPATHY,
-    superiorLevelOnly: true,
     disc: true,
     compressive: true,
-    note: "ICD-10-CM indexes bulging, protruding and extruded discs under disc displacement.",
+  },
+  {
+    id: "disc-bulge",
+    label: "Disc bulge",
+    terms: ["bulg\\w*"],
+    codes: DISPLACEMENT,
+    why: "“Bulge” is not an ICD-10-CM Index term. Disc displacement (M50.2-/M51.2-) is the closest code; confirm the radiologist means a displaced disc before billing.",
+    withRadiculopathy: DISC_WITH_RADICULOPATHY,
+    withMyelopathy: DISC_WITH_MYELOPATHY,
+    disc: true,
+    compressive: true,
   },
   {
     id: "disc-degeneration",
@@ -217,26 +254,32 @@ export const DX_RULES: DxRule[] = [
       "dis[ck] (?:space )?(?:height )?(?:narrowing|loss)",
     ],
     codes: DISC_DEGENERATION,
+    why: "ICD-10-CM Index: Degeneration, intervertebral disc → cervical M50.3-, thoracic M51.34, lumbar M51.36-, lumbosacral M51.37-. Desiccation and disc-height loss are how MRI reports describe degeneration.",
     others: DISC_DEGENERATION_OTHERS,
     withRadiculopathy: DISC_WITH_RADICULOPATHY,
     withMyelopathy: DISC_WITH_MYELOPATHY,
-    superiorLevelOnly: true,
     disc: true,
-    note: "Lumbar M51.36-/M51.37-: pick the back/leg pain version if the notes document it.",
+    note: "Lumbar M51.36-/M51.37-: the 6th character is for back/leg pain. Pick 0, 1 or 2 if the notes document it; 9 means no mention.",
   },
   {
     id: "annular-tear",
     label: "Annular tear / fissure",
-    terms: ["annular (?:tear|fissure)s?", "annulus fibrosus (?:tear|fissure)s?", "tear of the annulus", "high[- ]intensity zone"],
-    // ICD-10-CM index: "Tear, annular fibrosis" → disc degeneration (M51.3-).
-    // M51.A- (annulus fibrosus defect) is for annular defects, typically
-    // after a discectomy; add it from the ICD-10 search when it applies.
-    codes: DISC_DEGENERATION,
+    terms: ["annular (?:tear|fissure)s?", "annulus fibrosus (?:tear|fissure)s?", "tear of the annulus"],
+    // Index: "Tear, annular fibrosis" → M51.35 (disc degeneration). Coded to the stated
+    // thoracic/lumbar region. No cervical Index entry, so no cervical suggestion.
+    // M51.A- (annulus fibrosus defect) is for post-discectomy defects ("code first" a herniation).
+    codes: {
+      Thoracic: DISC_DEGENERATION.Thoracic,
+      Thoracolumbar: DISC_DEGENERATION.Thoracolumbar,
+      Lumbar: DISC_DEGENERATION.Lumbar,
+      Lumbosacral: DISC_DEGENERATION.Lumbosacral,
+    },
+    why: "ICD-10-CM Index: Tear, annular fibrosis → M51.35, other intervertebral disc degeneration. It's coded to the stated region (M51.3-). Cervical annular tears have no Index entry, so they aren't suggested.",
     others: DISC_DEGENERATION_OTHERS,
-    withRadiculopathy: DISC_WITH_RADICULOPATHY,
-    withMyelopathy: DISC_WITH_MYELOPATHY,
-    superiorLevelOnly: true,
+    withRadiculopathy: { Thoracic: DISC_WITH_RADICULOPATHY.Thoracic, Thoracolumbar: DISC_WITH_RADICULOPATHY.Thoracolumbar, Lumbar: DISC_WITH_RADICULOPATHY.Lumbar, Lumbosacral: DISC_WITH_RADICULOPATHY.Lumbosacral },
+    withMyelopathy: { Thoracic: DISC_WITH_MYELOPATHY.Thoracic, Thoracolumbar: DISC_WITH_MYELOPATHY.Thoracolumbar, Lumbar: DISC_WITH_MYELOPATHY.Lumbar },
     disc: true,
+    note: "Lumbar M51.36-/M51.37-: the 6th character is for back/leg pain. Pick 0, 1 or 2 if the notes document it; 9 means no mention.",
   },
   {
     id: "spinal-stenosis",
@@ -249,32 +292,22 @@ export const DX_RULES: DxRule[] = [
       "(?:central|spinal|canal)(?: canal)? and (?:\\w+ )?(?:neural )?foramin\\w* (?:stenosis|narrowing)",
       "(?<!foraminal |foramina |foramen |recess )stenosis",
     ],
-    codes: {
-      Cervical: [
-        { code: "M48.02", description: "Spinal stenosis, cervical region" },
-        { code: "M99.51", description: "Intervertebral disc stenosis of neural canal of cervical region" },
-      ],
-      Cervicothoracic: [
-        { code: "M48.03", description: "Spinal stenosis, cervicothoracic region" },
-        { code: "M99.51", description: "Intervertebral disc stenosis of neural canal of cervical region" },
-      ],
-      Thoracic: [
-        { code: "M48.04", description: "Spinal stenosis, thoracic region" },
-        { code: "M99.52", description: "Intervertebral disc stenosis of neural canal of thoracic region" },
-      ],
-      Thoracolumbar: [
-        { code: "M48.05", description: "Spinal stenosis, thoracolumbar region" },
-        { code: "M99.52", description: "Intervertebral disc stenosis of neural canal of thoracic region" },
-      ],
-      Lumbar: [
-        { code: "M48.061", description: "Spinal stenosis, lumbar region without neurogenic claudication" },
-        { code: "M99.53", description: "Intervertebral disc stenosis of neural canal of lumbar region" },
-      ],
-      Lumbosacral: [
-        { code: "M48.07", description: "Spinal stenosis, lumbosacral region" },
-        { code: "M99.53", description: "Intervertebral disc stenosis of neural canal of lumbar region" },
-      ],
-    },
+    codes: SPINAL_STENOSIS,
+    why: "ICD-10-CM Index: Stenosis, spinal → M48.0- by region. In the lumbar region, “without neurogenic claudication” unless the notes document claudication.",
+    biomechanical: [
+      {
+        when: causedBy(CANAL_WORD, DISC_WORD),
+        codes: {
+          Cervical: c("M99.51", "Intervertebral disc stenosis of neural canal of cervical region"),
+          Cervicothoracic: c("M99.51", "Intervertebral disc stenosis of neural canal of cervical region"),
+          Thoracic: c("M99.52", "Intervertebral disc stenosis of neural canal of thoracic region"),
+          Thoracolumbar: c("M99.52", "Intervertebral disc stenosis of neural canal of thoracic region"),
+          Lumbar: c("M99.53", "Intervertebral disc stenosis of neural canal of lumbar region"),
+          Lumbosacral: c("M99.53", "Intervertebral disc stenosis of neural canal of lumbar region"),
+        },
+        why: "ICD-10-CM Index: Stenosis, neural canal, intervertebral disc → M99.5-. It's suggested because your code list uses it and the report says the disc causes the canal stenosis. M99 note: “should not be used if the condition can be classified elsewhere”, so M48.0- is the usual choice.",
+      },
+    ],
     withClaudication: {
       Lumbar: c("M48.062", "Spinal stenosis, lumbar region with neurogenic claudication"),
     },
@@ -289,27 +322,34 @@ export const DX_RULES: DxRule[] = [
       "(?:neural )?foramina? (?:is |are )?(?:\\w+ly )?narrowed",
       "nfn",
     ],
-    // Index: Stenosis, intervertebral foramina, disc / connective tissue → M99.7-.
-    codes: {
-      Cervical: c("M99.71", "Connective tissue and disc stenosis of intervertebral foramina of cervical region"),
-      Cervicothoracic: c("M99.71", "Connective tissue and disc stenosis of intervertebral foramina of cervical region"),
-      Thoracic: c("M99.72", "Connective tissue and disc stenosis of intervertebral foramina of thoracic region"),
-      Thoracolumbar: c("M99.72", "Connective tissue and disc stenosis of intervertebral foramina of thoracic region"),
-      Lumbar: c("M99.73", "Connective tissue and disc stenosis of intervertebral foramina of lumbar region"),
-      Lumbosacral: c("M99.73", "Connective tissue and disc stenosis of intervertebral foramina of lumbar region"),
-    },
-    // …osseous (bony spur / facet / uncovertebral) → M99.6-.
-    variant: {
-      when: "osteophyt\\w*|spur\\w*|uncovertebral|facet\\w*|bony|osseous|hypertroph\\w*",
-      codes: {
-        Cervical: c("M99.61", "Osseous and subluxation stenosis of intervertebral foramina of cervical region"),
-        Cervicothoracic: c("M99.61", "Osseous and subluxation stenosis of intervertebral foramina of cervical region"),
-        Thoracic: c("M99.62", "Osseous and subluxation stenosis of intervertebral foramina of thoracic region"),
-        Thoracolumbar: c("M99.62", "Osseous and subluxation stenosis of intervertebral foramina of thoracic region"),
-        Lumbar: c("M99.63", "Osseous and subluxation stenosis of intervertebral foramina of lumbar region"),
-        Lumbosacral: c("M99.63", "Osseous and subluxation stenosis of intervertebral foramina of lumbar region"),
+    codes: SPINAL_STENOSIS,
+    why: "Foraminal narrowing is coded as spinal stenosis by region (M48.0-). The ICD-10-CM foramina codes (M99.6-/M99.7-) are suggested only when your list uses them and the report names the cause.",
+    biomechanical: [
+      {
+        when: causedBy(FORAMEN_WORD, OSSEOUS_WORD),
+        codes: {
+          Cervical: c("M99.61", "Osseous and subluxation stenosis of intervertebral foramina of cervical region"),
+          Cervicothoracic: c("M99.61", "Osseous and subluxation stenosis of intervertebral foramina of cervical region"),
+          Thoracic: c("M99.62", "Osseous and subluxation stenosis of intervertebral foramina of thoracic region"),
+          Thoracolumbar: c("M99.62", "Osseous and subluxation stenosis of intervertebral foramina of thoracic region"),
+          Lumbar: c("M99.63", "Osseous and subluxation stenosis of intervertebral foramina of lumbar region"),
+          Lumbosacral: c("M99.63", "Osseous and subluxation stenosis of intervertebral foramina of lumbar region"),
+        },
+        why: "ICD-10-CM Index: Stenosis, intervertebral foramina, osseous → M99.6-. It's suggested because your code list uses it and the report says bone (osteophyte, facet or uncovertebral) causes the narrowing. M99 note: “should not be used if the condition can be classified elsewhere.”",
       },
-    },
+      {
+        when: causedBy(FORAMEN_WORD, DISC_WORD),
+        codes: {
+          Cervical: c("M99.71", "Connective tissue and disc stenosis of intervertebral foramina of cervical region"),
+          Cervicothoracic: c("M99.71", "Connective tissue and disc stenosis of intervertebral foramina of cervical region"),
+          Thoracic: c("M99.72", "Connective tissue and disc stenosis of intervertebral foramina of thoracic region"),
+          Thoracolumbar: c("M99.72", "Connective tissue and disc stenosis of intervertebral foramina of thoracic region"),
+          Lumbar: c("M99.73", "Connective tissue and disc stenosis of intervertebral foramina of lumbar region"),
+          Lumbosacral: c("M99.73", "Connective tissue and disc stenosis of intervertebral foramina of lumbar region"),
+        },
+        why: "ICD-10-CM Index: Stenosis, intervertebral foramina, disc → M99.7-. It's suggested because your code list uses it and the report says the disc causes the narrowing. M99 note: “should not be used if the condition can be classified elsewhere.”",
+      },
+    ],
     compressive: true,
   },
   {
@@ -318,31 +358,33 @@ export const DX_RULES: DxRule[] = [
     terms: [
       "spondylos[ie]s",
       "spondylotic",
-      "dis[ck][- ]osteophyte(?: complex(?:es)?)?",
-      "uncovertebral (?:joint )?(?:hypertroph\\w*|arthropathy|arthrosis|spurring|osteophyt\\w*|degenerat\\w*)",
-      "(?:marginal|endplate|end plate|anterior|posterior|vertebral) (?:osteophyt\\w*|spurring)",
+      "degenerative changes (?:of|in) the (?:cervical |thoracic |lumbar )?spine",
+      "dis[ck][- ]osteophyte complex(?:es)?",
+      "uncovertebral (?:joint )?(?:hypertroph\\w*|arthropathy|arthrosis|degenerat\\w*)",
     ],
     codes: SPONDYLOSIS,
+    why: "ICD-10-CM Index: Spondylosis → M47.81- (without myelopathy or radiculopathy) by region. M47 includes arthrosis/osteoarthritis of the spine. A lone osteophyte isn't suggested (Index: Osteophyte, vertebrae → M25.78).",
     withRadiculopathy: SPONDYLOSIS_WITH_RADICULOPATHY,
     withMyelopathy: SPONDYLOSIS_WITH_MYELOPATHY,
   },
   {
     id: "facet-arthropathy",
     label: "Facet arthropathy",
-    // Index: Arthropathy, facet joint → Spondylosis (M47.81-).
     terms: [
       "facet (?:joint )?(?:arthropathy|arthrosis|hypertroph\\w*|osteoarthritis|arthritis|degenerat\\w*|disease)",
       "hypertrophic facet\\w*",
       "facet(?: joint)? (?:and ligamentum flavum )?hypertrophy",
     ],
     codes: SPONDYLOSIS,
+    why: "ICD-10-CM Index: Arthropathy, facet joint / Hypertrophy, facet joint → M47.819, see also Spondylosis → M47.81- by region. M47 includes degeneration of facet joints.",
     withRadiculopathy: SPONDYLOSIS_WITH_RADICULOPATHY,
     withMyelopathy: SPONDYLOSIS_WITH_MYELOPATHY,
   },
   {
     id: "spondylolisthesis",
-    label: "Spondylolisthesis / antero- or retrolisthesis",
-    terms: ["spondylolisthesis", "anterolisthesis", "retrolisthesis", "listhesis"],
+    label: "Spondylolisthesis / anterolisthesis",
+    // Retrolisthesis isn't an Index term and isn't a forward slip; it isn't suggested.
+    terms: ["spondylolisthesis", "anterolisthesis"],
     codes: {
       Cervical: c("M43.12", "Spondylolisthesis, cervical region"),
       Cervicothoracic: c("M43.13", "Spondylolisthesis, cervicothoracic region"),
@@ -351,6 +393,8 @@ export const DX_RULES: DxRule[] = [
       Lumbar: c("M43.16", "Spondylolisthesis, lumbar region"),
       Lumbosacral: c("M43.17", "Spondylolisthesis, lumbosacral region"),
     },
+    why: "ICD-10-CM Index: Spondylolisthesis → M43.1- by region.",
+    note: "M43.1 Excludes1: acute traumatic spondylolisthesis (lumbosacral S33.1-, other levels a vertebra fracture code) and congenital (Q76.2). If the slip is from this injury, code the injury instead.",
   },
   {
     id: "spondylolysis",
@@ -364,6 +408,7 @@ export const DX_RULES: DxRule[] = [
       Lumbar: c("M43.06", "Spondylolysis, lumbar region"),
       Lumbosacral: c("M43.07", "Spondylolysis, lumbosacral region"),
     },
+    why: "ICD-10-CM Index: Spondylolysis → M43.0- by region. Excludes1: spondylolisthesis (M43.1), so it isn't suggested with one.",
   },
   {
     id: "schmorl",
@@ -375,24 +420,60 @@ export const DX_RULES: DxRule[] = [
       Lumbar: c("M51.46", "Schmorl's nodes, lumbar region"),
       Lumbosacral: c("M51.47", "Schmorl's nodes, lumbosacral region"),
     },
+    why: "ICD-10-CM Index: Schmorl's disease or nodes → M51.4- by region.",
   },
 ];
+
+/** "Why" lines for the codes the engine adds on top of a rule. */
+export const WHY = {
+  radiculopathyCombo:
+    "Radiculopathy is documented in the notes (below), so the combination code is used (Index: Disorder, disc / Spondylosis, with radiculopathy). M54.1- is never added with it (Excludes1).",
+  myelopathyCombo: "Myelopathy is documented (below), so the “with myelopathy” combination code is used.",
+  claudication: "Neurogenic claudication is documented (below) → M48.062 (Index: Stenosis, spinal, lumbar region, with neurogenic claudication).",
+  radiculopathyAlone:
+    "The notes document radiculopathy (below) and the MRI shows a compressive finding in this region, but there's no disc or spondylosis code to combine it with → M54.1- by region.",
+};
+
+/**
+ * ICD-10-CM Excludes1 pairs relevant to these codes (FY2026 tabular). Raw code
+ * prefixes; a pair is never suggested together, and a suggestion that pairs
+ * with a code already on the patient is held back with this reason.
+ */
+export const EXCLUDES1: Array<{ a: string; b: string; note: string }> = [
+  { a: "M541", b: "M501", note: "M54.1 Excludes1: radiculopathy with cervical disc disorder (M50.1)" },
+  { a: "M541", b: "M511", note: "M54.1 Excludes1: radiculopathy with lumbar and other intervertebral disc disorder (M51.1-)" },
+  { a: "M541", b: "M472", note: "M54.1 Excludes1: radiculopathy with spondylosis (M47.2-)" },
+  { a: "M511", b: "M543", note: "M51.1 Excludes1: sciatica NOS (M54.3)" },
+  { a: "M430", b: "M431", note: "M43.0 Excludes1: spondylolysis with spondylolisthesis (M43.1)" },
+  { a: "M471", b: "M433", note: "M47.1 Excludes1: vertebral subluxation (M43.3–M43.5X9)" },
+  { a: "M471", b: "M434", note: "M47.1 Excludes1: vertebral subluxation (M43.3–M43.5X9)" },
+  { a: "M471", b: "M435", note: "M47.1 Excludes1: vertebral subluxation (M43.3–M43.5X9)" },
+  { a: "M431", b: "S331", note: "M43.1 Excludes1: acute traumatic spondylolisthesis of lumbosacral region (S33.1-)" },
+  // Block M50–M54 Excludes1: current injury, see injury of spine by body region.
+  { a: "M50", b: "S130", note: "M50–M54 Excludes1: current injury (traumatic rupture of cervical disc, S13.0-)" },
+  { a: "M51", b: "S230", note: "M50–M54 Excludes1: current injury (traumatic rupture of thoracic disc, S23.0-)" },
+  { a: "M51", b: "S330", note: "M50–M54 Excludes1: current injury (traumatic rupture of lumbar disc, S33.0-)" },
+  { a: "M541", b: "S142", note: "M50–M54 Excludes1: current injury (cervical nerve root injury, S14.2-)" },
+  { a: "M541", b: "S242", note: "M50–M54 Excludes1: current injury (thoracic nerve root injury, S24.2-)" },
+  { a: "M541", b: "S342", note: "M50–M54 Excludes1: current injury (lumbar/sacral nerve root injury, S34.2-)" },
+];
+
+/** The Excludes1 note if two codes may not be coded together, else null. */
+export function excludes1(codeA: string, codeB: string): string | null {
+  const a = codeA.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const b = codeB.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  for (const p of EXCLUDES1) {
+    if ((a.startsWith(p.a) && b.startsWith(p.b)) || (a.startsWith(p.b) && b.startsWith(p.a))) return p.note;
+  }
+  return null;
+}
 
 // --- Clinical support (read from notes, SOAP, specialist reports) ----------
 
 /** Words in the notes that support radiculopathy. Region comes from the same sentence. */
-export const RADICULOPATHY_TERMS = [
-  "radiculopath\\w*",
-  "radiculitis",
-  "radicular",
-  "sciatica",
-  "radiat\\w*",
-  "shooting",
-  "numbness",
-  "tingling",
-  "paresthesi\\w*",
-  "pins and needles",
-];
+// Conservative: the notes must name radiculopathy (or sciatica). Symptoms alone
+// (radiating pain, numbness, tingling) are not a radiculopathy diagnosis.
+export const RADICULOPATHY_TERMS = ["radiculopath\\w*", "radiculitis", "radicular", "sciatica"];
 
 /** Limb words that place radicular symptoms in a region. */
 export const LIMB_REGION: Array<[family: "Cervical" | "Lumbar", pattern: string]> = [

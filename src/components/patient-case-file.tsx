@@ -28,7 +28,7 @@ import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { Icd10Search } from "@/components/icd10-search";
 import { sameCode } from "@/lib/icd10";
 import { DxSuggestions } from "@/components/dx-suggestions";
-import { dxInputFromGoat, suggestDiagnoses } from "@/lib/dx-suggest";
+import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
@@ -2659,14 +2659,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // same privacy-filtered snapshot (hidden notes / SOAP / files are null there),
   // and only while the box is open so typing elsewhere doesn't re-run it.
   const dxSuggestState = useMemo(() => {
-    if (!sectionPanelsOpen.diagnosis) return { list: [], hasMriText: false };
+    if (!sectionPanelsOpen.diagnosis) return { list: [], heldBack: [], hasMriText: false };
     const input = dxInputFromGoat(
       goatContext,
       billingMacros.diagnoses.filter((d) => d.active).map((d) => ({ code: d.code, description: d.description })),
       patientDiagnoses.map((d) => ({ code: d.code })),
     );
     const hasMriText = input.imaging.length > 0 || (goatContext.files ?? []).some((f) => f.status === "read");
-    return { list: suggestDiagnoses(input), hasMriText };
+    return { ...suggestDiagnosesDetailed(input), hasMriText };
   }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses]);
   const addDiagnosisWithMessage = useCallback(
     (code: string, description: string, source: string) => {
@@ -7041,6 +7041,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <DxSuggestions
                   hasMriText={dxSuggestState.hasMriText}
+                  heldBack={dxSuggestState.heldBack}
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
                   suggestions={dxSuggestState.list}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}

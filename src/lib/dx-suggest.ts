@@ -7,6 +7,10 @@
  * dx-suggest-map.ts. Radiculopathy / myelopathy / neurogenic claudication
  * change the code only when the patient's notes support them.
  *
+ * Conservative by design: exact official descriptions, level-specific codes
+ * only when the level is stated, M99.5-/6-/7- only when the office uses them
+ * and the cause is stated, and never an ICD-10-CM Excludes1 pair.
+ *
  * It only suggests. Every suggestion carries the line it came from, and
  * nothing is added to the patient unless the user clicks Add. Codes already
  * on the patient are skipped. Sections hidden for the user are never passed
@@ -26,6 +30,8 @@ import {
   RADICULOPATHY_TERMS,
   SEGMENT_FAMILY,
   SEGMENT_ORDER,
+  WHY,
+  excludes1,
   type DxCode,
   type DxCodeMap,
   type DxKey,
@@ -77,7 +83,16 @@ export interface DxSuggestion {
   inLibrary: boolean;
   /** Other valid options for the same finding (e.g. M51.360–M51.362). */
   others: DxCode[];
+  /** "Why this code": ICD-10-CM Index path / note, level, and notes support. */
+  why: string;
   note?: string;
+}
+
+/** A code G.O.A.T. found but held back, with the reason (e.g. Excludes1 with a code on the patient). */
+export interface DxHeldBack {
+  code: string;
+  description: string;
+  reason: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +111,7 @@ const STRONG_RESET = /(?<![A-Za-z])(?:but|however|although|though)(?![A-Za-z])/i
 /** Words that start a new, positive statement inside a negated sentence ("no stenosis, mild bulge"). */
 const RESET =
   /(?<![A-Za-z])(?:but|however|although|though|mild|mildly|moderate|moderately|severe|severely|small|large|minimal|minimally|slight|slightly|focal|broad|diffuse|tiny|grade|there is|there are|with|resulting|causing|which|demonstrat\w*|shows?|noted|seen|present|\d+(?:\.\d+)?\s?mm)(?![A-Za-z])/gi;
-const POST_NEGATION = /^[^.;,]{0,30}?(?<![A-Za-z])(?:is|are|was|were)\s+(?:not|absent|none|no longer)(?![A-Za-z])|^\s*[:-]\s*(?:none|no|negative|absent)(?![A-Za-z])/i;
+const POST_NEGATION = /^[^.;,]{0,30}?(?<![A-Za-z])(?:(?:is|are|was|were)\s+(?:not|absent|none|no longer)|(?:has|have)\s+(?:resolved|regressed)|(?:is|are)\s+resolved)(?![A-Za-z])|^\s*[:-]\s*(?:none|no|negative|absent)(?![A-Za-z])/i;
 
 function lastIndex(re: RegExp, text: string): number {
   let idx = -1;
@@ -206,9 +221,9 @@ const RULE_RES = DX_RULES.map((rule) => ({ rule, re: rx(rule.terms) }));
 
 function findingsIn(unit: Unit): Finding[] {
   const out: Finding[] = [];
-  const itemLevels = levelsOf(unit.text);
   const itemNamed = regionsNamedIn(unit.text.slice(0, 60)).map(segmentOfRegion).filter((s): s is SpineSegment => Boolean(s));
-  let carry: Level[] = itemLevels.length ? [itemLevels[0]] : [];
+  // A level counts only when it's stated in this clause or an earlier one of the same item.
+  let carry: Level[] = [];
   for (const clause of clauses(unit.text)) {
     const own = levelsOf(clause);
     if (own.length) carry = own;
@@ -344,17 +359,25 @@ interface Acc {
   support?: DxSuggestion["support"];
   related: Set<string>;
   notes: Set<string>;
+  why: string[];
+  levels: Set<string>;
+  levelKeyed: boolean;
+  noLevel: boolean;
   ruleOrder: number;
   levelOrder: number;
 }
 
 export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
+  return suggestDiagnosesDetailed(input).list;
+}
+
+export function suggestDiagnosesDetailed(input: DxSuggestInput): { list: DxSuggestion[]; heldBack: DxHeldBack[] } {
   const units: Unit[] = [
     ...input.imaging.flatMap(panelUnits),
     ...(input.files ?? []).flatMap(fileUnits),
   ];
   const findings = units.flatMap(findingsIn);
-  if (!findings.length) return [];
+  if (!findings.length) return { list: [], heldBack: [] };
 
   // Myelopathy documented in the MRI text itself counts too.
   const support = clinicalSupport([...input.clinical, ...input.imaging.filter((s) => MYELO_RE.test(s.text))]);
@@ -374,14 +397,39 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
     codes: DxCode[],
     label: string,
     evidence: DxEvidence | null,
-    extras: { others?: DxCode[]; support?: DxSuggestion["support"]; related?: DxCode[]; note?: string; ruleOrder: number; levelOrder: number },
+    extras: {
+      others?: DxCode[];
+      support?: DxSuggestion["support"];
+      related?: DxCode[];
+      note?: string;
+      why: string[];
+      level: Level | null;
+      levelKeyed: boolean;
+      ruleOrder: number;
+      levelOrder: number;
+    },
   ) => {
     // Prefer the office's own list among equivalent codes.
     const pick = codes.find((x) => lib.has(raw(x.code))) ?? codes[0];
     const key = raw(pick.code);
     let a = acc.get(key);
     if (!a) {
-      a = { key, segment, codes: [pick, ...codes.filter((x) => x !== pick)], others: [], labels: new Set(), evidence: [], related: new Set(), notes: new Set(), ruleOrder: extras.ruleOrder, levelOrder: extras.levelOrder };
+      a = {
+        key,
+        segment,
+        codes: [pick, ...codes.filter((x) => x !== pick)],
+        others: [],
+        labels: new Set(),
+        evidence: [],
+        related: new Set(),
+        notes: new Set(),
+        why: [],
+        levels: new Set(),
+        levelKeyed: false,
+        noLevel: false,
+        ruleOrder: extras.ruleOrder,
+        levelOrder: extras.levelOrder,
+      };
       acc.set(key, a);
     }
     a.labels.add(label);
@@ -390,6 +438,10 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
     for (const r of extras.related ?? []) a.related.add(raw(r.code));
     if (extras.support && !a.support) a.support = extras.support;
     if (extras.note) a.notes.add(extras.note);
+    for (const w of extras.why) if (!a.why.includes(w)) a.why.push(w);
+    if (extras.level) a.levels.add(extras.level.name);
+    else a.noLevel = true;
+    if (extras.levelKeyed) a.levelKeyed = true;
     a.ruleOrder = Math.min(a.ruleOrder, extras.ruleOrder);
     a.levelOrder = Math.min(a.levelOrder, extras.levelOrder);
   };
@@ -403,30 +455,46 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
     if (!plain) continue;
     let codes = plain;
     let sup: DxSuggestion["support"];
+    let why = "";
+    let showPlain = false;
     const isDisc = Boolean(f.rule.disc);
     const myelo = myeloIn(f.segment);
     const radic = radicIn(f.segment);
     // Disc combos win; spondylosis combines only where there's no disc finding.
     const mayCombine = isDisc || !hasDisc.has(f.segment);
+    const biomech = (f.rule.biomechanical ?? []).find(
+      (b) => new RegExp(b.when, "i").test(f.clause) && lookup(b.codes, keys)?.some((x) => lib.has(raw(x.code))),
+    );
     if (myelo && mayCombine && lookup(f.rule.withMyelopathy, keys)) {
       codes = lookup(f.rule.withMyelopathy, keys)!;
       sup = { ...myelo, kind: "myelopathy" };
+      why = WHY.myelopathyCombo;
     } else if (radic && mayCombine && lookup(f.rule.withRadiculopathy, keys)) {
       codes = lookup(f.rule.withRadiculopathy, keys)!;
       sup = { ...radic, kind: "radiculopathy" };
+      why = WHY.radiculopathyCombo;
       radicCombined.add(f.segment);
-    } else if (f.rule.variant && new RegExp(f.rule.variant.when, "i").test(f.clause) && lookup(f.rule.variant.codes, keys)) {
-      codes = lookup(f.rule.variant.codes, keys)!;
     } else if (support.claudication?.Lumbar && lookup(f.rule.withClaudication, keys)) {
       codes = lookup(f.rule.withClaudication, keys)!;
       sup = { ...support.claudication.Lumbar, kind: "claudication" };
+      why = WHY.claudication;
+      showPlain = true;
+    } else if (biomech) {
+      // Only the office's own M99 code, and only when the cause is stated.
+      codes = lookup(biomech.codes, keys)!.filter((x) => lib.has(raw(x.code)));
+      why = biomech.why;
+      showPlain = true;
     }
+    const levelKeyed = Boolean(f.level && keys[0] !== f.segment);
     const related = [plain, lookup(f.rule.withRadiculopathy, keys), lookup(f.rule.withMyelopathy, keys)].flat().filter((x): x is DxCode => Boolean(x));
     add(f.segment, codes, f.rule.label, f.evidence, {
-      others: lookup(f.rule.others, keys) ?? [],
+      others: [...(showPlain ? plain : []), ...(codes === plain ? lookup(f.rule.others, keys) ?? [] : [])],
       support: sup,
       related,
-      note: f.rule.note,
+      note: codes === plain || showPlain ? f.rule.note : undefined,
+      why: biomech && codes !== plain && !sup ? [why] : sup?.kind === "claudication" ? [why] : [f.rule.why, why].filter(Boolean),
+      level: f.level,
+      levelKeyed,
       ruleOrder,
       levelOrder: lvl,
     });
@@ -441,29 +509,43 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
     if (anyCombined) continue;
     const codes = RADICULOPATHY[segment];
     if (!codes) continue;
-    const ev = findings.find((f) => f.segment === segment && (f.rule.compressive || f.rule.disc))?.evidence ?? null;
-    add(segment, codes, "Radiculopathy (notes)", ev, { support: { ...radic, kind: "radiculopathy" }, ruleOrder: DX_RULES.length, levelOrder: 99, related: codes });
+    const f0 = findings.find((f) => f.segment === segment && (f.rule.compressive || f.rule.disc));
+    add(segment, codes, "Radiculopathy (notes)", f0?.evidence ?? null, {
+      support: { ...radic, kind: "radiculopathy" },
+      why: [WHY.radiculopathyAlone],
+      level: f0?.level ?? null,
+      levelKeyed: false,
+      ruleOrder: DX_RULES.length,
+      levelOrder: 99,
+      related: codes,
+    });
   }
 
   type Draft = DxSuggestion & { acc: Acc };
   const drafts: Draft[] = [...acc.values()].map((a) => {
     const pick = a.codes[0];
-    const libEntry = input.library.find((d) => raw(d.code) === a.key);
     return {
       acc: a,
       code: dotted(pick.code),
-      description: libEntry?.description?.trim() || pick.description,
+      // Always the exact official FY2026 description (tests check the map against the list).
+      description: pick.description,
       segment: a.segment,
       labels: [...a.labels],
       evidence: a.evidence,
       support: a.support,
-      inLibrary: Boolean(libEntry),
-      others: [...a.codes.slice(1), ...a.others].filter((o) => raw(o.code) !== a.key && !existing.has(raw(o.code))),
+      inLibrary: lib.has(a.key),
+      others: [...a.codes.slice(1), ...a.others].filter(
+        (o, i, all) => raw(o.code) !== a.key && !existing.has(raw(o.code)) && all.findIndex((x) => raw(x.code) === raw(o.code)) === i,
+      ),
+      // Index/rule lines first, then notes support (combination code), then the level.
+      why: [...a.why.filter((w) => !ENGINE_WHY.has(w)), ...a.why.filter((w) => ENGINE_WHY.has(w)), levelWhy(a)].filter(Boolean).join(" "),
     };
   });
   const order = (s: Draft) => SEGMENT_ORDER.indexOf(s.segment);
   const out: DxSuggestion[] = [];
-  for (const d of (superiorCervicalOnly(drafts) as Draft[]).sort(
+  const heldBack: DxHeldBack[] = [];
+  const existingCodes = input.existing.map((d) => d.code);
+  for (const d of dropUnspecifiedCervical(drafts).sort(
     (a, b) => order(a) - order(b) || a.acc.ruleOrder - b.acc.ruleOrder || a.acc.levelOrder - b.acc.levelOrder,
   )) {
     const { acc: a, ...suggestion } = d;
@@ -472,39 +554,51 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
     // this is the combination code the notes support (e.g. M51.16 over M51.26).
     const relatedOnPatient = [...a.related].filter((r) => r !== a.key && existing.has(r));
     if (relatedOnPatient.length && !a.support) continue;
+    // ICD-10-CM Excludes1: never next to a code on the patient or another suggestion.
+    const onPatient = existingCodes.map((c) => ({ c, note: excludes1(d.code, c) })).find((x) => x.note);
+    if (onPatient) {
+      heldBack.push({ code: d.code, description: d.description, reason: `${onPatient.note}: ${dotted(onPatient.c)} is already on the patient.` });
+      continue;
+    }
+    const withOther = out.map((o) => ({ o, note: excludes1(d.code, o.code) })).find((x) => x.note);
+    if (withOther) {
+      heldBack.push({ code: d.code, description: d.description, reason: `${withOther.note}: ${withOther.o.code} is suggested instead.` });
+      continue;
+    }
     const notes = [...a.notes];
     if (relatedOnPatient.length) notes.push(`Would replace ${relatedOnPatient.map(dotted).join(", ")} on the patient.`);
     out.push({ ...suggestion, note: notes.join(" ") || undefined });
   }
-  return out;
+  return { list: out, heldBack };
+}
+
+const ENGINE_WHY = new Set<string>(Object.values(WHY));
+
+/** The level/region part of "why this code". */
+function levelWhy(a: Acc): string {
+  const levels = [...a.levels];
+  if (a.levelKeyed && levels.length) return `Level ${levels.join(", ")} is stated in the report.`;
+  if (levels.length && !a.noLevel) return `Region from the stated level ${levels.join(", ")}.`;
+  if (SEGMENT_FAMILY[a.segment] === "Cervical" && a.segment === "Cervical" && raw(a.codes[0].code).startsWith("M50"))
+    return "No cervical level is stated in that finding, so the unspecified-region code.";
+  return `No level stated; region from the ${a.segment.toLowerCase()} heading/record.`;
 }
 
 /**
- * ICD-10-CM M50: "Code to the most superior level of disorder." Within each
- * M50 subcategory (M50.0 myelopathy, M50.1 radiculopathy, M50.2 displacement,
- * M50.3 degeneration) keep only the highest level; the others' MRI lines are
- * kept on it. The "unspecified cervical region" code goes when a level is known.
+ * Within each M50 subcategory, the "unspecified cervical region" code (M50.x0)
+ * is dropped when a level-specific code for the same finding is suggested; its
+ * MRI lines move to that code.
  */
-function superiorCervicalOnly<T extends DxSuggestion>(list: T[]): T[] {
-  const rank = (code: string): number => {
-    const r = raw(code); // M5021, M50222, M5023, M5020
-    if (r.length === 6) return 2 + Number(r[5]) / 10; // mid-cervical C4-C5 / C5-C6 / C6-C7
-    const fifth = r[4];
-    return fifth === "1" ? 1 : fifth === "3" ? 3 : 9; // high, cervicothoracic, unspecified
-  };
-  const keep = new Set<T>(list);
+function dropUnspecifiedCervical<T extends DxSuggestion>(list: T[]): T[] {
+  const drop = new Set<T>();
   for (const sub of ["0", "1", "2", "3"]) {
-    const group = list.filter((s) => raw(s.code).startsWith(`M50${sub}`));
-    if (group.length < 2) continue;
-    const best = group.reduce((a, b) => (rank(b.code) < rank(a.code) ? b : a));
-    for (const s of group) {
-      if (s === best) continue;
-      keep.delete(s);
-      for (const e of s.evidence) if (!best.evidence.some((x) => x.text === e.text)) best.evidence.push(e);
-      for (const l of s.labels) if (!best.labels.includes(l)) best.labels.push(l);
-    }
+    const unspecified = list.find((s) => raw(s.code) === `M50${sub}0`);
+    const specific = list.find((s) => raw(s.code).startsWith(`M50${sub}`) && s !== unspecified);
+    if (!unspecified || !specific) continue;
+    drop.add(unspecified);
+    for (const e of unspecified.evidence) if (!specific.evidence.some((x) => x.text === e.text)) specific.evidence.push(e);
   }
-  return list.filter((s) => keep.has(s));
+  return list.filter((s) => !drop.has(s));
 }
 
 function dotted(code: string): string {

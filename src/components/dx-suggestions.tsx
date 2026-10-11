@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { DxSuggestion } from "@/lib/dx-suggest";
+import type { DxHeldBack, DxSuggestion } from "@/lib/dx-suggest";
+
+export const DX_DISCLAIMER = "Suggestions only. Confirm against the MRI and documentation before billing.";
 
 /**
  * G.O.A.T.'s "Suggested from MRI" list for the Diagnosis Codes box. Shows
@@ -10,11 +12,14 @@ import type { DxSuggestion } from "@/lib/dx-suggest";
  */
 export function DxSuggestions({
   suggestions,
+  heldBack = [],
   hasMriText,
   unreadFiles = 0,
   onAdd,
 }: {
   suggestions: DxSuggestion[];
+  /** Codes found but held back (ICD-10-CM Excludes1 with a code on the patient / another suggestion). */
+  heldBack?: DxHeldBack[];
   /** Whether there's any MRI/CT text to read at all (for the empty message). */
   hasMriText: boolean;
   /** Uploaded files G.O.A.T. hasn't read yet (their findings aren't included). */
@@ -34,8 +39,11 @@ export function DxSuggestions({
           </span>
           Suggested from MRI
         </p>
-        <span className="text-[11px] text-[var(--text-muted)]">Check each one · nothing is added for you</span>
+        <span className="text-[11px] text-[var(--text-muted)]">Nothing is added for you</span>
       </div>
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900" role="note">
+        {DX_DISCLAIMER}
+      </p>
       {suggestions.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)]">
           {hasMriText
@@ -70,6 +78,10 @@ export function DxSuggestions({
                   </button>
                 </div>
                 <div className="mt-1.5 grid gap-1 border-t border-dashed border-[var(--line-soft)] pt-1.5 text-xs">
+                  <p className="leading-snug">
+                    <span className="font-semibold text-[var(--text-muted)]">Why this code: </span>
+                    {s.why}
+                  </p>
                   {lines.map((e) => (
                     <p className="leading-snug" key={`${e.source}-${e.text}`}>
                       <span className="text-[var(--text-muted)]">MRI: </span>
@@ -124,6 +136,21 @@ export function DxSuggestions({
         >
           {showAll ? "Show fewer" : `Show all ${suggestions.length} suggestions`}
         </button>
+      )}
+      {heldBack.length > 0 && (
+        <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">
+          <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">
+            Not suggested ({heldBack.length}) · ICD-10-CM Excludes1
+          </summary>
+          <ul className="mt-1 grid gap-1">
+            {heldBack.map((h) => (
+              <li key={h.code}>
+                <span className="font-mono font-semibold">{h.code}</span> {h.description}
+                <span className="block text-[var(--text-muted)]">{h.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {unreadFiles > 0 && (
         <p className="text-[11px] text-[var(--text-muted)]">
