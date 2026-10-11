@@ -163,21 +163,6 @@ export function TreatmentPlanSettingsSection() {
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm">
-                <input
-                  checked={settings.saltConfirmsReplace}
-                  className="mt-0.5"
-                  onChange={(e) => setToggle("saltConfirmsReplace", e.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <span className="font-semibold">Confirm before replacing Plan text</span>
-                  <span className="block text-xs text-[var(--text-muted)]">
-                    When applying a plan (SALT) and the Plan section already has content, ask before
-                    replacing it.
-                  </span>
-                </span>
-              </label>
             </div>
           </div>
         </div>
