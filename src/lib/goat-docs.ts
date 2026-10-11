@@ -102,8 +102,24 @@ export interface GoatFilesResult {
 
 const TITLE_WORDS = new Set(["dr", "doctor", "md", "do", "dc", "pa", "np", "phd", "mr", "mrs", "ms", "jr", "sr", "iii", "ii"]);
 
-/** "Dr. Armen Haroutunian, MD" → "Haroutunian"; "Haroutunian, Armen" → "Haroutunian". */
+/**
+ * "JHS Medical Center", "Premier Pain Solutions", "LA Pain Associates, Inc.":
+ * a practice, not a person. It has no surname or first name; matching its last
+ * word alone ("Center") hit "surgical center" in another doctor's report and
+ * put JHS Medical Center on Dr. Armen's recommendations.
+ */
+const ORG_WORD_RE =
+  /\b(cent(?:er|re)s?|medical|clinics?|hospitals?|institutes?|associates?|group|partners|solutions|imaging|radiology|diagnostics?|health(?:care)?|wellness|rehab(?:ilitation)?|therapy|chiropractic|orthopa?edics?|spine|pain|surgery|surgical|labs?|laboratory|pharmacy|services|specialists|physicians|providers|network|inc|llc|llp|pc|corp(?:oration)?|company|co|office|practice|urgent care|mri)\b\.?/i;
+const SMALL_ORG_WORDS = new Set(["the", "of", "and", "at", "for", "a"]);
+export function isOrganizationName(name: string): boolean {
+  const cleaned = (name ?? "").replace(/\(.*?\)/g, " ").trim();
+  if (/^(?:dr\.?|doctor)\s/i.test(cleaned)) return false;
+  return ORG_WORD_RE.test(cleaned);
+}
+
+/** "Dr. Armen Haroutunian, MD" → "Haroutunian"; "Haroutunian, Armen" → "Haroutunian". "" for a practice name. */
 export function surnameOf(name: string): string {
+  if (isOrganizationName(name)) return "";
   let cleaned = (name ?? "").replace(/\(.*?\)/g, " ").trim();
   const credentials = /,\s*(md|do|dc|pa|np|phd|pa-c|dpm)\.?\s*$/i;
   while (credentials.test(cleaned)) cleaned = cleaned.replace(credentials, "").trim();
@@ -122,6 +138,7 @@ export function surnameOf(name: string): string {
 
 /** "Dr. Armen Haroutunian" → "Armen"; "Haroutunian, Armen" → "Armen". */
 export function firstNameOf(name: string): string {
+  if (isOrganizationName(name)) return "";
   const cleaned = (name ?? "").replace(/\(.*?\)/g, " ").replace(/,\s*(md|do|dc|pa|np|phd|pa-c|dpm)\.?\s*$/i, "").trim();
   const words = (s: string) =>
     s
@@ -141,6 +158,17 @@ export function firstNameOf(name: string): string {
 export function personNamedIn(question: string, person: Pick<GoatPerson, "name">): boolean {
   const q = (question ?? "").toLowerCase();
   const word = (w: string) => w.toLowerCase().replace(/[^a-z'-]/g, "");
+  if (isOrganizationName(person.name)) {
+    // A practice: its whole name ("premier pain solutions"), or its own part without
+    // the generic words ("premier", "JHS"), never one generic word like "center".
+    const words = person.name.replace(/\(.*?\)/g, " ").split(/[\s,.&/]+/).filter(Boolean);
+    const phrase = (ws: string[]) => ws.map(word).filter(Boolean).join("\\s+");
+    const own = words.filter((w) => !ORG_WORD_RE.test(w) && !SMALL_ORG_WORDS.has(w.toLowerCase()));
+    const ownPhrase = phrase(own);
+    const ownOk = own.length > 0 && (ownPhrase.replace(/\\s\+/g, "").length >= 5 || own.every((w) => /^[A-Z]{3,}$/.test(w)));
+    for (const p of [phrase(words), ownOk ? ownPhrase : ""]) if (p && new RegExp(`(?<![a-z])${p}(?![a-z])`).test(q)) return true;
+    return false;
+  }
   const s = word(surnameOf(person.name));
   if (s.length >= 4 && new RegExp(`(?<![a-z])${s}(?![a-z])`).test(q)) return true;
   const f = word(firstNameOf(person.name));
