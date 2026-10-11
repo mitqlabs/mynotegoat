@@ -148,3 +148,23 @@ Startup behavior:
 7. Wait for DNS propagation, then test from phone/tablet.
 
 This is the fastest production path for this Next.js app.
+
+## Built-in ICD-10-CM code list
+
+The ICD-10 search (patient Diagnosis Codes box, Diagnosis code settings and the bundle editor) and G.O.A.T.'s
+"Suggested from MRI" use a self-hosted copy of the official code list: `public/icd10/icd10cm-2026.json`.
+It is loaded by the browser from NoteGoat itself, only when a search box is first used. Nothing is sent to any outside service.
+
+- **Source:** CMS, *FY2026 ICD-10-CM Code Descriptions in Tabular Order*
+  (<https://www.cms.gov/files/zip/2026-code-descriptions-tabular-order.zip>, file `icd10cm_order_2026.txt`).
+  It's the same list the CDC/NCHS publishes at <https://ftp.cdc.gov/pub/Health_Statistics/NCHS/Publications/ICD10CM/>.
+- **License:** public domain (U.S. government work by CMS and CDC/NCHS). The JSON records the source URL and the SHA-256 of the file it was built from.
+- **Contents:** 74,719 billable (HIPAA-valid) codes with their long descriptions, about 6.7 MB raw or about 0.56 MB gzipped over the wire.
+- **Yearly update (new codes take effect every October 1):**
+  ```bash
+  npm run icd10:build -- --year 2027        # downloads from cms.gov and writes public/icd10/icd10cm-2027.json
+  npm run icd10:build -- --zip ./local.zip  # or build from a zip you downloaded yourself
+  ```
+  Then point `ICD10_ASSET` / `ICD10_VERSION` in `src/lib/icd10.ts` at the new file and run the tests.
+
+The MRI-finding to code rules G.O.A.T. uses live in `src/lib/dx-suggest-map.ts`, an editable data file covered by `scripts/tests/dx-suggest.test.ts`.

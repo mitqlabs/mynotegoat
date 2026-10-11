@@ -25,6 +25,10 @@ import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
+import { Icd10Search } from "@/components/icd10-search";
+import { sameCode } from "@/lib/icd10";
+import { DxSuggestions } from "@/components/dx-suggestions";
+import { dxInputFromGoat, suggestDiagnoses } from "@/lib/dx-suggest";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
@@ -2643,6 +2647,34 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, effectiveDischargeDate, dischargeInfo, billedAmount,
     paidAmount, paidDate, rbSentDate,
   ]);
+
+  // G.O.A.T. "Suggested from MRI" for the Diagnosis Codes box. Built from the
+  // same privacy-filtered snapshot (hidden notes / SOAP / files are null there),
+  // and only while the box is open so typing elsewhere doesn't re-run it.
+  const dxSuggestState = useMemo(() => {
+    if (!sectionPanelsOpen.diagnosis) return { list: [], hasMriText: false };
+    const input = dxInputFromGoat(
+      goatContext,
+      billingMacros.diagnoses.filter((d) => d.active).map((d) => ({ code: d.code, description: d.description })),
+      patientDiagnoses.map((d) => ({ code: d.code })),
+    );
+    const hasMriText = input.imaging.length > 0 || (goatContext.files ?? []).some((f) => f.status === "read");
+    return { list: suggestDiagnoses(input), hasMriText };
+  }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses]);
+  const addDiagnosisWithMessage = useCallback(
+    (code: string, description: string, source: string) => {
+      // Check against what's on screen: addDiagnosis's return value comes from a
+      // setState updater, which React may run after this call returns.
+      if (patientDiagnoses.some((d) => sameCode(d.code, code))) {
+        setDiagnosisMessage(`${code} is already on this patient.`);
+        return false;
+      }
+      addDiagnosis(code, description, source);
+      setDiagnosisMessage(`Added ${code} — ${description}.`);
+      return true;
+    },
+    [addDiagnosis, patientDiagnoses],
+  );
 
   // "Go to" from a G.O.A.T. answer: open the panel if it's collapsed, then scroll.
   const jumpToGoatSection = useCallback((section: GoatSection) => {
@@ -6976,6 +7008,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               >
                 + Dx Code
               </button>
+            </div>
+
+            {/* This box is one column wide on desktop, so stack: search, then G.O.A.T. suggestions. */}
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+                <Icd10Search
+                  existingCodes={patientDiagnoses.map((d) => d.code)}
+                  maxResults={15}
+                  onPick={(entry) => addDiagnosisWithMessage(entry.code, entry.description, "ICD-10 search")}
+                  placeholder="Code (M54.12) or words (lumbar stenosis)…"
+                />
+              </div>
+              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+                <DxSuggestions
+                  hasMriText={dxSuggestState.hasMriText}
+                  onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
+                  suggestions={dxSuggestState.list}
+                  unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
+                />
+              </div>
             </div>
 
             <div className="mt-3 grid gap-4 xl:grid-cols-2">
