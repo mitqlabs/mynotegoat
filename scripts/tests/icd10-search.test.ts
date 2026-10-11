@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildIcd10Index, dottedCode, rawCode, sameCode, searchIcd10 } from "../../src/lib/icd10";
+import { buildIcd10Index, buildLocalIndex, dottedCode, rawCode, sameCode, searchCombined, searchIcd10 } from "../../src/lib/icd10";
 
 const asset = JSON.parse(readFileSync(new URL("../../public/icd10/icd10cm-2026.json", import.meta.url), "utf8")) as {
   version: string;
@@ -82,6 +82,25 @@ test("search is fast enough for typing", () => {
   for (let i = 0; i < 20; i++) searchIcd10(index, "lumbar disc");
   const per = (performance.now() - t) / 20;
   assert.ok(per < 60, `${per.toFixed(1)} ms per search`);
+});
+
+test("one search: your codes first (labeled), ICD-10 below, no duplicates", () => {
+  const local = buildLocalIndex([
+    { code: "R51.9", description: "Headache, unspecified", group: "Misc." },
+    { code: "G44.309", description: "Post-traumatic headache, unspecified, not intractable", group: "Misc." },
+    { code: "M54.2", description: "Cervicalgia", group: "Cervical" },
+  ]);
+  const r = searchCombined(local, index, "headache", { limit: 50 });
+  assert.deepEqual(r.local.map((h) => h.item.code).sort(), ["G44.309", "R51.9"]);
+  assert.equal(r.local[0].item.group, "Misc.");
+  assert.ok(r.icd.length > 0, "ICD-10 headache codes listed too");
+  assert.ok(!r.icd.some((e) => e.raw === "R519" || e.raw === "G44309"), "codes in your list show once");
+  // Your list isn't loaded-dependent: works before the ICD file arrives.
+  assert.equal(searchCombined(local, null, "cervicalgia").local[0].item.code, "M54.2");
+  // Code prefix, undotted.
+  assert.equal(searchCombined(local, index, "m542").local[0].item.code, "M54.2");
+  // No local list → plain ICD search.
+  assert.deepEqual(searchCombined(null, index, "M54.12").icd.map((e) => e.code).slice(0, 1), ["M54.12"]);
 });
 
 console.log(`icd10-search: ${passed} tests passed`);

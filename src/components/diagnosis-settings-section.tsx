@@ -93,6 +93,16 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
   }, [billingMacros.diagnoses, folders, firstFolderId]);
 
   const libraryCodes = useMemo(() => billingMacros.diagnoses.map((d) => d.code), [billingMacros.diagnoses]);
+  // "Your codes" half of the search bars (labeled by folder).
+  const localCodes = useMemo(
+    () =>
+      billingMacros.diagnoses.map((d) => ({
+        code: d.code,
+        description: d.description,
+        group: `${folderNameById.get(d.folderId) ?? "General"}${d.active ? "" : " · inactive"}`,
+      })),
+    [billingMacros.diagnoses, folderNameById],
+  );
   const findInLibrary = (code: string) => billingMacros.diagnoses.find((d) => sameCode(d.code, code));
 
   /** Library id for a code — existing entry, or a new one in `folderId`. */
@@ -249,8 +259,10 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
             addedLabel="In your list"
             existingCodes={libraryCodes}
             label={null}
+            localCodes={localCodes}
             maxResults={20}
-            ariaLabel="Search ICD-10 to add to your codes"
+            ariaLabel="Search to add to your codes"
+            placeholder="Search your codes and ICD-10: code (M54.12) or words (headache)…"
             onPick={addFromIcd}
           />
         </div>
@@ -489,7 +501,7 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
           })}
           {filtering && totalShown === 0 && (
             <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
-              None of your codes match “{filter.trim()}”. Use the ICD-10 search above to add it.
+              None of your codes match “{filter.trim()}”. Use the search above to add it from ICD-10.
             </p>
           )}
         </div>
@@ -613,12 +625,13 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
                       </div>
                       <Icd10Search
                         addedLabel="In bundle"
-                        ariaLabel={`Search ICD-10 to add to ${bundle.name}`}
+                        ariaLabel={`Search codes to add to ${bundle.name}`}
                         existingCodes={bundleCodes}
-                        label="Add from ICD-10"
+                        label="Add a code"
+                        localCodes={localCodes}
                         maxResults={12}
                         onPick={(entry) => addIcdToBundle(bundle.id, entry)}
-                        placeholder="Search ICD-10 to add to this bundle…"
+                        placeholder="Search your codes and ICD-10…"
                       />
                     </div>
                     <div className="space-y-2">
@@ -710,12 +723,13 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
               </div>
               <Icd10Search
                 addedLabel="Picked"
-                ariaLabel="Search ICD-10 to add to the new bundle"
+                ariaLabel="Search codes to add to the new bundle"
                 existingCodes={bundleDraft.map((id) => diagnosisById.get(id)?.code ?? "")}
-                label="Add from ICD-10"
+                label="Add a code"
+                localCodes={localCodes}
                 maxResults={12}
                 onPick={addIcdToBundleDraft}
-                placeholder="Search ICD-10 to add to the new bundle…"
+                placeholder="Search your codes and ICD-10…"
               />
             </div>
             <div className="space-y-2">

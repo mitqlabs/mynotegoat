@@ -1,31 +1,48 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState } from "react";
-import { ICD10_VERSION, icd10IfLoaded, loadIcd10, searchIcd10, sameCode, type Icd10Code, type Icd10Index } from "@/lib/icd10";
+import {
+  ICD10_VERSION,
+  buildLocalIndex,
+  icd10IfLoaded,
+  loadIcd10,
+  sameCode,
+  searchCombined,
+  type Icd10Code,
+  type Icd10Index,
+  type LocalCode,
+} from "@/lib/icd10";
 
 /**
- * Search the built-in ICD-10-CM list (self-hosted, loaded on first use, no
- * outside calls) and add a code with one click. Used in the patient's
- * Diagnosis Codes box, the Diagnosis Code settings, and the bundle editor.
+ * One search bar for diagnosis codes: the office's own codes ("Your codes",
+ * with their folder) first, then the built-in ICD-10-CM list (self-hosted,
+ * loaded on first use, no outside calls). A code in the office's list shows
+ * once, under Your codes. Used in the patient's Diagnosis Codes box, the
+ * Diagnosis settings, and the bundle editor.
  */
 export function Icd10Search({
   onPick,
+  localCodes,
   existingCodes = [],
   actionLabel = "Add",
   addedLabel = "Added",
-  placeholder = "Search ICD-10 by code (M54.12) or words (lumbar stenosis)…",
-  label = "Search ICD-10",
+  placeholder = "Search your codes and ICD-10: code (M54.12) or words (lumbar stenosis)…",
+  label = "Search codes",
+  localLabel = "Your codes",
   maxResults = 30,
   ariaLabel,
 }: {
   /** Return false to signal the add didn't happen (e.g. duplicate). */
-  onPick: (entry: Icd10Code) => boolean | void;
-  /** Codes already added (dots/case ignored) — shown as "Added". */
+  onPick: (entry: Icd10Code, fromYourCodes: boolean) => boolean | void;
+  /** The office's own codes, searched first and labeled with their folder. */
+  localCodes?: LocalCode[];
+  /** Codes already added (dots/case ignored) — shown as `addedLabel`. */
   existingCodes?: string[];
   actionLabel?: string;
   addedLabel?: string;
   placeholder?: string;
   label?: string | null;
+  localLabel?: string;
   maxResults?: number;
   ariaLabel?: string;
 }) {
@@ -49,9 +66,59 @@ export function Icd10Search({
     );
   };
 
-  const results = useMemo(() => searchIcd10(index, deferred, { limit: maxResults }), [index, deferred, maxResults]);
+  const localIndex = useMemo(() => (localCodes ? buildLocalIndex(localCodes) : null), [localCodes]);
+  const results = useMemo(
+    () => searchCombined(localIndex, index, deferred, { limit: maxResults }),
+    [localIndex, index, deferred, maxResults],
+  );
   const isAdded = (code: string) => existingCodes.some((c) => sameCode(c, code));
   const q = query.trim();
+  const nothing = results.local.length === 0 && results.icd.length === 0;
+
+  const pickFirst = () => {
+    const firstLocal = results.local.find((hit) => !isAdded(hit.item.code));
+    if (firstLocal) return onPick({ code: firstLocal.item.code, description: firstLocal.item.description }, true);
+    const firstIcd = results.icd.find((e) => !isAdded(e.code));
+    if (firstIcd) return onPick({ code: firstIcd.code, description: firstIcd.description }, false);
+  };
+
+  const row = (key: string, code: string, description: string, fromYourCodes: boolean, group?: string) => {
+    const added = isAdded(code);
+    return (
+      <div
+        className="flex items-start gap-3 border-b border-[var(--line-soft)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--bg-soft)]"
+        key={key}
+      >
+        <span className="w-20 shrink-0 pt-0.5 font-mono text-sm font-semibold">{code}</span>
+        <span className="min-w-0 flex-1 text-sm leading-snug">
+          {description}
+          {group && (
+            <span className="ml-1.5 whitespace-nowrap rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+              {group}
+            </span>
+          )}
+        </span>
+        <button
+          className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+            added
+              ? "cursor-default border border-[var(--line-soft)] text-[var(--text-muted)]"
+              : "bg-[var(--brand-primary)] text-white transition-all active:scale-[0.97]"
+          }`}
+          disabled={added}
+          onClick={() => onPick({ code, description }, fromYourCodes)}
+          type="button"
+        >
+          {added ? addedLabel : actionLabel}
+        </button>
+      </div>
+    );
+  };
+  const heading = (text: string, note?: string) => (
+    <div className="sticky top-0 z-[1] flex items-baseline justify-between gap-2 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{text}</span>
+      {note && <span className="text-[10px] text-[var(--text-muted)]">{note}</span>}
+    </div>
+  );
 
   return (
     <div className="grid gap-2">
@@ -59,12 +126,13 @@ export function Icd10Search({
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-sm font-semibold">{label}</p>
           <span className="text-[11px] text-[var(--text-muted)]">
+            {localCodes ? "Your codes + " : ""}
             {ICD10_VERSION} ICD-10-CM{index ? ` · ${index.entries.length.toLocaleString()} codes` : ""} · built in
           </span>
         </div>
       )}
       <input
-        aria-label={ariaLabel ?? label ?? "Search ICD-10"}
+        aria-label={ariaLabel ?? (label ? `${label}` : "Search diagnosis codes")}
         className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
         onChange={(event) => {
           ensureLoaded();
@@ -73,9 +141,9 @@ export function Icd10Search({
         onFocus={ensureLoaded}
         onKeyDown={(event) => {
           if (event.key === "Escape") setQuery("");
-          if (event.key === "Enter" && results[0] && !isAdded(results[0].code)) {
+          if (event.key === "Enter") {
             event.preventDefault();
-            onPick({ code: results[0].code, description: results[0].description });
+            pickFirst();
           }
         }}
         placeholder={placeholder}
@@ -83,41 +151,24 @@ export function Icd10Search({
         value={query}
       />
       {q && (
-        <div className="max-h-72 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
-          {status === "loading" && !index && <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Loading the code list…</p>}
+        <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
+          {localCodes && results.local.length > 0 && (
+            <>
+              {heading(localLabel, `${results.local.length} match${results.local.length === 1 ? "" : "es"}`)}
+              {results.local.map(({ item, entry }) => row(`local-${entry.raw}`, item.code, item.description, true, item.group))}
+            </>
+          )}
+          {(results.icd.length > 0 || (localCodes && results.local.length > 0)) && heading("ICD-10", localCodes ? "not in your codes" : undefined)}
+          {status === "loading" && !index && <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Loading the ICD-10 list…</p>}
           {status === "error" && (
-            <p className="px-3 py-2 text-sm text-[#b43b34]">
-              Couldn&apos;t load the code list. Check the connection and try again.
-            </p>
+            <p className="px-3 py-2 text-sm text-[#b43b34]">Couldn&apos;t load the ICD-10 list. Check the connection and try again.</p>
           )}
-          {index && results.length === 0 && (
-            <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No billable codes match &ldquo;{q}&rdquo;.</p>
+          {index && results.icd.length === 0 && !nothing && (
+            <p className="px-3 py-2 text-xs text-[var(--text-muted)]">No other ICD-10 codes match.</p>
           )}
-          {results.map((entry) => {
-            const added = isAdded(entry.code);
-            return (
-              <div
-                className="flex items-start gap-3 border-b border-[var(--line-soft)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--bg-soft)]"
-                key={entry.raw}
-              >
-                <span className="w-20 shrink-0 pt-0.5 font-mono text-sm font-semibold">{entry.code}</span>
-                <span className="min-w-0 flex-1 text-sm leading-snug">{entry.description}</span>
-                <button
-                  className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                    added
-                      ? "cursor-default border border-[var(--line-soft)] text-[var(--text-muted)]"
-                      : "bg-[var(--brand-primary)] text-white transition-all active:scale-[0.97]"
-                  }`}
-                  disabled={added}
-                  onClick={() => onPick({ code: entry.code, description: entry.description })}
-                  type="button"
-                >
-                  {added ? addedLabel : actionLabel}
-                </button>
-              </div>
-            );
-          })}
-          {index && results.length === maxResults && (
+          {index && nothing && <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No codes match &ldquo;{q}&rdquo;.</p>}
+          {results.icd.map((entry) => row(entry.raw, entry.code, entry.description, false))}
+          {index && results.icd.length === maxResults && (
             <p className="px-3 py-1.5 text-[11px] text-[var(--text-muted)]">Showing the first {maxResults}. Type more to narrow it down.</p>
           )}
         </div>

@@ -1721,7 +1721,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [billedFocused, setBilledFocused] = useState(false);
   const [paidFocused, setPaidFocused] = useState(false);
   const [reviewStatus, setReviewStatus] = useState(() => normalizeReviewStatus(patient.matrix?.review));
-  const [diagnosisMacroIdDraft, setDiagnosisMacroIdDraft] = useState("");
   // "+ Dx Code" quick-add: creates a new ICD-10 code in the library
   // (folder-placed, like Settings) and drops it on this patient.
   const [showAddDxModal, setShowAddDxModal] = useState(false);
@@ -1794,7 +1793,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [diagnosisModalTab, setDiagnosisModalTab] = useState<"codes" | "bundles" | "custom">("codes");
   const [diagnosisSearchDraft, setDiagnosisSearchDraft] = useState("");
   const [diagnosisFolderFilter, setDiagnosisFolderFilter] = useState("all");
-  const [diagnosisListSearch, setDiagnosisListSearch] = useState("");
   const [dxDragIndex, setDxDragIndex] = useState<number | null>(null);
   const [dxDragOverIndex, setDxDragOverIndex] = useState<number | null>(null);
   const dxTouchStartY = useRef<number | null>(null);
@@ -2173,6 +2171,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return groups.filter((g) => g.macros.length > 0);
   }, [activeDiagnosisMacros, billingMacros.diagnosisFolders]);
+
+  // "Your codes" for the one Diagnosis Codes search bar (active codes, labeled by folder).
+  const diagnosisSearchLocalCodes = useMemo(
+    () =>
+      diagnosisMacrosByFolder.flatMap((group) =>
+        group.macros.map((m) => ({ code: m.code, description: m.description, group: group.name })),
+      ),
+    [diagnosisMacrosByFolder],
+  );
 
   const filteredDiagnosisMacros = useMemo(() => {
     const q = diagnosisSearchDraft.trim().toLowerCase();
@@ -4866,24 +4873,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setShowAddDxModal(false);
   };
 
-  const addDiagnosisFromMacro = () => {
-    if (!diagnosisMacroIdDraft) {
-      setDiagnosisMessage(
-        activeDiagnosisMacros.length
-          ? "Nothing selected — pick a diagnosis code first."
-          : "Create diagnosis macros in Settings > Billing Macro Settings first.",
-      );
-      return;
-    }
-    const macro = activeDiagnosisMacros.find((entry) => entry.id === diagnosisMacroIdDraft);
-    if (!macro) {
-      setDiagnosisMessage("Selected diagnosis macro is not available.");
-      return;
-    }
-    const wasAdded = addDiagnosis(macro.code, macro.description, "Diagnosis Macro");
-    setDiagnosisMessage(wasAdded ? `${macro.code} added to patient file.` : `${macro.code} already exists in this patient file.`);
-  };
-
   const addDiagnosisBundle = () => {
     if (!diagnosisBundleIdDraft) {
       setDiagnosisMessage(
@@ -7015,10 +7004,39 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <Icd10Search
                   existingCodes={patientDiagnoses.map((d) => d.code)}
+                  localCodes={diagnosisSearchLocalCodes}
                   maxResults={15}
-                  onPick={(entry) => addDiagnosisWithMessage(entry.code, entry.description, "ICD-10 search")}
-                  placeholder="Code (M54.12) or words (lumbar stenosis)…"
+                  onPick={(entry, fromYourCodes) =>
+                    addDiagnosisWithMessage(entry.code, entry.description, fromYourCodes ? "Diagnosis Macro" : "ICD-10 search")
+                  }
+                  placeholder="Code or words (headache, lumbar stenosis)…"
                 />
+                <div className="mt-3 flex items-center gap-2 border-t border-[var(--line-soft)] pt-3">
+                  <label className="shrink-0 text-sm font-semibold" htmlFor="dx-bundle-select">
+                    Add bundle
+                  </label>
+                  <select
+                    className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                    id="dx-bundle-select"
+                    onChange={(event) => setDiagnosisBundleIdDraft(event.target.value)}
+                    value={diagnosisBundleIdDraft}
+                  >
+                    <option value="">{activeDiagnosisBundles.length ? "Select a bundle…" : "No bundles yet (Settings)"}</option>
+                    {activeDiagnosisBundles.map((entry) => (
+                      <option key={`dx-bundle-${entry.id}`} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                    disabled={!diagnosisBundleIdDraft}
+                    onClick={addDiagnosisBundle}
+                    type="button"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
               <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                 <DxSuggestions
@@ -7027,112 +7045,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   suggestions={dxSuggestState.list}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
                 />
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-4 xl:grid-cols-2">
-              <div className="space-y-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                <p className="text-sm font-semibold">Add Diagnosis Macro</p>
-                <div className="relative">
-                  <input
-                    className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) => {
-                      setDiagnosisListSearch(event.target.value);
-                      setDiagnosisMacroIdDraft("");
-                    }}
-                    placeholder="Search codes..."
-                    value={diagnosisListSearch}
-                  />
-                  {diagnosisListSearch.trim() && (() => {
-                    const q = diagnosisListSearch.trim().toLowerCase();
-                    const qWords = q.replace(/[,.:;]/g, " ").split(/\s+/).filter(Boolean);
-                    const groupsWithMatches = diagnosisMacrosByFolder
-                      .map((group) => ({
-                        ...group,
-                        macros: group.macros.filter((entry) => {
-                          const haystack = `${entry.code.toLowerCase()} ${entry.description.toLowerCase()}`;
-                          return qWords.every((word) => haystack.includes(word));
-                        }),
-                      }))
-                      .filter((group) => group.macros.length > 0);
-                    const totalResults = groupsWithMatches.reduce((sum, g) => sum + g.macros.length, 0);
-                    return totalResults > 0 ? (
-                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
-                        {groupsWithMatches.map((group) => (
-                          <div key={`dx-search-group-${group.id}`}>
-                            <div className="sticky top-0 bg-[var(--bg-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                              {group.name}
-                            </div>
-                            {group.macros.map((entry) => (
-                              <button
-                                key={`dx-search-${entry.id}`}
-                                className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--bg-soft)] ${diagnosisMacroIdDraft === entry.id ? "bg-[var(--bg-soft)] font-semibold" : ""}`}
-                                onClick={() => {
-                                  setDiagnosisMacroIdDraft(entry.id);
-                                  setDiagnosisListSearch("");
-                                }}
-                                type="button"
-                              >
-                                <span className="font-semibold">{entry.code}</span>{" "}
-                                <span className="text-[var(--text-muted)]">- {entry.description}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="absolute z-20 mt-1 w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)] shadow-lg">
-                        No matching codes
-                      </div>
-                    );
-                  })()}
-                </div>
-                <select
-                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setDiagnosisMacroIdDraft(event.target.value)}
-                  value={diagnosisMacroIdDraft}
-                >
-                  <option value="">Select diagnosis code</option>
-                  {diagnosisMacrosByFolder.map((group) => (
-                    <optgroup key={`dx-folder-${group.id}`} label={group.name}>
-                      {group.macros.map((entry) => (
-                        <option key={`dx-macro-${entry.id}`} value={entry.id}>
-                          {entry.code} - {entry.description}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <button
-                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-semibold"
-                  onClick={addDiagnosisFromMacro}
-                  type="button"
-                >
-                  Add Diagnosis Code
-                </button>
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                <p className="text-sm font-semibold">Add Diagnosis Bundle</p>
-                <select
-                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setDiagnosisBundleIdDraft(event.target.value)}
-                  value={diagnosisBundleIdDraft}
-                >
-                  <option value="">Select bundle</option>
-                  {activeDiagnosisBundles.map((entry) => (
-                    <option key={`dx-bundle-${entry.id}`} value={entry.id}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-semibold"
-                  onClick={addDiagnosisBundle}
-                  type="button"
-                >
-                  Add Bundle
-                </button>
               </div>
             </div>
 

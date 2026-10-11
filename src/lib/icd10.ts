@@ -154,6 +154,52 @@ export function searchIcd10(index: Icd10Index | null, query: string, opts: Icd10
   return scored.slice(0, limit).map((x) => x.e);
 }
 
+/** A code from the office's own list (Diagnosis settings), with its folder. */
+export interface LocalCode {
+  code: string;
+  description: string;
+  /** Folder name shown next to the match ("Cervical"). */
+  group?: string;
+}
+
+export interface LocalCodeIndex<T extends LocalCode> {
+  index: Icd10Index;
+  byRaw: Map<string, T>;
+}
+
+/** Index the office's own codes so they search exactly like the ICD-10 list. First entry wins on duplicates. */
+export function buildLocalIndex<T extends LocalCode>(list: T[]): LocalCodeIndex<T> {
+  const byRaw = new Map<string, T>();
+  for (const item of list) {
+    const raw = rawCode(item.code);
+    if (raw && item.description.trim() && !byRaw.has(raw)) byRaw.set(raw, item);
+  }
+  const index = buildIcd10Index([...byRaw.entries()].map(([raw, item]) => [raw, item.description]), "local");
+  return { index, byRaw };
+}
+
+/**
+ * One search over both lists: the office's codes first, then ICD-10 codes that
+ * aren't already in the office's list (a code shows once, under "Your codes").
+ */
+export function searchCombined<T extends LocalCode>(
+  local: LocalCodeIndex<T> | null,
+  icd: Icd10Index | null,
+  query: string,
+  opts: { localLimit?: number; limit?: number } = {},
+): { local: Array<{ item: T; entry: Icd10Entry }>; icd: Icd10Entry[] } {
+  const localHits = local
+    ? searchIcd10(local.index, query, { limit: opts.localLimit ?? 20 })
+        .map((entry) => ({ item: local.byRaw.get(entry.raw) as T, entry }))
+        .filter((hit) => hit.item)
+    : [];
+  const limit = opts.limit ?? 30;
+  const icdHits = local
+    ? searchIcd10(icd, query, { limit: limit + local.byRaw.size }).filter((e) => !local.byRaw.has(e.raw)).slice(0, limit)
+    : searchIcd10(icd, query, { limit });
+  return { local: localHits, icd: icdHits };
+}
+
 // ---------------------------------------------------------------------------
 // Loading (browser): once, on first use.
 // ---------------------------------------------------------------------------
