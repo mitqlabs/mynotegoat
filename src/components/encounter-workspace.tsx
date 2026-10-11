@@ -60,7 +60,8 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients } from "@/lib/mock-data";
-import { decideFillVisit, fillConfirmText, fillDateSpan, fillPastQuestionText } from "@/lib/fill-plan-rules";
+import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
+import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -1004,6 +1005,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     forceSaveAll,
   } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
+  const { ask: askFillConfirm, confirmDialog: fillConfirmDialog } = useSimpleConfirm();
   const [closeBusy, setCloseBusy] = useState(false);
 
   /** Close a note only (appointment untouched), waiting for the cloud. */
@@ -2539,41 +2541,29 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       const hadNote = rows.filter((row) => row.skipKind === "past").length;
       const doneCount = rows.filter((row) => row.skipKind === "done").length;
       const refreshable = rows.filter((row) => row.existingNoteId);
-      if (!upcoming.length && !pastRows.length && !refreshable.length) {
+      // ONE prompt that lists exactly what will be filled (upcoming and past
+      // checked-in visits with no note). Cancel changes nothing.
+      const prompt = fillPromptText({
+        upcomingDatesUs: upcoming.map((row) => row.dateUs),
+        pastDatesUs: pastRows.map((row) => row.dateUs),
+      });
+      if (prompt.kind === "nothing" && !refreshable.length) {
         setMessage(
           `Nothing to fill — no Checked In visits without a note after ${source.encounterDate} in this plan` +
             `${doneCount ? ` (skipped ${doneCount} already checked out/closed)` : ""}.`,
         );
+        await askFillConfirm({ title: prompt.title });
         return;
       }
-      // Past checked-in visits with no note are rare / accidental: ask
-      // separately. No leaves them alone and everything else goes ahead.
-      const pastChosen =
-        pastRows.length > 0 && window.confirm(fillPastQuestionText(pastRows.map((row) => row.dateUs)));
-      const pastLeft = pastChosen ? [] : pastRows.map((row) => row.dateUs);
-      const toFill = [...(pastChosen ? pastRows : []), ...upcoming].sort(
-        (a, b) => a.dateIso.localeCompare(b.dateIso),
-      );
-      if (!toFill.length && !refreshable.length) {
-        setMessage(
-          `Nothing to fill — left ${pastLeft.length} past checked-in visit${pastLeft.length === 1 ? "" : "s"} without a note alone (${pastLeft.join(", ")})` +
-            `${doneCount ? `; skipped ${doneCount} already checked out/closed` : ""}.`,
-        );
-        return;
-      }
-      // Say exactly what will happen before anything is written.
+      const toFill = [...pastRows, ...upcoming].sort((a, b) => a.dateIso.localeCompare(b.dateIso));
       if (
-        toFill.length &&
-        !window.confirm(
-          fillConfirmText({
-            fillDatesUs: upcoming.map((row) => row.dateUs),
-            pastDatesUs: pastChosen ? pastRows.map((row) => row.dateUs) : [],
-            doneCount,
-            pastWithNoteCount: hadNote,
-            examDatesUs: examSkipped,
-            sourceDateUs: source.encounterDate,
-          }),
-        )
+        prompt.kind === "confirm" &&
+        !(await askFillConfirm({
+          title: prompt.title,
+          lines: prompt.lines,
+          confirmLabel: "Fill",
+          cancelLabel: "Cancel",
+        }))
       ) {
         setMessage("Fill Treatment Plan canceled. Nothing was changed.");
         return;
@@ -2730,9 +2720,6 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           ? `couldn't update ${refreshBlocked} not loaded on this device — open the patient's encounters and run it again`
           : "",
         doneCount ? `skipped ${doneCount} already checked out/closed` : "",
-        pastLeft.length
-          ? `left ${pastLeft.length} past checked-in visit${pastLeft.length === 1 ? "" : "s"} without a note alone (${pastLeft.join(", ")})`
-          : "",
         hadNote ? `left ${hadNote} past visit${hadNote === 1 ? "" : "s"} with a note alone` : "",
         leftOpenNoCharges.length
           ? `left ${leftOpenNoCharges.join(", ")} open (no plan charges)`
@@ -3468,6 +3455,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   return (
     <div className="space-y-5">
       {checkoutNoteDialog}
+      {fillConfirmDialog}
       {message && <p className="text-sm font-semibold text-[var(--brand-primary)]">{message}</p>}
 
       <AppointmentsOverview

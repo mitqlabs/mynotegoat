@@ -680,9 +680,9 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Write one good note for a routine visit.",
           "Press Fill Treatment Plan in the encounter header.",
-          "It shows what it will do (e.g. 'Will fill 6 upcoming visits (10/02–10/30). Skipping 3 already checked out/closed.') — press OK.",
+          "It asks once, listing the exact visits it will fill (e.g. 'Fill 5 visits from the treatment plan? 10/02, 10/06, 10/09, 10/13, 10/16') — press Fill, or Cancel to change nothing.",
           "Every Checked In visit after this note, dated today or later, inside the plan that has no note yet is written, closed and checked out.",
-          "If a PAST visit was checked in but never got a note (rare — usually a mistake), it asks about those separately: OK fills them too, Cancel leaves them alone and the rest still goes ahead.",
+          "If a PAST visit was checked in but never got a note (rare — usually a mistake), the same prompt lists it on its own line ('Past, checked in with no note: …'). Fill does those too; Cancel changes nothing.",
         ],
         why: "Subjective, Objective and Assessment are copied from the note you are on. The Plan and the charges come from the treatment plan for each visit's weekday — never copied — so each day bills what it should.",
       },

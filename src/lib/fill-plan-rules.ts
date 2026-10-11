@@ -7,8 +7,8 @@
  *   • New note   — visit dated AFTER the source note, Checked In, no note yet,
  *                  dated today or later.
  *   • Past visit (before today) Checked In with no note — rare / accidental,
- *                  so never filled automatically: Fill asks about these
- *                  separately ("fillPast"), and No leaves them alone.
+ *                  so never filled silently ("fillPast"): Fill's one prompt
+ *                  lists them on their own line, and Cancel changes nothing.
  *   • Refresh S/O/A of an existing note (re-exam) — only when the visit is
  *                  Checked In, the note is still open, and it's dated today or
  *                  later. A past day with a note is left alone even if open.
@@ -54,43 +54,42 @@ export function fillDateSpan(datesUs: string[]): string {
   return first === last ? first : `${first}–${last}`;
 }
 
-/** The confirm text shown before anything is written. */
-/** The separate question about past Checked In visits with no note. */
-export function fillPastQuestionText(pastDatesUs: string[]): string {
-  const n = pastDatesUs.length;
-  return (
-    `${n} past visit${n === 1 ? " was" : "s were"} checked in but ${n === 1 ? "has" : "have"} no note: ${pastDatesUs.map((d) => d.slice(0, 5)).join(", ")}. Fill ${n === 1 ? "it" : "them"} from the treatment plan?\n\n` +
-    `OK = fill ${n === 1 ? "it" : "them"} too (then closed + checked out). Cancel = leave ${n === 1 ? "it" : "them"} alone; everything else still goes ahead.`
-  );
-}
+/** "09/03" from "09/03/2026". */
+const shortUs = (d: string) => d.slice(0, 5);
 
-export function fillConfirmText(input: {
-  fillDatesUs: string[];
-  /** Past visits the user said Yes to (listed separately from fillDatesUs). */
-  pastDatesUs?: string[];
-  doneCount: number;
-  pastWithNoteCount: number;
-  examDatesUs: string[];
-  sourceDateUs: string;
-}): string {
-  const n = input.fillDatesUs.length;
-  const lines = [
-    n
-      ? `Will fill ${n} upcoming visit${n === 1 ? "" : "s"} (${fillDateSpan(input.fillDatesUs)}). Skipping ${input.doneCount} already checked out/closed.`
-      : `No upcoming visits to fill. Skipping ${input.doneCount} already checked out/closed.`,
-  ];
-  if (input.pastDatesUs?.length) {
-    const k = input.pastDatesUs.length;
-    lines.push(`Plus ${k} past checked-in visit${k === 1 ? "" : "s"} you chose to fill: ${input.pastDatesUs.map((d) => d.slice(0, 5)).join(", ")}.`);
-  }
-  if (input.pastWithNoteCount) {
-    lines.push(`Also skipping ${input.pastWithNoteCount} past visit${input.pastWithNoteCount === 1 ? "" : "s"} that already ${input.pastWithNoteCount === 1 ? "has a note" : "have notes"}.`);
-  }
-  if (input.examDatesUs.length) {
-    lines.push(`Exam visits are left for you to chart: ${input.examDatesUs.join(", ")}.`);
-  }
-  lines.push(
-    `Only Checked In visits after ${input.sourceDateUs} are filled, then closed + checked out. Earlier dates, checked-out visits and closed notes are never changed.`,
-  );
-  return lines.join("\n\n");
+/**
+ * The ONE prompt Fill Treatment Plan shows before anything is written.
+ * Lists exactly the visits it will fill; zero counts are left out.
+ *   • kind "confirm": ask Fill / Cancel.
+ *   • kind "nothing": a short notice (OK only), nothing qualifies.
+ * `text` is the same prompt as plain text (window.confirm / tests).
+ */
+export type FillPrompt = {
+  kind: "confirm" | "nothing";
+  title: string;
+  lines: string[];
+  text: string;
+};
+
+export const FILL_NOTHING_TEXT = "Nothing to fill. All visits are already done or checked out.";
+export const FILL_UNCHANGED_LINE = "Checked-out visits won't change.";
+
+export function fillPromptText(input: {
+  /** Checked In visits dated today or later with no note (MM/DD/YYYY, in order). */
+  upcomingDatesUs: string[];
+  /** Past Checked In visits with no note (MM/DD/YYYY, in order). */
+  pastDatesUs: string[];
+}): FillPrompt {
+  const upcoming = input.upcomingDatesUs;
+  const past = input.pastDatesUs;
+  const n = upcoming.length + past.length;
+  if (!n) return { kind: "nothing", title: FILL_NOTHING_TEXT, lines: [], text: FILL_NOTHING_TEXT };
+  const title = `Fill ${n} visit${n === 1 ? "" : "s"} from the treatment plan?`;
+  const list = (dates: string[]) => dates.map(shortUs).join(", ");
+  const lines =
+    upcoming.length && past.length
+      ? [`Upcoming: ${list(upcoming)}`, `Past, checked in with no note: ${list(past)}`]
+      : [list(upcoming.length ? upcoming : past)];
+  lines.push(FILL_UNCHANGED_LINE);
+  return { kind: "confirm", title, lines, text: [title, ...lines].join("\n") };
 }
