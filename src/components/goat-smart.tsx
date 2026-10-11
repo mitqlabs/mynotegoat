@@ -108,7 +108,7 @@ export function SmartWorking({ working, status, ai }: { working: boolean; status
   return (
     <p className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
       <Spinner />
-      {ai.status === "loading" ? `Getting Smart mode ready… ${Math.round(ai.progress * 100)}%` : status || "Smart mode is checking the file…"}
+      {ai.status === "loading" ? `Getting G.O.A.T.+ ready… ${Math.round(ai.progress * 100)}%` : status || "G.O.A.T.+ is checking the file…"}
     </p>
   );
 }

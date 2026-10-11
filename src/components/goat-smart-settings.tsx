@@ -43,7 +43,7 @@ export function GoatSmartSettings() {
     setRemoving(true);
     try {
       const r = await removeGoatAiModels();
-      setRemovedMsg(r.removed.length || r.freedMb ? `Removed. Freed about ${size(r.freedMb)} on this computer.` : "Nothing to remove: no model is downloaded on this computer.");
+      setRemovedMsg(r.removed.length || r.freedMb ? `Removed the G.O.A.T.+ model. Freed about ${size(r.freedMb)} on this computer.` : "Nothing to remove: no G.O.A.T.+ model is downloaded on this computer.");
       setDownloaded([]);
     } finally {
       setRemoving(false);
@@ -81,7 +81,7 @@ export function GoatSmartSettings() {
           <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}`} />
         </button>
         <span onClick={toggle}>
-          <span className="block font-semibold">Smart mode (beta) on this computer</span>
+          <span className="block font-semibold">G.O.A.T.+ (beta) on this computer</span>
           <span className="block text-xs text-[var(--text-muted)]">
             G.O.A.T. answers the same way, and a private AI model running only on this computer fills in what the rules miss (for example, reading a whole
             report for its recommendations). Questions and patient information are never sent anywhere.
@@ -100,7 +100,7 @@ export function GoatSmartSettings() {
             </>
           ) : (
             <>
-              <p>Turning on Smart mode downloads the model once. It stays on this computer.</p>
+              <p>Turning on G.O.A.T.+ downloads the model once. It stays on this computer.</p>
               <div className="mt-2 space-y-1">
                 {(Object.keys(GOAT_AI_MODELS) as GoatAiModel[]).map((m) => (
                   <label key={m} className="flex cursor-pointer items-start gap-2">
@@ -137,7 +137,7 @@ export function GoatSmartSettings() {
       {on && ai.status === "loading" && (
         <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-muted)]">
           <div className="flex justify-between gap-2">
-            <span>{ai.cached ? "Opening Smart mode…" : "One-time download, stays on this computer"}</span>
+            <span>{ai.cached ? "Opening G.O.A.T.+…" : "One-time download, stays on this computer"}</span>
             <span className="font-semibold">{pct}%</span>
           </div>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
@@ -166,7 +166,7 @@ export function GoatSmartSettings() {
 
       {step === "offRemove" && (
         <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-          <p>Smart mode is off. Also remove the downloaded model from this computer? You can download it again later.</p>
+          <p>G.O.A.T.+ is off. Also remove its downloaded model from this computer? You can download it again later.</p>
           <div className="mt-2 flex gap-2">
             <button className={primary} disabled={removing} onClick={() => void remove()} type="button">
               {removing ? "Removing…" : "Remove from this computer"}
@@ -180,16 +180,16 @@ export function GoatSmartSettings() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-white p-3">
         <div className="min-w-0 flex-1">
-          <div className="font-semibold">Downloaded model</div>
+          <div className="font-semibold">G.O.A.T.+ downloaded model</div>
           <div className="text-xs text-[var(--text-muted)]">
             {downloaded.length
               ? `${downloaded.map((m) => `${GOAT_AI_MODELS[m].label} (about ${size(GOAT_AI_MODELS[m].downloadMb)})`).join(", ")} on this computer.`
-              : "No model downloaded on this computer."}
+              : "No G.O.A.T.+ model downloaded on this computer."}
           </div>
         </div>
         {step === "confirmRemove" ? (
           <span className="flex items-center gap-2">
-            <span className="text-xs">Remove it{on ? " and turn Smart mode off" : ""}?</span>
+            <span className="text-xs">Remove it{on ? " and turn G.O.A.T.+ off" : ""}?</span>
             <button
               className={primary}
               disabled={removing}

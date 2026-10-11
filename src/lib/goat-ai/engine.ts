@@ -162,7 +162,7 @@ export async function checkGoatAiSupport(
   if (!gpu) {
     return {
       ok: false,
-      message: "This browser can't run Smart mode (it needs WebGPU: a recent Chrome or Edge on a computer). Normal G.O.A.T. still works.",
+      message: "This browser can't run G.O.A.T.+ (it needs WebGPU: a recent Chrome or Edge on a computer). Normal G.O.A.T. still works.",
       variant: null,
       cached: false,
     };
@@ -174,7 +174,7 @@ export async function checkGoatAiSupport(
     adapter = null;
   }
   if (!adapter) {
-    return { ok: false, message: "Smart mode couldn't start this computer's graphics chip (WebGPU). Normal G.O.A.T. still works.", variant: null, cached: false };
+    return { ok: false, message: "G.O.A.T.+ couldn't start this computer's graphics chip (WebGPU). Normal G.O.A.T. still works.", variant: null, cached: false };
   }
   const variant = adapter.features.has("shader-f16") ? "f16" : "f32";
   let cached = false;
@@ -220,7 +220,7 @@ export function loadGoatAi(): Promise<void> {
       set({ status: "unsupported", message: s.message, variant: s.variant });
       throw new Error(s.message || "unsupported");
     }
-    set({ status: "loading", progress: 0, progressText: s.cached ? "Opening Smart mode…" : "Starting the one-time download…", variant: s.variant, cached: s.cached, model });
+    set({ status: "loading", progress: 0, progressText: s.cached ? "Opening G.O.A.T.+…" : "Starting the one-time download…", variant: s.variant, cached: s.cached, model });
     try {
       // Keep the download from being cleared when the browser runs low on space.
       void navigator.storage?.persist?.().catch(() => undefined);
@@ -241,8 +241,8 @@ export function loadGoatAi(): Promise<void> {
         message: /quota/i.test(msg)
           ? "The browser ran out of storage space for the model. Normal G.O.A.T. still works."
           : /memory|OOM|buffer|device (was )?lost/i.test(msg) && model === "accurate"
-          ? "This computer's graphics chip doesn't have enough memory for the more accurate model. Try \"Smaller and faster\" in the Smart mode options. Normal G.O.A.T. still works."
-          : `Smart mode couldn't load (${msg.slice(0, 160)}). Normal G.O.A.T. still works.`,
+          ? "This computer's graphics chip doesn't have enough memory for the more accurate model. Try \"Smaller and faster\" in Settings → G.O.A.T. → G.O.A.T.+. Normal G.O.A.T. still works."
+          : `G.O.A.T.+ couldn't load (${msg.slice(0, 160)}). Normal G.O.A.T. still works.`,
       });
       throw e;
     } finally {
@@ -278,7 +278,7 @@ export function runGoatAi(
       return { text, ms: performance.now() - t0, firstTokenMs: 300, tokens: 0 };
     }
     await loadGoatAi();
-    if (!engine) throw new Error("Smart mode isn't loaded");
+    if (!engine) throw new Error("G.O.A.T.+ isn't loaded");
     const t0 = performance.now();
     let first = 0;
     let text = "";

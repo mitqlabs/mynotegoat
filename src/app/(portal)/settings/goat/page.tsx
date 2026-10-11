@@ -25,7 +25,7 @@ export default function GoatSettingsPage() {
       </section>
       {GOAT_SMART_AVAILABLE && (
         <section className="panel-card p-4">
-          <h3 className="text-xl font-semibold">Smart mode (beta)</h3>
+          <h3 className="text-xl font-semibold">G.O.A.T.+ (beta)</h3>
           <p className="text-sm text-[var(--text-muted)]">Turned on per computer: the model is downloaded to, and runs on, this computer only.</p>
           <div className="mt-3">
             <GoatSmartSettings />
@@ -34,9 +34,9 @@ export default function GoatSettingsPage() {
       )}
       {GOAT_SMART_AVAILABLE && (
         <section className="panel-card p-4">
-          <h3 className="text-xl font-semibold">Smart mode answers (beta)</h3>
+          <h3 className="text-xl font-semibold">G.O.A.T.+ answers (beta)</h3>
           <p className="text-sm text-[var(--text-muted)]">
-            How G.O.A.T.&apos;s Smart mode writes answers. Shared by everyone in the office. Normal G.O.A.T. isn&apos;t affected.
+            How G.O.A.T.+ writes answers. Shared by everyone in the office. Regular G.O.A.T. isn&apos;t affected.
           </p>
           <div className="mt-3">
             <GoatAnswerPrefsPanel />

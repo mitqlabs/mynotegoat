@@ -427,7 +427,7 @@ export function GlobalGoatPopup({
                     {m.patientId && (
                       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                         <span className="flex items-center gap-2">
-                          {m.smart ? "Smart mode helped · check the sources" : "From NoteGoat"}
+                          {m.smart ? "G.O.A.T.+ helped · check the sources" : "From NoteGoat"}
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
@@ -451,7 +451,7 @@ export function GlobalGoatPopup({
                     </div>
                   ) : (
                     <span className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                      <Spinner /> {smartActive && ai.status === "loading" ? "Getting Smart mode ready…" : "Searching…"}
+                      <Spinner /> {smartActive && ai.status === "loading" ? "Getting G.O.A.T.+ ready…" : "Searching…"}
                     </span>
                   )}
                 </div>

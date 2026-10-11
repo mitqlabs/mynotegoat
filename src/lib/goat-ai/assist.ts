@@ -82,12 +82,12 @@ export async function assistGoat(input: {
       title: "Recommendations",
       lines: [],
       groups: [{ lead: `${pick.who.length ? `${pick.who.join(" / ")} — ` : ""}${pick.file.name}`, blocks: blocks.map((b) => ({ ...b, plain: true })), note: notes.join(" ") || undefined }],
-      source: `Patient Files — ${pick.file.name} (${pick.dateLabel} ${pick.date || "—"}) · read in full by Smart mode`,
+      source: `Patient Files — ${pick.file.name} (${pick.dateLabel} ${pick.date || "—"}) · read in full by G.O.A.T.+`,
       section: "specialist",
       copyText: recommendationsText(blocks),
       fileId: pick.file.id,
     };
-    const warnings = ai.dropped.length ? [`Smart mode left out ${ai.dropped.length} item${ai.dropped.length === 1 ? "" : "s"} it couldn't find written in the report.`] : [];
+    const warnings = ai.dropped.length ? [`G.O.A.T.+ left out ${ai.dropped.length} item${ai.dropped.length === 1 ? "" : "s"} it couldn't find written in the report.`] : [];
     return done(
       {
         ...base,
@@ -109,7 +109,7 @@ export async function assistGoat(input: {
   const answer: GoatAnswer = {
     title: "Answer",
     lines: smart.text.split("\n").filter((l) => l.trim()),
-    source: files.length ? `Patient Files — ${[...new Set(files.map((f) => f.title))].join(", ")} · Smart mode` : "Patient page · Smart mode",
+    source: files.length ? `Patient Files — ${[...new Set(files.map((f) => f.title))].join(", ")} · G.O.A.T.+` : "Patient page · G.O.A.T.+",
     section: smart.retrieval.sources[0]?.section ?? "specialist",
     copyText: smart.text,
     fileId: files[0]?.fileId,

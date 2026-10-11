@@ -17,6 +17,7 @@
  */
 
 import type { PortalFeature } from "@/lib/plan-access";
+import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
 
 /** Who a chapter is for. "all" = anyone who can sign in. */
 export type HandbookAudience = "all" | "manager" | "admin";
@@ -885,4 +886,44 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       },
     ],
   },
+  // Preview only (hidden on production, like the feature itself).
+  ...(GOAT_SMART_AVAILABLE
+    ? [
+        {
+          id: "goat-plus",
+          title: "G.O.A.T.+ (beta)",
+          summary: "G.O.A.T. with a private AI model that runs on your own computer and fills in what the regular G.O.A.T. misses.",
+          audience: "all" as const,
+          tasks: [
+            {
+              heading: "Turn G.O.A.T.+ on (once per computer)",
+              steps: [
+                "Go to Settings → G.O.A.T.",
+                "Under G.O.A.T.+ (beta), turn on \"G.O.A.T.+ (beta) on this computer\".",
+                "Pick More accurate (about 2.3 GB, newer computers) or Smaller and faster (about 880 MB), then click Download and turn on.",
+                "Wait for the progress bar to finish. The download happens once and stays on this computer.",
+              ],
+              why: "The model runs inside this browser on this computer. Questions, patient information and answers are never sent anywhere, so each computer downloads its own copy.",
+              watchOut: "It needs a recent Chrome or Edge on a computer with a graphics chip. If it can't run, G.O.A.T. tells you and keeps working the regular way.",
+            },
+            {
+              heading: "What changes in answers",
+              steps: [
+                "Ask G.O.A.T. as usual on the patient page, in Encounters, or from the G.O.A.T. button in the sidebar.",
+                "You still get one answer in the regular format. For recommendations, G.O.A.T.+ reads the doctor's whole report and fills in anything the regular G.O.A.T. missed (regions, then Alternatives, Medications, Follow up, Costs).",
+                "Check the answer against the report (\"read in full by G.O.A.T.+\" and Open file under the answer), then click Copy to paste it into the Specialist box.",
+              ],
+              watchOut: "G.O.A.T.+ can still miss or misread something. Items it can't find written in the report are left out and flagged, but always check before you rely on it.",
+            },
+            {
+              heading: "Turn it off or free up space",
+              steps: [
+                "Go to Settings → G.O.A.T. and turn G.O.A.T.+ off. It asks whether to also remove the downloaded model from this computer.",
+                "Or click Remove downloaded model, then Remove, to delete it. G.O.A.T. shows how much space was freed.",
+              ],
+            },
+          ],
+        },
+      ]
+    : []),
 ];

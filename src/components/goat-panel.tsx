@@ -547,7 +547,7 @@ export function GoatPanel({
 
           <p className="mt-3 text-[11px] text-[var(--text-muted)]">
             {filesOn
-              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser${smartActive ? ", and Smart mode answers on this computer" : ""}. Nothing leaves NoteGoat.`
+              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser${smartActive ? ", and G.O.A.T.+ answers on this computer" : ""}. Nothing leaves NoteGoat.`
               : `G.O.A.T. reads only ${where}. Nothing leaves NoteGoat.`}
           </p>
         </div>
