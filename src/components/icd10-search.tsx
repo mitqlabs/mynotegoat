@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useRef, useState } from "react";
 import { DxSaveToListPanel, type DxSaveToListConfig } from "@/components/dx-save-to-list";
 import {
   ICD10_VERSION,
@@ -54,6 +54,7 @@ export function Icd10Search({
   saveToList?: DxSaveToListConfig;
 }) {
   const [savingCode, setSavingCode] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState<Icd10Index | null>(() => icd10IfLoaded());
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -108,19 +109,34 @@ export function Icd10Search({
         {added ? addedLabel : actionLabel}
       </button>
     );
+    const compactAdd = (
+      <button
+        className={`whitespace-nowrap rounded-lg px-2 py-0.5 text-[11px] font-semibold ${
+          added
+            ? "cursor-default border border-[var(--line-soft)] text-[var(--text-muted)]"
+            : "border border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white transition-all active:scale-[0.97]"
+        }`}
+        disabled={added}
+        onClick={() => onPick({ code, description }, fromYourCodes)}
+        type="button"
+      >
+        {added ? addedLabel : actionLabel}
+      </button>
+    );
     if (canSave && saveToList) {
       return (
         <Fragment key={key}>
           <div
             className={`flex items-start gap-2 px-3 py-1.5 hover:bg-[var(--bg-soft)] ${saving ? "bg-[var(--bg-soft)]" : "border-b border-[var(--line-soft)] last:border-b-0"}`}
           >
-            <span className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{code}</span>
+            <span className="w-[4.25rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{code}</span>
             <span className="min-w-0 flex-1 text-sm leading-snug">{description}</span>
-            <span className="flex shrink-0 flex-col items-stretch gap-1 @[26rem]:flex-row @[26rem]:items-start">
+            {/* Side by side when there's room; stacked in the narrow one-column box. */}
+            <span className="flex shrink-0 flex-col items-stretch gap-1 @[34rem]:flex-row @[34rem]:items-start">
               <button
                 aria-expanded={saving}
                 aria-label={`Save ${code} to your diagnosis codes`}
-                className={`whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-semibold transition-all active:scale-[0.97] ${
+                className={`whitespace-nowrap rounded-lg border px-2 py-0.5 text-[11px] font-semibold transition-all active:scale-[0.97] ${
                   saving
                     ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]"
                     : "border-[var(--brand-primary)]/50 bg-white text-[var(--brand-primary)]"
@@ -131,12 +147,20 @@ export function Icd10Search({
               >
                 {saveToList.buttonLabel ?? "+ Dx Code"}
               </button>
-              {addButton}
+              {compactAdd}
             </span>
           </div>
           {saving && (
             <div className="border-b border-[var(--line-soft)] bg-[var(--bg-soft)] last:border-b-0">
-              <DxSaveToListPanel config={saveToList} entry={{ code, description }} onClose={() => setSavingCode(null)} />
+              <DxSaveToListPanel
+                config={saveToList}
+                entry={{ code, description }}
+                onClose={(saved) => {
+                  setSavingCode(null);
+                  // The code now shows at the top, under Your codes.
+                  if (saved) listRef.current?.scrollTo?.({ top: 0 });
+                }}
+              />
             </div>
           )}
         </Fragment>
@@ -199,7 +223,7 @@ export function Icd10Search({
         value={query}
       />
       {q && (
-        <div className="@container max-h-80 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
+        <div ref={listRef} className="@container max-h-80 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white">
           {localCodes && results.local.length > 0 && (
             <>
               {heading(localLabel, `${results.local.length} match${results.local.length === 1 ? "" : "es"}`)}

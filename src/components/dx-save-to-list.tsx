@@ -29,7 +29,7 @@ export function DxSaveToListPanel({
 }: {
   entry: Icd10Code;
   config: DxSaveToListConfig;
-  onClose: () => void;
+  onClose: (saved: boolean) => void;
 }) {
   const [folderId, setFolderId] = useState(() => config.guessFolderId(entry) || config.folders[0]?.id || "");
   const [bundleIds, setBundleIds] = useState<string[]>([]);
@@ -44,7 +44,7 @@ export function DxSaveToListPanel({
   const save = () => {
     const err = config.onSave(entry, folderId, bundleIds);
     if (err) setError(err);
-    else onClose();
+    else onClose(true);
   };
 
   return (
@@ -55,7 +55,7 @@ export function DxSaveToListPanel({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
-          onClose();
+          onClose(false);
         }
       }}
       role="dialog"
@@ -105,7 +105,7 @@ export function DxSaveToListPanel({
       <div className="flex justify-end gap-2">
         <button
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
-          onClick={onClose}
+          onClick={() => onClose(false)}
           type="button"
         >
           Cancel
