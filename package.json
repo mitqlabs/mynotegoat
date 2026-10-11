@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "sanity": "node scripts/sanity-check.mjs"
+    "sanity": "node scripts/sanity-check.mjs",
+    "icd10:build": "node scripts/build-icd10.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

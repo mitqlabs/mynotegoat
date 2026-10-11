@@ -78,7 +78,10 @@ const PROCEDURE_RE =
 const SECTION_RE = /^(medications?|meds|imaging|diagnostics?|referrals?|follow[\s-]?up|return(?: to clinic| visit)?|rtc|disposition)\b\s*[:\-–]?\s*(.*)$/i;
 const NONE_RE = /^(none|n\/?a|no(?:ne)? (?:at this time|new)?|nil|-+|\.)?\.?$/i;
 const SIGNATURE_RE = /\s*(?:\b[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z'-]+)+,?\s*(?:M\.?D|D\.?O|D\.?C|PA-?C|NP|DPM)\.?)\s*$/;
-const END_RE = /\b(electronically signed|signed by|dictated by|cc:|this report was|thank you for (?:the|this) referral|sincerely)\b/i;
+// "signed by" only where it ends the report, never inside a per-page "E-signed by Dr. … on 05/30/2026" footer.
+const END_RE = /\b(electronically signed|(?<![-\w])signed by|dictated by|cc:|this report was|thank you for (?:the|this) referral|thank you for (?:allowing|letting) me|please do not hesitate|sincerely)\b/i;
+/** "[Page 5 of 6] E-signed by …", "Page 2 of 6", "This page was generated at …": printed on every page. */
+const PAGE_MARK_RE = /^\s*(?:\[?\s*page\s+\d+\s+(?:of|\/)\s+\d+\s*\]?|this page was (?:generated|printed|created)\b)/i;
 
 const SMALL_WORDS = new Set(["and", "or", "of", "to", "the", "for", "in", "on", "a", "an", "with"]);
 
@@ -173,9 +176,43 @@ export function normalizeLevels(text: string): string {
   return (text ?? "").replace(/\b([CTLS])(\d{1,2})\s*[-–]\s*([CTLS]?)(\d{1,2})\b/g, (_m, a: string, n1: string, b: string, n2: string) => `${a}${n1}-${b || a}${n2}`);
 }
 
+/**
+ * Take out what an EMR prints on every page (letterhead, "Patient: … DOB: …",
+ * "[Page 5 of 6] E-signed by …"). A PDF reader puts it in the middle of the
+ * text wherever a page breaks, which used to cut a Plan off after its first item.
+ * Only lines right before a page mark that repeat on most pages are dropped,
+ * so a sentence the doctor wrote twice (two identical fee lines) stays.
+ */
+export function stripPageFurniture(text: string): string {
+  const lines = (text ?? "").replace(/\r/g, "").split("\n");
+  const norm = (l: string) => l.replace(/\s+/g, " ").trim().toLowerCase();
+  const marks = lines.map((l, i) => (PAGE_MARK_RE.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (!marks.length) return text ?? "";
+  const counts = new Map<string, number>();
+  for (const l of lines) {
+    const k = norm(l);
+    if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const pages = marks.filter((i) => /page\s+\d/i.test(lines[i])).length || marks.length;
+  const minRepeat = Math.max(2, Math.ceil(pages * 0.6));
+  const drop = new Set<number>(marks);
+  for (const m of marks) {
+    // The header block sits just before the mark: walk back over lines that repeat on most pages.
+    for (let i = m - 1, seen = 0; i >= 0 && seen < 8; i--) {
+      const k = norm(lines[i]);
+      if (!k) continue;
+      if (drop.has(i)) continue;
+      if ((counts.get(k) ?? 0) < minRepeat) break;
+      drop.add(i);
+      seen++;
+    }
+  }
+  return lines.filter((_, i) => !drop.has(i)).join("\n");
+}
+
 /** The Plan / Recommendations part of a report (whole text when there's no such heading). */
 export function planSection(text: string): string {
-  const flat = normalizeLevels((text ?? "").replace(/\r/g, ""));
+  const flat = normalizeLevels(stripPageFurniture(text).replace(/\r/g, ""));
   const m = PLAN_HEAD.exec(flat);
   const line = PLAN_LINE.exec(flat);
   const start = [m ? { i: m.index, len: m[0].length } : null, line ? { i: line.index, len: line[0].length } : null]
@@ -189,9 +226,12 @@ export function planSection(text: string): string {
 
 /** Whole report minus the signature block (for the fallback scan). */
 function wholeReport(text: string): string {
-  const flat = normalizeLevels((text ?? "").replace(/\r/g, ""));
-  const end = END_RE.exec(flat);
-  return end ? flat.slice(0, end.index) : flat;
+  const flat = normalizeLevels(stripPageFurniture(text).replace(/\r/g, ""));
+  // A closing line near the top ("Thank you for allowing me to see …") isn't the end of the report.
+  const re = new RegExp(END_RE.source, "gi");
+  let end: RegExpExecArray | null;
+  while ((end = re.exec(flat))) if (end.index >= flat.length * 0.4) return flat.slice(0, end.index);
+  return flat;
 }
 
 function segments(plan: string): string[] {
