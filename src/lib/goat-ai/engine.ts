@@ -170,18 +170,20 @@ export async function checkGoatAiSupport(
   let adapter: { features: Set<string> } | null = null;
   try {
     adapter = await gpu.requestAdapter();
-  } catch {
+  } catch (e) {
+    console.error("[goat+] WebGPU requestAdapter failed", e);
     adapter = null;
   }
   if (!adapter) {
-    return { ok: false, message: "+ mode couldn't start this computer's graphics chip (WebGPU). Normal G.O.A.T. still works.", variant: null, cached: false };
+    return { ok: false, message: "This computer's graphics can't run + mode (Chrome's WebGPU didn't start; see chrome://gpu). Normal G.O.A.T. still works.", variant: null, cached: false };
   }
   const variant = adapter.features.has("shader-f16") ? "f16" : "f32";
   let cached = false;
   try {
     const { hasModelInCache } = await import("@mlc-ai/web-llm");
     cached = await hasModelInCache(GOAT_AI_MODELS[model][variant].model_id, appConfig(model, variant));
-  } catch {
+  } catch (e) {
+    console.error("[goat+] couldn't load the + mode code (web-llm chunk) or read its cache", e);
     cached = false;
   }
   if (!cached && navigator.storage?.estimate) {
@@ -200,8 +202,13 @@ export async function checkGoatAiSupport(
 export async function refreshGoatAiSupport(): Promise<void> {
   if (state.status === "loading" || state.status === "ready") return;
   const model = goatAiModel();
+  if (loading) return;
   set({ status: "checking", model });
   const s = await checkGoatAiSupport(model);
+  // A Turn on (loadGoatAi) may have started while this check ran: don't
+  // overwrite its "loading" state with "idle" (that hid the download progress).
+  const now = goatAiState().status;
+  if (loading || now === "loading" || now === "ready") return;
   set({ status: s.ok ? "idle" : "unsupported", message: s.message, variant: s.variant, cached: s.cached, model });
 }
 
@@ -215,7 +222,10 @@ export function loadGoatAi(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     const model = goatAiModel();
+    set({ status: "checking", progressText: "Checking this computer…", message: "", model });
+    console.info("[goat+] checking this computer for + mode", { model });
     const s = await checkGoatAiSupport(model);
+    console.info("[goat+] support check", s);
     if (!s.ok || !s.variant) {
       set({ status: "unsupported", message: s.message, variant: s.variant });
       throw new Error(s.message || "unsupported");
@@ -232,6 +242,7 @@ export function loadGoatAi(): Promise<void> {
       });
       set({ status: "ready", progress: 1, progressText: "", cached: true });
     } catch (e) {
+      console.error("[goat+] + mode load failed", e);
       engine = null;
       worker?.terminate();
       worker = null;
@@ -242,6 +253,8 @@ export function loadGoatAi(): Promise<void> {
           ? "The browser ran out of storage space for the model. Normal G.O.A.T. still works."
           : /memory|OOM|buffer|device (was )?lost/i.test(msg) && model === "accurate"
           ? "This computer's graphics chip doesn't have enough memory for the more accurate model. Try \"Smaller and faster\" in Settings → G.O.A.T. → + mode. Normal G.O.A.T. still works."
+          : /fetch|network|load failed|404|403|cors/i.test(msg)
+          ? `Download blocked: ${msg.slice(0, 160)}. Check the internet connection or any firewall / ad blocker, then try again. Normal G.O.A.T. still works.`
           : `+ mode couldn't load (${msg.slice(0, 160)}). Normal G.O.A.T. still works.`,
       });
       throw e;

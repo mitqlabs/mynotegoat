@@ -607,7 +607,12 @@ export function replacePatientsFromCloud(nextPatients: PatientRecord[]) {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(merged));
+  try {
+    window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(merged));
+  } catch (err) {
+    // In-memory `patients` (above) already holds the cloud copy.
+    console.error("[patients] localStorage write failed during cloud reload:", err);
+  }
 }
 
 function createPatientId() {
