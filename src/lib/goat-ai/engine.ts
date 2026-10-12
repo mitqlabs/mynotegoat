@@ -138,7 +138,6 @@ export function goatAiPhaseText(raw: string, progress: number, cached: boolean):
 
 let state: GoatAiState = { status: "idle", progress: 0, progressText: "", message: "", cached: false, variant: null, model: GOAT_AI_DEFAULT_MODEL };
 let lastProgressAt = 0;
-let lastLoggedPhase = "";
 let stallTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 let engine: WebWorkerMLCEngine | null = null;
@@ -260,7 +259,11 @@ export function loadGoatAi(): Promise<void> {
     startStallWatch();
     try {
       // Keep the download from being cleared when the browser runs low on space.
-      void navigator.storage?.persist?.().catch(() => undefined);
+      void navigator.storage
+        ?.persist?.()
+        .then((granted) => console.info(`[goat+] persistent storage ${granted ? "granted" : "not granted"}`))
+        .catch((e) => console.warn("[goat+] persistent storage request failed", e));
+      void logStorage("before load");
       const webllm = await import("@mlc-ai/web-llm");
       worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
       worker.addEventListener("error", (ev) => console.error("[goat+] model worker error", ev.message || ev));
@@ -269,12 +272,8 @@ export function loadGoatAi(): Promise<void> {
         appConfig: appConfig(model, s.variant),
         initProgressCallback: (p: InitProgressReport) => {
           lastProgressAt = Date.now();
-          const phase = p.text.split("[")[0].split(":")[0];
-          const decile = Math.floor(p.progress * 10);
-          if (`${phase}${decile}` !== lastLoggedPhase) {
-            lastLoggedPhase = `${phase}${decile}`;
-            console.info(`[goat+] ${p.text}`);
-          }
+          // Every report (WebLLM already sends at most about one a second).
+          console.info(`[goat+] ${p.text}`);
           set({ progress: p.progress, progressText: goatAiPhaseText(p.text, p.progress, s.cached), stalled: false });
         },
       });
@@ -308,6 +307,20 @@ export function loadGoatAi(): Promise<void> {
   return loading;
 }
 
+/** Browser storage for this site (Cache API + IndexedDB + localStorage share it). */
+async function logStorage(when: string) {
+  try {
+    const e = await navigator.storage?.estimate?.();
+    if (!e) return;
+    const mb = (b = 0) => Math.round(b / (1024 * 1024));
+    const free = mb((e.quota ?? 0) - (e.usage ?? 0));
+    console.info(`[goat+] storage ${when}: used ${mb(e.usage)} MB of ${mb(e.quota)} MB (${free} MB free)`);
+    if (free < GOAT_AI_MODELS[goatAiModel()].downloadMb * 1.2) console.warn(`[goat+] only ${free} MB free for the ${GOAT_AI_MODELS[goatAiModel()].downloadMb} MB model: the download can fail or hang`);
+  } catch (err) {
+    console.warn("[goat+] storage estimate failed", err);
+  }
+}
+
 function stopStallWatch() {
   if (stallTimer) clearInterval(stallTimer);
   stallTimer = null;
@@ -316,12 +329,12 @@ function stopStallWatch() {
 function startStallWatch() {
   stopStallWatch();
   lastProgressAt = Date.now();
-  lastLoggedPhase = "";
   stallTimer = setInterval(() => {
     if (state.status !== "loading") return stopStallWatch();
     const idle = Date.now() - lastProgressAt;
     if (idle >= GOAT_AI_STALL_MS && !state.stalled) {
       console.warn(`[goat+] no load progress for ${Math.round(idle / 1000)}s at "${state.progressText}" (${Math.round(state.progress * 100)}%)`);
+      void logStorage("stalled");
       set({ stalled: true });
     }
   }, 15000);
