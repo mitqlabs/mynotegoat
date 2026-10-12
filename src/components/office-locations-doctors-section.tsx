@@ -1,5 +1,6 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
 import { useEffect, useRef, useState } from "react";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -432,33 +433,29 @@ export function OfficeLocationsDoctorsSection() {
                               />
                               {h.enabled ? (
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  <input
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                    onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { start: e.target.value })}
-                                    type="time"
+                                  <TimeInput12h
+                                    inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { start: v })}
                                     value={h.start}
                                   />
                                   <span className="text-xs text-[var(--text-muted)]">–</span>
-                                  <input
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                    onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { end: e.target.value })}
-                                    type="time"
+                                  <TimeInput12h
+                                    inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { end: v })}
                                     value={h.end}
                                   />
                                   {h.start2 && h.end2 ? (
                                     <>
                                       <span className="text-[10px] font-semibold text-[var(--text-muted)]">then</span>
-                                      <input
-                                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                        onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { start2: e.target.value })}
-                                        type="time"
+                                      <TimeInput12h
+                                        inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { start2: v })}
                                         value={h.start2}
                                       />
                                       <span className="text-xs text-[var(--text-muted)]">–</span>
-                                      <input
-                                        className="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
-                                        onChange={(e) => setLocHour(loc.id, h.dayOfWeek, { end2: e.target.value })}
-                                        type="time"
+                                      <TimeInput12h
+                                        inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { end2: v })}
                                         value={h.end2}
                                       />
                                       <button

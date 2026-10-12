@@ -1,5 +1,6 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
@@ -1994,13 +1995,10 @@ export default function AppointmentsPage() {
               </label>
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Start Time *</span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) =>
-                    setNewAppointmentDraft((current) => ({ ...current, startTime: event.target.value }))
-                  }
-                  step={scheduleSettings.appointmentIntervalMin * 60}
-                  type="time"
+                <TimeInput12h
+                  smart
+                  inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(v) => setNewAppointmentDraft((current) => ({ ...current, startTime: v }))}
                   value={newAppointmentDraft.startTime}
                 />
               </label>
@@ -2382,11 +2380,10 @@ export default function AppointmentsPage() {
 
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Start Time</span>
-                <input
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => setEditTimeDraft(event.target.value)}
-                  step={scheduleSettings.appointmentIntervalMin * 60}
-                  type="time"
+                <TimeInput12h
+                  smart
+                  inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(v) => setEditTimeDraft(v)}
                   value={editTimeDraft}
                 />
               </label>

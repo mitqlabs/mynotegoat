@@ -1,3 +1,4 @@
+import { to12hLabel } from "./time-12h";
 export interface DailyOfficeHours {
   dayOfWeek: number;
   enabled: boolean;
@@ -226,9 +227,9 @@ export function getOfficeHoursLabel(settings: ScheduleSettingsConfig, dateIso: s
   if (!officeHours || !officeHours.enabled) {
     return "Closed";
   }
-  const first = `${officeHours.start} - ${officeHours.end}`;
+  const first = `${to12hLabel(officeHours.start)} - ${to12hLabel(officeHours.end)}`;
   return officeHours.start2 && officeHours.end2
-    ? `${first}, ${officeHours.start2} - ${officeHours.end2}`
+    ? `${first}, ${to12hLabel(officeHours.start2)} - ${to12hLabel(officeHours.end2)}`
     : first;
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
+import { inferMeridiem, parseTyped } from "@/lib/time-12h";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -130,20 +132,6 @@ function formatUsTimeInput(rawValue: string): string {
   if (!digits) return "";
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-}
-
-/**
- * 12-hour input formatter — accepts 1-4 digits and emits "H:MM" or
- * "HH:MM" (1-12 for hour portion). Designed so the user can type
- * "930" and see "9:30", or "1230" and see "12:30".
- */
-function format12hTimeInput(rawValue: string): string {
-  const digits = rawValue.replace(/\D/g, "").slice(0, 4);
-  if (!digits) return "";
-  if (digits.length <= 2) return digits;
-  const hourDigits = digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2);
-  const minuteDigits = digits.slice(-2);
-  return `${hourDigits}:${minuteDigits}`;
 }
 
 type Ampm = "AM" | "PM";
@@ -676,6 +664,8 @@ export function NewAppointmentModal({
   );
   const [startTimeDisplay, setStartTimeDisplay] = useState("");
   const [startTimeAmpm, setStartTimeAmpm] = useState<Ampm>("AM");
+  // True once the user picks AM/PM themselves — smart AM/PM then stays out of the way.
+  const [startTimeAmpmPicked, setStartTimeAmpmPicked] = useState(false);
   const [recurEndDateDisplay, setRecurEndDateDisplay] = useState("");
 
   // Filter appointment types by the selected patient's kind (PI vs Cash).
@@ -773,6 +763,7 @@ export function NewAppointmentModal({
     const initial12h = split12hFrom24h(initial.startTime);
     setStartTimeDisplay(initial12h.display);
     setStartTimeAmpm(initial12h.ampm);
+    setStartTimeAmpmPicked(false);
     setRecurEndDateDisplay(isoDateToUs(initial.recurEndDate));
     setShowPatientSuggestions(false);
     setError("");
@@ -1843,11 +1834,21 @@ export function NewAppointmentModal({
               <input
                 className="w-24 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                 inputMode="numeric"
-                maxLength={5}
+                maxLength={8}
                 onChange={(event) => {
-                  const formatted = format12hTimeInput(event.target.value);
+                  const parsed = parseTyped(event.target.value);
+                  const formatted = parsed.display;
                   setStartTimeDisplay(formatted);
-                  const composed = compose24hFrom12h(formatted, startTimeAmpm);
+                  let nextAmpm: Ampm = startTimeAmpm;
+                  if (parsed.meridiem) {
+                    nextAmpm = parsed.meridiem;
+                    setStartTimeAmpmPicked(true);
+                  } else if (!startTimeAmpmPicked) {
+                    nextAmpm =
+                      inferMeridiem(formatted, scheduleSettings.officeHours, draft.startDate) ?? startTimeAmpm;
+                  }
+                  setStartTimeAmpm(nextAmpm);
+                  const composed = compose24hFrom12h(formatted, nextAmpm);
                   if (composed) {
                     setDraft((current) => ({ ...current, startTime: composed }));
                   }
@@ -1860,6 +1861,7 @@ export function NewAppointmentModal({
                 onChange={(event) => {
                   const nextAmpm = event.target.value as Ampm;
                   setStartTimeAmpm(nextAmpm);
+                  setStartTimeAmpmPicked(true);
                   const composed = compose24hFrom12h(startTimeDisplay, nextAmpm);
                   if (composed) {
                     setDraft((current) => ({ ...current, startTime: composed }));
@@ -2130,10 +2132,12 @@ export function NewAppointmentModal({
                                   {weekdayLabels[day]}
                                 </span>
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                                    onChange={(event) => {
-                                      const value = event.target.value;
+                                  <TimeInput12h
+                                    smart
+                                    allowEmpty
+                                    inputClassName="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                                    onChange={(v) => {
+                                      const value = v;
                                       setDraft((current) => ({
                                         ...current,
                                         perDayTimes: {
@@ -2142,7 +2146,6 @@ export function NewAppointmentModal({
                                         },
                                       }));
                                     }}
-                                    type="time"
                                     value={override}
                                   />
                                   {override ? (
@@ -2588,11 +2591,10 @@ function SeriesEditor({
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-semibold text-[var(--text-muted)]">Time</span>
-              <input
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                onChange={(event) => onChange({ ...series, startTime: event.target.value })}
-                step={intervalMin * 60}
-                type="time"
+              <TimeInput12h
+                smart
+                inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                onChange={(v) => onChange({ ...series, startTime: v })}
                 value={series.startTime || mainStartTime}
               />
             </label>
@@ -2696,15 +2698,14 @@ function SeriesEditor({
                         <span className="text-[10px] font-semibold text-[var(--text-muted)]">
                           {weekdayLabels[day]}
                         </span>
-                        <input
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                          onChange={(event) =>
-                            onChange({
+                        <TimeInput12h
+                          smart
+                          allowEmpty
+                          inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
+                          onChange={(v) => onChange({
                               ...series,
-                              perDayTimes: { ...series.perDayTimes, [day]: event.target.value },
-                            })
-                          }
-                          type="time"
+                              perDayTimes: { ...series.perDayTimes, [day]: v },
+                            })}
                           value={series.perDayTimes[day] ?? ""}
                         />
                       </label>
