@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import type { GoatContext } from "@/lib/goat";
 import type { AssistedAnswer } from "@/lib/goat-ai/assist";
-import { GOAT_AI_MODELS, goatAiModel, goatAiState, loadGoatAi, refreshGoatAiSupport, stopGoatAi, subscribeGoatAi, type GoatAiState } from "@/lib/goat-ai/engine";
+import { GOAT_AI_MODELS, goatAiModel, goatAiState, loadGoatAi, refreshGoatAiSupport, retryGoatAi, stopGoatAi, subscribeGoatAi, type GoatAiState } from "@/lib/goat-ai/engine";
 import { GOAT_PLUS_INTRO_KEY, GOAT_SMART_AVAILABLE, GOAT_SMART_LOCAL_KEY } from "@/lib/goat-ai/flag";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 
@@ -102,15 +102,11 @@ export function PlusIntroCard() {
   const ai = useGoatAiState();
   if (!show && !msg && started && ai.status !== "idle" && ai.status !== "ready") {
     // Right after "Turn on": always show what's happening (never a silent click).
-    const text =
-      ai.status === "checking"
-        ? "Checking this computer…"
-        : ai.status === "loading"
-          ? ai.cached
-            ? `Opening + mode… ${Math.round(ai.progress * 100)}%`
-            : `Downloading ${Math.round(ai.progress * 100)}%… (one time, stays on this computer)`
-          : ai.message;
-    return <div className={`mt-2 rounded-xl p-2.5 text-xs ${ai.status === "error" || ai.status === "unsupported" ? "border border-amber-200 bg-amber-50 text-amber-900" : "bg-[var(--bg-soft)] text-[var(--text-muted)]"}`}>{text}</div>;
+    return (
+      <div className="mt-2">
+        <GoatPlusLoadStatus ai={ai} compact />
+      </div>
+    );
   }
   if (!show && !msg) return null;
   if (msg) {
@@ -227,7 +223,7 @@ export function statusLabel(s: GoatStatus, ai?: GoatAiState): string {
     case "reading":
       return "Reading files…";
     case "plus":
-      return ai?.status === "loading" ? `Getting + mode ready… ${Math.round((ai.progress ?? 0) * 100)}%` : "Searching… (+ mode)";
+      return ai?.status === "loading" ? ai.progressText || `Getting + mode ready… ${Math.round((ai.progress ?? 0) * 100)}%` : "Searching… (+ mode)";
     case "found":
       return "Found it";
     case "notFound":
@@ -252,5 +248,48 @@ export function GoatStatusLine({ status, ai, className = "" }: { status: GoatSta
       <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${DOT[status]}`} />
       {statusLabel(status, ai)}
     </span>
+  );
+}
+
+/**
+ * What + mode is doing while it gets ready: the real phase (Downloading / Loading into
+ * graphics / Preparing the model…), a bar, and if nothing moves for 3 minutes a plain
+ * message with Retry and the smaller-model option. Errors show as a message.
+ */
+export function GoatPlusLoadStatus({ ai, compact = false }: { ai: GoatAiState; compact?: boolean }) {
+  const pct = Math.round(ai.progress * 100);
+  const box = compact ? "rounded-xl p-2.5 text-xs" : "rounded-xl px-3 py-2 text-sm";
+  if (ai.status === "checking") return <p className={`${box} bg-[var(--bg-soft)] text-[var(--text-muted)]`}>Checking this computer…</p>;
+  if (ai.status === "unsupported" || ai.status === "error") return <p className={`${box} border border-amber-200 bg-amber-50 font-semibold text-amber-900`}>{ai.message}</p>;
+  if (ai.status !== "loading") return null;
+  const retry = (model?: "fast") => void retryGoatAi(model).catch((e) => console.error("[goat+] retry failed", e));
+  return (
+    <div className={`${box} bg-[var(--bg-soft)] text-[var(--text-muted)]`} data-goat-plus-load="">
+      <div className="flex justify-between gap-2">
+        <span>{ai.progressText || "Getting + mode ready…"}</span>
+        <span className="font-semibold">{pct}%</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
+        <div className="h-full rounded-full bg-[#72bdcf] transition-all" style={{ width: `${Math.max(3, pct)}%` }} />
+      </div>
+      {ai.stalled && (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-900">
+          <p>
+            + mode hasn&apos;t moved in 3 minutes. The connection may have dropped, or this computer&apos;s graphics may be struggling with this model. What&apos;s
+            already downloaded is kept.
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            <button className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 font-semibold text-white" onClick={() => retry()} style={{ fontSize: 12 }} type="button">
+              Retry
+            </button>
+            {ai.model === "accurate" && (
+              <button className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 font-semibold" onClick={() => retry("fast")} style={{ fontSize: 12 }} type="button">
+                Use the smaller model ({GOAT_AI_MODELS.fast.downloadMb} MB)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

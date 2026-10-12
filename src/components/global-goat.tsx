@@ -604,7 +604,7 @@ export function GlobalGoatPopup({
                     </div>
                   ) : (
                     <span className="text-[var(--text-muted)]">
-                      {smartActive && ai.status === "loading" ? `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
+                      {smartActive && ai.status === "loading" ? ai.progressText || `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
                     </span>
                   )}
                 </div>
