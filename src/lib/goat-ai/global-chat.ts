@@ -54,6 +54,8 @@ export interface ChatMessage {
   practice?: boolean;
   /** Show the 'Turn on + mode' link to G.O.A.T. Settings. */
   plusLink?: boolean;
+  /** Clickable links under the answer (e.g. the Settings page that changes something). */
+  links?: Array<{ label: string; href: string }>;
 }
 
 export interface ChatState {

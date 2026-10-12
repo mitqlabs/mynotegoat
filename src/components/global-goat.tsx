@@ -25,7 +25,7 @@ import { GoatAvatar } from "@/components/goat-avatar";
 import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
-import { PLUS_NEEDED, PRACTICE_HELP, PRACTICE_SYSTEM_PROMPT, answerPractice, detectPracticeIntent, isPatientSpecific, practiceSnapshot, type PracticeData } from "@/lib/goat-practice";
+import { PLUS_NEEDED, PRACTICE_ANSWER_PROMPT, PRACTICE_HELP, SETTING_QUESTION, detectPracticeIntent, fallbackToolCalls, isPatientSpecific, parseToolCalls, runPracticeTool, toolPickPrompt, type PracticeData, type ToolResult } from "@/lib/goat-practice";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
@@ -282,44 +282,60 @@ export function GlobalGoatPopup({
     };
   };
 
-  /** Office question with + mode on: the local model answers from the office data, keeping the conversation. */
-  const askPracticeModel = async (question: string, ruleHint: string | null) => {
+  /**
+   * + mode office question: the local model picks read-only tools, NoteGoat runs
+   * them on this browser's data, then the model writes a natural answer from the
+   * results (keeping the recent conversation for follow-ups).
+   */
+  const askPracticeModel = async (question: string) => {
     setPracticeBusy(true);
     setPartial("");
     const t0 = performance.now();
+    const data = practiceData();
+    let results: ToolResult[] = [];
     try {
       const { runGoatAi } = await import("@/lib/goat-ai/engine");
       const history = chat.messages.filter((m) => m.practice).slice(-6).map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.text }));
-      const system = `${PRACTICE_SYSTEM_PROMPT}\n\nOFFICE DATA:\n${practiceSnapshot(practiceData())}${ruleHint ? `\n\nEXACT FIGURES FOR THIS QUESTION (computed by NoteGoat, trust these):\n${ruleHint}` : ""}`;
-      const r = await runGoatAi([{ role: "system", content: system }, ...history, { role: "user", content: question }], (t) => setPartial(t), { maxTokens: 400 });
-      push({ role: "goat", text: r.text.trim() || (ruleHint ?? PRACTICE_HELP), smart: true, practice: true, ms: performance.now() - t0 });
+      const pick = await runGoatAi([{ role: "system", content: toolPickPrompt() }, ...history, { role: "user", content: question }], () => undefined, { maxTokens: 160 });
+      let calls = parseToolCalls(pick.text);
+      if (!calls || !calls.length) {
+        if (calls === null) console.info("[goat+] tool pick wasn't valid JSON; using rules", pick.text.slice(0, 200));
+        calls = fallbackToolCalls(question);
+      }
+      results = calls.map((c) => runPracticeTool(c, data));
+      const choiceResult = results.find((r) => r.choices?.length);
+      if (choiceResult) {
+        push({ role: "goat", text: choiceResult.text, practice: true, choices: choiceResult.choices!.map((c) => ({ label: c.label, question: c.question })) });
+        return;
+      }
+      const toolText = results.length ? results.map((r) => `[${r.name}]\n${r.text}`).join("\n\n") : "(no tool results)";
+      const r = await runGoatAi(
+        [{ role: "system", content: `${PRACTICE_ANSWER_PROMPT}\n\nTODAY: ${data.today}\n\nTOOL RESULTS:\n${toolText}` }, ...history, { role: "user", content: question }],
+        (t) => setPartial(t),
+        { maxTokens: 400 },
+      );
+      const links = results.flatMap((x) => x.links ?? []);
+      push({ role: "goat", text: r.text.trim() || results.map((x) => x.text).join("\n") || PRACTICE_HELP, smart: true, practice: true, links: links.length ? links : undefined, ms: performance.now() - t0 });
     } catch (e) {
-      console.error("[goat] + mode office answer failed", e);
-      push({ role: "goat", text: ruleHint ?? PRACTICE_HELP, practice: true });
+      console.error("[goat+] + mode office answer failed", e);
+      const links = results.flatMap((x) => x.links ?? []);
+      push({ role: "goat", text: results.map((x) => x.text).join("\n") || PRACTICE_HELP, practice: true, links: links.length ? links : undefined });
     } finally {
       setPartial("");
       setPracticeBusy(false);
     }
   };
 
-  /** Office questions (to-do, schedule, case counts, contacts). True if handled. */
+  /** Office questions (to-do, schedule, cases, contacts, settings). True if handled. */
   const tryPractice = (question: string, confidentPatient: boolean): boolean => {
     const intent = detectPracticeIntent(question);
-    if (confidentPatient && (!intent || intent.kind !== "contact")) return false;
-    if (!intent) return false;
+    const setting = SETTING_QUESTION.test(question);
+    if (!intent && !setting) return false;
+    if (confidentPatient && intent?.kind !== "contact" && !setting) return false;
     push({ role: "user", text: question, practice: true });
     // Regular G.O.A.T. is for patient questions only: office questions are a + mode feature.
-    if (!smartActive) {
-      push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
-      return true;
-    }
-    // + mode: NoteGoat computes the exact figures; the model writes the answer.
-    const a = answerPractice(intent, practiceData());
-    if (a.choices?.some((c) => c.label !== "List them")) {
-      push({ role: "goat", text: a.text, practice: true, choices: a.choices.map((c) => ({ label: c.label, question: c.question })) });
-      return true;
-    }
-    void askPracticeModel(question, a.text);
+    if (!smartActive) push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
+    else void askPracticeModel(question);
     return true;
   };
 
@@ -334,7 +350,7 @@ export function GlobalGoatPopup({
     // + mode: anything not clearly about a patient is an office question for the model (follow-ups included).
     if (smartActive && !found.confident && !found.candidates.length && !found.named && !isPatientSpecific(question) && !waitingForName) {
       push({ role: "user", text: question, practice: true });
-      void askPracticeModel(question, null);
+      void askPracticeModel(question);
       return;
     }
     push({ role: "user", text: question });
@@ -485,6 +501,11 @@ export function GlobalGoatPopup({
                   <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <div className="whitespace-pre-line leading-snug">{m.text}</div>
+                    {m.links?.map((l) => (
+                      <Link key={l.href} className="mt-1 block font-semibold text-[var(--brand-primary)] hover:underline" href={l.href} style={{ fontSize: 13 }}>
+                        {l.label} ↗
+                      </Link>
+                    ))}
                     {m.plusLink && (
                       <Link className="mt-1 inline-block font-semibold text-[var(--brand-primary)] hover:underline" href="/settings/goat" style={{ fontSize: 13 }}>
                         Turn on + mode in G.O.A.T. Settings

@@ -9,6 +9,7 @@ import type { CaseStatus, ContactRecord } from "@/lib/mock-data";
 import type { TaskRecord } from "@/lib/tasks";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { editDistance } from "@/lib/goat-ai/global-chat";
+import { settingsHref, settingsSearchCatalog, GOAT_SETTINGS_PAGE } from "@/lib/settings-catalog";
 
 export interface PracticePatient {
   id: string;
@@ -229,3 +230,157 @@ export function practiceSnapshot(data: PracticeData): string {
 
 export const PRACTICE_SYSTEM_PROMPT =
   "You are G.O.A.T., the in-office assistant for a chiropractic practice. Answer the user's question in one to four short, natural sentences (use a short bulleted list only when listing several items). Use ONLY the OFFICE DATA below and the conversation so far; follow-up questions refer to the previous answer. Count carefully. If the data doesn't contain the answer, say you don't know from NoteGoat's data. Never invent names, numbers or dates.";
+
+// ---------------------------------------------------------------------------
+// + mode tools (read-only). The local model picks tools, NoteGoat runs them on
+// this computer's data, and the model writes the answer from the results.
+// Designed so write actions (e.g. scheduling, docs/goat-plus-actions.md) can be
+// added later as confirm-first tools.
+// ---------------------------------------------------------------------------
+
+export interface ToolCall {
+  name: string;
+  args: Record<string, string>;
+}
+export interface ToolLink {
+  label: string;
+  href: string;
+}
+export interface ToolResult {
+  name: string;
+  text: string;
+  links?: ToolLink[];
+  choices?: PracticeChoice[];
+}
+
+export const PRACTICE_TOOLS: Array<{ name: string; args: string; description: string }> = [
+  { name: "searchPatients", args: '{"name": string}', description: "find patients by (partial / misspelled) name; returns name, case status, attorney" },
+  { name: "getTodos", args: "{}", description: "open to-do items with due dates" },
+  { name: "caseCounts", args: '{"status"?: "Active"|"Submitted"|"Ready To Submit"|"Discharged"|"Dropped"|"Paid", "attorney"?: string}', description: "count cases by status (Submitted = billed, waiting for the check); optional attorney filter" },
+  { name: "listCases", args: '{"status": string, "attorney"?: string}', description: "list the cases with that status (optionally one attorney)" },
+  { name: "findContact", args: '{"name": string}', description: "contact directory lookup (attorneys, imaging, doctors): phone, fax, email" },
+  { name: "getSchedule", args: '{"day": "today"|"tomorrow"|"YYYY-MM-DD"}', description: "appointments on that day" },
+  { name: "findSetting", args: '{"query": string}', description: "which Settings page changes something (office hours, reminders, templates, + mode…); returns a link" },
+];
+
+const STATUSES: CaseStatus[] = ["Active", "Discharged", "Ready To Submit", "Submitted", "Dropped", "Paid"];
+function asStatus(v: string | undefined): CaseStatus | null {
+  if (!v) return null;
+  const n = v.toLowerCase();
+  if (/check|waiting|pending/.test(n)) return "Submitted";
+  return STATUSES.find((s) => s.toLowerCase() === n) ?? STATUSES.find((s) => n.includes(s.toLowerCase())) ?? null;
+}
+function attorneyMatch(p: PracticePatient, attorney: string | undefined): boolean {
+  if (!attorney) return true;
+  const a = norm(attorney).split(" ").filter((w) => w.length >= 3 && !["law", "the", "group", "firm", "office"].includes(w));
+  const pa = norm(p.attorney);
+  return a.length > 0 && a.every((w) => pa.split(" ").some((x) => x === w || (w.length >= 5 && editDistance(w, x) <= 1)));
+}
+
+export function findSettings(query: string): ToolLink[] {
+  const ws = norm(query).split(" ").filter((w) => w.length >= 3 && !CONTACT_STOP.has(w) && !["where", "change", "setting", "settings", "how", "can", "edit", "set", "turn", "find"].includes(w));
+  if (/\+ ?mode|goat|g\.o\.a\.t|abbreviation/i.test(query)) return [{ label: GOAT_SETTINGS_PAGE.title, href: GOAT_SETTINGS_PAGE.href }];
+  const scored = settingsSearchCatalog
+    .map((e) => {
+      const hay = norm([e.title, e.description ?? "", ...(e.aliases ?? [])].join(" "));
+      const phrases = (e.aliases ?? []).filter((a) => norm(query).includes(norm(a))).length * 2;
+      const score = phrases + ws.filter((w) => hay.split(" ").some((h) => h === w || (w.length >= 5 && editDistance(w, h) <= 1))).length;
+      return { e, score };
+    })
+    .filter((x) => x.score > 0 && !["officeSettings", "macros", "templates", "admin"].includes(x.e.key))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  return scored.map(({ e }) => ({ label: `Settings → ${e.title}`, href: settingsHref(e.key) }));
+}
+
+export function runPracticeTool(call: ToolCall, data: PracticeData): ToolResult {
+  const a = call.args ?? {};
+  switch (call.name) {
+    case "searchPatients": {
+      const q = norm(a.name ?? "");
+      const hits = data.patients.filter((p) => q && norm(p.fullName).split(" ").some((w) => q.split(" ").some((x) => x.length >= 2 && (w.startsWith(x) || (x.length >= 4 && editDistance(x, w) <= 1))))).slice(0, 8);
+      return { name: call.name, text: hits.length ? hits.map((p) => `${p.fullName} | ${p.caseStatus} | ${p.attorney || "-"}`).join("\n") : `No patient matches "${a.name}".` };
+    }
+    case "getTodos":
+      return { name: call.name, text: answerPractice({ kind: "todo" }, data).text };
+    case "caseCounts": {
+      const st = asStatus(a.status);
+      const pool = data.patients.filter((p) => (!st || p.caseStatus === st) && attorneyMatch(p, a.attorney));
+      if (st) return { name: call.name, text: `${st}${a.attorney ? ` with ${a.attorney}` : ""}: ${pool.length}` };
+      const counts: Record<string, number> = {};
+      for (const p of pool) counts[p.caseStatus] = (counts[p.caseStatus] ?? 0) + 1;
+      return { name: call.name, text: Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(", ") || "No cases." };
+    }
+    case "listCases": {
+      const st = asStatus(a.status) ?? "Active";
+      const hits = data.patients.filter((p) => p.caseStatus === st && attorneyMatch(p, a.attorney)).sort((x, y) => x.fullName.localeCompare(y.fullName));
+      return { name: call.name, text: `${st}${a.attorney ? ` with ${a.attorney}` : ""} (${hits.length}):\n${hits.slice(0, 60).map((p) => `${p.fullName} | ${p.attorney || "-"}`).join("\n")}` };
+    }
+    case "findContact": {
+      const ans = answerPractice({ kind: "contact", query: a.name ?? "", want: "all" }, data);
+      return { name: call.name, text: ans.text, choices: ans.choices };
+    }
+    case "getSchedule": {
+      const d = (a.day ?? "today").toLowerCase();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        const appts = data.appointments.filter((x) => x.date === d && x.status !== "Canceled").sort((x, y) => x.startTime.localeCompare(y.startTime));
+        return { name: call.name, text: appts.length ? appts.map((x) => `${time12(x.startTime)} ${x.patientName} ${x.appointmentType} (${x.status})`).join("\n") : `Nothing scheduled ${usDate(d)}.` };
+      }
+      return { name: call.name, text: answerPractice({ kind: "schedule", day: d.startsWith("tom") ? "tomorrow" : "today" }, data).text };
+    }
+    case "findSetting": {
+      const links = findSettings(a.query ?? "");
+      return { name: call.name, text: links.length ? links.map((l) => l.label).join("\n") : "No matching settings page.", links };
+    }
+    default:
+      return { name: call.name, text: `Unknown tool ${call.name}.` };
+  }
+}
+
+export const SETTING_QUESTION = /\b(settings?|where (do|can) i (change|set|edit|turn|find)|how do i (change|turn on|turn off|set up|edit))\b/i;
+
+/** Rules' guess at the tools (used if the model's tool pick isn't valid JSON). */
+export function fallbackToolCalls(question: string): ToolCall[] {
+  if (SETTING_QUESTION.test(question)) return [{ name: "findSetting", args: { query: question } }];
+  const i = detectPracticeIntent(question);
+  if (!i) return [];
+  switch (i.kind) {
+    case "todo":
+      return [{ name: "getTodos", args: {} }];
+    case "schedule":
+      return [{ name: "getSchedule", args: { day: i.day } }];
+    case "caseCount":
+      return [{ name: i.list ? "listCases" : "caseCounts", args: { status: i.status } }];
+    case "contact":
+      return [{ name: "findContact", args: { name: i.query } }];
+  }
+}
+
+export function toolPickPrompt(): string {
+  return [
+    "You route questions for G.O.A.T., the assistant inside a chiropractic EHR. Pick the read-only tools needed to answer the LAST user message (use the conversation for follow-ups like 'those').",
+    "Tools:",
+    ...PRACTICE_TOOLS.map((t) => `- ${t.name} ${t.args}: ${t.description}`),
+    'Reply with ONLY JSON, no other text: {"tools":[{"name":"...","args":{...}}]} (at most 3; [] if none apply).',
+  ].join("\n");
+}
+
+/** Parse the model's tool pick. Null if it isn't valid. */
+export function parseToolCalls(text: string): ToolCall[] | null {
+  const m = /\{[\s\S]*\}/.exec(text.replace(/<think>[\s\S]*?<\/think>/g, ""));
+  if (!m) return null;
+  try {
+    const v = JSON.parse(m[0]) as { tools?: Array<{ name?: unknown; args?: unknown }> };
+    if (!Array.isArray(v.tools)) return null;
+    const names = new Set(PRACTICE_TOOLS.map((t) => t.name));
+    return v.tools
+      .filter((t) => typeof t.name === "string" && names.has(t.name))
+      .slice(0, 3)
+      .map((t) => ({ name: t.name as string, args: Object.fromEntries(Object.entries((t.args as Record<string, unknown>) ?? {}).map(([k, x]) => [k, String(x)])) }));
+  } catch {
+    return null;
+  }
+}
+
+export const PRACTICE_ANSWER_PROMPT =
+  "You are G.O.A.T., the friendly in-office assistant built into NoteGoat (a chiropractic EHR). Answer the last user message in one to four short, natural sentences, like a helpful coworker (a short bulleted list only when listing several items). Use ONLY the TOOL RESULTS below and the conversation; follow-ups refer to the previous answer. Never invent names, numbers, dates or settings. If the results don't answer it, say you don't know from NoteGoat's data. If a settings page is in the results, tell the user where to go (the link is shown under your answer).";
