@@ -96,7 +96,7 @@ export function isPatientSpecific(question: string): boolean {
 }
 
 export const PLUS_NEEDED =
-  "Regular G.O.A.T. answers questions about a patient (type their name). Questions about your to-do list, cases, contacts and schedule need + mode.";
+  "Regular G.O.A.T. answers questions about a patient (type their name). Questions about your to-do list, cases, contacts, schedule or settings need + mode.";
 
 export const PRACTICE_HELP =
   "I can answer about a patient (type their name), or about the office: your to-do list, today's or tomorrow's schedule, how many active or submitted cases you have (or which ones), and a contact's phone, fax or email.";
