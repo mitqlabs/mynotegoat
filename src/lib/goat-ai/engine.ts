@@ -202,8 +202,13 @@ export async function checkGoatAiSupport(
 export async function refreshGoatAiSupport(): Promise<void> {
   if (state.status === "loading" || state.status === "ready") return;
   const model = goatAiModel();
+  if (loading) return;
   set({ status: "checking", model });
   const s = await checkGoatAiSupport(model);
+  // A Turn on (loadGoatAi) may have started while this check ran: don't
+  // overwrite its "loading" state with "idle" (that hid the download progress).
+  const now = goatAiState().status;
+  if (loading || now === "loading" || now === "ready") return;
   set({ status: s.ok ? "idle" : "unsupported", message: s.message, variant: s.variant, cached: s.cached, model });
 }
 
