@@ -202,7 +202,21 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       }
       const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
       onDone({
-        text: answers.map((a, i) => `${label(parts[i])}?\n${a.text}`).join("\n\n"),
+        // The same block (e.g. "Specialist referrals") is shown once, under the first part that has it.
+        text: (() => {
+          const seen = new Set<string>();
+          return answers
+            .map((a, i) => {
+              const blocks = a.text.split(/\n\n+/).filter((b) => {
+                const k = b.trim();
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+              });
+              return `${label(parts[i])}?\n${blocks.join("\n\n") || "(see above)"}`;
+            })
+            .join("\n\n");
+        })(),
         quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
         warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
         copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
