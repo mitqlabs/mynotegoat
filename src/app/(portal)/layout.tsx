@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
+import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -82,6 +84,8 @@ export default function PortalLayout({
   const [mounted, setMounted] = useState(false);
   const [planTier, setPlanTier] = useState<PlanTier>("complete");
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
+  const [unsyncedNotes, setUnsyncedNotes] = useState(0);
+  useEffect(() => subscribeUnsyncedNotes(setUnsyncedNotes), []);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [errorPillDismissed, setErrorPillDismissed] = useState(false);
   const [retryingSync, setRetryingSync] = useState(false);
@@ -170,6 +174,13 @@ export default function PortalLayout({
       // every casemate.* key. This prevents one account's data from being
       // shown to — or, worse, synced up to the cloud under — another account.
       ensureWorkspaceForUser(workspaceId);
+
+      // Notes and appointments are cached in IndexedDB (localStorage is too small
+      // for big offices). Load them, migrating the old localStorage copy once,
+      // BEFORE anything reads them. Never throws; falls back to localStorage.
+      installBigCacheShim();
+      await hydrateBigCache(workspaceId);
+      if (!active) return;
 
       // Install the listener-leak guard FIRST, before any other code
       // can register window/document listeners. The guard intercepts
@@ -475,6 +486,28 @@ export default function PortalLayout({
             push, which both drops the red pill and triggers the green
             flash so the user has unambiguous confirmation. */}
         <div className="pointer-events-none fixed bottom-3 right-3 z-50 flex flex-col items-end gap-2">
+          {unsyncedNotes > 0 && (
+            <div
+              className="pointer-events-auto max-w-sm rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-lg"
+              data-testid="unsynced-notes"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  {unsyncedNotes === 1 ? "1 note isn't" : `${unsyncedNotes} notes aren't`} synced to the cloud yet — retrying
+                </span>
+                <button
+                  className="rounded bg-white/20 px-2 py-0.5 text-[10px] font-semibold hover:bg-white/30"
+                  onClick={() => void confirmNotesInCloud()}
+                  type="button"
+                >
+                  Check now
+                </button>
+              </div>
+              <div className="mt-1 text-[10px] font-normal text-amber-50">
+                Saved on this computer. Keep this tab open until this goes away.
+              </div>
+            </div>
+          )}
           {syncStatus === "error" && !errorPillDismissed && (
             <div className="pointer-events-auto max-w-sm rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-lg">
               <div className="flex items-center justify-between gap-2">

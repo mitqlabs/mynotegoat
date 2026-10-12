@@ -1,6 +1,7 @@
 import { encounters as seedEncounters } from "@/lib/mock-data";
 import { type MacroAnswerMap } from "@/lib/macro-templates";
 import { notifyChange } from "@/lib/local-sync";
+import { bigCacheUsesIdb } from "@/lib/big-cache";
 import { createNoteWriteQueue, type NoteWriteQueue } from "@/lib/note-write-queue";
 
 export const encounterSections = [
@@ -332,17 +333,17 @@ let previousNotesById: Map<string, EncounterNoteRecord> = new Map();
  * take up localStorage space.  This prevents the 5 MB quota from
  * filling up as the encounter list grows over months/years.
  */
-const LOCAL_CACHE_DAYS = 90;
+const LOCAL_CACHE_DAYS_LS = 90;
 // Hard byte ceiling on the encounter-notes localStorage blob. The full
 // localStorage quota is ~5 MB; we need to leave room for patients,
 // appointments, macros, templates, draft-recovery keys, the safety
 // backup, and every other casemate.* key. 1.25 MB is generous for
 // encounter notes specifically.
-const LOCAL_CACHE_MAX_BYTES = 1_250_000;
+const LOCAL_CACHE_MAX_BYTES_LS = 1_250_000;
 // Hard ceiling on encounter count regardless of date. Above this we
 // keep only the most-recent N. Everything else still lives in the
 // cloud table and can be fetched on demand.
-const LOCAL_CACHE_MAX_RECORDS = 100;
+const LOCAL_CACHE_MAX_RECORDS_LS = 100;
 
 function encounterDateStamp(r: EncounterNoteRecord): number {
   const match = r.encounterDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -365,6 +366,25 @@ function encounterDateStamp(r: EncounterNoteRecord): number {
  * Dropped records remain in the cloud — only the local cache shrinks.
  */
 function pruneForLocalStorage(records: EncounterNoteRecord[]): EncounterNoteRecord[] {
+  const kept = pruneByBudget(records);
+  // Never evict a note that isn't confirmed in the cloud yet: changed since the
+  // last save, or still on the confirmation list. It stays cached until confirmed.
+  loadWatch();
+  const keptIds = new Set(kept.map((r) => r.id));
+  const keep = records.filter((r) => {
+    if (keptIds.has(r.id)) return false;
+    const prior = previousNotesById.get(r.id);
+    return watched.has(r.id) || (previousNotesById.size > 0 && (!prior || prior.updatedAt !== r.updatedAt));
+  });
+  return keep.length ? [...kept, ...keep] : kept;
+}
+
+function pruneByBudget(records: EncounterNoteRecord[]): EncounterNoteRecord[] {
+  // In IndexedDB there's room for far more than localStorage's ~5 MB.
+  const idb = bigCacheUsesIdb();
+  const LOCAL_CACHE_DAYS = idb ? 400 : LOCAL_CACHE_DAYS_LS;
+  const LOCAL_CACHE_MAX_RECORDS = idb ? 5000 : LOCAL_CACHE_MAX_RECORDS_LS;
+  const LOCAL_CACHE_MAX_BYTES = idb ? 40_000_000 : LOCAL_CACHE_MAX_BYTES_LS;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - LOCAL_CACHE_DAYS);
   const cutoffStamp = cutoff.getTime();
@@ -535,6 +555,11 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
   // Update the snapshot baseline from safeRecords — so the next
   // call's "did the prior have content?" check compares against
   // what we actually persisted, not what was rejected.
+  for (const rec of safeRecords) {
+    const prior = previousNotesById.get(rec.id);
+    // Skip the very first save after load (no baseline yet = everything looks new).
+    if (previousNotesById.size > 0 && (!prior || prior.updatedAt !== rec.updatedAt)) watchNoteForCloudConfirm(rec.id);
+  }
   previousNotesById = new Map(safeRecords.map((n) => [n.id, n]));
   // true = local cache written too. The cloud write was attempted either way.
   return localCacheOk;
@@ -602,6 +627,8 @@ type CloudWriteDeps = {
   reportCloudWriteStart: (label: string) => void;
   reportCloudWriteSuccess: (label: string) => void;
   reportCloudWriteError: (label: string, err: unknown) => void;
+  /** Test-only override for the cloud confirmation read. */
+  fetchByIds?: (ids: string[]) => Promise<EncounterNoteRecord[] | null>;
 };
 let cloudWriteDepsPromise: Promise<CloudWriteDeps> | null = null;
 let cloudWriteDepsOverride: CloudWriteDeps | null = null;
@@ -911,4 +938,134 @@ export function normalizeEncounterDateInput(value: string) {
     return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   }
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+// ── Background cloud confirmation ─────────────────────────────────────────
+// Every note changed on this computer is checked against Supabase until the
+// cloud copy is at least as new. If it isn't, it's re-sent (and re-checked).
+// Notes that failed a check are counted as "not synced" for the UI. The list of
+// ids is kept in localStorage (tiny, outside the casemate.* snapshot) so a
+// reload keeps checking; the note itself stays in the local cache.
+
+const UNSYNCED_KEY = "notegoat.unsynced-notes.v1";
+const CONFIRM_INTERVAL_MS = 45_000;
+const CONFIRM_AFTER_SAVE_MS = 15_000;
+const watched = new Map<string, number>(); // id -> failed checks
+let watchLoaded = false;
+let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+let confirmRunning = false;
+const unsyncedListeners = new Set<(count: number) => void>();
+let lastUnsynced = 0;
+
+function loadWatch() {
+  if (watchLoaded || typeof window === "undefined") return;
+  watchLoaded = true;
+  try {
+    const ids = JSON.parse(window.localStorage.getItem(UNSYNCED_KEY) ?? "[]");
+    if (Array.isArray(ids)) for (const id of ids) if (typeof id === "string") watched.set(id, 0);
+  } catch {
+    /* ignore a bad list */
+  }
+}
+
+function saveWatch() {
+  try {
+    if (watched.size === 0) window.localStorage.removeItem(UNSYNCED_KEY);
+    else window.localStorage.setItem(UNSYNCED_KEY, JSON.stringify(Array.from(watched.keys())));
+  } catch (err) {
+    console.warn("[encounter-notes] couldn't save the unsynced-notes list (still checking in memory)", err);
+  }
+}
+
+function emitUnsynced() {
+  let n = 0;
+  for (const fails of watched.values()) if (fails > 0) n++;
+  if (n === lastUnsynced) return;
+  lastUnsynced = n;
+  for (const l of unsyncedListeners) l(n);
+}
+
+function scheduleConfirm(ms: number) {
+  if (typeof window === "undefined") return;
+  if (confirmTimer) clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(() => {
+    confirmTimer = null;
+    void confirmNotesInCloud();
+  }, ms);
+}
+
+function watchNoteForCloudConfirm(id: string) {
+  loadWatch();
+  if (!watched.has(id)) watched.set(id, 0);
+  saveWatch();
+  scheduleConfirm(CONFIRM_AFTER_SAVE_MS);
+}
+
+/** Notes that failed a cloud check and are being re-sent. */
+export function getUnsyncedNoteCount(): number {
+  return lastUnsynced;
+}
+
+export function subscribeUnsyncedNotes(listener: (count: number) => void): () => void {
+  unsyncedListeners.add(listener);
+  loadWatch();
+  if (watched.size > 0) scheduleConfirm(2_000);
+  return () => unsyncedListeners.delete(listener);
+}
+
+/**
+ * Check the watched notes against Supabase. Confirmed ones are dropped; the rest
+ * are re-queued and counted as not synced. Returns how many are still unsynced.
+ */
+export async function confirmNotesInCloud(): Promise<number> {
+  loadWatch();
+  if (confirmRunning || watched.size === 0) return lastUnsynced;
+  confirmRunning = true;
+  try {
+    if (!(await cloudNotesEnabled())) {
+      watched.clear();
+      saveWatch();
+      return 0;
+    }
+    // The notes this computer holds (the last save, else the local cache).
+    const localById = previousNotesById.size > 0 ? previousNotesById : new Map(loadEncounterNoteRecords().map((n) => [n.id, n]));
+    // Notes not loaded yet (app still starting): check again later.
+    if (localById.size === 0) return lastUnsynced;
+    // Drop ids that no longer exist locally (deleted notes).
+    for (const id of Array.from(watched.keys())) if (!localById.has(id)) watched.delete(id);
+    const ids = Array.from(watched.keys());
+    if (ids.length === 0) return 0;
+    const fetchByIds = cloudWriteDepsOverride?.fetchByIds ?? (await import("@/lib/encounter-notes-cloud")).fetchEncounterNotesByIds;
+    const rows = await fetchByIds(ids);
+    const byId = new Map((rows ?? []).map((r) => [r.id, r]));
+    const resend: EncounterNoteRecord[] = [];
+    for (const id of ids) {
+      const local = localById.get(id)!;
+      const cloud = byId.get(id);
+      const ok = rows !== null && cloud && (Date.parse(cloud.updatedAt) || 0) >= (Date.parse(local.updatedAt) || 0) - 1000;
+      if (ok) {
+        watched.delete(id);
+      } else {
+        watched.set(id, (watched.get(id) ?? 0) + 1);
+        if (rows !== null) {
+          noteCloudQueue.invalidate(id);
+          resend.push(local);
+        }
+      }
+    }
+    if (rows === null) console.warn(`[encounter-notes] couldn't reach the cloud to confirm ${ids.length} note(s); will retry`);
+    if (resend.length > 0) {
+      console.warn(`[encounter-notes] ${resend.length} note(s) not confirmed in the cloud; re-sending`);
+      noteCloudQueue.enqueue(resend);
+    }
+    saveWatch();
+  } catch (err) {
+    console.error("[encounter-notes] cloud confirmation check failed; will retry", err);
+    for (const [id, fails] of watched) watched.set(id, fails + 1);
+  } finally {
+    confirmRunning = false;
+    emitUnsynced();
+    if (watched.size > 0) scheduleConfirm(previousNotesById.size === 0 ? 5_000 : CONFIRM_INTERVAL_MS);
+  }
+  return lastUnsynced;
 }
