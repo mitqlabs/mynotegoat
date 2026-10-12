@@ -25,6 +25,10 @@ import { GoatAvatar } from "@/components/goat-avatar";
 import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
+import { PLUS_NEEDED, PRACTICE_HELP, PRACTICE_SYSTEM_PROMPT, answerPractice, detectPracticeIntent, isPatientSpecific, practiceSnapshot, type PracticeData } from "@/lib/goat-practice";
+import { loadTasks } from "@/lib/tasks";
+import { loadScheduleAppointments } from "@/lib/schedule-appointments";
+import { loadContactDirectory } from "@/lib/contact-directory";
 
 // ---------------------------------------------------------------------------
 // Open/closed, shared by the nav button and the popup.
@@ -197,10 +201,13 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
 
 export function GlobalGoatPopup({
   patientsOverride,
+  practiceOverride,
   contextOverride,
 }: {
   /** Test harness only: a fixed patient list and contexts instead of the workspace's. */
   patientsOverride?: PatientRecord[];
+  /** Test harness only: office data instead of this browser's stores. */
+  practiceOverride?: () => PracticeData;
   contextOverride?: (patientId: string) => GoatContext | null;
 } = {}) {
   const open = useGlobalGoatOpen();
@@ -216,6 +223,7 @@ export function GlobalGoatPopup({
     setJobState(j);
   }, []);
   const [partial, setPartial] = useState("");
+  const [practiceBusy, setPracticeBusy] = useState(false);
   const [smartOn] = useSmartMode();
   const ai = useGoatAiState();
   const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
@@ -262,13 +270,74 @@ export function GlobalGoatPopup({
     return last?.pendingQuestion ?? null;
   };
 
+  const practiceData = (): PracticeData => {
+    if (practiceOverride) return practiceOverride();
+    const d = new Date();
+    return {
+      patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted),
+      tasks: loadTasks(),
+      appointments: loadScheduleAppointments(),
+      contacts: loadContactDirectory(),
+      today: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+    };
+  };
+
+  /** Office question with + mode on: the local model answers from the office data, keeping the conversation. */
+  const askPracticeModel = async (question: string, ruleHint: string | null) => {
+    setPracticeBusy(true);
+    setPartial("");
+    const t0 = performance.now();
+    try {
+      const { runGoatAi } = await import("@/lib/goat-ai/engine");
+      const history = chat.messages.filter((m) => m.practice).slice(-6).map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.text }));
+      const system = `${PRACTICE_SYSTEM_PROMPT}\n\nOFFICE DATA:\n${practiceSnapshot(practiceData())}${ruleHint ? `\n\nEXACT FIGURES FOR THIS QUESTION (computed by NoteGoat, trust these):\n${ruleHint}` : ""}`;
+      const r = await runGoatAi([{ role: "system", content: system }, ...history, { role: "user", content: question }], (t) => setPartial(t), { maxTokens: 400 });
+      push({ role: "goat", text: r.text.trim() || (ruleHint ?? PRACTICE_HELP), smart: true, practice: true, ms: performance.now() - t0 });
+    } catch (e) {
+      console.error("[goat] + mode office answer failed", e);
+      push({ role: "goat", text: ruleHint ?? PRACTICE_HELP, practice: true });
+    } finally {
+      setPartial("");
+      setPracticeBusy(false);
+    }
+  };
+
+  /** Office questions (to-do, schedule, case counts, contacts). True if handled. */
+  const tryPractice = (question: string, confidentPatient: boolean): boolean => {
+    const intent = detectPracticeIntent(question);
+    if (confidentPatient && (!intent || intent.kind !== "contact")) return false;
+    if (!intent) return false;
+    push({ role: "user", text: question, practice: true });
+    // Regular G.O.A.T. is for patient questions only: office questions are a + mode feature.
+    if (!smartActive) {
+      push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
+      return true;
+    }
+    // + mode: NoteGoat computes the exact figures; the model writes the answer.
+    const a = answerPractice(intent, practiceData());
+    if (a.choices?.some((c) => c.label !== "List them")) {
+      push({ role: "goat", text: a.text, practice: true, choices: a.choices.map((c) => ({ label: c.label, question: c.question })) });
+      return true;
+    }
+    void askPracticeModel(question, a.text);
+    return true;
+  };
+
   const send = (raw: string) => {
     const question = raw.trim();
-    if (!question || job) return;
+    if (!question || job || practiceBusy) return;
     setInput("");
-    push({ role: "user", text: question });
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
+    const waitingForName = waitingQuestion();
+    if (!(waitingForName && found.named) && tryPractice(question, Boolean(found.confident))) return;
+    // + mode: anything not clearly about a patient is an office question for the model (follow-ups included).
+    if (smartActive && !found.confident && !found.candidates.length && !found.named && !isPatientSpecific(question) && !waitingForName) {
+      push({ role: "user", text: question, practice: true });
+      void askPracticeModel(question, null);
+      return;
+    }
+    push({ role: "user", text: question });
     // A reply that is only a name ("Jane Sample") answers the question that was waiting for a patient.
     const waiting = waitingQuestion();
     const justAName = waiting && found.named && question.split(/\s+/).length <= 4;
@@ -294,15 +363,22 @@ export function GlobalGoatPopup({
     // No name: stay on the chat's patient, else the patient page that's open.
     const p = current ?? patientById(openPatientId);
     if (!p) {
-      push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
+      // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
+      if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
+      else push({ role: "goat", text: smartActive ? PRACTICE_HELP : PLUS_NEEDED, practice: true, plusLink: !smartActive });
       return;
     }
     startAnswer(p, question, Boolean(current));
   };
 
   // A tapped patient answers the ORIGINAL question; nothing needs retyping.
-  const pick = (msg: ChatMessage, patientId: string) => {
-    const p = patientById(patientId);
+  const pick = (msg: ChatMessage, patientId: string | undefined, question?: string) => {
+    if (question) {
+      setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined } : m)) }));
+      send(question);
+      return;
+    }
+    const p = patientById(patientId ?? null);
     if (!p || job) return;
     push({ role: "user", text: displayName(p.fullName) });
     setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined, pendingQuestion: undefined } : m)) }));
@@ -325,13 +401,13 @@ export function GlobalGoatPopup({
   const jobPatient = job ? patientById(job.patientId) : null;
 
   const lastGoat = [...chat.messages].reverse().find((m) => m.role === "goat");
-  const status: GoatStatus = job
+  const status: GoatStatus = job || practiceBusy
     ? smartActive && ai.status === "loading"
       ? "plus"
       : "searching"
     : !lastGoat || lastGoat.choices || lastGoat.pendingQuestion
       ? "ready"
-      : /^I couldn't find/.test(lastGoat.text)
+      : /^I couldn't find/.test(lastGoat.text) || lastGoat.text === PRACTICE_HELP || lastGoat.text === PLUS_NEEDED
         ? "notFound"
         : "found";
 
@@ -409,14 +485,19 @@ export function GlobalGoatPopup({
                   <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <div className="whitespace-pre-line leading-snug">{m.text}</div>
+                    {m.plusLink && (
+                      <Link className="mt-1 inline-block font-semibold text-[var(--brand-primary)] hover:underline" href="/settings/goat" style={{ fontSize: 13 }}>
+                        Turn on + mode in G.O.A.T. Settings
+                      </Link>
+                    )}
                     {m.choices && (
                       <div className="mt-2 space-y-1.5">
                         {m.choices.map((c) => (
                           <button style={{ fontSize: 12 }}
-                            key={c.patientId}
+                            key={c.patientId ?? c.label}
                             className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
-                            disabled={Boolean(job)}
-                            onClick={() => pick(m, c.patientId)}
+                            disabled={Boolean(job) || practiceBusy}
+                            onClick={() => pick(m, c.patientId, c.question)}
                             type="button"
                           >
                             {c.label}
@@ -454,7 +535,7 @@ export function GlobalGoatPopup({
                 </div>
               ),
             )}
-            {job && (
+            {(job || practiceBusy) && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
                 <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
@@ -488,7 +569,7 @@ export function GlobalGoatPopup({
                 placeholder="Ask about a patient…"
                 value={input}
               />
-              <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job)} type="submit">
+              <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
                 Ask
               </button>
             </form>
