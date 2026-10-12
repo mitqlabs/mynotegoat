@@ -302,10 +302,29 @@ export function getDefaultScheduleAppointments(): ScheduleAppointmentRecord[] {
     .sort(compareAppointments);
 }
 
+/**
+ * In-memory copy used when localStorage is full (QuotaExceededError). Without
+ * it, a full browser store made saves throw BEFORE the cloud write (the change
+ * never reached Supabase) and cloud reloads never reached the screen (local
+ * kept showing e.g. "Check In" while the cloud said "Check Out").
+ */
+let memoryAppointments: ScheduleAppointmentRecord[] | null = null;
+
+function writeLocalCache(records: ScheduleAppointmentRecord[], where: string) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    memoryAppointments = null;
+  } catch (err) {
+    memoryAppointments = records;
+    console.error(`[schedule-appointments] localStorage write failed in ${where} (cloud save continues; using in-memory copy):`, err);
+  }
+}
+
 export function loadScheduleAppointments(): ScheduleAppointmentRecord[] {
   if (typeof window === "undefined") {
     return [];
   }
+  if (memoryAppointments) return memoryAppointments;
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -326,7 +345,7 @@ export function saveScheduleAppointments(records: ScheduleAppointmentRecord[]) {
     return;
   }
   const next = [...records].sort(compareAppointments);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  writeLocalCache(next, "save");
 
   // Phase-2 dual-write. Async — now awaits every op and reports failures
   // via reportCloudWriteError (which flips the UI sync indicator to "error").
@@ -404,7 +423,7 @@ async function dualWriteAppointmentsToCloud(
 export function replaceAppointmentsFromCloud(records: ScheduleAppointmentRecord[]) {
   if (typeof window === "undefined") return;
   const sorted = [...records].sort(compareAppointments);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+  writeLocalCache(sorted, "cloud reload");
   // Update the diff baseline so the next save doesn't re-push everything.
   previousAppointmentsById = new Map(sorted.map((a) => [a.id, a]));
   // Fire the same in-tab change notification that saveScheduleAppointments
