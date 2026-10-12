@@ -1,5 +1,6 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
@@ -3715,13 +3716,10 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
                       Start
                     </span>
-                    <input
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
+                    <TimeInput12h
                       disabled={!officeHour.enabled}
-                      onChange={(event) =>
-                        updateOfficeHour(officeHour.dayOfWeek, { start: event.target.value })
-                      }
-                      type="time"
+                      inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
+                      onChange={(v) => updateOfficeHour(officeHour.dayOfWeek, { start: v })}
                       value={officeHour.start}
                     />
                   </label>
@@ -3729,13 +3727,10 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
                       End
                     </span>
-                    <input
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
+                    <TimeInput12h
                       disabled={!officeHour.enabled}
-                      onChange={(event) =>
-                        updateOfficeHour(officeHour.dayOfWeek, { end: event.target.value })
-                      }
-                      type="time"
+                      inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
+                      onChange={(v) => updateOfficeHour(officeHour.dayOfWeek, { end: v })}
                       value={officeHour.end}
                     />
                   </label>

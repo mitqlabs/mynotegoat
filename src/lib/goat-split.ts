@@ -1,3 +1,4 @@
+import { to12hLabel } from "@/lib/time-12h";
 import type { GoatContext } from "@/lib/goat";
 /**
  * Multi-part patient questions: "when was his XR and what were the findings?"
@@ -127,7 +128,7 @@ export function typedDateAnswer(ctx: GoatContext, question: string): string | nu
   const appts = (ctx.appointments ?? []).filter((a) => kind.match.test(a.type));
   if (appts.length) {
     lines.push(`${kind.label} appointments in the schedule`);
-    for (const a of appts.slice(-6)) lines.push(`- ${usDay(a.date)}${a.startTime ? ` ${a.startTime}` : ""}: ${a.type} (${a.status})`);
+    for (const a of appts.slice(-6)) lines.push(`- ${usDay(a.date)}${a.startTime ? ` ${to12hLabel(a.startTime)}` : ""}: ${a.type} (${a.status})`);
   }
   // Report files of that kind and their own dates.
   const files = (ctx.files ?? []).filter((f) => kind.match.test(f.name) || (kind.imaging ? false : kind.match.test(f.folder) && kind.match.test(f.pages?.[0] ?? "")));
