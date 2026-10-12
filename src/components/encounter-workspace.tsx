@@ -1,5 +1,6 @@
 "use client";
 
+import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { SplitPane } from "@/components/split-pane";
@@ -5133,6 +5134,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       ? [answerValue.trim()]
                       : [];
                   const selectedAnswer = selectedAnswers[0] ?? "";
+                  // Decompression "Targeted Segment" / "Which program": one pick
+                  // per section even if the saved macro question is multi-select.
+                  const singlePick =
+                    Boolean(question.multiSelect) && isDecompressionSinglePick(runMacro.buttonName, question.label);
                   const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
                   const numericOptions = Array.from(
                     new Set(
@@ -5157,7 +5162,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       key={`${question.id}-${option}`}
                       className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
                     >
-                      {question.multiSelect ? (
+                      {singlePick ? (
+                        <input
+                          checked={selectedAnswers.includes(option)}
+                          onChange={() =>
+                            setRunMacroAnswers((current) => ({ ...current, [question.id]: [option] }))
+                          }
+                          type="radio"
+                        />
+                      ) : question.multiSelect ? (
                         <input
                           checked={selectedAnswers.includes(option)}
                           onChange={() =>
@@ -5210,7 +5223,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
                   return (
                     <div key={question.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                      <p className="text-sm font-semibold">{question.label}</p>
+                      <p className="text-sm font-semibold">
+                        {question.label}
+                        {singlePick ? " (pick one)" : ""}
+                      </p>
                       {question.options.length > 0 ? (
                         <>
                           {usePainScaleColumns ? (
