@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -4806,23 +4807,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           value={entry.procedureCode}
                         />
                         {/* Price */}
-                        <input
+                        <NumberInput
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
                           disabled={selectedEncounter.signed}
                           min={0}
-                          onChange={(event) => updateCharge(selectedEncounter.id, entry.id, { unitPrice: Number(event.target.value) })}
+                          onChange={(n) => updateCharge(selectedEncounter.id, entry.id, { unitPrice: n })}
                           step="0.01"
-                          type="number"
+                          fallback={0}
                           value={entry.unitPrice}
                         />
                         {/* Units */}
-                        <input
+                        <NumberInput
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
                           disabled={selectedEncounter.signed}
                           min={1}
-                          onChange={(event) => updateCharge(selectedEncounter.id, entry.id, { units: Number(event.target.value) })}
+                          onChange={(n) => updateCharge(selectedEncounter.id, entry.id, { units: n })}
                           step={1}
-                          type="number"
+                          fallback={0}
                           value={entry.units}
                         />
                         {/* Total */}
