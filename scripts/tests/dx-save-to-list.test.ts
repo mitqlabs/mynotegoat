@@ -212,3 +212,13 @@ test("source: the patient box reads the live list everywhere", () => {
 });
 
 console.log(`dx-save-to-list: ${passed} passed`);
+
+// ICD-10 rows: the save button reads "+Dx" and sits to the RIGHT of Add.
+{
+  const src = readFileSync("src/components/icd10-search.tsx", "utf8");
+  assert.ok(src.includes('saveToList.buttonLabel ?? "+Dx"'), "+Dx label");
+  const addAt = src.indexOf("{compactAdd}\n              <button\n                aria-expanded={saving}");
+  assert.ok(addAt > 0, "Add comes before +Dx");
+  assert.ok(src.includes('title="Save to your diagnosis codes'), "tooltip kept");
+  console.log("ok - +Dx sits right of Add");
+}
