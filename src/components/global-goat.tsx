@@ -25,6 +25,7 @@ import { GoatAvatar } from "@/components/goat-avatar";
 import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
+import { splitPatientQuestion } from "@/lib/goat-split";
 import { PLUS_NEEDED, PRACTICE_ANSWER_PROMPT, PRACTICE_HELP, SETTING_QUESTION, detectPracticeIntent, fallbackToolCalls, isPatientSpecific, parseToolCalls, runPracticeTool, toolPickPrompt, type PracticeData, type ToolResult } from "@/lib/goat-practice";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -172,23 +173,42 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       await new Promise((r) => setTimeout(r, 400));
       while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
       const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
-      if (smart) {
-        try {
-          // Rules first; + mode fills gaps in that same answer (one answer, regular format).
-          // Its code (and the model) load only when + mode is on.
-          const { assistGoat } = await import("@/lib/goat-ai/assist");
-          const a = await assistGoat({ context: ctx, question: job.question, prefs, previous: job.previous, onText: onPartial, onStatus: onPartial });
-          const r = ruleAnswerToMessage(a.result);
-          const warnings = [...(r.warnings ?? []), ...a.warnings].slice(0, 3);
-          onDone({ ...r, warnings: warnings.length ? warnings : undefined, ms: a.ms, smart: a.smartUsed });
-          return;
-        } catch {
-          // fall through to normal G.O.A.T.
+      // "when was his XR and what were the findings?": answer each part, then one reply with every part.
+      const parts = splitPatientQuestion(job.question);
+      const answerPart = async (question: string, previous: Job["previous"]): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number; smart?: boolean }> => {
+        if (smart) {
+          try {
+            // Rules first; + mode fills gaps in that same answer (regular format, region order).
+            const { assistGoat } = await import("@/lib/goat-ai/assist");
+            const a = await assistGoat({ context: ctx, question, prefs, previous, onText: parts.length > 1 ? () => undefined : onPartial, onStatus: onPartial });
+            const r = ruleAnswerToMessage(a.result);
+            const warnings = [...(r.warnings ?? []), ...a.warnings].slice(0, 3);
+            return { ...r, warnings: warnings.length ? warnings : undefined, ms: a.ms, smart: a.smartUsed };
+          } catch (e) {
+            console.error("[goat+] + mode answer failed; using regular G.O.A.T.", e);
+          }
         }
+        const t1 = performance.now();
+        return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1, smart: false };
+      };
+      if (parts.length < 2) {
+        onDone(await answerPart(job.question, job.previous));
+        return;
       }
-      const t1 = performance.now();
-      const r = ruleAnswerToMessage(askGoat(ctx, job.question));
-      onDone({ ...r, ms: performance.now() - t1, smart: false });
+      const answers = [];
+      for (const [i, part] of parts.entries()) {
+        if (smart) onPartial(`Answering part ${i + 1} of ${parts.length}…`);
+        answers.push(await answerPart(part, null));
+      }
+      const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
+      onDone({
+        text: answers.map((a, i) => `${label(parts[i])}?\n${a.text}`).join("\n\n"),
+        quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
+        warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
+        copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
+        ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
+        smart: answers.some((a) => a.smart),
+      });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per job; callbacks only touch refs / functional updates
   }, [job]);
