@@ -18,7 +18,15 @@ export function useGoatAiState(): GoatAiState {
 // ---------------------------------------------------------------------------
 
 const flagListeners = new Set<() => void>();
+/**
+ * In-memory copy of each flag. Offices with big patient lists can fill
+ * localStorage (the notes cache), and then setItem throws: the switch used to
+ * silently stay off and "Turn on" did nothing. Memory wins for this tab, so
+ * the click always takes effect; it's re-saved whenever storage allows.
+ */
+const memFlags = new Map<string, string>();
 function readKey(key: string): string | null {
+  if (memFlags.has(key)) return memFlags.get(key) ?? null;
   try {
     return window.localStorage.getItem(key);
   } catch {
@@ -26,17 +34,21 @@ function readKey(key: string): string | null {
   }
 }
 function writeKey(key: string, value: string) {
+  memFlags.set(key, value);
   try {
     window.localStorage.setItem(key, value);
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn(`[goat+] couldn't save "${key}" to this browser's storage (it's full?). Keeping it for this tab only.`, e);
   }
   flagListeners.forEach((l) => l());
 }
 function subscribeFlags(l: () => void) {
   flagListeners.add(l);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === GOAT_SMART_LOCAL_KEY || e.key === GOAT_PLUS_INTRO_KEY) l();
+    if (e.key === GOAT_SMART_LOCAL_KEY || e.key === GOAT_PLUS_INTRO_KEY) {
+      if (e.key) memFlags.delete(e.key);
+      l();
+    }
   };
   window.addEventListener("storage", onStorage);
   return () => {
@@ -70,7 +82,7 @@ export async function turnOnPlusMode(): Promise<{ ok: boolean; message: string }
     return { ok: false, message: s.message };
   }
   writeSmart(true);
-  void loadGoatAi().catch(() => undefined);
+  void loadGoatAi().catch((e) => console.error("[goat+] + mode failed to load", e));
   return { ok: true, message: "" };
 }
 
@@ -86,6 +98,20 @@ export function PlusIntroCard() {
   const { show, answer } = usePlusIntro();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [started, setStarted] = useState(false);
+  const ai = useGoatAiState();
+  if (!show && !msg && started && ai.status !== "idle" && ai.status !== "ready") {
+    // Right after "Turn on": always show what's happening (never a silent click).
+    const text =
+      ai.status === "checking"
+        ? "Checking this computer…"
+        : ai.status === "loading"
+          ? ai.cached
+            ? `Opening + mode… ${Math.round(ai.progress * 100)}%`
+            : `Downloading ${Math.round(ai.progress * 100)}%… (one time, stays on this computer)`
+          : ai.message;
+    return <div className={`mt-2 rounded-xl p-2.5 text-xs ${ai.status === "error" || ai.status === "unsupported" ? "border border-amber-200 bg-amber-50 text-amber-900" : "bg-[var(--bg-soft)] text-[var(--text-muted)]"}`}>{text}</div>;
+  }
   if (!show && !msg) return null;
   if (msg) {
     return (
@@ -110,6 +136,7 @@ export function PlusIntroCard() {
           disabled={busy}
           onClick={() => {
             setBusy(true);
+            setStarted(true);
             answer("on");
             void turnOnPlusMode()
               .then((r) => {

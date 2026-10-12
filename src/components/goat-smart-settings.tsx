@@ -43,7 +43,7 @@ export function GoatSmartSettings() {
   }, [ai.status]);
   // On and already downloaded: open it in the background.
   useEffect(() => {
-    if (on && ai.status === "idle" && ai.cached) void loadGoatAi().catch(() => undefined);
+    if (on && ai.status === "idle" && ai.cached) void loadGoatAi().catch((e) => console.error("[goat+] + mode failed to load", e));
   }, [on, ai.status, ai.cached]);
 
   if (!GOAT_SMART_AVAILABLE) return null;
@@ -71,7 +71,7 @@ export function GoatSmartSettings() {
     }
     if (ai.cached || ai.status === "ready") {
       setOn(true);
-      void loadGoatAi().catch(() => undefined);
+      void loadGoatAi().catch((e) => console.error("[goat+] + mode failed to load", e));
       return;
     }
     setStep("download");
@@ -130,7 +130,7 @@ export function GoatSmartSettings() {
                   onClick={() => {
                     setStep("");
                     setOn(true);
-                    void loadGoatAi().catch(() => undefined);
+                    void loadGoatAi().catch((e) => console.error("[goat+] + mode failed to load", e));
                   }}
                   type="button"
                 >
@@ -145,10 +145,11 @@ export function GoatSmartSettings() {
         </div>
       )}
 
+      {on && ai.status === "checking" && <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-muted)]">Checking this computer…</p>}
       {on && ai.status === "loading" && (
         <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-muted)]">
           <div className="flex justify-between gap-2">
-            <span>{ai.cached ? "Opening + mode…" : "One-time download, stays on this computer"}</span>
+            <span>{ai.cached ? "Opening + mode…" : `Downloading ${pct}%… (one time, stays on this computer)`}</span>
             <span className="font-semibold">{pct}%</span>
           </div>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
