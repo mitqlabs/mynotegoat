@@ -20,8 +20,11 @@ export interface ChatPatient {
 }
 
 export interface ChatChoice {
-  patientId: string;
+  /** A patient to answer the waiting question about… */
+  patientId?: string;
   label: string;
+  /** …or an office question to ask when tapped (contact pick, "List them"). */
+  question?: string;
 }
 
 export interface ChatQuote {
@@ -47,6 +50,12 @@ export interface ChatMessage {
   ms?: number;
   /** Plain text for Copy (e.g. recommendations in the regular format). */
   copy?: string;
+  /** An office-level (not patient) exchange: kept as + mode conversation context. */
+  practice?: boolean;
+  /** Show the 'Turn on + mode' link to G.O.A.T. Settings. */
+  plusLink?: boolean;
+  /** Clickable links under the answer (e.g. the Settings page that changes something). */
+  links?: Array<{ label: string; href: string }>;
 }
 
 export interface ChatState {
