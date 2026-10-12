@@ -172,7 +172,10 @@ function appConfig(model: GoatAiModel, variant: "f16" | "f32"): AppConfig {
         overrides: { context_window_size: 4096 },
       },
     ],
-    cacheBackend: "cache",
+    // IndexedDB: files are fetched with fetch() in the worker (retried there) and
+    // each saved file is kept, so a retry resumes. The Cache API backend used
+    // cache.add(), which fails the whole load on one network error.
+    cacheBackend: "indexeddb",
   };
 }
 
@@ -282,7 +285,7 @@ export function loadGoatAi(): Promise<void> {
       set({ status: "ready", progress: 1, progressText: "", cached: true, stalled: false });
     } catch (e) {
       stopStallWatch();
-      console.error("[goat+] + mode load failed", e);
+      console.error(`[goat+] + mode load failed${blockedHost(e instanceof Error ? e.message : String(e)) ? ` (host: ${blockedHost(e instanceof Error ? e.message : String(e))})` : ""}`, e);
       engine = null;
       worker?.terminate();
       worker = null;
@@ -295,8 +298,8 @@ export function loadGoatAi(): Promise<void> {
           ? "This computer's graphics chip doesn't have enough memory for the more accurate model. Try \"Smaller and faster\" in Settings → G.O.A.T. → + mode. Normal G.O.A.T. still works."
           : /maxStorageBufferBindingSize|limit|adapter|feature/i.test(msg)
           ? `This computer's graphics can't run the more accurate model (${msg.slice(0, 120)}). Try "Smaller and faster" in Settings → G.O.A.T. → + mode. Normal G.O.A.T. still works.`
-          : /fetch|network|load failed|404|403|cors/i.test(msg)
-          ? `Download blocked: ${msg.slice(0, 160)}. Check the internet connection or any firewall / ad blocker, then try again. Normal G.O.A.T. still works.`
+          : /fetch|network|load failed|blocked|404|403|cors/i.test(msg)
+          ? `Download blocked${blockedHost(msg) ? ` at ${blockedHost(msg)}` : ""}. Check the internet connection, and pause any ad blocker or privacy extension for mynotegoat.com (it needs to download the model from Hugging Face), then press Retry. Already-downloaded parts are kept. Normal G.O.A.T. still works.`
           : `+ mode couldn't load (${msg.slice(0, 160)}). Normal G.O.A.T. still works.`,
       });
       throw e;
@@ -305,6 +308,14 @@ export function loadGoatAi(): Promise<void> {
     }
   })();
   return loading;
+}
+
+/** The host named in a download error ("…at cdn-lfs.hf.co…" or a URL in it). */
+function blockedHost(msg: string): string {
+  const at = /Download blocked at ([^\s:]+)/.exec(msg);
+  if (at) return at[1];
+  const url = /https?:\/\/([^/\s'"\]]+)/.exec(msg);
+  return url ? url[1] : "";
 }
 
 /** Browser storage for this site (Cache API + IndexedDB + localStorage share it). */
