@@ -77,11 +77,21 @@ export function TimeInput12h({
     }
   };
 
+  // One field: the caller's input classes (border, radius, padding, font)
+  // go on the wrapper, so it matches neighbouring inputs and fills its
+  // column. The text box flexes; AM/PM is a compact attached select.
+  const fieldClass =
+    inputClassName ?? "rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2";
+  const widthClass = /(^|\s)w-/.test(fieldClass) ? "" : "w-full";
   return (
-    <div className={`flex items-center gap-1 ${className ?? ""}`}>
+    <div
+      className={`time12-field flex min-w-0 items-center ${fieldClass} ${widthClass} ${
+        disabled ? "cursor-not-allowed opacity-60" : ""
+      } ${className ?? ""}`}
+    >
       <input
         aria-label={ariaLabel}
-        className={inputClassName ?? "w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"}
+        className="time12-text min-w-0 flex-1 disabled:cursor-not-allowed"
         disabled={disabled}
         inputMode="numeric"
         maxLength={8}
@@ -103,11 +113,7 @@ export function TimeInput12h({
       />
       <select
         aria-label={ariaLabel ? `${ariaLabel} AM/PM` : "AM/PM"}
-        className={
-          inputClassName
-            ? `${inputClassName.replace(/\bw-(full|\d+)\b/g, "")} w-auto`
-            : "rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2"
-        }
+        className="time12-ampm shrink-0 disabled:cursor-not-allowed"
         disabled={disabled}
         onChange={(event) => {
           const m = event.target.value as Meridiem;
