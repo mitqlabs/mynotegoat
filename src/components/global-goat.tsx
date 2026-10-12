@@ -25,7 +25,7 @@ import { GoatAvatar } from "@/components/goat-avatar";
 import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
-import { splitPatientQuestion } from "@/lib/goat-split";
+import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
 import { PLUS_NEEDED, PRACTICE_ANSWER_PROMPT, PRACTICE_HELP, SETTING_QUESTION, detectPracticeIntent, fallbackToolCalls, isPatientSpecific, parseToolCalls, runPracticeTool, toolPickPrompt, type PracticeData, type ToolResult } from "@/lib/goat-practice";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -176,6 +176,9 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       // "when was his XR and what were the findings?": answer each part, then one reply with every part.
       const parts = splitPatientQuestion(job.question);
       const answerPart = async (question: string, previous: Job["previous"]): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number; smart?: boolean }> => {
+        // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
+        const typed = typedDateAnswer(ctx, question);
+        if (typed) return { text: typed, ms: 0, smart: false };
         if (smart) {
           try {
             // Rules first; + mode fills gaps in that same answer (regular format, region order).
