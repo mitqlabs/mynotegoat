@@ -5,14 +5,13 @@
  * nothing is written to the patient record.
  *
  *  1. A saved date in the Initial Exam box always wins (never overwritten).
- *  2. Otherwise: the EARLIEST New Patient visit the patient attended —
- *     appointment type contains "new patient" (any case, e.g. "Personal
- *     Injury New Patient", "Cash New Patient") and status Checked In or
- *     Checked Out, or a New Patient encounter note on that date (the note
- *     proves the visit happened). Canceled / No Show / Reschedule never count.
- *  3. A New Patient visit that is only Scheduled is NOT an initial exam date
- *     (the patient may not come). It's reported separately as "scheduled" so
- *     the UI can say so.
+ *  2. Otherwise: the EARLIEST New Patient appointment — appointment type
+ *     contains "new patient" (any case, e.g. "Personal Injury New Patient",
+ *     "Cash New Patient") in ANY status except Canceled or No Show (it no
+ *     longer has to be Checked In first) — or a New Patient encounter note on
+ *     that date.
+ *  3. `scheduled` is kept for callers but is only set when nothing above
+ *     counts (with every status counting, that no longer happens).
  *
  * The patient page passes the patient's encounter notes; list pages (Patients,
  * dashboard, weekly summary) don't load notes, so they use the schedule only.
@@ -33,7 +32,7 @@ export interface InitialExamNote {
   encounterDate: string;
 }
 
-export type InitialExamVisitStatus = "Checked In" | "Checked Out" | "Encounter note";
+export type InitialExamVisitStatus = "Scheduled" | "Checked In" | "Checked Out" | "Encounter note";
 
 export interface InitialExamInfo {
   /** MM/DD/YYYY to show and use, or "" when there is none. */
@@ -49,6 +48,8 @@ export interface InitialExamInfo {
 }
 
 const NEW_PATIENT_TYPE = /new\s*patient/i;
+/** Statuses that never make an Initial Exam date. */
+const NOT_A_VISIT = /^(cancell?ed|cancel|no[\s-]?show)$/;
 const ATTENDED: Record<string, "Checked In" | "Checked Out"> = {
   "check out": "Checked Out",
   "checked out": "Checked Out",
@@ -93,10 +94,11 @@ export function resolveInitialExamDate(
 ): InitialExamInfo {
   let visitIso = "";
   let visitStatus: InitialExamVisitStatus = "Checked Out";
-  let scheduledIso = "";
+  const scheduledIso: string = "";
   const consider = (iso: string, status: InitialExamVisitStatus) => {
-    // Earliest wins; on the same day a checked-in/out appointment beats a note.
-    if (!visitIso || iso < visitIso || (iso === visitIso && visitStatus === "Encounter note" && status !== "Encounter note")) {
+    // Earliest wins; on the same day a checked-in/out appointment beats a scheduled one, which beats a note.
+    const rank = (s: InitialExamVisitStatus) => (s === "Encounter note" ? 0 : s === "Scheduled" ? 1 : 2);
+    if (!visitIso || iso < visitIso || (iso === visitIso && rank(status) > rank(visitStatus))) {
       visitIso = iso;
       visitStatus = status;
     }
@@ -106,9 +108,9 @@ export function resolveInitialExamDate(
     const iso = toIso(a.date);
     if (!iso) continue;
     const status = (a.status ?? "").trim().toLowerCase();
-    const attended = ATTENDED[status];
-    if (attended) consider(iso, attended);
-    else if (status === "scheduled" && (!scheduledIso || iso < scheduledIso)) scheduledIso = iso;
+    if (NOT_A_VISIT.test(status)) continue;
+    // Any existing appointment (Scheduled, Checked In/Out, Reschedule…) is enough.
+    consider(iso, ATTENDED[status] ?? "Scheduled");
   }
   for (const n of notes ?? []) {
     if (!isNewPatientAppointmentType(n.appointmentType)) continue;
