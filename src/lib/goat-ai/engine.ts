@@ -111,9 +111,34 @@ export interface GoatAiState {
   /** Which build: "f16" on GPUs with 16-bit shader support, else "f32". */
   variant: "f16" | "f32" | null;
   model: GoatAiModel;
+  /** No progress for STALL_MS while loading: show a plain message with Retry / smaller model. */
+  stalled?: boolean;
+}
+
+/** No load progress for this long = stalled (shown to the user with Retry). */
+export const GOAT_AI_STALL_MS = 3 * 60 * 1000;
+
+/**
+ * WebLLM reports several phases, and each one restarts at 0%..100%:
+ *   "Start to fetch params" → "Fetching param cache[i/n]: … % completed" (download, by bytes)
+ *   → "Loading model from cache[i/n]" (weights onto the graphics chip)
+ *   → "Loading GPU shader modules[i/n]" (compiling for this computer; can take minutes on Macs)
+ *   → "Finish loading on <GPU>".
+ * Showing only report.progress made it look stuck near the end (e.g. 95%) while a later phase ran.
+ */
+export function goatAiPhaseText(raw: string, progress: number, cached: boolean): string {
+  const pct = `${Math.round(progress * 100)}%`;
+  if (/^Fetching param cache/i.test(raw)) return cached ? `Opening + mode… ${pct}` : `Downloading… ${pct} (one time, stays on this computer)`;
+  if (/^Start to fetch/i.test(raw)) return cached ? "Opening + mode…" : "Starting the one-time download…";
+  if (/^Loading model from cache/i.test(raw)) return `Loading into graphics… ${pct}`;
+  if (/shader/i.test(raw)) return `Preparing the model on this computer… ${pct} (this can take a few minutes)`;
+  if (/^Finish loading/i.test(raw)) return "Ready";
+  return `Getting + mode ready… ${pct}`;
 }
 
 let state: GoatAiState = { status: "idle", progress: 0, progressText: "", message: "", cached: false, variant: null, model: GOAT_AI_DEFAULT_MODEL };
+let lastProgressAt = 0;
+let stallTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 let engine: WebWorkerMLCEngine | null = null;
 let worker: Worker | null = null;
@@ -147,7 +172,10 @@ function appConfig(model: GoatAiModel, variant: "f16" | "f32"): AppConfig {
         overrides: { context_window_size: 4096 },
       },
     ],
-    cacheBackend: "cache",
+    // IndexedDB: files are fetched with fetch() in the worker (retried there) and
+    // each saved file is kept, so a retry resumes. The Cache API backend used
+    // cache.add(), which fails the whole load on one network error.
+    cacheBackend: "indexeddb",
   };
 }
 
@@ -231,18 +259,33 @@ export function loadGoatAi(): Promise<void> {
       throw new Error(s.message || "unsupported");
     }
     set({ status: "loading", progress: 0, progressText: s.cached ? "Opening + mode…" : "Starting the one-time download…", variant: s.variant, cached: s.cached, model });
+    startStallWatch();
     try {
       // Keep the download from being cleared when the browser runs low on space.
-      void navigator.storage?.persist?.().catch(() => undefined);
+      void navigator.storage
+        ?.persist?.()
+        .then((granted) => console.info(`[goat+] persistent storage ${granted ? "granted" : "not granted"}`))
+        .catch((e) => console.warn("[goat+] persistent storage request failed", e));
+      void logStorage("before load");
       const webllm = await import("@mlc-ai/web-llm");
       worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+      worker.addEventListener("error", (ev) => console.error("[goat+] model worker error", ev.message || ev));
+      worker.addEventListener("messageerror", (ev) => console.error("[goat+] model worker message error", ev));
       engine = await webllm.CreateWebWorkerMLCEngine(worker, GOAT_AI_MODELS[model][s.variant].model_id, {
         appConfig: appConfig(model, s.variant),
-        initProgressCallback: (p: InitProgressReport) => set({ progress: p.progress, progressText: p.text }),
+        initProgressCallback: (p: InitProgressReport) => {
+          lastProgressAt = Date.now();
+          // Every report (WebLLM already sends at most about one a second).
+          console.info(`[goat+] ${p.text}`);
+          set({ progress: p.progress, progressText: goatAiPhaseText(p.text, p.progress, s.cached), stalled: false });
+        },
       });
-      set({ status: "ready", progress: 1, progressText: "", cached: true });
+      stopStallWatch();
+      console.info("[goat+] + mode ready");
+      set({ status: "ready", progress: 1, progressText: "", cached: true, stalled: false });
     } catch (e) {
-      console.error("[goat+] + mode load failed", e);
+      stopStallWatch();
+      console.error(`[goat+] + mode load failed${blockedHost(e instanceof Error ? e.message : String(e)) ? ` (host: ${blockedHost(e instanceof Error ? e.message : String(e))})` : ""}`, e);
       engine = null;
       worker?.terminate();
       worker = null;
@@ -253,8 +296,10 @@ export function loadGoatAi(): Promise<void> {
           ? "The browser ran out of storage space for the model. Normal G.O.A.T. still works."
           : /memory|OOM|buffer|device (was )?lost/i.test(msg) && model === "accurate"
           ? "This computer's graphics chip doesn't have enough memory for the more accurate model. Try \"Smaller and faster\" in Settings → G.O.A.T. → + mode. Normal G.O.A.T. still works."
-          : /fetch|network|load failed|404|403|cors/i.test(msg)
-          ? `Download blocked: ${msg.slice(0, 160)}. Check the internet connection or any firewall / ad blocker, then try again. Normal G.O.A.T. still works.`
+          : /maxStorageBufferBindingSize|limit|adapter|feature/i.test(msg)
+          ? `This computer's graphics can't run the more accurate model (${msg.slice(0, 120)}). Try "Smaller and faster" in Settings → G.O.A.T. → + mode. Normal G.O.A.T. still works.`
+          : /fetch|network|load failed|blocked|404|403|cors/i.test(msg)
+          ? `Download blocked${blockedHost(msg) ? ` at ${blockedHost(msg)}` : ""}. Check the internet connection, and pause any ad blocker or privacy extension for mynotegoat.com (it needs to download the model from Hugging Face), then press Retry. Already-downloaded parts are kept. Normal G.O.A.T. still works.`
           : `+ mode couldn't load (${msg.slice(0, 160)}). Normal G.O.A.T. still works.`,
       });
       throw e;
@@ -263,6 +308,67 @@ export function loadGoatAi(): Promise<void> {
     }
   })();
   return loading;
+}
+
+/** The host named in a download error ("…at cdn-lfs.hf.co…" or a URL in it). */
+function blockedHost(msg: string): string {
+  const at = /Download blocked at ([^\s:]+)/.exec(msg);
+  if (at) return at[1];
+  const url = /https?:\/\/([^/\s'"\]]+)/.exec(msg);
+  return url ? url[1] : "";
+}
+
+/** Browser storage for this site (Cache API + IndexedDB + localStorage share it). */
+async function logStorage(when: string) {
+  try {
+    const e = await navigator.storage?.estimate?.();
+    if (!e) return;
+    const mb = (b = 0) => Math.round(b / (1024 * 1024));
+    const free = mb((e.quota ?? 0) - (e.usage ?? 0));
+    console.info(`[goat+] storage ${when}: used ${mb(e.usage)} MB of ${mb(e.quota)} MB (${free} MB free)`);
+    if (free < GOAT_AI_MODELS[goatAiModel()].downloadMb * 1.2) console.warn(`[goat+] only ${free} MB free for the ${GOAT_AI_MODELS[goatAiModel()].downloadMb} MB model: the download can fail or hang`);
+  } catch (err) {
+    console.warn("[goat+] storage estimate failed", err);
+  }
+}
+
+function stopStallWatch() {
+  if (stallTimer) clearInterval(stallTimer);
+  stallTimer = null;
+}
+
+function startStallWatch() {
+  stopStallWatch();
+  lastProgressAt = Date.now();
+  stallTimer = setInterval(() => {
+    if (state.status !== "loading") return stopStallWatch();
+    const idle = Date.now() - lastProgressAt;
+    if (idle >= GOAT_AI_STALL_MS && !state.stalled) {
+      console.warn(`[goat+] no load progress for ${Math.round(idle / 1000)}s at "${state.progressText}" (${Math.round(state.progress * 100)}%)`);
+      void logStorage("stalled");
+      set({ stalled: true });
+    }
+  }, 15000);
+}
+
+/** Stop a stuck load and start again (downloaded parts are kept in the browser cache). */
+export function retryGoatAi(model?: GoatAiModel): Promise<void> {
+  console.info("[goat+] retrying + mode load", { model: model ?? goatAiModel() });
+  stopStallWatch();
+  void engine?.unload().catch(() => undefined);
+  engine = null;
+  worker?.terminate();
+  worker = null;
+  loading = null;
+  if (model && model !== goatAiModel()) {
+    try {
+      window.localStorage.setItem(MODEL_KEY, model);
+    } catch (e) {
+      console.warn("[goat+] couldn't save the model choice", e);
+    }
+  }
+  set({ status: "idle", progress: 0, progressText: "", message: "", stalled: false, model: goatAiModel() });
+  return loadGoatAi();
 }
 
 export interface GoatAiRun {

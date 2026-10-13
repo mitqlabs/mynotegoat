@@ -1,5 +1,6 @@
 "use client";
 
+import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { useRef, useMemo, useState } from "react";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
@@ -1236,9 +1237,17 @@ export function MacroSettingsPanel() {
                 const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
                 return (
                   <div key={question.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                    <p className="text-sm font-semibold">{question.label}</p>
+                    <p className="text-sm font-semibold">
+                      {question.label}
+                      {question.multiSelect && isDecompressionSinglePick(selectedMacro.buttonName, question.label)
+                        ? " (pick one)"
+                        : ""}
+                    </p>
                     {question.options.length > 0 ? (
                       (() => {
+                        const singlePick =
+                          Boolean(question.multiSelect) &&
+                          isDecompressionSinglePick(selectedMacro.buttonName, question.label);
                         const opts = question.options;
                         const colCount = opts.length >= 5 ? Math.ceil(opts.length / 5) : 1;
                         const perCol = Math.ceil(opts.length / colCount);
@@ -1247,7 +1256,13 @@ export function MacroSettingsPanel() {
                             key={`${question.id}-${option}`}
                             className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
                           >
-                            {question.multiSelect ? (
+                            {singlePick ? (
+                              <input
+                                checked={selectedOptions.includes(option)}
+                                onChange={() => setAnswers((current) => ({ ...current, [question.id]: [option] }))}
+                                type="radio"
+                              />
+                            ) : question.multiSelect ? (
                               <input
                                 checked={selectedOptions.includes(option)}
                                 onChange={() =>

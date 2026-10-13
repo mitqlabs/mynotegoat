@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { useEffect, useMemo, useState } from "react";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -295,11 +296,11 @@ export function RescheduleAppointmentModal({
           </label>
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Duration (min)</span>
-            <input
+            <NumberInput
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               min={5}
-              onChange={(event) => setNewDurationMin(Math.max(5, Number(event.target.value) || 30))}
-              type="number"
+              onChange={(n) => setNewDurationMin(Math.max(5, n))}
+              fallback={30}
               value={newDurationMin}
             />
           </label>

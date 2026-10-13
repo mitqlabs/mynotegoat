@@ -15,6 +15,7 @@ import {
   pickCarryoverSourcePlan,
   type WeekdayRegion,
   type DecompressionProgression,
+  isDecompressionSinglePickLabel,
 } from "@/lib/treatment-plans";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -763,9 +764,9 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                             region: {
                               ...dcRegion,
                               macroId: decompDef.macroId,
-                              treatments: cur.includes(t)
-                                ? cur.filter((x) => x !== t)
-                                : [...cur, t],
+                              // One targeted segment per section: a new pick
+                              // replaces the old; tapping the picked one clears it.
+                              treatments: cur.includes(t) && cur.length === 1 ? [] : [t],
                             },
                           });
                         };
@@ -775,7 +776,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                             ? cur.includes(opt)
                               ? cur.filter((x) => x !== opt)
                               : [...cur, opt]
-                            : cur.includes(opt)
+                            : cur.includes(opt) && cur.length === 1
                               ? []
                               : [opt];
                           const answers = { ...(dcRegion.answers ?? {}) };
@@ -853,7 +854,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               <>
                                 {decompDef.treatmentsLabel && (
                                   <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                                    {decompDef.treatmentsLabel}
+                                    {decompDef.treatmentsLabel} (pick one)
                                   </div>
                                 )}
                                 <div className="mt-1 flex flex-wrap gap-1.5">
@@ -879,7 +880,9 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                 <div key={question.id} className="mt-2">
                                   <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                                     {question.label}
-                                    {question.multiSelect ? "" : " (pick one)"}
+                                    {question.multiSelect && !isDecompressionSinglePickLabel(question.label)
+                                      ? ""
+                                      : " (pick one)"}
                                   </div>
                                   <div className="mt-1 flex flex-wrap gap-1.5">
                                     {question.options.map((opt) => {
@@ -892,7 +895,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             toggleAnswer(
                                               question.id,
                                               opt,
-                                              Boolean(question.multiSelect),
+                                              Boolean(question.multiSelect) &&
+                                                !isDecompressionSinglePickLabel(question.label),
                                             )
                                           }
                                           type="button"

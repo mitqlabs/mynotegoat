@@ -86,6 +86,21 @@ export function isDecompressionMacroName(name: string): boolean {
 }
 
 /**
+ * Spinal Decompression prompts that allow exactly ONE pick per section:
+ * the targeted segment (Cervical (flat), Lumbar (flat), C1-C2 … L5-S1) and
+ * the program (Legacy 1-7). The answer keeps its array shape (["L4-L5"]) so
+ * macro text, plan fill and weight progression read it unchanged; picking a
+ * new option replaces the old one. Saved multi-picks stay until changed.
+ */
+export function isDecompressionSinglePickLabel(label: string): boolean {
+  return /target(?:ed)?\s*segment|\bsegment\b|which\s*program|\bprogram\b/i.test(label);
+}
+
+export function isDecompressionSinglePick(macroName: string, questionLabel: string): boolean {
+  return isDecompressionMacroName(macroName) && isDecompressionSinglePickLabel(questionLabel);
+}
+
+/**
  * Stepped weight for a decompression visit. `visitIndex` is 0-based (first
  * covered encounter = 0 → startWeight). Returns null when no usable start
  * weight is configured.

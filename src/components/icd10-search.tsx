@@ -131,8 +131,10 @@ export function Icd10Search({
           >
             <span className="w-[4.25rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{code}</span>
             <span className="min-w-0 flex-1 text-sm leading-snug">{description}</span>
-            {/* Side by side when there's room; stacked in the narrow one-column box. */}
+            {/* Add first, then +Dx on its right (side by side when there's room;
+                stacked in the narrow one-column box). */}
             <span className="flex shrink-0 flex-col items-stretch gap-1 @[34rem]:flex-row @[34rem]:items-start">
+              {compactAdd}
               <button
                 aria-expanded={saving}
                 aria-label={`Save ${code} to your diagnosis codes`}
@@ -145,9 +147,8 @@ export function Icd10Search({
                 title="Save to your diagnosis codes (doesn't add it to this patient)"
                 type="button"
               >
-                {saveToList.buttonLabel ?? "+ Dx Code"}
+                {saveToList.buttonLabel ?? "+Dx"}
               </button>
-              {compactAdd}
             </span>
           </div>
           {saving && (

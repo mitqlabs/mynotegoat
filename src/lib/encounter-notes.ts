@@ -450,7 +450,7 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
     if (priorHasContent && nextIsAllEmpty) {
       console.warn(
         `[encounter-notes] BLOCKED save that would wipe non-empty SOAP for encounter ${rec.id} ` +
-          `(patient=${rec.patientName}, date=${rec.encounterDate}). Existing cloud content preserved. ` +
+          `(date=${rec.encounterDate}). Existing cloud content preserved. ` +
           `If this was intentional, delete the encounter or edit each section explicitly.`,
       );
       return false;

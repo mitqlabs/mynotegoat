@@ -434,13 +434,13 @@ export function OfficeLocationsDoctorsSection() {
                               {h.enabled ? (
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <TimeInput12h
-                                    inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    inputClassName="w-[7.5rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                     onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { start: v })}
                                     value={h.start}
                                   />
                                   <span className="text-xs text-[var(--text-muted)]">–</span>
                                   <TimeInput12h
-                                    inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                    inputClassName="w-[7.5rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                     onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { end: v })}
                                     value={h.end}
                                   />
@@ -448,13 +448,13 @@ export function OfficeLocationsDoctorsSection() {
                                     <>
                                       <span className="text-[10px] font-semibold text-[var(--text-muted)]">then</span>
                                       <TimeInput12h
-                                        inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        inputClassName="w-[7.5rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                         onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { start2: v })}
                                         value={h.start2}
                                       />
                                       <span className="text-xs text-[var(--text-muted)]">–</span>
                                       <TimeInput12h
-                                        inputClassName="rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
+                                        inputClassName="w-[7.5rem] rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-xs"
                                         onChange={(v) => setLocHour(loc.id, h.dayOfWeek, { end2: v })}
                                         value={h.end2}
                                       />

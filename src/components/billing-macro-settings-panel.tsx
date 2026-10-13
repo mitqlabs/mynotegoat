@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { useCallback, useMemo, useState } from "react";
 import { DiagnosisSettingsSection } from "@/components/diagnosis-settings-section";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -152,16 +153,16 @@ export function BillingMacroSettingsPanel() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
               Price ($)
             </span>
-            <input
+            <NumberInput
               aria-label="Price ($)"
               className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2"
               min={0}
-              onChange={(event) =>
-                setTreatmentDraft((current) => ({ ...current, unitPrice: Number(event.target.value) || 0 }))
+              onChange={(n) =>
+                setTreatmentDraft((current) => ({ ...current, unitPrice: n }))
               }
               placeholder="$"
               step="0.01"
-              type="number"
+              fallback={0}
               value={treatmentDraft.unitPrice}
             />
           </label>
@@ -169,16 +170,16 @@ export function BillingMacroSettingsPanel() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
               Units
             </span>
-            <input
+            <NumberInput
               aria-label="Default Units"
               className="rounded-lg border border-[var(--line-soft)] bg-white px-1 py-2 text-center"
               min={1}
               max={9}
-              onChange={(event) =>
-                setTreatmentDraft((current) => ({ ...current, defaultUnits: Number(event.target.value) || 1 }))
+              onChange={(n) =>
+                setTreatmentDraft((current) => ({ ...current, defaultUnits: n }))
               }
               placeholder="1"
-              type="number"
+              fallback={1}
               value={treatmentDraft.defaultUnits}
             />
           </label>
@@ -252,13 +253,13 @@ export function BillingMacroSettingsPanel() {
                 <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)] md:hidden">
                   Price ($)
                 </span>
-                <input
+                <NumberInput
                   aria-label="Price ($)"
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                   min={0}
-                  onChange={(event) => updateTreatment(entry.id, { unitPrice: Number(event.target.value) || 0 })}
+                  onChange={(n) => updateTreatment(entry.id, { unitPrice: n })}
                   step="0.01"
-                  type="number"
+                  fallback={0}
                   value={entry.unitPrice}
                 />
               </label>
@@ -266,13 +267,13 @@ export function BillingMacroSettingsPanel() {
                 <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)] md:hidden">
                   Units
                 </span>
-                <input
+                <NumberInput
                   aria-label="Default Units"
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-1 py-1 text-center"
                   min={1}
                   max={9}
-                  onChange={(event) => updateTreatment(entry.id, { defaultUnits: Number(event.target.value) || 1 })}
-                  type="number"
+                  onChange={(n) => updateTreatment(entry.id, { defaultUnits: n })}
+                  fallback={1}
                   value={entry.defaultUnits}
                 />
               </label>

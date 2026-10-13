@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -2028,17 +2029,17 @@ export default function AppointmentsPage() {
                     <option value={3}>3 hr</option>
                     <option value={4}>4 hr</option>
                   </select>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2"
                     max={59}
                     min={0}
-                    onChange={(event) =>
+                    onChange={(n) =>
                       setNewAppointmentDraft((current) => ({
                         ...current,
-                        durationMinutes: Math.max(0, Math.min(59, Number(event.target.value) || 0)),
+                        durationMinutes: Math.max(0, Math.min(59, n)),
                       }))
                     }
-                    type="number"
+                    fallback={0}
                     value={newAppointmentDraft.durationMinutes}
                   />
                 </div>
@@ -2097,16 +2098,16 @@ export default function AppointmentsPage() {
                   ) : (
                     <label className="grid gap-1 md:col-span-2">
                       <span className="text-sm font-semibold text-[var(--text-muted)]">Visits *</span>
-                      <input
+                      <NumberInput
                         className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                         min={1}
-                        onChange={(event) =>
+                        onChange={(n) =>
                           setNewAppointmentDraft((current) => ({
                             ...current,
-                            recurVisitCount: Math.max(1, Number(event.target.value) || 1),
+                            recurVisitCount: Math.max(1, n),
                           }))
                         }
-                        type="number"
+                        fallback={1}
                         value={newAppointmentDraft.recurVisitCount}
                       />
                     </label>
