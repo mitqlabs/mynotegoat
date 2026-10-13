@@ -1,3 +1,6 @@
+import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
+export { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
+
 export type CaseStatus =
   | "Active"
   | "Discharged"
@@ -48,7 +51,8 @@ export interface PatientRecord {
   fullName: string;
   dob: string;
   sex?: "Male" | "Female" | "Other";
-  maritalStatus?: "Single" | "Married" | "Divorced" | "Widowed" | "Other";
+  /** Blank (undefined) for patients saved before this field; "Other" is legacy. */
+  maritalStatus?: MaritalStatus;
   phone: string;
   email?: string;
   address?: string;
@@ -317,15 +321,6 @@ function normalizeSex(value: unknown): PatientRecord["sex"] | undefined {
   return undefined;
 }
 
-function normalizeMaritalStatus(value: unknown): PatientRecord["maritalStatus"] | undefined {
-  const normalized = cleanString(value).toLowerCase();
-  if (normalized === "single") return "Single";
-  if (normalized === "married") return "Married";
-  if (normalized === "divorced") return "Divorced";
-  if (normalized === "widowed") return "Widowed";
-  if (normalized === "other") return "Other";
-  return undefined;
-}
 
 function normalizeMatrix(rawValue: unknown): Partial<Record<PatientMatrixField, string>> | undefined {
   if (!isRecord(rawValue)) {

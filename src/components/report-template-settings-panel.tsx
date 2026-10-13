@@ -27,7 +27,7 @@ const autoFieldCategories: FieldCategory[] = [
   },
   {
     label: "Patient",
-    tokens: ["PATIENT_FULL_NAME", "PATIENT_FIRST_NAME", "PATIENT_LAST_NAME", "MR_MRS_MS_LAST_NAME", "MR_MRS_MS_FULL_NAME", "HE_SHE", "HIS_HER", "PATIENT_DOB", "PATIENT_PHONE", "PATIENT_EMAIL"],
+    tokens: ["PATIENT_FULL_NAME", "PATIENT_FIRST_NAME", "PATIENT_LAST_NAME", "MR_MRS_MS_LAST_NAME", "MR_MRS_MS_FULL_NAME", "HE_SHE", "HIS_HER", "PATIENT_DOB", "PATIENT_SEX", "MARITAL_STATUS", "PATIENT_PHONE", "PATIENT_EMAIL"],
   },
   {
     label: "Case Info",
@@ -103,6 +103,8 @@ const examplePreviewContext: Record<string, string> = {
   PATIENT_FIRST_NAME: "Maria",
   PATIENT_LAST_NAME: "Garcia",
   PATIENT_DOB: "05/15/1988",
+  PATIENT_SEX: "Female",
+  MARITAL_STATUS: "Married",
   PATIENT_PHONE: "(818) 555-9876",
   PATIENT_EMAIL: "maria.garcia@email.com",
   MR_MRS_MS_LAST_NAME: "Ms. Garcia",

@@ -1,5 +1,6 @@
 "use client";
 
+import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -279,6 +280,7 @@ type NewPatientDraft = {
   lastName: string;
   firstName: string;
   sex: PatientRecord["sex"] | "";
+  maritalStatus: MaritalStatus | "";
   attorney: string;
   attorneyPhone: string;
   dob: string;
@@ -651,6 +653,7 @@ export default function PatientsPage() {
     lastName: "",
     firstName: "",
     sex: "",
+    maritalStatus: "",
     attorney: "",
     attorneyPhone: "",
     dob: "",
@@ -671,6 +674,7 @@ export default function PatientsPage() {
       lastName: "",
       firstName: "",
       sex: "",
+      maritalStatus: "",
       attorney: "",
       attorneyPhone: "",
       dob: "",
@@ -759,6 +763,7 @@ export default function PatientsPage() {
       firstName,
       lastName,
       sex: newPatientDraft.sex || undefined,
+      maritalStatus: newPatientDraft.maritalStatus || undefined,
       attorney: attorneyName,
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
@@ -2653,16 +2658,16 @@ export default function PatientsPage() {
               </label>
 
               {/* Taking in a new patient: name, who they are, how to reach
-                  them, where they live — then the attorney side. Marital
-                  status, email and the initial-exam date were dropped; they
+                  them, where they live — then the attorney side. Email and
+                  the initial-exam date were dropped; they
                   are set on the patient file once the case is open, and the
                   lien, case status and "schedule the initial visit" step
                   start themselves (see createNewPatient). */}
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" data-row="new-patient-identity">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Last Name *</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
                       setNewPatientDraft((current) => ({ ...current, lastName: event.target.value }))
                     }
@@ -2673,7 +2678,7 @@ export default function PatientsPage() {
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient First Name *</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
                       setNewPatientDraft((current) => ({ ...current, firstName: event.target.value }))
                     }
@@ -2684,7 +2689,7 @@ export default function PatientsPage() {
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     inputMode="numeric"
                     maxLength={10}
                     onChange={(event) =>
@@ -2701,7 +2706,7 @@ export default function PatientsPage() {
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
                   <select
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
                       setNewPatientDraft((current) => ({
                         ...current,
@@ -2717,9 +2722,31 @@ export default function PatientsPage() {
                 </label>
 
                 <label className="grid gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
+                  <select
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    data-field="marital-status"
+                    onChange={(event) =>
+                      setNewPatientDraft((current) => ({
+                        ...current,
+                        maritalStatus: event.target.value as NewPatientDraft["maritalStatus"],
+                      }))
+                    }
+                    value={newPatientDraft.maritalStatus}
+                  >
+                    <option value="">—</option>
+                    {maritalStatusOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Phone Number</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     inputMode="numeric"
                     maxLength={12}
                     onChange={(event) =>

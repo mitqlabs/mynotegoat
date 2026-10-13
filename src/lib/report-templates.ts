@@ -65,6 +65,8 @@ export const narrativeReportAutoFields: NarrativeReportAutoField[] = [
   { token: "PATIENT_FIRST_NAME", label: "Patient First Name" },
   { token: "PATIENT_LAST_NAME", label: "Patient Last Name" },
   { token: "PATIENT_DOB", label: "Patient DOB" },
+  { token: "PATIENT_SEX", label: "Patient Sex" },
+  { token: "MARITAL_STATUS", label: "Marital Status" },
   { token: "PATIENT_PHONE", label: "Patient Phone" },
   { token: "PATIENT_EMAIL", label: "Patient Email" },
   { token: "MR_MRS_MS_LAST_NAME", label: "Mr./Mrs./Ms. Last Name" },

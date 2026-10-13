@@ -1808,6 +1808,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       FULL_NAME: `${names.firstName} ${names.lastName}`.trim(),
       AGE: ageTokenOn(patient?.dob ?? "", asOfDate),
       SEX: patient?.sex ?? "",
+      MARITAL_STATUS: patient?.maritalStatus ?? "",
       DOB: toUsDate(patient?.dob ?? ""),
       INJURY_DATE: toUsDate(patient?.dateOfLoss ?? ""),
       ATTORNEY: patient?.attorney ?? "",

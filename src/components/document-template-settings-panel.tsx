@@ -28,6 +28,8 @@ const demoPatientContext: Record<string, string> = {
   PATIENT_FIRST_NAME: "John",
   PATIENT_LAST_NAME: "Doe",
   PATIENT_DOB: "05/12/1990",
+  PATIENT_SEX: "Male",
+  MARITAL_STATUS: "Single",
   DATE_OF_INJURY: "03/01/2026",
   PATIENT_PHONE: "818-555-0144",
   PATIENT_EMAIL: "john.doe@example.com",
