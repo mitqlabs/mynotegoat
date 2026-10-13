@@ -31,7 +31,7 @@ export interface FileFacts {
   regions: string[];
 }
 
-export const FACTS_VERSION = 3;
+export const FACTS_VERSION = 4;
 /** Text read per file for facts (dates, headers and plans sit in the first pages). */
 export const MAX_FACT_CHARS = 250_000;
 
@@ -158,7 +158,7 @@ export function extractFileFacts(file: GoatFile): FileFacts {
   }
 
   // Sections: a header line ("IMPRESSION:", "Plan") then its lines until the next header.
-  const lines = text.split(/\r?\n/);
+  const lines = unwrapLines(text);
   let cur: (typeof HEADERS)[number][0] | null = null;
   let taken = 0;
   for (const raw of lines) {
@@ -169,19 +169,20 @@ export function extractFileFacts(file: GoatFile): FileFacts {
       cur = hdr[0];
       taken = 0;
       const rest = line.replace(/^[^:]*:\s*/, "");
+      if (cur === "rom") continue; // ROM is read as whole sentences below
       if (rest !== line && rest) push(facts[cur], rest);
       else if (rest === line && /\s\S+\s\S+/.test(line)) push(facts[cur], line); // "Follow up in 4 weeks."
       continue;
     }
     if (ANY_HEADER.test(line) && !/^\d/.test(line)) cur = null;
-    if (cur && taken < 12) { push(facts[cur], line); taken++; }
+    if (cur && cur !== "rom" && taken < 12) { push(facts[cur], line); taken++; }
     // Anywhere in the text:
-    if (/\b(flexion|extension|rotation|lateral (?:bending|flexion)|abduction)\b[^.\n]{0,40}?\d+\s*(?:°|deg)/i.test(line)) push(facts.rom, line, 20);
     if (/\b(injection|ESI|epidural|facet|medial branch|RFA|radiofrequency|nerve block|trigger point|PRP|surgery|discectomy|fusion|arthroscop\w*)\b/i.test(line) && /recommend|candidate|perform|schedul|underwent|consider|plan/i.test(line)) push(facts.procedures, line);
     if (/\bfollow[\s-]?up\b[^.\n]{0,30}\b(\d+|one|two|three|four|six)\s*(days?|weeks?|wks?|months?)\b|\breturn in\b/i.test(line)) push(facts.followUp, line);
     if (/\b[A-TV-Z]\d{2}\.[0-9A-Z]{1,4}\b/.test(line)) push(facts.diagnoses, line);
     if (/\b\d+\s*mg\b/i.test(line)) push(facts.medications, line);
   }
+  facts.rom = extractRom(lines);
   // Radiology without headers: lines that read like impressions.
   if ((docType === "xray" || docType === "mri" || docType === "ct") && !facts.impressions.length && !facts.findings.length) {
     for (const l of lines) if (/\b(degenerat\w*|herniat\w*|bulg\w*|protrusion|stenosis|straightening|lordosis|fracture|spondylo\w*|osteophyte\w*|unremarkable|no acute)\b/i.test(l)) push(facts.findings, l, 8);
@@ -212,4 +213,66 @@ export function factsForPrompt(f: FileFacts, fields: Array<keyof FileFacts> = fa
     if (Array.isArray(v) && v.length && typeof v[0] === "string") out.push(`  ${k}: ${(v as string[]).slice(0, 8).join(" | ")}`);
   }
   return out.join("\n");
+}
+
+/**
+ * PDF text wraps mid-sentence ("Cervical flexion 35 degrees with\npain, extension …"): join a line
+ * into the previous one unless the previous one ended a sentence or the line is a heading / list item.
+ */
+export function unwrapLines(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (!line) {
+      out.push("");
+      continue;
+    }
+    const prev = out.length ? out[out.length - 1] : "";
+    const startsNew = /^([-•*·]|\d+[.)]\s|[A-Z][A-Z /&-]{2,}:?$|[A-Za-z][A-Za-z /&-]{1,40}:\s)/.test(line) || /^(p\.\d+|page \d+)/i.test(line);
+    // A continuation starts lowercase / with a digit, or the previous line clearly stops mid-phrase.
+    const continues = /^[a-z0-9(]/.test(line) || /(,|\b(with|without|and|or|of|to|at|the|a|an|in|on|for|by|bilaterally)|-)$/i.test(prev);
+    if (prev && continues && !/[.:;!?]$/.test(prev) && !startsNew && !/^[A-Z][A-Z /&-]{2,}:?$/.test(prev)) out[out.length - 1] = `${prev} ${line}`;
+    else out.push(line);
+  }
+  return out.filter(Boolean);
+}
+
+const ROM_MOTION = /\b(flexion|extension|rotation|lateral (?:bending|flexion)|side bending|abduction|adduction|internal rotation|external rotation)\b/i;
+const ROM_REGIONS: Array<[string, RegExp]> = [
+  ["Cervical", /\b(cervical|c[- ]?spine|neck)\b/i],
+  ["Thoracic", /\b(thoracic|t[- ]?spine)\b/i],
+  ["Lumbar", /\b(lumbar|l[- ]?spine|low(?:er)? back|lumbosacral)\b/i],
+  ["Shoulder", /\bshoulders?\b/i],
+  ["Knee", /\bknees?\b/i],
+  ["Hip", /\bhips?\b/i],
+];
+
+/**
+ * Range of motion as whole sentences with their region: "Cervical: flexion 35° with pain, extension
+ * 40° with pain." Region from the sentence, else the last region heading above it. Never cut mid-sentence.
+ */
+export function extractRom(lines: string[]): string[] {
+  const out: string[] = [];
+  let region = "";
+  let inRom = false;
+  for (const line of lines) {
+    const head = /^([A-Za-z][A-Za-z /&-]{1,40}):\s*(.*)$/.exec(line);
+    const headRegion = ROM_REGIONS.find(([, re]) => re.test(head ? head[1] : line.length < 40 ? line : ""))?.[0];
+    if (headRegion) region = headRegion;
+    if (/^(range of motion|rom)\b/i.test(line)) inRom = true;
+    else if (/^[A-Z][A-Z /&-]{3,}:?\s*$/.test(line) || (head && !headRegion && !ROM_MOTION.test(head[1]) && !/range of motion|rom/i.test(head[1]))) inRom = false;
+    const body = head && (headRegion || /range of motion|rom/i.test(head[1])) ? head[2] : line;
+    for (const sentence of body.split(/(?<=[.;])\s+(?=[A-Z])/)) {
+      const sn = sentence.trim();
+      if (!sn) continue;
+      const hasMeasure = ROM_MOTION.test(sn) && /\d+\s*(?:°|deg|degrees)\b|\b(full|limited|restricted|reduced|decreased|normal|WNL|within normal limits)\b/i.test(sn);
+      if (!hasMeasure && !(inRom && ROM_MOTION.test(sn))) continue;
+      const own = ROM_REGIONS.find(([, re]) => re.test(sn))?.[0];
+      const r = own ?? region;
+      const text = sn.replace(/\s*(\d+)\s*(?:degrees|deg)\b\.?/gi, " $1°").replace(/\s+/g, " ").trim();
+      const lineOut = r && !new RegExp(`^${r}\\b`, "i").test(text) ? `${r}: ${text}` : text;
+      if (!out.includes(lineOut) && out.length < 20) out.push(lineOut);
+    }
+  }
+  return out;
 }
