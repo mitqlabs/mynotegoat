@@ -2,6 +2,7 @@
 
 import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
 import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
+import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -86,6 +87,11 @@ export default function PortalLayout({
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
   const [unsyncedNotes, setUnsyncedNotes] = useState(0);
   useEffect(() => subscribeUnsyncedNotes(setUnsyncedNotes), []);
+  // + mode was removed: free the space its model took in this browser (once, silently, on idle).
+  useEffect(() => {
+    const t = window.setTimeout(() => void cleanupPlusModeOnce().catch(() => undefined), 5000);
+    return () => window.clearTimeout(t);
+  }, []);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [errorPillDismissed, setErrorPillDismissed] = useState(false);
   const [retryingSync, setRetryingSync] = useState(false);

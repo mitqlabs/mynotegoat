@@ -1,6 +1,6 @@
 /**
  * Settings sections and the words people use for them. Shared by the Settings
- * page search and G.O.A.T. + mode ("where do I change office hours?").
+ * page search and G.O.A.T. ("where do I change office hours?").
  * Each section opens with /settings?section=<key>.
  */
 export type SettingsSectionKey =
@@ -284,7 +284,7 @@ export const settingsSearchCatalog: Array<{
   },
 ];
 
-export const GOAT_SETTINGS_PAGE = { key: "goatPage", title: "G.O.A.T. Settings (+ mode, answers, words)", href: "/settings/goat" } as const;
+export const GOAT_SETTINGS_PAGE = { key: "goatPage", title: "G.O.A.T. Settings (answers, words)", href: "/settings/goat" } as const;
 
 export function settingsHref(key: SettingsSectionKey): string {
   return key === "goat" ? "/settings/goat" : `/settings?section=${key}`;

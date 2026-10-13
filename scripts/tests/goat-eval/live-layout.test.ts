@@ -6,7 +6,7 @@
  * Run:  npx tsx scripts/tests/goat-eval/live-layout.test.ts
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { askGoat } from "../../../src/lib/goat";
 import { goatPeople } from "../../../src/lib/goat-context";
 import { extractFileFacts } from "../../../src/lib/goat-facts";
@@ -100,13 +100,13 @@ evalCase("header 'Visit: 02/25/2026 9:15AM' with other labels on the line; never
   assert.doesNotMatch(t, /07\/19\/1979/);
 });
 
-// + mode On + ready: the model writes the final answer; the basic lookup is input / fallback only.
-evalCase("+ mode never short-circuits with the basic answer", () => {
-  const src = readFileSync(new URL("../../../src/lib/goat-ai/assist.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /if \(base\.answers\.length\) return done\(base, false\)/);
-  assert.match(src, /ruleAnswers: base\.answers/);
-  const ans = readFileSync(new URL("../../../src/lib/goat-ai/answer.ts", import.meta.url), "utf8");
-  assert.match(ans, /Basic lookup results/);
+// + mode is gone: no web-llm, no model files, and the old cache is cleaned once.
+evalCase("+ mode removed; old model storage is cleaned up", () => {
+  const pkg = readFileSync(new URL("../../../package.json", import.meta.url), "utf8");
+  assert.doesNotMatch(pkg, /web-llm/);
+  for (const f of ["engine", "assist", "answer", "worker", "flag"]) assert.equal(existsSync(new URL(`../../../src/lib/goat-ai/${f}.ts`, import.meta.url)), false, f);
+  const gg = readFileSync(new URL("../../../src/components/global-goat.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(gg, /\+ mode|useSmartMode|runGoatAi/);
 });
 
 const passed = results.filter((r) => r.ok).length;

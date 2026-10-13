@@ -22,12 +22,18 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useGoatPatientContext } from "@/hooks/use-goat-patient-context";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
-import { GoatStatusLine, PlusIntroCard, PlusModeBadge, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
+import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
-import { HOWTO_QUESTION, answerHowTo, bookingReply, isBookingRequest } from "@/lib/goat-howto";
-import { PLUS_NEEDED, PRACTICE_ANSWER_PROMPT, PRACTICE_HELP, SETTING_QUESTION, detectPracticeIntent, fallbackToolCalls, isPatientSpecific, parseToolCalls, runPracticeTool, toolPickPrompt, type PracticeData, type ToolResult } from "@/lib/goat-practice";
+import { HOWTO_QUESTION, answerHowTo, dayLabel, isBookingRequest } from "@/lib/goat-howto";
+import { PRACTICE_HELP, isPatientSpecific, type PracticeData } from "@/lib/goat-practice";
+import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
+import { bookingRecord, draftSummary, finishDraft, planBooking, retime } from "@/lib/goat-booking";
+import { loadScheduleSettings } from "@/lib/schedule-settings";
+import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { to12hLabel } from "@/lib/time-12h";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
@@ -135,9 +141,8 @@ interface Job {
 interface AnswererProps {
   patient: PatientRecord;
   job: Job;
-  smart: boolean;
   onPartial: (text: string) => void;
-  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart" | "copy">) => void;
+  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy">) => void;
 }
 
 function PatientAnswerer(props: AnswererProps) {
@@ -155,7 +160,7 @@ const NO_FILES: GoatFilesController = {
   openFile: () => undefined,
 };
 
-function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererProps & { context: GoatContext; files: GoatFilesController }) {
+function Answerer({ job, onDone, context, files }: AnswererProps & { context: GoatContext; files: GoatFilesController }) {
   const { prefs } = useGoatAnswerPrefs();
   const started = useRef<string | null>(null);
   const ctxRef = useRef<GoatContext>(context);
@@ -176,33 +181,20 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
       const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
       // "when was his XR and what were the findings?": answer each part, then one reply with every part.
       const parts = splitPatientQuestion(job.question);
-      const answerPart = async (question: string, previous: Job["previous"]): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number; smart?: boolean }> => {
+      const answerPart = async (question: string): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number }> => {
         // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
         const typed = typedDateAnswer(ctx, question);
-        if (typed) return { text: typed, ms: 0, smart: false };
-        if (smart) {
-          try {
-            // Rules first; + mode fills gaps in that same answer (regular format, region order).
-            const { assistGoat } = await import("@/lib/goat-ai/assist");
-            const a = await assistGoat({ context: ctx, question, prefs, previous, onText: parts.length > 1 ? () => undefined : onPartial, onStatus: onPartial });
-            const r = ruleAnswerToMessage(a.result);
-            const warnings = [...(r.warnings ?? []), ...a.warnings].slice(0, 3);
-            return { ...r, warnings: warnings.length ? warnings : undefined, ms: a.ms, smart: a.smartUsed };
-          } catch (e) {
-            console.error("[goat+] + mode answer failed; using regular G.O.A.T.", e);
-          }
-        }
+        if (typed) return { text: typed, ms: 0 };
         const t1 = performance.now();
-        return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1, smart: false };
+        return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1 };
       };
       if (parts.length < 2) {
-        onDone(await answerPart(job.question, job.previous));
+        onDone(await answerPart(job.question));
         return;
       }
       const answers = [];
-      for (const [i, part] of parts.entries()) {
-        if (smart) onPartial(`Answering part ${i + 1} of ${parts.length}…`);
-        answers.push(await answerPart(part, null));
+      for (const part of parts) {
+        answers.push(await answerPart(part));
       }
       const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
       onDone({
@@ -225,7 +217,6 @@ function Answerer({ job, smart, onPartial, onDone, context, files }: AnswererPro
         warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
         copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
         ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
-        smart: answers.some((a) => a.smart),
       });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per job; callbacks only touch refs / functional updates
@@ -261,10 +252,8 @@ export function GlobalGoatPopup({
     setJobState(j);
   }, []);
   const [partial, setPartial] = useState("");
-  const [practiceBusy, setPracticeBusy] = useState(false);
-  const [smartOn] = useSmartMode();
-  const ai = useGoatAiState();
-  const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
+  const practiceBusy = false;
+  const { addAppointments } = useScheduleAppointments();
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     saveChat(chat);
@@ -320,61 +309,67 @@ export function GlobalGoatPopup({
     };
   };
 
-  /**
-   * + mode office question: the local model picks read-only tools, NoteGoat runs
-   * them on this browser's data, then the model writes a natural answer from the
-   * results (keeping the recent conversation for follow-ups).
-   */
-  const askPracticeModel = async (question: string) => {
-    setPracticeBusy(true);
-    setPartial("");
-    const t0 = performance.now();
-    const data = practiceData();
-    let results: ToolResult[] = [];
-    try {
-      const { runGoatAi } = await import("@/lib/goat-ai/engine");
-      const history = chat.messages.filter((m) => m.practice).slice(-6).map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.text }));
-      const pick = await runGoatAi([{ role: "system", content: toolPickPrompt() }, ...history, { role: "user", content: question }], () => undefined, { maxTokens: 160 });
-      let calls = parseToolCalls(pick.text);
-      if (!calls || !calls.length) {
-        if (calls === null) console.info(`[goat+] tool pick wasn't valid JSON (${pick.text.length} chars); using rules`);
-        calls = fallbackToolCalls(question);
-      }
-      results = calls.map((c) => runPracticeTool(c, data));
-      const choiceResult = results.find((r) => r.choices?.length);
-      if (choiceResult) {
-        push({ role: "goat", text: choiceResult.text, practice: true, choices: choiceResult.choices!.map((c) => ({ label: c.label, question: c.question })) });
-        return;
-      }
-      const toolText = results.length ? results.map((r) => `[${r.name}]\n${r.text}`).join("\n\n") : "(no tool results)";
-      const r = await runGoatAi(
-        [{ role: "system", content: `${PRACTICE_ANSWER_PROMPT}\n\nTODAY: ${data.today}\n\nTOOL RESULTS:\n${toolText}` }, ...history, { role: "user", content: question }],
-        (t) => setPartial(t),
-        { maxTokens: 400 },
-      );
-      const links = results.flatMap((x) => x.links ?? []);
-      push({ role: "goat", text: r.text.trim() || results.map((x) => x.text).join("\n") || PRACTICE_HELP, smart: true, practice: true, links: links.length ? links : undefined, ms: performance.now() - t0 });
-    } catch (e) {
-      console.error("[goat+] + mode office answer failed", e);
-      const links = results.flatMap((x) => x.links ?? []);
-      push({ role: "goat", text: results.map((x) => x.text).join("\n") || PRACTICE_HELP, practice: true, links: links.length ? links : undefined });
-    } finally {
-      setPartial("");
-      setPracticeBusy(false);
-    }
+  /** The memory of the last office answer, for follow-ups ("and tomorrow?", "list them", "their fax?"). */
+  const lastOffice = (): OfficeMemory | null => {
+    const last = [...chat.messages].reverse().find((m) => m.role === "goat");
+    return last?.office ?? null;
   };
 
-  /** Office questions (to-do, schedule, cases, contacts, settings). True if handled. */
+  /** Office questions (to-do, schedule, cases, contacts, settings), rules only. True if handled. */
   const tryPractice = (question: string, confidentPatient: boolean): boolean => {
-    const intent = detectPracticeIntent(question);
-    const setting = SETTING_QUESTION.test(question);
-    if (!intent && !setting) return false;
-    if (confidentPatient && intent?.kind !== "contact" && !setting) return false;
+    const ans = answerOffice(question, practiceData(), lastOffice());
+    if (!ans) return false;
+    if (confidentPatient && !ans.memory?.contact && !ans.links) return false;
     push({ role: "user", text: question, practice: true });
-    // Regular G.O.A.T. is for patient questions only: office questions are a + mode feature.
-    if (!smartActive) push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
-    else void askPracticeModel(question);
+    push({ role: "goat", text: ans.text, practice: true, links: ans.links, office: ans.memory, choices: ans.choices?.map((c) => ({ label: c.label, question: c.question })) });
     return true;
+  };
+
+  const scheduleSettings = () => practiceOverride ? undefined : loadScheduleSettings();
+
+  /** "book kara tmrw at 3": a confirm card; nothing is saved until Confirm. */
+  const startBooking = (question: string, patient: PatientRecord) => {
+    const data = practiceData();
+    const settings = scheduleSettings() ?? loadScheduleSettings();
+    const step = planBooking({ question, patient: { id: patient.id, fullName: patient.fullName }, todayIso: data.today, appointments: data.appointments, settings, types: [...new Set(data.appointments.map((a) => a.appointmentType).filter(Boolean))] });
+    const name = displayName(patient.fullName);
+    if (step.kind === "needDay") {
+      push({ role: "goat", text: `What day should I book ${name}? (e.g. "Thursday at 3" or "10/20 9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question } });
+      return;
+    }
+    if (step.kind === "needTime") {
+      push({ role: "goat", text: `What time on ${dayLabel(step.date)} for ${name}? (e.g. "3" or "9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question } });
+      return;
+    }
+    push({ role: "goat", text: draftSummary(step.draft), patientName: name, booking: { ...step.draft, state: "open" } });
+  };
+
+  const updateBooking = (id: string, next: ChatMessage["booking"], text?: string) =>
+    setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === id ? { ...m, booking: next, ...(text !== undefined ? { text } : {}) } : m)) }));
+
+  /** Confirm: recheck the slot, then save through the Schedule's own save path. */
+  const confirmBooking = (msg: ChatMessage, override = false) => {
+    const b = msg.booking;
+    if (!b || b.state !== "open") return;
+    const data = practiceData();
+    const settings = scheduleSettings() ?? loadScheduleSettings();
+    const fresh = finishDraft({ ...b, override }, data.appointments, settings);
+    if (!override && (fresh.taken || fresh.outsideHours)) {
+      updateBooking(msg.id, { ...fresh, state: "open" }, draftSummary(fresh));
+      return;
+    }
+    const record = bookingRecord({ ...fresh, override }, createAppointmentId(), data.appointments);
+    addAppointments([record]);
+    updateBooking(msg.id, { ...fresh, override, state: "booked" });
+    push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
+  };
+
+  const pickTime = (msg: ChatMessage, time: string) => {
+    const b = msg.booking;
+    if (!b) return;
+    const settings = scheduleSettings() ?? loadScheduleSettings();
+    const next = finishDraft({ ...b, time, notes: [], override: false }, practiceData().appointments, settings);
+    updateBooking(msg.id, { ...next, state: "open" }, draftSummary(next));
   };
 
   const send = (raw: string) => {
@@ -386,29 +381,50 @@ export function GlobalGoatPopup({
     const waitingForName = waitingQuestion();
     // "How do I…" answers come only from NoteGoat's page/button and Settings
     // catalogs (never the model's guess); unknown ones say "I'm not sure".
+    const lastG = [...chat.messages].reverse().find((m) => m.role === "goat");
+    // Reply to "what time?" / "what day?" for a booking.
+    if (lastG?.bookingAsk) {
+      const p = patientById(lastG.bookingAsk.patientId);
+      if (p && !isBookingRequest(question) && question.split(/\s+/).length <= 6) {
+        push({ role: "user", text: question, practice: true });
+        startBooking(`${lastG.bookingAsk.question} ${question}`, p);
+        return;
+      }
+    }
+    // A new time typed while a booking card is open ("4:15", "4p", "different time 2pm").
+    if (lastG?.booking?.state === "open" && question.split(/\s+/).length <= 4) {
+      const next = retime(lastG.booking, question.replace(/^(different time|instead|how about|make it|change( it)? to)\s*/i, ""), practiceData().appointments, scheduleSettings() ?? loadScheduleSettings());
+      if (next) {
+        push({ role: "user", text: question, practice: true });
+        updateBooking(lastG.id, { ...lastG.booking, state: "canceled" });
+        push({ role: "goat", text: draftSummary(next), patientName: displayName(next.patientName), booking: { ...next, state: "open" } });
+        return;
+      }
+    }
+    // "How do I…" answers come only from NoteGoat's page/button and Settings catalogs; unknown ones say "I'm not sure".
     const how = HOWTO_QUESTION.test(question) && !waitingForName ? answerHowTo(question) : null;
     if (how && (how.found || !found.confident)) {
       push({ role: "user", text: question, practice: true });
-      if (!smartActive) push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
-      else push({ role: "goat", text: how.text, practice: true, links: how.links });
+      push({ role: "goat", text: how.text, practice: true, links: how.links });
       return;
     }
-    // Booking ("schedule armen next thursday") isn't a lookup: say plainly it can't
-    // book yet and open the Schedule on that day. Never runs the next-visit answer.
+    // Booking ("book kara tmrw at 3"): a confirm card, never the next-visit answer.
     if (isBookingRequest(question)) {
-      const who = found.confident ? displayName(found.confident.patient.fullName) : null;
-      const reply = bookingReply(question, practiceData().today, who);
       push({ role: "user", text: question, practice: true });
-      push({ role: "goat", text: reply.text, practice: true, links: reply.links });
+      if (found.confident) {
+        const p = patientById(found.confident.patient.id);
+        if (p) return startBooking(question, p);
+      }
+      if (found.candidates.length) {
+        push({ role: "goat", text: "Book which patient?", choices: found.candidates.map((c) => ({ label: choiceLabel(c.patient), question: `book ${c.patient.fullName} ${stripPatientName(question, found.named ?? "").replace(/^(please\s+)?(book|schedule)\b/i, "")}`.replace(/\s+/g, " ").trim() })) });
+        return;
+      }
+      const p = found.named ? null : current ?? patientById(openPatientId);
+      if (p) return startBooking(question, p);
+      push({ role: "goat", text: found.named ? `I couldn't find a patient named "${found.named}". Who should I book?` : "Who should I book? Type their name, the day and the time." });
       return;
     }
     if (!(waitingForName && found.named) && tryPractice(question, Boolean(found.confident))) return;
-    // + mode: anything not clearly about a patient is an office question for the model (follow-ups included).
-    if (smartActive && !found.confident && !found.candidates.length && !found.named && !isPatientSpecific(question) && !waitingForName) {
-      push({ role: "user", text: question, practice: true });
-      void askPracticeModel(question);
-      return;
-    }
     push({ role: "user", text: question });
     // A reply that is only a name ("Jane Sample") answers the question that was waiting for a patient.
     const waiting = waitingQuestion();
@@ -437,7 +453,7 @@ export function GlobalGoatPopup({
     if (!p) {
       // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
       if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
-      else push({ role: "goat", text: smartActive ? PRACTICE_HELP : PLUS_NEEDED, practice: true, plusLink: !smartActive });
+      else push({ role: "goat", text: PRACTICE_HELP, practice: true });
       return;
     }
     startAnswer(p, question, Boolean(current));
@@ -461,7 +477,7 @@ export function GlobalGoatPopup({
 
   // Plain functions: they only touch refs and functional state updates, so a stale copy is fine.
   const onPartial = (t: string) => setPartial(t);
-  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "smart" | "copy">) => {
+  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy">) => {
     const j = jobRef.current;
     if (j) {
       const p = findPatient(patientsOverride, j.patientId);
@@ -476,12 +492,10 @@ export function GlobalGoatPopup({
 
   const lastGoat = [...chat.messages].reverse().find((m) => m.role === "goat");
   const status: GoatStatus = job || practiceBusy
-    ? smartActive && ai.status === "loading"
-      ? "plus"
-      : "searching"
+    ? "searching"
     : !lastGoat || (lastGoat.choices && !lastGoat.picked) || lastGoat.pendingQuestion
       ? "ready"
-      : /^I couldn't find/.test(lastGoat.text) || lastGoat.text === PRACTICE_HELP || lastGoat.text === PLUS_NEEDED
+      : /^I couldn't find/.test(lastGoat.text) || lastGoat.text === PRACTICE_HELP
         ? "notFound"
         : "found";
 
@@ -489,9 +503,9 @@ export function GlobalGoatPopup({
   return (
     <>
       {jobPatient && job && (contextOverride ? (
-        <Answerer context={contextOverride(jobPatient.id)!} files={NO_FILES} job={job} onDone={onDone} onPartial={onPartial} patient={jobPatient} smart={smartActive} />
+        <Answerer context={contextOverride(jobPatient.id)!} files={NO_FILES} job={job} onDone={onDone} onPartial={onPartial} patient={jobPatient} />
       ) : (
-        <PatientAnswerer job={job} onDone={onDone} onPartial={onPartial} patient={jobPatient} smart={smartActive} />
+        <PatientAnswerer job={job} onDone={onDone} onPartial={onPartial} patient={jobPatient} />
       ))}
       {open && (
         <section
@@ -504,7 +518,7 @@ export function GlobalGoatPopup({
             <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80 object-cover" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-lg font-semibold leading-tight">
-                G.O.A.T. <PlusModeBadge ai={ai} smartOn={smartOn} /> <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
+                G.O.A.T. <GoatStatusLine className="font-medium text-white/95" status={status} />
               </div>
               <div className="truncate text-xs text-white/90">
                 {current ? (
@@ -538,7 +552,6 @@ export function GlobalGoatPopup({
           </header>
 
           <div ref={listRef} className="flex-1 space-y-2.5 overflow-y-auto bg-[var(--bg-soft,#f6f9fa)] px-3 py-3">
-            <PlusIntroCard />
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
@@ -564,11 +577,7 @@ export function GlobalGoatPopup({
                         {l.label} ↗
                       </Link>
                     ))}
-                    {m.plusLink && (
-                      <Link className="mt-1 inline-block font-semibold text-[var(--brand-primary)] hover:underline" href="/settings/goat" style={{ fontSize: 13 }}>
-                        Turn on + mode in G.O.A.T. Settings
-                      </Link>
-                    )}
+                    {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
                       <div className="mt-2 space-y-1.5" data-goat-choices>
                         {m.choices.map((c) => (
@@ -610,7 +619,7 @@ export function GlobalGoatPopup({
                     {m.patientId && (
                       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                         <span className="flex items-center gap-2">
-                          {m.smart ? "Written by + mode · check the sources" : "Basic lookup"}
+                          Basic lookup
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
@@ -633,7 +642,7 @@ export function GlobalGoatPopup({
                     </div>
                   ) : (
                     <span className="text-[var(--text-muted)]">
-                      {smartActive && ai.status === "loading" ? ai.progressText || `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
+                      Searching…
                     </span>
                   )}
                 </div>
@@ -664,5 +673,64 @@ export function GlobalGoatPopup({
         </section>
       )}
     </>
+  );
+}
+
+function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: NonNullable<ChatMessage["booking"]>; busy: boolean; onConfirm: (override: boolean) => void; onTime: (time: string) => void; onCancel: () => void }) {
+  const [other, setOther] = useState("");
+  const [otherOpen, setOtherOpen] = useState(false);
+  if (booking.state === "booked") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Booked</p>;
+  if (booking.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not booked.</p>;
+  const blocked = booking.taken || booking.outsideHours;
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
+  return (
+    <div className="mt-2 space-y-1.5" data-goat-booking>
+      {booking.suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {booking.suggestions.map((t) => (
+            <button key={t} className={`${btn} border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6]`} disabled={busy} onClick={() => onTime(t)} style={{ fontSize: 12 }} type="button">
+              {to12hLabel(t)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {!blocked && (
+          <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} disabled={busy} onClick={() => onConfirm(false)} style={{ fontSize: 12 }} type="button">
+            Confirm
+          </button>
+        )}
+        <button className={`${btn} border-[var(--line-soft)] bg-white`} disabled={busy} onClick={() => setOtherOpen((o) => !o)} style={{ fontSize: 12 }} type="button">
+          Different time
+        </button>
+        {blocked && (
+          <button className={`${btn} border-amber-400 bg-amber-50 text-amber-900`} disabled={busy} onClick={() => onConfirm(true)} style={{ fontSize: 12 }} type="button">
+            Override, book anyway
+          </button>
+        )}
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={busy} onClick={onCancel} style={{ fontSize: 12 }} type="button">
+          Cancel
+        </button>
+      </div>
+      {otherOpen && (
+        <form
+          className="flex gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = parseTimeFlexible(other);
+            if (t) {
+              onTime(t);
+              setOther("");
+              setOtherOpen(false);
+            }
+          }}
+        >
+          <input aria-label="Different time" className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs" onChange={(e) => setOther(e.target.value)} placeholder="e.g. 3:30p" value={other} />
+          <button className={`${btn} border-[var(--brand-primary)] text-[var(--brand-primary)]`} style={{ fontSize: 12 }} type="submit">
+            Check
+          </button>
+        </form>
+      )}
+    </div>
   );
 }

@@ -1,3 +1,5 @@
+import type { OfficeMemory } from "@/lib/goat-office";
+import type { BookingDraft } from "@/lib/goat-booking";
 /**
  * Global G.O.A.T. (sidebar popup) — who is the question about, and the chat
  * history. Pure helpers plus browser-only storage.
@@ -48,14 +50,17 @@ export interface ChatMessage {
   pendingQuestion?: string;
   quotes?: ChatQuote[];
   warnings?: string[];
-  smart?: boolean;
   ms?: number;
   /** Plain text for Copy (e.g. recommendations in the regular format). */
   copy?: string;
-  /** An office-level (not patient) exchange: kept as + mode conversation context. */
+  /** An office-level (not patient) exchange. */
   practice?: boolean;
-  /** Show the 'Turn on + mode' link to G.O.A.T. Settings. */
-  plusLink?: boolean;
+  /** Memory of an office answer, for follow-ups ("and tomorrow?", "list them"). */
+  office?: OfficeMemory;
+  /** A booking waiting for Confirm (nothing is saved before that). */
+  booking?: BookingDraft & { state: "open" | "booked" | "canceled" };
+  /** Waiting for the day/time of a booking. */
+  bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
   links?: Array<{ label: string; href: string }>;
 }

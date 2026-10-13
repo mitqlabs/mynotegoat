@@ -2,8 +2,7 @@
  * Practice-level G.O.A.T. questions (not about one patient): to-do list,
  * today's / tomorrow's schedule, case status counts, contact numbers.
  * All local: reads the same stores the app already has in this browser.
- * + mode only: regular G.O.A.T. stays patient-only. NoteGoat computes exact
- * figures here; the local model writes the answer from practiceSnapshot().
+ * Rule-based (see goat-office.ts): NoteGoat computes exact figures here.
  */
 import type { CaseStatus, ContactRecord } from "@/lib/mock-data";
 import type { TaskRecord } from "@/lib/tasks";
@@ -95,11 +94,8 @@ export function isPatientSpecific(question: string): boolean {
   return PATIENT_WORDS.test(question);
 }
 
-export const PLUS_NEEDED =
-  "Regular G.O.A.T. answers questions about a patient (type their name). Questions about your to-do list, cases, contacts, schedule or settings need + mode.";
-
 export const PRACTICE_HELP =
-  "I can answer about a patient (type their name), or about the office: your to-do list, today's or tomorrow's schedule, how many active or submitted cases you have (or which ones), and a contact's phone, fax or email.";
+  "I can answer about a patient (type their name), or about the office: your to-do list, the schedule for any day, how many active or submitted cases you have (or which ones), a contact's phone, fax or email, where a setting is, how to do something, and booking (\"book Kara Friday at 3\").";
 
 function usDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -260,7 +256,7 @@ export const PRACTICE_TOOLS: Array<{ name: string; args: string; description: st
   { name: "listCases", args: '{"status": string, "attorney"?: string}', description: "list the cases with that status (optionally one attorney)" },
   { name: "findContact", args: '{"name": string}', description: "contact directory lookup (attorneys, imaging, doctors): phone, fax, email" },
   { name: "getSchedule", args: '{"day": "today"|"tomorrow"|"YYYY-MM-DD"}', description: "appointments on that day" },
-  { name: "findSetting", args: '{"query": string}', description: "which Settings page changes something (office hours, reminders, templates, + mode…); returns a link" },
+  { name: "findSetting", args: '{"query": string}', description: "which Settings page changes something (office hours, reminders, templates…); returns a link" },
 ];
 
 const STATUSES: CaseStatus[] = ["Active", "Discharged", "Ready To Submit", "Submitted", "Dropped", "Paid"];

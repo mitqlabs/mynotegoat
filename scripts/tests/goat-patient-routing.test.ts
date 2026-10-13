@@ -12,7 +12,6 @@ import type { GoatFile } from "../../src/lib/goat-docs";
 import { MAX_PATIENT_CHOICES, editDistance, findPatientsInQuestion, nameWords, stripPatientName, type ChatPatient } from "../../src/lib/goat-ai/global-chat";
 import { buildAiSources, detectIntents } from "../../src/lib/goat-ai/sources";
 import { buildSystemPrompt } from "../../src/lib/goat-ai/prompt";
-import { RECS_ASK_RE } from "../../src/lib/goat-ai/assist";
 
 let pass = 0;
 function test(name: string, fn: () => void) {
@@ -137,7 +136,6 @@ test("+ mode routing: intents", () => {
   assert.ok(detectIntents("what did dr armen recommend").includes("recommend"));
   assert.ok(detectIntents("summarize this case").includes("summary"));
   assert.ok(!detectIntents("lumbar mri findings").includes("summary"));
-  assert.ok(RECS_ASK_RE.test("pm recs") && !RECS_ASK_RE.test("when is the follow up visit") && !RECS_ASK_RE.test("treatment plan"));
 });
 
 test("+ mode routing: a visit question reads the appointments only, never report text", () => {
