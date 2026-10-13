@@ -2,7 +2,7 @@ import { encounters as seedEncounters } from "@/lib/mock-data";
 import { type MacroAnswerMap } from "@/lib/macro-templates";
 import { notifyChange } from "@/lib/local-sync";
 import { bigCacheUsesIdb } from "@/lib/big-cache";
-import { createNoteWriteQueue, type NoteWriteQueue } from "@/lib/note-write-queue";
+import { canonicalJson, createNoteWriteQueue, type NoteWriteQueue } from "@/lib/note-write-queue";
 
 export const encounterSections = [
   "subjective",
@@ -729,12 +729,29 @@ function shouldSkipCloudWrite(
   return false;
 }
 
+/** Same value for a cloud row and its local-cache copy when the content is the same. */
+// Only the fields the cloud stores (appointmentId/startTime aren't round-tripped),
+// with object keys sorted (Postgres jsonb reorders keys inside diagnoses/charges/macros).
+export function encounterNoteFingerprint(note: EncounterNoteRecord): string {
+  const n = normalizeRecord(note) ?? note;
+  return canonicalJson({
+    id: n.id, patientId: n.patientId, patientName: n.patientName, provider: n.provider,
+    appointmentType: n.appointmentType, encounterDate: n.encounterDate, soap: n.soap,
+    macroRuns: n.macroRuns, diagnoses: n.diagnoses, charges: n.charges, signed: n.signed,
+    signedAt: n.signedAt, createdAt: n.createdAt, updatedAt: n.updatedAt,
+  });
+}
+
 const noteCloudQueue: NoteWriteQueue<EncounterNoteRecord> = createNoteWriteQueue<EncounterNoteRecord>({
   write: async (note) => {
     const deps = await loadCloudWriteDeps();
     await deps.upsertEncounterNoteToTable(note);
   },
   shouldSkip: shouldSkipCloudWrite,
+  // Compare notes as the app holds them: a cloud row and its local-cache copy
+  // differ in key order and normalized fields (e.g. startTime), which made
+  // every cached note look changed and re-uploaded ~2,300 notes at once.
+  versionOf: encounterNoteFingerprint,
   concurrency: 4,
   onBatchStart: () => {
     void loadCloudWriteDeps().then((d) => d.reportCloudWriteStart("encounter-notes auto-save"));

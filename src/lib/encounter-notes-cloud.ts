@@ -33,7 +33,7 @@ interface EncounterNoteRow {
   updated_at_record: string;
 }
 
-function noteToRow(note: EncounterNoteRecord, workspaceId: string): EncounterNoteRow {
+export function noteToRow(note: EncounterNoteRecord, workspaceId: string): EncounterNoteRow {
   return {
     id: note.id,
     workspace_id: workspaceId,
@@ -54,7 +54,7 @@ function noteToRow(note: EncounterNoteRecord, workspaceId: string): EncounterNot
   };
 }
 
-function rowToNote(row: EncounterNoteRow): EncounterNoteRecord {
+export function rowToNote(row: EncounterNoteRow): EncounterNoteRecord {
   const soap = (row.soap && typeof row.soap === "object")
     ? row.soap as Record<string, string>
     : { subjective: "", objective: "", assessment: "", plan: "" };

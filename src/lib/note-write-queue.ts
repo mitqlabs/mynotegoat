@@ -22,6 +22,18 @@
 
 export type QueueRecord = { id: string };
 
+/** JSON with sorted keys and undefined fields dropped, so key order never counts as a change. */
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(v).sort()) if (v[k] !== undefined) out[k] = v[k];
+      return out;
+    }
+    return v;
+  });
+}
+
 export type NoteWriteQueueOptions<T extends QueueRecord> = {
   write: (record: T) => Promise<void>;
   /**
@@ -36,6 +48,12 @@ export type NoteWriteQueueOptions<T extends QueueRecord> = {
   onBatchDone?: (result: { ok: number; failed: number; firstError?: unknown }) => void;
   /** A write that hasn't settled after this long counts as failed and is retried (0 = no limit). */
   writeTimeoutMs?: number;
+  /**
+   * Content fingerprint used to decide whether a record changed. Two copies of
+   * the same note from different sources (cloud row vs local cache) must give
+   * the same fingerprint, or every note looks changed and gets re-uploaded.
+   */
+  versionOf?: (record: T) => string;
   /** Injected for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
 };
@@ -57,7 +75,16 @@ export function createNoteWriteQueue<T extends QueueRecord>(options: NoteWriteQu
   const priority = new Set<string>();
   const writeTimeoutMs = options.writeTimeoutMs ?? 30_000;
 
-  const versionOf = (record: T) => JSON.stringify(record);
+  const fingerprint = options.versionOf ?? canonicalJson;
+  const memo = new WeakMap<object, string>();
+  const versionOf = (record: T): string => {
+    let v = memo.get(record);
+    if (v === undefined) {
+      v = fingerprint(record);
+      memo.set(record, v);
+    }
+    return v;
+  };
 
   const latestKnown = (id: string): { record: T | undefined; local: boolean } => {
     const queued = pending.get(id) ?? inFlight.get(id)?.record;
