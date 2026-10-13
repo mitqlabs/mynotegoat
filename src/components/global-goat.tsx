@@ -26,6 +26,7 @@ import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatS
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
+import { HOWTO_QUESTION, answerHowTo, bookingReply, isBookingRequest } from "@/lib/goat-howto";
 import { PLUS_NEEDED, PRACTICE_ANSWER_PROMPT, PRACTICE_HELP, SETTING_QUESTION, detectPracticeIntent, fallbackToolCalls, isPatientSpecific, parseToolCalls, runPracticeTool, toolPickPrompt, type PracticeData, type ToolResult } from "@/lib/goat-practice";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -383,6 +384,24 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // "How do I…" answers come only from NoteGoat's page/button and Settings
+    // catalogs (never the model's guess); unknown ones say "I'm not sure".
+    const how = HOWTO_QUESTION.test(question) && !waitingForName ? answerHowTo(question) : null;
+    if (how && (how.found || !found.confident)) {
+      push({ role: "user", text: question, practice: true });
+      if (!smartActive) push({ role: "goat", text: PLUS_NEEDED, practice: true, plusLink: true });
+      else push({ role: "goat", text: how.text, practice: true, links: how.links });
+      return;
+    }
+    // Booking ("schedule armen next thursday") isn't a lookup: say plainly it can't
+    // book yet and open the Schedule on that day. Never runs the next-visit answer.
+    if (isBookingRequest(question)) {
+      const who = found.confident ? displayName(found.confident.patient.fullName) : null;
+      const reply = bookingReply(question, practiceData().today, who);
+      push({ role: "user", text: question, practice: true });
+      push({ role: "goat", text: reply.text, practice: true, links: reply.links });
+      return;
+    }
     if (!(waitingForName && found.named) && tryPractice(question, Boolean(found.confident))) return;
     // + mode: anything not clearly about a patient is an office question for the model (follow-ups included).
     if (smartActive && !found.confident && !found.candidates.length && !found.named && !isPatientSpecific(question) && !waitingForName) {
@@ -426,15 +445,17 @@ export function GlobalGoatPopup({
 
   // A tapped patient answers the ORIGINAL question; nothing needs retyping.
   const pick = (msg: ChatMessage, patientId: string | undefined, question?: string) => {
+    // The chips stay inside the "Did you mean" bubble with the pick highlighted
+    // (no separate message for the pick).
+    const label = msg.choices?.find((c) => (patientId ? c.patientId === patientId : c.question === question))?.label;
     if (question) {
-      setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined } : m)) }));
+      setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, picked: label ?? question } : m)) }));
       send(question);
       return;
     }
     const p = patientById(patientId ?? null);
     if (!p || job) return;
-    push({ role: "user", text: displayName(p.fullName) });
-    setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: undefined, pendingQuestion: undefined } : m)) }));
+    setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, picked: label ?? displayName(p.fullName), pendingQuestion: undefined } : m)) }));
     startAnswer(p, msg.pendingQuestion ?? "", false);
   };
 
@@ -458,7 +479,7 @@ export function GlobalGoatPopup({
     ? smartActive && ai.status === "loading"
       ? "plus"
       : "searching"
-    : !lastGoat || lastGoat.choices || lastGoat.pendingQuestion
+    : !lastGoat || (lastGoat.choices && !lastGoat.picked) || lastGoat.pendingQuestion
       ? "ready"
       : /^I couldn't find/.test(lastGoat.text) || lastGoat.text === PRACTICE_HELP || lastGoat.text === PLUS_NEEDED
         ? "notFound"
@@ -548,16 +569,24 @@ export function GlobalGoatPopup({
                         Turn on + mode in G.O.A.T. Settings
                       </Link>
                     )}
-                    {m.choices && (
-                      <div className="mt-2 space-y-1.5">
+                    {m.choices && m.choices.length > 0 && (
+                      <div className="mt-2 space-y-1.5" data-goat-choices>
                         {m.choices.map((c) => (
                           <button style={{ fontSize: 12 }}
                             key={c.patientId ?? c.label}
-                            className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
-                            disabled={Boolean(job) || practiceBusy}
+                            aria-pressed={m.picked === c.label}
+                            className={`block w-full rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold ${
+                              m.picked === c.label
+                                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                                : m.picked
+                                  ? "border-[var(--line-soft)] bg-white text-[var(--text-muted)] opacity-60"
+                                  : "border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6] disabled:opacity-50"
+                            }`}
+                            disabled={Boolean(job) || practiceBusy || Boolean(m.picked)}
                             onClick={() => pick(m, c.patientId, c.question)}
                             type="button"
                           >
+                            {m.picked === c.label ? "✓ " : ""}
                             {c.label}
                           </button>
                         ))}

@@ -409,8 +409,10 @@ function visitsAnswer(ctx: GoatContext, today: number, focus: "next" | "last" | 
     : "";
 
   // Answer what was asked: "last visit" is the last visit (and what's next), not every count on file.
-  const ordered =
-    focus === "next"
+  // Nothing in the past or ahead: one plain line, not "No visits yet" + "Nothing scheduled ahead".
+  const ordered = !past.length && !next
+    ? ["No visits on file."]
+    : focus === "next"
       ? [lineNext, lineLast]
       : focus === "last"
         ? [lineLast, lineNext]

@@ -454,7 +454,14 @@ export default function AppointmentsPage() {
   }, [globalScheduleSettings, selectedLocationId, officeLocations]);
   const { keyDates } = useKeyDates();
   const [mode, setMode] = useState<AppointmentMode>("schedule");
-  const [selectedDate, setSelectedDate] = useState(() => getTodayIsoDate());
+  // ?date=YYYY-MM-DD opens the schedule on that day (G.O.A.T. "Open Schedule" links).
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (typeof window !== "undefined") {
+      const d = new URLSearchParams(window.location.search).get("date");
+      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    }
+    return getTodayIsoDate();
+  });
   // Patient Flow column sort. "time" = chronological (existing
   // behavior). "type-time" = group by appointment type first, then
   // chronological within each type, so the user can scan all the

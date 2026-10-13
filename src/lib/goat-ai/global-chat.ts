@@ -42,6 +42,8 @@ export interface ChatMessage {
   patientName?: string;
   /** Clarifying question: pick one of these patients. */
   choices?: ChatChoice[];
+  /** The choice the user tapped (shown highlighted in the same bubble). */
+  picked?: string;
   /** The question waiting on that choice. */
   pendingQuestion?: string;
   quotes?: ChatQuote[];
