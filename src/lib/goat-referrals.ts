@@ -20,7 +20,7 @@ const REFERRAL_LABEL = /(?:date\s+of\s+referral|referral\s+date|date\s+referred|
 const VISIT_LABEL = /(?:consultation\s+visit|consultation\s+date|date\s+of\s+(?:service|visit|consultation|consult|exam(?:ination)?|evaluation)|visit\s+date|exam\s+date|date\s+seen|seen\s+on|\bDOS\b)/;
 
 /** Specialties people ask about by short name. */
-const SPECIALTIES: Array<{ label: string; ask: RegExp; match: RegExp }> = [
+export const SPECIALTIES: Array<{ label: string; ask: RegExp; match: RegExp }> = [
   { label: "pain management", ask: /\b(pm|pain\s*(?:management|mgmt|mgt|doc(?:tor)?|specialist)|pain\s+med\w*)\b/i, match: /\b(pain|pm|interventional|anesthesi\w*|physiatr\w*)\b/i },
   { label: "orthopedics", ask: /\b(ortho\w*)\b/i, match: /\bortho\w*/i },
   { label: "neurology", ask: /\b(neuro\w*)\b/i, match: /\bneuro\w*/i },

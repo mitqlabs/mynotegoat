@@ -1,5 +1,6 @@
 "use client";
 
+import { syncPatientFacts } from "@/lib/goat-facts-store";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { loadFileManagerState } from "@/lib/file-manager";
 import { getSignedUrl } from "@/lib/file-storage";
@@ -91,6 +92,12 @@ export function useGoatFiles(patientId: string | undefined, enabled: boolean): G
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [records, textVersion, readingName],
   );
+  // Facts per file: loaded from / saved to this browser's IndexedDB (re-extracted when a file changes).
+  useEffect(() => {
+    if (!enabled || !patientId || !files.some((f) => f.pages?.length)) return;
+    const t = window.setTimeout(() => void syncPatientFacts(patientId, files), 800);
+    return () => window.clearTimeout(t);
+  }, [enabled, patientId, files]);
   const counts = useMemo(() => ({
     total: files.length,
     read: files.filter((f) => f.status === "read").length,

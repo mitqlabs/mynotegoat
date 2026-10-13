@@ -66,14 +66,28 @@ export const GOAT_AI_MODELS: Record<
 const MODEL_KEY = "notegoat.goat-smart-model.v1";
 export const GOAT_AI_DEFAULT_MODEL: GoatAiModel = "accurate";
 
-/** This computer's model choice (not synced: it depends on the computer's graphics chip). */
-export function goatAiModel(): GoatAiModel {
+/**
+ * Default when nobody picked a model: the accurate one whenever this device can hold it
+ * (a big enough WebGPU buffer and free storage for the download), else the smaller one. Pure.
+ */
+export function defaultModelFor(device: { maxBufferMb: number; freeMb: number | null }): GoatAiModel {
+  const fits = device.maxBufferMb >= 1024 && (device.freeMb === null || device.freeMb >= GOAT_AI_MODELS.accurate.downloadMb * 1.2);
+  return fits ? "accurate" : "fast";
+}
+let deviceDefault: GoatAiModel | null = null;
+
+function savedModel(): GoatAiModel | null {
   try {
     const v = window.localStorage.getItem(MODEL_KEY);
-    return v === "fast" || v === "accurate" ? v : GOAT_AI_DEFAULT_MODEL;
+    return v === "fast" || v === "accurate" ? v : null;
   } catch {
-    return GOAT_AI_DEFAULT_MODEL;
+    return null;
   }
+}
+
+/** This computer's model choice (not synced: it depends on the computer's graphics chip). */
+export function goatAiModel(): GoatAiModel {
+  return savedModel() ?? deviceDefault ?? GOAT_AI_DEFAULT_MODEL;
 }
 
 /** Switch models. Unloads the current one; the other is downloaded on next use. */
@@ -186,7 +200,7 @@ export async function checkGoatAiSupport(
   if (typeof window === "undefined") return { ok: false, message: "", variant: null, cached: false };
   if (devReplay()) return { ok: true, message: "", variant: "f16", cached: true };
   const downloadMb = GOAT_AI_MODELS[model].downloadMb;
-  const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<{ features: Set<string> } | null> } }).gpu;
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<{ features: Set<string>; limits?: { maxBufferSize?: number } } | null> } }).gpu;
   if (!gpu) {
     return {
       ok: false,
@@ -195,7 +209,7 @@ export async function checkGoatAiSupport(
       cached: false,
     };
   }
-  let adapter: { features: Set<string> } | null = null;
+  let adapter: { features: Set<string>; limits?: { maxBufferSize?: number } } | null = null;
   try {
     adapter = await gpu.requestAdapter();
   } catch (e) {
@@ -206,6 +220,17 @@ export async function checkGoatAiSupport(
     return { ok: false, message: "This computer's graphics can't run + mode (Chrome's WebGPU didn't start; see chrome://gpu). Normal G.O.A.T. still works.", variant: null, cached: false };
   }
   const variant = adapter.features.has("shader-f16") ? "f16" : "f32";
+  if (!savedModel() && !deviceDefault) {
+    let freeMb: number | null = null;
+    try {
+      const est = await navigator.storage?.estimate?.();
+      if (est?.quota) freeMb = ((est.quota ?? 0) - (est.usage ?? 0)) / (1024 * 1024);
+    } catch {
+      freeMb = null;
+    }
+    deviceDefault = defaultModelFor({ maxBufferMb: (adapter.limits?.maxBufferSize ?? 2 ** 31) / (1024 * 1024), freeMb });
+    if (deviceDefault !== model) return checkGoatAiSupport(deviceDefault);
+  }
   let cached = false;
   try {
     const { hasModelInCache } = await import("@mlc-ai/web-llm");
@@ -237,7 +262,7 @@ export async function refreshGoatAiSupport(): Promise<void> {
   // overwrite its "loading" state with "idle" (that hid the download progress).
   const now = goatAiState().status;
   if (loading || now === "loading" || now === "ready") return;
-  set({ status: s.ok ? "idle" : "unsupported", message: s.message, variant: s.variant, cached: s.cached, model });
+  set({ status: s.ok ? "idle" : "unsupported", message: s.message, variant: s.variant, cached: s.cached, model: goatAiModel() });
 }
 
 /** Download (first time) or open from cache, then load onto the GPU. */
