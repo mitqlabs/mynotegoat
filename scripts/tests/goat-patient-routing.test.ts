@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { askGoat, type GoatAppointment, type GoatContext } from "../../src/lib/goat";
 import type { GoatFile } from "../../src/lib/goat-docs";
-import { MAX_PATIENT_CHOICES, editDistance, findPatientsInQuestion, nameWords, stripPatientName, type ChatPatient } from "../../src/lib/goat-ai/global-chat";
+import { editDistance, findPatientsInQuestion, nameWords, stripPatientName, type ChatPatient } from "../../src/lib/goat-ai/global-chat";
 import { buildAiSources, detectIntents } from "../../src/lib/goat-ai/sources";
 import { buildSystemPrompt } from "../../src/lib/goat-ai/prompt";
 
@@ -77,9 +77,11 @@ test("several close names: up to 5 chips, best first", () => {
   const anna = findPatientsInQuestion("testoyan visits", PATIENTS);
   assert.equal(anna.confident, null, "Testoyan exact, Testoian one letter off: ask");
   assert.deepEqual(ids(anna), ["p6", "p7"]);
-  const many = findPatientsInQuestion("jan last visit", PATIENTS);
-  assert.ok(many.candidates.length <= MAX_PATIENT_CHOICES);
-  assert.ok(many.candidates.length >= 2);
+  // "jan" still being typed (last word) matches the start of names: every one is listed.
+  const many = findPatientsInQuestion("last visit for jan", PATIENTS);
+  assert.ok(many.candidates.length >= 5);
+  // A finished word is whole: only Jan.
+  assert.equal(findPatientsInQuestion("jan last visit", PATIENTS).confident?.patient.id, "p11");
 });
 
 test("questions with no patient name don't match anyone", () => {

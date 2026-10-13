@@ -1,5 +1,6 @@
 "use client";
 
+import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
@@ -2213,7 +2214,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         }
         const dateOfInjury = toUsDate(entry.dateOfLoss).toLowerCase();
         return (
-          entry.fullName.toLowerCase().includes(query) ||
+          nameSearchMatches(entry.fullName, relatedCaseDraft) ||
           entry.dateOfLoss.toLowerCase().includes(query) ||
           dateOfInjury.includes(query)
         );
