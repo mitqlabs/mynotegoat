@@ -7,7 +7,7 @@ import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
 import { CopyButton } from "@/components/copy-button";
-import { GoatStatusLine, PlusIntroCard, SmartWorking, useGoatAiState, useSmartAssist, useSmartMode, type GoatStatus } from "@/components/goat-smart";
+import { AnswerOrigin, GoatStatusLine, PlusIntroCard, PlusModeBadge, SmartWorking, useGoatAiState, useSmartAssist, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { goatAiState as goatAiStateNow, loadGoatAi, refreshGoatAiSupport } from "@/lib/goat-ai/engine";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
@@ -324,6 +324,7 @@ export function GoatPanel({
 
   // "Searching…" for a moment after Ask, so the status line follows what happens (static, no animation).
   const [searchingFor, setSearchingFor] = useState("");
+  const [sourcesFor, setSourcesFor] = useState("");
   useEffect(() => {
     if (!searchingFor) return;
     const t = window.setTimeout(() => setSearchingFor(""), 350);
@@ -349,7 +350,21 @@ export function GoatPanel({
   const hasFileMatches = Boolean(fileResult && fileResult.matches.length);
   const hitsDefaultOpen = Boolean(result && !result.answers.length && !hasFileMatches);
   const hitsOpen = hitsDefaultOpen !== (hitsFlipped === asked && asked !== "");
-  const filesCard = hasFileMatches && fileResult ? <FilesCard files={fileResult} onOpen={files?.openFile} /> : null;
+  const filesCardInner = hasFileMatches && fileResult ? <FilesCard files={fileResult} onOpen={files?.openFile} /> : null;
+  // "When …" with a direct answer: the excerpts wait behind "Show sources".
+  const sourcesOpen = sourcesFor === asked;
+  const filesCard =
+    filesCardInner && result?.sourcesCollapsed ? (
+      <div data-goat-sources-toggle>
+        <button aria-expanded={sourcesOpen} className="text-xs font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => setSourcesFor(sourcesOpen ? "" : asked)} style={{ fontSize: 12 }} type="button">
+          {sourcesOpen ? "Hide sources" : "Show sources"}
+        </button>
+        {sourcesOpen && <div className="mt-2">{filesCardInner}</div>}
+      </div>
+    ) : (
+      filesCardInner
+    );
+  const smartWrote = Boolean(smartActive && smart.answer && smart.question === asked && smart.answer.smartUsed);
   const plusWorking = smartActive && smart.working && smart.question === asked;
   const status: GoatStatus = !result
     ? files?.reader.running
@@ -398,7 +413,7 @@ export function GoatPanel({
         <span className="flex items-center gap-2">
           <GoatAvatar className="bg-white/80" size={32} />
           <span className="flex flex-col items-start leading-tight">
-            <span>G.O.A.T.</span>
+            <span className="flex items-center gap-2">G.O.A.T. <PlusModeBadge ai={ai} smartOn={smartOn} /></span>
             <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
           </span>
         </span>
@@ -506,8 +521,18 @@ export function GoatPanel({
                   )}
                   <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-1.5 text-xs text-[var(--text-muted)]">
                     <span className="min-w-0">
+                      <AnswerOrigin plus={smartWrote && a.source.includes("+ mode")} />{" "}
                       From: {a.source}
-                      {a.fileId && files?.openFile && (
+                      {a.sources?.length && files?.openFile ? (
+                        a.sources.map((src) => (
+                          <span key={src.fileId}>
+                            {" "}
+                            <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => files.openFile(src.fileId)} style={{ fontSize: 12 }} title={src.name} type="button">
+                              Open {/referr?al/i.test(src.name) ? "referral" : /report|consult/i.test(src.name) ? "report" : "file"}
+                            </button>
+                          </span>
+                        ))
+                      ) : a.fileId && files?.openFile && (
                         <>
                           {" "}
                           <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => files.openFile(a.fileId!)} style={{ fontSize: 12 }} type="button">

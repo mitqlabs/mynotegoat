@@ -12,6 +12,7 @@
  * and G.O.A.T. will not read it.
  */
 
+import { findReferralFacts, referralSentence } from "@/lib/goat-referrals";
 import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
@@ -184,6 +185,8 @@ export interface GoatAnswer {
   copyText?: string;
   /** The Patient File it was read from (opens from the answer). */
   fileId?: string;
+  /** Files the answer was read from, each with its own Open link. */
+  sources?: Array<{ fileId: string; name: string }>;
 }
 
 export interface GoatHit {
@@ -208,6 +211,8 @@ export interface GoatResult {
   filesFirst: boolean;
   /** Extra words to highlight in answers (e.g. a spinal level asked about). */
   highlight: string[];
+  /** A "when" question got a direct answer: excerpts go behind "Show sources". */
+  sourcesCollapsed?: boolean;
 }
 
 /** Breaks between visits shorter than this are normal scheduling. */
@@ -1020,6 +1025,21 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     if (!answers.some((x) => x.title === a.title)) answers.push(a);
   };
 
+  // "When was X referred to PM and when did they go?" → one sentence from the Specialist box or the files.
+  const refFacts = findReferralFacts(ctx, question);
+  const refAnswer: GoatAnswer | null = refFacts
+    ? {
+        title: "Referral & visit",
+        lines: [referralSentence(refFacts)],
+        source: refFacts.fromBox && !refFacts.referralFile && !refFacts.visitFile
+          ? "Specialist panel"
+          : `Patient Files — ${[refFacts.referralFile?.name, refFacts.visitFile?.name].filter(Boolean).join(", ")}${refFacts.fromBox ? " + Specialist panel" : ""}`,
+        section: "specialist",
+        fileId: refFacts.referralFile?.fileId ?? refFacts.visitFile?.fileId,
+        sources: [refFacts.referralFile, refFacts.visitFile].filter((f): f is { fileId: string; name: string } => !!f),
+      }
+    : null;
+
   const asksGap = has(tokens, ["gap", "break", "lapse", "stopped", "missed"]) || text.includes("no visit");
   const visitWords = has(tokens, ["visit", "appointment", "appt", "seen", "came", "come", "scheduled", "schedule", "booked", "encounter"]);
   const focus: "next" | "last" | "first" | null = has(tokens, ["next", "upcoming", "coming"])
@@ -1192,6 +1212,12 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     .filter((h) => !(shownSections.has(h.section) && h.kind !== "SOAP" && h.kind !== "Note"))
     .filter((h) => !regionMatcher || regionMatcher.test(h.snippet) || levelsInText(h.snippet).some((l) => rq.levels.includes(l) || regionOfLevelName(l, rq.regions)))
     .slice(0, 5);
+  if (refAnswer) {
+    // The direct answer replaces the generic visit / dates / specialist-panel cards.
+    return { answers: [refAnswer], hits: [], terms, files, filesFirst: false, highlight: [], sourcesCollapsed: true };
+  }
   const filesFirst = !romShown && Boolean(files && files.matches.length && (files.matches.some((m) => m.who.length) || !answers.length));
-  return { answers, hits, terms, files, filesFirst, highlight: levelHighlightTerms(rq.levels) };
+  // "When …" with a direct answer: lead with it; excerpts behind "Show sources".
+  const sourcesCollapsed = /\bwhen\b|\bwhat (?:date|day)\b/i.test(question) && answers.length > 0;
+  return { answers, hits, terms, files, filesFirst: sourcesCollapsed ? false : filesFirst, highlight: levelHighlightTerms(rq.levels), sourcesCollapsed };
 }
