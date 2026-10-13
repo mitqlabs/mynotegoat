@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { GOAT_AI_MODELS, downloadedGoatAiModels, hasGoatAiDownload, loadGoatAi, refreshGoatAiSupport, removeGoatAiModels, setGoatAiModel, type GoatAiModel } from "@/lib/goat-ai/engine";
 import { GOAT_SMART_AVAILABLE } from "@/lib/goat-ai/flag";
-import { useGoatAiState, usePlusIntro, useSmartMode } from "@/components/goat-smart";
+import { GoatPlusLoadStatus, useGoatAiState, usePlusIntro, useSmartMode } from "@/components/goat-smart";
 
 const btn = "rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold disabled:opacity-40";
 const primary = "rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-sm font-semibold text-white disabled:opacity-40";
@@ -78,7 +78,6 @@ export function GoatSmartSettings() {
     void refreshGoatAiSupport();
   };
 
-  const pct = Math.round(ai.progress * 100);
   return (
     <div className="space-y-3 text-sm">
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
@@ -145,19 +144,7 @@ export function GoatSmartSettings() {
         </div>
       )}
 
-      {on && ai.status === "checking" && <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-muted)]">Checking this computer…</p>}
-      {on && ai.status === "loading" && (
-        <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-[var(--text-muted)]">
-          <div className="flex justify-between gap-2">
-            <span>{ai.cached ? "Opening + mode…" : `Downloading ${pct}%… (one time, stays on this computer)`}</span>
-            <span className="font-semibold">{pct}%</span>
-          </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
-            <div className="h-full rounded-full bg-[#72bdcf] transition-all" style={{ width: `${Math.max(3, pct)}%` }} />
-          </div>
-        </div>
-      )}
-      {on && (ai.status === "unsupported" || ai.status === "error") && <p className="rounded-xl bg-amber-50 px-3 py-2 font-semibold text-amber-800">{ai.message}</p>}
+      {on && <GoatPlusLoadStatus ai={ai} />}
       {on && ai.status === "ready" && (
         <p className="text-xs text-[var(--text-muted)]">
           Ready ({GOAT_AI_MODELS[ai.model].label.toLowerCase()} model, {GOAT_AI_MODELS[ai.model].name}).{" "}
