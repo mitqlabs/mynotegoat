@@ -119,6 +119,11 @@ evalCase("+ mode prompt: warm direct answer, follow-ups, never invent", () => {
   const p = buildSystemPrompt({ showCosts: true, regionOrder: ["Cervical", "Lumbar"] }, ["visit"]);
   has(p, "one or two warm", "You could also ask", "Never guess or invent", "say plainly what's missing", "Earlier turns");
 });
+evalCase("quick lookup: balance = billed - paid", () => {
+  const t = askGoat({ ...ctx, billing: { billed: "$2,500.00", paid: "1000", paidDate: "", rbSent: "" } }, "what's the balance").answers.map((a) => a.lines.join("\n")).join("\n");
+  has(t, "Balance: $1,500.00", "Billed: $2,500.00");
+});
+
 const passed = results.filter((r) => r.ok).length;
 for (const r of results) console.log(`${r.ok ? "PASS" : "FAIL"} ${r.name}${r.err ? ` — ${r.err}` : ""}`);
 console.log(`\nG.O.A.T. eval: ${passed}/${results.length} passed`);

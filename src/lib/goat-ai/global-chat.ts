@@ -59,6 +59,8 @@ export interface ChatMessage {
   office?: OfficeMemory;
   /** A booking waiting for Confirm (nothing is saved before that). */
   booking?: BookingDraft & { state: "open" | "booked" | "canceled" };
+  /** A note waiting for Confirm before it's added to the patient's Notes. */
+  noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
   /** Waiting for the day/time of a booking. */
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */

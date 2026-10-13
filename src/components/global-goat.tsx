@@ -34,6 +34,11 @@ import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
+import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor } from "@/lib/goat-notes";
+import { expandFollowUp } from "@/lib/goat-followup";
+import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
+import { notifyChange } from "@/lib/local-sync";
+import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
@@ -364,6 +369,17 @@ export function GlobalGoatPopup({
     push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
   };
 
+  /** Confirm: append the signed line to the patient's Notes (the same store the Notes box uses). */
+  const saveNote = (msg: ChatMessage, line: string) => {
+    const d = msg.noteDraft;
+    if (!d || d.state !== "open") return;
+    const p = patientById(d.patientId);
+    const existing = getCaseNote(d.patientId) ?? p?.matrix?.notes ?? "";
+    setCaseNote(d.patientId, appendNote(existing, line));
+    notifyChange(STORAGE_KEY_CASE_NOTES);
+    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saved", saved: line } } : x)) }));
+  };
+
   const pickTime = (msg: ChatMessage, time: string) => {
     const b = msg.booking;
     if (!b) return;
@@ -379,6 +395,28 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // "add note to kara's file: spoke to atty" → preview; saved only on Confirm.
+    if (isAddNoteRequest(question)) {
+      push({ role: "user", text: question, practice: true });
+      const req = parseAddNote(question);
+      if (!req) {
+        push({ role: "goat", text: 'Tell me the patient and the note, like: "add note to Kara\'s file: spoke to atty, waiting for reduction."' });
+        return;
+      }
+      const hits = matchPatientsByName(req.name, allPatients().filter((p) => !(p as { deleted?: boolean }).deleted));
+      if (!hits.length) {
+        push({ role: "goat", text: `I couldn't find a patient named "${req.name}". Check the name and try again.` });
+        return;
+      }
+      if (hits.length > 1) {
+        push({ role: "goat", text: `Which ${req.name}?`, choices: hits.slice(0, 8).map((p) => ({ label: choiceLabel(toChatPatient(p)), question: `add note to ${p.fullName}: ${req.text}` })) });
+        return;
+      }
+      const p = hits[0];
+      setChat((c) => ({ ...c, patientId: p.id }));
+      push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: req.text, state: "open" } });
+      return;
+    }
     // "How do I…" answers come only from NoteGoat's page/button and Settings
     // catalogs (never the model's guess); unknown ones say "I'm not sure".
     const lastG = [...chat.messages].reverse().find((m) => m.role === "goat");
@@ -448,8 +486,18 @@ export function GlobalGoatPopup({
       push({ role: "goat", text: `I couldn't find a patient named "${found.named}" in the patient list. Type their name and I'll answer "${original}".`, pendingQuestion: original });
       return;
     }
-    // No name: stay on the chat's patient, else the patient page that's open.
-    const p = current ?? patientById(openPatientId);
+    // No name: stay on the chat's patient (or the last one mentioned), else the patient page that's open.
+    const lastMentioned = [...chat.messages].reverse().find((m) => m.patientId)?.patientId ?? null;
+    const p = current ?? patientById(lastMentioned) ?? patientById(openPatientId);
+    // "and the MRI?" after "when was her x-ray?" → "when was her MRI?"
+    if (p) {
+      const prev = lastExchange(p.id);
+      const expanded = expandFollowUp(question, prev?.question ?? null);
+      if (expanded) {
+        startAnswer(p, expanded, false);
+        return;
+      }
+    }
     if (!p) {
       // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
       if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
@@ -577,6 +625,7 @@ export function GlobalGoatPopup({
                         {l.label} ↗
                       </Link>
                     ))}
+                    {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
                       <div className="mt-2 space-y-1.5" data-goat-choices>
@@ -731,6 +780,89 @@ function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: 
           </button>
         </form>
       )}
+    </div>
+  );
+}
+
+function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
+  const [signers] = useState(() => loadSigners());
+  const [initial] = useState(() => {
+    let last: string | null = null;
+    try {
+      last = window.localStorage.getItem(LAST_SIGNER_KEY);
+    } catch {
+      last = null;
+    }
+    return defaultSigner(signers, getCurrentMembershipSync()?.userId ?? null, last);
+  });
+  const [signerId, setSignerId] = useState(initial.signer?.id ?? "");
+  const [now] = useState(() => new Date());
+  const signer = signers.find((s) => s.id === signerId) ?? null;
+  const line = formatNote(draft.text, signer, now);
+  if (draft.state === "saved") {
+    return (
+      <div className="mt-1.5 text-xs">
+        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.saved}</p>
+        <p className="mt-1 font-semibold text-emerald-700">
+          ✓ Saved to Notes ·{" "}
+          <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
+            Open patient file ↗
+          </Link>
+        </p>
+      </div>
+    );
+  }
+  if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not saved.</p>;
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
+  const needSigner = signers.length > 0 && !signer;
+  return (
+    <div className="mt-2 space-y-1.5" data-goat-note>
+      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1 text-xs">{line}</p>
+      {signers.length === 0 ? (
+        <p className="text-[11px] text-[var(--text-muted)]">
+          No signature set up.{" "}
+          <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href="/settings/goat">
+            Add your team in G.O.A.T. Settings
+          </Link>
+        </p>
+      ) : initial.linked ? (
+        <p className="text-[11px] text-[var(--text-muted)]">Signed as {signer ? signatureFor(signer).slice(1) : ""} (your login)</p>
+      ) : (
+        <label className="flex items-center gap-1.5 text-[11px]">
+          Signed as
+          <select aria-label="Signed as" className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-xs" onChange={(e) => setSignerId(e.target.value)} value={signerId}>
+            <option value="">Choose…</option>
+            {signers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {signatureFor(s).slice(1)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`}
+          disabled={busy || needSigner}
+          onClick={() => {
+            if (signer && !initial.linked) {
+              try {
+                window.localStorage.setItem(LAST_SIGNER_KEY, signer.id);
+              } catch {
+                /* ignore */
+              }
+            }
+            onSave(formatNote(draft.text, signer, new Date()));
+          }}
+          style={{ fontSize: 12 }}
+          type="button"
+        >
+          Confirm
+        </button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={busy} onClick={onCancel} style={{ fontSize: 12 }} type="button">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
