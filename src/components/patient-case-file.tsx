@@ -1,5 +1,6 @@
 "use client";
 
+import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1490,7 +1491,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   });
   const [patientDob, setPatientDob] = useState(toUsDate(patient.dob));
   const [patientSex, setPatientSex] = useState<"Male" | "Female" | "Other" | "">(patient.sex ?? "");
-  const [maritalStatus, setMaritalStatus] = useState<"Single" | "Married" | "Divorced" | "Widowed" | "Other" | "">(patient.maritalStatus ?? "");
+  const [maritalStatus, setMaritalStatus] = useState<MaritalStatus | "">(patient.maritalStatus ?? "");
   const [dateOfLoss, setDateOfLoss] = useState(toUsDate(patient.dateOfLoss));
   const [initialExam, setInitialExam] = useState(toUsDate(patient.matrix?.initialExam ?? ""));
   const [patientPhone, setPatientPhone] = useState(formatUsPhoneInput(patient.phone));
@@ -2924,6 +2925,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       MR_MRS_MS_LAST_NAME: titleLast,
       MR_MRS_MS_FULL_NAME: titleFull,
       PATIENT_DOB: toUsDate(patientDob),
+      PATIENT_SEX: patientSex,
+      MARITAL_STATUS: maritalStatus,
       DATE_OF_INJURY: toUsDate(dateOfLoss),
       PATIENT_PHONE: patientPhone,
       PATIENT_EMAIL: patientEmail,
@@ -3658,6 +3661,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         lastName,
         fullName: `${firstName} ${lastName}`.trim(),
         dob: patientDob,
+        sex: patientSex,
+        maritalStatus,
         dateOfLoss,
         initialExam: effectiveInitialExam,
         phone: patientPhone,
@@ -4991,6 +4996,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               / Patient File
             </p>
             <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
+            {(patientSex || maritalStatus) && (
+              <p className="text-sm text-[var(--text-muted)]" data-patient-demographics>
+                {[patientSex, maritalStatus].filter(Boolean).join(" · ")}
+              </p>
+            )}
             <p className="text-sm text-[var(--text-muted)]">
               Case profile only. SOAP charting is kept in the Encounters module.
             </p>
@@ -5186,7 +5196,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
             <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               onChange={(event) => setPatientSex(event.target.value as "Male" | "Female" | "Other" | "")}
               value={patientSex}
             >
@@ -5199,15 +5209,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
             <select
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setMaritalStatus(event.target.value as "Single" | "Married" | "Divorced" | "Widowed" | "Other" | "")}
+              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setMaritalStatus(event.target.value as MaritalStatus | "")}
               value={maritalStatus}
             >
               <option value="">—</option>
-              <option value="Single">Single</option>
-              <option value="Married">Married</option>
-              <option value="Divorced">Divorced</option>
-              <option value="Widowed">Widowed</option>
+              {maritalStatusOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              {maritalStatus === "Other" && <option value="Other">Other</option>}
             </select>
           </label>
 

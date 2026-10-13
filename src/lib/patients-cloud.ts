@@ -34,6 +34,7 @@ import type {
   PatientPriority,
   PatientRecord,
 } from "@/lib/mock-data";
+import { normalizeMaritalStatus } from "@/lib/marital-status";
 
 interface PatientRow {
   id: string;
@@ -95,7 +96,7 @@ function rowToPatient(row: PatientRow): PatientRecord {
     fullName: row.full_name ?? "",
     dob: row.dob ?? "",
     sex: (row.sex as PatientRecord["sex"]) ?? undefined,
-    maritalStatus: (row.marital_status as PatientRecord["maritalStatus"]) ?? undefined,
+    maritalStatus: normalizeMaritalStatus(row.marital_status),
     phone: row.phone ?? "",
     email: row.email ?? undefined,
     address: row.address ?? undefined,

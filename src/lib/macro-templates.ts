@@ -114,6 +114,7 @@ export const macroAutoFieldLabels = {
   FULL_NAME: "Patient full name",
   AGE: "Patient age",
   SEX: "Patient sex",
+  MARITAL_STATUS: "Marital status",
   DOB: "Date of birth",
   INJURY_DATE: "Date of injury",
   ATTORNEY: "Attorney",

@@ -16,6 +16,9 @@ type NarrativePatientContext = {
   lastName: string;
   fullName: string;
   dob: string;
+  /** Optional: older callers don't pass these; they render blank. */
+  sex?: string;
+  maritalStatus?: string;
   dateOfLoss: string;
   initialExam: string;
   phone: string;
@@ -607,6 +610,8 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     PATIENT_FIRST_NAME: input.patient.firstName,
     PATIENT_LAST_NAME: input.patient.lastName,
     PATIENT_DOB: toUsDate(input.patient.dob),
+    PATIENT_SEX: input.patient.sex ?? "",
+    MARITAL_STATUS: input.patient.maritalStatus ?? "",
     PATIENT_PHONE: input.patient.phone,
     PATIENT_EMAIL: input.patient.email,
     DATE_OF_INJURY: toUsDate(input.patient.dateOfLoss),
