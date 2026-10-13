@@ -7,7 +7,7 @@
  */
 
 import { buildFactSources } from "@/lib/goat-ai/fact-sources";
-import type { GoatContext } from "@/lib/goat";
+import type { GoatAnswer, GoatContext } from "@/lib/goat";
 import type { GoatAnswerPrefs } from "@/lib/goat-answer-prefs";
 import { buildAiSources, type AiRetrieval } from "@/lib/goat-ai/sources";
 import { applyAnswerPrefs, buildMessages, NOT_FOUND, tidyAnswer } from "@/lib/goat-ai/prompt";
@@ -31,11 +31,20 @@ export async function answerSmart(input: {
   prefs: GoatAnswerPrefs;
   previous?: { question: string; answer: string } | null;
   onText?: (text: string) => void;
+  /** What the basic lookup found (already checked against the page/files): input for the model. */
+  ruleAnswers?: GoatAnswer[];
 }): Promise<SmartAnswer> {
   const t0 = performance.now();
   const retrieval = buildAiSources(input.context, input.question);
   // + mode reads the timeline + the facts relevant to the question (not raw excerpts).
   retrieval.sources = buildFactSources(input.context, input.question, retrieval.sources);
+  const ruleLines = (input.ruleAnswers ?? []).flatMap((a) => [
+    `${a.title}:`,
+    ...a.lines,
+    ...(a.groups ?? []).flatMap((g) => [g.lead, ...g.blocks.flatMap((b) => [b.heading, ...b.items].filter(Boolean))]),
+  ]).filter((l) => l.trim()).slice(0, 40);
+  if (ruleLines.length) retrieval.sources.unshift({ id: "S0", title: "Basic lookup results (checked against the chart)", kind: "page", section: input.ruleAnswers![0].section, lines: ruleLines.map((text) => ({ text })) });
+  retrieval.sources.forEach((src, i) => (src.id = `S${i + 1}`));
   if (!retrieval.sources.length) {
     const text = retrieval.unread
       ? `${NOT_FOUND} ${retrieval.unread} file${retrieval.unread === 1 ? " hasn't" : "s haven't"} been read yet; use "Read files" and ask again.`

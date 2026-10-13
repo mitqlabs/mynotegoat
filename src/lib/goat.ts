@@ -14,7 +14,7 @@
 
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
-import { findReferralFacts, referralSentence } from "@/lib/goat-referrals";
+import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
 import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
@@ -631,7 +631,7 @@ function recommendationBlocks(text: string): GoatBlock[] {
   return regionBlocks(text, [], null).map((b) => ({ ...b, heading: b.heading || "Recommendations" }));
 }
 
-function specialistAnswer(ctx: GoatContext): GoatAnswer {
+function specialistAnswer(ctx: GoatContext, question = ""): GoatAnswer {
   const lines: string[] = [];
   const groups: GoatAnswerGroup[] = [];
   const flags: string[] = [];
@@ -645,6 +645,25 @@ function specialistAnswer(ctx: GoatContext): GoatAnswer {
   }
   if (ctx.specialistRecommendations.trim() && !ctx.specialists.some((s) => s.recommendations.trim() === ctx.specialistRecommendations.trim())) {
     groups.push({ lead: "Recommendations (panel):", blocks: recommendationBlocks(ctx.specialistRecommendations) });
+  }
+  // Empty Specialist box: never "none on file" when referral / report files exist — use their facts.
+  if (!groups.length && ctx.files?.length) {
+    let facts = factsForFiles(ctx.files).filter((f) => f.docType === "referral" || f.docType === "specialist report");
+    // A specialty was asked ("ortho"): only that specialty's files (by Contacts specialty or file text).
+    const spec = SPECIALTIES.find((x) => x.ask.test(question));
+    if (spec && facts.length) {
+      const docs = (ctx.people ?? []).filter((p) => spec.match.test(p.specialty ?? "")).map((p) => p.name.replace(/\b(dr|md|do)\b\.?/gi, " ").split(/[\s,]+/).filter((w) => w.length >= 4).pop()?.toLowerCase() ?? "").filter(Boolean);
+      facts = facts.filter((f) => f.specialty === spec.label || docs.some((d) => f.fileName.toLowerCase().includes(d) || f.doctor.toLowerCase().includes(d)));
+      if (!facts.length) return { title: "Specialist referrals", lines: [`I didn't find a ${spec.label} referral or report in the Specialist box or the patient files.`], source: "Specialist panel + Patient Files", section: "specialist" };
+    }
+    if (facts.length) {
+      for (const f of facts) {
+        const date = f.docType === "referral" ? f.dates.find((d) => d.label === "referral")?.date || f.mainDate : f.mainDate;
+        lines.push(`${f.docType === "referral" ? "Referral" : "Report"}${f.doctor ? ` — ${f.doctor}` : ""}${f.specialty ? ` (${f.specialty})` : ""}: ${date ? `${f.docType === "referral" ? "referred on" : "seen on"} ${date}` : "no date found"} (${f.fileName}).`);
+      }
+      lines.push("The Specialist box is empty; this is from the patient files.");
+      return { title: "Specialist referrals", lines, source: `Patient Files — ${facts.map((f) => f.fileName).join(", ")}`, section: "specialist", fileId: facts[0].fileId, sources: facts.map((f) => ({ fileId: f.fileId, name: f.fileName })) };
+    }
   }
   if (!groups.length) lines.push("No specialist referrals on file.");
   return {
@@ -1211,7 +1230,7 @@ function askGoatOne(ctx: GoatContext, question: string): GoatResult {
     ask("mri", true);
     ask("xray", true);
   }
-  if (specialistWords) push(specialistAnswer(ctx));
+  if (specialistWords) push(specialistAnswer(ctx, question));
   if (has(tokens, ["plan", "frequency", "weekly", "week", "regions"]) || text.includes("treatment plan")) push(planAnswer(ctx, today));
   if (has(tokens, ["diagnos", "dx", "icd", "code", "codes"])) push(diagnosisAnswer(ctx));
   if (has(tokens, ["bill", "charge", "balance", "paid", "payment", "owe", "money", "cost", "amount", "rb", "reduction"])) push(billingAnswer(ctx));
