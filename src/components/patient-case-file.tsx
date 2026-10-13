@@ -1,5 +1,6 @@
 "use client";
 
+import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
@@ -7673,6 +7674,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           const showsMoney = !hiddenStyle("billingFigures");
           const headerColor = !showsMoney
             ? "bg-[#6db5c8]"
+            : isPaidFilled(paidDate, paidAmount)
+            ? PAID_GREEN.header // money green — Paid Date and $ Paid Amount both in
             : billingMissing
             ? "bg-[#c93b1d]" // red — billing not yet complete
             : paidMissing
@@ -7680,6 +7683,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               : "bg-[#6db5c8]"; // teal — fully closed out
           const statusBadge = !showsMoney
             ? null
+            : isPaidFilled(paidDate, paidAmount)
+            ? "Paid"
             : billingMissing
             ? "Needs billing"
             : paidMissing
@@ -7857,7 +7862,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               className="mt-4 grid gap-4 md:grid-cols-[1.8fr_1fr] xl:grid-cols-1"
               style={hiddenStyle("billingFigures")}
             >
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3">
+              <div
+                className={`rounded-xl border px-4 py-3 ${
+                  !hiddenStyle("billingFigures") && isPaidFilled(paidDate, paidAmount)
+                    ? PAID_GREEN.panel
+                    : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
+                }`}
+                data-paid={isPaidFilled(paidDate, paidAmount) ? "true" : undefined}
+              >
                 <dl className="space-y-2 text-sm sm:text-base">
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
                     <dt className="font-medium text-[var(--text-muted)]">Initial To Discharge:</dt>
