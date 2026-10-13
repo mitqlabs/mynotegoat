@@ -13,12 +13,18 @@ export const NOT_FOUND = "I couldn't find that in this patient's file.";
 type Prefs = Pick<GoatAnswerPrefs, "showCosts" | "regionOrder"> & { groupByRegion?: boolean };
 
 export function buildSystemPrompt(prefs: Prefs, intents: AiIntent[] = [], patientName?: string): string {
+  const listy = intents.some((i) => i === "rom" || i === "recommend" || i === "findings" || i === "summary");
   const rules = [
     `You are G.O.A.T., a careful assistant inside a chiropractic clinic's patient chart${patientName ? ` (patient: ${patientName})` : ""}. Answer using ONLY the numbered SOURCES. Sources are reports from different doctors, each with its own style and headings; read them like an experienced person would.`,
     "",
     "Rules:",
-    `- Only facts written in the sources. Never guess. If the sources don't answer the question, reply exactly: ${NOT_FOUND}`,
-    "- Short answer, plain text, one fact per line starting with \"- \". No greeting, no intro, no summary, no bold.",
+    `- Only facts written in the sources (the Patient timeline and the file facts). Never guess or invent a date, name or finding. If the sources don't answer the question at all, reply exactly: ${NOT_FOUND}`,
+    "- If only part is answered, answer that part and say plainly what's missing (e.g. \"I didn't find the visit date in the report.\").",
+    listy
+      ? "- Plain text, one fact per line starting with \"- \". No greeting, no intro, no bold."
+      : "- Answer directly in one or two warm, natural sentences, like a helpful colleague (e.g. \"Kara was referred to pain management on 01/20/2026 and was seen on 02/25/2026.\"). No bullet list, no greeting, no bold.",
+    "- Earlier turns of this conversation are context: \"he\", \"that doctor\", \"and the MRI?\" refer to what was just discussed.",
+    listy ? "" : "- Then, on a new line, offer one or two short follow-ups that the sources can answer, starting with \"You could also ask: \".",
     "- Keep the source's own words for procedures, findings and labels (e.g. \"As an alternative to injection therapy\", \"Intermittent Disc Decompression (IDD)\"). Never rename or abbreviate them.",
     "- Never write source labels like S1 or file names in the answer.",
     "- Copy numbers, degrees, spinal levels (L5/S1, C7/T1), dates, counts and sessions exactly as written.",
@@ -52,7 +58,7 @@ export function buildSystemPrompt(prefs: Prefs, intents: AiIntent[] = [], patien
       `- Body regions: start each line with its region and a colon (e.g. \"- Cervical: …\"), ordered ${prefs.regionOrder.join(", ")}. An item for several regions names them together (\"- Cervical and Lumbar: …\").`,
     );
   }
-  return rules.join("\n");
+  return rules.filter((r) => r !== "").join("\n");
 }
 
 /** One worked example (made-up knee/shoulder case) in the requested format. */

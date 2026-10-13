@@ -12,6 +12,8 @@
  * and G.O.A.T. will not read it.
  */
 
+import { factsForFiles } from "@/lib/goat-facts-store";
+import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence } from "@/lib/goat-referrals";
 import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
@@ -1017,6 +1019,28 @@ function searchPage(ctx: GoatContext, terms: TermMatcher[]): GoatHit[] {
 // ---------------------------------------------------------------------------
 
 export function askGoat(ctx: GoatContext, question: string): GoatResult {
+  // Two questions in one ("when was the xray and when is the next visit"): answer each, in order.
+  const parts = findReferralFacts(ctx, question) ? [question] : splitQuestion(question);
+  if (parts.length < 2) return askGoatOne(ctx, question);
+  const results = parts.map((p) => askGoatOne(ctx, p));
+  const answers: GoatAnswer[] = [];
+  results.forEach((r, i) => {
+    if (!r.answers.length) answers.push({ title: "Not found", lines: [`I couldn't find an answer to "${parts[i]}" in this patient's page or files.`], source: "G.O.A.T.", section: "info" });
+    for (const a of r.answers) if (!answers.some((x) => x.title === a.title)) answers.push(a);
+  });
+  const withFiles = results.find((r) => r.files && r.files.matches.length) ?? results[0];
+  return {
+    answers,
+    hits: results.flatMap((r) => r.hits).slice(0, 5),
+    terms: [...new Set(results.flatMap((r) => r.terms))],
+    files: withFiles.files,
+    filesFirst: false,
+    highlight: [...new Set(results.flatMap((r) => r.highlight))],
+    sourcesCollapsed: true,
+  };
+}
+
+function askGoatOne(ctx: GoatContext, question: string): GoatResult {
   const tokens = tokenize(question);
   const text = question.toLowerCase();
   const today = dayStamp(ctx.today) ?? Math.floor(Date.now() / 86_400_000);
@@ -1025,6 +1049,14 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     if (!answers.some((x) => x.title === a.title)) answers.push(a);
   };
 
+  // A specialist's visit with ROM / recommendations comes before the referral sentence.
+  if (ctx.files?.length) {
+    const sv = specialistVisitFactsAnswer(ctx, question, factsForFiles(ctx.files));
+    if (sv) {
+      const filesRes = answerFromFiles(ctx.files, { question, words: [], asked: [], allGroups: ctx.termGroups ?? [], people: ctx.people ?? [], region: parseRegionQuery(question, []) });
+      return { answers: [sv], hits: [], terms: [], files: filesRes, filesFirst: false, highlight: [], sourcesCollapsed: true };
+    }
+  }
   // "When was X referred to PM and when did they go?" → one sentence from the Specialist box or the files.
   const refFacts = findReferralFacts(ctx, question);
   const refAnswer: GoatAnswer | null = refFacts
@@ -1039,6 +1071,16 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
         sources: [refFacts.referralFile, refFacts.visitFile].filter((f): f is { fileId: string; name: string } => !!f),
       }
     : null;
+
+  // Quick plain answers from the per-file facts (imaging date + findings, a specialist's visit + ROM / recs).
+  if (!refAnswer && ctx.files?.length) {
+    const facts = factsForFiles(ctx.files);
+    const direct = imagingFactsAnswer(ctx, question, facts);
+    if (direct) {
+      const filesRes = answerFromFiles(ctx.files, { question, words: [], asked: [], allGroups: ctx.termGroups ?? [], people: ctx.people ?? [], region: parseRegionQuery(question, []) });
+      return { answers: [direct], hits: [], terms: [], files: filesRes, filesFirst: false, highlight: [], sourcesCollapsed: true };
+    }
+  }
 
   const asksGap = has(tokens, ["gap", "break", "lapse", "stopped", "missed"]) || text.includes("no visit");
   const visitWords = has(tokens, ["visit", "appointment", "appt", "seen", "came", "come", "scheduled", "schedule", "booked", "encounter"]);
