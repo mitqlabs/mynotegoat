@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -302,11 +303,11 @@ function AppointmentTypesStep({
           placeholder="Name (e.g. Personal Injury Office Visit)"
           value={name}
         />
-        <input
+        <NumberInput
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-          onChange={(e) => setDuration(Number(e.target.value) || 30)}
+          onChange={(n) => setDuration(n)}
           placeholder="Minutes"
-          type="number"
+          fallback={30}
           value={duration}
         />
         <input
