@@ -336,7 +336,7 @@ export function GlobalGoatPopup({
       const pick = await runGoatAi([{ role: "system", content: toolPickPrompt() }, ...history, { role: "user", content: question }], () => undefined, { maxTokens: 160 });
       let calls = parseToolCalls(pick.text);
       if (!calls || !calls.length) {
-        if (calls === null) console.info("[goat+] tool pick wasn't valid JSON; using rules", pick.text.slice(0, 200));
+        if (calls === null) console.info(`[goat+] tool pick wasn't valid JSON (${pick.text.length} chars); using rules`);
         calls = fallbackToolCalls(question);
       }
       results = calls.map((c) => runPracticeTool(c, data));
@@ -604,7 +604,7 @@ export function GlobalGoatPopup({
                     </div>
                   ) : (
                     <span className="text-[var(--text-muted)]">
-                      {smartActive && ai.status === "loading" ? `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
+                      {smartActive && ai.status === "loading" ? ai.progressText || `Getting + mode ready… ${Math.round(ai.progress * 100)}%` : "Searching…"}
                     </span>
                   )}
                 </div>
