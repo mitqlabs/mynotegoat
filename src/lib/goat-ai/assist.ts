@@ -13,6 +13,7 @@
  *    Medications → Follow up → Costs when shown), with Copy.
  *  - Nothing answered by the rules: the model answers from the best-matching
  *    parts of the file, shown as a regular answer card.
+ * When the model is ready it always writes the final answer (rules answers + file facts are its input).
  * Everything runs in this browser; nothing is sent anywhere.
  */
 
@@ -106,11 +107,17 @@ export async function assistGoat(input: {
     );
   }
 
-  if (base.answers.length) return done(base, false);
-
-  // Nothing the rules could answer: the model reads the best-matching parts of the file.
-  const smart = await answerSmart({ context: input.context, question: input.question, prefs: input.prefs, previous: input.previous, onText: input.onText });
+  // + mode writes the final answer every time. The basic lookup's answers and the file facts are its
+  // input; the basic answer is only the fallback when the model finds nothing or fails.
+  let smart: Awaited<ReturnType<typeof answerSmart>>;
+  try {
+    smart = await answerSmart({ context: input.context, question: input.question, prefs: input.prefs, previous: input.previous, onText: input.onText, ruleAnswers: base.answers });
+  } catch (e) {
+    console.error("[goat+] + mode failed; showing the basic lookup", e);
+    return done(base, false, ["+ mode couldn't answer this time, so this is the basic lookup."]);
+  }
   if (smart.skipped || smart.text.startsWith(NOT_FOUND)) return done(base, false);
+  const ruleLinks = base.answers.flatMap((a) => a.sources ?? (a.fileId ? [{ fileId: a.fileId, name: a.source.replace(/^Patient Files — /, "") }] : []));
   const files = smart.retrieval.sources.filter((s) => s.kind === "file");
   const answer: GoatAnswer = {
     title: "Answer",
@@ -118,7 +125,8 @@ export async function assistGoat(input: {
     source: files.length ? `Patient Files — ${[...new Set(files.map((f) => f.title))].join(", ")} · + mode` : "Patient page · + mode",
     section: smart.retrieval.sources[0]?.section ?? "specialist",
     copyText: smart.text,
-    fileId: files[0]?.fileId,
+    fileId: files[0]?.fileId ?? ruleLinks[0]?.fileId,
+    sources: ruleLinks.length ? ruleLinks.filter((l, i, all) => all.findIndex((x) => x.fileId === l.fileId) === i) : undefined,
   };
   const warnings = [
     ...smart.check.mismatches.map((m) => `Double-check: ${m}`),

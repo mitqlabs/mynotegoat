@@ -10,6 +10,7 @@
  * Encounters access.
  */
 
+import { migrateLegacyCategory } from "@/lib/contact-categories";
 import type { GoatContext, GoatEncounter, GoatImaging, GoatPlan } from "@/lib/goat";
 import type { GoatPerson } from "@/lib/goat-docs";
 import type { PatientRecord } from "@/lib/mock-data";
@@ -211,7 +212,16 @@ export function goatPeople(
   referrals: Array<{ name: string; sentDate?: string }>,
   contacts: Array<{ name: string; category: string; subCategory?: string }>,
 ): GoatPerson[] {
-  const key = (n: string) => n.toLowerCase().replace(/\(.*?\)/g, " ").replace(/[^a-z]+/g, " ").trim();
+  // Case-insensitive, with or without "Dr." / "MD": "DR. ARMEN HAROUTUNIAN" = "Armen Haroutunian, MD".
+  const key = (n: string) => n.toLowerCase().replace(/\(.*?\)/g, " ").replace(/[^a-z]+/g, " ").replace(/\b(dr|md|do|dc|np|pa|phd)\b/g, " ").replace(/\s+/g, " ").trim();
+  // Contacts saved before the Specialist sub-category refactor keep "Pain Management" as the category.
+  const specialtyOf = (c: { category: string; subCategory?: string }) => {
+    if (c.category === "Specialist") return { specialist: true, specialty: c.subCategory?.trim() ?? "" };
+    // A sub-category ("Pain Management") is the specialty, whatever top-level category holds it.
+    if (c.subCategory?.trim() && !/attorney|insurance/i.test(c.category)) return { specialist: true, specialty: c.subCategory.trim() };
+    const m = migrateLegacyCategory(c.category);
+    return { specialist: m.category === "Specialist", specialty: c.subCategory?.trim() || m.subCategory?.trim() || "" };
+  };
   const byName = new Map(contacts.map((c) => [key(c.name), c]));
   const out = new Map<string, GoatPerson>();
   for (const r of referrals) {
@@ -222,14 +232,15 @@ export function goatPeople(
     const name = contact?.name ?? raw.replace(/\s*\(.*?\)\s*/g, " ").trim();
     out.set(key(name), {
       name,
-      specialty: contact?.subCategory?.trim() || paren,
+      specialty: (contact ? specialtyOf(contact).specialty : "") || paren,
       referred: true,
       referralSent: usDate(r.sentDate) || undefined,
     });
   }
   for (const c of contacts) {
-    if (c.category !== "Specialist" || !c.name.trim() || out.has(key(c.name))) continue;
-    out.set(key(c.name), { name: c.name.trim(), specialty: c.subCategory?.trim() ?? "", referred: false });
+    const sp = specialtyOf(c);
+    if (!sp.specialist || !c.name.trim() || out.has(key(c.name))) continue;
+    out.set(key(c.name), { name: c.name.trim(), specialty: sp.specialty, referred: false });
   }
   return [...out.values()];
 }

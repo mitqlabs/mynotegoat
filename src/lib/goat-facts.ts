@@ -5,7 +5,7 @@
  * Cached per file id + text hash (see goat-facts-store.ts) so it runs once per file version.
  */
 import type { GoatFile } from "@/lib/goat-docs";
-import { toMDY } from "@/lib/goat-referrals";
+import { reportVisitDate, toMDY } from "@/lib/goat-referrals";
 
 export type FactDocType = "referral" | "specialist report" | "xray" | "mri" | "ct" | "pt" | "letter" | "bill" | "other";
 export type FactDateLabel = "referral" | "visit" | "exam" | "injury" | "report" | "scheduled" | "follow-up" | "other";
@@ -31,7 +31,7 @@ export interface FileFacts {
   regions: string[];
 }
 
-export const FACTS_VERSION = 1;
+export const FACTS_VERSION = 2;
 
 /** Small stable hash (FNV-1a) of the file's name + text. */
 export function factsHash(file: Pick<GoatFile, "name" | "pages">): string {
@@ -88,6 +88,8 @@ function doctorOf(name: string, text: string): string {
   const fromName = /\bdr\.?\s+([a-z][a-z' .-]+?)\s*$/i.exec(base);
   if (fromName) return `Dr. ${titleCase(fromName[1].trim())}`;
   const head = text.slice(0, 2500);
+  const provider = /\bprovider\s*:\s*(?:dr\.?\s+)?([A-Za-z][A-Za-z'.-]+(?:\s+[A-Za-z][A-Za-z'.-]+){1,3}?)(?=\s*,|\s+M\.?D\b|\s+D\.?O\b|\s*\||\s+\w+\s*:|\s*$)/im.exec(head);
+  if (provider && !/^(visit|chart|office)$/i.test(provider[1])) return `Dr. ${titleCase(provider[1].trim())}`;
   const md = /^\s*([A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){1,3}),?\s+(?:M\.?D\.?|D\.?O\.?)\b/m.exec(head);
   if (md) return `Dr. ${titleCase(md[1])}`;
   const dr = /\b(?:Dr\.?|Doctor)\s+([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+)?)/.exec(head);
@@ -145,7 +147,8 @@ export function extractFileFacts(file: GoatFile): FileFacts {
     }
   }
   const pick = (...ls: FactDateLabel[]) => ls.map((l) => facts.dates.find((d) => d.label === l)?.date).find(Boolean) ?? "";
-  facts.mainDate = docType === "referral" ? pick("referral", "visit", "report") : pick("visit", "exam", "report", "referral");
+  facts.mainDate = docType === "referral" ? pick("referral", "visit", "report") : docType === "specialist report" ? reportVisitDate(text, { avoid: facts.dates.filter((d) => d.label === "injury").map((d) => d.date) }) || pick("visit", "exam", "report") : pick("visit", "exam", "report", "referral");
+  if (docType === "specialist report" && facts.mainDate && !facts.dates.some((d) => d.label === "visit")) facts.dates.push({ label: "visit", date: facts.mainDate, raw: "visit (from the report body)" });
   if (!facts.mainDate) {
     const any = new RegExp(`\\bdate\\s*:?\\s*${DATE}`, "i").exec(text);
     if (any) facts.mainDate = toMDY(any[1]);

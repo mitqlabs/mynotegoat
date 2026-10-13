@@ -54,7 +54,73 @@ export function dateAfterLabel(text: string, label: RegExp): string {
 }
 
 export const referralDateIn = (text: string) => dateAfterLabel(text, REFERRAL_LABEL);
-export const visitDateIn = (text: string) => dateAfterLabel(text, VISIT_LABEL);
+
+/** A date written right after a visit label ("DOS: 05/06/2026", "Consultation Visit\n\n02/25/2026"), not one further along the sentence. */
+export function visitDateIn(text: string, avoid: string[] = []): string {
+  const t = text ?? "";
+  const re = new RegExp(`(?:${VISIT_LABEL.source}|\\bvisit(?=\\s*:))\\s*(?:[:#–-]\\s*)?(?:on\\s+|of\\s+)?${DATE_SRC}`, "i");
+  const m = re.exec(t);
+  if (m) return toMDY(m[1]);
+  // Two-column header read out of order ("Provider: Visit: Chart:" then the values): the first
+  // date after a "Visit:" label (within ~200 characters) that isn't the DOB.
+  const dob = dobIn(t);
+  const skip = new Set([dob, ...avoid.map((d) => (d ? toMDY(d) : ""))].filter(Boolean));
+  // A birth-year-looking date (15+ years before the newest date in the text) is never a visit.
+  const years = [...t.matchAll(new RegExp(DATE_SRC, "gi"))].map((d) => Number(toMDY(d[1]).slice(6))).filter((y) => y > 1900);
+  const newest = years.length ? Math.max(...years) : 0;
+  const lab = /\bvisit\s*:/i.exec(t);
+  if (lab) {
+    const tail = t.slice(lab.index, lab.index + 220);
+    for (const d of tail.matchAll(new RegExp(DATE_SRC, "gi"))) {
+      const v = toMDY(d[1]);
+      const pre = tail.slice(Math.max(0, (d.index ?? 0) - 12), d.index ?? 0);
+      if (!skip.has(v) && !/\b(dob|birth)\b/i.test(pre) && Number(v.slice(6)) > newest - 15) return v;
+    }
+  }
+  return "";
+}
+
+/** The date of birth written in the text ("DOB: 07/19/1979"), to never mistake it for a visit. */
+export function dobIn(text: string): string {
+  const m = new RegExp(`\\b(?:dob|d\\.o\\.b\\.?|date of birth|birth\\s*date)\\s*[:#]?\\s*${DATE_SRC}`, "i").exec(text ?? "");
+  return m ? toMDY(m[1]) : "";
+}
+
+const SECTION_DATE = new RegExp(`^\\s*(?:(?:p\\.\\d+\\s+)?(?:assessment|hpi|history of present illness|history|impression|plan|subjective|interval history)\\s*:\\s*)?${DATE_SRC}\\s*[:\\-–]`, "im");
+const NOT_VISIT_CONTEXT = /\b(dob|d\.o\.b|birth|born|doi|doa|dol|injur\w*|accident|mva|mvc|collision|crash|loss|incident|rear[\s-]?ended|referr\w*|signed|printed|faxed)\b/i;
+
+const dayOf = (mdy: string) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(mdy);
+  return m ? Date.UTC(+m[3], +m[1] - 1, +m[2]) : NaN;
+};
+
+/**
+ * The visit date of a specialist report: (1) a date right after a visit / consultation / DOS /
+ * date of exam / date of service label; (2) a date opening a section line ("ASSESSMENT: 02/25/2026: …",
+ * "02/25/2026: Karen is …"); (3) the earliest other date after the referral date that isn't a
+ * DOB / injury / accident / MVA date.
+ */
+export function reportVisitDate(text: string, opts: { after?: string; avoid?: string[] } = {}): string {
+  const t = text ?? "";
+  const avoid = new Set([...(opts.avoid ?? []), dobIn(t)].filter(Boolean).map((d) => toMDY(d)));
+  const labeled = visitDateIn(t, [...avoid]);
+  if (labeled && !avoid.has(labeled)) return labeled;
+  const sect = SECTION_DATE.exec(t);
+  if (sect && !avoid.has(toMDY(sect[1]))) return toMDY(sect[1]);
+  const after = opts.after ? dayOf(toMDY(opts.after)) : NaN;
+  let best = "";
+  for (const m of t.matchAll(new RegExp(DATE_SRC, "gi"))) {
+    const d = toMDY(m[1]);
+    // Only the words before the date in the same sentence / line ("MVA on …", "DOB: …").
+    const before = t.slice(Math.max(0, (m.index ?? 0) - 45), m.index ?? 0);
+    const ctx = before.split(/[.;\n](?:\s|$)|\n/).pop() ?? before;
+    if (avoid.has(d) || NOT_VISIT_CONTEXT.test(ctx)) continue;
+    const day = dayOf(d);
+    if (Number.isNaN(day) || (!Number.isNaN(after) && day < after)) continue;
+    if (!best || day < dayOf(best)) best = d;
+  }
+  return best;
+}
 
 export const isReferralFile = (f: Pick<GoatFile, "name">) => /referr?al|referred/i.test(f.name);
 export const isReportFile = (f: Pick<GoatFile, "name">) => !isReferralFile(f) && /report|consult|eval|visit|follow[\s_-]?up|f\/u|note/i.test(f.name);
@@ -103,12 +169,17 @@ export interface ReferralFacts {
 }
 
 /** Doctor named in a file name like "Specialist Report - DR. JANE DOE.pdf". */
-const doctorFromFileName = (name: string) => {
+export const doctorFromFileName = (name: string) => {
   const m = /\bdr\.?\s+([a-z' -]+?)(?:\.\w+)?$/i.exec(name.replace(/\.(pdf|docx?|txt|png|jpe?g)$/i, ""));
   return m ? `Dr. ${m[1].trim()}` : "";
 };
 
-export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specialists" | "files" | "people" | "termGroups">, question: string): ReferralFacts | null {
+const isoMdy = (d: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? "");
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : d ?? "";
+};
+
+export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specialists" | "files" | "people" | "termGroups"> & { doi?: string; dob?: string }, question: string): ReferralFacts | null {
   if (!isReferralWhenQuestion(question)) return null;
   const q = question;
   const people: GoatPerson[] = ctx.people ?? [];
@@ -119,6 +190,17 @@ export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specia
   // Who: a named person, a person in a matching term group, or a contact with the asked specialty.
   let doctors = people.filter((p) => mentions(q, p.name) || (groupText && mentions(groupText, p.name)));
   if (!doctors.length && asked) doctors = people.filter((p) => asked.match.test(p.specialty ?? ""));
+  // Doctors named in "Specialist Referral/Report - DR. X" file names, matched to Contacts case-insensitively.
+  const fileDoctors = [...new Set((ctx.files ?? []).filter((f) => isReferralFile(f) || isReportFile(f)).map((f) => doctorFromFileName(f.name)).filter(Boolean))];
+  if (!doctors.length && asked && fileDoctors.length) {
+    const known = fileDoctors.map((fd) => people.find((p) => mentions(fd, p.name) || mentions(p.name, fd))).filter((p): p is GoatPerson => !!p);
+    const ofSpecialty = known.filter((p) => asked.match.test(p.specialty ?? ""));
+    const inGroup = fileDoctors.filter((fd) => groupText && mentions(groupText, fd));
+    if (ofSpecialty.length) doctors = ofSpecialty;
+    else if (inGroup.length) doctors = inGroup.map((name) => ({ name, specialty: asked.label, referred: false }));
+    // One specialist on file and their specialty isn't recorded anywhere: use them.
+    else if (fileDoctors.length === 1 && !known.some((p) => (p.specialty ?? "").trim())) doctors = [{ name: fileDoctors[0], specialty: asked.label, referred: false }];
+  }
   const specificAsk = !!asked || doctors.length > 0 || /\bspecialist\b/i.test(q);
   if (!specificAsk) return null;
 
@@ -150,7 +232,7 @@ export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specia
   }
   if (!seenOn) {
     for (const f of repFiles) {
-      const d = visitDateIn(textOf(f));
+      const d = reportVisitDate(textOf(f), { after: referredOn, avoid: [ctx.doi ?? "", ctx.dob ?? ""].map(isoMdy) });
       if (d) { seenOn = d; visitFile = { fileId: f.id, name: f.name }; break; }
     }
   }
