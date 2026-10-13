@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { GoatSettingsPanel } from "@/components/goat-settings-panel";
 import { GoatAnswerPrefsPanel } from "@/components/goat-answer-prefs-panel";
+import { NoteSignersPanel } from "@/components/note-signers-panel";
 
 export default function GoatSettingsPage() {
   return (
@@ -26,6 +27,15 @@ export default function GoatSettingsPage() {
         </p>
         <div className="mt-3">
           <GoatSettingsPanel />
+        </div>
+      </section>
+      <section className="panel-card p-4">
+        <h3 className="text-xl font-semibold">Note signatures</h3>
+        <p className="text-sm text-[var(--text-muted)]">
+          Notes added with G.O.A.T. end with the signer: doctors sign &quot;-Dr. Mike&quot;, everyone else their first name (&quot;-Hannah&quot;). Link a person to their login to sign automatically; otherwise the note card asks &quot;Signed as&quot;. Saved in this browser.
+        </p>
+        <div className="mt-3">
+          <NoteSignersPanel />
         </div>
       </section>
     </div>

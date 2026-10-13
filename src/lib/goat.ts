@@ -723,6 +723,12 @@ function billingAnswer(ctx: GoatContext): GoatAnswer {
     `Billed: ${money(b.billed) || "not entered"}.`,
     `Paid: ${money(b.paid) || "not entered"}${dayStamp(b.paidDate) !== null ? ` on ${shown(b.paidDate)}` : ""}.`,
   ];
+  const num = (v: string) => Number.parseFloat(String(v ?? "").replace(/[$,\s]/g, ""));
+  const billed = num(b.billed);
+  if (Number.isFinite(billed) && billed > 0) {
+    const bal = billed - (Number.isFinite(num(b.paid)) ? num(b.paid) : 0);
+    lines.unshift(`Balance: ${bal.toLocaleString("en-US", { style: "currency", currency: "USD" })}.`);
+  }
   if (dayStamp(b.rbSent) !== null) lines.push(`R&B sent: ${shown(b.rbSent)}.`);
   return { title: "Billing", lines, source: "Additional Details", section: "details" };
 }
