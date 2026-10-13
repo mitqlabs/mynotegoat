@@ -33,6 +33,8 @@ export async function answerSmart(input: {
   onText?: (text: string) => void;
   /** What the basic lookup found (already checked against the page/files): input for the model. */
   ruleAnswers?: GoatAnswer[];
+  /** Extra instruction added to the question (e.g. one heading per part). */
+  instruction?: string;
 }): Promise<SmartAnswer> {
   const t0 = performance.now();
   const retrieval = buildAiSources(input.context, input.question);
@@ -53,7 +55,7 @@ export async function answerSmart(input: {
     return { retrieval, text, check: { supports: [], unverified: [], mismatches: [] }, ms: performance.now() - t0, firstTokenMs: 0, skipped: true };
   }
   const messages = buildMessages({
-    question: input.question,
+    question: input.instruction ? `${input.question}\n(${input.instruction})` : input.question,
     sources: retrieval.sources,
     prefs: input.prefs,
     intents: retrieval.intents,

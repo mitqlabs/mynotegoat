@@ -75,7 +75,7 @@ evalCase("XR date and findings", () => {
 });
 evalCase("PM appt date + ROM + recommendations", () => {
   const t = text("when was her pm appointment and what was the rom and recs");
-  has(t, "02/25/2026", "Cervical flexion 35 degrees", "epidural steroid injection at L4-L5", "Follow up in 4 weeks");
+  has(t, "02/25/2026", "Cervical flexion 35°", "epidural steroid injection at L4-L5", "Follow up in 4 weeks");
 });
 evalCase("next visit", () => {
   const t = text("when is her next visit");

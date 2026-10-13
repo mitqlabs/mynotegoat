@@ -12,6 +12,7 @@
  * and G.O.A.T. will not read it.
  */
 
+import { sortByRegion } from "@/lib/goat-region-order";
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
@@ -1177,7 +1178,7 @@ function askGoatOne(ctx: GoatContext, question: string): GoatResult {
           groups: [
             {
               lead: `${rom.who.length ? `${rom.who.join(" / ")} — ` : ""}${rom.file.name}`,
-              blocks: rom.blocks.map((b) => ({ ...b, plain: true })),
+              blocks: sortByRegion(rom.blocks, (b) => b.heading || b.items[0] || "", ctx.recFormat?.regionOrder).map((b) => ({ ...b, plain: true })),
               note: rom.notes.join(" ") || undefined,
             },
           ],

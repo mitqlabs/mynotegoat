@@ -12,11 +12,12 @@
 import type { GoatContext, GoatSpecialist } from "@/lib/goat";
 import type { GoatFile, GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion } from "@/lib/goat-terms";
+import { isOrganizationName } from "@/lib/goat-docs";
 
 const MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec";
 const DATE_SRC = `(\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}|(?:${MONTHS})[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4})`;
 
-const REFERRAL_LABEL = /(?:date\s+of\s+referral|referral\s+date|date\s+referred|referred\s+on|referral\s+sent(?:\s+on)?)/;
+const REFERRAL_LABEL = /(?:date\s+of\s+referral|referral\s+date|date\s+referred|referred\s+on|referral\s+sent(?:\s+on)?)/i;
 const VISIT_LABEL = /(?:consultation\s+visit|consultation\s+date|date\s+of\s+(?:service|visit|consultation|consult|exam(?:ination)?|evaluation)|visit\s+date|exam\s+date|date\s+seen|seen\s+on|\bDOS\b)/;
 
 /** Specialties people ask about by short name. */
@@ -54,7 +55,33 @@ export function dateAfterLabel(text: string, label: RegExp): string {
   return m ? toMDY(m[1]) : "";
 }
 
-export const referralDateIn = (text: string) => dateAfterLabel(text, REFERRAL_LABEL);
+/**
+ * "Date of Referral" in real PDF text: right after the label, or (forms / two-column layouts) a few
+ * lines further on, or just before the label. Never a DOB / birth-year-like date.
+ */
+export function referralDateIn(text: string): string {
+  const t = (text ?? "").slice(0, 250_000);
+  const direct = new RegExp(`${REFERRAL_LABEL.source}\\s*(?:[:#–-]\\s*)?${DATE_SRC}`, "i").exec(t);
+  if (direct) return toMDY(direct[1]);
+  const dob = dobIn(t);
+  const years = [...t.matchAll(new RegExp(DATE_SRC, "gi"))].map((d) => Number(toMDY(d[1]).slice(6))).filter((y) => y > 1900);
+  const newest = years.length ? Math.max(...years) : 0;
+  const ok = (v: string, pre: string) => v !== dob && !/\b(dob|birth|born|doi|injur\w*|accident)\b\W*$/i.test(pre) && Number(v.slice(6)) > newest - 15;
+  const label = new RegExp(`${REFERRAL_LABEL.source}|\\breferral\\s*:`, "i").exec(t);
+  if (!label) return "";
+  const after = t.slice(label.index + label[0].length, label.index + label[0].length + 240);
+  for (const d of after.matchAll(new RegExp(DATE_SRC, "gi"))) {
+    const v = toMDY(d[1]);
+    if (ok(v, after.slice(Math.max(0, (d.index ?? 0) - 14), d.index ?? 0))) return v;
+  }
+  const before = t.slice(Math.max(0, label.index - 80), label.index);
+  const prev = [...before.matchAll(new RegExp(DATE_SRC, "gi"))].pop();
+  if (prev) {
+    const v = toMDY(prev[1]);
+    if (ok(v, before.slice(Math.max(0, (prev.index ?? 0) - 14), prev.index ?? 0))) return v;
+  }
+  return "";
+}
 
 /** A date written right after a visit label ("DOS: 05/06/2026", "Consultation Visit\n\n02/25/2026"), not one further along the sentence. */
 export function visitDateIn(text: string, avoid: string[] = []): string {
@@ -152,10 +179,19 @@ const firstName = (patientName: string) => {
 };
 
 const titleName = (name: string) => {
-  const n = name.trim().replace(/\s+/g, " ");
-  const cased = n === n.toUpperCase() ? n.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : n;
-  return /^dr\.?\s/i.test(cased) ? cased.replace(/^dr\.?\s/i, "Dr. ") : `Dr. ${cased}`;
+  const n = name.trim().replace(/,?\s*\b(M\.?D|D\.?O|Ph\.?D)\b\.?$/i, "").replace(/\s+/g, " ").trim();
+  const body = n.replace(/^dr\.?\s+/i, "");
+  const cased = body === body.toUpperCase() ? n.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : n;
+  if (/^dr\.?\s/i.test(cased)) return cased.replace(/^dr\.?\s/i, "Dr. ");
+  return isOrganizationName(cased) || ORG_HINT.test(cased) ? cased : `Dr. ${cased}`;
 };
+const ORG_HINT = /\b(clinic|center|centre|medical|medicine|group|associates|institute|hospital|llc|inc|pc|apc|health|spine|ortho\w*|pain management|imaging|therapy|rehab\w*)\b/i;
+
+/** Doctor named in a report's own text ("Provider: Dr. Jane Doe, M.D."). */
+export function providerIn(text: string): string {
+  const m = /\b(?:provider|physician|attending|examining physician|consultant)\s*:\s*(?:dr\.?\s+)?([A-Za-z][A-Za-z'.-]+(?:\s+[A-Za-z][A-Za-z'.-]+){1,3}?)(?=\s*,|\s+M\.?D\b|\s+D\.?O\b|\s*\||\s+\w+\s*:|\s*$)/im.exec((text ?? "").slice(0, 4000));
+  return m && !/^(visit|chart|office|date)$/i.test(m[1]) ? `Dr. ${m[1].trim()}` : "";
+}
 
 export interface ReferralFacts {
   patient: string;
@@ -188,19 +224,26 @@ export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specia
   const groupText = groups.map((g) => g.terms.join(" ")).join(" ");
   const asked = SPECIALTIES.find((s) => s.ask.test(q) || (groupText && s.ask.test(groupText)));
 
-  // Who: a named person, a person in a matching term group, or a contact with the asked specialty.
-  let doctors = people.filter((p) => mentions(q, p.name) || (groupText && mentions(groupText, p.name)));
-  if (!doctors.length && asked) doctors = people.filter((p) => asked.match.test(p.specialty ?? ""));
-  // Doctors named in "Specialist Referral/Report - DR. X" file names, matched to Contacts case-insensitively.
-  const fileDoctors = [...new Set((ctx.files ?? []).filter((f) => isReferralFile(f) || isReportFile(f)).map((f) => doctorFromFileName(f.name)).filter(Boolean))];
+  // Who: the doctor named in the files themselves (file name "DR. X" or the report's "Provider:" line).
+  // Contacts only confirm a file doctor's specialty; a Contacts entry with no file is never picked.
+  const specialistFiles = (ctx.files ?? []).filter((f) => isReferralFile(f) || isReportFile(f));
+  const fileDoctorOf = (f: GoatFile) => doctorFromFileName(f.name) || providerIn((f.pages ?? []).slice(0, 2).join("\n"));
+  const fileDoctors = [...new Set(specialistFiles.map(fileDoctorOf).filter(Boolean))];
+  const contactOf = (d: string) => people.find((p) => mentions(d, p.name) || mentions(p.name, d));
+  let doctors: GoatPerson[] = fileDoctors
+    .filter((d) => mentions(q, d) || (groupText && mentions(groupText, d)))
+    .map((d) => ({ name: d, specialty: contactOf(d)?.specialty ?? "", referred: false }));
+  if (!doctors.length) {
+    const named = people.filter((p) => mentions(q, p.name));
+    doctors = named.map((p) => ({ ...p }));
+  }
   if (!doctors.length && asked && fileDoctors.length) {
-    const known = fileDoctors.map((fd) => people.find((p) => mentions(fd, p.name) || mentions(p.name, fd))).filter((p): p is GoatPerson => !!p);
-    const ofSpecialty = known.filter((p) => asked.match.test(p.specialty ?? ""));
-    const inGroup = fileDoctors.filter((fd) => groupText && mentions(groupText, fd));
-    if (ofSpecialty.length) doctors = ofSpecialty;
-    else if (inGroup.length) doctors = inGroup.map((name) => ({ name, specialty: asked.label, referred: false }));
-    // One specialist on file and their specialty isn't recorded anywhere: use them.
-    else if (fileDoctors.length === 1 && !known.some((p) => (p.specialty ?? "").trim())) doctors = [{ name: fileDoctors[0], specialty: asked.label, referred: false }];
+    const fileText = (d: string) => specialistFiles.filter((f) => fileDoctorOf(f) === d).map((f) => (f.pages ?? []).slice(0, 3).join(" ")).join(" ");
+    const confirmed = fileDoctors.filter((d) => asked.match.test(contactOf(d)?.specialty ?? "") || asked.ask.test(fileText(d)));
+    const unknown = fileDoctors.filter((d) => !(contactOf(d)?.specialty ?? "").trim());
+    // Confirmed by Contacts / the file; else the only file doctor whose specialty isn't recorded.
+    const pick = confirmed.length ? confirmed : unknown.length === 1 && fileDoctors.length === 1 ? unknown : [];
+    doctors = pick.map((d) => ({ name: d, specialty: contactOf(d)?.specialty || asked.label, referred: false }));
   }
   const specificAsk = !!asked || doctors.length > 0 || /\bspecialist\b/i.test(q);
   if (!specificAsk) return null;
@@ -247,8 +290,9 @@ export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specia
   }
   if (!referredOn && !seenOn && !scheduledFor) return null;
 
-  const fileDoc = doctorFromFileName((referralFile ?? visitFile)?.name ?? "");
-  const doctorRaw = doctors[0]?.name || box?.name || fileDoc;
+  const srcFile = (ctx.files ?? []).find((f) => f.id === (visitFile ?? referralFile)?.fileId) ?? (ctx.files ?? []).find((f) => f.id === referralFile?.fileId);
+  const fileDoc = srcFile ? fileDoctorOf(srcFile) : "";
+  const doctorRaw = (referralFile || visitFile ? fileDoc : "") || doctors[0]?.name || box?.name || fileDoc;
   const specialty = asked?.label || doctors[0]?.specialty?.toLowerCase() || "";
   return {
     patient: firstName(ctx.patientName),

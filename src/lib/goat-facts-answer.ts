@@ -6,7 +6,8 @@
  */
 import type { GoatAnswer, GoatContext } from "@/lib/goat";
 import type { FileFacts } from "@/lib/goat-facts";
-import { SPECIALTIES } from "@/lib/goat-referrals";
+import { findReferralFacts, SPECIALTIES } from "@/lib/goat-referrals";
+import { sortByRegion } from "@/lib/goat-region-order";
 import { groupsInQuestion } from "@/lib/goat-terms";
 
 const firstName = (p: string) => {
@@ -44,7 +45,7 @@ export function imagingFactsAnswer(ctx: GoatContext, question: string, facts: Fi
       const date = f.mainDate || (b?.doneDate ? isoToMdy(b.doneDate) : "");
       lines.push(`${who}'s ${region ? `${region} ` : ""}${mod.label} was ${date ? `done on ${date}` : "done (no date found in the report)"}.`);
       const imp = f.impressions.length ? f.impressions : f.findings;
-      if (asksFind || !asksWhen) lines.push(imp.length ? `It showed: ${imp.slice(0, 5).join("; ")}.` : "I didn't find an impression or findings section in the report.");
+      if (asksFind || !asksWhen) lines.push(imp.length ? `It showed: ${sortByRegion(imp.slice(0, 5), (x) => x, ctx.recFormat?.regionOrder).join("; ")}.` : "I didn't find an impression or findings section in the report.");
       sources.push({ fileId: f.fileId, name: f.fileName });
     }
   } else {
@@ -69,14 +70,22 @@ export function specialistReports(ctx: GoatContext, question: string, facts: Fil
   const groupText = groupsInQuestion(question, ctx.termGroups ?? []).map((g) => g.terms.join(" ")).join(" ");
   const spec = SPECIALTIES.find((s) => s.ask.test(question) || (groupText && s.ask.test(groupText)));
   const people = ctx.people ?? [];
-  const last = (n: string) => n.replace(/\b(dr|md|do)\b\.?/gi, " ").split(/\s+/).filter((w) => w.length >= 4).pop()?.toLowerCase() ?? "";
-  const named = people.find((p) => last(p.name) && (question.toLowerCase().includes(last(p.name)) || groupText.toLowerCase().includes(last(p.name))));
-  const doc = named ?? (spec ? people.find((p) => spec.match.test(p.specialty ?? "")) : undefined);
-  if (!spec && !doc) return null;
-  const reports = facts.filter(
-    (f) => f.docType === "specialist report" && ((doc && last(doc.name) && (f.fileName.toLowerCase().includes(last(doc.name)) || f.doctor.toLowerCase().includes(last(doc.name)))) || (!doc && spec && f.specialty === spec.label)),
-  );
-  return { label: spec?.label ?? doc?.specialty?.toLowerCase() ?? "", doctor: doc?.name ?? reports[0]?.doctor ?? "", reports: reports.sort((a, b) => (a.mainDate < b.mainDate ? 1 : -1)) };
+  const last = (n: string) => n.replace(/\b(dr|md|do)\b\.?/gi, " ").split(/[^A-Za-z'-]+/).filter((w) => w.length >= 4).pop()?.toLowerCase() ?? "";
+  // Doctors come from the reports themselves (file name / Provider line); Contacts only confirm their specialty.
+  const all = facts.filter((f) => f.docType === "specialist report" && f.doctor);
+  const contactOf = (d: string) => people.find((p) => last(p.name) && last(p.name) === last(d));
+  const q = question.toLowerCase();
+  let reports = all.filter((f) => last(f.doctor) && (q.includes(last(f.doctor)) || groupText.toLowerCase().includes(last(f.doctor))));
+  if (!reports.length && spec) {
+    reports = all.filter((f) => spec.match.test(contactOf(f.doctor)?.specialty ?? "") || f.specialty === spec.label);
+    if (!reports.length) {
+      const docs = [...new Set(all.map((f) => f.doctor))];
+      if (docs.length === 1 && !(contactOf(docs[0])?.specialty ?? "").trim()) reports = all;
+    }
+  }
+  if (!spec && !reports.length) return null;
+  const doc = reports[0]?.doctor ?? "";
+  return { label: spec?.label ?? contactOf(doc)?.specialty?.toLowerCase() ?? "", doctor: doc, reports: reports.sort((a, b) => (a.mainDate < b.mainDate ? 1 : -1)) };
 }
 
 /** "When was the PM appt, what was the ROM and recs?" — date + ROM + recommendations from the report. */
@@ -90,12 +99,24 @@ export function specialistVisitFactsAnswer(ctx: GoatContext, question: string, f
   const r = sr.reports[0];
   const who = firstName(ctx.patientName);
   const doc = sr.doctor || r.doctor;
-  const lines = [`${who} saw ${[sr.label, doc ? `(${doc})` : ""].filter(Boolean).join(" ") || "the specialist"} on ${r.mainDate || "an undated visit"}.`];
+  const to = [sr.label, doc ? `(${doc})` : ""].filter(Boolean).join(" ") || "the specialist";
+  // Referral date: the Specialist box, else the referral file to the same doctor ("Date of Referral").
+  const ref = findReferralFacts(ctx, /\brefer/i.test(question) ? question : `when was ${who} referred to ${sr.label || "the specialist"} and when seen`);
+  const lastName = (doc.replace(/\b(dr|md|do)\b\.?/gi, " ").split(/[^A-Za-z'-]+/).filter((w) => w.length >= 4).pop() ?? "").toLowerCase();
+  const refFile = facts.find((f) => f.docType === "referral" && lastName.length >= 4 && (f.fileName.toLowerCase().includes(lastName) || f.doctor.toLowerCase().includes(lastName)) && f.dates.some((d) => d.label === "referral"));
+  const referredOn = ref?.referredOn || refFile?.dates.find((d) => d.label === "referral")?.date || "";
+  const asksReferral = /\brefer/i.test(question);
+  const lines = [
+    referredOn
+      ? `${who} was referred to ${to} on ${referredOn} and was seen on ${r.mainDate || "a date I couldn't find in the report"}.`
+      : `${who} saw ${to} on ${r.mainDate || "an undated visit"}.${asksReferral ? " I didn't find the referral date." : ""}`,
+  ];
   const groups = [] as NonNullable<GoatAnswer["groups"]>;
-  if (asksRom) groups.push({ lead: "Range of motion", blocks: [{ heading: "", items: r.rom.length ? r.rom : ["Not found in the report."], plain: true }] });
+  const order = ctx.recFormat?.regionOrder;
+  if (asksRom) groups.push({ lead: "Range of motion", blocks: [{ heading: "", items: r.rom.length ? sortByRegion(r.rom, (x) => x, order) : ["Not found in the report."], plain: true }] });
   if (asksRecs) {
     const recs = [...r.recommendations, ...r.procedures.filter((p) => !r.recommendations.includes(p)), ...r.followUp.filter((p) => !r.recommendations.includes(p))];
-    groups.push({ lead: "Recommendations", blocks: [{ heading: "", items: recs.length ? recs.slice(0, 12) : ["Not found in the report."], plain: true }] });
+    groups.push({ lead: "Recommendations", blocks: [{ heading: "", items: recs.length ? (recs.every((x) => /\b(cervical|thoracic|lumbar|shoulder|knee|hip|elbow|wrist|hand|ankle|foot|neck|back)\b/i.test(x)) ? sortByRegion(recs.slice(0, 12), (x) => x, order) : recs.slice(0, 12)) : ["Not found in the report."], plain: true }] });
   }
   return {
     title: "Specialist visit",
@@ -104,7 +125,7 @@ export function specialistVisitFactsAnswer(ctx: GoatContext, question: string, f
     source: `Patient Files — ${r.fileName}`,
     section: "specialist",
     fileId: r.fileId,
-    sources: [{ fileId: r.fileId, name: r.fileName }],
+    sources: [...(refFile ? [{ fileId: refFile.fileId, name: refFile.fileName }] : ref?.referralFile ? [ref.referralFile] : []), { fileId: r.fileId, name: r.fileName }],
     copyText: [lines[0], ...groups.flatMap((g) => [g.lead + ":", ...g.blocks.flatMap((b) => b.items.map((i) => `- ${i}`))])].join("\n"),
   };
 }

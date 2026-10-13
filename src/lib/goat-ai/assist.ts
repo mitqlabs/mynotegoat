@@ -26,6 +26,7 @@ import { NOT_FOUND } from "@/lib/goat-ai/prompt";
 import { buildRecsMessages, mergeRecs, parseRecsJson, recsFromAi, type AiRecsJson } from "@/lib/goat-ai/recs-ai";
 import { chunkReport, chunkText, pickReport } from "@/lib/goat-ai/report-text";
 import { detectIntents } from "@/lib/goat-ai/sources";
+import { backfillParts, PART_HEADINGS, partsInstruction, questionParts, romGroupsFrom } from "@/lib/goat-ai/parts";
 
 /** Characters of report text per model pass (4,096-token context: instructions + example + reply fit around it). */
 export const REPORT_CHUNK_CHARS = 7000;
@@ -61,7 +62,11 @@ export async function assistGoat(input: {
   const ruleRecs = base.answers.find((a) => a.title === "Recommendations");
   // A doctor's recommendations: + mode reads the whole report and fills what the rules missed.
   // Any other question the rules answered (visits, dates, plan, billing …) is answered by the rules alone.
-  if (intents.includes("recommend") && (ruleRecs || RECS_ASK_RE.test(input.question))) {
+  const parts = questionParts(input.question);
+  // ROM is shown from the extracted facts (exact numbers, region order), next to + mode's prose.
+  const romGroups = parts.includes("rom") ? romGroupsFrom(base.answers) : [];
+  // Recommendations alone: read the whole report. Several parts (dates + ROM + recs): the general path below.
+  if (parts.length < 2 && intents.includes("recommend") && (ruleRecs || RECS_ASK_RE.test(input.question))) {
     const ruleAnswer = ruleRecs;
     const ruleFile = ruleAnswer ? (input.context.files ?? []).find((f) => ruleAnswer.source.includes(f.name)) : undefined;
     const pick = pickReport(input.context, input.question, ruleFile?.id);
@@ -111,12 +116,15 @@ export async function assistGoat(input: {
   // input; the basic answer is only the fallback when the model finds nothing or fails.
   let smart: Awaited<ReturnType<typeof answerSmart>>;
   try {
-    smart = await answerSmart({ context: input.context, question: input.question, prefs: input.prefs, previous: input.previous, onText: input.onText, ruleAnswers: base.answers });
+    smart = await answerSmart({ context: input.context, question: input.question, prefs: input.prefs, previous: input.previous, onText: input.onText, ruleAnswers: base.answers, instruction: partsInstruction(parts, romGroups.length > 0) });
   } catch (e) {
     console.error("[goat+] + mode failed; showing the basic lookup", e);
     return done(base, false, ["+ mode couldn't answer this time, so this is the basic lookup."]);
   }
   if (smart.skipped || smart.text.startsWith(NOT_FOUND)) return done(base, false);
+  // Every part answered: anything the model left out is added back from the facts.
+  const filled = backfillParts(smart.text, romGroups.length ? parts.filter((p) => p !== "rom") : parts, base.answers);
+  smart.text = filled.text;
   const ruleLinks = base.answers.flatMap((a) => a.sources ?? (a.fileId ? [{ fileId: a.fileId, name: a.source.replace(/^Patient Files — /, "") }] : []));
   const files = smart.retrieval.sources.filter((s) => s.kind === "file");
   const answer: GoatAnswer = {
@@ -124,11 +132,13 @@ export async function assistGoat(input: {
     lines: smart.text.split("\n").filter((l) => l.trim()),
     source: files.length ? `Patient Files — ${[...new Set(files.map((f) => f.title))].join(", ")} · + mode` : "Patient page · + mode",
     section: smart.retrieval.sources[0]?.section ?? "specialist",
-    copyText: smart.text,
+    groups: romGroups.length ? romGroups.map((g) => ({ ...g, lead: g.lead.startsWith("Range of motion") ? g.lead : `Range of motion — ${g.lead}` })) : undefined,
+    copyText: romGroups.length ? [smart.text, "Range of motion:", ...romGroups.flatMap((g) => g.blocks.flatMap((b) => [b.heading, ...b.items].filter(Boolean).map((i) => `- ${i}`)))].join("\n") : smart.text,
     fileId: files[0]?.fileId ?? ruleLinks[0]?.fileId,
     sources: ruleLinks.length ? ruleLinks.filter((l, i, all) => all.findIndex((x) => x.fileId === l.fileId) === i) : undefined,
   };
   const warnings = [
+    ...(filled.added.length ? [`Added from the files: ${filled.added.map((p) => PART_HEADINGS[p]).join(", ")}.`] : []),
     ...smart.check.mismatches.map((m) => `Double-check: ${m}`),
     ...(smart.check.unverified.length ? [`Couldn't find ${smart.check.unverified.map((n) => `"${n}"`).join(", ")} in the file. Check before using.`] : []),
   ];
