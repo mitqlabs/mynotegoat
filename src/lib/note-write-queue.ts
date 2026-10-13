@@ -34,6 +34,8 @@ export type NoteWriteQueueOptions<T extends QueueRecord> = {
   retryDelaysMs?: number[];
   onBatchStart?: () => void;
   onBatchDone?: (result: { ok: number; failed: number; firstError?: unknown }) => void;
+  /** A write that hasn't settled after this long counts as failed and is retried (0 = no limit). */
+  writeTimeoutMs?: number;
   /** Injected for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
 };
@@ -52,6 +54,8 @@ export function createNoteWriteQueue<T extends QueueRecord>(options: NoteWriteQu
   let running: Promise<void> | null = null;
   let retryAttempt = 0;
   let retryTimerSet = false;
+  const priority = new Set<string>();
+  const writeTimeoutMs = options.writeTimeoutMs ?? 30_000;
 
   const versionOf = (record: T) => JSON.stringify(record);
 
@@ -104,46 +108,79 @@ export function createNoteWriteQueue<T extends QueueRecord>(options: NoteWriteQu
     return queued;
   };
 
-  const runLoop = async () => {
-    while (pending.size > 0) {
-      const batch = Array.from(pending.values());
-      pending.clear();
-      for (const record of batch) inFlight.set(record.id, { record, version: versionOf(record) });
-      options.onBatchStart?.();
-
-      let ok = 0;
-      let failed = 0;
-      let firstError: unknown;
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < batch.length) {
-          const record = batch[cursor++];
-          const version = inFlight.get(record.id)!.version;
-          try {
-            await options.write(record);
-            confirmed.set(record.id, { record, version, local: true });
-            ok++;
-            settleWaiters(record.id, version, true);
-          } catch (err) {
-            failed++;
-            if (firstError === undefined) firstError = err;
-            // Re-queue unless a newer version is already waiting.
-            if (!pending.has(record.id)) pending.set(record.id, record);
-            settleWaiters(record.id, version, false);
-          } finally {
-            inFlight.delete(record.id);
-          }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(concurrency, batch.length) }, worker));
-      options.onBatchDone?.({ ok, failed, firstError });
-
-      if (failed > 0) {
-        scheduleRetry();
-        return; // the retry timer (or the next enqueue) resumes the loop
+  /** Next record to send: a waited-on (saveNow) record first, else the oldest queued. */
+  const takeNext = (): T | undefined => {
+    for (const id of priority) {
+      const rec = pending.get(id);
+      if (rec && !inFlight.has(id)) {
+        priority.delete(id);
+        pending.delete(id);
+        return rec;
       }
-      retryAttempt = 0;
+      if (!rec) priority.delete(id);
     }
+    for (const [id, rec] of pending) {
+      if (inFlight.has(id)) continue; // one write per record at a time
+      pending.delete(id);
+      return rec;
+    }
+    return undefined;
+  };
+
+  const writeWithTimeout = (record: T): Promise<void> => {
+    if (!(writeTimeoutMs > 0)) return options.write(record);
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(`[note-write-queue] write of ${record.id} timed out after ${writeTimeoutMs}ms`));
+      }, writeTimeoutMs);
+      options.write(record).then(
+        () => { clearTimeout(timer); if (!settled) { settled = true; resolve(); } },
+        (err) => { clearTimeout(timer); if (!settled) { settled = true; reject(err); } },
+      );
+    });
+  };
+
+  // Workers pull from the LIVE queue, so a note saved with saveNow (Close &
+  // Check Out) jumps ahead of a big background batch instead of waiting for
+  // thousands of writes, and one hung request times out instead of stalling
+  // every later write (production 2026-10-13: "Closing…" stuck, notes unsynced).
+  const runLoop = async () => {
+    options.onBatchStart?.();
+    let ok = 0;
+    let failed = 0;
+    let firstError: unknown;
+    const failedRecords: T[] = [];
+    const worker = async () => {
+      for (let record = takeNext(); record; record = takeNext()) {
+        const version = versionOf(record);
+        inFlight.set(record.id, { record, version });
+        try {
+          await writeWithTimeout(record);
+          confirmed.set(record.id, { record, version, local: true });
+          ok++;
+          settleWaiters(record.id, version, true);
+        } catch (err) {
+          failed++;
+          if (firstError === undefined) firstError = err;
+          failedRecords.push(record);
+          settleWaiters(record.id, version, false);
+        } finally {
+          inFlight.delete(record.id);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, worker));
+    // Failed writes go back in the queue (unless a newer version is waiting) and are retried.
+    for (const record of failedRecords) if (!pending.has(record.id)) pending.set(record.id, record);
+    options.onBatchDone?.({ ok, failed, firstError });
+    if (failed > 0) {
+      scheduleRetry();
+      return;
+    }
+    retryAttempt = 0;
   };
 
   const scheduleRetry = () => {
@@ -185,6 +222,7 @@ export function createNoteWriteQueue<T extends QueueRecord>(options: NoteWriteQu
       if (!pending.has(record.id) || versionOf(pending.get(record.id)!) !== version) {
         pending.set(record.id, record);
       }
+      priority.add(record.id);
       void kick();
     });
   };
