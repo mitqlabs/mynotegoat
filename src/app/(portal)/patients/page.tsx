@@ -1,5 +1,6 @@
 "use client";
 
+import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
@@ -913,8 +914,6 @@ export default function PatientsPage() {
 
   const filteredPatients = useMemo(() => {
     const q = searchDraft.trim().toLowerCase();
-    // Split query into individual words so "john doe" matches "Doe, John"
-    const qWords = q.replace(/[,.:;]/g, " ").split(/\s+/).filter(Boolean);
     // Month-range bounds within the selected year (only meaningful when a
     // specific Year is chosen). From alone = single month; From+To = span.
     const fromN = Number(fromMon) || 0;
@@ -933,8 +932,9 @@ export default function PatientsPage() {
       const nameNorm = patient.fullName.toLowerCase().replace(/[,.:;]/g, " ");
       const attNorm = patient.attorney.toLowerCase().replace(/[,.:;]/g, " ");
       const haystack = `${nameNorm} ${attNorm}`;
+      // Words followed by a space are whole words ("armen " ≠ Armenuhi); see patient-name-match.ts.
       const matchesSearch =
-        !q || qWords.every((word) => haystack.includes(word));
+        !q || nameSearchMatches(haystack, searchDraft);
 
       // Filter by INITIAL EXAM date (year + optional month range within
       // it), falling back to the date of injury — a patient taken in today
@@ -1473,7 +1473,7 @@ export default function PatientsPage() {
     const q = taskQuickPatientQuery.trim().toLowerCase();
     if (!q || taskQuickPatientId) return [];
     return taskPatientCaseEntries
-      .filter((e) => e.fullName.toLowerCase().includes(q))
+      .filter((e) => nameSearchMatches(e.fullName, taskQuickPatientQuery))
       .slice(0, 6);
   }, [taskPatientCaseEntries, taskQuickPatientQuery, taskQuickPatientId]);
 

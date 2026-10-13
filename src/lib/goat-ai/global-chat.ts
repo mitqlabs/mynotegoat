@@ -13,12 +13,15 @@ import type { BookingDraft } from "@/lib/goat-booking";
  */
 
 import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
 
 export interface ChatPatient {
   id: string;
   fullName: string;
   dob: string;
   dateOfLoss: string;
+  /** Case status ("Active", "Discharged", …); active cases are offered first. */
+  caseStatus?: string;
 }
 
 export interface ChatChoice {
@@ -27,6 +30,8 @@ export interface ChatChoice {
   label: string;
   /** …or an office question to ask when tapped (contact pick, "List them"). */
   question?: string;
+  /** "Show inactive (N)": reveals the message's moreChoices in place. */
+  showMore?: boolean;
 }
 
 export interface ChatQuote {
@@ -59,6 +64,10 @@ export interface ChatMessage {
   office?: OfficeMemory;
   /** A booking waiting for Confirm (nothing is saved before that). */
   booking?: BookingDraft & { state: "open" | "booked" | "canceled" };
+  /** Inactive-case choices revealed by "Show inactive (N)". */
+  moreChoices?: ChatChoice[];
+  /** A team message waiting for Confirm (posted to Messages only then). */
+  msgDraft?: { toLabel: string; toUserId?: string; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
   /** A note waiting for Confirm before it's added to the patient's Notes. */
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
   /** Waiting for the day/time of a booking. */
@@ -186,12 +195,13 @@ export function editDistance(a: string, b: string): number {
 }
 
 /** How well one word of the question fits one part of a name: 1 exact, 0.85 start of the name, 0.8 / 0.6 typo, else 0. */
-export function namePartScore(word: string, part: string): number {
+export function namePartScore(word: string, part: string, whole = false): number {
   const w = word.toLowerCase();
   const p = part.toLowerCase();
   if (w.length < 2 || p.length < 2) return 0;
   if (w === p) return 1;
-  if (w.length >= 3 && p.startsWith(w)) return 0.85;
+  // A finished word ("armen " / "armen next visit") never matches the start of a longer name (Armenuhi).
+  if (!whole && w.length >= 3 && p.startsWith(w)) return 0.85;
   if (w.length >= 4) {
     const d = editDistance(w, p);
     if (d === 1) return 0.8;
@@ -224,6 +234,9 @@ function nameTokens(fullName: string): string[] {
 export function scorePatients(question: string, patients: ChatPatient[]): PatientMatch[] {
   const words = nameWords(question);
   if (!words.length) return [];
+  // Only the last word, still being typed (no space or punctuation after it), may be part of a name.
+  const tail = /([A-Za-z][A-Za-z'-]*)$/.exec(question)?.[1]?.replace(/'s$/i, "").toLowerCase() ?? null;
+  const whole = (w: string) => w.toLowerCase() !== tail;
   const out: PatientMatch[] = [];
   for (const patient of patients) {
     let score = 0;
@@ -233,7 +246,7 @@ export function scorePatients(question: string, patients: ChatPatient[]): Patien
       let bestWord = "";
       for (const w of words) {
         if (used.includes(w)) continue;
-        const s = namePartScore(w, part);
+        const s = namePartScore(w, part, whole(w));
         if (s > best) {
           best = s;
           bestWord = w;
@@ -254,13 +267,14 @@ export interface PatientLookup {
   named: string | null;
   /** One patient, sure enough to answer right away. */
   confident: PatientMatch | null;
-  /** Several or unsure: up to 5 patients to pick from ("Did you mean …"). */
+  /** Several or unsure: every matching patient with an active case (or every match when none is active). */
   candidates: PatientMatch[];
+  /** Inactive matches held back while active ones are shown ("Show inactive"). */
+  inactive: PatientMatch[];
   /** The confident one, else the candidates. */
   matches: ChatPatient[];
 }
 
-export const MAX_PATIENT_CHOICES = 5;
 
 /**
  * Find the patient a question is about. One clear match (a whole first or last
@@ -272,7 +286,7 @@ export function findPatientsInQuestion(question: string, patients: ChatPatient[]
   if (!scored.length) {
     // Only an explicit "for / about Someone" counts as naming a patient nobody matches.
     const m = /\b(?:for|about|patient)\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,2})\b/.exec(question.replace(/\b(?:dr|doctor)\.?\s+[A-Za-z'-]+/gi, " "));
-    return { named: m && !NOT_A_NAME.has(m[1].toLowerCase()) ? m[1] : null, confident: null, candidates: [], matches: [] };
+    return { named: m && !NOT_A_NAME.has(m[1].toLowerCase()) ? m[1] : null, confident: null, candidates: [], inactive: [], matches: [] };
   }
   const [top, second] = scored;
   const named = top.words.join(" ");
@@ -281,9 +295,11 @@ export function findPatientsInQuestion(question: string, patients: ChatPatient[]
   const strong = top.score >= 1.6 || (topExact >= 1 && top.score >= 1);
   // Nobody else close, or the full name typed exactly while the next one is only near it ("Maria Sample" vs "Mario Sample").
   const sure = strong && (!second || second.score < top.score - 0.3 || (topExact >= 2 && exact(second) < topExact));
-  if (sure) return { named, confident: top, candidates: [], matches: [top.patient] };
-  const candidates = scored.filter((m) => m.score >= Math.max(0.6, top.score - 0.6)).slice(0, MAX_PATIENT_CHOICES);
-  return { named, confident: null, candidates, matches: candidates.map((c) => c.patient) };
+  if (sure) return { named, confident: top, candidates: [], inactive: [], matches: [top.patient] };
+  // Every close match (no cap), active cases first.
+  const close = scored.filter((m) => m.score >= Math.max(0.6, top.score - 0.6));
+  const { shown, hidden } = activeFirst(close, (m) => isActiveCase(m.patient.caseStatus));
+  return { named, confident: null, candidates: shown, inactive: hidden, matches: shown.map((c) => c.patient) };
 }
 
 function usDate(value: string): string {
@@ -299,6 +315,7 @@ export function choiceLabel(p: ChatPatient): string {
     p.dob ? `DOB ${usDate(p.dob)}` : "",
     p.dateOfLoss ? `DOI ${usDate(p.dateOfLoss)}` : "",
     caseNo ? `Case # ${caseNo}` : "",
+    p.caseStatus && !isActiveCase(p.caseStatus) ? p.caseStatus : "",
   ]
     .filter(Boolean)
     .join(" · ");

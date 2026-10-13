@@ -14,6 +14,7 @@ import {
   saveChat,
   stripPatientName,
   type ChatMessage,
+  type ChatChoice,
   type ChatPatient,
   type ChatState,
 } from "@/lib/goat-ai/global-chat";
@@ -36,6 +37,12 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
+import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
+import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
+import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
+import { useWorkspaceMessages } from "@/hooks/use-workspace-messages";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
+import { buildCaseNumber } from "@/lib/follow-up-queue";
 import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { notifyChange } from "@/lib/local-sync";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
@@ -129,7 +136,7 @@ const newId = () => `m-${Date.now().toString(36)}-${Math.random().toString(36).s
 const nowIso = () => new Date().toISOString();
 
 function toChatPatient(p: PatientRecord): ChatPatient {
-  return { id: p.id, fullName: p.fullName, dob: p.dob, dateOfLoss: p.dateOfLoss };
+  return { id: p.id, fullName: p.fullName, dob: p.dob, dateOfLoss: p.dateOfLoss, caseStatus: p.caseStatus };
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +266,7 @@ export function GlobalGoatPopup({
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
   const { addAppointments } = useScheduleAppointments();
+  const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     saveChat(chat);
@@ -403,19 +411,60 @@ export function GlobalGoatPopup({
         push({ role: "goat", text: 'Tell me the patient and the note, like: "add note to Kara\'s file: spoke to atty, waiting for reduction."' });
         return;
       }
-      const hits = matchPatientsByName(req.name, allPatients().filter((p) => !(p as { deleted?: boolean }).deleted));
+      const all = matchPatientsByName(req.name, allPatients().filter((p) => !(p as { deleted?: boolean }).deleted));
+      const split = activeFirst(all, (p) => isActiveCase(p.caseStatus));
+      const hits = split.shown;
       if (!hits.length) {
         push({ role: "goat", text: `I couldn't find a patient named "${req.name}". Check the name and try again.` });
         return;
       }
       if (hits.length > 1) {
-        push({ role: "goat", text: `Which ${req.name}?`, choices: hits.slice(0, 8).map((p) => ({ label: choiceLabel(toChatPatient(p)), question: `add note to ${p.fullName}: ${req.text}` })) });
+        const ch = (p: PatientRecord) => ({ label: choiceLabel(toChatPatient(p)), question: `add note to ${p.fullName}: ${req.text}` });
+        push({ role: "goat", text: `Which ${req.name}?`, ...withInactive(hits.map(ch), split.hidden.map(ch)) });
         return;
       }
       const p = hits[0];
       setChat((c) => ({ ...c, patientId: p.id }));
       push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: req.text, state: "open" } });
       return;
+    }
+    // "tell hanna i need notes for John" → a team message about John's case; posted only on Confirm.
+    if (isTellRequest(question)) {
+      const req = parseTell(question);
+      if (req) {
+        push({ role: "user", text: question, practice: true });
+        const team = buildTeam(loadSigners(), teamLogins);
+        const to = matchRecipient(req.to, team);
+        if (!to.length) {
+          push({ role: "goat", text: `I couldn't find a team member named "${req.to}". Add them under Note signatures in G.O.A.T. Settings (link their login so they get notified).`, links: [{ label: "G.O.A.T. Settings", href: "/settings/goat" }] });
+          return;
+        }
+        const recipient = to[0];
+        const pool = allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map(toChatPatient);
+        const lookup = req.patientName ? findPatientsInQuestion(`about ${req.patientName} `, pool) : findPatientsInQuestion(req.text, pool);
+        if (!lookup.confident && lookup.candidates.length) {
+          const swap = (full: string) => {
+            const t = req.text.replace(/[.?!]+$/, "");
+            const n = req.patientName ?? "";
+            return n && t.toLowerCase().endsWith(n.toLowerCase()) ? `${t.slice(0, t.length - n.length)}${full}` : `${t} about ${full}`;
+          };
+          const ch = (c: { patient: ChatPatient }) => ({ label: choiceLabel(c.patient), question: `tell ${req.to} ${swap(displayName(c.patient.fullName))}` });
+          push({ role: "goat", text: "Which patient is this about?", ...withInactive(lookup.candidates.map(ch), lookup.inactive.map(ch)) });
+          return;
+        }
+        if (!lookup.confident && req.patientName) {
+          push({ role: "goat", text: `I couldn't find a patient named "${req.patientName}". Check the name and try again.` });
+          return;
+        }
+        const pt = lookup.confident?.patient ?? null;
+        const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+        push({
+          role: "goat",
+          text: "Send this message?",
+          msgDraft: { toLabel: recipient.label, toUserId: recipient.userId, text: req.text, patientId: pt?.id, patientName: pt?.fullName, caseLabel: pt ? (caseNo ? `${caseNo} ${pt.fullName}` : pt.fullName) : undefined, state: "open" },
+        });
+        return;
+      }
     }
     // "How do I…" answers come only from NoteGoat's page/button and Settings
     // catalogs (never the model's guess); unknown ones say "I'm not sure".
@@ -454,7 +503,7 @@ export function GlobalGoatPopup({
         if (p) return startBooking(question, p);
       }
       if (found.candidates.length) {
-        push({ role: "goat", text: "Book which patient?", choices: found.candidates.map((c) => ({ label: choiceLabel(c.patient), question: `book ${c.patient.fullName} ${stripPatientName(question, found.named ?? "").replace(/^(please\s+)?(book|schedule)\b/i, "")}`.replace(/\s+/g, " ").trim() })) });
+        push({ role: "goat", text: "Book which patient?", choices: [...found.candidates, ...found.inactive].map((c) => ({ label: choiceLabel(c.patient), question: `book ${c.patient.fullName} ${stripPatientName(question, found.named ?? "").replace(/^(please\s+)?(book|schedule)\b/i, "")}`.replace(/\s+/g, " ").trim() })) });
         return;
       }
       const p = found.named ? null : current ?? patientById(openPatientId);
@@ -477,7 +526,10 @@ export function GlobalGoatPopup({
       push({
         role: "goat",
         text: "Did you mean:",
-        choices: found.candidates.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
+        ...withInactive(
+          found.candidates.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
+          found.inactive.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
+        ),
         pendingQuestion: original,
       });
       return;
@@ -508,7 +560,11 @@ export function GlobalGoatPopup({
   };
 
   // A tapped patient answers the ORIGINAL question; nothing needs retyping.
-  const pick = (msg: ChatMessage, patientId: string | undefined, question?: string) => {
+  const pick = (msg: ChatMessage, patientId: string | undefined, question?: string, showMore?: boolean) => {
+    if (showMore) {
+      setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === msg.id ? { ...m, choices: [...(m.choices ?? []).filter((x) => !x.showMore), ...(m.moreChoices ?? [])], moreChoices: undefined } : m)) }));
+      return;
+    }
     // The chips stay inside the "Did you mean" bubble with the pick highlighted
     // (no separate message for the pick).
     const label = msg.choices?.find((c) => (patientId ? c.patientId === patientId : c.question === question))?.label;
@@ -555,6 +611,7 @@ export function GlobalGoatPopup({
       ) : (
         <PatientAnswerer job={job} onDone={onDone} onPartial={onPartial} patient={jobPatient} />
       ))}
+      {open && <PeopleLoader onPeople={setTeamLogins} />}
       {open && (
         <section
           aria-label="G.O.A.T. chat"
@@ -625,6 +682,7 @@ export function GlobalGoatPopup({
                         {l.label} ↗
                       </Link>
                     ))}
+                    {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -641,7 +699,7 @@ export function GlobalGoatPopup({
                                   : "border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6] disabled:opacity-50"
                             }`}
                             disabled={Boolean(job) || practiceBusy || Boolean(m.picked)}
-                            onClick={() => pick(m, c.patientId, c.question)}
+                            onClick={() => pick(m, c.patientId, c.question, c.showMore)}
                             type="button"
                           >
                             {m.picked === c.label ? "✓ " : ""}
@@ -860,6 +918,104 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
           Confirm
         </button>
         <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={busy} onClick={onCancel} style={{ fontSize: 12 }} type="button">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Choices with inactive cases held back behind "Show inactive (N)". */
+function withInactive(shown: ChatChoice[], hidden: ChatChoice[]): Pick<ChatMessage, "choices" | "moreChoices"> {
+  if (!hidden.length) return { choices: shown };
+  if (!shown.length) return { choices: hidden };
+  return { choices: [...shown, { label: `Show inactive (${hidden.length})`, showMore: true }], moreChoices: hidden };
+}
+
+/** Team logins for "tell <name>", read only while the chat is open. */
+function PeopleLoader({ onPeople }: { onPeople: (p: WorkspacePerson[]) => void }) {
+  const { officeSettings } = useOfficeSettings();
+  const people = useWorkspacePeople((officeSettings.doctorName ?? "").trim());
+  useEffect(() => {
+    onPeople(people);
+  }, [people, onPeople]);
+  return null;
+}
+
+function MessageCard(props: { draft: NonNullable<ChatMessage["msgDraft"]>; onSent: (body: string) => void; onCancel: () => void }) {
+  const { draft } = props;
+  if (draft.state === "sent") {
+    return (
+      <div className="mt-1.5 text-xs">
+        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.sent}</p>
+        <p className="mt-1 font-semibold text-emerald-700">
+          ✓ Sent ·{" "}
+          <Link className="text-[var(--brand-primary)] hover:underline" href="/messages">
+            Open Messages ↗
+          </Link>
+        </p>
+      </div>
+    );
+  }
+  if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not sent.</p>;
+  return <OpenMessageCard {...props} />;
+}
+
+function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatMessage["msgDraft"]>; onSent: (body: string) => void; onCancel: () => void }) {
+  const { postMessage } = useWorkspaceMessages();
+  const { isOwner } = useWorkspaceAccess();
+  const { officeSettings } = useOfficeSettings();
+  const [signers] = useState(() => loadSigners());
+  const [signer] = useState(() => {
+    let last: string | null = null;
+    try {
+      last = window.localStorage.getItem(LAST_SIGNER_KEY);
+    } catch {
+      last = null;
+    }
+    return defaultSigner(signers, getCurrentMembershipSync()?.userId ?? null, last).signer;
+  });
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const sig = signer ? signatureFor(signer) : "";
+  const body = messageBody({ firstName: draft.toLabel, label: draft.toLabel, userId: draft.toUserId }, draft.text, sig);
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
+  return (
+    <div className="mt-2 space-y-1 text-xs" data-goat-message>
+      <p>
+        <span className="text-[var(--text-muted)]">To:</span> <strong>{draft.toLabel}</strong>
+      </p>
+      <p>
+        <span className="text-[var(--text-muted)]">Case:</span> {draft.caseLabel ?? "None (general message)"}
+      </p>
+      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1">{body}</p>
+      <p className="text-[11px] text-[var(--text-muted)]">From: {sig ? sig.slice(1) : "you"}</p>
+      {!draft.toUserId && <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800">{draft.toLabel} isn&apos;t linked to a login, so they won&apos;t get a notification. It still shows in Messages.</p>}
+      {error && <p className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-800">{error}</p>}
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
+        <button
+          className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`}
+          disabled={sending}
+          onClick={async () => {
+            setSending(true);
+            setError("");
+            const ok = await postMessage({
+              body,
+              authorLabel: isOwner ? (officeSettings.doctorName ?? "").trim() || "Admin" : getCurrentMembershipSync()?.label || "Team Member",
+              patientId: draft.patientId,
+              patientName: draft.caseLabel,
+              mentions: draft.toUserId ? [{ userId: draft.toUserId, label: draft.toLabel }] : [],
+            });
+            setSending(false);
+            if (ok) onSent(body);
+            else setError("Couldn't send. Check that you're signed in and try again.");
+          }}
+          style={{ fontSize: 12 }}
+          type="button"
+        >
+          {sending ? "Sending…" : "Confirm"}
+        </button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={sending} onClick={onCancel} style={{ fontSize: 12 }} type="button">
           Cancel
         </button>
       </div>

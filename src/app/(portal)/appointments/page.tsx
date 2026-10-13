@@ -1,5 +1,6 @@
 "use client";
 
+import { nameSearchMatches } from "@/lib/patient-name-match";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
@@ -542,7 +543,7 @@ export default function AppointmentsPage() {
       return [];
     }
     return patients
-      .filter((patient) => patient.fullName.toLowerCase().includes(query))
+      .filter((patient) => nameSearchMatches(patient.fullName, patientSearchDraft))
       .slice(0, 12);
   }, [patientSearchDraft]);
 
