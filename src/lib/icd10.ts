@@ -71,19 +71,66 @@ const SYNONYMS: Record<string, string[]> = {
   herniation: ["displacement"],
   hernia: ["displacement", "hernia"],
   hnp: ["displacement"],
-  bulge: ["displacement"],
-  bulging: ["displacement"],
+  bulge: ["displacement", "degeneration"],
+  bulging: ["displacement", "degeneration"],
+  bulges: ["displacement", "degeneration"],
   protrusion: ["displacement"],
+  protruding: ["displacement"],
   extrusion: ["displacement"],
+  extruded: ["displacement"],
   ddd: ["degeneration"],
+  djd: ["spondylosis", "degeneration"],
   degenerative: ["degeneration", "degenerative"],
   neck: ["cervical", "neck", "cervicalgia"],
-  whiplash: ["sprain"],
+  cervical: ["cervical", "cervicalgia", "cervicothoracic"],
+  thoracic: ["thoracic", "thoracolumbar", "cervicothoracic", "thorax"],
+  lumbar: ["lumbar", "lumbosacral", "lower back", "low back"],
+  lumbosacral: ["lumbosacral"],
+  whiplash: ["sprain of ligaments of cervical spine"],
   lbp: ["low back pain"],
   sciatic: ["sciatica", "sciatic"],
   listhesis: ["spondylolisthesis"],
+  radic: ["radiculopathy"],
+  radicular: ["radiculopathy"],
+  radiculitis: ["radiculopathy", "radiculitis"],
+  stenotic: ["stenosis"],
+  spondylitic: ["spondylosis"],
+  spasms: ["spasm"],
   rotator: ["rotator"],
 };
+
+// Clinical phrases → the words the official descriptions use (all FY2026
+// billable code families; see scripts/tests/icd10-synonyms.test.ts):
+//   annular tear / fissure → M51.A* "Intervertebral annulus fibrosus defect"
+//   neck pain → M54.2 Cervicalgia;  facet syndrome → M47.81* spondylosis without myelopathy or radiculopathy
+//   mid / upper back pain → M54.6 "Pain in thoracic spine"
+//   pinched nerve → M54.1* radiculopathy;  SI joint → sacroiliac
+const PHRASES: Array<[RegExp, string[][]]> = [
+  [/\bannul(?:ar|us)\s+(?:tears?|fissures?|defects?)\b|\bannular\b/g, [["annulus fibrosus defect"]]],
+  [/\bneck\s+pain\b/g, [["cervicalgia"]]],
+  [/\bfacet\s+(?:syndrome|arthropathy|joint\s+syndrome|joint\s+pain|pain|joints?)\b/g, [["spondylosis without myelopathy or radiculopathy"]]],
+  [/\b(?:mid|middle|upper|thoracic)\s+back\s+pain\b/g, [["pain in thoracic spine"]]],
+  [/\bpinched\s+nerves?\b/g, [["radiculopathy"]]],
+  [/\bs\.?i\.?\s+joints?\b|\bsij\b/g, [["sacroiliac"]]],
+  [/\bdisc\s+bulges?\b|\bbulging\s+discs?\b/g, [["disc"], ["displacement", "degeneration"]]],
+];
+
+// Spinal levels ("C5-6", "c5-c6", "L4/5", "L5-S1"): the region is required; the exact level only ranks first.
+const LEVEL_RE = /\b([ctls])(\d{1,2})(?![\d.])\s*(?:[-–/]\s*([ctls])?(\d{1,2})(?![\d.]))?(?![a-z])/g;
+function levelGroups(region: string, n: number, region2: string | undefined, n2: number | undefined): Array<{ alts: string[]; soft?: boolean }> {
+  const r2 = region2 ?? region;
+  const pair = `${region}${r2}`;
+  let regionAlts: string[];
+  if (pair === "cc") regionAlts = ["cervical", "cervicalgia"];
+  else if (pair === "ct") regionAlts = ["cervicothoracic"];
+  else if (pair === "tt") regionAlts = ["thoracic"];
+  else if (pair === "tl") regionAlts = ["thoracolumbar"];
+  else if (pair === "ls" || pair === "ss") regionAlts = ["lumbosacral"];
+  else regionAlts = ["lumbar", "lumbosacral", "lower back", "low back"];
+  const out: Array<{ alts: string[]; soft?: boolean }> = [{ alts: regionAlts }];
+  if (n2 !== undefined) out.push({ alts: [`${region}${n} ${r2}${n2}`], soft: true });
+  return out;
+}
 
 /** "M54", "m5412", "S13.4" — but not a spinal level word like "c5" (two characters). */
 function isCodeToken(token: string): boolean {
@@ -104,18 +151,42 @@ export interface Icd10SearchOptions {
 export function searchIcd10(index: Icd10Index | null, query: string, opts: Icd10SearchOptions = {}): Icd10Entry[] {
   if (!index) return [];
   const limit = opts.limit ?? 50;
-  const tokens = (query ?? "")
-    .toLowerCase()
+  let q = (query ?? "").toLowerCase();
+  const groups: Array<{ alts: string[]; soft?: boolean }> = [];
+  for (const [re, gs] of PHRASES) {
+    if (re.test(q)) {
+      re.lastIndex = 0;
+      q = q.replace(re, " ");
+      for (const g of gs) groups.push({ alts: g });
+    }
+    re.lastIndex = 0;
+  }
+  q = q.replace(LEVEL_RE, (m, r1: string, a1: string, r2: string | undefined, a2: string | undefined) => {
+    // "c5" alone is a level word too; plain codes ("m54", "s13") never match [ctls]+digits only.
+    const n1 = Number(a1);
+    const n2 = a2 !== undefined ? Number(a2) : undefined;
+    const max: Record<string, number> = { c: 8, t: 12, l: 5, s: 5 };
+    if (a1.startsWith("0") || (a2 ?? "").startsWith("0")) return m; // "T07", "C01": codes
+    if (n1 < 1 || n1 > max[r1] || (n2 !== undefined && (n2 < 1 || n2 > max[r2 ?? r1]))) return m;
+    if (r1 === "s" && !r2) return m;
+    if (n2 !== undefined && !r2 && n2 <= n1) return m;
+    const second = n2 !== undefined ? (r2 ?? r1) : undefined;
+    const secondN = n2 !== undefined ? n2 : undefined;
+    groups.push(...levelGroups(r1, n1, second, secondN));
+    return " ";
+  });
+  const tokens = q
     .replace(/[,;:()/\-–]/g, " ")
     .split(/\s+/)
     .map((t) => t.replace(/^[^a-z0-9]+|[^a-z0-9.]+$/g, ""))
     .filter(Boolean);
-  if (!tokens.length) return [];
+  if (!tokens.length && !groups.length) return [];
   const codeTokens = tokens.filter(isCodeToken).map(rawCode);
   const wordTokens = tokens.filter((t) => !isCodeToken(t)).map((t) => t.replace(/[^a-z0-9]/g, "")).filter(Boolean);
   // Single short words ("a") would match nearly everything.
-  if (!codeTokens.length && wordTokens.every((w) => w.length < 2)) return [];
-  const wordAlts = wordTokens.map((w) => [w, ...(SYNONYMS[w] ?? [])].map((a) => ` ${a}`));
+  if (!codeTokens.length && !groups.length && wordTokens.every((w) => w.length < 2)) return [];
+  const wordAlts = [...wordTokens.map((w) => [w, ...(SYNONYMS[w] ?? [])]), ...groups.filter((g) => !g.soft).map((g) => g.alts)].map((alts) => alts.map((a) => ` ${a}`));
+  const softAlts = groups.filter((g) => g.soft).map((g) => g.alts.map((a) => ` ${a}`));
 
   const scored: Array<{ e: Icd10Entry; s: number }> = [];
   for (const e of index.entries) {
@@ -143,6 +214,7 @@ export function searchIcd10(index: Icd10Index | null, query: string, opts: Icd10
       pos += at;
     }
     if (!ok) continue;
+    for (const alts of softAlts) if (alts.some((a) => e.hay.includes(a))) s += 60;
     if (wordAlts.length) {
       // Words found early in a short description rank first
       // ("Radiculopathy, cervical region" before "Cervical disc disorder … with radiculopathy").
