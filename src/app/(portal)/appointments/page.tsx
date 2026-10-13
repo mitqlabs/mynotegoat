@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -453,7 +454,14 @@ export default function AppointmentsPage() {
   }, [globalScheduleSettings, selectedLocationId, officeLocations]);
   const { keyDates } = useKeyDates();
   const [mode, setMode] = useState<AppointmentMode>("schedule");
-  const [selectedDate, setSelectedDate] = useState(() => getTodayIsoDate());
+  // ?date=YYYY-MM-DD opens the schedule on that day (G.O.A.T. "Open Schedule" links).
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (typeof window !== "undefined") {
+      const d = new URLSearchParams(window.location.search).get("date");
+      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    }
+    return getTodayIsoDate();
+  });
   // Patient Flow column sort. "time" = chronological (existing
   // behavior). "type-time" = group by appointment type first, then
   // chronological within each type, so the user can scan all the
@@ -2021,17 +2029,17 @@ export default function AppointmentsPage() {
                     <option value={3}>3 hr</option>
                     <option value={4}>4 hr</option>
                   </select>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2"
                     max={59}
                     min={0}
-                    onChange={(event) =>
+                    onChange={(n) =>
                       setNewAppointmentDraft((current) => ({
                         ...current,
-                        durationMinutes: Math.max(0, Math.min(59, Number(event.target.value) || 0)),
+                        durationMinutes: Math.max(0, Math.min(59, n)),
                       }))
                     }
-                    type="number"
+                    fallback={0}
                     value={newAppointmentDraft.durationMinutes}
                   />
                 </div>
@@ -2090,16 +2098,16 @@ export default function AppointmentsPage() {
                   ) : (
                     <label className="grid gap-1 md:col-span-2">
                       <span className="text-sm font-semibold text-[var(--text-muted)]">Visits *</span>
-                      <input
+                      <NumberInput
                         className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                         min={1}
-                        onChange={(event) =>
+                        onChange={(n) =>
                           setNewAppointmentDraft((current) => ({
                             ...current,
-                            recurVisitCount: Math.max(1, Number(event.target.value) || 1),
+                            recurVisitCount: Math.max(1, n),
                           }))
                         }
-                        type="number"
+                        fallback={1}
                         value={newAppointmentDraft.recurVisitCount}
                       />
                     </label>

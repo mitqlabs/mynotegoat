@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { inferMeridiem, parseTyped } from "@/lib/time-12h";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -1894,17 +1895,17 @@ export function NewAppointmentModal({
                 <option value={4}>4 hr</option>
               </select>
               <div className="flex items-center gap-1">
-                <input
+                <NumberInput
                   className="w-16 rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2 text-center"
                   max={59}
                   min={0}
-                  onChange={(event) =>
+                  onChange={(n) =>
                     setDraft((current) => ({
                       ...current,
-                      durationMinutes: Math.max(0, Math.min(59, Number(event.target.value) || 0)),
+                      durationMinutes: Math.max(0, Math.min(59, n)),
                     }))
                   }
-                  type="number"
+                  fallback={0}
                   value={draft.durationMinutes}
                 />
                 <span className="text-sm text-[var(--text-muted)]">min</span>
@@ -1980,16 +1981,16 @@ export function NewAppointmentModal({
               ) : (
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Visits *</span>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     min={1}
-                    onChange={(event) =>
+                    onChange={(n) =>
                       setDraft((current) => ({
                         ...current,
-                        recurVisitCount: Math.max(1, Number(event.target.value) || 1),
+                        recurVisitCount: Math.max(1, n),
                       }))
                     }
-                    type="number"
+                    fallback={1}
                     value={draft.recurVisitCount}
                   />
                 </label>
@@ -2663,13 +2664,13 @@ function SeriesEditor({
             ) : (
               <label className="grid gap-1">
                 <span className="text-xs font-semibold text-[var(--text-muted)]">Visits</span>
-                <input
+                <NumberInput
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
                   min={1}
-                  onChange={(event) =>
-                    onChange({ ...series, visitCount: Math.max(1, Number(event.target.value) || 1) })
+                  onChange={(n) =>
+                    onChange({ ...series, visitCount: Math.max(1, n) })
                   }
-                  type="number"
+                  fallback={1}
                   value={series.visitCount}
                 />
               </label>

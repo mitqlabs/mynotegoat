@@ -42,10 +42,10 @@ export function applyLabelValueHangingIndent(html: string): string {
   // see EXACTLY what the helper is being asked to process. The
   // alignment bugs I keep failing to fix correctly are caused by my
   // assumptions about the template's HTML structure not matching the
-  // truth. Set window.__DOC_LAYOUT_DEBUG = false to silence.
+  // truth. Opt-in, dev builds only (it prints patient report HTML): set window.__DOC_LAYOUT_DEBUG = true.
   if (typeof window !== "undefined") {
     const w = window as unknown as { __DOC_LAYOUT_DEBUG?: boolean };
-    if (w.__DOC_LAYOUT_DEBUG !== false) {
+    if (process.env.NODE_ENV !== "production" && w.__DOC_LAYOUT_DEBUG === true) {
       console.log("[doc-layout] input HTML:\n" + html);
     }
   }
@@ -171,7 +171,7 @@ export function applyLabelValueHangingIndent(html: string): string {
 
   if (typeof window !== "undefined") {
     const w = window as unknown as { __DOC_LAYOUT_DEBUG?: boolean };
-    if (w.__DOC_LAYOUT_DEBUG !== false) {
+    if (process.env.NODE_ENV !== "production" && w.__DOC_LAYOUT_DEBUG === true) {
       console.log("[doc-layout] output HTML:\n" + next);
     }
   }

@@ -1,5 +1,8 @@
 "use client";
 
+import { ageTokenOn } from "@/lib/age";
+import { isDecompressionSinglePick } from "@/lib/treatment-plans";
+import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -358,19 +361,6 @@ function parseUsDate(value: string) {
   return date;
 }
 
-function getAgeFromDob(dob: string) {
-  const parsed = parseUsDate(toUsDate(dob));
-  if (!parsed) {
-    return "";
-  }
-  const now = new Date();
-  let age = now.getFullYear() - parsed.getFullYear();
-  const monthDiff = now.getMonth() - parsed.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < parsed.getDate())) {
-    age -= 1;
-  }
-  return age > 0 ? `${age}` : "";
-}
 
 function getPronouns(sex?: string) {
   const normalized = (sex ?? "").toLowerCase();
@@ -1805,7 +1795,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     return sectionMacroRuns.find((entry) => entry.id === editingMacroRunId) ?? null;
   }, [editingMacroRunId, sectionMacroRuns]);
 
-  const buildMacroContext = (patientId: string): Record<string, string> => {
+  // asOfDate: the note's date of service, so {{AGE}} is the age on the visit
+  // date (notes are often written later). Today only when no date is known.
+  const buildMacroContext = (patientId: string, asOfDate?: string): Record<string, string> => {
     const patient = patients.find((entry) => entry.id === patientId);
     const names = getNames(patient?.fullName ?? "");
     const pronouns = getPronouns(patient?.sex);
@@ -1814,7 +1806,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       FIRST_NAME: names.firstName,
       LAST_NAME: names.lastName,
       FULL_NAME: `${names.firstName} ${names.lastName}`.trim(),
-      AGE: getAgeFromDob(patient?.dob ?? ""),
+      AGE: ageTokenOn(patient?.dob ?? "", asOfDate),
       SEX: patient?.sex ?? "",
       DOB: toUsDate(patient?.dob ?? ""),
       INJURY_DATE: toUsDate(patient?.dateOfLoss ?? ""),
@@ -1839,7 +1831,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       setMessage("Encounter is closed. Reopen it to add SOAP macro text.");
       return;
     }
-    const context = buildMacroContext(selectedEncounter.patientId);
+    const context = buildMacroContext(selectedEncounter.patientId, selectedEncounter.encounterDate);
     // Inject specialist picker selection into context if present
     const specialistAnswer = answers.__specialist_referred__;
     if (typeof specialistAnswer === "string" && specialistAnswer.trim()) {
@@ -2032,7 +2024,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       setMessage("Encounter is closed. Reopen it to import.");
       return;
     }
-    const context = buildMacroContext(selectedEncounter.patientId);
+    const context = buildMacroContext(selectedEncounter.patientId, selectedEncounter.encounterDate);
     const stripBlankWrappers = (html: string) =>
       html
         .replace(
@@ -2103,8 +2095,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     coverage: NonNullable<ReturnType<typeof resolvePlanCoverage>>,
     patientId: string,
     decompVisitIndex: number,
+    encounterDate?: string,
   ): Array<{ snippetId: string; macro: MacroTemplate; answers: MacroAnswerMap; html: string }> => {
-    const context = buildMacroContext(patientId);
+    const context = buildMacroContext(patientId, encounterDate);
     const stripBlankWrappers = (html: string) =>
       html
         .replace(
@@ -2289,6 +2282,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         selectedEncounter.patientId,
         selectedEncounter.encounterDate,
       ),
+      selectedEncounter.encounterDate,
     );
     if (!prepared.length) {
       if (!options?.silent) {
@@ -2622,7 +2616,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           const t = parseUsDate(n.encounterDate)?.getTime();
           return t != null && t >= planStartT && t <= planEndT && t < targetT;
         }).length;
-        const snippets = buildPlanSnippets(coverage, source.patientId, priorInRange + createdIds.length);
+        const snippets = buildPlanSnippets(coverage, source.patientId, priorInRange + createdIds.length, row.dateUs);
         for (const { snippetId, macro, answers, html } of snippets) {
           appendSoapSection(newId, "plan", html);
           addMacroRun(newId, {
@@ -2932,7 +2926,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           signed: Boolean(note.signed),
           appointmentStatus: appointment?.status ?? null,
           planHtml: note.soap.plan,
-          prefilledPlanHtml: buildPlanSnippets(noteCoverage, patientId, decompIndex)
+          prefilledPlanHtml: buildPlanSnippets(noteCoverage, patientId, decompIndex, note.encounterDate)
             .map((snippet) => snippet.html)
             .join(""),
         });
@@ -3033,6 +3027,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           { plan: nextPlan, weekday, regions: planRegionsForWeekday(nextPlan, weekday) },
           patientId,
           decompIndex,
+          note.encounterDate,
         );
         if (!snippets.length) continue;
         note.macroRuns
@@ -4806,23 +4801,23 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           value={entry.procedureCode}
                         />
                         {/* Price */}
-                        <input
+                        <NumberInput
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
                           disabled={selectedEncounter.signed}
                           min={0}
-                          onChange={(event) => updateCharge(selectedEncounter.id, entry.id, { unitPrice: Number(event.target.value) })}
+                          onChange={(n) => updateCharge(selectedEncounter.id, entry.id, { unitPrice: n })}
                           step="0.01"
-                          type="number"
+                          fallback={0}
                           value={entry.unitPrice}
                         />
                         {/* Units */}
-                        <input
+                        <NumberInput
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:outline-none"
                           disabled={selectedEncounter.signed}
                           min={1}
-                          onChange={(event) => updateCharge(selectedEncounter.id, entry.id, { units: Number(event.target.value) })}
+                          onChange={(n) => updateCharge(selectedEncounter.id, entry.id, { units: n })}
                           step={1}
-                          type="number"
+                          fallback={0}
                           value={entry.units}
                         />
                         {/* Total */}
@@ -5132,6 +5127,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       ? [answerValue.trim()]
                       : [];
                   const selectedAnswer = selectedAnswers[0] ?? "";
+                  // Decompression "Targeted Segment" / "Which program": one pick
+                  // per section even if the saved macro question is multi-select.
+                  const singlePick =
+                    Boolean(question.multiSelect) && isDecompressionSinglePick(runMacro.buttonName, question.label);
                   const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
                   const numericOptions = Array.from(
                     new Set(
@@ -5156,7 +5155,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       key={`${question.id}-${option}`}
                       className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
                     >
-                      {question.multiSelect ? (
+                      {singlePick ? (
+                        <input
+                          checked={selectedAnswers.includes(option)}
+                          onChange={() =>
+                            setRunMacroAnswers((current) => ({ ...current, [question.id]: [option] }))
+                          }
+                          type="radio"
+                        />
+                      ) : question.multiSelect ? (
                         <input
                           checked={selectedAnswers.includes(option)}
                           onChange={() =>
@@ -5209,7 +5216,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
                   return (
                     <div key={question.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                      <p className="text-sm font-semibold">{question.label}</p>
+                      <p className="text-sm font-semibold">
+                        {question.label}
+                        {singlePick ? " (pick one)" : ""}
+                      </p>
                       {question.options.length > 0 ? (
                         <>
                           {usePainScaleColumns ? (

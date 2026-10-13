@@ -12,7 +12,7 @@ export type DxSaveToListConfig = {
   guessFolderId: (entry: Icd10Code) => string;
   /** Save to the list. Return an error message to keep the panel open. */
   onSave: (entry: Icd10Code, folderId: string, bundleIds: string[]) => string | null;
-  /** Button text (default "+ Dx Code"). */
+  /** Button text (default "+Dx"). */
   buttonLabel?: string;
 };
 
