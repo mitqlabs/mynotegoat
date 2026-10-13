@@ -31,7 +31,9 @@ export interface FileFacts {
   regions: string[];
 }
 
-export const FACTS_VERSION = 2;
+export const FACTS_VERSION = 3;
+/** Text read per file for facts (dates, headers and plans sit in the first pages). */
+export const MAX_FACT_CHARS = 250_000;
 
 /** Small stable hash (FNV-1a) of the file's name + text. */
 export function factsHash(file: Pick<GoatFile, "name" | "pages">): string {
@@ -125,7 +127,8 @@ const REGIONS: Array<[string, RegExp]> = [
 ];
 
 export function extractFileFacts(file: GoatFile): FileFacts {
-  const text = (file.pages ?? []).join("\n");
+  // Capped: a 1.7 MB OCR dump would make every pattern pass over it on the main thread.
+  const text = (file.pages ?? []).join("\n").slice(0, MAX_FACT_CHARS);
   const docType = classifyFactsDoc(file.name, text);
   const facts: FileFacts = {
     fileId: file.id, fileName: file.name, hash: factsHash(file), docType,

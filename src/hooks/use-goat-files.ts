@@ -95,8 +95,17 @@ export function useGoatFiles(patientId: string | undefined, enabled: boolean): G
   // Facts per file: loaded from / saved to this browser's IndexedDB (re-extracted when a file changes).
   useEffect(() => {
     if (!enabled || !patientId || !files.some((f) => f.pages?.length)) return;
-    const t = window.setTimeout(() => void syncPatientFacts(patientId, files), 800);
-    return () => window.clearTimeout(t);
+    // On idle, after things settle: never competes with typing or rendering.
+    let idle = 0;
+    const t = window.setTimeout(() => {
+      const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) idle = ric(() => void syncPatientFacts(patientId, files), { timeout: 10_000 });
+      else void syncPatientFacts(patientId, files);
+    }, 3000);
+    return () => {
+      window.clearTimeout(t);
+      if (idle) (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idle);
+    };
   }, [enabled, patientId, files]);
   const counts = useMemo(() => ({
     total: files.length,
