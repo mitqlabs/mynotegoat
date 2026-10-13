@@ -48,6 +48,7 @@ export function toMDY(raw: string): string {
 
 /** First date written right after one of the labels (within ~80 characters, may cross a line). */
 export function dateAfterLabel(text: string, label: RegExp): string {
+  text = (text ?? "").slice(0, 250_000);
   const re = new RegExp(`${label.source}[\\s\\S]{0,80}?${DATE_SRC}`, "i");
   const m = re.exec(text ?? "");
   return m ? toMDY(m[1]) : "";
@@ -57,7 +58,7 @@ export const referralDateIn = (text: string) => dateAfterLabel(text, REFERRAL_LA
 
 /** A date written right after a visit label ("DOS: 05/06/2026", "Consultation Visit\n\n02/25/2026"), not one further along the sentence. */
 export function visitDateIn(text: string, avoid: string[] = []): string {
-  const t = text ?? "";
+  const t = (text ?? "").slice(0, 250_000);
   const re = new RegExp(`(?:${VISIT_LABEL.source}|\\bvisit(?=\\s*:))\\s*(?:[:#–-]\\s*)?(?:on\\s+|of\\s+)?${DATE_SRC}`, "i");
   const m = re.exec(t);
   if (m) return toMDY(m[1]);
@@ -101,7 +102,7 @@ const dayOf = (mdy: string) => {
  * DOB / injury / accident / MVA date.
  */
 export function reportVisitDate(text: string, opts: { after?: string; avoid?: string[] } = {}): string {
-  const t = text ?? "";
+  const t = (text ?? "").slice(0, 250_000);
   const avoid = new Set([...(opts.avoid ?? []), dobIn(t)].filter(Boolean).map((d) => toMDY(d)));
   const labeled = visitDateIn(t, [...avoid]);
   if (labeled && !avoid.has(labeled)) return labeled;
@@ -210,7 +211,15 @@ export function findReferralFacts(ctx: Pick<GoatContext, "patientName" | "specia
   ) ?? (!asked && !doctors.length ? ctx.specialists.find((s) => s.sentDate || s.completedDate) : undefined);
 
   const files = (ctx.files ?? []).filter((f) => f.pages && f.pages.length);
-  const textOf = (f: GoatFile) => (f.pages ?? []).join("\n");
+  const texts = new Map<string, string>();
+  const textOf = (f: GoatFile) => {
+    let t = texts.get(f.id);
+    if (t === undefined) {
+      t = (f.pages ?? []).join("\n").slice(0, 250_000);
+      texts.set(f.id, t);
+    }
+    return t;
+  };
   const aboutDoctor = (f: GoatFile) => {
     if (doctors.length) return doctors.some((d) => mentions(f.name, d.name) || mentions(textOf(f).slice(0, 4000), d.name));
     if (asked) return asked.match.test(f.name) || asked.ask.test(textOf(f));

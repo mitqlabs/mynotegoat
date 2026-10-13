@@ -98,6 +98,19 @@ async function idbDelete(key: string): Promise<void> {
 function persist(key: string, value: string | null) {
   latest.set(key, value);
   if (writing.has(key)) return;
+  // Coalesce bursts (typing, bulk updates): write the newest value at most about once a second.
+  if (persistTimers.has(key)) return;
+  persistTimers.set(key, setTimeout(() => {
+    persistTimers.delete(key);
+    startPersist(key);
+  }, PERSIST_DEBOUNCE_MS));
+}
+
+const PERSIST_DEBOUNCE_MS = 1000;
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function startPersist(key: string) {
+  if (writing.has(key) || !latest.has(key)) return;
   const run = (async () => {
     while (latest.has(key)) {
       const v = latest.get(key)!;
@@ -119,6 +132,8 @@ export function installBigCacheShim() {
   const ls = window.localStorage;
   original = { getItem: ls.getItem.bind(ls), setItem: ls.setItem.bind(ls), removeItem: ls.removeItem.bind(ls) };
   const o = original;
+  // Leaving the page: start any debounced IndexedDB writes now.
+  window.addEventListener("pagehide", () => void flushBigCache());
   ls.getItem = (key: string) => (hydrated && BIG.has(key) ? (mem.get(key) ?? null) : o.getItem(key));
   ls.setItem = (key: string, value: string) => {
     if (!hydrated || !BIG.has(key)) return o.setItem(key, value);
@@ -187,6 +202,11 @@ export function bigCacheUsesIdb(): boolean {
 
 /** Wait for pending IndexedDB writes (tests, sign-out). */
 export async function flushBigCache(): Promise<void> {
+  for (const [key, t] of persistTimers) {
+    clearTimeout(t);
+    persistTimers.delete(key);
+    startPersist(key);
+  }
   await Promise.all(Array.from(writing.values()));
 }
 

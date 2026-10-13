@@ -308,22 +308,107 @@ export function loadEncounterNoteRecords() {
     return [];
   }
 
+  // A cache write waiting for idle time: that's the newest local copy.
+  if (pendingLocal) return pendingLocal.slice();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return [];
     }
+    // Same string as last time (the IndexedDB mirror hands back the same value): skip re-parsing
+    // thousands of notes. Every hook instance used to re-parse the whole cache on every save.
+    if (raw === parsedMemo.raw) return parsedMemo.records.slice();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed
+    const records = parsed
       .map(normalizeRecord)
       .filter((entry): entry is EncounterNoteRecord => Boolean(entry));
+    parsedMemo = { raw, records };
+    return records.slice();
   } catch {
     return [];
   }
 }
+
+let parsedMemo: { raw: string | null; records: EncounterNoteRecord[] } = { raw: null, records: [] };
+/** Records saved but not yet written to the local cache (IndexedDB mode writes on idle). */
+let pendingLocal: EncounterNoteRecord[] | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSince = 0;
+const LOCAL_WRITE_DEBOUNCE_MS = 800;
+const LOCAL_WRITE_MAX_WAIT_MS = 5000;
+
+/** Write the local cache now: prune, serialize once, store, then clear the saved notes' drafts. */
+function writeLocalCache(records: EncounterNoteRecord[], changedIds: Set<string> | null): boolean {
+  const localSubset = pruneForLocalStorage(records);
+  let ok = true;
+  try {
+    const raw = JSON.stringify(localSubset);
+    window.localStorage.setItem(STORAGE_KEY, raw);
+    parsedMemo = { raw, records: localSubset };
+  } catch (err) {
+    ok = false;
+    console.error("[encounter-notes] local cache write failed (cloud save continues):", err);
+  }
+  // Committed → clear the crash-safe drafts of the notes that changed (not every note on file).
+  if (ok) {
+    try {
+      for (const record of records) {
+        if (changedIds && !changedIds.has(record.id)) continue;
+        for (const section of encounterSections) {
+          const safeId = record.id.replace(/[^a-zA-Z0-9_-]/g, "");
+          const safeSection = section.replace(/[^a-zA-Z0-9_-]/g, "");
+          window.localStorage.removeItem(`casemate.draft.v1.${safeId}.${safeSection}`);
+        }
+      }
+    } catch {
+      // Non-fatal — scanDrafts GC will clean up on next app load.
+    }
+  }
+  return ok;
+}
+
+const pendingChanged = new Set<string>();
+function flushPendingLocal() {
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  const recs = pendingLocal;
+  if (!recs) return;
+  const changed = new Set(pendingChanged);
+  pendingChanged.clear();
+  writeLocalCache(recs, changed);
+  pendingLocal = null;
+  pendingSince = 0;
+}
+
+/** Write any waiting local cache now (page hide, tests). */
+export function flushEncounterNotesLocalCache() {
+  flushPendingLocal();
+}
+
+function scheduleLocalWrite(records: EncounterNoteRecord[], changed: string[]) {
+  pendingLocal = records;
+  changed.forEach((id) => pendingChanged.add(id));
+  if (!pendingSince) pendingSince = Date.now();
+  if (pendingTimer) clearTimeout(pendingTimer);
+  const wait = Math.max(0, Math.min(LOCAL_WRITE_DEBOUNCE_MS, LOCAL_WRITE_MAX_WAIT_MS - (Date.now() - pendingSince)));
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null;
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (ric) ric(flushPendingLocal, { timeout: 2000 });
+    else flushPendingLocal();
+  }, wait);
+  if (!flushHooked) {
+    flushHooked = true;
+    window.addEventListener("pagehide", flushPendingLocal);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushPendingLocal();
+    });
+  }
+}
+let flushHooked = false;
 
 let previousNotesById: Map<string, EncounterNoteRecord> = new Map();
 
@@ -383,8 +468,9 @@ function pruneByBudget(records: EncounterNoteRecord[]): EncounterNoteRecord[] {
   // In IndexedDB there's room for far more than localStorage's ~5 MB.
   const idb = bigCacheUsesIdb();
   const LOCAL_CACHE_DAYS = idb ? 400 : LOCAL_CACHE_DAYS_LS;
-  const LOCAL_CACHE_MAX_RECORDS = idb ? 5000 : LOCAL_CACHE_MAX_RECORDS_LS;
-  const LOCAL_CACHE_MAX_BYTES = idb ? 40_000_000 : LOCAL_CACHE_MAX_BYTES_LS;
+  // IndexedDB has room, but every save serializes this set: keep it a speed cache, not the archive.
+  const LOCAL_CACHE_MAX_RECORDS = idb ? 1500 : LOCAL_CACHE_MAX_RECORDS_LS;
+  const LOCAL_CACHE_MAX_BYTES = idb ? 12_000_000 : LOCAL_CACHE_MAX_BYTES_LS;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - LOCAL_CACHE_DAYS);
   const cutoffStamp = cutoff.getTime();
@@ -406,13 +492,17 @@ function pruneByBudget(records: EncounterNoteRecord[]): EncounterNoteRecord[] {
   // Pass 3: byte-budget prune. Serialize; if over budget, strip the
   // oldest record and retry until we fit. Guarantees we never exceed
   // LOCAL_CACHE_MAX_BYTES which means localStorage.setItem won't throw.
-  let serialized = JSON.stringify(kept);
-  if (serialized.length <= LOCAL_CACHE_MAX_BYTES) return kept;
+  // One serialization per record (the old loop re-serialized the whole set per dropped record).
+  const sizes = new Map(kept.map((r) => [r.id, JSON.stringify(r).length + 1]));
+  let total = 2;
+  for (const n of sizes.values()) total += n;
+  if (total <= LOCAL_CACHE_MAX_BYTES) return kept;
   kept = [...kept].sort((a, b) => encounterDateStamp(b) - encounterDateStamp(a));
-  while (kept.length > 1 && JSON.stringify(kept).length > LOCAL_CACHE_MAX_BYTES) {
-    kept.pop(); // drop oldest
+  while (kept.length > 1 && total > LOCAL_CACHE_MAX_BYTES) {
+    const dropped = kept.pop()!; // drop oldest
+    total -= sizes.get(dropped.id) ?? 0;
   }
-  serialized = JSON.stringify(kept);
+  const serialized = { length: total };
   if (serialized.length > LOCAL_CACHE_MAX_BYTES) {
     // Single record is somehow over budget. Keep it anyway — the caller
     // will see a quota error on setItem, but dropping it entirely means
@@ -484,56 +574,18 @@ export function saveEncounterNoteRecords(records: EncounterNoteRecord[]): boolea
     return false;
   }
 
-  // Only cache recent encounters in localStorage to stay under 5 MB.
-  // ALL records still go to the cloud via dual-write below.
-  const localSubset = pruneForLocalStorage(safeRecords);
-
-  // The cloud is the record; localStorage is only a speed cache. A failed
-  // cache write must NOT stop the cloud write. It used to `return false`
-  // right here, before the dual-write below — so once the browser's 5 MB
-  // quota filled (appointments + patients alone take ~3 MB), every note save
-  // on that browser silently stopped reaching the cloud. Verified live on
-  // 2026-09-12: typing in a note logged QuotaExceededError and produced zero
-  // encounter_notes requests.
+  // Only recent encounters are cached locally; ALL records still go to the cloud below.
+  // A failed cache write must NOT stop the cloud write (see 2026-09-12 quota incident).
+  // IndexedDB mode (thousands of notes): the cache write is debounced to idle time so a
+  // keystroke never serializes the whole set; reads see the pending copy meanwhile.
   let localCacheOk = true;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localSubset));
-  } catch (err) {
-    localCacheOk = false;
-    console.error("[encounter-notes] localStorage write failed (cloud save continues):", err);
+  if (bigCacheUsesIdb()) {
+    const changed = safeRecords.filter((r) => previousNotesById.get(r.id)?.updatedAt !== r.updatedAt).map((r) => r.id);
+    scheduleLocalWrite(safeRecords, changed);
+  } else {
+    localCacheOk = writeLocalCache(safeRecords, new Set(safeRecords.filter((r) => previousNotesById.get(r.id)?.updatedAt !== r.updatedAt).map((r) => r.id)));
   }
 
-  // Committed successfully → clear the crash-safe drafts for each
-  // encounter/section whose current content matches what we just
-  // wrote. Drafts only exist to recover work that hadn't been
-  // committed yet, so keeping them after a successful commit is noise.
-  // We lazy-import draft-recovery because encounter-notes.ts is a
-  // shared module and draft-recovery is browser-only.
-  // Clear every pending draft for every encounter we just saved,
-  // SYNCHRONOUSLY — no dynamic import, no async gap. The previous
-  // version used `void import("@/lib/draft-recovery").then(...)`,
-  // which left a ~10ms window after commit during which a fresh
-  // keystroke could write a new draft before the old drafts were
-  // cleared, re-inventing the exact "banner on every reload"
-  // problem the wider fix was meant to solve. Do the removeItem
-  // calls inline against the same prefix shape that draft-recovery
-  // uses so there's no cross-module ordering race.
-  // Drafts are cleared only after a successful local commit. If the cache
-  // write failed, the drafts are the only local safety copy until the cloud
-  // write lands, so leave them alone.
-  try {
-    for (const record of localCacheOk ? safeRecords : []) {
-      for (const section of encounterSections) {
-        // Matches draftKeyFor(record.id, section) — keep in sync with
-        // src/lib/draft-recovery.ts DRAFT_KEY_PREFIX.
-        const safeId = record.id.replace(/[^a-zA-Z0-9_-]/g, "");
-        const safeSection = section.replace(/[^a-zA-Z0-9_-]/g, "");
-        window.localStorage.removeItem(`casemate.draft.v1.${safeId}.${safeSection}`);
-      }
-    }
-  } catch {
-    // Non-fatal — scanDrafts GC will clean up on next app load.
-  }
   // Always dual-write the FULL set to cloud (not the pruned subset).
   // We don't await here because saveEncounterNoteRecords is sync for
   // backwards compatibility, but the inner function reports failures
