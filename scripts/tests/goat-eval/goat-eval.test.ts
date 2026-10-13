@@ -12,8 +12,9 @@ import { factsForFiles, patientsToEvict, __resetFactsMemForTest } from "../../..
 import { buildTimeline, compactTimeline } from "../../../src/lib/goat-timeline";
 import { buildFactSources } from "../../../src/lib/goat-ai/fact-sources";
 import { buildSystemPrompt } from "../../../src/lib/goat-ai/prompt";
-import { defaultModelFor } from "../../../src/lib/goat-ai/engine";
-import { bookingReply, isBookingRequest } from "../../../src/lib/goat-howto";
+import { isBookingRequest } from "../../../src/lib/goat-howto";
+import { planBooking } from "../../../src/lib/goat-booking";
+import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
 import { FILES, mockContext } from "./mock-patient";
 
 const results: Array<{ name: string; ok: boolean; err?: string }> = [];
@@ -83,9 +84,13 @@ evalCase("next visit", () => {
 });
 evalCase("scheduling intent", () => {
   assert.ok(isBookingRequest("book kara an appointment friday"));
-  const r = bookingReply("book kara an appointment friday", "2026-10-12", "Kara Testpatient");
-  has(r.text, "Kara Testpatient");
-  assert.ok(r.links.length > 0);
+  const step = planBooking({ question: "book kara an appointment friday at 3", patient: { id: "p1", fullName: "Kara Testpatient" }, todayIso: "2026-10-12", appointments: [], settings: getDefaultScheduleSettings() });
+  assert.equal(step.kind, "draft");
+  if (step.kind === "draft") {
+    assert.equal(step.draft.date, "2026-10-16");
+    assert.equal(step.draft.time, "15:00");
+    assert.equal(step.draft.taken, false);
+  }
 });
 evalCase("two-part question", () => {
   const r = askGoat(ctx, "when was the xray and when is the next visit");
@@ -114,12 +119,6 @@ evalCase("+ mode prompt: warm direct answer, follow-ups, never invent", () => {
   const p = buildSystemPrompt({ showCosts: true, regionOrder: ["Cervical", "Lumbar"] }, ["visit"]);
   has(p, "one or two warm", "You could also ask", "Never guess or invent", "say plainly what's missing", "Earlier turns");
 });
-evalCase("model default: accurate when the device can hold it", () => {
-  assert.equal(defaultModelFor({ maxBufferMb: 4096, freeMb: 10000 }), "accurate");
-  assert.equal(defaultModelFor({ maxBufferMb: 256, freeMb: 10000 }), "fast");
-  assert.equal(defaultModelFor({ maxBufferMb: 4096, freeMb: 1000 }), "fast");
-});
-
 const passed = results.filter((r) => r.ok).length;
 for (const r of results) console.log(`${r.ok ? "PASS" : "FAIL"} ${r.name}${r.err ? ` — ${r.err}` : ""}`);
 console.log(`\nG.O.A.T. eval: ${passed}/${results.length} passed`);

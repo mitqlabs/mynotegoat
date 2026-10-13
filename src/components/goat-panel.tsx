@@ -7,8 +7,7 @@ import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
 import { CopyButton } from "@/components/copy-button";
-import { AnswerOrigin, GoatStatusLine, PlusIntroCard, PlusModeBadge, SmartWorking, useGoatAiState, useSmartAssist, useSmartMode, type GoatStatus } from "@/components/goat-smart";
-import { goatAiState as goatAiStateNow, loadGoatAi, refreshGoatAiSupport } from "@/lib/goat-ai/engine";
+import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
 
@@ -300,27 +299,12 @@ export function GoatPanel({
   // Settings → G.O.A.T.: Show costs / fees and Region order shape recommendations (and their Copy text).
   const { prefs } = useGoatAnswerPrefs();
   const context: GoatContext = useMemo(() => ({ ...pageContext, recFormat: recFormatFromPrefs(prefs) }), [pageContext, prefs]);
-  // + mode (off until turned on on this computer): the rules answer first and the in-browser
-  // model only fills gaps in that same answer (e.g. reads the whole report for recommendations).
-  const [smartOn] = useSmartMode();
-  const ai = useGoatAiState();
-  const smart = useSmartAssist();
-  const smartActive = smartOn && ai.status !== "unsupported" && ai.status !== "error";
-  useEffect(() => {
-    if (!smartOn) return;
-    void refreshGoatAiSupport().then(() => {
-      const s = goatAiStateNow();
-      if (s.status === "idle" && s.cached) void loadGoatAi().catch(() => undefined);
-    });
-  }, [smartOn]);
-
   // Recomputed from live page data, so an answer updates as the page is edited.
   const ruleResult: GoatResult | null = useMemo(
     () => (asked ? askGoat(context, asked) : null),
     [asked, context],
   );
-  // One answer: Smart mode's version of the regular answer once it's ready.
-  const result: GoatResult | null = smartActive && smart.answer && smart.question === asked ? smart.answer.result : ruleResult;
+  const result: GoatResult | null = ruleResult;
 
   // "Searching…" for a moment after Ask, so the status line follows what happens (static, no animation).
   const [searchingFor, setSearchingFor] = useState("");
@@ -337,7 +321,6 @@ export function GoatPanel({
     setQuestion(trimmed);
     setAsked(trimmed);
     setSearchingFor(trimmed);
-    if (smartActive) void smart.run(context, trimmed);
   };
 
   const fileResult = result?.files ?? null;
@@ -364,17 +347,13 @@ export function GoatPanel({
     ) : (
       filesCardInner
     );
-  const smartWrote = Boolean(smartActive && smart.answer && smart.question === asked && smart.answer.smartUsed);
-  const plusWorking = smartActive && smart.working && smart.question === asked;
   const status: GoatStatus = !result
     ? files?.reader.running
       ? "reading"
       : "ready"
     : searchingFor === asked
       ? "searching"
-      : plusWorking
-        ? "plus"
-        : files?.reader.running
+      : files?.reader.running
           ? "reading"
           : nothing
             ? "notFound"
@@ -413,8 +392,8 @@ export function GoatPanel({
         <span className="flex items-center gap-2">
           <GoatAvatar className="bg-white/80" size={32} />
           <span className="flex flex-col items-start leading-tight">
-            <span className="flex items-center gap-2">G.O.A.T. <PlusModeBadge ai={ai} smartOn={smartOn} /></span>
-            <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
+            <span>G.O.A.T.</span>
+            <GoatStatusLine className="font-medium text-white/95" status={status} />
           </span>
         </span>
         <span className="text-xl">{open ? "−" : "+"}</span>
@@ -445,8 +424,6 @@ export function GoatPanel({
             </button>
           </form>
 
-          <PlusIntroCard />
-
           {!result && (
             <div className="mt-3 flex items-start gap-2">
               <GoatAvatar size={28} />
@@ -468,7 +445,6 @@ export function GoatPanel({
                   onClick={() => {
                     setAsked("");
                     setQuestion("");
-                    smart.reset();
                   }}
                   type="button"
                 >
@@ -476,19 +452,6 @@ export function GoatPanel({
                 </button>
               </div>
 
-              {smartActive && smart.question === asked && <SmartWorking ai={ai} status={smart.status} working={smart.working} />}
-              {smartActive && smart.question === asked && smart.working && smart.text && (
-                <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold">
-                    <GoatAvatar size={22} />
-                    Answer
-                  </div>
-                  <p className="mt-1 whitespace-pre-line text-sm">{smart.text}</p>
-                </div>
-              )}
-              {smartActive && smart.question === asked && smart.answer?.warnings.map((w) => (
-                <p key={w} className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">{w}</p>
-              ))}
               {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
@@ -521,7 +484,6 @@ export function GoatPanel({
                   )}
                   <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-1.5 text-xs text-[var(--text-muted)]">
                     <span className="min-w-0">
-                      <AnswerOrigin plus={smartWrote && a.source.includes("+ mode")} />{" "}
                       From: {a.source}
                       {a.sources?.length && files?.openFile ? (
                         a.sources.map((src) => (
@@ -600,7 +562,7 @@ export function GoatPanel({
                 <FilesCard files={fileResult} onOpen={files?.openFile} />
               )}
 
-              {nothing && !plusWorking && (
+              {nothing && (
                 <p className="rounded-xl bg-[var(--bg-soft)] p-2.5 text-sm">
                   I couldn&apos;t find that in {where}. I only read what&apos;s there and I won&apos;t
                   guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
@@ -614,7 +576,7 @@ export function GoatPanel({
 
           <p className="mt-3 text-[11px] text-[var(--text-muted)]">
             {filesOn
-              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser${smartActive ? ", and + mode answers on this computer" : ""}. Nothing leaves NoteGoat.`
+              ? `G.O.A.T. reads only ${where} and its uploaded files. Files are read right here in your browser. Nothing leaves NoteGoat.`
               : `G.O.A.T. reads only ${where}. Nothing leaves NoteGoat.`}
           </p>
         </div>

@@ -201,17 +201,3 @@ export function resolveRequestedDay(question: string, todayIso: string): Resolve
   return null;
 }
 
-export const BOOKING_NOT_YET =
-  "+ mode can't book appointments yet. That's coming next, and it will always ask you to confirm first.";
-
-/** Plain reply for a booking request, with the Schedule opened on that day. */
-export function bookingReply(question: string, todayIso: string, patientName: string | null): { text: string; links: ToolLink[] } {
-  const day = resolveRequestedDay(question, todayIso);
-  const who = patientName ? ` for ${patientName}` : "";
-  const when = day ? ` on ${dayLabel(day.iso)}` : "";
-  const note = day?.note && day.note.includes(".") ? `\n${day.note}` : "";
-  return {
-    text: `${BOOKING_NOT_YET}\nTo book${who}${when}, open the Schedule and click New Appointment.${note}`,
-    links: [{ label: day ? `Open Schedule (${dayLabel(day.iso)})` : "Open Schedule", href: day ? `/appointments?date=${day.iso}` : "/appointments" }],
-  };
-}
