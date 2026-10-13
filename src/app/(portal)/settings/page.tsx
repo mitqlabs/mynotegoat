@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -3667,14 +3668,14 @@ export default function SettingsPage() {
 
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold">Max appointments per time slot</span>
-                  <input
+                  <NumberInput
                     className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
                     max={20}
                     min={1}
-                    onChange={(event) =>
-                      setMaxAppointmentsPerSlot(Math.max(1, Number(event.target.value) || 1))
+                    onChange={(n) =>
+                      setMaxAppointmentsPerSlot(Math.max(1, n))
                     }
-                    type="number"
+                    fallback={1}
                     value={scheduleSettings.maxAppointmentsPerSlot}
                   />
                   <span className="text-xs text-[var(--text-muted)]">
@@ -3785,11 +3786,11 @@ export default function SettingsPage() {
               <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
                 Duration (Min)
               </span>
-              <input
+              <NumberInput
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
                 min={5}
-                onChange={(event) => setAppointmentTypeDurationDraft(Number(event.target.value) || 5)}
-                type="number"
+                onChange={(n) => setAppointmentTypeDurationDraft(n)}
+                fallback={5}
                 value={appointmentTypeDurationDraft}
               />
             </label>
@@ -3864,11 +3865,11 @@ export default function SettingsPage() {
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
                   <label className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-muted)]">
                     Duration
-                    <input
+                    <NumberInput
                       className="w-16 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-1 text-center"
                       min={5}
-                      onChange={(event) => updateAppointmentType(entry.id, { durationMin: Number(event.target.value) || 5 })}
-                      type="number"
+                      onChange={(n) => updateAppointmentType(entry.id, { durationMin: n })}
+                      fallback={5}
                       value={entry.durationMin}
                     />
                     min
@@ -4217,12 +4218,12 @@ export default function SettingsPage() {
                         />
                         After
                       </label>
-                      <input
+                      <NumberInput
                         className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                         disabled={dashboardWorkspaceSettings.patientFollowUp.mriAppearMode !== "days_from_initial"}
                         min={1}
-                        onChange={(event) => setMriAppearDays(Number(event.target.value) || 1)}
-                        type="number"
+                        onChange={(n) => setMriAppearDays(n)}
+                        fallback={1}
                         value={dashboardWorkspaceSettings.patientFollowUp.mriAppearDays}
                       />
                       <span className="text-sm text-[var(--text-muted)]">days from initial</span>
@@ -4232,11 +4233,11 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm">Warn after</span>
-                      <input
+                      <NumberInput
                         className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                         min={0}
-                        onChange={(event) => setMriNoScheduleWarningDays(Number(event.target.value) || 0)}
-                        type="number"
+                        onChange={(n) => setMriNoScheduleWarningDays(n)}
+                        fallback={0}
                         value={dashboardWorkspaceSettings.patientFollowUp.mriNoScheduleWarningDays}
                       />
                       <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
@@ -4346,11 +4347,11 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm">Warn after</span>
-                      <input
+                      <NumberInput
                         className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                         min={0}
-                        onChange={(event) => setSpecialistNoScheduleWarningDays(Number(event.target.value) || 0)}
-                        type="number"
+                        onChange={(n) => setSpecialistNoScheduleWarningDays(n)}
+                        fallback={0}
                         value={dashboardWorkspaceSettings.patientFollowUp.specialistNoScheduleWarningDays}
                       />
                       <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
@@ -4446,12 +4447,12 @@ export default function SettingsPage() {
                       />
                       No Update alert after
                     </label>
-                    <input
+                    <NumberInput
                       className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                       disabled={!priorityRules.includeNoUpdate}
                       min={1}
-                      onChange={(event) => setNoUpdateDaysThreshold(Number(event.target.value) || 1)}
-                      type="number"
+                      onChange={(n) => setNoUpdateDaysThreshold(n)}
+                      fallback={1}
                       value={priorityRules.noUpdateDaysThreshold}
                     />
                     <span className="text-sm text-[var(--text-muted)]">days</span>
@@ -4466,12 +4467,12 @@ export default function SettingsPage() {
                       />
                       Payment Status after
                     </label>
-                    <input
+                    <NumberInput
                       className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                       disabled={!priorityRules.includeRbStatusCheck}
                       min={1}
-                      onChange={(event) => setRbStatusCheckDaysThreshold(Number(event.target.value) || 1)}
-                      type="number"
+                      onChange={(n) => setRbStatusCheckDaysThreshold(n)}
+                      fallback={1}
                       value={priorityRules.rbStatusCheckDaysThreshold}
                     />
                     <span className="text-sm text-[var(--text-muted)]">days from report submitted</span>
@@ -4486,33 +4487,33 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Stale after (days)</span>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     min={1}
-                    onChange={(event) => setFollowUpStaleDaysThreshold(Number(event.target.value) || 1)}
-                    type="number"
+                    onChange={(n) => setFollowUpStaleDaysThreshold(n)}
+                    fallback={1}
                     value={dashboardWorkspaceSettings.patientFollowUp.staleDaysThreshold}
                   />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Max Case Flow rows</span>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     min={1}
-                    onChange={(event) => setFollowUpMaxItems(Number(event.target.value) || 1)}
-                    type="number"
+                    onChange={(n) => setFollowUpMaxItems(n)}
+                    fallback={1}
                     value={dashboardWorkspaceSettings.patientFollowUp.maxItems}
                   />
                 </label>
 
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Max alert items</span>
-                  <input
+                  <NumberInput
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     min={1}
-                    onChange={(event) => setMaxItems(Number(event.target.value) || 1)}
-                    type="number"
+                    onChange={(n) => setMaxItems(n)}
+                    fallback={1}
                     value={priorityRules.maxItems}
                   />
                 </label>

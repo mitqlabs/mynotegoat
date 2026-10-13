@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/number-input";
 import { useMemo, useState } from "react";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import type { TreatmentPackage } from "@/lib/billing-macros";
@@ -482,18 +483,18 @@ export function PackageBuilderSettingsPanel() {
                               <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
                                 Total Visits
                               </span>
-                              <input
+                              <NumberInput
                                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                                 min={1}
-                                onChange={(event) =>
+                                onChange={(n) =>
                                   updatePackage(entry.id, {
                                     totalVisits: Math.max(
                                       1,
-                                      Number(event.target.value) || 1,
+                                      n,
                                     ),
                                   })
                                 }
-                                type="number"
+                                fallback={1}
                                 value={entry.totalVisits}
                               />
                             </label>
@@ -501,19 +502,19 @@ export function PackageBuilderSettingsPanel() {
                               <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
                                 Discounted Price ($)
                               </span>
-                              <input
+                              <NumberInput
                                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                                 min={0}
-                                onChange={(event) =>
+                                onChange={(n) =>
                                   updatePackage(entry.id, {
                                     discountedPrice: Math.max(
                                       0,
-                                      Number(event.target.value) || 0,
+                                      n,
                                     ),
                                   })
                                 }
                                 step="0.01"
-                                type="number"
+                                fallback={0}
                                 value={entry.discountedPrice}
                               />
                             </label>
@@ -583,19 +584,19 @@ export function PackageBuilderSettingsPanel() {
                               <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
                                 Visits
                               </span>
-                              <input
+                              <NumberInput
                                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                                 min={1}
-                                onChange={(event) =>
+                                onChange={(n) =>
                                   setPackageTreatmentDrafts((current) => ({
                                     ...current,
                                     [entry.id]: {
                                       treatmentId: current[entry.id]?.treatmentId ?? "",
-                                      visits: Math.max(1, Number(event.target.value) || 1),
+                                      visits: Math.max(1, n),
                                     },
                                   }))
                                 }
-                                type="number"
+                                fallback={1}
                                 value={draft.visits}
                               />
                             </label>
@@ -646,17 +647,17 @@ export function PackageBuilderSettingsPanel() {
                                     <p className="text-sm font-semibold">
                                       {treatment.name} ({treatment.procedureCode})
                                     </p>
-                                    <input
+                                    <NumberInput
                                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                                       min={1}
-                                      onChange={(event) =>
+                                      onChange={(n) =>
                                         updatePackageTreatmentVisits(
                                           entry.id,
                                           item.treatmentId,
-                                          Math.max(1, Number(event.target.value) || 1),
+                                          Math.max(1, n),
                                         )
                                       }
-                                      type="number"
+                                      fallback={1}
                                       value={item.visits}
                                     />
                                     <p className="text-sm font-semibold">
@@ -727,15 +728,15 @@ export function PackageBuilderSettingsPanel() {
                           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
                             Total Visits
                           </span>
-                          <input
+                          <NumberInput
                             className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                             min={1}
-                            onChange={(event) =>
+                            onChange={(n) =>
                               setTierDraft(group.key, {
-                                totalVisits: Math.max(1, Number(event.target.value) || 1),
+                                totalVisits: Math.max(1, n),
                               })
                             }
-                            type="number"
+                            fallback={1}
                             value={tierDraft.totalVisits}
                           />
                         </label>
@@ -743,19 +744,19 @@ export function PackageBuilderSettingsPanel() {
                           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
                             Discounted Price ($)
                           </span>
-                          <input
+                          <NumberInput
                             className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1"
                             min={0}
-                            onChange={(event) =>
+                            onChange={(n) =>
                               setTierDraft(group.key, {
                                 discountedPrice: Math.max(
                                   0,
-                                  Number(event.target.value) || 0,
+                                  n,
                                 ),
                               })
                             }
                             step="0.01"
-                            type="number"
+                            fallback={0}
                             value={tierDraft.discountedPrice}
                           />
                         </label>
@@ -823,16 +824,16 @@ export function PackageBuilderSettingsPanel() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
               Visits
             </span>
-            <input
+            <NumberInput
               className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2"
               min={1}
-              onChange={(event) =>
+              onChange={(n) =>
                 setNewFamilyDraft((current) => ({
                   ...current,
-                  totalVisits: Math.max(1, Number(event.target.value) || 1),
+                  totalVisits: Math.max(1, n),
                 }))
               }
-              type="number"
+              fallback={1}
               value={newFamilyDraft.totalVisits}
             />
           </label>
@@ -840,17 +841,17 @@ export function PackageBuilderSettingsPanel() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)]">
               Price ($)
             </span>
-            <input
+            <NumberInput
               className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2"
               min={0}
-              onChange={(event) =>
+              onChange={(n) =>
                 setNewFamilyDraft((current) => ({
                   ...current,
-                  discountedPrice: Math.max(0, Number(event.target.value) || 0),
+                  discountedPrice: Math.max(0, n),
                 }))
               }
               step="0.01"
-              type="number"
+              fallback={0}
               value={newFamilyDraft.discountedPrice}
             />
           </label>
