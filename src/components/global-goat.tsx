@@ -22,7 +22,7 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useGoatPatientContext } from "@/hooks/use-goat-patient-context";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
-import { GoatStatusLine, PlusIntroCard, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
+import { GoatStatusLine, PlusIntroCard, PlusModeBadge, useGoatAiState, useSmartMode, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
@@ -504,7 +504,7 @@ export function GlobalGoatPopup({
             <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80 object-cover" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-lg font-semibold leading-tight">
-                G.O.A.T. <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
+                G.O.A.T. <PlusModeBadge ai={ai} smartOn={smartOn} /> <GoatStatusLine ai={ai} className="font-medium text-white/95" status={status} />
               </div>
               <div className="truncate text-xs text-white/90">
                 {current ? (
@@ -610,7 +610,7 @@ export function GlobalGoatPopup({
                     {m.patientId && (
                       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                         <span className="flex items-center gap-2">
-                          {m.smart ? "+ mode helped · check the sources" : "From NoteGoat"}
+                          {m.smart ? "Written by + mode · check the sources" : "Basic lookup"}
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">

@@ -309,3 +309,37 @@ export function GoatPlusLoadStatus({ ai, compact = false }: { ai: GoatAiState; c
     </div>
   );
 }
+
+/** "+ mode" pill for every G.O.A.T. header: On (model ready), Loading, Off (or Unavailable). */
+export function plusModeState(smartOn: boolean, ai: GoatAiState): "on" | "loading" | "off" | "unavailable" {
+  if (!smartOn) return "off";
+  if (ai.status === "ready") return "on";
+  if (ai.status === "unsupported" || ai.status === "error") return "unavailable";
+  return "loading";
+}
+
+const PLUS_BADGE: Record<ReturnType<typeof plusModeState>, { text: string; cls: string }> = {
+  on: { text: "+ mode: On", cls: "bg-emerald-500 text-white" },
+  loading: { text: "+ mode: Loading…", cls: "bg-amber-300 text-amber-950" },
+  off: { text: "+ mode: Off", cls: "bg-white/25 text-white" },
+  unavailable: { text: "+ mode: Unavailable", cls: "bg-rose-200 text-rose-900" },
+};
+
+export function PlusModeBadge({ smartOn, ai }: { smartOn: boolean; ai: GoatAiState }) {
+  const state = plusModeState(smartOn, ai);
+  const b = PLUS_BADGE[state];
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${b.cls}`} data-plus-mode={state} title={state === "off" ? "Answers come from the basic lookup" : state === "on" ? "The in-browser model can help answer" : undefined}>
+      {b.text}
+    </span>
+  );
+}
+
+/** Small note on each answer: who wrote it. */
+export function AnswerOrigin({ plus }: { plus: boolean }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${plus ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`} data-answer-origin={plus ? "plus" : "basic"}>
+      {plus ? "Written by + mode" : "Basic lookup"}
+    </span>
+  );
+}

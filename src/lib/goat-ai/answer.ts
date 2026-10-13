@@ -6,6 +6,7 @@
  * → check against the sources (verify.ts).
  */
 
+import { findReferralFacts, referralFactLines } from "@/lib/goat-referrals";
 import type { GoatContext } from "@/lib/goat";
 import type { GoatAnswerPrefs } from "@/lib/goat-answer-prefs";
 import { buildAiSources, type AiRetrieval } from "@/lib/goat-ai/sources";
@@ -33,6 +34,17 @@ export async function answerSmart(input: {
 }): Promise<SmartAnswer> {
   const t0 = performance.now();
   const retrieval = buildAiSources(input.context, input.question);
+  // Referral / visit dates the rules already pulled out: handed to the model as a source.
+  const refFacts = findReferralFacts(input.context, input.question);
+  if (refFacts) {
+    retrieval.sources.unshift({
+      id: `S${retrieval.sources.length + 1}`,
+      title: "Referral & visit dates (found by NoteGoat)",
+      kind: "page",
+      section: "specialist",
+      lines: referralFactLines(refFacts).map((text) => ({ text })),
+    });
+  }
   if (!retrieval.sources.length) {
     const text = retrieval.unread
       ? `${NOT_FOUND} ${retrieval.unread} file${retrieval.unread === 1 ? " hasn't" : "s haven't"} been read yet; use "Read files" and ask again.`
