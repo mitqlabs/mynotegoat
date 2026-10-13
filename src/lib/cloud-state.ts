@@ -1,5 +1,6 @@
 "use client";
 
+import { bigCacheEntries } from "@/lib/big-cache";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
 import { notifyChange } from "@/lib/local-sync";
@@ -297,6 +298,11 @@ function readLocalSnapshot(): LocalSnapshot {
 
     const value = window.localStorage.getItem(key);
     snapshot[key] = value ?? "";
+  }
+  // Notes / appointments now live in IndexedDB (see big-cache.ts) and no longer
+  // show up in localStorage.key(): add them so the snapshot is unchanged.
+  for (const [key, value] of bigCacheEntries()) {
+    if (!(key in snapshot)) snapshot[key] = value;
   }
   return snapshot;
 }
