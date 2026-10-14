@@ -32,7 +32,7 @@ export default function GoatSettingsPage() {
       <section className="panel-card p-4">
         <h3 className="text-xl font-semibold">Note signatures</h3>
         <p className="text-sm text-[var(--text-muted)]">
-          Notes added with G.O.A.T. end with the signer: doctors sign &quot;-Dr. Mike&quot;, everyone else their first name (&quot;-Hannah&quot;). Link a person to their login to sign automatically; otherwise the note card asks &quot;Signed as&quot;. Saved in this browser.
+          Notes added with G.O.A.T. end with the signer: doctors sign &quot;-Dr. Mike&quot;, everyone else their first name (&quot;-Hannah&quot;). Link a person to their login to sign automatically; otherwise the note card asks &quot;Signed as&quot;. Saved to your account.
         </p>
         <div className="mt-3">
           <NoteSignersPanel />

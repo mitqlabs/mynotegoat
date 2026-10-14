@@ -128,6 +128,47 @@ function checkFile(path) {
 
 walk(ROOT);
 
+// Rule 4: every casemate.* / notegoat.* storage key must be registered as
+// cloud-backed in src/lib/cloud-key-registry.ts. Nothing is browser-only.
+{
+  const regPath = join(ROOT, "lib", "cloud-key-registry.ts");
+  const regSrc = readFileSync(regPath, "utf8");
+  const registry = new Map(
+    [...regSrc.matchAll(/^\s*"([^"]+)":\s*"(workspace|table|user|system)"/gm)].map((m) => [m[1], m[2]]),
+  );
+  const isPrefix = (k) => /[.:-]$/.test(k);
+  const known = (key) =>
+    registry.has(key) || [...registry.keys()].some((r) => isPrefix(r) && key.startsWith(r));
+  const BARE = new Set(["casemate.", "notegoat.", "notegoat-"]);
+  const files = [];
+  (function collect(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) collect(full);
+      else if (/\.(ts|tsx|js|mjs)$/.test(entry)) files.push(full);
+    }
+  })(ROOT);
+  const unknown = new Map();
+  for (const file of files) {
+    if (file === regPath) continue;
+    const src = readFileSync(file, "utf8");
+    for (const m of src.matchAll(/["'`]((?:casemate\.|notegoat[.-])[A-Za-z0-9_.:-]*)/g)) {
+      const key = m[1];
+      if (BARE.has(key) || known(key)) continue;
+      // IndexedDB database names / storage buckets, not localStorage keys.
+      if (/^notegoat-(backup-?|big-cache|goat-facts|goat-text)$/.test(key)) continue;
+      if (!unknown.has(key)) unknown.set(key, file.replace(ROOT, "src"));
+    }
+  }
+  for (const [key, file] of unknown) {
+    failures.push({
+      file,
+      rule: "storage key not registered as cloud-backed",
+      hint: `"${key}" isn't in src/lib/cloud-key-registry.ts. Nothing may be browser-only: register it as workspace / table / user (mirrored to the user's cloud row) / system.`,
+    });
+  }
+}
+
 if (failures.length === 0) {
   console.log("✓ sanity-check: all rules pass");
   process.exit(0);

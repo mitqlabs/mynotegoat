@@ -1,5 +1,45 @@
 "use client";
 
+import { sameJson, unionMerge } from "@/lib/kv-merge";
+
+/** Keys merged by union instead of "cloud replaces local" on boot. */
+export const UNION_MERGE_KEYS = new Set([
+  "casemate.cash-payments.v1",
+  "casemate.patient-packages.v1",
+  "casemate.contact-subcategories.v1",
+  "casemate.key-date-dismissals.v1",
+  "casemate.duplicate-dismissals.v1",
+  "casemate.attorney-not-same.v1",
+]);
+
+/**
+ * Per-browser display preferences (sorting, column order, collapsed
+ * panels). They hold no practice data, so they survive a sign-out or
+ * workspace switch instead of being wiped with the workspace cache.
+ */
+export const PRESERVE_ON_WIPE_KEYS = new Set([
+  "casemate.sidebar-collapsed",
+  "casemate.soap-split-height.v1",
+  "casemate.quick-glance.open.v1",
+  "casemate.files-view-mode",
+  "casemate.contacts-sort.v1",
+  "casemate.dashboard.sections-open.v1",
+  "casemate.timer-sound-repeat.v1",
+  "casemate.patient-sort-column.v1",
+  "casemate.patient-sort-asc.v1",
+  "casemate.patient-column-order.v1",
+  "casemate.cf-sort-levels.v1",
+  "casemate.cf-sort-column.v1",
+  "casemate.cf-sort-asc.v1",
+  "casemate.cf-secondary-sort-column.v1",
+  "casemate.cf-secondary-sort-asc.v1",
+  "casemate.cf-hidden-categories.v1",
+  "casemate.cf-column-order.v1",
+  "casemate.attorney-perf-sort-levels.v1",
+  "casemate.attorney-perf-sort-column.v1",
+  "casemate.attorney-perf-sort-asc.v1",
+  "casemate.macro-question-clipboard",
+]);
 import { bigCacheEntries } from "@/lib/big-cache";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
@@ -252,7 +292,8 @@ function clearLocalWorkspaceData() {
       if (
         key === ACTIVE_WORKSPACE_KEY ||
         key.startsWith(`${LOCAL_SYNC_AT_PREFIX}.`) ||
-        key === BACKUP_KEY
+        key === BACKUP_KEY ||
+        PRESERVE_ON_WIPE_KEYS.has(key)
       ) {
         continue;
       }
@@ -824,6 +865,9 @@ async function bootstrapTableBackedEntities() {
           "casemate.patient-diagnoses.v1",
           "casemate.patient-follow-up-overrides.v1",
           "casemate.treatment-plans.v1",
+          // Written to the cloud but never pulled back before. Union-merged.
+          "casemate.cash-payments.v1",
+          "casemate.patient-packages.v1",
         ],
         macros: [
           "casemate.soap-macros.v1",
@@ -846,6 +890,9 @@ async function bootstrapTableBackedEntities() {
           // Dual-written to the "contacts" namespace, so it hydrates here.
           "casemate.marketing.v1",
           "casemate.marketing-settings.v1",
+          // Written to the cloud but never pulled back before (lost on a
+          // workspace switch / sign-out). Union-merged — see UNION_MERGE_KEYS.
+          "casemate.contact-subcategories.v1",
         ],
         tasks: [
           "casemate.tasks.v1",
@@ -877,6 +924,14 @@ async function bootstrapTableBackedEntities() {
           "casemate.goat-settings.v1",
           // G.O.A.T. answer settings: Show costs / fees, Region order (Settings → G.O.A.T.).
           "casemate.goat-answer-prefs.v1",
+          // Written to the cloud but never pulled back before, so a
+          // workspace switch / sign-out lost them locally.
+          "casemate.key-date-dismissals.v1",
+          "casemate.duplicate-dismissals.v1",
+          "casemate.attorney-not-same.v1",
+          "casemate.team-settings.v1",
+          "casemate.team-member-order.v1",
+          "casemate.onboarding.v1",
         ],
       };
 
@@ -962,6 +1017,31 @@ async function bootstrapTableBackedEntities() {
               // hadn't synced yet (the orphaned-upload bug). A union by id
               // (newer updatedAt wins, tombstones respected) can't drop either
               // side's records.
+              // Union-merge keys: keep everything from both sides so a stale
+              // copy (either side) can never drop data; upload if cloud lacks some.
+              if (UNION_MERGE_KEYS.has(key)) {
+                let localParsed: unknown = null;
+                try {
+                  localParsed = localRaw ? JSON.parse(localRaw) : null;
+                } catch {
+                  localParsed = null;
+                }
+                const merged = unionMerge(localParsed, value);
+                try {
+                  window.localStorage.setItem(key, JSON.stringify(merged));
+                  replacedCount += 1;
+                  notifyChange(key);
+                } catch (storageErr) {
+                  console.warn(`[Cloud Sync] Could not write "${key}" to localStorage (quota?):`, storageErr);
+                  continue;
+                }
+                if (!sameJson(merged, value)) {
+                  void upsertKvValue(key, merged).catch((uploadErr: unknown) =>
+                    console.error(`[Cloud Sync] Uploading merged "${key}" failed:`, uploadErr),
+                  );
+                }
+                continue;
+              }
               if (key === FILES_INDEX_KEY) {
                 mergeFilesIndexIntoLocal(value);
                 replacedCount += 1;
