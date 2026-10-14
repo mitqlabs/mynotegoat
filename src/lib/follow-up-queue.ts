@@ -360,7 +360,13 @@ export function buildFollowUpItems(
     const isRefused = (entry: unknown) =>
       Boolean((entry as { patientRefused?: boolean })?.patientRefused);
     const xrayAllEntries = Array.isArray(patient.xrayReferrals) ? patient.xrayReferrals : [];
-    const mriAllEntries = Array.isArray(patient.mriReferrals) ? patient.mriReferrals : [];
+    // Prior / outside studies (isPrior) hold findings only; they are not
+    // our referrals, so Case Flow ignores them entirely.
+    const isPriorStudy = (entry: unknown) =>
+      Boolean((entry as { isPrior?: boolean })?.isPrior);
+    const mriAllEntries = Array.isArray(patient.mriReferrals)
+      ? patient.mriReferrals.filter((entry) => !isPriorStudy(entry))
+      : [];
     const xrayOpenEntries = xrayAllEntries.filter((entry) => !isRefused(entry));
     const mriOpenEntries = mriAllEntries.filter((entry) => !isRefused(entry));
     const xrayHasEntries = xrayOpenEntries.length > 0;

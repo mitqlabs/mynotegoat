@@ -781,6 +781,7 @@ export default function DashboardPage() {
       if (Array.isArray(patient.mriReferrals)) {
         for (const raw of patient.mriReferrals) {
           const ref = raw as Record<string, unknown>;
+          if (ref.isPrior === true) continue; // outside study, not our referral
           const center = typeof ref.center === "string" ? ref.center.trim() : "";
           if (!center) continue;
           addReferral(patient, center, "mri", countStudies(ref), refSentDate(ref));
