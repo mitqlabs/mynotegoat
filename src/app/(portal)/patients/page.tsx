@@ -44,6 +44,7 @@ import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } f
 import { buildPrintTableHtml, formatPrintedAt, printHtmlDocument, type PrintCell } from "@/lib/print-table";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { matchesOfficeFilter, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patient-list-sort";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -66,8 +67,6 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
 }
 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
-const SORT_COLUMN_KEY = "casemate.patient-sort-column.v1";
-const SORT_ASC_KEY = "casemate.patient-sort-asc.v1";
 type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "review";
 const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "review"];
 
@@ -603,16 +602,8 @@ export default function PatientsPage() {
   const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
 
   // Sort state (persisted)
-  const [sortColumn, setSortColumn] = useState<ListColumnId>(() => {
-    if (typeof window === "undefined") return "patient";
-    const saved = window.localStorage.getItem(SORT_COLUMN_KEY);
-    return saved && defaultColumnOrder.includes(saved as ListColumnId) ? (saved as ListColumnId) : "patient";
-  });
-  const [sortAsc, setSortAsc] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const saved = window.localStorage.getItem(SORT_ASC_KEY);
-    return saved === null ? true : saved === "true";
-  });
+  const [sortColumn, setSortColumn] = useState<ListColumnId>(() => loadPatientListSort(defaultColumnOrder, { column: "patient", asc: true }).column);
+  const [sortAsc, setSortAsc] = useState(() => loadPatientListSort(defaultColumnOrder, { column: "patient", asc: true }).asc);
 
   // Case Flow sort: ordered list of {column, asc} levels (max 3). Each
   // level breaks ties from the level above. The legacy primary/secondary
@@ -1073,18 +1064,11 @@ export default function PatientsPage() {
   }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex]);
 
   const toggleSort = (col: ListColumnId) => {
-    if (sortColumn === col) {
-      setSortAsc((prev) => {
-        const next = !prev;
-        window.localStorage.setItem(SORT_ASC_KEY, String(next));
-        return next;
-      });
-    } else {
-      setSortColumn(col);
-      setSortAsc(true);
-      window.localStorage.setItem(SORT_COLUMN_KEY, col);
-      window.localStorage.setItem(SORT_ASC_KEY, "true");
-    }
+    // Remembered per browser (outside the workspace cloud snapshot).
+    const next = nextSort({ column: sortColumn, asc: sortAsc }, col);
+    setSortColumn(next.column);
+    setSortAsc(next.asc);
+    savePatientListSort(next);
   };
 
   const handleColumnDragStart = (col: ListColumnId) => {
