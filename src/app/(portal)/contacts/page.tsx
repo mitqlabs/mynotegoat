@@ -12,6 +12,53 @@ import { formatUsPhoneInput } from "@/lib/phone-format";
 import { ConsolidateAttorneysModal } from "@/components/consolidate-attorneys-modal";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { ScrollLock } from "@/components/scroll-lock";
+import {
+  CONTACT_SORT_STORAGE_KEY,
+  initialsFor,
+  nextContactSort,
+  parseContactSort,
+  pastelFor,
+  sortContacts,
+  type ContactSort,
+  type ContactSortKey,
+} from "@/lib/contact-sort";
+
+const COLS =
+  "md:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_10.5rem_minmax(0,1.9fr)]";
+
+function PhoneIcon() {
+  return (
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <rect height="14" rx="2" width="18" x="3" y="5" />
+      <path d="m3 7 9 6 9-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SortHeader({ label, k, sort, onSort }: { label: string; k: ContactSortKey; sort: ContactSort; onSort: (k: ContactSortKey) => void }) {
+  const active = sort.key === k;
+  return (
+    <button
+      className={`inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-[var(--brand-primary)] ${active ? "text-[var(--brand-primary)]" : ""}`}
+      onClick={() => onSort(k)}
+      title={`Sort by ${label.toLowerCase()}`}
+      type="button"
+    >
+      {label}
+      <span aria-hidden className={`text-[10px] ${active ? "opacity-100" : "opacity-30"}`}>
+        {active && sort.dir === "desc" ? "▼" : "▲"}
+      </span>
+    </button>
+  );
+}
 
 type ContactFormState = {
   name: string;
@@ -140,9 +187,25 @@ export default function ContactsPage() {
   const { roleTier, deleteRule } = useWorkspaceAccess();
   const canEditContacts = isAdminTier(roleTier) || roleTier === "manager";
   const canDeleteContacts = deleteRule("contacts") !== "never";
+  // Clicking a name opens the contact (edit form, with Delete inside).
+  const canOpenContact = canEditContacts || canDeleteContacts;
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedSubCategory, setSelectedSubCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
+  // Remembered per browser. The portal only mounts on the client, so
+  // reading localStorage here can't cause a hydration mismatch.
+  const [sort, setSort] = useState<ContactSort>(() =>
+    typeof window === "undefined" ? parseContactSort(null) : parseContactSort(window.localStorage.getItem(CONTACT_SORT_STORAGE_KEY)),
+  );
+  const changeSort = (key: ContactSortKey) => {
+    const next = nextContactSort(sort, key);
+    setSort(next);
+    try {
+      window.localStorage.setItem(CONTACT_SORT_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
   const defaultCategory = useMemo<ContactRecord["category"]>(() => "Attorney", []);
 
   const [showConsolidateModal, setShowConsolidateModal] = useState(false);
@@ -238,8 +301,8 @@ export default function ContactsPage() {
           return haystack.includes(query);
         })
       : list;
-    return [...searched].sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts, resolvedSelectedCategory, resolvedSelectedSubCategory, contactSearch]);
+    return sortContacts(searched, sort);
+  }, [contacts, resolvedSelectedCategory, resolvedSelectedSubCategory, contactSearch, sort]);
 
   const startEditing = (contact: ContactRecord) => {
     setEditingContactId(contact.id);
@@ -416,31 +479,57 @@ export default function ContactsPage() {
         />
       )}
 
-      <section className="panel-card overflow-hidden p-0">
-        <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_9.5rem_minmax(0,1.6fr)_7.5rem] items-center gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)] md:grid">
-          <span>Name</span>
-          <span>Category</span>
-          <span>Phone / Fax</span>
-          <span>Email</span>
-          <span className="text-right">Actions</span>
+      <section className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_4px_16px_rgba(16,24,40,0.05)]">
+        <div className={`hidden items-center gap-4 border-b border-[var(--line-soft)] px-5 py-2.5 text-[11px] font-semibold text-[#7b8794] md:grid ${COLS}`}>
+          <span className="pl-11"><SortHeader k="name" label="Name" onSort={changeSort} sort={sort} /></span>
+          <SortHeader k="category" label="Category" onSort={changeSort} sort={sort} />
+          <span className="uppercase tracking-wide">Phone</span>
+          <span className="uppercase tracking-wide">Email</span>
+        </div>
+        <div className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2 text-[11px] font-semibold text-[#7b8794] md:hidden">
+          <span className="uppercase tracking-wide">Sort</span>
+          <SortHeader k="name" label="Name" onSort={changeSort} sort={sort} />
+          <SortHeader k="category" label="Category" onSort={changeSort} sort={sort} />
         </div>
 
         {filteredContacts.length === 0 && (
-          <p className="px-4 py-3 text-sm text-[var(--text-muted)]">
+          <p className="px-5 py-4 text-sm text-[var(--text-muted)]">
             No contacts found for this category yet.
           </p>
         )}
 
-        <ul className="divide-y divide-[var(--line-soft)]">
-        {filteredContacts.map((contact) => {
+        <ul>
+        {filteredContacts.map((contact, index) => {
           const isEditing = editingContactId === contact.id;
           const emailRows = toDisplayEmails(contact);
+          const pill = pastelFor(contact.category);
+          const avatar = pastelFor(contact.name);
+          const showGroup =
+            sort.key === "category" &&
+            (index === 0 || filteredContacts[index - 1].category !== contact.category);
+          const groupCount = showGroup
+            ? filteredContacts.filter((c) => c.category === contact.category).length
+            : 0;
+          const groupHeader = showGroup ? (
+            <li
+              className="flex items-center gap-2 border-t border-[var(--line-soft)] bg-[#f8fafc] px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide first:border-t-0"
+              data-contact-group
+              key={`group-${contact.category}`}
+              style={{ color: pill.fg }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: pill.fg }} />
+              {contact.category}
+              <span className="font-medium text-[#9aa5b1]">{groupCount}</span>
+            </li>
+          ) : null;
 
           if (isEditing) {
-            return (
-              <li key={contact.id} className="bg-[var(--bg-soft)] px-4 py-3">
-                <p className="mb-2 text-sm font-semibold">Editing {contact.name}</p>
-                <form className="grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-2 py-1" onSubmit={(e) => { e.preventDefault(); saveEditedContact(); }}>
+            return [
+              groupHeader,
+              <li key={contact.id} className="border-t border-[var(--line-soft)] bg-[#f8fafc] px-5 py-3 first:border-t-0">
+                <p className="mb-2 text-sm font-semibold">{contact.name}</p>
+                <form className="grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-2 py-1" onSubmit={(e) => { e.preventDefault(); if (canEditContacts) saveEditedContact(); }}>
+                  <fieldset className="contents" disabled={!canEditContacts}>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
@@ -543,92 +632,114 @@ export default function ContactsPage() {
                     <p className="text-sm font-semibold text-[#b43b34]">{editContactError}</p>
                   )}
 
-                  <div className="flex justify-end gap-2 pt-1">
+                  </fieldset>
+                  <div className="flex items-center gap-2 pt-1">
+                    {canDeleteContacts && (
+                      <button
+                        className="rounded-lg px-3 py-1 text-sm font-semibold text-[#b43b34] hover:bg-[rgba(180,59,52,0.10)]"
+                        onClick={() => void handleDeleteContact(contact)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    )}
+                    <span className="flex-1" />
                     <button
                       className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
                       onClick={cancelEditing}
                       type="button"
                     >
-                      Cancel
+                      {canEditContacts ? "Cancel" : "Close"}
                     </button>
-                    <button
-                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
-                      type="submit"
-                    >
-                      Save
-                    </button>
+                    {canEditContacts && (
+                      <button
+                        className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                        type="submit"
+                      >
+                        Save
+                      </button>
+                    )}
                   </div>
                 </form>
-              </li>
-            );
+              </li>,
+            ];
           }
 
-          return (
+          return [
+            groupHeader,
             <li
               key={contact.id}
-              className="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 px-4 py-2 text-sm transition-colors hover:bg-[rgba(13,121,191,0.04)] md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_9.5rem_minmax(0,1.6fr)_7.5rem]"
+              className={`group grid grid-cols-[minmax(0,1fr)] items-start gap-x-4 gap-y-1 border-t border-[#eef1f4] px-5 py-2.5 text-[13px] text-[#334155] transition-colors first:border-t-0 hover:bg-[#f6f9fc] ${COLS}`}
               data-contact-row
             >
-              <div className="col-start-1 row-start-1 min-w-0">
-                <p className="truncate font-semibold leading-6" title={contact.name}>{contact.name}</p>
-                {contact.address && (
-                  <p className="truncate text-xs text-[var(--text-muted)]" title={contact.address}>{contact.address}</p>
-                )}
+              <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                  style={{ background: avatar.bg, color: avatar.fg }}
+                >
+                  {initialsFor(contact.name)}
+                </span>
+                <div className="min-w-0">
+                  {canOpenContact ? (
+                    <button
+                      className="block max-w-full cursor-pointer truncate text-left text-[14px] font-semibold leading-5 text-[#1f2937] decoration-[var(--brand-primary)]/40 underline-offset-2 transition-colors hover:text-[var(--brand-primary)] hover:underline focus-visible:text-[var(--brand-primary)] focus-visible:underline focus-visible:outline-none"
+                      data-contact-open
+                      onClick={() => startEditing(contact)}
+                      title={`Open ${contact.name}`}
+                      type="button"
+                    >
+                      <span className="font-semibold">{contact.name}</span>
+                    </button>
+                  ) : (
+                    <p className="truncate text-[14px] font-semibold leading-5 text-[#1f2937]" title={contact.name}>{contact.name}</p>
+                  )}
+                  {contact.address && (
+                    <p className="truncate text-[11.5px] leading-4 text-[#8a96a3]" title={contact.address}>{contact.address}</p>
+                  )}
+                </div>
               </div>
 
-              <div className="order-last col-span-2 flex min-w-0 flex-wrap items-center gap-1.5 leading-6 text-[var(--text-muted)] md:order-none md:col-span-1">
-                <span className="truncate">{contact.category}</span>
+              <div className="order-last col-span-1 flex min-w-0 flex-wrap items-center gap-1.5 pl-11 md:order-none md:col-span-1 md:min-h-8 md:pl-0">
+                <span
+                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4"
+                  style={{ background: pill.bg, color: pill.fg }}
+                >
+                  {contact.category}
+                </span>
                 {contact.subCategory ? (
-                  <span className="rounded bg-[var(--bg-soft)] px-1.5 text-[11px] font-semibold leading-5 text-[var(--text-main,inherit)]">
-                    {contact.subCategory}
-                  </span>
+                  <span className="truncate text-[12px] text-[#64748b]">{contact.subCategory}</span>
                 ) : null}
               </div>
 
-              <div className="order-last col-span-2 tabular-nums leading-6 md:order-none md:col-span-1">
-                <p>{contact.phone || <span className="text-[var(--text-muted)]">—</span>}</p>
-                {contact.fax && <p className="text-xs leading-5 text-[var(--text-muted)]">Fax {contact.fax}</p>}
+              <div className="order-last col-span-1 pl-11 tabular-nums md:order-none md:col-span-1 md:flex md:min-h-8 md:flex-col md:justify-center md:pl-0">
+                <p className="flex items-center gap-1.5 leading-5">
+                  <PhoneIcon />
+                  {contact.phone || <span className="text-[#9aa5b1]">—</span>}
+                </p>
+                {contact.fax && <p className="pl-5 text-[11.5px] leading-4 text-[#8a96a3]">Fax {contact.fax}</p>}
               </div>
 
-              <div className="order-last col-span-2 min-w-0 md:order-none md:col-span-1">
+              <div className="order-last col-span-1 min-w-0 pl-11 md:order-none md:col-span-1 md:flex md:min-h-8 md:flex-col md:justify-center md:pl-0">
                 {emailRows.length === 0 ? (
-                  <p className="leading-6 text-[var(--text-muted)]">—</p>
+                  <p className="flex items-center gap-1.5 leading-5 text-[#9aa5b1]"><MailIcon />—</p>
                 ) : (
                   emailRows.map((e, i) => (
-                    <p key={i} className="flex min-w-0 items-center gap-1.5 leading-6">
+                    <p key={i} className="flex min-w-0 items-center gap-1.5 leading-5">
+                      <MailIcon />
+                      <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
                       {(e.name || e.label) && (
-                        <span className="shrink-0 rounded bg-[rgba(13,121,191,0.08)] px-1.5 text-[11px] font-semibold leading-5 text-[var(--brand-primary)]">
+                        <span className="shrink-0 rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
                           {[e.name, e.label].filter(Boolean).join(" · ")}
                         </span>
                       )}
-                      <a className="truncate hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
                     </p>
                   ))
                 )}
               </div>
 
-              <div className="col-start-2 row-start-1 flex justify-end gap-1 md:col-start-5 md:opacity-60 md:transition-opacity md:group-hover:opacity-100 md:focus-within:opacity-100">
-                {canEditContacts && (
-                  <button
-                    className="rounded-md px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.10)]"
-                    onClick={() => startEditing(contact)}
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                )}
-                {canDeleteContacts && (
-                  <button
-                    className="rounded-md px-2 py-0.5 text-xs font-semibold text-[#b43b34] hover:bg-[rgba(180,59,52,0.10)]"
-                    onClick={() => void handleDeleteContact(contact)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            </li>
-          );
+            </li>,
+          ];
         })}
         </ul>
       </section>
