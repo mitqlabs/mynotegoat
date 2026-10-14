@@ -1,5 +1,6 @@
 "use client";
 
+import { useReferralTicks } from "@/hooks/use-referral-ticks";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ScrollLock } from "@/components/scroll-lock";
@@ -187,30 +188,6 @@ type ReferralPatient = {
   mri: number;
   sentDate: string;
 };
-
-const REFERRAL_CHECKS_KEY = "casemate.referral-checked.v1";
-
-/** Ticked-off patients, as "<place>::<patientId>" keys. Per browser. */
-function loadReferralChecks(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(REFERRAL_CHECKS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveReferralChecks(checks: Set<string>) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(REFERRAL_CHECKS_KEY, JSON.stringify([...checks]));
-  } catch (err) {
-    // A full quota shouldn't break the list — the ticks just won't persist.
-    console.warn("[dashboard] Could not save referral ticks:", err);
-  }
-}
 
 /** "MM/DD/YYYY" or "YYYY-MM-DD" → a string that sorts chronologically. */
 function sortableDate(value: string): string {
@@ -413,7 +390,8 @@ export default function DashboardPage() {
   // Ticked-off patients, remembered per place so a half-worked list
   // survives closing the panel. Per browser, on purpose — this is a
   // personal "who have I called" marker, not shared office state.
-  const [referralChecked, setReferralChecked] = useState<Set<string>>(() => loadReferralChecks());
+  // Personal ticks, saved locally + in the cloud and merged per tick.
+  const { checked: referralChecked, toggle: toggleReferralCheck } = useReferralTicks();
   const { caseStatuses } = useCaseStatuses();
   // Live patient-billing records. The patient page writes paid amount
   // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
@@ -1526,15 +1504,7 @@ export default function DashboardPage() {
                             aria-label={`Mark ${row.name} as done`}
                             checked={ticked}
                             className="h-4 w-4"
-                            onChange={() =>
-                              setReferralChecked((current) => {
-                                const next = new Set(current);
-                                if (next.has(checkKey)) next.delete(checkKey);
-                                else next.add(checkKey);
-                                saveReferralChecks(next);
-                                return next;
-                              })
-                            }
+                            onChange={() => toggleReferralCheck(checkKey)}
                             type="checkbox"
                           />
                         </td>
