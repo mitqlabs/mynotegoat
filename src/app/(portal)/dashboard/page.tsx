@@ -1,5 +1,6 @@
 "use client";
 
+import { DRILL_SORT_KEY, nextDrillSort, parseDrillSort, sortDrillPatients, type DrillSort } from "@/lib/referral-drill-sort";
 import { useReferralTicks } from "@/hooks/use-referral-ticks";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -319,7 +320,7 @@ function readSectionOpen(id: string): boolean {
   }
 }
 
-/** Collapsible Dashboard section; open/closed is remembered per browser. */
+/** Collapsible Dashboard section; open/closed is remembered per user (cloud-backed prefs). */
 function DashboardSection({
   id,
   title,
@@ -392,6 +393,19 @@ export default function DashboardPage() {
   // personal "who have I called" marker, not shared office state.
   // Personal ticks, saved locally + in the cloud and merged per tick.
   const { checked: referralChecked, toggle: toggleReferralCheck } = useReferralTicks();
+  // Drill-down sort (default Patient A–Z); saved per user, mirrored to the cloud.
+  const [drillSort, setDrillSort] = useState<DrillSort>(() =>
+    typeof window === "undefined" ? parseDrillSort(null) : parseDrillSort(window.localStorage.getItem(DRILL_SORT_KEY)),
+  );
+  const changeDrillSort = (k: DrillSort["key"]) => {
+    const next = nextDrillSort(drillSort, k);
+    setDrillSort(next);
+    try {
+      window.localStorage.setItem(DRILL_SORT_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
   const { caseStatuses } = useCaseStatuses();
   // Live patient-billing records. The patient page writes paid amount
   // to BOTH this store (canonical) and patient.matrix.paidAmount (legacy
@@ -1449,8 +1463,21 @@ export default function DashboardPage() {
               <table className="min-w-full border-collapse text-sm">
                 <thead className="sticky top-0 bg-[var(--bg-soft)] text-left">
                   <tr>
-                    <th className="px-3 py-2">Patient</th>
-                    <th className="px-3 py-2">Sent</th>
+                    {(["name", "sent"] as const).map((k) => (
+                      <th className="px-3 py-2" key={k}>
+                        <button
+                          className={`inline-flex items-center gap-1 hover:text-[var(--brand-primary)] ${drillSort.key === k ? "text-[var(--brand-primary)]" : ""}`}
+                          onClick={() => changeDrillSort(k)}
+                          title={k === "name" ? "Sort by patient name" : "Sort by sent date"}
+                          type="button"
+                        >
+                          {k === "name" ? "Patient" : "Sent"}
+                          <span aria-hidden className={`text-[10px] ${drillSort.key === k ? "" : "opacity-30"}`}>
+                            {drillSort.key === k && drillSort.dir === "desc" ? "▼" : "▲"}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
                     {referralDrill.kind === "imaging" && (
                       <>
                         <th className="px-3 py-2">XR</th>
@@ -1464,7 +1491,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {referralDrill.patients.map((row) => {
+                  {sortDrillPatients(referralDrill.patients, drillSort).map((row) => {
                     const checkKey = `${referralDrill.title.toLowerCase()}::${row.id}`;
                     const ticked = referralChecked.has(checkKey);
                     return (
@@ -1524,7 +1551,7 @@ export default function DashboardPage() {
             <p className="mt-2 text-[11px] text-[var(--text-muted)]">
               {referralDrill.patients.length} patient
               {referralDrill.patients.length === 1 ? "" : "s"} · follows the filters set above.
-              Ticks are yours alone — they stay in this browser and nobody else sees them.
+              Ticks are yours alone — saved to your account (any computer you sign in on) and nobody else sees them.
             </p>
           </div>
         </div>

@@ -192,7 +192,7 @@ export default function ContactsPage() {
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedSubCategory, setSelectedSubCategory] = useState("ALL");
   const [contactSearch, setContactSearch] = useState("");
-  // Remembered per browser. The portal only mounts on the client, so
+  // Remembered per user (mirrored to the cloud). The portal only mounts on the client, so
   // reading localStorage here can't cause a hydration mismatch.
   const [sort, setSort] = useState<ContactSort>(() =>
     typeof window === "undefined" ? parseContactSort(null) : parseContactSort(window.localStorage.getItem(CONTACT_SORT_STORAGE_KEY)),

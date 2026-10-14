@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Two stacked panes with a divider you can drag, remembered per browser.
+ * Two stacked panes with a divider you can drag, remembered per user (cloud-backed prefs).
  *
  * Used for the note editor over the previous encounter: how much room each
  * one needs is a personal thing — a doctor reading a long prior note wants

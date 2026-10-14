@@ -13,6 +13,7 @@
  * Cloud is the source of truth. localStorage is just a fast cache.
  */
 
+import { recordUserPrefWrite } from "@/lib/user-prefs-cloud";
 import { pushLocalStateToCloud } from "@/lib/cloud-state";
 
 const CASEMATE_PREFIX = "casemate.";
@@ -205,6 +206,15 @@ export function installStorageSyncInterceptor() {
 
   window.localStorage.setItem = (key: string, value: string) => {
     originalSetItem(key, value);
+    // Back per-user prefs up to the user's own cloud row (never while a
+    // wipe/bootstrap has sync paused).
+    if (!paused) {
+      try {
+        recordUserPrefWrite(key, value, originalSetItem);
+      } catch (err) {
+        console.warn("[storage-sync] user pref backup failed:", err);
+      }
+    }
     if (shouldSyncKey(key)) {
       scheduleSyncNow();
     }

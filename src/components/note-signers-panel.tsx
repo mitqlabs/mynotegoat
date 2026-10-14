@@ -4,7 +4,7 @@ import { useState } from "react";
 import { loadSigners, saveSigners, signatureFor, type NoteSigner } from "@/lib/goat-notes";
 import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 
-/** Team list for note signatures (first name + Doctor flag, optional login link). Kept in this browser. */
+/** Team list for note signatures (first name + Doctor flag, optional login link). Saved to the user's cloud prefs (user-prefs-cloud.ts). */
 export function NoteSignersPanel() {
   const [list, setList] = useState<NoteSigner[]>(() => loadSigners());
   const people = useWorkspacePeople();

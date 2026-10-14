@@ -242,6 +242,10 @@ export default function PortalLayout({
       // exactly how the 2026-04-08 data loss happened.
       try {
         await prepareCloudStateBeforeMount();
+        // Bring back this user's prefs (sorts, columns, chat…) from the cloud.
+        void import("@/lib/user-prefs-cloud").then((m) =>
+          m.syncUserPrefs().catch((err: unknown) => console.warn("[user-prefs] restore failed:", err)),
+        );
       } catch (error) {
         if (!active) return;
         const message =
