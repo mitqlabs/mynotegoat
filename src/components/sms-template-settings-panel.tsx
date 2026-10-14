@@ -78,7 +78,7 @@ export function SmsTemplateSettingsPanel() {
               key={t.token}
               title={t.description}
             >
-              {t.token}
+              {t.token} <span className="font-sans">{t.label}</span>
             </code>
           ))}
         </div>
