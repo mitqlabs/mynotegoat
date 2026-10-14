@@ -178,6 +178,11 @@ type ImagingFormState = {
    *  patient's imaging list shows a "Patient Refused" badge. Default
    *  undefined / false = open referral, follow up normally. */
   patientRefused?: boolean;
+  /** Prior / outside study: imaging done elsewhere (before care, or
+   *  ordered by another provider). Holds findings only. It is NOT one
+   *  of our referrals, so it never writes the matrix sent/done dates,
+   *  never drives Case Flow and never counts in referral stats. */
+  isPrior?: boolean;
 };
 
 type ImagingReferral = ImagingFormState & {
@@ -3167,18 +3172,52 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setShowImagingRegionEditor(false);
   };
 
+  const openPriorImagingEditor = (mode: ImagingMode, event?: MouseEvent<HTMLElement>) => {
+    setEditingImagingReferral({
+      ...emptyImagingFormState(mode),
+      id: `${mode}-prior-${Date.now()}`,
+      modalityLabel: mode === "xray" ? "X-Ray" : "MRI",
+      isPrior: true,
+      mode,
+    });
+    setImagingEditorAnchor(event ? getPopupAnchorFromEvent(event) : null);
+    setShowImagingRegionEditor(true);
+  };
+
   const saveImagingEditor = () => {
     if (!editingImagingReferral) return;
     const { mode, ...referral } = editingImagingReferral;
     const setReferrals = mode === "xray" ? setXrayReferrals : setMriReferrals;
     const setMessage = mode === "xray" ? setXrayMessage : setMriMessage;
+    const currentReferrals = mode === "xray" ? xrayReferrals : mriReferrals;
+    const isNewEntry = !currentReferrals.some((entry) => entry.id === referral.id);
+
+    if (referral.isPrior) {
+      if (!referral.findings.trim() && referral.regions.length === 0) {
+        setMessage("Add the findings or at least one region for the prior study.");
+        return;
+      }
+      const nextReferrals = isNewEntry
+        ? [...currentReferrals, referral]
+        : currentReferrals.map((entry) => (entry.id === referral.id ? referral : entry));
+      setReferrals(nextReferrals);
+      // Prior / outside study: save the entry only. Leave the matrix
+      // sent/done dates alone so Case Flow keeps tracking OUR referrals.
+      updatePatientRecordById(patient.id, {
+        lastUpdate: new Date().toISOString().slice(0, 10),
+        [mode === "xray" ? "xrayReferrals" : "mriReferrals"]: nextReferrals,
+      } as UpdatePatientRecordPatch);
+      setMessage(isNewEntry ? "Prior / outside study added." : "Prior / outside study updated.");
+      setEditingImagingReferral(null);
+      setImagingEditorAnchor(null);
+      return;
+    }
 
     setReferrals((current) =>
       current.map((entry) => (entry.id === referral.id ? referral : entry)),
     );
 
     // Persist immediately
-    const currentReferrals = mode === "xray" ? xrayReferrals : mriReferrals;
     const nextReferrals = currentReferrals.map((entry) => (entry.id === referral.id ? referral : entry));
     const referralKey = mode === "xray" ? "xrayReferrals" : "mriReferrals";
     const sentDateIso = toIsoDateFromUsDate(referral.sentDate);
@@ -3224,7 +3263,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     // recently-sent one (matches the "overwrite on add/edit"
     // behaviour); if none remain we clear the matrix fields.
     const key = mode === "xray" ? "xrayReferrals" : "mriReferrals";
-    const primary = [...nextReferrals].sort((a, b) => {
+    const primary = nextReferrals.filter((entry) => !entry.isPrior).sort((a, b) => {
       const aIso = toIsoDateFromUsDate(a.sentDate) || "";
       const bIso = toIsoDateFromUsDate(b.sentDate) || "";
       return bIso.localeCompare(aIso);
@@ -5882,6 +5921,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
+              <div className="flex justify-end">
+                <button
+                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                  data-testid="add-prior-mri"
+                  onClick={(event) => openPriorImagingEditor("mri", event)}
+                  type="button"
+                >
+                  + Prior / outside MRI
+                </button>
+              </div>
+              {mriCtFindings.trim() && (
+                <div className="rounded-lg border border-dashed border-[var(--line-soft)] p-2" data-testid="legacy-mri-findings">
+                  <p className="font-semibold">Earlier MRI / CT findings (saved before April 2026, read-only)</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">{mriCtFindings.trim()}</p>
+                </div>
+              )}
               {mriReferrals.length === 0 && (
                 <p className="text-[var(--text-muted)]">
                   {mriCtFollowUpOverride.completedPriorCare
@@ -5904,8 +5959,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
-                      {entry.modalityLabel} — {entry.center || "No Center"}
+                      {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
+                    {entry.isPrior && (
+                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                        Prior / outside
+                      </span>
+                    )}
                     {entry.patientRefused && (
                       <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
                         Patient Refused
@@ -5913,6 +5973,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     )}
                   </div>
                   <p>Regions: {formatImagingRegionsSummary(entry, "mri")}</p>
+                  {entry.isPrior ? (
+                    <p>Date done: {entry.doneDate || "-"}</p>
+                  ) : (
                   <p>
                     Sent: {entry.sentDate || "-"}
                     {" | Scheduled: "}{entry.scheduledDate || "-"}
@@ -5920,12 +5983,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     {" | Received: "}{entry.reportReceivedDate || "-"}
                     {" | Reviewed: "}{entry.reportReviewedDate || "-"}
                   </p>
+                  )}
                   {entry.findings?.trim() && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {entry.findings.trim()}
                     </p>
                   )}
                   <div className="mt-2 flex gap-2">
+                    {!entry.isPrior && (
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
                       onClick={() => generateImagingRequestPdf("mri", entry)}
@@ -5933,6 +5998,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     >
                       Generate PDF
                     </button>
+                    )}
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
                       onClick={(event) => openImagingEditor("mri", entry, event)}
@@ -8954,7 +9020,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <form className="panel-card overflow-auto resize p-4" style={getAnchoredModalStyle(imagingEditorAnchor, 1000, 75, { resizable: true })} onSubmit={(e) => { e.preventDefault(); saveImagingEditor(); }}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">
-                Edit {editingImagingReferral.modalityLabel} Referral
+                {editingImagingReferral.isPrior
+                  ? `Prior / outside ${editingImagingReferral.modalityLabel}`
+                  : `Edit ${editingImagingReferral.modalityLabel} Referral`}
               </h3>
               <button
                 className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
@@ -8969,6 +9037,40 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
 
             <div className="space-y-3">
+              {editingImagingReferral.isPrior && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="grid gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Facility (optional)</span>
+                  <input
+                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    list="imaging-centers"
+                    onChange={(event) =>
+                      setEditingImagingReferral((current) =>
+                        current ? { ...current, center: event.target.value } : current,
+                      )
+                    }
+                    placeholder="Where it was done"
+                    value={editingImagingReferral.center}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Date Done (optional)</span>
+                  <input
+                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    inputMode="numeric"
+                    maxLength={10}
+                    onChange={(event) =>
+                      setEditingImagingReferral((current) =>
+                        current ? { ...current, doneDate: formatUsDateInput(event.target.value) } : current,
+                      )
+                    }
+                    placeholder="MM/DD/YYYY"
+                    value={editingImagingReferral.doneDate}
+                  />
+                </label>
+              </div>
+              )}
+              {!editingImagingReferral.isPrior && (<>
               <div className="grid grid-cols-2 gap-2">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Sent Date</span>
@@ -9088,6 +9190,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   Closes this referral without a Done date.
                 </span>
               </label>
+              </>)}
 
               <div className="grid gap-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
