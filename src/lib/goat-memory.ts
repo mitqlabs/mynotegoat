@@ -15,7 +15,7 @@
 
 export type LastAct =
   | { kind: "note"; msgId: string; patientId: string; patientName: string; line: string }
-  | { kind: "msgAsk"; msgId: string; toLabel: string; toUserId?: string; text: string }
+  | { kind: "msgAsk"; msgId: string; toLabel: string; toUserId?: string; alsoTo?: Array<{ label: string; userId?: string }>; text: string }
   | { kind: "message"; msgId: string; toLabel: string; toUserId?: string; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled" }
   | { kind: "booking"; msgId: string; state: "open" | "booked" | "canceled" };
 
