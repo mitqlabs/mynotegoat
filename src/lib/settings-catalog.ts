@@ -30,6 +30,7 @@ export type SettingsSectionKey =
   | "documents"
   | "reports"
   | "smsTemplates"
+  | "textReminders"
   | "emailSettings"
   // "admin" is the outer wrapper that nests the five admin-y subsections
   // (diagnostics, backup, recovery, security, subscription). Those child
@@ -215,6 +216,12 @@ export const settingsSearchCatalog: Array<{
     key: "smsTemplates",
     title: "SMS / Text Templates",
     aliases: ["sms", "text", "text message", "messages", "imessage"],
+    parent: "templates",
+  },
+  {
+    key: "textReminders",
+    title: "Text Reminders",
+    aliases: ["reminder", "appointment reminder", "automatic text", "imac", "mac", "sms", "24 hour"],
     parent: "templates",
   },
   {

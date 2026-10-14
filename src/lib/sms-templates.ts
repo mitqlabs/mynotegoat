@@ -10,19 +10,9 @@ export interface SmsTemplate {
   updatedAt: string;
 }
 
-export interface SmsTokenContext {
-  patient?: {
-    firstName?: string;
-    lastName?: string;
-    fullName?: string;
-  };
-  appointment?: {
-    time?: string; // e.g. "10:30 AM"
-    date?: string; // e.g. "04/17/2026"
-    type?: string;
-  };
-  office?: Pick<OfficeSettings, "officeName" | "doctorName">;
-}
+export type { SmsTokenContext } from "@/lib/sms-render";
+import type { SmsTokenContext } from "@/lib/sms-render";
+export { expandTokens } from "@/lib/sms-render";
 
 export const SMS_TEMPLATES_STORAGE_KEY = "casemate.sms-templates.v1";
 
@@ -35,6 +25,7 @@ export const SMS_TOKENS: { token: string; description: string }[] = [
   { token: "{{APPOINTMENT_TYPE}}", description: "Appointment type" },
   { token: "{{OFFICE_NAME}}", description: "Office name from settings" },
   { token: "{{DOCTOR_NAME}}", description: "Doctor name from settings" },
+  { token: "{{OFFICE_PHONE}}", description: "Office phone (the patient's office when you have several)" },
 ];
 
 function createId() {
@@ -119,27 +110,6 @@ export function createSmsTemplate(name: string, body = ""): SmsTemplate {
     createdAt: iso,
     updatedAt: iso,
   };
-}
-
-export function expandTokens(body: string, ctx: SmsTokenContext): string {
-  const first = ctx.patient?.firstName ?? "";
-  const last = ctx.patient?.lastName ?? "";
-  const full =
-    ctx.patient?.fullName ??
-    [first, last].filter(Boolean).join(" ");
-  const map: Record<string, string> = {
-    "{{FIRST_NAME}}": first,
-    "{{LAST_NAME}}": last,
-    "{{FULL_NAME}}": full,
-    "{{TIME}}": ctx.appointment?.time ?? "",
-    "{{DATE}}": ctx.appointment?.date ?? "",
-    "{{APPOINTMENT_TYPE}}": ctx.appointment?.type ?? "",
-    "{{OFFICE_NAME}}": ctx.office?.officeName ?? "",
-    "{{DOCTOR_NAME}}": ctx.office?.doctorName ?? "",
-  };
-  return body.replace(/\{\{[A-Z_]+\}\}/g, (tok) =>
-    Object.prototype.hasOwnProperty.call(map, tok) ? map[tok] : tok,
-  );
 }
 
 /**

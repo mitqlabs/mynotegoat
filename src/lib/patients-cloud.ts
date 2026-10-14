@@ -59,6 +59,7 @@ interface PatientRow {
   alerts: string[] | null;
   is_cash_patient: boolean | null;
   location_id: string | null;
+  text_reminders_off?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -87,6 +88,7 @@ function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
     alerts: patient.alerts ?? null,
     is_cash_patient: patient.isCashPatient ?? false,
     location_id: patient.locationId ?? null,
+    text_reminders_off: patient.textRemindersOff === true,
   };
 }
 
@@ -115,6 +117,7 @@ function rowToPatient(row: PatientRow): PatientRecord {
     alerts: row.alerts ?? undefined,
     isCashPatient: row.is_cash_patient ?? false,
     locationId: row.location_id ?? undefined,
+    textRemindersOff: row.text_reminders_off === true ? true : undefined,
   };
 }
 

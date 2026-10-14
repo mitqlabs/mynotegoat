@@ -34,6 +34,13 @@ export interface SmsReminderSettings {
   templateId: string;
   /** Appointment types that never get a reminder (exam types, say). */
   skipTypes: string[];
+  /** Weekdays (0 = Sun) the batch runs. null = automatic: the day before
+   *  every open office day (from Schedule Settings office hours). */
+  runDays: number[] | null;
+  /** Sending device logs what it WOULD send and sends nothing. */
+  dryRun: boolean;
+  /** IANA time zone the office runs in (decides "today" and "tomorrow"). */
+  timeZone: string;
 }
 
 export function defaultSmsReminderSettings(): SmsReminderSettings {
@@ -42,11 +49,16 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     // days of the preview. Turning this on is a deliberate act.
     enabled: false,
     daysAhead: 1,
-    sendHour: 16,
+    sendHour: 8,
     quietStartHour: 21,
     quietEndHour: 8,
     templateId: "",
     skipTypes: [],
+    runDays: null,
+    // New setups start in dry run: the Mac logs, sends nothing, until the
+    // office turns this off on purpose.
+    dryRun: true,
+    timeZone: "America/Los_Angeles",
   };
 }
 
@@ -67,6 +79,18 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   if (Array.isArray(raw.skipTypes)) {
     base.skipTypes = raw.skipTypes.filter((entry): entry is string => typeof entry === "string");
   }
+  if (Array.isArray(raw.runDays)) {
+    const days = Array.from(
+      new Set(
+        raw.runDays
+          .map((entry) => Number(entry))
+          .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 6),
+      ),
+    ).sort((a, b) => a - b);
+    base.runDays = days;
+  }
+  if (raw.dryRun === false) base.dryRun = false;
+  if (typeof raw.timeZone === "string" && raw.timeZone.trim()) base.timeZone = raw.timeZone.trim();
   return base;
 }
 
