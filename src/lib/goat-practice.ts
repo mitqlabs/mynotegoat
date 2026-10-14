@@ -15,6 +15,10 @@ export interface PracticePatient {
   fullName: string;
   caseStatus: CaseStatus;
   attorney: string;
+  /** Year the Patients list files this patient under (Initial Exam, else date of injury). */
+  listYear?: number;
+  /** Self-pay (non-PI) patient: the Patients list's default PI tab leaves them out. */
+  cash?: boolean;
 }
 
 export interface PracticeData {
@@ -89,6 +93,32 @@ export function detectPracticeIntent(question: string): PracticeIntent | null {
 /** Words that mean the question is about one patient's chart. */
 const PATIENT_WORDS =
   /\b(last visit|next visit|visits?|mri|x-?ray|dob|birthday|date of (birth|loss|injury)|dol|doi|injur|diagnos|dx|recommend|plan|treatment|notes?|report|balance|bill|charges?|his|her|she|he|their|this patient|the patient)\b/i;
+
+/** Year in a date string, ISO (2026-04-02) or US (04/02/2026, 4/2/26); 0 when none. */
+export function yearOfDate(s: string | undefined | null): number {
+  const t = (s ?? "").trim();
+  let m = /^(\d{4})-\d{1,2}-\d{1,2}/.exec(t);
+  if (m) return Number(m[1]);
+  m = /^\d{1,2}\/\d{1,2}\/(\d{2,4})\b/.exec(t);
+  if (m) return Number(m[1]) < 100 ? Number(m[1]) + 2000 : Number(m[1]);
+  return 0;
+}
+
+/** The Patients list's default year (this year) when patients carry a list year; else null (count everything). */
+export function listScope(data: PracticeData): number | null {
+  return data.patients.some((p) => typeof p.listYear === "number") ? Number(data.today.slice(0, 4)) : null;
+}
+
+/**
+ * Practice-wide wording ("how many…", "do we have", "our…") that is not about
+ * one patient. These must be answered for the whole office even while a
+ * patient's file is open, never from that file.
+ */
+const PRACTICE_WIDE = /\b(how many|how much (?:are|is) we|do we (?:have|got)|we (?:have|got|saw|see|had)|our|the office|the practice|everyone|all (?:the )?(?:patients|cases|files))\b|\b(to\s*-?\s*dos?|todos?|tasks?|schedule|contacts?|checks? (?:waiting|pending|owed))\b/i;
+const ONE_PATIENT = /\b(his|her|hers|she|he|him|this patient|the patient|this file|this case|their)\b/i;
+export function isPracticeWide(question: string): boolean {
+  return PRACTICE_WIDE.test(question) && !ONE_PATIENT.test(question);
+}
 
 export function isPatientSpecific(question: string): boolean {
   return PATIENT_WORDS.test(question);
@@ -172,9 +202,11 @@ export function answerPractice(intent: PracticeIntent, data: PracticeData): Prac
       return { text: `${appts.length} appointment${appts.length === 1 ? "" : "s"} ${intent.day} (${usDate(day)}):\n${lines.join("\n")}${appts.length > 30 ? `\n…and ${appts.length - 30} more.` : ""}` };
     }
     case "caseCount": {
-      const hits = data.patients.filter((p) => p.caseStatus === intent.status).sort((a, b) => a.fullName.localeCompare(b.fullName));
-      const label = intent.status === "Submitted" ? "Submitted cases (waiting on payment)" : `${intent.status} cases`;
-      const head = `${label}: ${hits.length}.`;
+      const all = data.patients.filter((p) => p.caseStatus === intent.status).sort((a, b) => a.fullName.localeCompare(b.fullName));
+      const sc = listScope(data);
+      const hits = sc ? all.filter((p) => p.listYear === sc && !p.cash) : all;
+      const label = intent.status === "Submitted" ? "Submitted cases (checks waiting)" : `${intent.status} cases`;
+      const head = sc ? `${label} in ${sc}: ${hits.length}. (Same as the Patients list, PI tab, ${sc}, Status ${intent.status}. All years: ${all.length}.)` : `${label}: ${hits.length}.`;
       if (!intent.list || !hits.length) {
         return { text: head, choices: hits.length ? [{ label: "List them", question: `list ${intent.status.toLowerCase()} cases` }] : undefined };
       }

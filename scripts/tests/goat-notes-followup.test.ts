@@ -35,13 +35,13 @@ test("match by first or last name; several → ask which", () => {
   assert.deepEqual(matchPatientsByName("jane sample", pts).map((p) => p.id), ["p2"]);
   assert.deepEqual(matchPatientsByName("zed", pts), []);
 });
-test("signatures: -Dr. First for doctors, -First for others", () => {
+test("signatures: -Dr. First for doctors, -First L. for others", () => {
   assert.equal(signatureFor({ firstName: "Mike", doctor: true }), "-Dr. Mike");
   assert.equal(signatureFor({ firstName: "Dr. abi Smith", doctor: true }), "-Dr. Abi");
-  assert.equal(signatureFor({ firstName: "Hannah Lee", doctor: false }), "-Hannah");
+  assert.equal(signatureFor({ firstName: "Hannah Lee", doctor: false }), "-Hannah L.");
   const at = new Date(2026, 9, 13, 14, 53);
-  assert.equal(formatNote("spoke to atty waiting for reduction.", { firstName: "Mike", doctor: true }, at), "10/13/2026 2:53 PM spoke to atty waiting for reduction. -Dr. Mike");
-  assert.equal(formatNote("called", { firstName: "Greg", doctor: false }, at), "10/13/2026 2:53 PM called -Greg");
+  assert.equal(formatNote("spoke to atty waiting for reduction.", { firstName: "Mike", doctor: true }, at), "10/13/26 - Spoke to atty waiting for reduction. -Dr. Mike");
+  assert.equal(formatNote("called", { firstName: "Greg", doctor: false }, at), "10/13/26 - Called -Greg");
   assert.equal(appendNote("old line\n\n", "new"), "old line\nnew");
   assert.equal(appendNote("", "new"), "new");
 });

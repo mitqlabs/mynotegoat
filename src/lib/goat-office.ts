@@ -4,7 +4,7 @@
  * follow-up memory ("and tomorrow?", "list them", "their fax?"). Read-only.
  */
 import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
-import { SETTING_QUESTION, answerPractice, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
+import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
   kind: "todo" | "schedule" | "caseCount" | "caseSummary" | "contact";
@@ -48,9 +48,10 @@ function addDays(iso: string, n: number): string {
 }
 
 function caseSummary(data: PracticeData): OfficeAnswer {
-  const n = (s: string) => data.patients.filter((p) => p.caseStatus === s).length;
+  const sc = listScope(data);
+  const n = (s: string) => data.patients.filter((p) => p.caseStatus === s && (!sc || (p.listYear === sc && !p.cash))).length;
   return {
-    text: `Active cases: ${n("Active")}.\nSubmitted (checks waiting): ${n("Submitted")}.${n("Ready To Submit") ? `\nReady to submit: ${n("Ready To Submit")}.` : ""}`,
+    text: `${sc ? `In ${sc} (same as the Patients list):\n` : ""}Active cases: ${n("Active")}.\nSubmitted (checks waiting): ${n("Submitted")}.${n("Ready To Submit") ? `\nReady to submit: ${n("Ready To Submit")}.` : ""}`,
     choices: [
       { label: "List active", question: "list active cases" },
       { label: "List submitted", question: "list submitted cases" },
@@ -112,5 +113,11 @@ export function answerOffice(question: string, data: PracticeData, last: OfficeM
     if (/\b(my|the|today'?s?)\s+schedule\b|\bwho'?s coming\b/i.test(question)) return { text: scheduleFor(data.today, data), memory: { kind: "schedule", day: data.today } };
   }
   if (intent) return fromIntent(intent, data);
+  // "how many visits / patients did we have today" → the schedule count for that day.
+  if (/\bhow many\b/i.test(question) && /\b(visits?|appointments?|appts?|patients?|people)\b/i.test(question) && !/\b(his|her|she|he|this patient)\b/i.test(question)) {
+    const day = resolveRequestedDay(question, data.today) ?? { iso: data.today };
+    const n = data.appointments.filter((a) => a.date === day.iso && a.status !== "Canceled").length;
+    return { text: `${n} appointment${n === 1 ? "" : "s"} ${dayLabel(day.iso)} (canceled ones not counted).\n${scheduleFor(day.iso, data)}`, memory: { kind: "schedule", day: day.iso } };
+  }
   return null;
 }

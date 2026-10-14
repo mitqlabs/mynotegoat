@@ -27,11 +27,22 @@ export function useWorkspacePeople(ownerName?: string) {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
       const membership = getCurrentMembershipSync();
-      const ownerId = membership?.ownerId ?? "";
-      const { data } = await supabase
-        .from("workspace_members")
-        .select("member_user_id, label, email")
-        .eq("workspace_owner_id", ownerId);
+      let ownerId = membership?.ownerId ?? "";
+      // The roster comes from a server function that only returns the caller's
+      // own workspace (names + emails, no permissions), so every login, owner,
+      // doctor or front desk, gets recipients. A member can't read other
+      // members' rows directly (RLS), which is why messaging had no one to pick.
+      let data: Array<{ member_user_id: string; label: string | null; email: string | null }> | null = null;
+      const rpc = await supabase.rpc("workspace_team_roster");
+      if (!rpc.error && Array.isArray(rpc.data)) {
+        data = rpc.data as typeof data;
+        const o = (rpc.data as Array<{ owner_id?: string }>)[0]?.owner_id;
+        if (o) ownerId = String(o);
+      } else {
+        // Before the SQL is installed: the old direct read (owner sees all).
+        const res = await supabase.from("workspace_members").select("member_user_id, label, email").eq("workspace_owner_id", ownerId);
+        data = res.data ?? null;
+      }
       if (cancelled) return;
       const roster: WorkspacePerson[] = (data ?? []).map((row) => ({
         userId: String(row.member_user_id),

@@ -1132,8 +1132,10 @@ function askGoatOne(ctx: GoatContext, question: string): GoatResult {
   if (apptList) push(apptList);
 
   if (asksGap) push(gapsAnswer(ctx, today));
-  if (!asksGap && !(asksDecomp && !visitWords) && (visitWords || (focus && !has(tokens, ["xray", "mri", "specialist", "plan"])) || (asksCount && !has(tokens, ["bill", "diagnos"])))) {
-    push(visitsAnswer(ctx, today, focus));
+  if (!asksGap && !(asksDecomp && !visitWords) && (visitWords || (focus && !has(tokens, ["xray", "mri", "specialist", "plan"])) || (asksCount && !has(tokens, ["bill", "diagnos", "case", "submit", "check", "todo", "task", "contact", "attorney"])))) {
+    // A hidden Visits section only answers a question that is actually about visits,
+    // never a stray "how many" (that question is about something else).
+    if (ctx.appointments !== null || visitWords) push(visitsAnswer(ctx, today, focus));
   }
   if (has(tokens, ["doi", "injur", "accident", "loss", "crash", "initial", "ie", "exam", "discharg"]) || text.includes("date of")) {
     push(datesAnswer(ctx, today));
