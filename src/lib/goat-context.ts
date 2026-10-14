@@ -10,6 +10,7 @@
  * Encounters access.
  */
 
+import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { migrateLegacyCategory } from "@/lib/contact-categories";
 import type { GoatContext, GoatEncounter, GoatImaging, GoatPlan } from "@/lib/goat";
 import type { GoatPerson } from "@/lib/goat-docs";
@@ -172,7 +173,8 @@ export function goatContextFromRecords(input: {
     initialExam: usDate(resolveInitialExamDate(m.initialExam ?? "", input.appointments, input.encounters).date),
     priorCare: m.priorCare ?? "",
     xrayFindings: m.xrayFindings ?? "",
-    mriFindings: m.mriCtFindings ?? "",
+    // Old imports stored the facility NAME here; that's not findings.
+    mriFindings: usableLegacyMriFindings(m.mriCtFindings ?? "", asList(p.mriReferrals).map((r) => (r as { center?: string }).center ?? "")),
     specialistRecommendations: m.specialistRecommendations ?? "",
     imaging: [
       ...asList(p.xrayReferrals).map((r) => imagingToGoat(r, "X-Ray")),

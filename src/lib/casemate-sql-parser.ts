@@ -876,7 +876,9 @@ export function buildMigrationPayload(
     if (p.mri_reviewed_checked === "Y" || !isEmptyDate(p.mri_reviewed)) {
       matrix.mriReviewed = formatDate(p.mri_reviewed) || "Y";
     }
-    if (mriFacility) matrix.mriCtFindings = mriFacility;
+    // The facility name belongs on the MRI entry's center (buildMriReferral
+    // below), NOT in the findings field — it used to be copied here and
+    // then showed/printed as "findings".
 
     // Re-exams
     if (reexams[0]) matrix.reExam1 = formatDate(reexams[0].reexam);

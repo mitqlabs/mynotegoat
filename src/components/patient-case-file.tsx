@@ -1,5 +1,6 @@
 "use client";
 
+import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
@@ -2097,13 +2098,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     if (legacy) return legacy;
     return "-";
   }, [xrayReferrals, xrayFindings, buildFindingsString]);
+  // Old imports put the facility NAME in the findings field; ignore that.
+  const legacyMriFindingsUsable = useMemo(
+    () => usableLegacyMriFindings(mriCtFindings, mriReferrals.map((r) => r.center ?? "")),
+    [mriCtFindings, mriReferrals],
+  );
   const mriCtFindingsForTemplates = useMemo(() => {
     const built = buildFindingsString(mriReferrals, "mri");
     if (built) return built;
-    const legacy = mriCtFindings.trim();
+    const legacy = legacyMriFindingsUsable;
     if (legacy) return legacy;
     return "-";
-  }, [mriReferrals, mriCtFindings, buildFindingsString]);
+  }, [mriReferrals, legacyMriFindingsUsable, buildFindingsString]);
   const specialistRecommendationsForTemplates = useMemo(() => {
     const perSpec = specialistReferrals
       .filter((s) => s.recommendations?.trim())
@@ -2621,7 +2627,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       initialExam: effectiveInitialExam,
       priorCare,
       xrayFindings,
-      mriFindings: mriCtFindings,
+      mriFindings: legacyMriFindingsUsable,
       specialistRecommendations,
       imaging: [...xrayReferrals, ...mriReferrals].map((r) => imagingToGoat(r, "Imaging")),
       specialists: specialistReferrals.map(specialistToGoat),
@@ -5962,10 +5968,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
-              {mriCtFindings.trim() && (
+              {legacyMriFindingsUsable && (
                 <div className="rounded-lg border border-dashed border-[var(--line-soft)] p-2" data-testid="legacy-mri-findings">
                   <p className="font-semibold">Earlier MRI / CT findings (saved before April 2026, read-only)</p>
-                  <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">{mriCtFindings.trim()}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">{legacyMriFindingsUsable}</p>
                 </div>
               )}
               {mriReferrals.length === 0 && (
