@@ -31,7 +31,7 @@ export function useOfficeSettings() {
     (patch: Partial<OfficeSettings> | ((current: OfficeSettings) => Partial<OfficeSettings>)) => {
       setOfficeSettings((current) => {
         const resolved = typeof patch === "function" ? patch(current) : patch;
-        const next = { ...current, ...resolved };
+        const next = { ...current, ...resolved, savedAt: Date.now() };
         markLocalWrite(STORAGE_KEY_OFFICE_SETTINGS);
         saveOfficeSettings(next);
         notifyChange(STORAGE_KEY_OFFICE_SETTINGS);
@@ -42,7 +42,7 @@ export function useOfficeSettings() {
   );
 
   const resetToDefaults = useCallback(() => {
-    const defaults = getDefaultOfficeSettings();
+    const defaults = { ...getDefaultOfficeSettings(), savedAt: Date.now() };
     markLocalWrite(STORAGE_KEY_OFFICE_SETTINGS);
     setOfficeSettings(defaults);
     saveOfficeSettings(defaults);

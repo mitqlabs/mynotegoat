@@ -937,6 +937,7 @@ async function bootstrapTableBackedEntities() {
           const CONTENT_SIZED_LIBRARY_KEYS = new Set([
             "casemate.report-templates.v1",
             "casemate.document-templates.v1",
+            // (Office settings are handled above by pickOfficeSettingsSource.)
             // Office settings is a single wrapper object, so a top-level key
             // count is CONSTANT no matter how many locations/doctors it holds.
             // That made the entry-count guard blind to it — a stale/smaller
@@ -1000,6 +1001,25 @@ async function bootstrapTableBackedEntities() {
                   );
                 }
                 continue;
+              }
+              // Office settings: newer copy wins (savedAt), never the
+              // bigger one. Size let a stale copy (or the logo) decide.
+              if (key === "casemate.office-settings.v1" && localRaw) {
+                let localParsed: unknown = null;
+                try {
+                  localParsed = JSON.parse(localRaw);
+                } catch {
+                  localParsed = null;
+                }
+                const { pickOfficeSettingsSource } = await import("@/lib/office-settings");
+                if (pickOfficeSettingsSource(localParsed, value) === "local") {
+                  console.warn("[Cloud Sync] Office settings: this device has the newer copy; re-saving it to the cloud.");
+                  skippedLocalIsBigger += 1;
+                  void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
+                    console.error("[Cloud Sync] Re-saving office settings failed:", uploadErr),
+                  );
+                  continue;
+                }
               }
               if (localRaw) {
                 let localCount = -1;
