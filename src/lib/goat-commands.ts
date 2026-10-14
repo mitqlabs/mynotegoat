@@ -125,7 +125,7 @@ function nameWords(s: string): string[] {
  * "how many submitted cases do we have" never turns into Mary's file.
  */
 const COMMON_WORDS = new Set(
-  "many much more most have has had having make made what when where were with will would could should does done this that them they then than there these those case cases file files call called calls today tomorrow week next last visit visits bill paid open office offices check checks list show team note notes said told back over just only also like want need sent send text total count number submitted active ready schedule patients patient".split(" "),
+  "hey hi hello how are you yes yeah testing test tests tested feature features new out thanks thank please good great fine morning tonight anything everything something nothing many much more most have has had having make made what when where were with will would could should does done this that them they then than there these those case cases file files call called calls today tomorrow week next last visit visits bill paid open office offices check checks list show team note notes said told back over just only also like want need sent send text total count number submitted active ready schedule patients patient".split(" "),
 );
 
 function wordMatches(w: string, target: string, loose = false): boolean {

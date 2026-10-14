@@ -63,7 +63,11 @@ export interface ChatMessage {
   /** Memory of an office answer, for follow-ups ("and tomorrow?", "list them"). */
   office?: OfficeMemory;
   /** A booking waiting for Confirm (nothing is saved before that). */
-  booking?: BookingDraft & { state: "open" | "booked" | "canceled" };
+  booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string };
+  /** A change to a Case Notes line G.O.A.T. just added (redate / retext / undo), waiting for Confirm. */
+  noteEdit?: { patientId: string; patientName: string; oldLine: string; newLine: string | null; state: "open" | "done" | "canceled" | "missing" };
+  /** "Which patient is this about?" for a team message; "no patient" sends it as a general message. */
+  msgAsk?: { toLabel: string; toUserId?: string; text: string };
   /** Inactive-case choices revealed by "Show inactive (N)". */
   moreChoices?: ChatChoice[];
   /** A team message waiting for Confirm (posted to Messages only then). */

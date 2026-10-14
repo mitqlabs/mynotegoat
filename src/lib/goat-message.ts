@@ -1,3 +1,4 @@
+import { findNameAnywhere } from "@/lib/goat-commands";
 /**
  * "tell hanna i need notes for John" → a team message about John's case,
  * previewed first and posted to NoteGoat Messages only after Confirm.
@@ -74,4 +75,17 @@ export function buildTeam(signers: Array<{ firstName: string; userId?: string; d
 /** The message as posted: "@Hannah i need notes for John -Dr. Mike". */
 export function messageBody(to: TeamPerson, text: string, signature: string): string {
   return `@${to.label} ${text.trim()}${signature ? ` ${signature}` : ""}`;
+}
+
+/**
+ * Patients a team message's text actually names (strict: exact names or one
+ * typo; everyday words like "hey", "how", "testing" never match). Empty → a
+ * general team message with no patient. Active cases win over inactive ones.
+ */
+export function patientsMentionedInMessage<T extends { id: string; fullName: string; caseStatus?: string }>(text: string, pool: T[]): T[] {
+  const active = (p: T) => !/^(dropped|paid|discharged)$/i.test(p.caseStatus ?? "");
+  const hit = findNameAnywhere(text, pool.map((p) => ({ id: p.id, fullName: p.fullName, active: active(p) })));
+  if (!hit) return [];
+  const ids = hit.matches.filter((m) => m.active).length ? hit.matches.filter((m) => m.active).map((m) => m.id) : hit.matches.map((m) => m.id);
+  return pool.filter((p) => ids.includes(p.id));
 }
