@@ -38,7 +38,7 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
-import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
+import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell, audienceLabel, privateToFor } from "@/lib/goat-message";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
 import { clarifyFor, editNoteLine, followUpFor, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
@@ -1165,8 +1165,9 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
   const signer = useLoginSigner();
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [eyesOnly, setEyesOnly] = useState(false);
   const sig = signer ? signatureFor(signer) : "";
-  const body = messageBody({ firstName: draft.toLabel, label: draft.toLabel, userId: draft.toUserId }, draft.text, sig);
+  const body = messageBody({ firstName: draft.toLabel, label: draft.toLabel, userId: draft.toUserId }, draft.text);
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
     <div className="mt-2 space-y-1 text-xs" data-goat-message>
@@ -1189,6 +1190,7 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
             setError("");
             const ok = await postMessage({
               body,
+              privateTo: privateToFor(eyesOnly ? "eyes-only" : "general", draft.toUserId),
               authorLabel: isOwner ? (officeSettings.doctorName ?? "").trim() || "Admin" : getCurrentMembershipSync()?.label || "Team Member",
               patientId: draft.patientId,
               patientName: draft.caseLabel,
@@ -1205,6 +1207,19 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
         </button>
         <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={sending} onClick={onCancel} style={{ fontSize: 12 }} type="button">
           Cancel
+        </button>
+        <button
+          aria-label={eyesOnly ? audienceLabel("eyes-only", draft.toLabel) : "General (tap for Eyes only)"}
+          aria-pressed={eyesOnly}
+          className={`${btn} ${eyesOnly ? "border-amber-500 bg-amber-100 text-amber-900" : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] opacity-70"}`}
+          data-goat-eyes-only={eyesOnly ? "on" : "off"}
+          disabled={sending || !draft.toUserId}
+          onClick={() => setEyesOnly((v) => !v)}
+          style={{ fontSize: 12 }}
+          title={!draft.toUserId ? `${draft.toLabel} has no login, so Eyes only isn't possible` : eyesOnly ? "Eyes only: just you and " + draft.toLabel : "Posts to General. Tap for Eyes only"}
+          type="button"
+        >
+          🔒{eyesOnly ? ` ${audienceLabel("eyes-only", draft.toLabel)}` : ""}
         </button>
       </div>
     </div>

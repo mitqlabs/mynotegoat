@@ -97,9 +97,21 @@ export function buildTeam(signers: Array<{ firstName: string; userId?: string; d
   return out;
 }
 
-/** The message as posted: "@Hannah i need notes for John -Dr. Mike". */
-export function messageBody(to: TeamPerson, text: string, signature: string): string {
-  return `@${to.label} ${text.trim()}${signature ? ` ${signature}` : ""}`;
+/** The message as posted: "@Hannah i need notes for John". No signature: the sender's name already shows on the message. */
+export function messageBody(to: TeamPerson, text: string): string {
+  return `@${to.label} ${text.trim()}`;
+}
+
+export type MessageAudience = "eyes-only" | "general";
+
+/** Eyes only → private to the recipient (author is added by postMessage); General → everyone. */
+export function privateToFor(audience: MessageAudience, toUserId?: string): string[] | undefined {
+  return audience === "eyes-only" && toUserId ? [toUserId] : undefined;
+}
+
+/** Choice labels shown before sending. */
+export function audienceLabel(audience: MessageAudience, toLabel: string): string {
+  return audience === "eyes-only" ? `Eyes only (just ${toLabel})` : "General";
 }
 
 /**

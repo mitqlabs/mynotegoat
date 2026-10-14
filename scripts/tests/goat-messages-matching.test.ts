@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "../../src/lib/goat-message";
+import { audienceLabel, buildTeam, privateToFor, isTellRequest, matchRecipient, messageBody, parseTell } from "../../src/lib/goat-message";
 import { findPatientsInQuestion, type ChatPatient } from "../../src/lib/goat-ai/global-chat";
 import { activeFirst, nameSearchMatches } from "../../src/lib/patient-name-match";
 
@@ -29,7 +29,13 @@ test("recipient by first name from signatures + logins", () => {
   assert.deepEqual(matchRecipient("sara", team).map((p) => p.userId), ["u3"]);
   assert.equal(matchRecipient("greg", team)[0].userId, undefined);
   assert.deepEqual(matchRecipient("zed", team), []);
-  assert.equal(messageBody({ firstName: "Hannah", label: "Hannah" }, "i need notes for John", "-Dr. Mike"), "@Hannah i need notes for John -Dr. Mike");
+  assert.equal(messageBody({ firstName: "Hannah", label: "Hannah" }, "i need notes for John"), "@Hannah i need notes for John");
+  assert.ok(!/-Dr\./.test(messageBody({ firstName: "Abi", label: "Dr. Abi Mitchell" }, "hey")));
+  assert.deepEqual(privateToFor("eyes-only", "u1"), ["u1"]);
+  assert.equal(privateToFor("general", "u1"), undefined);
+  assert.equal(privateToFor("eyes-only", undefined), undefined);
+  assert.equal(audienceLabel("eyes-only", "Leilani"), "Eyes only (just Leilani)");
+  assert.equal(audienceLabel("general", "Leilani"), "General");
 });
 test("trailing space = whole word (search boxes)", () => {
   assert.ok(nameSearchMatches("Armen Sample", "armen "));
