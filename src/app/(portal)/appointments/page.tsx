@@ -6,7 +6,7 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { ScrollLock } from "@/components/scroll-lock";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
@@ -18,7 +18,8 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import { createPatientRecord, patients } from "@/lib/mock-data";
+import { createPatientRecord, patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { onLocalChange } from "@/lib/local-sync";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -429,6 +430,8 @@ function getCardBackground(status: AppointmentStatus) {
   }
 }
 
+import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_LABEL } from "@/lib/location-filter";
+
 export default function AppointmentsPage() {
   const router = useRouter();
   const { scheduleAppointments, addAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
@@ -553,22 +556,41 @@ export default function AppointmentsPage() {
   // the current location view (an appointment belongs to its patient's
   // location). Recomputed via scheduleAppointments so quick-created
   // patients are included.
+  // `patients` is a module-level list, so React can't see the cloud load fill
+  // it; bump a counter when it's replaced so the lookup below rebuilds.
+  const [patientsVersion, setPatientsVersion] = useState(0);
+  useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setPatientsVersion((v) => v + 1)), []);
   const patientLocationById = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of patients) map.set(p.id, p.locationId ?? "");
     return map;
-  }, [scheduleAppointments]);
+    // Rebuild when patients load too — keyed on appointments alone, the map
+    // stayed empty after a fresh load and a filtered day showed nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patientsVersion stands in for the module-level list
+  }, [patientsVersion, scheduleAppointments]);
+
+  // "No office set" tag on schedule cards while an office is in view.
+  const noOfficeTag = (patientId: string | undefined) =>
+    multiLocation && selectedLocationId && hasNoOffice(patientLocationById.get(patientId ?? ""), officeLocations.map((l) => l.id)) ? (
+      <span className="ml-2 rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+        {NO_OFFICE_LABEL}
+      </span>
+    ) : null;
 
   const selectedDayAppointments = useMemo(
     () =>
       scheduleAppointments.filter((appointment) => {
         if (appointment.date !== selectedDate) return false;
         if (multiLocation && selectedLocationId) {
-          return patientLocationById.get(appointment.patientId ?? "") === selectedLocationId;
+          return matchesOfficeFilter(
+            patientLocationById.get(appointment.patientId ?? ""),
+            selectedLocationId,
+            officeLocations.map((l) => l.id),
+          );
         }
         return true;
       }),
-    [scheduleAppointments, selectedDate, multiLocation, selectedLocationId, patientLocationById],
+    [scheduleAppointments, selectedDate, multiLocation, selectedLocationId, patientLocationById, officeLocations],
   );
   const selectedDayAppointmentsForView = useMemo(() => {
     if (!schedulePatientSearchQuery) {
@@ -1299,7 +1321,7 @@ export default function AppointmentsPage() {
                       type="button"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold">{appointment.patientName}</span>
+                        <span className="block truncate text-sm font-semibold">{appointment.patientName}{noOfficeTag(appointment.patientId)}</span>
                         <span className="block text-xs text-[var(--text-muted)]">
                           {formatUsDateWithWeekday(appointment.date)} • {formatTimeLabel(appointment.startTime)} •{" "}
                           {appointment.appointmentType}
@@ -1370,7 +1392,7 @@ export default function AppointmentsPage() {
                             className={`cursor-pointer rounded-xl border border-[var(--line-soft)] border-l-4 px-3 py-3 ${getCardBackground(appointment.status)}`}
                             onClick={() => openAppointmentEditor(appointment.id)}
                           >
-                            <p className="font-semibold">{appointment.patientName}</p>
+                            <p className="font-semibold">{appointment.patientName}{noOfficeTag(appointment.patientId)}</p>
                             <p className="inline-flex items-center gap-2 text-sm">
                               <span
                                 aria-hidden
@@ -1564,7 +1586,7 @@ export default function AppointmentsPage() {
                         className={`cursor-pointer rounded-xl border border-[var(--line-soft)] border-l-4 px-3 py-3 ${getCardBackground(appointment.status)}`}
                         onClick={() => openAppointmentEditor(appointment.id)}
                       >
-                        <p className="font-semibold">{appointment.patientName}</p>
+                        <p className="font-semibold">{appointment.patientName}{noOfficeTag(appointment.patientId)}</p>
                         <p className="text-sm">
                           {formatTimeLabel(appointment.startTime)} • {appointment.durationMin} min
                         </p>
