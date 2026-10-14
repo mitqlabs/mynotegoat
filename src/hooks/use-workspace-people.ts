@@ -32,10 +32,11 @@ export function useWorkspacePeople(ownerName?: string) {
       // own workspace (names + emails, no permissions), so every login, owner,
       // doctor or front desk, gets recipients. A member can't read other
       // members' rows directly (RLS), which is why messaging had no one to pick.
-      let data: Array<{ member_user_id: string; label: string | null; email: string | null }> | null = null;
+      type Row = { member_user_id: string; label: string | null; email: string | null };
+      let data: Row[] | null = null;
       const rpc = await supabase.rpc("workspace_team_roster");
       if (!rpc.error && Array.isArray(rpc.data)) {
-        data = rpc.data as typeof data;
+        data = rpc.data as Row[];
         const o = (rpc.data as Array<{ owner_id?: string }>)[0]?.owner_id;
         if (o) ownerId = String(o);
       } else {
