@@ -43,6 +43,7 @@ import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischarge
 import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } from "@/lib/initial-exam-date";
 import { buildPrintTableHtml, formatPrintedAt, printHtmlDocument, type PrintCell } from "@/lib/print-table";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
+import { matchesOfficeFilter, NO_OFFICE_LABEL } from "@/lib/location-filter";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -972,8 +973,9 @@ export default function PatientsPage() {
 
       // Location filter (only when multi-location is on and a specific
       // location is selected). "" selected = all locations.
+      // Patients with no office (or a removed one) show under every office.
       const matchesLocation =
-        !multiLocation || !selectedLocationId || patient.locationId === selectedLocationId;
+        !multiLocation || matchesOfficeFilter(patient.locationId, selectedLocationId, locations.map((l) => l.id));
 
       // A search looks across every year — the year filter is about what
       // the list opens on, not a wall around what can be found.
@@ -1068,7 +1070,7 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, initialExamIndex]);
+  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex]);
 
   const toggleSort = (col: ListColumnId) => {
     if (sortColumn === col) {
@@ -1336,7 +1338,7 @@ export default function PatientsPage() {
   const handlePrintList = (extras: PrintExtraId[]) => {
     const locationOf = (patient: PatientRecord) => {
       const loc = locations.find((l) => l.id === patient.locationId);
-      return loc ? locationLabel(loc) : "Unassigned";
+      return loc ? locationLabel(loc) : NO_OFFICE_LABEL;
     };
     const cellFor = (patient: PatientRecord, colId: ListColumnId): string | PrintCell => {
       if (colId === "patient") {
@@ -2002,7 +2004,7 @@ export default function PatientsPage() {
                               <span className="ml-2 rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
                                 {(() => {
                                   const loc = locations.find((l) => l.id === patient.locationId);
-                                  return loc ? locationLabel(loc) : "Unassigned";
+                                  return loc ? locationLabel(loc) : NO_OFFICE_LABEL;
                                 })()}
                               </span>
                             )}

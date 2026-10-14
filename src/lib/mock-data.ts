@@ -602,6 +602,8 @@ export function replacePatientsFromCloud(nextPatients: PatientRecord[]) {
   if (typeof window === "undefined") {
     return;
   }
+  // Let screens that read the module-level list (Schedule) re-derive from it.
+  void import("@/lib/local-sync").then((m) => m.notifyChange(PATIENTS_STORAGE_KEY));
   try {
     window.localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(merged));
   } catch (err) {

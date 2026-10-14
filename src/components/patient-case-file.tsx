@@ -1,6 +1,7 @@
 "use client";
 
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
+import { NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
@@ -5096,7 +5097,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
 
       <section className="panel-card overflow-hidden" data-goat-section="info">
-        <div className="grid gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
           {/* Field order is deliberate, four to a row on xl:
                 1. Last Name | First Name | DOB | Phone
                 2. Sex | Marital Status | Email | Case #
@@ -5133,66 +5134,70 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             />
           </label>
 
-          <label className="grid gap-1">
+          <div className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
-            {/* Text / Add to Contacts wrap under the input when the column is
-                too narrow for them — this cell is one column wide now. */}
+            {/* Text and Add to Contacts sit side by side after the input (they
+                wrap under it when the column is narrow); the No reminder texts
+                checkbox goes on its own line underneath. */}
             <div className="flex flex-wrap items-center gap-2">
               <input
-                className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="min-w-[9.5rem] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                 inputMode="numeric"
                 maxLength={12}
                 onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
                 value={patientPhone}
               />
-              {patientPhone.replace(/\D/g, "").length > 0 && (
-                <SmsSendMenu
-                  align="right"
+              {/* Kept together so they wrap as a pair, never split. */}
+              <span className="inline-flex shrink-0 items-center gap-2">
+                {patientPhone.replace(/\D/g, "").length > 0 && (
+                  <SmsSendMenu
+                    align="right"
+                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
+                    context={{
+                      patient: {
+                        firstName,
+                        lastName,
+                        fullName: [firstName, lastName].filter(Boolean).join(" "),
+                      },
+                    }}
+                    label="Text"
+                    phone={patientPhone}
+                  />
+                )}
+                <button
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
-                  context={{
-                    patient: {
+                  onClick={() =>
+                    downloadVCard({
                       firstName,
                       lastName,
-                      fullName: [firstName, lastName].filter(Boolean).join(" "),
-                    },
-                  }}
-                  label="Text"
-                  phone={patientPhone}
-                />
-              )}
-              {patientPhone.replace(/\D/g, "").length > 0 && (
-                <label
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]"
-                  title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
+                      phone: patientPhone,
+                      email: patientEmail,
+                      dob: patientDob,
+                      address: patientAddress,
+                      note: caseNumber ? `Case #: ${caseNumber}` : undefined,
+                    })
+                  }
+                  title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
+                  type="button"
                 >
-                  <input
-                    checked={textRemindersOff}
-                    onChange={(event) => handleTextRemindersChange(event.target.checked)}
-                    type="checkbox"
-                  />
-                  No reminder texts
-                </label>
-              )}
-              <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
-                onClick={() =>
-                  downloadVCard({
-                    firstName,
-                    lastName,
-                    phone: patientPhone,
-                    email: patientEmail,
-                    dob: patientDob,
-                    address: patientAddress,
-                    note: caseNumber ? `Case #: ${caseNumber}` : undefined,
-                  })
-                }
-                title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
-                type="button"
-              >
-                Add to Contacts
-              </button>
+                  Add to Contacts
+                </button>
+              </span>
             </div>
-          </label>
+            {patientPhone.replace(/\D/g, "").length > 0 && (
+              <label
+                className="inline-flex w-fit items-center gap-1.5 text-xs leading-4 font-semibold text-[var(--text-muted)]"
+                title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
+              >
+                <input
+                  checked={textRemindersOff}
+                  onChange={(event) => handleTextRemindersChange(event.target.checked)}
+                  type="checkbox"
+                />
+                No reminder texts
+              </label>
+            )}
+          </div>
 
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
@@ -5426,7 +5431,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {(officeSettings.locations?.length ?? 0) > 1 && !patientReadOnly && (
+          {/* Office this patient belongs to (2+ offices only). Saves to
+              patients.location_id; drives the Patients/Schedule office filter. */}
+          {(officeSettings.locations?.length ?? 0) > 1 && (
             <label className="grid gap-1 w-full sm:w-44">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
               <select
@@ -5436,9 +5443,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   setPatientLocationId(next);
                   autoSavePatientFile({ locationId: next });
                 }}
+                disabled={patientReadOnly}
                 value={patientLocationId}
               >
-                <option value="">Unassigned</option>
+                <option value="">{NO_OFFICE_LABEL}</option>
+                {patientLocationId && !(officeSettings.locations ?? []).some((loc) => loc.id === patientLocationId) && (
+                  <option value={patientLocationId}>Removed office</option>
+                )}
                 {(officeSettings.locations ?? []).map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.nickname?.trim() || loc.name}
