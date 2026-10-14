@@ -38,6 +38,8 @@ import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
+import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
+import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceMessages } from "@/hooks/use-workspace-messages";
@@ -275,6 +277,7 @@ export function GlobalGoatPopup({
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [chat.messages.length, partial, open]);
 
+  const dialogRef = useRef<DialogState>(emptyDialog());
   const openPatientId = useMemo(() => {
     const m = /^\/patients\/([^/?#]+)/.exec(pathname ?? "");
     return m ? decodeURIComponent(m[1]) : null;
@@ -403,8 +406,74 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // Casual-language turn (goat-dialog): add-note across turns, "him/her/that
+    // one", "no, the other John", and a clarifying question for a statement that
+    // names a patient — never "couldn't find that in this patient's file".
+    {
+      const team = buildTeam(loadSigners(), teamLogins);
+      const turn = goatTurn(question, dialogRef.current, {
+        data: practiceData(),
+        team,
+        openPatientId: current?.id ?? openPatientId ?? null,
+        settings: scheduleSettings() ?? loadScheduleSettings(),
+      });
+      const r = turn.reply;
+      const wasPendingNote = Boolean(dialogRef.current.pendingNote);
+      dialogRef.current = turn.state;
+      const noteFlow = wasPendingNote || Boolean(turn.state.pendingNote) || isAddNote(question);
+      const pp = (id: string | null | undefined) => patientById(id ?? null);
+      if (r.kind === "noteConfirm") {
+        const p = pp(r.patientId);
+        if (p) {
+          push({ role: "user", text: question, practice: true });
+          setChat((c) => ({ ...c, patientId: p.id }));
+          push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: r.text, state: "open" } });
+          return;
+        }
+      }
+      if ((r.kind === "ask" && noteFlow) || (r.kind === "choose" && noteFlow)) {
+        push({ role: "user", text: question, practice: true });
+        const ids = r.kind === "choose" ? r.patientIds : [];
+        push({ role: "goat", text: r.say, practice: true, choices: ids.map((id) => pp(id)).filter((p): p is PatientRecord => Boolean(p)).map((p) => ({ label: choiceLabel(toChatPatient(p)), question: p.fullName })) });
+        return;
+      }
+      if (r.kind === "clarify" || r.kind === "unsupported") {
+        push({ role: "user", text: question, practice: true });
+        const p = pp(r.patientId);
+        const opts = r.kind === "clarify" && p ? clarifyForPatient(p.fullName, question.replace(new RegExp(p.fullName.split(" ")[0], "i"), "").replace(new RegExp(p.fullName.split(" ").slice(1).join(" ") || "^$", "i"), "").trim()).options : [];
+        push({
+          role: "goat",
+          text: r.say,
+          practice: true,
+          choices: opts.length ? opts : undefined,
+          links: r.kind === "unsupported" ? [{ label: "Open Schedule", href: "/appointments" }] : undefined,
+        });
+        return;
+      }
+      // Pronoun / correction follow-ups the rest of send() can't resolve on its own.
+      const viaContext = !findPatientsInQuestion(question, people).named;
+      if (viaContext && r.kind === "fileQuestion") {
+        const p = pp(r.patientId);
+        if (p) {
+          push({ role: "user", text: question });
+          startAnswer(p, r.topic === "bill" ? "what is the balance" : question, false);
+          return;
+        }
+      }
+      if (viaContext && r.kind === "booking") {
+        const p = pp(r.patientId);
+        if (p) {
+          push({ role: "user", text: question, practice: true });
+          startBooking(canonicalBooking(question), p);
+          return;
+        }
+      }
+    }
+    // Casual message wording ("send greg a message…", "let hannah know…") → the "tell" form.
+    if (!isTellRequest(question) && isTell(question)) return send(canonicalTell(question));
+    if (!isBookingRequest(question) && isBooking(question) && canonicalBooking(question) !== question) return send(canonicalBooking(question));
     // "add note to kara's file: spoke to atty" → preview; saved only on Confirm.
-    if (isAddNoteRequest(question)) {
+    if (isAddNoteRequest(question) || isAddNote(question)) {
       push({ role: "user", text: question, practice: true });
       const req = parseAddNote(question);
       if (!req) {
