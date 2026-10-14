@@ -12,6 +12,10 @@ export interface ReminderDevice {
   id: string;
   workspace_id: string;
   name: string;
+  kind: string;
+  last_run_at: string | null;
+  run_requested_until: string | null;
+  is_primary: boolean;
 }
 
 export function adminClient(): SupabaseClient | null {
@@ -30,11 +34,19 @@ export async function authenticateDevice(
   const hash = await hashDeviceToken(token);
   const { data, error } = await admin
     .from("reminder_devices")
-    .select("id, workspace_id, name, revoked_at")
+    .select("id, workspace_id, name, kind, last_run_at, run_requested_until, is_primary, revoked_at")
     .eq("token_hash", hash)
     .maybeSingle();
   if (error || !data || data.revoked_at) return null;
-  return { id: data.id, workspace_id: data.workspace_id, name: data.name };
+  return {
+    id: data.id,
+    workspace_id: data.workspace_id,
+    name: data.name,
+    kind: data.kind ?? "mac",
+    last_run_at: data.last_run_at ?? null,
+    run_requested_until: data.run_requested_until ?? null,
+    is_primary: data.is_primary === true,
+  };
 }
 
 export interface WorkspaceReminderConfig {
@@ -168,4 +180,39 @@ export async function alreadySentIds(
     .eq("visit_date", visitDate)
     .eq("status", "sent");
   return new Set((data ?? []).map((row) => row.appointment_id as string));
+}
+
+/** Is another active device in this workspace marked primary? */
+export async function otherPrimaryExists(admin: SupabaseClient, device: ReminderDevice): Promise<boolean> {
+  if (device.is_primary) return false;
+  const { data } = await admin
+    .from("reminder_devices")
+    .select("id")
+    .eq("workspace_id", device.workspace_id)
+    .eq("is_primary", true)
+    .is("revoked_at", null)
+    .neq("id", device.id)
+    .limit(1);
+  return (data ?? []).length > 0;
+}
+
+/** Lease these appointments to the device; returns the ids it now holds. */
+export async function claimReminders(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  visitDate: string,
+  ids: string[],
+  minutes: number,
+): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const { data, error } = await admin.rpc("claim_reminders", {
+    p_workspace_id: device.workspace_id,
+    p_device_id: device.id,
+    p_visit_date: visitDate,
+    p_appointment_ids: ids,
+    p_minutes: minutes,
+  });
+  if (error) throw new Error(`claim failed: ${error.message}`);
+  const rows = (data ?? []) as unknown[];
+  return new Set(rows.map((row) => (typeof row === "string" ? row : String((row as Record<string, unknown>).claim_reminders ?? ""))));
 }

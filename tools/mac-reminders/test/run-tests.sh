@@ -35,7 +35,7 @@ setup() {
   export MOCK_DIR="$T/m$RANDOM"; mkdir -p "$MOCK_DIR"; : > "$MOCK_DIR/sent"; : > "$MOCK_DIR/acks"; : > "$MOCK_DIR/urls"
   export MOCK_QUEUE="$MOCK_DIR/q.json" NG_LOG_DIR="$MOCK_DIR/log" NG_LOCK_DIR="$MOCK_DIR/lock"
   export NG_CURL="$T/bin/curl" NG_OSASCRIPT="$T/bin/osascript" NG_SECURITY="$T/bin/security" NG_LAUNCHCTL="$T/bin/launchctl"
-  export NG_FORCE_PY=1 NG_SLEEP_MIN=0 NG_SLEEP_MAX=0 MOCK_TOKEN="ngr_$(printf 'a%.0s' $(seq 64))"
+  export NG_FORCE_PY=1 NG_SLEEP_MIN=0 NG_SLEEP_MAX=0 NG_HOUR_NOW=09 MOCK_TOKEN="ngr_$(printf 'a%.0s' $(seq 64))"
   unset NG_CAP MOCK_OSA_FAIL MOCK_HTTP NG_TOKEN
 }
 q() { echo "$1" > "$MOCK_QUEUE"; }
@@ -86,13 +86,21 @@ bash "$R"; rc=$?; check "no token → exit 1, no request" '[ $rc = 1 ] && [ "$(n
 setup; q '{"error":"Invalid or revoked device token."}'
 MOCK_HTTP=401 bash "$R"; rc=$?; check "HTTP 401 → exit 1, logged" '[ $rc = 1 ] && grep -q "HTTP 401" $NG_LOG_DIR/reminders.log'
 
+setup; q "{\"send\":true,\"run\":true,\"dryRun\":false,\"visitDate\":\"2026-10-19\",\"items\":$ITEMS}"
+NG_HOUR_NOW=07 bash "$R"; check "before 8 AM: no request" '[ "$(n $MOCK_DIR/urls)" = 0 ]'
+NG_HOUR_NOW=18 bash "$R"; check "6 PM or later: no request" '[ "$(n $MOCK_DIR/urls)" = 0 ]'
+NG_HOUR_NOW=19 bash "$R" --force; check "--force runs any hour with force=1" 'grep -q "force=1" $MOCK_DIR/urls && [ "$(grep -c "\"status\":\"sent\"" $MOCK_DIR/acks)" = 3 ]'
+
+setup; q '{"send":false,"run":false,"dryRun":false,"reason":"Backup device: waits until 8:30 AM.","visitDate":"2026-10-19","items":[]}'
+bash "$R"; bash "$R"; check "repeated reason logged once" '[ "$(grep -c "Backup device" $NG_LOG_DIR/reminders.log)" = 1 ]'
+
 # installer
 setup; q '{"send":false,"run":false,"dryRun":true,"reason":"x","visitDate":"2026-10-20","items":[]}'
 export NG_APP_DIR="$MOCK_DIR/app" NG_AGENTS_DIR="$MOCK_DIR/agents"
 NG_TOKEN="$MOCK_TOKEN" bash "$DIR/install.sh" > "$MOCK_DIR/install.out" 2>&1; rc=$?
 check "install ok" '[ $rc = 0 ]'
 check "token stored in keychain" 'grep -q "add-generic-password -U -s com.notegoat.reminders -a notegoat-reminders -w ngr_" $MOCK_DIR/security'
-check "plist valid, 8:00, points at script" 'python3 -c "import plistlib,sys; p=plistlib.load(open(\"$NG_AGENTS_DIR/com.notegoat.reminders.plist\",\"rb\")); assert p[\"StartCalendarInterval\"]=={\"Hour\":8,\"Minute\":0}; assert p[\"ProgramArguments\"][1].endswith(\"notegoat-reminders.sh\")"'
+check "plist valid, every 600s, points at script" 'python3 -c "import plistlib,sys; p=plistlib.load(open(\"$NG_AGENTS_DIR/com.notegoat.reminders.plist\",\"rb\")); assert p[\"StartInterval\"]==600; assert p[\"ProgramArguments\"][1].endswith(\"notegoat-reminders.sh\")"'
 check "script installed" '[ -x "$NG_APP_DIR/notegoat-reminders.sh" ]'
 check "launchctl bootstrap" 'grep -q "bootstrap gui/" $MOCK_DIR/launchctl'
 check "no token written to disk" '! grep -rq "$MOCK_TOKEN" "$NG_APP_DIR" "$NG_AGENTS_DIR"'

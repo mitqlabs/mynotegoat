@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   autoRunDays,
+  backupWaitReason,
   buildDeviceQueue,
   generateDeviceToken,
   hashDeviceToken,
@@ -38,6 +39,26 @@ plan = planReminderRun({ now: sun8, settings: { ...s, enabled: false }, officeHo
 assert.equal(plan.run, false);
 plan = planReminderRun({ now: new Date("2026-10-19T15:05:00Z"), settings: { ...s, runDays: [1] }, officeHours: monWedThu, closedIsoDates: new Set() });
 assert.equal(plan.run, true, "manual run days override");
+// Send Now (force): skips run day + send hour, still needs enabled.
+plan = planReminderRun({ now: new Date("2026-10-19T22:00:00Z"), settings: s, officeHours: monWedThu, closedIsoDates: new Set(), force: true });
+assert.equal(plan.run, true, "force runs on a non-run day");
+assert.equal(plan.visitDate, "2026-10-20");
+plan = planReminderRun({ now: new Date("2026-10-18T14:05:00Z"), settings: s, officeHours: monWedThu, closedIsoDates: new Set(), force: true });
+assert.equal(plan.run, false, "force still respects quiet hours (07:05 is before quiet end 8)");
+plan = planReminderRun({ now: sun8, settings: { ...s, enabled: false }, officeHours: monWedThu, closedIsoDates: new Set(), force: true });
+assert.equal(plan.run, false, "force never overrides the off switch");
+plan = planReminderRun({ now: new Date("2026-10-18T17:00:00Z"), settings: s, officeHours: monWedThu, closedIsoDates: new Set(), lastRunAt: sun8 });
+assert.equal(plan.run, false, "once a day (dry-run polling)");
+plan = planReminderRun({ now: new Date("2026-10-18T17:00:00Z"), settings: s, officeHours: monWedThu, closedIsoDates: new Set(), lastRunAt: sun8, force: true });
+assert.equal(plan.run, true, "Send Now after a run is allowed");
+// Backup device timing (8 AM send hour → backup from 8:30 PT).
+assert.ok(backupWaitReason({ now: new Date("2026-10-18T15:10:00Z"), settings: s, requestedAt: null, selfForced: false })?.includes("8:30"));
+assert.equal(backupWaitReason({ now: new Date("2026-10-18T15:31:00Z"), settings: s, requestedAt: null, selfForced: false }), null);
+assert.equal(backupWaitReason({ now: new Date("2026-10-18T15:10:00Z"), settings: s, requestedAt: null, selfForced: true }), null, "forced on the device itself");
+const req = new Date("2026-10-18T20:00:00Z");
+assert.ok(backupWaitReason({ now: new Date("2026-10-18T20:10:00Z"), settings: s, requestedAt: req, selfForced: false }));
+assert.equal(backupWaitReason({ now: new Date("2026-10-18T20:31:00Z"), settings: s, requestedAt: req, selfForced: false }), null, "Send Now: backup after 30 min");
+
 const n = normalizeSmsReminderSettings({ runDays: [3, 0, 9, 3], dryRun: false });
 assert.deepEqual(n.runDays, [0, 3]);
 assert.equal(n.dryRun, false);

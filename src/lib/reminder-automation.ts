@@ -80,14 +80,19 @@ export function planReminderRun(input: {
   settings: SmsReminderSettings;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
+  /** "Send Now": skip the run-day, send-hour and once-a-day checks. */
+  force?: boolean;
+  /** When this device last finished a run (to run once per day). */
+  lastRunAt?: Date | null;
 }): RunPlan {
   const { now, settings, officeHours, closedIsoDates } = input;
+  const force = input.force === true;
   const today = localNow(now, settings.timeZone);
   const visitDate = addDaysIso(today.iso, 1);
   const base = { todayIso: today.iso, visitDate };
   if (!settings.enabled) return { ...base, run: false, reason: "Text reminders are turned off." };
   const days = effectiveRunDays(settings, officeHours);
-  if (!days.includes(today.dow)) {
+  if (!force && !days.includes(today.dow)) {
     return { ...base, run: false, reason: `${WEEKDAY_SHORT[today.dow]} is not a run day.` };
   }
   if (closedIsoDates.has(visitDate)) {
@@ -96,8 +101,11 @@ export function planReminderRun(input: {
   const { quietStartHour: qs, quietEndHour: qe } = settings;
   const quiet = qs !== qe && (qs < qe ? today.hour >= qs && today.hour < qe : today.hour >= qs || today.hour < qe);
   if (quiet) return { ...base, run: false, reason: "Quiet hours — nothing sends now." };
-  if (today.hour < settings.sendHour) {
+  if (!force && today.hour < settings.sendHour) {
     return { ...base, run: false, reason: `Too early — sends at ${settings.sendHour}:00.` };
+  }
+  if (!force && input.lastRunAt && localNow(input.lastRunAt, settings.timeZone).iso === today.iso) {
+    return { ...base, run: false, reason: "Already ran today." };
   }
   return { ...base, run: true };
 }
@@ -207,4 +215,38 @@ export function generateDeviceToken(): string {
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
   return `ngr_${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Minutes after the send time before a backup device may send. */
+export const BACKUP_DELAY_MIN = 30;
+/** How long a device holds the reminders it was handed. */
+export const CLAIM_MINUTES = 15;
+
+/**
+ * May a BACKUP device send now? Only after the primary has had its chance:
+ * BACKUP_DELAY_MIN past the send hour on a normal run, or that long after
+ * a Settings "Send Now" request. A device forced by hand (?force=1 on that
+ * device) may send at once. Returns a reason when it must wait.
+ */
+export function backupWaitReason(input: {
+  now: Date;
+  settings: SmsReminderSettings;
+  requestedAt: Date | null;
+  selfForced: boolean;
+}): string | null {
+  if (input.selfForced) return null;
+  if (input.requestedAt) {
+    const ready = input.requestedAt.getTime() + BACKUP_DELAY_MIN * 60_000;
+    return input.now.getTime() >= ready ? null : "Backup device: giving the primary time to send first.";
+  }
+  const local = localNow(input.now, input.settings.timeZone);
+  const minutes = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: input.settings.timeZone, minute: "2-digit" }).format(input.now),
+  );
+  const nowMin = local.hour * 60 + (Number.isFinite(minutes) ? minutes : 0);
+  const readyMin = input.settings.sendHour * 60 + BACKUP_DELAY_MIN;
+  if (nowMin >= readyMin) return null;
+  const h = Math.floor(readyMin / 60);
+  const m = readyMin % 60;
+  return `Backup device: waits until ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}.`;
 }

@@ -2,7 +2,8 @@
 # Installs NoteGoat text reminders on this Mac (current user only).
 # - asks for the device token from NoteGoat Settings → Text Reminders
 # - stores it in your login Keychain (never in a file)
-# - installs the sender script and a launchd job that runs daily at 8:00
+# - installs the sender script and a launchd job that checks every 10 minutes
+#   (the script itself only checks in between 8 AM and 6 PM)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="${NG_APP_DIR:-$HOME/Library/Application Support/NoteGoat}"
@@ -12,7 +13,6 @@ LABEL="com.notegoat.reminders"
 PLIST="$AGENTS_DIR/$LABEL.plist"
 SECURITY="${NG_SECURITY:-/usr/bin/security}"
 LAUNCHCTL="${NG_LAUNCHCTL:-/bin/launchctl}"
-HOUR="${NG_HOUR:-8}"
 
 [ -f "$HERE/notegoat-reminders.sh" ] || { echo "notegoat-reminders.sh must be next to install.sh"; exit 1; }
 
@@ -42,15 +42,14 @@ cat > "$PLIST" <<PLIST
     <string>/bin/bash</string>
     <string>$APP_DIR/notegoat-reminders.sh</string>
   </array>
-  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>$HOUR</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StartInterval</key><integer>600</integer>
   <key>StandardOutPath</key><string>$LOG_DIR/launchd.out.log</string>
   <key>StandardErrorPath</key><string>$LOG_DIR/launchd.err.log</string>
   <key>RunAtLoad</key><false/>
 </dict>
 </plist>
 PLIST
-echo "✓ Daily 8:00 job installed: $PLIST"
+echo "✓ Job installed (checks every 10 minutes, 8 AM–6 PM): $PLIST"
 
 UID_NUM=$(id -u)
 "$LAUNCHCTL" bootout "gui/$UID_NUM/$LABEL" >/dev/null 2>&1 || true
