@@ -8,9 +8,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
+import { DraftTextarea } from "@/components/draft-textarea";
+import { markLocalWrite } from "@/lib/local-sync";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { createSmsTemplate, SMS_TOKENS } from "@/lib/sms-templates";
+import { createSmsTemplate, DEFAULT_REMINDER_BODY, SMS_TOKENS } from "@/lib/sms-templates";
 import {
   defaultSmsReminderSettings,
   normalizeSmsReminderSettings,
@@ -39,6 +41,7 @@ function loadSettings(): SmsReminderSettings {
 }
 
 function saveSettings(next: SmsReminderSettings) {
+  markLocalWrite(SMS_REMINDER_SETTINGS_KEY);
   window.localStorage.setItem(SMS_REMINDER_SETTINGS_KEY, JSON.stringify(next));
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(SMS_REMINDER_SETTINGS_KEY, "tasks", next));
 }
@@ -287,7 +290,7 @@ export function TextRemindersSettingsPanel() {
               onClick={() => {
                 const created = createSmsTemplate(
                   "⏰ Appointment Reminder",
-                  "Hi {{FIRST_NAME}}, reminder of your appointment tomorrow at {{TIME}} with {{OFFICE_NAME}}. Questions? Call {{OFFICE_PHONE}}.",
+                  DEFAULT_REMINDER_BODY,
                 );
                 updateSmsTemplates((current) => [...current, created]);
                 update({ templateId: created.id });
@@ -299,19 +302,20 @@ export function TextRemindersSettingsPanel() {
           )}
         </div>
         {template && (
-          <textarea
+          <DraftTextarea
             className="min-h-[90px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-            onChange={(e) => {
-              const body = e.target.value;
+            key={template.id}
+            onSave={(body) => {
+              const id = template.id;
               updateSmsTemplates((current) =>
-                current.map((t) => (t.id === template.id ? { ...t, body, updatedAt: new Date().toISOString() } : t)),
+                current.map((t) => (t.id === id ? { ...t, body, updatedAt: new Date().toISOString() } : t)),
               );
             }}
             value={template.body}
           />
         )}
         <p className="text-xs text-[var(--text-muted)]">
-          Tokens: {SMS_TOKENS.map((t) => t.token).join(" ")}. Keep it short; no diagnoses or visit details.
+          Tokens: {SMS_TOKENS.map((t) => t.token).join(" ")}. {"{{DATE}}"} is the appointment date (e.g. 10/19/2026), not today; {"{{TIME}}"} is the appointment time (e.g. 10:30 AM). Keep it short; no diagnoses or visit details.
         </p>
         {template && (
           <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">

@@ -7,7 +7,7 @@ import {
   saveSmsTemplates,
   type SmsTemplate,
 } from "@/lib/sms-templates";
-import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { markLocalWrite, notifyChange, onLocalChange } from "@/lib/local-sync";
 
 export function useSmsTemplates() {
   const [smsTemplates, setSmsTemplates] = useState<SmsTemplate[]>(() => loadSmsTemplates());
@@ -27,6 +27,8 @@ export function useSmsTemplates() {
     (updater: (current: SmsTemplate[]) => SmsTemplate[]) => {
       setSmsTemplates((current) => {
         const next = updater(current);
+        // Keep cloud echoes of our own saves from overwriting newer typing.
+        markLocalWrite(SMS_TEMPLATES_STORAGE_KEY);
         saveSmsTemplates(next);
         selfWriteCountRef.current++;
         notifyChange(SMS_TEMPLATES_STORAGE_KEY);

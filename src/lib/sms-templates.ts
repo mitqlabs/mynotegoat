@@ -16,12 +16,16 @@ export { expandTokens } from "@/lib/sms-render";
 
 export const SMS_TEMPLATES_STORAGE_KEY = "casemate.sms-templates.v1";
 
+/** Built-in appointment reminder text. */
+export const DEFAULT_REMINDER_BODY =
+  "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
+
 export const SMS_TOKENS: { token: string; description: string }[] = [
   { token: "{{FIRST_NAME}}", description: "Patient first name" },
   { token: "{{LAST_NAME}}", description: "Patient last name" },
   { token: "{{FULL_NAME}}", description: "Patient full name" },
-  { token: "{{TIME}}", description: "Appointment time (if applicable)" },
-  { token: "{{DATE}}", description: "Appointment date (if applicable)" },
+  { token: "{{TIME}}", description: "Appointment time, e.g. 10:30 AM" },
+  { token: "{{DATE}}", description: "Appointment date (not today's date), e.g. 10/19/2026" },
   { token: "{{APPOINTMENT_TYPE}}", description: "Appointment type" },
   { token: "{{OFFICE_NAME}}", description: "Office name from settings" },
   { token: "{{DOCTOR_NAME}}", description: "Doctor name from settings" },
@@ -52,7 +56,7 @@ export function getDefaultSmsTemplates(): SmsTemplate[] {
   });
   return [
     mk("🎂 Birthday", "Happy birthday, {{FIRST_NAME}}!"),
-    mk("⏰ Appointment Reminder", "Hi {{FIRST_NAME}}, this is a reminder of your appointment on {{DATE}} at {{TIME}}."),
+    mk("⏰ Appointment Reminder", DEFAULT_REMINDER_BODY),
     mk("✅ Records Received", "Hi {{FIRST_NAME}}, we've received your records."),
     mk("🗓️ Follow-Up", "Hi {{FIRST_NAME}}, following up on your last visit."),
     mk("💳 Payment Due", "Hi {{FIRST_NAME}}, this is a reminder about your outstanding balance."),
