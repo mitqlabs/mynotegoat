@@ -269,3 +269,10 @@ function addDaysIso(iso: string, n: number): string {
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/** A question clearly about a patient's file (question word, "?", or a file topic like MRI / visits / balance). */
+export function isClearFileQuestion(text: string): boolean {
+  const m = text.trim();
+  if (/^(hi|hey|hello|yo|thanks|thank you|thx|ok|okay|k|lol|cool|nice|great|perfect|got it|how are you|how'?s it going|what'?s up|sup|good (morning|afternoon|night))\b[\s!.?,]*(?:g\.?o\.?a\.?t\.?|goat)?[\s!.?]*$/i.test(m)) return false;
+  return QUESTIONY.test(m) || FILE_TOPIC.test(m);
+}

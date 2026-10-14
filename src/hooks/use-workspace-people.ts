@@ -16,6 +16,8 @@ export interface WorkspacePerson {
   label: string;
   /** Secondary line (email), shown under the name in the @ picker. */
   email: string;
+  /** On the office's doctor list (Office Settings). */
+  doctor?: boolean;
 }
 
 export function useWorkspacePeople(ownerName?: string) {
@@ -55,7 +57,9 @@ export function useWorkspacePeople(ownerName?: string) {
       // ADMIN (shown by name when Office Settings has a doctor name).
       if (ownerId && !roster.some((p) => p.userId === ownerId)) {
         const name = (ownerName ?? "").trim();
-        roster.unshift({ userId: ownerId, label: name || "Admin", email: name ? "Admin" : "" });
+        // The account owner (e.g. Dr. Abi Mitchell) is on the team for messaging,
+        // @mentions, G.O.A.T. "tell" and signatures, labeled "Owner".
+        roster.unshift({ userId: ownerId, label: name || "Owner", email: "Owner" });
       }
       setPeople(roster);
     };

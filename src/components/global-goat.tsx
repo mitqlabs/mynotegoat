@@ -39,6 +39,9 @@ import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
+import { patientsMentionedInMessage } from "@/lib/goat-message";
+import { clarifyFor, editNoteLine, followUpFor, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
+import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
@@ -268,7 +271,7 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
-  const { addAppointments } = useScheduleAppointments();
+  const { addAppointments, removeAppointment } = useScheduleAppointments();
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -390,7 +393,9 @@ export function GlobalGoatPopup({
     }
     const record = bookingRecord({ ...fresh, override }, createAppointmentId(), data.appointments);
     addAppointments([record]);
-    updateBooking(msg.id, { ...fresh, override, state: "booked" });
+    // "make it 2pm instead" after it was booked: the new time replaces the old appointment.
+    if (b.replacesId) removeAppointment(b.replacesId);
+    updateBooking(msg.id, { ...fresh, override, state: "booked", appointmentId: record.id, replacesId: b.replacesId });
     push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
   };
 
@@ -413,6 +418,85 @@ export function GlobalGoatPopup({
     updateBooking(msg.id, { ...next, state: "open" }, draftSummary(next));
   };
 
+  /** The last thing G.O.A.T. did or is waiting on, for follow-ups ("change the date to yesterday", "send it to Greg instead"). */
+  const lastAct = (): LastAct | null => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const m = chat.messages[i];
+      if (m.role !== "goat") continue;
+      if (m.noteEdit) {
+        if (m.noteEdit.state === "done" && m.noteEdit.newLine) return { kind: "note", msgId: m.id, patientId: m.noteEdit.patientId, patientName: m.noteEdit.patientName, line: m.noteEdit.newLine };
+        if (m.noteEdit.state === "done") return null;
+        continue;
+      }
+      if (m.noteDraft) return m.noteDraft.state === "saved" && m.noteDraft.saved ? { kind: "note", msgId: m.id, patientId: m.noteDraft.patientId, patientName: m.noteDraft.patientName, line: m.noteDraft.saved } : null;
+      if (m.msgAsk) return { kind: "msgAsk", msgId: m.id, ...m.msgAsk };
+      if (m.msgDraft) return { kind: "message", msgId: m.id, toLabel: m.msgDraft.toLabel, toUserId: m.msgDraft.toUserId, text: m.msgDraft.text, patientId: m.msgDraft.patientId, patientName: m.msgDraft.patientName, caseLabel: m.msgDraft.caseLabel, state: m.msgDraft.state };
+      if (m.booking) return { kind: "booking", msgId: m.id, state: m.booking.state };
+    }
+    return null;
+  };
+
+  /** Act on a follow-up to the last action. True if handled. */
+  const tryFollowUp = (question: string): boolean => {
+    const last = lastAct();
+    const f = followUpFor(question, last, practiceData().today);
+    if (!f || !last) return false;
+    push({ role: "user", text: question, practice: true });
+    if (last.kind === "note") {
+      const edit = (newLine: string | null, say: string) => push({ role: "goat", text: say, practice: true, noteEdit: { patientId: last.patientId, patientName: last.patientName, oldLine: last.line, newLine, state: "open" } });
+      if (f.kind === "noteDate") edit(withNoteDate(last.line, f.iso), `Change the date on the note I just added for ${displayName(last.patientName)}?`);
+      else if (f.kind === "noteReplace") edit(withNoteText(last.line, f.text), `Change the note I just added for ${displayName(last.patientName)} to this?`);
+      else if (f.kind === "noteDelete") edit(null, `Remove the note I just added for ${displayName(last.patientName)}?`);
+      else if (f.kind === "noteAppend") push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(last.patientName), noteDraft: { patientId: last.patientId, patientName: last.patientName, text: f.text, state: "open" } });
+      else if (f.kind === "clarify") push({ role: "goat", text: f.say, practice: true, choices: f.choice ? [f.choice] : undefined });
+      return true;
+    }
+    if (last.kind === "msgAsk" && f.kind === "generalMessage") {
+      setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === last.msgId ? { ...x, msgAsk: undefined } : x)) }));
+      push({ role: "goat", text: "Send this message? (general, no patient)", msgDraft: { toLabel: last.toLabel, toUserId: last.toUserId, text: last.text, state: "open" } });
+      return true;
+    }
+    if (last.kind === "message" && f.kind === "messageTo") {
+      const to = matchRecipient(f.to, buildTeam(loadSigners(), teamLogins));
+      if (!to.length) {
+        push({ role: "goat", text: `I couldn't find a team member named "${f.to}".`, practice: true });
+        return true;
+      }
+      if (f.mode === "instead" && last.state === "open") setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === last.msgId && x.msgDraft ? { ...x, msgDraft: { ...x.msgDraft, state: "canceled" } } : x)) }));
+      const note = f.mode === "instead" && last.state === "sent" ? ` (The one to ${last.toLabel} was already sent.)` : "";
+      push({ role: "goat", text: `Send this to ${to[0].label}?${note}`, msgDraft: { toLabel: to[0].label, toUserId: to[0].userId, text: last.text, patientId: last.patientId, patientName: last.patientName, caseLabel: last.caseLabel, state: "open" } });
+      return true;
+    }
+    if (last.kind === "booking" && f.kind === "bookingTime") {
+      const prev = chat.messages.find((x) => x.id === last.msgId)?.booking;
+      if (!prev) return false;
+      const next = retime(prev, f.time, practiceData().appointments.filter((a) => a.id !== prev.appointmentId), scheduleSettings() ?? loadScheduleSettings());
+      if (!next) {
+        push({ role: "goat", text: `What time? (e.g. "2pm" or "9:30am")`, practice: true });
+        return true;
+      }
+      if (prev.state === "open") updateBooking(last.msgId, { ...prev, state: "canceled" });
+      const replacesId = prev.state === "booked" ? prev.appointmentId : undefined;
+      push({ role: "goat", text: `${draftSummary(next)}${replacesId ? "\nThis moves the visit I just booked." : ""}`, patientName: displayName(next.patientName), booking: { ...next, state: "open", replacesId } });
+      return true;
+    }
+    return false;
+  };
+
+  /** Confirm a change to the note G.O.A.T. just added: edit that exact line in Case Notes. */
+  const applyNoteEdit = (msg: ChatMessage) => {
+    const e = msg.noteEdit;
+    if (!e || e.state !== "open") return;
+    const p = patientById(e.patientId);
+    const existing = getCaseNote(e.patientId) ?? p?.matrix?.notes ?? "";
+    const next = editNoteLine(existing, e.oldLine, e.newLine);
+    if (next !== null) {
+      setCaseNote(e.patientId, next);
+      notifyChange(STORAGE_KEY_CASE_NOTES);
+    }
+    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteEdit: { ...e, state: next === null ? "missing" : "done" } } : x)) }));
+  };
+
   const send = (raw: string) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
@@ -420,6 +504,8 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // Follow-ups to what G.O.A.T. just did (note / message / booking) come first.
+    if (tryFollowUp(question)) return;
     // Casual-language turn (goat-dialog): add-note across turns, "him/her/that
     // one", "no, the other John", and a clarifying question for a statement that
     // names a patient — never "couldn't find that in this patient's file".
@@ -524,7 +610,14 @@ export function GlobalGoatPopup({
         }
         const recipient = to[0];
         const pool = allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map(toChatPatient);
-        const lookup = req.patientName ? findPatientsInQuestion(`about ${req.patientName} `, pool) : findPatientsInQuestion(req.text, pool);
+        // No "about <name>": only a real name in the text points at a patient (strict
+        // match, common words like "testing"/"hey" never do). No name → a general
+        // team message (no patient), like the Messages page's own composer.
+        const mentioned = req.patientName ? [] : patientsMentionedInMessage(req.text, pool);
+        const asCand = (p: ChatPatient) => ({ patient: p, score: 1, words: [] as string[] });
+        const lookup = req.patientName
+          ? findPatientsInQuestion(`about ${req.patientName} `, pool)
+          : { confident: mentioned.length === 1 ? asCand(mentioned[0]) : null, candidates: mentioned.length > 1 ? mentioned.map(asCand) : [], inactive: [] as ReturnType<typeof asCand>[] };
         if (!lookup.confident && lookup.candidates.length) {
           const swap = (full: string) => {
             const t = req.text.replace(/[.?!]+$/, "");
@@ -532,7 +625,7 @@ export function GlobalGoatPopup({
             return n && t.toLowerCase().endsWith(n.toLowerCase()) ? `${t.slice(0, t.length - n.length)}${full}` : `${t} about ${full}`;
           };
           const ch = (c: { patient: ChatPatient }) => ({ label: choiceLabel(c.patient), question: `tell ${req.to} ${swap(displayName(c.patient.fullName))}` });
-          push({ role: "goat", text: "Which patient is this about?", ...withInactive(lookup.candidates.map(ch), lookup.inactive.map(ch)) });
+          push({ role: "goat", text: "Which patient is this about? (Or say \"no patient\" to send it as a general message.)", msgAsk: { toLabel: recipient.label, toUserId: recipient.userId, text: req.text }, ...withInactive(lookup.candidates.map(ch), lookup.inactive.map(ch)) });
           return;
         }
         if (!lookup.confident && req.patientName) {
@@ -642,6 +735,11 @@ export function GlobalGoatPopup({
       // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
       if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
       else push({ role: "goat", text: PRACTICE_HELP, practice: true });
+      return;
+    }
+    // Not clearly about the file: never "I couldn't find that in this patient's file".
+    if (!isClearFileQuestion(question)) {
+      push({ role: "goat", text: clarifyFor(lastAct()), practice: true });
       return;
     }
     startAnswer(p, question, Boolean(current));
@@ -771,6 +869,7 @@ export function GlobalGoatPopup({
                       </Link>
                     ))}
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
+                    {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -1000,6 +1099,27 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
   );
 }
 
+function NoteEditCard({ edit, onConfirm, onCancel }: { edit: NonNullable<ChatMessage["noteEdit"]>; onConfirm: () => void; onCancel: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  if (edit.state === "done") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ {edit.newLine ? "Updated in Case Notes" : "Removed from Case Notes"}</p>;
+  if (edit.state === "missing") return <p className="mt-1.5 text-xs font-semibold text-amber-800">That line isn&apos;t in the Case Notes anymore (it was edited), so I didn&apos;t change anything.</p>;
+  if (edit.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">No change.</p>;
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-note-edit>
+      <p className="rounded-md bg-[#f6f6f6] px-2 py-1 text-[var(--text-muted)] line-through">{edit.oldLine}</p>
+      {edit.newLine && <p className="rounded-md bg-[#eef8fb] px-2 py-1">{edit.newLine}</p>}
+      <div className="flex flex-wrap gap-1.5">
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">
+          Confirm
+        </button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Choices with inactive cases held back behind "Show inactive (N)". */
 function withInactive(shown: ChatChoice[], hidden: ChatChoice[]): Pick<ChatMessage, "choices" | "moreChoices"> {
   if (!hidden.length) return { choices: shown };
@@ -1011,9 +1131,11 @@ function withInactive(shown: ChatChoice[], hidden: ChatChoice[]): Pick<ChatMessa
 function PeopleLoader({ onPeople }: { onPeople: (p: WorkspacePerson[]) => void }) {
   const { officeSettings } = useOfficeSettings();
   const people = useWorkspacePeople((officeSettings.doctorName ?? "").trim());
+  const doctors = officeSettings.doctors;
   useEffect(() => {
-    onPeople(people);
-  }, [people, onPeople]);
+    // Doctors (Office Settings list) answer to "Dr. <First>" / "Dr. <Last>".
+    onPeople(people.map((p) => ({ ...p, doctor: (doctors ?? []).some((d) => d.memberUserId === p.userId) })));
+  }, [people, onPeople, doctors]);
   return null;
 }
 
