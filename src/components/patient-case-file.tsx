@@ -7374,11 +7374,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </div>
             )}
 
-            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-              <label className="grid gap-1">
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="grid min-w-[14rem] flex-1 gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Narrative Template</span>
                 <select
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  className="h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3"
                   onChange={(event) => {
                     setNarrativeTemplateIdDraft(event.target.value);
                     setNarrativeMessage("");
@@ -7398,7 +7398,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </label>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="h-[42px] shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-4 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                 onClick={startNarrativeGeneration}
                 type="button"
               >
@@ -7406,7 +7406,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </button>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="h-[42px] shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-4 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                 onClick={openReportTemplateSettings}
                 type="button"
               >
