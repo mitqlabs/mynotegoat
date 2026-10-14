@@ -1,7 +1,7 @@
 "use client";
 
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
-import { NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
@@ -5399,9 +5399,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         </div>
 
-        {/* Lien and Case Status are short picks, so they size to their content and
-            Prior Care (free text) takes the rest of the row. Equal thirds made
-            the two dropdowns needlessly long. */}
+        {/* Every field has a fixed width on sm+ (full width on phones) so the
+            row wraps tidily. Prior Care is capped; Location is sized to fit the
+            longest office name (see locationFieldWidth). */}
         <div className="flex flex-wrap items-end gap-3 border-b border-[var(--line-soft)] p-4">
           {!isCashPatient && (
             <label className="grid gap-1 w-full sm:w-44">
@@ -5421,7 +5421,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1 min-w-[14rem] flex-1">
+            <label className="grid gap-1 w-full sm:w-72">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -5473,7 +5473,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Office this patient belongs to (2+ offices only). Saves to
               patients.location_id; drives the Patients/Schedule office filter. */}
           {(officeSettings.locations?.length ?? 0) > 1 && (
-            <label className="grid gap-1 w-full sm:w-44">
+            <label
+              className="grid gap-1 w-full sm:w-[var(--loc-field-w)]"
+              style={{ "--loc-field-w": locationFieldWidth(officeSettings.locations ?? []) } as CSSProperties}
+            >
               <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
               <select
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
