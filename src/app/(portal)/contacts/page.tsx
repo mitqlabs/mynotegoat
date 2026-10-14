@@ -416,104 +416,31 @@ export default function ContactsPage() {
         />
       )}
 
-      <section className="grid gap-3 md:grid-cols-2">
+      <section className="panel-card overflow-hidden p-0">
+        <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_9.5rem_minmax(0,1.6fr)_7.5rem] items-center gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)] md:grid">
+          <span>Name</span>
+          <span>Category</span>
+          <span>Phone / Fax</span>
+          <span>Email</span>
+          <span className="text-right">Actions</span>
+        </div>
+
         {filteredContacts.length === 0 && (
-          <article className="panel-card p-4 md:col-span-2">
-            <p className="text-sm text-[var(--text-muted)]">
-              No contacts found for this category yet.
-            </p>
-          </article>
+          <p className="px-4 py-3 text-sm text-[var(--text-muted)]">
+            No contacts found for this category yet.
+          </p>
         )}
 
+        <ul className="divide-y divide-[var(--line-soft)]">
         {filteredContacts.map((contact) => {
           const isEditing = editingContactId === contact.id;
+          const emailRows = toDisplayEmails(contact);
 
-          return (
-            <article key={contact.id} className="panel-card p-4 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-lg font-semibold">{contact.name}</h4>
-                {!isEditing && (
-                  <div className="flex shrink-0 gap-2">
-                    {canEditContacts && (
-                      <button
-                        className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
-                        onClick={() => startEditing(contact)}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {canDeleteContacts && (
-                      <button
-                        className="rounded-lg border border-[#b43b34] px-3 py-1 text-sm font-semibold text-[#b43b34] hover:bg-[#b43b34] hover:text-white"
-                        onClick={() => void handleDeleteContact(contact)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {!isEditing ? (
-                <>
-                  <p className="mt-2 text-sm">
-                    <span className="font-semibold">Category:</span> {contact.category}
-                    {contact.subCategory ? (
-                      <span className="ml-2 inline-block rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold">
-                        {contact.subCategory}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="text-sm">
-                    <span className="font-semibold">Phone:</span> {contact.phone}
-                  </p>
-                  {contact.fax && (
-                    <p className="text-sm">
-                      <span className="font-semibold">Fax:</span> {contact.fax}
-                    </p>
-                  )}
-                  {(() => {
-                    const emailRows = toDisplayEmails(contact);
-                    if (!emailRows.length) {
-                      return (
-                        <p className="text-sm">
-                          <span className="font-semibold">Email:</span> -
-                        </p>
-                      );
-                    }
-                    return (
-                      <div className="text-sm">
-                        <span className="font-semibold">Email:</span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          {emailRows.map((e, i) => (
-                            <div key={i} className="flex flex-wrap items-center gap-1.5">
-                              {e.name && (
-                                <span className="rounded-full bg-[rgba(13,121,191,0.10)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)]">
-                                  {e.name}
-                                </span>
-                              )}
-                              {e.label && (
-                                <span className="rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--text-muted)]">
-                                  {e.label}
-                                </span>
-                              )}
-                              <span>{e.email}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {contact.address && (
-                    <p className="text-sm">
-                      <span className="font-semibold">Address:</span> {contact.address}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <form className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2" onSubmit={(e) => { e.preventDefault(); saveEditedContact(); }}>
+          if (isEditing) {
+            return (
+              <li key={contact.id} className="bg-[var(--bg-soft)] px-4 py-3">
+                <p className="mb-2 text-sm font-semibold">Editing {contact.name}</p>
+                <form className="grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-2 py-1" onSubmit={(e) => { e.preventDefault(); saveEditedContact(); }}>
                   <input
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     onChange={(event) =>
@@ -632,10 +559,78 @@ export default function ContactsPage() {
                     </button>
                   </div>
                 </form>
-              )}
-            </article>
+              </li>
+            );
+          }
+
+          return (
+            <li
+              key={contact.id}
+              className="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 px-4 py-2 text-sm transition-colors hover:bg-[rgba(13,121,191,0.04)] md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_9.5rem_minmax(0,1.6fr)_7.5rem]"
+              data-contact-row
+            >
+              <div className="col-start-1 row-start-1 min-w-0">
+                <p className="truncate font-semibold leading-6" title={contact.name}>{contact.name}</p>
+                {contact.address && (
+                  <p className="truncate text-xs text-[var(--text-muted)]" title={contact.address}>{contact.address}</p>
+                )}
+              </div>
+
+              <div className="order-last col-span-2 flex min-w-0 flex-wrap items-center gap-1.5 leading-6 text-[var(--text-muted)] md:order-none md:col-span-1">
+                <span className="truncate">{contact.category}</span>
+                {contact.subCategory ? (
+                  <span className="rounded bg-[var(--bg-soft)] px-1.5 text-[11px] font-semibold leading-5 text-[var(--text-main,inherit)]">
+                    {contact.subCategory}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="order-last col-span-2 tabular-nums leading-6 md:order-none md:col-span-1">
+                <p>{contact.phone || <span className="text-[var(--text-muted)]">—</span>}</p>
+                {contact.fax && <p className="text-xs leading-5 text-[var(--text-muted)]">Fax {contact.fax}</p>}
+              </div>
+
+              <div className="order-last col-span-2 min-w-0 md:order-none md:col-span-1">
+                {emailRows.length === 0 ? (
+                  <p className="leading-6 text-[var(--text-muted)]">—</p>
+                ) : (
+                  emailRows.map((e, i) => (
+                    <p key={i} className="flex min-w-0 items-center gap-1.5 leading-6">
+                      {(e.name || e.label) && (
+                        <span className="shrink-0 rounded bg-[rgba(13,121,191,0.08)] px-1.5 text-[11px] font-semibold leading-5 text-[var(--brand-primary)]">
+                          {[e.name, e.label].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
+                      <a className="truncate hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
+                    </p>
+                  ))
+                )}
+              </div>
+
+              <div className="col-start-2 row-start-1 flex justify-end gap-1 md:col-start-5 md:opacity-60 md:transition-opacity md:group-hover:opacity-100 md:focus-within:opacity-100">
+                {canEditContacts && (
+                  <button
+                    className="rounded-md px-2 py-0.5 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.10)]"
+                    onClick={() => startEditing(contact)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                )}
+                {canDeleteContacts && (
+                  <button
+                    className="rounded-md px-2 py-0.5 text-xs font-semibold text-[#b43b34] hover:bg-[rgba(180,59,52,0.10)]"
+                    onClick={() => void handleDeleteContact(contact)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </li>
           );
         })}
+        </ul>
       </section>
 
       {showAddContactModal && (
