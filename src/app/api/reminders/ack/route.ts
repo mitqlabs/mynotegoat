@@ -17,9 +17,21 @@ export async function POST(request: NextRequest) {
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: "Invalid or revoked device token." }, { status: 401 });
 
-  const body = (await request.json().catch(() => ({}))) as { visitDate?: unknown; results?: unknown };
+  const body = (await request.json().catch(() => ({}))) as {
+    visitDate?: unknown;
+    results?: unknown;
+    id?: unknown;
+    status?: unknown;
+    error?: unknown;
+  };
   const visitDate = typeof body.visitDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.visitDate) ? body.visitDate : "";
-  const results = Array.isArray(body.results) ? (body.results as AckResult[]).slice(0, 500) : [];
+  // Batch form { results: [...] } or the single-item form { id, status }
+  // (easier to build in an iPhone Shortcut).
+  const results = Array.isArray(body.results)
+    ? (body.results as AckResult[]).slice(0, 500)
+    : body.id !== undefined
+      ? [{ id: body.id, status: body.status, error: body.error }]
+      : [];
   if (!visitDate) return NextResponse.json({ error: "Missing visitDate." }, { status: 400 });
 
   const ids = Array.from(new Set(results.map((r) => (typeof r.id === "string" ? r.id : "")).filter(Boolean)));
@@ -69,7 +81,7 @@ export async function POST(request: NextRequest) {
   const summary = `${visitDate}: ${counts.sent} sent, ${counts.failed} failed, ${counts["dry-run"]} dry-run`;
   await admin
     .from("reminder_devices")
-    .update({ last_run_at: new Date().toISOString(), last_run_summary: summary })
+    .update({ last_run_at: new Date().toISOString(), last_run_summary: summary, run_requested_until: null })
     .eq("id", device.id);
   return NextResponse.json({ logged, duplicates, ignored, summary });
 }

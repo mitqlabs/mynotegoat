@@ -46,6 +46,9 @@ function saveSettings(next: SmsReminderSettings) {
 type DeviceRow = {
   id: string;
   name: string;
+  kind: string | null;
+  is_primary: boolean | null;
+  run_requested_until: string | null;
   created_at: string;
   last_seen_at: string | null;
   last_run_at: string | null;
@@ -98,6 +101,7 @@ export function TextRemindersSettingsPanel() {
     : "";
 
   const workspaceId = typeof window === "undefined" ? "" : getActiveWorkspaceIdSync();
+  const origin = typeof window === "undefined" ? "https://www.mynotegoat.com" : window.location.origin;
 
   const refresh = useCallback(async () => {
     const client = getSupabaseBrowserClient();
@@ -105,7 +109,7 @@ export function TextRemindersSettingsPanel() {
     const [{ data: d }, { data: l }] = await Promise.all([
       client
         .from("reminder_devices")
-        .select("id, name, created_at, last_seen_at, last_run_at, last_run_summary, revoked_at")
+        .select("id, name, kind, is_primary, run_requested_until, created_at, last_seen_at, last_run_at, last_run_summary, revoked_at")
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: false }),
       client
@@ -143,15 +147,25 @@ export function TextRemindersSettingsPanel() {
       });
   }, [workspaceId]);
 
-  const addDevice = async () => {
+  const addDevice = async (kind: "mac" | "iphone") => {
     const client = getSupabaseBrowserClient();
     if (!client || !workspaceId) return setMessage("Sign in to add a device.");
-    const name = window.prompt("Name this device", "Office iMac")?.trim();
+    const name = window.prompt("Name this device", kind === "iphone" ? "Office iPhone" : "Office iMac")?.trim();
     if (!name) return;
     const token = generateDeviceToken();
-    const { error } = await client
-      .from("reminder_devices")
-      .insert({ workspace_id: workspaceId, name, token_hash: await hashDeviceToken(token) });
+    const firstActive = !devices.some((d) => !d.revoked_at);
+    const { error } = await client.from("reminder_devices").insert({
+      workspace_id: workspaceId,
+      name,
+      kind,
+      // The first device is primary; the iPhone becomes primary when added.
+      is_primary: firstActive || kind === "iphone",
+      token_hash: await hashDeviceToken(token),
+    });
+    if (!error && (kind === "iphone" || firstActive)) {
+      const others = devices.filter((d) => !d.revoked_at).map((d) => d.id);
+      if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
+    }
     if (error) return setMessage(`Couldn't add the device: ${error.message}`);
     setNewToken(token);
     setMessage("");
@@ -164,6 +178,35 @@ export function TextRemindersSettingsPanel() {
     if (!client) return;
     const { error } = await client.from("reminder_devices").update({ revoked_at: new Date().toISOString() }).eq("id", id);
     if (error) setMessage(`Couldn't revoke: ${error.message}`);
+    void refresh();
+  };
+
+  const makePrimary = async (id: string) => {
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    const others = devices.filter((d) => d.id !== id && !d.revoked_at).map((d) => d.id);
+    if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
+    const { error } = await client.from("reminder_devices").update({ is_primary: true }).eq("id", id);
+    if (error) setMessage(`Couldn't change the primary device: ${error.message}`);
+    void refresh();
+  };
+
+  const sendNow = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    const active = devices.filter((d) => !d.revoked_at);
+    if (!active.length) return setMessage("Add a device first.");
+    if (!window.confirm("Send tomorrow's reminders now? Anyone already texted is skipped.")) return;
+    const until = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const { error } = await client
+      .from("reminder_devices")
+      .update({ run_requested_until: until })
+      .in("id", active.map((d) => d.id));
+    setMessage(
+      error
+        ? `Couldn't request a run: ${error.message}`
+        : "Requested for the next 2 hours. On the iPhone, tap the \"Send Reminders Now\" shortcut; the Mac checks every 10 minutes (as backup it waits 30 minutes for the primary).",
+    );
     void refresh();
   };
 
@@ -280,10 +323,18 @@ export function TextRemindersSettingsPanel() {
 
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={label}>Sending Mac</span>
-          <button className={btn} onClick={() => void addDevice()} type="button">
-            + Add device
-          </button>
+          <span className={label}>Sending devices</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btn} data-testid="send-now" onClick={() => void sendNow()} type="button">
+              Send Reminders Now
+            </button>
+            <button className={btn} onClick={() => void addDevice("iphone")} type="button">
+              + Add iPhone
+            </button>
+            <button className={btn} onClick={() => void addDevice("mac")} type="button">
+              + Add Mac
+            </button>
+          </div>
         </div>
         {newToken && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
@@ -297,12 +348,23 @@ export function TextRemindersSettingsPanel() {
           activeDevices.map((d) => (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" key={d.id}>
               <span>
-                <span className="font-semibold">{d.name}</span> · last checked in {fmt(d.last_seen_at)} · last run {fmt(d.last_run_at)}
+                <span className="font-semibold">{d.name}</span>{" "}
+                <span className="rounded-md bg-[var(--bg-soft)] px-1.5 py-0.5 text-xs font-semibold">
+                  {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
+                </span>
+                {d.run_requested_until && new Date(d.run_requested_until) > new Date() ? " · Send Now requested" : ""} · last checked in {fmt(d.last_seen_at)} · last run {fmt(d.last_run_at)}
                 {d.last_run_summary ? ` (${d.last_run_summary})` : ""}
               </span>
-              <button className="text-sm font-semibold text-red-700" onClick={() => void revokeDevice(d.id)} type="button">
-                Revoke
-              </button>
+              <span className="inline-flex items-center gap-3">
+                {!d.is_primary && (
+                  <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void makePrimary(d.id)} type="button">
+                    Make primary
+                  </button>
+                )}
+                <button className="text-sm font-semibold text-red-700" onClick={() => void revokeDevice(d.id)} type="button">
+                  Revoke
+                </button>
+              </span>
             </div>
           ))
         )}
@@ -319,9 +381,46 @@ export function TextRemindersSettingsPanel() {
           <li>Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}. A closed day in Key Dates is skipped.</li>
           <li>Skipped: canceled and no-show visits, patients marked &quot;no text reminders&quot;, and patients with no phone.</li>
           <li>One text per patient per day, and never the same reminder twice.</li>
+          <li>
+            Two devices? The primary sends first. The backup only sends what is still unsent 30 minutes later, and a
+            device only sends reminders it has claimed, so nobody gets two texts.
+          </li>
           <li>In dry run, the Mac only logs what it would send. Turn dry run off when the log looks right.</li>
         </ul>
       </div>
+
+      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
+        <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-[var(--text-muted)]">
+          <li>Click <b>+ Add iPhone</b> and copy the token (shown once).</li>
+          <li>On the office iPhone: <b>Shortcuts</b> → <b>+</b> → name it <b>Send Reminders</b>.</li>
+          <li>
+            <b>Get Contents of URL</b>: <code>{origin}/api/reminders/queue?format=shortcut</code> → Show More → Method GET →
+            Headers: <code>Authorization</code> = <code>Bearer YOUR-TOKEN</code>.
+          </li>
+          <li>
+            <b>Get Dictionary Value</b> <code>visitDate</code> → <b>Set Variable</b> VisitDate. Then{" "}
+            <b>Get Dictionary Value</b> <code>items</code> from Contents of URL.
+          </li>
+          <li>
+            <b>Repeat with Each</b> item. Inside: <b>Get Dictionary Value</b> <code>text</code> (Repeat Item) →{" "}
+            <b>Send Message</b> with that text to <b>Get Dictionary Value</b> <code>phone</code>; tap ⌄ and turn{" "}
+            <b>Show When Run</b> OFF. Then <b>Get Contents of URL</b> <code>{origin}/api/reminders/ack</code>, Method POST,
+            same header, Request Body JSON: <code>visitDate</code> = VisitDate, <code>id</code> = Repeat Item&apos;s{" "}
+            <code>id</code>, <code>status</code> = <code>sent</code>. Then <b>Wait</b> 5 seconds.
+          </li>
+          <li>Optional: after the repeat, <b>Get Dictionary Value</b> <code>message</code> → <b>Show Notification</b>.</li>
+          <li>Run it once by hand and choose <b>Always Allow</b> for mynotegoat.com and Messages.</li>
+          <li>
+            Duplicate it as <b>Send Reminders Now</b>, change the URL to end in{" "}
+            <code>?format=shortcut&amp;force=1</code>, and Add to Home Screen. Duplicates are still blocked.
+          </li>
+          <li>
+            <b>Automation</b> → <b>+</b> → <b>Time of Day</b> 8:00 AM, Daily → <b>Run Immediately</b>, Notify When Run off
+            → <b>Run Shortcut</b> “Send Reminders”. It only sends on run days.
+          </li>
+        </ol>
+      </details>
 
       <div className="grid gap-1">
         <div className="flex items-center justify-between">

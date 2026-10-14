@@ -1,11 +1,14 @@
 #!/bin/bash
 # NoteGoat day-before text reminders, sent from this Mac's Messages app.
-# Run by launchd at 8:00 every day. NoteGoat decides whether today is a run
-# day; this script only sends when the server says send=true.
+# Run by launchd every 10 minutes; it only checks in between 8 AM and 6 PM.
+# NoteGoat decides whether there's anything to send (run days, Send Now,
+# primary/backup); this script only sends when the server says send=true.
 #
-# Usage: notegoat-reminders.sh [--dry-run] [--preview]
+# Usage: notegoat-reminders.sh [--dry-run] [--preview] [--force]
 #   --dry-run  log what would be sent, send nothing (reports "dry-run")
 #   --preview  fetch the list even on a non-run day; implies --dry-run
+#   --force    "Send Now" from this Mac (skips run-day/time checks;
+#              duplicates are still blocked by NoteGoat)
 set -u
 
 BASE_URL="${NG_BASE_URL:-https://www.mynotegoat.com}"
@@ -23,17 +26,27 @@ CURL="${NG_CURL:-curl}"
 
 DRY_RUN=0
 PREVIEW=0
+FORCE=0
+START_HOUR="${NG_START_HOUR:-8}"
+END_HOUR="${NG_END_HOUR:-18}"
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --preview) PREVIEW=1; DRY_RUN=1 ;;
-    -h|--help) sed -n 2,9p "$0"; exit 0 ;;
+    --force) FORCE=1 ;;
+    -h|--help) sed -n 2,12p "$0"; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
 
 mkdir -p "$LOG_DIR"
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
+
+# Scheduled checks only during office hours (manual flags always run).
+HOUR_NOW=$((10#${NG_HOUR_NOW:-$(date +%H)}))
+if [ "$PREVIEW" = 0 ] && [ "$FORCE" = 0 ] && { [ "$HOUR_NOW" -lt "$START_HOUR" ] || [ "$HOUR_NOW" -ge "$END_HOUR" ]; }; then
+  exit 0
+fi
 
 # --- JSON helpers: plutil on macOS, python3 fallback (tests / Linux) ---
 json_get() { # file keypath  (e.g. items.0.text) -> raw value, empty if missing
@@ -96,7 +109,7 @@ fi
 # --- fetch queue ---
 QUEUE="$WORK/queue.json"
 URL="$BASE_URL/api/reminders/queue"
-[ "$PREVIEW" = 1 ] && URL="$URL?preview=1"
+if [ "$PREVIEW" = 1 ]; then URL="$URL?preview=1"; elif [ "$FORCE" = 1 ]; then URL="$URL?force=1"; fi
 HTTP=$("$CURL" -sS --max-time 60 -o "$QUEUE" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$URL" 2>>"$LOG_FILE")
 if [ "$HTTP" != "200" ]; then
   log "ERROR: queue request failed (HTTP $HTTP): $(head -c 300 "$QUEUE" 2>/dev/null)"
@@ -113,9 +126,15 @@ COUNT=${COUNT:-0}
 [ "$SERVER_DRY" = "true" ] && DRY_RUN=1
 
 if [ "$PREVIEW" = 0 ] && [ "$RUN" != "true" ]; then
-  log "Nothing to do for $VISIT_DATE: ${REASON:-not a run day}"
+  # Polled every 10 minutes: only log when something changes.
+  STATE="$LOG_DIR/.last-reason"
+  if [ "$(cat "$STATE" 2>/dev/null)" != "$VISIT_DATE $REASON" ]; then
+    log "Nothing to do for $VISIT_DATE: ${REASON:-not a run day}"
+    printf '%s' "$VISIT_DATE $REASON" > "$STATE"
+  fi
   exit 0
 fi
+rm -f "$LOG_DIR/.last-reason"
 # Real sending only when the server explicitly says send=true.
 if [ "$SEND" != "true" ]; then DRY_RUN=1; fi
 

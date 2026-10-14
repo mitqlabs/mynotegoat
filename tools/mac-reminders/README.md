@@ -24,10 +24,22 @@ the Mac just sends.
    click **OK**.
 
 ## The first week (dry run)
-Every run day at 8:00 the Mac writes what it *would* send to
+Every run day from 8:00 the Mac writes what it *would* send to
 `~/Library/Logs/NoteGoat/reminders.log`, and NoteGoat shows it under
 **Recent sends** as "dry-run". When it looks right, turn **Dry run** off in
 Settings. Nothing else changes on the Mac.
+
+## iPhone primary, Mac backup
+If the office iPhone is set up too (Settings → Text Reminders → iPhone
+setup), mark it **Primary** there. The Mac then waits until 8:30 and only
+sends what the iPhone hasn't. Each device "claims" the reminders it is
+handed for 15 minutes, so the two never text the same patient.
+
+## Send Now
+**Send Reminders Now** in Settings asks every device to send tomorrow's
+reminders within the next 2 hours. The Mac checks every 10 minutes
+(8 AM–6 PM). Anyone already texted is skipped. From the Mac itself:
+`… notegoat-reminders.sh --force`.
 
 ## Everyday
 - Run days are automatic (the day before each open office day) and can
