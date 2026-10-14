@@ -14,7 +14,7 @@ import type { TaskPriority } from "@/lib/tasks";
 import { markMessagesSeen } from "@/lib/messages-read";
 
 const GENERAL_KEY = "__general__";
-const GENERAL_NAME = "General — whole team";
+const GENERAL_NAME = "General";
 
 type Conversation = {
   key: string;
