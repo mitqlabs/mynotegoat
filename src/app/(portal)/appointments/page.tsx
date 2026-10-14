@@ -430,7 +430,7 @@ function getCardBackground(status: AppointmentStatus) {
   }
 }
 
-import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -1214,6 +1214,7 @@ export default function AppointmentsPage() {
                   value={selectedLocationId}
                 >
                   <option value="">All locations</option>
+                  <option value={NO_OFFICE_FILTER}>{NO_OFFICE_LABEL}</option>
                   {officeLocations.map((loc) => (
                     <option key={loc.id} value={loc.id}>
                       {locationLabel(loc)}

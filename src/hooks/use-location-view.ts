@@ -15,6 +15,7 @@ import {
   LOCATION_VIEW_EVENT,
   setSelectedLocationId,
 } from "@/lib/location-view";
+import { NO_OFFICE_FILTER } from "@/lib/location-filter";
 
 export function useLocationView() {
   const { officeSettings } = useOfficeSettings();
@@ -47,7 +48,15 @@ export function useLocationView() {
   }, []);
 
   // A selected location that no longer exists falls back to All.
-  const effectiveId = selectedId && locations.some((l) => l.id === selectedId) ? selectedId : "";
+  // "No office set" (NO_OFFICE_FILTER) is kept as-is.
+  const effectiveId =
+    selectedId === NO_OFFICE_FILTER
+      ? multiLocation
+        ? NO_OFFICE_FILTER
+        : ""
+      : selectedId && locations.some((l) => l.id === selectedId)
+        ? selectedId
+        : "";
 
   const select = (id: string) => {
     setSelectedLocationId(id);

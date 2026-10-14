@@ -43,7 +43,7 @@ import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischarge
 import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } from "@/lib/initial-exam-date";
 import { buildPrintTableHtml, formatPrintedAt, printHtmlDocument, type PrintCell } from "@/lib/print-table";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
-import { matchesOfficeFilter, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patient-list-sort";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
@@ -1277,7 +1277,7 @@ export default function PatientsPage() {
       section === "nonpi" ? "Non-PI" : "Personal Injury",
       // While searching, the year is not applied (same as the list).
       q ? `Search: “${q}” · all years` : year !== "ALL" ? `Initial Exam: ${monthSpan ? `${monthSpan} ` : ""}${year}` : "All years",
-      loc ? `Location: ${locationLabel(loc)}` : "",
+      loc ? `Location: ${locationLabel(loc)}` : multiLocation && selectedLocationId === NO_OFFICE_FILTER ? `Location: ${NO_OFFICE_LABEL}` : "",
       attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
       status !== "ALL" ? `Status: ${status}` : "",
       reviewFilter !== "ALL" ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}` : "",
@@ -1853,6 +1853,7 @@ export default function PatientsPage() {
                   value={selectedLocationId}
                 >
                   <option value="">All locations</option>
+                  <option value={NO_OFFICE_FILTER}>{NO_OFFICE_LABEL}</option>
                   {locations.map((loc) => (
                     <option key={loc.id} value={loc.id}>
                       {locationLabel(loc)}

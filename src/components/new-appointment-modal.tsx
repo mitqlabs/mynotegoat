@@ -12,6 +12,7 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { useLocationView } from "@/hooks/use-location-view";
+import { NO_OFFICE_FILTER } from "@/lib/location-filter";
 import { RecurrenceHolidayTable, type RecurrenceHolidayRow } from "@/components/recurrence-holiday-table";
 import { addKeyDatesToCloud, cloudKeyDatesQueryKey } from "@/hooks/use-cloud-key-dates";
 import { useQueryClient } from "@tanstack/react-query";
@@ -907,7 +908,8 @@ export function NewAppointmentModal({
   const bookingLocationId = useMemo(() => {
     if (!multiLocation) return "";
     const patient = patients.find((entry) => entry.id === draft.patientId);
-    return patient?.locationId || selectedLocationId;
+    // "No office set" in view isn't a location to book into.
+    return patient?.locationId || (selectedLocationId === NO_OFFICE_FILTER ? "" : selectedLocationId);
   }, [multiLocation, selectedLocationId, draft.patientId]);
 
   // US federal holidays inside the series range (start date → projected
