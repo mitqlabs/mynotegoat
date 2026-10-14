@@ -28,14 +28,15 @@ import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
 import { HOWTO_QUESTION, answerHowTo, dayLabel, isBookingRequest } from "@/lib/goat-howto";
-import { PRACTICE_HELP, isPatientSpecific, type PracticeData } from "@/lib/goat-practice";
+import { PRACTICE_HELP, isPatientSpecific, isPracticeWide, yearOfDate, type PracticeData } from "@/lib/goat-practice";
+import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
 import { bookingRecord, draftSummary, finishDraft, planBooking, retime } from "@/lib/goat-booking";
 import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
-import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor } from "@/lib/goat-notes";
+import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
@@ -316,10 +317,15 @@ export function GlobalGoatPopup({
   const practiceData = (): PracticeData => {
     if (practiceOverride) return practiceOverride();
     const d = new Date();
+    const appointments = loadScheduleAppointments();
+    const index = buildInitialExamIndex(appointments);
+    // Same year the Patients list files each patient under: Initial Exam box, else the
+    // schedule's New Patient visit, else date of injury (so counts match its Status filter).
+    const listYear = (p: PatientRecord) => yearOfDate(p.matrix?.initialExam?.trim() ? p.matrix.initialExam : patientInitialExamIso(p, index)) || yearOfDate(p.dateOfLoss);
     return {
-      patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted),
+      patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ ...p, listYear: listYear(p), cash: Boolean(p.isCashPatient) })),
       tasks: loadTasks(),
-      appointments: loadScheduleAppointments(),
+      appointments,
       contacts: loadContactDirectory(),
       today: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
     };
@@ -427,7 +433,7 @@ export function GlobalGoatPopup({
         if (p) {
           push({ role: "user", text: question, practice: true });
           setChat((c) => ({ ...c, patientId: p.id }));
-          push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: r.text, state: "open" } });
+          push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: stripNameTokens(r.text, p.fullName) || r.text, state: "open" } });
           return;
         }
       }
@@ -494,7 +500,7 @@ export function GlobalGoatPopup({
       }
       const p = hits[0];
       setChat((c) => ({ ...c, patientId: p.id }));
-      push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: req.text, state: "open" } });
+      push({ role: "goat", text: "Add this to the Notes in the patient file?", patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: stripNameTokens(req.text, p.fullName) || req.text, state: "open" } });
       return;
     }
     // "tell hanna i need notes for John" → a team message about John's case; posted only on Confirm.
@@ -605,6 +611,11 @@ export function GlobalGoatPopup({
     }
     if (found.named) {
       push({ role: "goat", text: `I couldn't find a patient named "${found.named}" in the patient list. Type their name and I'll answer "${original}".`, pendingQuestion: original });
+      return;
+    }
+    // Practice-wide wording ("how many…", "do we have", "our…") is never answered from the open patient's file.
+    if (isPracticeWide(question)) {
+      push({ role: "goat", text: PRACTICE_HELP, practice: true });
       return;
     }
     // No name: stay on the chat's patient (or the last one mentioned), else the patient page that's open.
@@ -911,27 +922,44 @@ function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: 
   );
 }
 
-function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
-  const [signers] = useState(() => loadSigners());
-  const [initial] = useState(() => {
+/**
+ * The logged-in person's signature, derived from their login (no setup):
+ * a member signs with their roster name (Doctor if on the office's doctor
+ * list); the owner signs with the profile / office doctor name. Falls back to
+ * the old G.O.A.T. signer list only when the login has no usable name.
+ */
+function useLoginSigner(): Pick<NoteSigner, "firstName" | "doctor"> | null {
+  const { officeSettings } = useOfficeSettings();
+  return useMemo(() => {
+    const m = getCurrentMembershipSync();
+    const fromLogin = signerFromLogin({
+      userId: m?.userId ?? null,
+      isMember: Boolean(m?.isMember),
+      memberLabel: m?.label ?? "",
+      ownerName: (officeSettings.doctorName ?? "").trim(),
+      doctors: officeSettings.doctors ?? [],
+    });
+    if (fromLogin) return fromLogin;
     let last: string | null = null;
     try {
       last = window.localStorage.getItem(LAST_SIGNER_KEY);
     } catch {
       last = null;
     }
-    return defaultSigner(signers, getCurrentMembershipSync()?.userId ?? null, last);
-  });
-  const [signerId, setSignerId] = useState(initial.signer?.id ?? "");
+    return defaultSigner(loadSigners(), m?.userId ?? null, last).signer;
+  }, [officeSettings.doctorName, officeSettings.doctors]);
+}
+
+function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
+  const signer = useLoginSigner();
   const [now] = useState(() => new Date());
-  const signer = signers.find((s) => s.id === signerId) ?? null;
   const line = formatNote(draft.text, signer, now);
   if (draft.state === "saved") {
     return (
       <div className="mt-1.5 text-xs">
         <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.saved}</p>
         <p className="mt-1 font-semibold text-emerald-700">
-          ✓ Saved to Notes ·{" "}
+          ✓ Saved to Case Notes ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
             Open patient file ↗
           </Link>
@@ -941,46 +969,15 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
   }
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not saved.</p>;
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
-  const needSigner = signers.length > 0 && !signer;
   return (
     <div className="mt-2 space-y-1.5" data-goat-note>
       <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1 text-xs">{line}</p>
-      {signers.length === 0 ? (
-        <p className="text-[11px] text-[var(--text-muted)]">
-          No signature set up.{" "}
-          <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href="/settings/goat">
-            Add your team in G.O.A.T. Settings
-          </Link>
-        </p>
-      ) : initial.linked ? (
-        <p className="text-[11px] text-[var(--text-muted)]">Signed as {signer ? signatureFor(signer).slice(1) : ""} (your login)</p>
-      ) : (
-        <label className="flex items-center gap-1.5 text-[11px]">
-          Signed as
-          <select aria-label="Signed as" className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-xs" onChange={(e) => setSignerId(e.target.value)} value={signerId}>
-            <option value="">Choose…</option>
-            {signers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {signatureFor(s).slice(1)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {signer && <p className="text-[11px] text-[var(--text-muted)]">Signed as {signatureFor(signer).slice(1)} (your login)</p>}
       <div className="flex flex-wrap gap-1.5">
         <button
           className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`}
-          disabled={busy || needSigner}
-          onClick={() => {
-            if (signer && !initial.linked) {
-              try {
-                window.localStorage.setItem(LAST_SIGNER_KEY, signer.id);
-              } catch {
-                /* ignore */
-              }
-            }
-            onSave(formatNote(draft.text, signer, new Date()));
-          }}
+          disabled={busy}
+          onClick={() => onSave(formatNote(draft.text, signer, new Date()))}
           style={{ fontSize: 12 }}
           type="button"
         >
@@ -1034,16 +1031,7 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
   const { postMessage } = useWorkspaceMessages();
   const { isOwner } = useWorkspaceAccess();
   const { officeSettings } = useOfficeSettings();
-  const [signers] = useState(() => loadSigners());
-  const [signer] = useState(() => {
-    let last: string | null = null;
-    try {
-      last = window.localStorage.getItem(LAST_SIGNER_KEY);
-    } catch {
-      last = null;
-    }
-    return defaultSigner(signers, getCurrentMembershipSync()?.userId ?? null, last).signer;
-  });
+  const signer = useLoginSigner();
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const sig = signer ? signatureFor(signer) : "";

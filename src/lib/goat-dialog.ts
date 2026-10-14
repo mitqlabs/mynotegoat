@@ -9,7 +9,7 @@
  * office-day eval drives every turn through it.
  */
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
-import type { PracticeData, PracticePatient } from "@/lib/goat-practice";
+import { isPracticeWide, type PracticeData, type PracticePatient } from "@/lib/goat-practice";
 import { matchRecipient, parseTell, type TeamPerson } from "@/lib/goat-message";
 import { planBooking, type BookingStep } from "@/lib/goat-booking";
 import type { ScheduleSettingsConfig } from "@/lib/schedule-settings";
@@ -222,6 +222,12 @@ export function goatTurn(raw: string, st0: DialogState, ctx: DialogCtx): { reply
   if (ref.via !== "name" || !one) {
     const off = answerOffice(msg, ctx.data, st.office);
     if (off) return { reply: { kind: "office", say: off.text }, state: { ...st, office: off.memory ?? st.office } };
+  }
+
+  // Practice-wide wording ("how many…", "do we have", "our…") with no patient named:
+  // never answered from the open / last patient's file.
+  if (ref.via !== "name" && isPracticeWide(msg)) {
+    return { reply: { kind: "help", say: "That sounds like a question about the whole office. I can count cases by status (active, submitted = checks waiting), show the schedule or to-dos, and look up contacts. What do you need?" }, state: st };
   }
 
   // 5. About a patient (named or "him/her"): attorney / LOP / anything in the file.

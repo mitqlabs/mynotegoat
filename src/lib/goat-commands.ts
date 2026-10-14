@@ -119,9 +119,21 @@ function nameWords(s: string): string[] {
   return s.toLowerCase().replace(/[^a-z\s'-]/g, " ").replace(/'s\b/g, "").split(/\s+/).filter(Boolean);
 }
 
-function wordMatches(w: string, target: string): boolean {
+/**
+ * Everyday words that are one typo away from a name ("many" → Mary, "have" →
+ * Dave, "cases" → Casey). They only match a name when typed exactly, so
+ * "how many submitted cases do we have" never turns into Mary's file.
+ */
+const COMMON_WORDS = new Set(
+  "many much more most have has had having make made what when where were with will would could should does done this that them they then than there these those case cases file files call called calls today tomorrow week next last visit visits bill paid open office offices check checks list show team note notes said told back over just only also like want need sent send text total count number submitted active ready schedule patients patient".split(" "),
+);
+
+function wordMatches(w: string, target: string, loose = false): boolean {
   if (w === target) return true;
+  if (COMMON_WORDS.has(w)) return false;
   if (w.length >= 4 && target.length >= 4 && editDistance(w, target) <= 1) return true;
+  // Inside a full name ("collin eliliot"), a longer last name may be two typos off.
+  if (loose && w.length >= 5 && target.length >= 5 && w[0] === target[0] && editDistance(w, target) <= 2) return true;
   return false;
 }
 
@@ -131,7 +143,9 @@ export function patientsNamed<T extends CommandPatient>(words: string[], patient
   if (!ws.length || ws.length !== words.length) return [];
   const full = patients.filter((p) => {
     const ns = nameWords(p.fullName);
-    return ws.length >= 2 && ws.every((w) => ns.some((n) => wordMatches(w, n)));
+    if (ws.length < 2) return false;
+    // Every word fits a name part; at least one fits closely (exact or one typo).
+    return ws.every((w) => ns.some((n) => wordMatches(w, n, true))) && ws.some((w) => ns.some((n) => wordMatches(w, n)));
   });
   if (full.length) return full;
   if (ws.length !== 1) return [];

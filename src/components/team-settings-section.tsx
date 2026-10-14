@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/activity-log";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import {
   MEMBER_LOCKABLE_SECTIONS,
   normalizePermissions,
@@ -116,7 +117,10 @@ export function TeamSettingsSection() {
     const { data, error: qErr } = await supabase
       .from("workspace_members")
       .select("member_user_id, email, label, permissions")
-      .eq("workspace_owner_id", session.user.id);
+      // A member (doctor / office admin) reads THEIR workspace's roster: the
+      // owner's id, never their own (they own no workspace). RLS still decides
+      // who may see it (owner, office admins, doctors; same workspace only).
+      .eq("workspace_owner_id", getCurrentMembershipSync()?.ownerId || session.user.id);
     setLoading(false);
     if (qErr) {
       // Most likely the migration hasn't been run yet.
