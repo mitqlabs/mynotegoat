@@ -67,11 +67,11 @@ export interface ChatMessage {
   /** A change to a Case Notes line G.O.A.T. just added (redate / retext / undo), waiting for Confirm. */
   noteEdit?: { patientId: string; patientName: string; oldLine: string; newLine: string | null; state: "open" | "done" | "canceled" | "missing" };
   /** "Which patient is this about?" for a team message; "no patient" sends it as a general message. */
-  msgAsk?: { toLabel: string; toUserId?: string; text: string };
+  msgAsk?: { toLabel: string; toUserId?: string; alsoTo?: Array<{ label: string; userId?: string }>; text: string };
   /** Inactive-case choices revealed by "Show inactive (N)". */
   moreChoices?: ChatChoice[];
   /** A team message waiting for Confirm (posted to Messages only then). */
-  msgDraft?: { toLabel: string; toUserId?: string; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
+  msgDraft?: { toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
   /** A note waiting for Confirm before it's added to the patient's Notes. */
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
   /** Waiting for the day/time of a booking. */
