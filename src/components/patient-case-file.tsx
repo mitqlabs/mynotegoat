@@ -5894,11 +5894,44 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
                     <input
                       checked={mriCtFollowUpOverride.completedPriorCare}
-                      onChange={(event) => { void runOverrideToggle("mriCt", "completedPriorCare", event.target.checked); }}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        // Checking opens the Prior / outside MRI editor so the
+                        // findings land in the file. Cancel keeps the box
+                        // checked with no entry. Unchecking keeps any prior
+                        // entries (nothing is removed).
+                        void runOverrideToggle("mriCt", "completedPriorCare", checked);
+                        if (checked) openPriorImagingEditor("mri");
+                      }}
                       type="checkbox"
                     />
                     Completed Prior Care
                   </label>
+                  {mriCtFollowUpOverride.completedPriorCare && (() => {
+                    const priorEntries = mriReferrals.filter((entry) => entry.isPrior);
+                    return (
+                      <span className="-ml-3 inline-flex items-center gap-2 text-sm font-semibold">
+                        {priorEntries.length > 0 && (
+                          <button
+                            className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                            data-testid="prior-mri-edit"
+                            onClick={(event) => openImagingEditor("mri", priorEntries[priorEntries.length - 1], event)}
+                            type="button"
+                          >
+                            Edit findings
+                          </button>
+                        )}
+                        <button
+                          className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                          data-testid="prior-mri-add"
+                          onClick={(event) => openPriorImagingEditor("mri", event)}
+                          type="button"
+                        >
+                          {priorEntries.length > 0 ? "+ Add another" : "+ Add findings"}
+                        </button>
+                      </span>
+                    );
+                  })()}
                   <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
                     <input
                       checked={mriCtFollowUpOverride.notNeeded}
@@ -5921,16 +5954,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
-              <div className="flex justify-end">
-                <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                  data-testid="add-prior-mri"
-                  onClick={(event) => openPriorImagingEditor("mri", event)}
-                  type="button"
-                >
-                  + Prior / outside MRI
-                </button>
-              </div>
               {mriCtFindings.trim() && (
                 <div className="rounded-lg border border-dashed border-[var(--line-soft)] p-2" data-testid="legacy-mri-findings">
                   <p className="font-semibold">Earlier MRI / CT findings (saved before April 2026, read-only)</p>
