@@ -38,7 +38,8 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
-import { buildTeam, isTellRequest, matchRecipient, messageBody, parseTell } from "@/lib/goat-message";
+import { buildTeam, isTellRequest, matchRecipient, parseTell, type TeamPerson } from "@/lib/goat-message";
+import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
 import { clarifyFor, editNoteLine, followUpFor, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
@@ -273,6 +274,31 @@ export function GlobalGoatPopup({
   const practiceBusy = false;
   const { addAppointments, removeAppointment } = useScheduleAppointments();
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
+  // "@" in the input: the team roster picker (owner included), like the Messages composer.
+  const [mention, setMention] = useState<{ at: number; query: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionMatches = mention ? filterMentionPeople(teamLogins, mention.query, getCurrentMembershipSync()?.userId ?? null) : [];
+  const syncMention = (value: string, caret: number) => {
+    const m = mentionQueryAt(value, caret);
+    setMention(m);
+    if (!m) setMentionIndex(0);
+  };
+  const pickMention = (p: WorkspacePerson) => {
+    if (!mention) return;
+    const el = inputRef.current;
+    const caret = el?.selectionStart ?? input.length;
+    const before = input.slice(0, mention.at);
+    const ins = mentionInsert(p.label);
+    setInput(before + ins + input.slice(caret));
+    setMention(null);
+    setMentionIndex(0);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      const pos = before.length + ins.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Opening G.O.A.T. (sidebar button or anywhere else) puts the cursor in the
@@ -453,7 +479,7 @@ export function GlobalGoatPopup({
     }
     if (last.kind === "msgAsk" && f.kind === "generalMessage") {
       setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === last.msgId ? { ...x, msgAsk: undefined } : x)) }));
-      push({ role: "goat", text: "Send this message? (general, no patient)", msgDraft: { toLabel: last.toLabel, toUserId: last.toUserId, text: last.text, state: "open" } });
+      push({ role: "goat", text: "Send this message? (general, no patient)", msgDraft: { toLabel: last.toLabel, toUserId: last.toUserId, alsoTo: last.alsoTo, text: last.text, state: "open" } });
       return true;
     }
     if (last.kind === "message" && f.kind === "messageTo") {
@@ -497,10 +523,30 @@ export function GlobalGoatPopup({
     setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteEdit: { ...e, state: next === null ? "missing" : "done" } } : x)) }));
   };
 
-  const send = (raw: string) => {
+  const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
     setInput("");
+    setMention(null);
+    // "@Leilani hi", "@Dr. Abi …", "@Hannah @Greg …" = "tell …" (one card for everyone mentioned).
+    if (!opts && question.startsWith("@")) {
+      const team = buildTeam(loadSigners(), teamLogins);
+      const mc = parseMentions(question, team);
+      if (mc) {
+        if (!mc.recipients.length || mc.unknown.length) {
+          push({ role: "user", text: question, practice: true });
+          push({ role: "goat", text: `I couldn't find a team member named "${mc.unknown[0] ?? question.slice(1).split(/\s/)[0]}". Type @ to pick from the team.`, practice: true });
+          return;
+        }
+        if (!mc.text) {
+          push({ role: "user", text: question, practice: true });
+          push({ role: "goat", text: `What should I tell ${mc.recipients.map((r) => r.label).join(" and ")}?`, practice: true });
+          return;
+        }
+        const prefix = mc.recipients.map((r) => `@${r.label}`).join(" ");
+        return send(`tell ${mc.recipients[0].firstName} ${mc.text}`, { to: mc.recipients, display: question, prefix });
+      }
+    }
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
@@ -601,9 +647,10 @@ export function GlobalGoatPopup({
     if (isTellRequest(question)) {
       const req = parseTell(question);
       if (req) {
-        push({ role: "user", text: question, practice: true });
+        push({ role: "user", text: opts?.display ?? question, practice: true });
         const team = buildTeam(loadSigners(), teamLogins);
-        const to = matchRecipient(req.to, team);
+        const to = opts?.to ?? matchRecipient(req.to, team);
+        const alsoTo = (opts?.to ?? []).slice(1).map((p) => ({ label: p.label, userId: p.userId }));
         if (!to.length) {
           push({ role: "goat", text: `I couldn't find a team member named "${req.to}". Add them under Note signatures in G.O.A.T. Settings (link their login so they get notified).`, links: [{ label: "G.O.A.T. Settings", href: "/settings/goat" }] });
           return;
@@ -624,8 +671,8 @@ export function GlobalGoatPopup({
             const n = req.patientName ?? "";
             return n && t.toLowerCase().endsWith(n.toLowerCase()) ? `${t.slice(0, t.length - n.length)}${full}` : `${t} about ${full}`;
           };
-          const ch = (c: { patient: ChatPatient }) => ({ label: choiceLabel(c.patient), question: `tell ${req.to} ${swap(displayName(c.patient.fullName))}` });
-          push({ role: "goat", text: "Which patient is this about? (Or say \"no patient\" to send it as a general message.)", msgAsk: { toLabel: recipient.label, toUserId: recipient.userId, text: req.text }, ...withInactive(lookup.candidates.map(ch), lookup.inactive.map(ch)) });
+          const ch = (c: { patient: ChatPatient }) => ({ label: choiceLabel(c.patient), question: opts?.prefix ? `${opts.prefix} ${swap(displayName(c.patient.fullName))}` : `tell ${req.to} ${swap(displayName(c.patient.fullName))}` });
+          push({ role: "goat", text: "Which patient is this about? (Or say \"no patient\" to send it as a general message.)", msgAsk: { toLabel: recipient.label, toUserId: recipient.userId, alsoTo, text: req.text }, ...withInactive(lookup.candidates.map(ch), lookup.inactive.map(ch)) });
           return;
         }
         if (!lookup.confident && req.patientName) {
@@ -637,7 +684,7 @@ export function GlobalGoatPopup({
         push({
           role: "goat",
           text: "Send this message?",
-          msgDraft: { toLabel: recipient.label, toUserId: recipient.userId, text: req.text, patientId: pt?.id, patientName: pt?.fullName, caseLabel: pt ? (caseNo ? `${caseNo} ${pt.fullName}` : pt.fullName) : undefined, state: "open" },
+          msgDraft: { toLabel: recipient.label, toUserId: recipient.userId, alsoTo: alsoTo.length ? alsoTo : undefined, text: req.text, patientId: pt?.id, patientName: pt?.fullName, caseLabel: pt ? (caseNo ? `${caseNo} ${pt.fullName}` : pt.fullName) : undefined, state: "open" },
         });
         return;
       }
@@ -952,14 +999,72 @@ export function GlobalGoatPopup({
                 send(input);
               }}
             >
-              <input
-                ref={inputRef}
-                aria-label="Ask G.O.A.T."
-                className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about a patient…"
-                value={input}
-              />
+              <div className="relative min-w-0 flex-1">
+                <input
+                  aria-label="Ask G.O.A.T."
+                  aria-autocomplete="list"
+                  aria-expanded={mentionMatches.length > 0}
+                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  onBlur={() => window.setTimeout(() => setMention(null), 150)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!mention || !mentionMatches.length) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                    } else if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      pickMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setMention(null);
+                    }
+                  }}
+                  onKeyUp={(e) => {
+                    if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(e.key)) return;
+                    const t = e.target as HTMLInputElement;
+                    syncMention(t.value, t.selectionStart ?? t.value.length);
+                  }}
+                  placeholder="Ask about a patient… or type @ to message the team"
+                  ref={inputRef}
+                  value={input}
+                />
+                {mention && mentionMatches.length > 0 && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 max-h-60 w-64 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg" data-goat-mention-picker role="listbox">
+                    {mentionMatches.map((p, i) => (
+                      <button
+                        aria-selected={i === mentionIndex}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${i === mentionIndex ? "bg-[var(--bg-soft)]" : "bg-white"}`}
+                        key={p.userId}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickMention(p);
+                        }}
+                        onMouseEnter={() => setMentionIndex(i)}
+                        ref={(el) => {
+                          if (el && i === mentionIndex) el.scrollIntoView({ block: "nearest" });
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] text-xs font-bold text-[var(--text-muted)]">
+                          {p.label.replace(/^dr\.?\s+/i, "").split(/\s+/).map((w) => w[0] ?? "").join("").slice(0, 2).toUpperCase()}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold">{p.label}</span>
+                          {p.email && <span className="block truncate text-xs text-[var(--text-muted)]">{p.email}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
                 Ask
               </button>
@@ -1166,19 +1271,20 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const sig = signer ? signatureFor(signer) : "";
-  const body = messageBody({ firstName: draft.toLabel, label: draft.toLabel, userId: draft.toUserId }, draft.text, sig);
+  const all = [{ label: draft.toLabel, userId: draft.toUserId }, ...(draft.alsoTo ?? [])];
+  const body = `${all.map((p) => `@${p.label}`).join(" ")} ${draft.text.trim()}${sig ? ` ${sig}` : ""}`;
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
     <div className="mt-2 space-y-1 text-xs" data-goat-message>
       <p>
-        <span className="text-[var(--text-muted)]">To:</span> <strong>{draft.toLabel}</strong>
+        <span className="text-[var(--text-muted)]">To:</span> <strong>{all.map((p) => p.label).join(", ")}</strong>
       </p>
       <p>
         <span className="text-[var(--text-muted)]">Case:</span> {draft.caseLabel ?? "None (general message)"}
       </p>
       <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1">{body}</p>
       <p className="text-[11px] text-[var(--text-muted)]">From: {sig ? sig.slice(1) : "you"}</p>
-      {!draft.toUserId && <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800">{draft.toLabel} isn&apos;t linked to a login, so they won&apos;t get a notification. It still shows in Messages.</p>}
+      {all.filter((p) => !p.userId).map((p) => <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800" key={p.label}>{p.label} isn&apos;t linked to a login, so they won&apos;t get a notification. It still shows in Messages.</p>)}
       {error && <p className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-800">{error}</p>}
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         <button
@@ -1192,7 +1298,8 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
               authorLabel: isOwner ? (officeSettings.doctorName ?? "").trim() || "Admin" : getCurrentMembershipSync()?.label || "Team Member",
               patientId: draft.patientId,
               patientName: draft.caseLabel,
-              mentions: draft.toUserId ? [{ userId: draft.toUserId, label: draft.toLabel }] : [],
+              // One message that notifies everyone @mentioned (same as the Messages composer).
+              mentions: all.filter((p) => p.userId).map((p) => ({ userId: p.userId!, label: p.label })),
             });
             setSending(false);
             if (ok) onSent(body);
