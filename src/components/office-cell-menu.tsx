@@ -31,9 +31,13 @@ export function OfficeCellMenu({
   const label = officeCellLabel(locationId, locations);
   const assigned = locations.some((l) => l.id === locationId);
 
+  // One pair of document listeners for the component's life (no state deps);
+  // they only act while the menu is open.
+  const openRef = useRef(false);
+  openRef.current = open;
   useEffect(() => {
-    if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
+      if (!openRef.current) return;
       if (e instanceof KeyboardEvent ? e.key === "Escape" : !boxRef.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", close);
@@ -42,7 +46,7 @@ export function OfficeCellMenu({
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", close);
     };
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     if (state !== "saved") return;
