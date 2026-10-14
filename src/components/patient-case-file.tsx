@@ -5402,7 +5402,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {/* Every field has a fixed width on sm+ (full width on phones) so the
             row wraps tidily. Prior Care is capped; Location is sized to fit the
             longest office name (see locationFieldWidth). */}
-        <div className="flex flex-wrap items-end gap-3 border-b border-[var(--line-soft)] p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line-soft)] p-4">
+          {/* Left: LOP + Prior Care. Right: Case Status / Review / Location,
+              right-aligned on the same line; each group wraps as a unit. */}
+          <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto">
           {!isCashPatient && (
             <label className="grid gap-1 w-full sm:w-44">
               <span className="text-sm font-semibold text-[var(--text-muted)]">{lienLabel}</span>
@@ -5421,7 +5424,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && (
-            <label className="grid gap-1 w-full sm:w-72">
+            <label className="grid gap-1 w-full sm:w-[22rem]">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Prior Care</span>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -5431,7 +5434,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               />
             </label>
           )}
-
+          </div>
+          <div className="flex w-full flex-wrap items-end gap-3 sm:ml-auto sm:w-auto sm:justify-end">
           {/* Non-PI (cash) patients don't run through an insurance case
               lifecycle, so they have no Case Status. */}
           {!isCashPatient && (
@@ -5500,6 +5504,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </select>
             </label>
           )}
+          </div>
         </div>
 
         {/* Cash Payments + Treatment Packages side by side (cash-patient
