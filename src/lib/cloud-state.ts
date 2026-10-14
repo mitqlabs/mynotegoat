@@ -871,6 +871,8 @@ async function bootstrapTableBackedEntities() {
           // it. Listing the key makes SMS templates cloud-as-truth like
           // every other synced key.
           "casemate.sms-templates.v1",
+          // Automatic text reminder settings (Settings → Text Reminders).
+          "casemate.sms-reminders.v1",
           // G.O.A.T. words & synonym groups (Settings → G.O.A.T.).
           "casemate.goat-settings.v1",
           // G.O.A.T. answer settings: Show costs / fees, Region order (Settings → G.O.A.T.).

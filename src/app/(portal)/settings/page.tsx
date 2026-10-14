@@ -18,6 +18,7 @@ import { PackageBuilderSettingsPanel } from "@/components/package-builder-settin
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
+import { TextRemindersSettingsPanel } from "@/components/text-reminders-settings-panel";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { usePatientPagePrefs } from "@/hooks/use-patient-page-prefs";
@@ -100,6 +101,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   documents: false,
   reports: false,
   smsTemplates: false,
+  textReminders: false,
   emailSettings: false,
   admin: false,
   adminAccess: false,
@@ -2809,6 +2811,7 @@ export default function SettingsPage() {
         resolvedSection === "contactCategories" ||
         resolvedSection === "documents" ||
         resolvedSection === "smsTemplates" ||
+        resolvedSection === "textReminders" ||
         resolvedSection === "emailSettings"
       ) {
         next.templates = true;
@@ -5090,6 +5093,16 @@ export default function SettingsPage() {
         title="SMS / Text Templates"
       >
         <SmsTemplateSettingsPanel />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        description="Automatic day-before appointment texts, sent from your office Mac's Messages app."
+        hidden={!showSection("textReminders")}
+        isOpen={sectionIsOpen("textReminders")}
+        onToggle={() => toggleSection("textReminders")}
+        title="Text Reminders"
+      >
+        <TextRemindersSettingsPanel />
       </CollapsibleSection>
 
       <CollapsibleSection
