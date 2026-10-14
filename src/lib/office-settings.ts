@@ -95,6 +95,9 @@ export interface OfficeSettings {
   locations: OfficeLocation[];
   /** All providers the office schedules under (name-only + team-member doctors). */
   doctors: OfficeDoctor[];
+  /** When this copy was last edited (ms). Used to pick the newer of the
+   *  local and cloud copies; absent on copies saved before it existed. */
+  savedAt?: number;
 }
 
 const STORAGE_KEY = "casemate.office-settings.v1";
@@ -146,12 +149,16 @@ function normalizeLocations(value: unknown): OfficeLocation[] {
     if (!raw || typeof raw !== "object") continue;
     const row = raw as Record<string, unknown>;
     const id = normalizeString(row.id);
-    const name = normalizeString(row.name);
-    if (!id || !name) continue;
+    // Offices added in Settings carry only a nickname (name ""). Dropping
+    // nameless rows here made every reload lose them, and the "seed a first
+    // office" step then saved a lone office over the cloud copy.
+    if (!id) continue;
+    const nickname = normalizeString(row.nickname);
+    const name = normalizeString(row.name) || nickname;
     out.push({
       id,
       name,
-      nickname: normalizeString(row.nickname),
+      nickname,
       address: normalizeString(row.address),
       addr1: normalizeString(row.addr1),
       addr2: normalizeString(row.addr2),
@@ -212,7 +219,39 @@ export function normalizeOfficeSettings(value: unknown): OfficeSettings {
     multiLocation: row.multiLocation === true,
     locations: normalizeLocations(row.locations),
     doctors: normalizeDoctors(row.doctors),
+    ...(typeof row.savedAt === "number" && Number.isFinite(row.savedAt) ? { savedAt: row.savedAt } : {}),
   };
+}
+
+/**
+ * Decide whether the local or the cloud copy of office settings should win
+ * on load. Newer `savedAt` wins. For older copies without `savedAt`, local
+ * wins only when it has offices the cloud lacks (compared by id, so the
+ * logo, which is most of the bytes, can't decide it). Otherwise cloud wins.
+ */
+export function pickOfficeSettingsSource(localValue: unknown, cloudValue: unknown): "local" | "cloud" {
+  if (!localValue || typeof localValue !== "object") return "cloud";
+  if (!cloudValue || typeof cloudValue !== "object") return "local";
+  const local = normalizeOfficeSettings(localValue);
+  const cloud = normalizeOfficeSettings(cloudValue);
+  if (typeof local.savedAt === "number" && typeof cloud.savedAt === "number") {
+    return local.savedAt > cloud.savedAt ? "local" : "cloud";
+  }
+  if (typeof local.savedAt === "number" && typeof cloud.savedAt !== "number") {
+    // Local was edited with the new code; cloud is a legacy copy.
+    return "local";
+  }
+  if (typeof cloud.savedAt === "number") return "cloud";
+  const cloudIds = new Set(cloud.locations.map((l) => l.id));
+  const localHasMissing = local.locations.some((l) => !cloudIds.has(l.id));
+  return localHasMissing && local.locations.length > cloud.locations.length ? "local" : "cloud";
+}
+
+/** True when every office id in `local` is present in `cloud`. */
+export function cloudHasAllOffices(local: OfficeSettings, cloudValue: unknown): boolean {
+  const cloud = normalizeOfficeSettings(cloudValue);
+  const ids = new Set(cloud.locations.map((l) => l.id));
+  return local.locations.every((l) => ids.has(l.id));
 }
 
 export function loadOfficeSettings(): OfficeSettings {
@@ -233,7 +272,12 @@ export function loadOfficeSettings(): OfficeSettings {
 /** Fast synchronous local write — safe to call on every keystroke. */
 export function writeOfficeSettingsLocal(settings: OfficeSettings) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch (err) {
+    // Storage full (a big logo can do it). The cloud save still runs.
+    console.warn("[office-settings] local write failed:", err);
+  }
 }
 
 /** Heavier cloud dual-write — debounce this; don't call it per keystroke. */

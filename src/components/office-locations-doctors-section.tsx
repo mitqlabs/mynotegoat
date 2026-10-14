@@ -10,6 +10,7 @@ import { DebouncedInput } from "@/components/debounced-input";
 import {
   composeLocationAddress,
   STORAGE_KEY_OFFICE_SETTINGS,
+  cloudHasAllOffices,
   type OfficeDoctor,
   type OfficeLocation,
 } from "@/lib/office-settings";
@@ -40,6 +41,7 @@ export function OfficeLocationsDoctorsSection() {
   const [openLocId, setOpenLocId] = useState<string | null>(null);
   const seededRef = useRef(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Confirm each change reached the CLOUD (awaited), so a fast refresh can't
   // lose a just-added office. The hook already writes fire-and-forget; this
@@ -69,7 +71,7 @@ export function OfficeLocationsDoctorsSection() {
         const cloud = await fetchKvValue<{ locations?: unknown[] }>(STORAGE_KEY_OFFICE_SETTINGS);
         const cloudCount = Array.isArray(cloud?.locations) ? cloud!.locations!.length : -1;
         console.info("[office-save] read back from cloud", { locations: cloudCount });
-        if (cloudCount >= localCount) {
+        if (cloudHasAllOffices(officeSettings, cloud)) {
           if (!cancelled) setSaveState("saved");
         } else {
           console.error("[office-save] MISMATCH — cloud has fewer locations than local", {
@@ -88,7 +90,7 @@ export function OfficeLocationsDoctorsSection() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [officeSettings]);
+  }, [officeSettings, retryNonce]);
 
   // Locations are universal: there's always at least one office (this one).
   // Seed it once from the existing single-office info so a solo practice
@@ -145,7 +147,7 @@ export function OfficeLocationsDoctorsSection() {
 
   const emptyLoc = (nickname: string): OfficeLocation => ({
     id: genId("loc"),
-    name: "",
+    name: nickname,
     nickname,
     address: "",
     addr1: "",
@@ -225,7 +227,20 @@ export function OfficeLocationsDoctorsSection() {
                     : "bg-red-100 text-red-700"
               }`}
             >
-              {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed — retry"}
+              {saveState === "saving" ? (
+                "Saving…"
+              ) : saveState === "saved" ? (
+                "Saved ✓"
+              ) : (
+                <button
+                  className="underline"
+                  onClick={() => setRetryNonce((n) => n + 1)}
+                  title="Your office changes did not reach the cloud. Click to try again."
+                  type="button"
+                >
+                  Not saved — click to retry
+                </button>
+              )}
             </span>
           )}
         </div>
