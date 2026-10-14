@@ -35,6 +35,8 @@ import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { OfficeCellMenu } from "@/components/office-cell-menu";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { UsDateInput } from "@/components/us-date-input";
@@ -600,6 +602,10 @@ export default function PatientsPage() {
   const [reviewOverrides, setReviewOverrides] = useState<Record<string, string>>({});
   // Multi-location: filter the list by the shared "current location" view.
   const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
+  // Office changes made from this list's office cell; bumps the list memo so
+  // the row and the office filter update right away.
+  const [officeOverrides, setOfficeOverrides] = useState<Record<string, string>>({});
+  const { canEdit } = useWorkspaceAccess();
 
   // Sort state (persisted)
   const [sortColumn, setSortColumn] = useState<ListColumnId>(() => loadPatientListSort(defaultColumnOrder, { column: "patient", asc: true }).column);
@@ -1061,7 +1067,8 @@ export default function PatientsPage() {
     });
 
     return sorted;
-  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- officeOverrides re-runs the filter after an office-cell save (the patient list is module-level)
+  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -1986,12 +1993,13 @@ export default function PatientsPage() {
                               {patient.fullName}
                             </Link>
                             {multiLocation && (
-                              <span className="ml-2 rounded-full bg-[var(--bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
-                                {(() => {
-                                  const loc = locations.find((l) => l.id === patient.locationId);
-                                  return loc ? locationLabel(loc) : NO_OFFICE_LABEL;
-                                })()}
-                              </span>
+                              <OfficeCellMenu
+                                locationId={patient.locationId}
+                                locations={locations}
+                                onSaved={(id) => setOfficeOverrides((cur) => ({ ...cur, [patient.id]: id }))}
+                                patientId={patient.id}
+                                readOnly={!canEdit("patients")}
+                              />
                             )}
                             {patient.phone && (
                               <p className="text-sm text-[var(--text-muted)]">

@@ -274,6 +274,14 @@ export function GlobalGoatPopup({
   const { addAppointments, removeAppointment } = useScheduleAppointments();
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Opening G.O.A.T. (sidebar button or anywhere else) puts the cursor in the
+  // chat box so the user can type right away.
+  useEffect(() => {
+    if (!open) return;
+    const id = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(id);
+  }, [open]);
   useEffect(() => {
     saveChat(chat);
   }, [chat]);
@@ -945,6 +953,7 @@ export function GlobalGoatPopup({
               }}
             >
               <input
+                ref={inputRef}
                 aria-label="Ask G.O.A.T."
                 className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 onChange={(e) => setInput(e.target.value)}
