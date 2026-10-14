@@ -6,7 +6,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { NOT_CAUGHT, clarifyFor, editNoteLine, followUpFor, noteDateIn, withNoteDate, withNoteText, type LastAct } from "../../../src/lib/goat-memory";
-import { parseTell, patientsMentionedInMessage } from "../../../src/lib/goat-message";
+import { buildTeam, matchRecipient, parseTell, patientsMentionedInMessage } from "../../../src/lib/goat-message";
+import { canonicalTell } from "../../../src/lib/goat-commands";
 import { appendNote } from "../../../src/lib/goat-notes";
 
 const TODAY = "2026-10-14";
@@ -77,6 +78,18 @@ const ids = (q: string) => { const t = parseTell(q); assert.ok(t, `not a tell: $
 for (const q of ["message Hannah hey how are you, just testing this new feature out", "tell hannah good morning!", "message greg can you lock up tonight", "tell hannah thanks for today", "msg greg are we still on for lunch", "tell hannah the fax machine is jammed", "message hannah testing testing", "tell greg how's it going", "tell hannah to order more paper", "message hannah hello"]) check(`no patient: ${q}`, () => assert.deepEqual(ids(q), []));
 for (const [q, id] of [["tell hannah collin elliott called", "c"], ["message hannah destiny greer needs a ride", "d"], ["tell greg to call kara smith back", "k1"], ["msg hannah collin's atty called", "c"]] as const) check(`patient: ${q}`, () => assert.deepEqual(ids(q), [id]));
 for (const q of ["tell hannah kara called", "message greg call kara back"]) check(`ambiguous: ${q}`, () => assert.deepEqual(ids(q).sort(), ["k1", "k2"]));
+
+// Texas-style roster (mock): owner Dr. Abi Mitchell (labeled Owner), doctor member Mike Galstyan, staff Leilani, Hannah.
+const team = buildTeam([], [
+  { userId: "owner", label: "Dr. Abi Mitchell", email: "Owner" },
+  { userId: "u-mike", label: "Mike Galstyan", email: "m@example.com", doctor: true },
+  { userId: "u-lei", label: "Leilani Duque", email: "l@example.com" },
+  { userId: "u-han", label: "Hannah Mitchell", email: "h@example.com" },
+]);
+const who = (q: string) => { const t = parseTell(canonicalTell(q)); assert.ok(t, `not a tell: ${q}`); return { to: matchRecipient(t!.to, team).map((p) => p.userId), text: t!.text, pts: patientsMentionedInMessage(t!.text, pool).map((p) => p.id) }; };
+for (const [q, id] of [["tell Leilani testing testing", "u-lei"], ["tell Dr. Abi testing testing", "owner"], ["tell dr abi testing testing", "owner"], ["tell Abi testing testing", "owner"], ["tell Dr. Mitchell testing testing", "owner"], ["message Dr. Mike testing testing", "u-mike"], ["tell Dr. Galstyan testing testing", "u-mike"], ["let dr. abi know the fax is down", "owner"], ["msg leilani: testing", "u-lei"]] as const) check(`roster: ${q}`, () => { const r = who(q); assert.deepEqual(r.to, [id]); assert.deepEqual(r.pts, [], "offered a patient"); assert.ok(!/^dr/i.test(r.text), r.text); });
+check("plain Mitchell is ambiguous-safe (Hannah first name differs)", () => assert.deepEqual(matchRecipient("Hannah", team).map((p) => p.userId), ["u-han"]));
+check("canonical keeps Dr. readable", () => assert.equal(canonicalTell("message dr abi: hi"), "tell Dr. abi hi"));
 
 console.log(`followups-memory: ${pass}/${pass + fail} passed (mock data only)`);
 if (fail) process.exit(1);

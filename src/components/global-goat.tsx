@@ -1122,9 +1122,11 @@ function withInactive(shown: ChatChoice[], hidden: ChatChoice[]): Pick<ChatMessa
 function PeopleLoader({ onPeople }: { onPeople: (p: WorkspacePerson[]) => void }) {
   const { officeSettings } = useOfficeSettings();
   const people = useWorkspacePeople((officeSettings.doctorName ?? "").trim());
+  const doctors = officeSettings.doctors;
   useEffect(() => {
-    onPeople(people);
-  }, [people, onPeople]);
+    // Doctors (Office Settings list) answer to "Dr. <First>" / "Dr. <Last>".
+    onPeople(people.map((p) => ({ ...p, doctor: (doctors ?? []).some((d) => d.memberUserId === p.userId) })));
+  }, [people, onPeople, doctors]);
   return null;
 }
 
