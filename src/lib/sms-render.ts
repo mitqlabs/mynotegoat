@@ -15,7 +15,16 @@ export interface SmsTokenContext {
     date?: string; // e.g. "04/17/2026"
     type?: string;
   };
+  /** Today as MM/DD/YYYY; defaults to the current Pacific date. */
+  today?: string;
   office?: Pick<OfficeSettings, "officeName" | "doctorName"> & { phone?: string };
+}
+
+/** MM/DD/YYYY for a moment in the given time zone. */
+export function todayUsDate(now: Date = new Date(), timeZone = "America/Los_Angeles"): string {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("month")}/${get("day")}/${get("year")}`;
 }
 
 export function expandTokens(body: string, ctx: SmsTokenContext): string {
@@ -27,7 +36,11 @@ export function expandTokens(body: string, ctx: SmsTokenContext): string {
     "{{LAST_NAME}}": last,
     "{{FULL_NAME}}": full,
     "{{TIME}}": ctx.appointment?.time ?? "",
+    "{{APPT_DATE}}": ctx.appointment?.date ?? "",
+    // Old alias of {{APPT_DATE}}; kept so saved templates don't break.
     "{{DATE}}": ctx.appointment?.date ?? "",
+    "{{TODAY}}": ctx.today ?? todayUsDate(),
+    // No longer offered in the UI; still renders for old templates.
     "{{APPOINTMENT_TYPE}}": ctx.appointment?.type ?? "",
     "{{OFFICE_NAME}}": ctx.office?.officeName ?? "",
     "{{DOCTOR_NAME}}": ctx.office?.doctorName ?? "",

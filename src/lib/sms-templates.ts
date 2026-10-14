@@ -18,18 +18,22 @@ export const SMS_TEMPLATES_STORAGE_KEY = "casemate.sms-templates.v1";
 
 /** Built-in appointment reminder text. */
 export const DEFAULT_REMINDER_BODY =
-  "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
+  "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
 
-export const SMS_TOKENS: { token: string; description: string }[] = [
-  { token: "{{FIRST_NAME}}", description: "Patient first name" },
-  { token: "{{LAST_NAME}}", description: "Patient last name" },
-  { token: "{{FULL_NAME}}", description: "Patient full name" },
-  { token: "{{TIME}}", description: "Appointment time, e.g. 10:30 AM" },
-  { token: "{{DATE}}", description: "Appointment date (not today's date), e.g. 10/19/2026" },
-  { token: "{{APPOINTMENT_TYPE}}", description: "Appointment type" },
-  { token: "{{OFFICE_NAME}}", description: "Office name from settings" },
-  { token: "{{DOCTOR_NAME}}", description: "Doctor name from settings" },
-  { token: "{{OFFICE_PHONE}}", description: "Office phone (the patient's office when you have several)" },
+/**
+ * Placeholders shown in the UI. {{DATE}} (old alias of {{APPT_DATE}}) and
+ * {{APPOINTMENT_TYPE}} still render for old templates but aren't offered.
+ */
+export const SMS_TOKENS: { token: string; label: string; description: string }[] = [
+  { token: "{{FIRST_NAME}}", label: "First name", description: "Patient first name" },
+  { token: "{{LAST_NAME}}", label: "Last name", description: "Patient last name" },
+  { token: "{{FULL_NAME}}", label: "Full name", description: "Patient full name" },
+  { token: "{{APPT_DATE}}", label: "Appointment date", description: "Appointment date, e.g. 10/19/2026" },
+  { token: "{{TIME}}", label: "Appointment time", description: "Appointment time, e.g. 10:30 AM" },
+  { token: "{{TODAY}}", label: "Today's date", description: "The date the text is sent, e.g. 10/18/2026" },
+  { token: "{{OFFICE_NAME}}", label: "Office name", description: "Office name from settings" },
+  { token: "{{DOCTOR_NAME}}", label: "Doctor name", description: "Doctor name from settings" },
+  { token: "{{OFFICE_PHONE}}", label: "Office phone", description: "Office phone (the patient's office when you have several)" },
 ];
 
 function createId() {

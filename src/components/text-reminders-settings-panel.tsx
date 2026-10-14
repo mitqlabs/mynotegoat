@@ -315,7 +315,7 @@ export function TextRemindersSettingsPanel() {
           />
         )}
         <p className="text-xs text-[var(--text-muted)]">
-          Tokens: {SMS_TOKENS.map((t) => t.token).join(" ")}. {"{{DATE}}"} is the appointment date (e.g. 10/19/2026), not today; {"{{TIME}}"} is the appointment time (e.g. 10:30 AM). Keep it short; no diagnoses or visit details.
+          Placeholders: {SMS_TOKENS.map((t) => `${t.token} = ${t.label}`).join(" · ")}. Keep it short; no diagnoses or visit details.
         </p>
         {template && (
           <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
