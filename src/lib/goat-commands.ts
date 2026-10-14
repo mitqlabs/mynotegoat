@@ -1,3 +1,4 @@
+import { joinDrTitle } from "@/lib/goat-message";
 /**
  * Casual-language front door for G.O.A.T. action commands.
  *
@@ -125,7 +126,7 @@ function nameWords(s: string): string[] {
  * "how many submitted cases do we have" never turns into Mary's file.
  */
 const COMMON_WORDS = new Set(
-  "many much more most have has had having make made what when where were with will would could should does done this that them they then than there these those case cases file files call called calls today tomorrow week next last visit visits bill paid open office offices check checks list show team note notes said told back over just only also like want need sent send text total count number submitted active ready schedule patients patient".split(" "),
+  "hey hi hello how are you yes yeah testing test tests tested feature features new out thanks thank please good great fine morning tonight anything everything something nothing many much more most have has had having make made what when where were with will would could should does done this that them they then than there these those case cases file files call called calls today tomorrow week next last visit visits bill paid open office offices check checks list show team note notes said told back over just only also like want need sent send text total count number submitted active ready schedule patients patient".split(" "),
 );
 
 function wordMatches(w: string, target: string, loose = false): boolean {
@@ -272,14 +273,14 @@ export function continueAddNote<T extends CommandPatient>(raw: string, pending: 
 
 /** Casual "message X …" phrasings rewritten to the "tell X …" form parseTell knows. */
 export function canonicalTell(raw: string): string {
-  let q = normalizeCasual(raw);
+  let q = joinDrTitle(normalizeCasual(raw));
   q = q.replace(/^(?:send|shoot|drop|write|give)\s+(?:a\s+)?(?:quick\s+)?(?:message|text|note|line|heads up)\s+(?:to\s+)?([A-Za-z][A-Za-z'-]*)\s*(?:[:,\-–—]\s*|\s+(?:saying|that|to say)\s+|\s+)/i, "tell $1 ");
   q = q.replace(/^(?:send|shoot|drop|give)\s+([A-Za-z][A-Za-z'-]*)\s+(?:a\s+)?(?:quick\s+)?(?:message|text|note|line|heads up)\s*(?:[:,\-–—]\s*|\s+(?:saying|that|to say)\s+|\s+)/i, "tell $1 ");
   q = q.replace(/^(?:message|text|tell|ask|remind|ping)\s+([A-Za-z][A-Za-z'-]*)\s*[:,\-–—]\s*/i, "tell $1 ");
   q = q.replace(/^ask\s+([A-Za-z][A-Za-z'-]*)\s+(to|if|whether|about|for)\s+/i, (_m, who: string, w: string) => `tell ${who} ${w === "to" ? "to " : `${w} `}`);
   q = q.replace(/^(?:let|have)\s+([A-Za-z][A-Za-z'-]*)\s+know\s+(?:that\s+)?/i, "tell $1 ");
   q = q.replace(/^(?:can you\s+)?(?:message|text)\s+([A-Za-z][A-Za-z'-]*)\s+(?:and\s+)?(?:say|tell (?:her|him|them))\s+(?:that\s+)?/i, "tell $1 ");
-  return q;
+  return q.replace(/^(\s*\S+\s+)dr-(?=[A-Za-z])/i, "$1Dr. ");
 }
 
 export function isTell(raw: string): boolean {
