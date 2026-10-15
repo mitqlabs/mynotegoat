@@ -39,6 +39,10 @@ import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
 import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
+import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
+import { onLocalChange } from "@/lib/local-sync";
+import { getPatientById, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { loadPatientBillingMap } from "@/lib/patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -4827,18 +4831,90 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // Shared save core. `silent` autosaves get a tiny "Auto-saved" pill that
   // fades quickly; explicit Save & Close gets the louder "Saving — pushing
   // to cloud..." flow.
+  // ---- Field-level merge: save only what the user edited; take in outside changes to untouched fields. ----
+  const billingNow = () => {
+    const v = Number.parseFloat(paidAmount);
+    return { billedAmount: currentBillTotal, paidAmount: Number.isFinite(v) ? v : 0, paidDate };
+  };
+  const mergeBaseRef = useRef<Flat | null>(null);
+  const billingBaseRef = useRef<ReturnType<typeof billingNow> | null>(null);
+  const liveRef = useRef<{ build: () => UpdatePatientRecordPatch; billing: () => ReturnType<typeof billingNow> } | null>(null);
+  useEffect(() => {
+    liveRef.current = { build: () => buildPatientPatch(), billing: billingNow };
+  });
+  useEffect(() => {
+    // What the form showed on open = the baseline for "did the user edit this?".
+    mergeBaseRef.current = flatten(buildPatientPatch() as Record<string, unknown>);
+    billingBaseRef.current = billingNow();
+    const takePatient = () => {
+      const rec = getPatientById(patient.id);
+      const base = mergeBaseRef.current;
+      const live = liveRef.current;
+      if (!rec || !base || !live) return;
+      const incoming = flatten({
+        caseStatus: rec.caseStatus,
+        attorney: rec.attorney,
+        matrix: { discharge: rec.matrix?.discharge ?? "", rbSent: rec.matrix?.rbSent ?? "", review: normalizeReviewStatus(rec.matrix?.review) },
+      });
+      const { take } = takeExternal(base, flatten(live.build() as Record<string, unknown>), incoming);
+      for (const k of take) {
+        const v = decodeFlat(incoming[k]) as string;
+        if (k === "caseStatus") setCaseStatus(v);
+        else if (k === "attorney") setAttorney(v);
+        else if (k === "matrix.discharge") setDischargeDate(toUsDate(v ?? ""));
+        else if (k === "matrix.rbSent") setRbSentDate(toUsDate(v ?? ""));
+        else if (k === "matrix.review") setReviewStatus(v);
+        base[k] = incoming[k];
+      }
+    };
+    const takeBilling = () => {
+      const rec = loadPatientBillingMap()[patient.id];
+      const base = billingBaseRef.current;
+      const live = liveRef.current;
+      if (!rec || !base || !live) return;
+      const now = live.billing();
+      if (rec.paidAmount !== base.paidAmount && now.paidAmount === base.paidAmount) {
+        setPaidAmount(rec.paidAmount ? rec.paidAmount.toString() : "");
+        base.paidAmount = rec.paidAmount;
+      }
+      if (rec.paidDate !== base.paidDate && now.paidDate === base.paidDate) {
+        setPaidDate(rec.paidDate);
+        base.paidDate = rec.paidDate;
+      }
+      if (rec.billedAmount !== base.billedAmount && now.billedAmount === base.billedAmount) {
+        setBilledAmount(rec.billedAmount ? rec.billedAmount.toString() : "");
+        base.billedAmount = rec.billedAmount;
+      }
+    };
+    const offP = onLocalChange(PATIENTS_STORAGE_KEY, takePatient);
+    const offB = onLocalChange("casemate.patient-billing.v1", takeBilling);
+    return () => {
+      offP();
+      offB();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per patient; live values come through liveRef
+  }, [patient.id]);
+
   const performPatientSave = async (
     overrides: Parameters<typeof buildPatientPatch>[0] = {},
     opts: { silent: boolean } = { silent: false },
   ): Promise<boolean> => {
-    const paidValue = Number.parseFloat(paidAmount);
-    setPatientBillingCoreFields(patient.id, {
-      billedAmount: currentBillTotal,
-      paidAmount: Number.isFinite(paidValue) ? paidValue : 0,
-      paidDate,
-    });
+    // Billing: only the fields the user changed, so a stale tab can't undo a payment logged elsewhere.
+    const bNow = billingNow();
+    const bBase = billingBaseRef.current;
+    const bPatch: { billedAmount?: number; paidAmount?: number; paidDate?: string } = {};
+    if (!bBase || bNow.billedAmount !== bBase.billedAmount) bPatch.billedAmount = bNow.billedAmount;
+    if (!bBase || bNow.paidAmount !== bBase.paidAmount) bPatch.paidAmount = bNow.paidAmount;
+    if (!bBase || bNow.paidDate !== bBase.paidDate) bPatch.paidDate = bNow.paidDate;
+    if (Object.keys(bPatch).length) setPatientBillingCoreFields(patient.id, bPatch);
+    billingBaseRef.current = bNow;
 
-    const savedPatient = updatePatientRecordById(patient.id, buildPatientPatch(overrides));
+    // Patient record: only edited fields (plus lastUpdate) are written.
+    const full = buildPatientPatch(overrides);
+    const base = mergeBaseRef.current;
+    const patch = base ? editedPatch(full as Record<string, unknown>, base, { always: ["lastUpdate"] }) : full;
+    const savedPatient = patch ? updatePatientRecordById(patient.id, patch as UpdatePatientRecordPatch) : getPatientById(patient.id);
+    if (savedPatient) mergeBaseRef.current = flatten(full as Record<string, unknown>);
     if (!savedPatient) {
       setSaveStatus("error");
       setSaveMessage("Could not save patient record. Try again or refresh.");
