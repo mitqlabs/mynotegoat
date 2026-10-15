@@ -359,11 +359,13 @@ export function buildFollowUpItems(
     // stops asking the user to chase a Done date that's never coming.
     const isRefused = (entry: unknown) =>
       Boolean((entry as { patientRefused?: boolean })?.patientRefused);
-    const xrayAllEntries = Array.isArray(patient.xrayReferrals) ? patient.xrayReferrals : [];
     // Prior / outside studies (isPrior) hold findings only; they are not
-    // our referrals, so Case Flow ignores them entirely.
+    // our referrals, so Case Flow ignores them entirely (X-ray and MRI).
     const isPriorStudy = (entry: unknown) =>
       Boolean((entry as { isPrior?: boolean })?.isPrior);
+    const xrayAllEntries = Array.isArray(patient.xrayReferrals)
+      ? patient.xrayReferrals.filter((entry) => !isPriorStudy(entry))
+      : [];
     const mriAllEntries = Array.isArray(patient.mriReferrals)
       ? patient.mriReferrals.filter((entry) => !isPriorStudy(entry))
       : [];
