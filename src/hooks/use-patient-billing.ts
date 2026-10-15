@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { onLocalChange } from "@/lib/local-sync";
 import {
   createPatientBillingRecord,
   loadPatientBillingMap,
@@ -70,6 +71,8 @@ function createAdjustmentId() {
 
 export function usePatientBilling() {
   const [recordsByPatientId, setRecordsByPatientId] = useState<PatientBillingMap>(() => loadPatientBillingMap());
+  // G.O.A.T. writes the billing store directly; pick those up here.
+  useEffect(() => onLocalChange("casemate.patient-billing.v1", () => setRecordsByPatientId(loadPatientBillingMap())), []);
 
   const updateMap = useCallback((updater: (current: PatientBillingMap) => PatientBillingMap) => {
     setRecordsByPatientId((current) => {

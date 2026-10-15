@@ -1,5 +1,7 @@
 import type { OfficeMemory } from "@/lib/goat-office";
 import type { BookingDraft } from "@/lib/goat-booking";
+import type { OmPlan } from "@/lib/goat-om";
+import type { OmSnapshot } from "@/lib/goat-om-apply";
 /**
  * Global G.O.A.T. (sidebar popup) — who is the question about, and the chat
  * history. Pure helpers plus browser-only storage.
@@ -45,6 +47,12 @@ export interface ChatMessage {
   role: "user" | "goat";
   text: string;
   at: string;
+  /** Office manager: patients this message listed ("these", "them"). */
+  omListed?: string[];
+  /** Office manager confirm card (money / case status / attorney). */
+  om?: { plan: Exclude<OmPlan, { kind: "undo" }>; state: "open" | "done" | "canceled" | "undone"; snapshot?: OmSnapshot[]; result?: string };
+  /** Office manager undo card for the card `targetId`. */
+  omUndo?: { targetId: string; state: "open" | "done" | "canceled"; result?: string };
   patientId?: string;
   patientName?: string;
   /** Clarifying question: pick one of these patients. */

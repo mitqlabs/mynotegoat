@@ -169,6 +169,29 @@ walk(ROOT);
   }
 }
 
+// Rule 5: G.O.A.T. office manager (src/lib/goat-om*.ts) is rules-only and
+// cloud-backed only: no direct browser storage, no network / cloud AI, and its
+// writes go through the app's registered cloud-backed stores.
+{
+  const libDir = join(ROOT, "lib");
+  const omFiles = readdirSync(libDir).filter((f) => /^goat-om.*\.ts$/.test(f));
+  const BANNED = [
+    [/\b(localStorage|sessionStorage|indexedDB)\b/, "direct browser storage"],
+    [/\bfetch\s*\(|XMLHttpRequest|\/api\//, "network call"],
+    [/goat-ai\/(?!global-chat)|openai|anthropic|\bxai\b|\bllm\b|chat\/completions/i, "cloud AI"],
+  ];
+  const ALLOWED_STORES = new Set(["@/lib/patient-billing", "@/lib/mock-data", "@/lib/case-notes", "@/lib/local-sync", "@/lib/activity-log", "@/lib/goat-notes", "@/lib/goat-om", "@/lib/schedule-appointments", "@/lib/goat-ai/global-chat"]);
+  for (const f of omFiles) {
+    const src = readFileSync(join(libDir, f), "utf8").replace(/^\s*(\*|\/\/).*$/gm, "");
+    for (const [re, what] of BANNED) {
+      if (re.test(src)) failures.push({ file: `src/lib/${f}`, rule: `office manager: ${what}`, hint: "goat-om files are rules-only and may only write through cloud-backed stores (billing, patients, Case Notes)." });
+    }
+    for (const m of src.matchAll(/from\s+"(@\/[^"]+)"/g)) {
+      if (!ALLOWED_STORES.has(m[1])) failures.push({ file: `src/lib/${f}`, rule: "office manager: unapproved import", hint: `${m[1]} isn't an approved cloud-backed store for the office manager. Add it to Rule 5 only if it is cloud-backed.` });
+    }
+  }
+}
+
 if (failures.length === 0) {
   console.log("✓ sanity-check: all rules pass");
   process.exit(0);
