@@ -122,20 +122,50 @@ export function detectBrief(raw: string): BriefKind | null {
   return null;
 }
 
-/** Active patients seen this week (today..Sunday) with nothing booked after this week. */
+function daysBetween(a: string, b: string): number {
+  const t = (x: string) => Date.UTC(+x.slice(0, 4), +x.slice(5, 7) - 1, +x.slice(8, 10));
+  return Math.round((t(b) - t(a)) / 86400000);
+}
+
+export interface ApptCheckGroups {
+  /** Active, nothing booked today or later. Never-seen first, then longest since last visit. */
+  noneBooked: Array<{ patient: BriefPatient; lastVisit: string; daysAgo: number | null }>;
+  /** Active, a visit between today and Sunday, nothing after this week. */
+  runningOut: Array<{ patient: BriefPatient; lastThisWeek: string }>;
+}
+
+/** Appointment Check groups (canceled / no-show / rescheduled visits don't count). */
+export function appointmentCheckGroups(data: BriefData): ApptCheckGroups {
+  const end = endOfWeek(data.today);
+  const noneBooked: ApptCheckGroups["noneBooked"] = [];
+  const runningOut: ApptCheckGroups["runningOut"] = [];
+  for (const p of data.patients.filter(isActive)) {
+    const dates = data.appointments.filter((a) => a.patientId === p.id && live(a)).map((a) => a.date).sort();
+    const thisWeek = dates.filter((d) => d >= data.today && d <= end);
+    if (thisWeek.length) {
+      if (!dates.some((d) => d > end)) runningOut.push({ patient: p, lastThisWeek: thisWeek.at(-1)! });
+      continue;
+    }
+    if (dates.some((d) => d >= data.today)) continue; // booked after this week
+    const last = dates.filter((d) => d < data.today).at(-1) ?? "";
+    noneBooked.push({ patient: p, lastVisit: last, daysAgo: last ? daysBetween(last, data.today) : null });
+  }
+  noneBooked.sort((a, b) => (a.daysAgo === null ? -1 : 0) - (b.daysAgo === null ? -1 : 0) || (b.daysAgo ?? 0) - (a.daysAgo ?? 0) || byName(a.patient, b.patient));
+  runningOut.sort((a, b) => byName(a.patient, b.patient));
+  return { noneBooked, runningOut };
+}
+
+/** Admins: who needs to be scheduled, most urgent first. */
 export function appointmentCheck(data: BriefData): BriefAnswer {
   const end = endOfWeek(data.today);
-  const act = data.patients.filter(isActive);
-  const need = act.filter((p) => {
-    const mine = data.appointments.filter((a) => a.patientId === p.id && live(a));
-    return mine.some((a) => a.date >= data.today && a.date <= end) && !mine.some((a) => a.date > end);
-  }).sort(byName);
-  if (!need.length) return { text: `Everyone active with a visit this week (through ${us(end)}) already has something booked for next week or later.` };
-  const lastVisit = (id: string) => data.appointments.filter((a) => a.patientId === id && live(a) && a.date <= end).map((a) => a.date).sort().at(-1) ?? "";
-  return {
-    text: `${need.length} active patient${need.length === 1 ? "" : "s"} need${need.length === 1 ? "s" : ""} to be scheduled — visit this week, nothing booked after ${us(end)}:\n${need.map((p) => `- ${p.fullName} (last this week: ${us(lastVisit(p.id))})`).join("\n")}`,
-    links: need.map(patientLink),
-  };
+  const { noneBooked, runningOut } = appointmentCheckGroups(data);
+  if (!noneBooked.length && !runningOut.length) return { text: `Every active patient has a visit booked after this week (through ${us(end)}).` };
+  const lines = [`Appointment Check — ${noneBooked.length + runningOut.length} active patient${noneBooked.length + runningOut.length === 1 ? "" : "s"} need to be scheduled`];
+  lines.push(`\nNo appointments booked (${noneBooked.length})`);
+  lines.push(...(noneBooked.length ? noneBooked.map((r) => `- ${r.patient.fullName} — ${r.lastVisit ? `last visit ${us(r.lastVisit)} (${r.daysAgo} day${r.daysAgo === 1 ? "" : "s"} ago)` : "⚠ no visits ever"}`) : ["- None"]));
+  lines.push(`\nRunning out this week (${runningOut.length})`);
+  lines.push(...(runningOut.length ? runningOut.map((r) => `- ${r.patient.fullName} — last this week ${us(r.lastThisWeek)}, nothing after ${us(end)}`) : ["- None"]));
+  return { text: lines.join("\n"), links: [...noneBooked.map((r) => patientLink(r.patient)), ...runningOut.map((r) => patientLink(r.patient))] };
 }
 
 export function morningRundown(data: BriefData): BriefAnswer {
