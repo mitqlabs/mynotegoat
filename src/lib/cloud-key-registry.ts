@@ -29,6 +29,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.report-templates.v1": "workspace",
   "casemate.document-templates.v1": "workspace",
   "casemate.tasks.v1": "workspace",
+  "casemate.encounter-merge-backups.v1": "workspace",
   "casemate.patient-follow-up-overrides.v1": "workspace",
   "casemate.files.v1": "workspace",
   "casemate.billing-macros.v1": "workspace",

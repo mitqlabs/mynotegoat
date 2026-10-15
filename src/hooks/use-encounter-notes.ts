@@ -1309,6 +1309,26 @@ export function useEncounterNotes() {
     return ok;
   }, []);
 
+  /**
+   * Write whole encounter records (replace by id, add if missing) and push
+   * each straight to the cloud table. Used by the G.O.A.T. duplicate merge
+   * (kept encounter) and its restore (re-creating removed encounters).
+   */
+  const putEncounterRecords = useCallback(
+    (records: EncounterNoteRecord[]) => {
+      const at = nowIso();
+      const stamped = records.map((r) => ({ ...r, updatedAt: at }));
+      const ids = new Set(stamped.map((r) => r.id));
+      updateRecords((current) => [...current.map((e) => stamped.find((r) => r.id === e.id) ?? e), ...stamped.filter((r) => !current.some((e) => e.id === r.id))]);
+      for (const r of stamped) {
+        forgetCloudCopy(r.id);
+        void saveEncounterNoteToCloudNow(r);
+      }
+      return ids.size;
+    },
+    [updateRecords],
+  );
+
   const deleteEncounter = useCallback(
     (encounterId: string) => {
       const note = encountersForLogRef.current.find((entry) => entry.id === encounterId);
@@ -1382,6 +1402,7 @@ export function useEncounterNotes() {
     setSignedAndConfirm,
     resaveEncountersToCloud,
     deleteEncounter,
+    putEncounterRecords,
     forceSaveAll,
   };
 }
