@@ -81,6 +81,8 @@ export interface ChatMessage {
   /** A team message waiting for Confirm (posted to Messages only then). */
   msgDraft?: { toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
   /** A note waiting for Confirm before it's added to the patient's Notes. */
+  /** "/todo" confirm card. */
+  todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
   /** Waiting for the day/time of a booking. */
   bookingAsk?: { patientId: string; question: string };
