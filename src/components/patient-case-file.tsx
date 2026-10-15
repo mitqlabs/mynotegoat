@@ -1,5 +1,7 @@
 "use client";
 
+import { mainEmailOf } from "@/lib/contact-email";
+
 import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dates";
 
 import { usableLegacyMriFindings } from "@/lib/legacy-mri";
@@ -2953,7 +2955,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       ATTORNEY_NAME: attorney,
       ATTORNEY_PHONE: matchedAttorneyContact?.phone ?? "",
       ATTORNEY_FAX: matchedAttorneyContact?.fax ?? "",
-      ATTORNEY_EMAIL: matchedAttorneyContact?.email ?? "",
+      ATTORNEY_EMAIL: (matchedAttorneyContact ? mainEmailOf(matchedAttorneyContact) : ""),
       ATTORNEY_ADDRESS: matchedAttorneyContact?.address ?? "",
       SPECIALIST_NAME: "",
       SPECIALIST_PHONE: "",
@@ -3471,7 +3473,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       SPECIALIST_NAME: entry.specialist,
       SPECIALIST_PHONE: specialistContact?.phone ?? "",
       SPECIALIST_FAX: specialistContact?.fax ?? "",
-      SPECIALIST_EMAIL: specialistContact?.email ?? "",
+      SPECIALIST_EMAIL: (specialistContact ? mainEmailOf(specialistContact) : ""),
       SPECIALIST_ADDRESS: specialistContact?.address ?? "",
       REFERRAL_SENT_DATE: toUsDate(entry.sentDate),
       REFERRAL_SCHEDULED_DATE: toUsDate(entry.scheduledDate),
@@ -3588,7 +3590,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       IMAGING_CENTER: entry.center,
       IMAGING_PHONE: imagingCenterContact?.phone ?? "",
       IMAGING_FAX: imagingCenterContact?.fax ?? "",
-      IMAGING_EMAIL: imagingCenterContact?.email ?? "",
+      IMAGING_EMAIL: (imagingCenterContact ? mainEmailOf(imagingCenterContact) : ""),
       IMAGING_ADDRESS: imagingCenterContact?.address ?? "",
       IMAGING_REGIONS: formatImagingRegionsSummary(entry, mode),
       IMAGING_SENT_DATE: toUsDate(entry.sentDate),
@@ -3775,7 +3777,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         attorney,
         attorneyPhone: matchedAttorneyContact?.phone ?? "",
         attorneyFax: matchedAttorneyContact?.fax ?? "",
-        attorneyEmail: matchedAttorneyContact?.email ?? "",
+        attorneyEmail: (matchedAttorneyContact ? mainEmailOf(matchedAttorneyContact) : ""),
         attorneyAddress: matchedAttorneyContact?.address ?? "",
         caseStatus,
         lienStatus: resolvedLienStatus,

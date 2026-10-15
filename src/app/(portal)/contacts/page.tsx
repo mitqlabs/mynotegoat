@@ -1,5 +1,7 @@
 "use client";
 
+import { withMainFirst } from "@/lib/contact-email";
+
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { logActivity } from "@/lib/activity-log";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -106,7 +108,7 @@ function toContactForm(contact: ContactRecord): ContactFormState {
 
 /** Display rows for a saved contact (labeled list, or legacy single email). */
 function toDisplayEmails(contact: ContactRecord): ContactEmail[] {
-  if (contact.emails?.length) return contact.emails;
+  if (contact.emails?.length) return withMainFirst(contact.emails);
   if (contact.email) return [{ name: "", label: "", email: contact.email }];
   return [];
 }
@@ -127,13 +129,27 @@ function EmailFieldList({
     const next = rows.filter((_, i) => i !== index);
     onChange(next.length ? next : [blank]);
   };
+  // Exactly one main: the starred row, else the first.
+  const mainIndex = Math.max(0, rows.findIndex((r) => r.main));
+  const setMain = (index: number) => onChange(rows.map((row, i) => ({ ...row, main: i === index })));
   return (
     <div className="grid gap-2">
       {rows.map((row, i) => (
         <div
           key={i}
-          className="grid grid-cols-[minmax(0,6rem)_minmax(0,6rem)_minmax(0,1fr)_auto] gap-2"
+          className="grid grid-cols-[auto_minmax(0,6rem)_minmax(0,6rem)_minmax(0,1fr)_auto] gap-2"
         >
+          <button
+            aria-label={i === mainIndex ? "Main email" : "Make this the main email"}
+            aria-pressed={i === mainIndex}
+            className={`rounded-lg px-1.5 text-base leading-none transition ${i === mainIndex ? "text-amber-500" : "text-[#cbd5e1] hover:text-amber-400"}`}
+            data-email-main={i === mainIndex ? "on" : "off"}
+            onClick={() => setMain(i)}
+            title={i === mainIndex ? "Main email — used on reports, letters and G.O.A.T." : "Make main email"}
+            type="button"
+          >
+            {i === mainIndex ? "★" : "☆"}
+          </button>
           <input
             className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
             onChange={(event) => update(i, { name: event.target.value })}
@@ -728,6 +744,9 @@ export default function ContactsPage() {
                     <p key={i} className="flex min-w-0 items-center gap-1.5 leading-5">
                       <MailIcon />
                       <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
+                      {i === 0 && emailRows.length > 1 && (
+                        <span className="shrink-0 rounded-full bg-[#fef3c7] px-1.5 text-[10.5px] font-semibold leading-4 text-[#92400e]" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
+                      )}
                       {(e.name || e.label) && (
                         <span className="shrink-0 rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
                           {[e.name, e.label].filter(Boolean).join(" · ")}

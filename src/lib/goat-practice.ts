@@ -7,6 +7,7 @@
 import type { CaseStatus, ContactRecord } from "@/lib/mock-data";
 import type { TaskRecord } from "@/lib/tasks";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import { mainEmailOf } from "@/lib/contact-email";
 import { editDistance } from "@/lib/goat-ai/global-chat";
 import { settingsHref, settingsSearchCatalog, GOAT_SETTINGS_PAGE } from "@/lib/settings-catalog";
 
@@ -173,7 +174,7 @@ export function matchContacts(query: string, contacts: ContactRecord[]): Array<{
 }
 
 function contactLine(c: ContactRecord, want: "phone" | "fax" | "email" | "all"): string {
-  const email = c.email || c.emails?.[0]?.email || "";
+  const email = mainEmailOf(c);
   const parts: string[] = [];
   if (want === "phone" || want === "all") parts.push(c.phone ? `phone ${c.phone}` : "no phone number saved");
   if (want === "fax" || want === "all") parts.push(c.fax ? `fax ${c.fax}` : "no fax saved");
@@ -241,7 +242,7 @@ export function practiceSnapshot(data: PracticeData): string {
     .filter((p) => p.caseStatus === "Active" || p.caseStatus === "Submitted" || p.caseStatus === "Ready To Submit")
     .slice(0, 400)
     .map((p) => `${p.fullName} | ${p.caseStatus} | ${p.attorney || "-"}`);
-  const contacts = data.contacts.slice(0, 200).map((c) => `${c.name} | ${c.category} | ph ${c.phone || "-"} | fax ${c.fax || "-"} | ${c.email || "-"}`);
+  const contacts = data.contacts.slice(0, 200).map((c) => `${c.name} | ${c.category} | ph ${c.phone || "-"} | fax ${c.fax || "-"} | ${mainEmailOf(c) || "-"}`);
   return [
     `TODAY: ${usDate(data.today)}`,
     `CASE STATUS COUNTS: ${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} (total patients ${data.patients.length}). "Submitted" means billed and waiting for the check.`,
