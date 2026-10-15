@@ -110,7 +110,11 @@ function checkFile(path) {
       .split(",")
       .map((d) => d.trim())
       .filter(Boolean);
-    const unstable = depList.filter((d) => !d.endsWith(".current"));
+    // Open-gated listeners are the pattern Rule 6 asks for: a boolean
+    // open/visible dep and an early `if (!open) return;` — at most one menu
+    // listens at a time, and the cleanup is the same closure.
+    const gated = (d) => /^(is)?(open|show|visible|expanded)\w*$/i.test(d) && new RegExp(String.raw`^\s*if\s*\(\s*!${d}\s*\)\s*return;`).test(body);
+    const unstable = depList.filter((d) => !d.endsWith(".current") && !gated(d));
     if (unstable.length > 0) {
       failures.push({
         file: path,
@@ -188,6 +192,34 @@ walk(ROOT);
     }
     for (const m of src.matchAll(/from\s+"(@\/[^"]+)"/g)) {
       if (!ALLOWED_STORES.has(m[1])) failures.push({ file: `src/lib/${f}`, rule: "office manager: unapproved import", hint: `${m[1]} isn't an approved cloud-backed store for the office manager. Add it to Rule 5 only if it is cloud-backed.` });
+    }
+  }
+}
+
+// Rule 6: no lifetime document/window input listeners per component instance.
+// A component that can render once per list row (office pill, menus, pickers)
+// must add document-level mousedown/click/keydown/... listeners only while it
+// is open (useEffect gated on that state), or share one module-level listener.
+// An effect with [] deps that installs one = one listener per row (the Texas
+// "100 mousedown handlers" leak).
+{
+  const INPUT = /\b(document|window)\.addEventListener\(\s*["'](mousedown|mouseup|pointerdown|pointerup|click|keydown|keyup|touchstart|touchend)["']/g;
+  // App-level singletons (mounted once), allowed to listen for their whole life.
+  const SINGLETONS = new Set(["app/(portal)/layout.tsx", "components/fill-confirm-dialog.tsx", "components/checkout-note-guard.tsx"]);
+  const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : /\.tsx$/.test(f) ? [p] : []; });
+  for (const file of walk(ROOT)) {
+    const rel = file.slice(ROOT.length + 1);
+    if (SINGLETONS.has(rel)) continue;
+    const src = readFileSync(file, "utf8");
+    for (const m of src.matchAll(INPUT)) {
+      const at = m.index ?? 0;
+      const eff = src.lastIndexOf("useEffect(", at);
+      if (eff < 0) continue; // module-level shared listener: fine
+      // The effect's deps: the first "}, [ ... ])" after the listener.
+      const deps = /\},\s*\[([^\]]*)\]\s*\)/.exec(src.slice(at));
+      if (deps && deps[1].trim() === "") {
+        failures.push({ file: `src/${rel}`, rule: "per-instance lifetime document listener", hint: `"${m[2]}" on ${m[1]} is added in a useEffect with [] deps. Add it only while open (useEffect(..., [open]) with an early return) or use one shared module-level listener; list rows render this hundreds of times.` });
+      }
     }
   }
 }
