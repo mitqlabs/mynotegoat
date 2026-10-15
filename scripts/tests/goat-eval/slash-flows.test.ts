@@ -106,6 +106,8 @@ check("send: new request resets flow first", () => assert.ok(sendSrc.indexOf("br
 check("chips dispatch directly", () => { assert.match(ui, /onClick=\{\(\) => runChip\(c\)\}/); assert.match(ui, /const runChip = [\s\S]{0,80}flowRef\.current = null/); });
 check("clear chat resets flow + dialog", () => assert.match(ui, /clearChat\(\);[\s\S]{0,200}flowRef\.current = null;[\s\S]{0,60}dialogRef\.current = emptyDialog\(\)/));
 check("flow state not persisted", () => assert.doesNotMatch(ui, /localStorage[^\n]*flow|dualWriteKv[^\n]*flow/i));
+check("/view gated for non-admins", () => { const v = ui.slice(ui.indexOf("const runView"), ui.indexOf("const runChip")); assert.match(v, /briefAllowed\(kind\[target\], isGoatAdmin\)/); assert.match(v, /ADMIN_ONLY_REPLY/); assert.match(v, /viewTargetsFor\(isGoatAdmin\)/); });
+check("/view breaks a waiting step", () => assert.equal(step("/view todo", n0), null));
 check("import double-click guard", () => assert.match(ui, /importingRef\.current\.has\(msg\.id\)/));
 console.log(`slash-flows: ${pass}/${pass + fail} passed (mock data only)`);
 if (fail) process.exit(1);

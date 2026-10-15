@@ -65,6 +65,7 @@ import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
+import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
@@ -654,6 +655,24 @@ export function GlobalGoatPopup({
       })),
     };
   };
+  /** "/view <target>": read-only lists (admin targets gated). */
+  const runView = (question: string, rest: string) => {
+    push({ role: "user", text: question, practice: true });
+    const target = parseViewTarget(rest);
+    const opts = viewTargetsFor(isGoatAdmin);
+    if (!target) {
+      push({ role: "goat", text: rest ? `I can't show "${rest}". What would you like to see?` : "What would you like to see?", practice: true, choices: opts.map((v) => ({ label: v.word[0].toUpperCase() + v.word.slice(1), question: `/view ${v.word}` })) });
+      return;
+    }
+    const kind: Record<ViewTarget, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
+    if (!briefAllowed(kind[target], isGoatAdmin)) {
+      push({ role: "goat", text: ADMIN_ONLY_REPLY, practice: true });
+      return;
+    }
+    const data = briefData();
+    const a = target === "todo" ? viewTodos(data) : target === "schedule" ? viewSchedule(data) : target === "messages" ? viewMessages(data) : target === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
+    push({ role: "goat", text: a.text, practice: true, links: a.links });
+  };
   /** Greeting chip tap: drop any waiting step and run the brief directly. */
   const runChip = (chip: string) => {
     flowRef.current = null;
@@ -684,6 +703,10 @@ export function GlobalGoatPopup({
         return true;
       }
       return false;
+    }
+    if (sl.cmd === "view") {
+      runView(question, sl.rest);
+      return true;
     }
     const started = startFlow(sl.cmd, sl.rest, flowCtx());
     if (started) {
@@ -1356,6 +1379,12 @@ export function GlobalGoatPopup({
                     syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
                   }}
                   onKeyDown={(e) => {
+                    const vq = !mention ? viewQuery(input) : null;
+                    if (vq !== null && e.key === "Tab" && viewMatches(vq, isGoatAdmin).length) {
+                      e.preventDefault();
+                      setInput(`/view ${viewMatches(vq, isGoatAdmin)[0].word}`);
+                      return;
+                    }
                     const sq = !mention ? slashQuery(input) : null;
                     if (sq !== null && e.key === "Tab" && slashMatches(sq).length) {
                       e.preventDefault();
@@ -1386,6 +1415,25 @@ export function GlobalGoatPopup({
                   ref={inputRef}
                   value={input}
                 />
+                {!mention && viewQuery(input) !== null && viewMatches(viewQuery(input) ?? "", isGoatAdmin).length > 0 && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-72 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg" data-goat-view-menu role="listbox">
+                    {viewMatches(viewQuery(input) ?? "", isGoatAdmin).map((v) => (
+                      <button
+                        aria-selected={false}
+                        className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-soft)]"
+                        key={v.target}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          send(`/view ${v.word}`);
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <span className="text-sm font-semibold">/view {v.word}</span> <span className="text-xs text-[var(--text-muted)]">{v.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {!mention && slashQuery(input) !== null && slashMatches(slashQuery(input) ?? "").length > 0 && (
                   <div className="absolute bottom-full left-0 z-30 mb-1 w-72 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg" data-goat-slash-menu role="listbox">
                     {slashMatches(slashQuery(input) ?? "").map((c) => (
