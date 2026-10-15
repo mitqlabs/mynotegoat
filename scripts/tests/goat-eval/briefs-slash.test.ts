@@ -4,7 +4,7 @@
  * Run: npx tsx scripts/tests/goat-eval/briefs-slash.test.ts
  */
 import assert from "node:assert/strict";
-import { ADMIN_ONLY_REPLY, CHIPS, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
 import type { PracticeData } from "../../../src/lib/goat-practice";
@@ -81,13 +81,46 @@ const BRIEFS: Array<[string, ReturnType<typeof detectBrief>]> = [
 ];
 for (const [q, want] of BRIEFS) check(`detect "${q}"`, () => assert.equal(detectBrief(q), want));
 
-// Appointment Check
+// Appointment Check (two groups)
 const ac = appointmentCheck(data);
-check("ac list", () => { assert.match(ac.text, /^2 active patients need to be scheduled/); assert.match(ac.text, /Alpha Mock/); assert.match(ac.text, /Charlie Mock/); });
-check("ac excludes", () => { for (const x of ["Bravo", "Delta", "Foxtrot", "Echo"]) assert.doesNotMatch(ac.text, new RegExp(x)); });
-check("ac links", () => assert.deepEqual(ac.links?.map((l) => l.href), ["/patients/p1", "/patients/p3"]));
-check("ac none", () => assert.match(appointmentCheck({ ...data, appointments: [] }).text, /^Everyone active/));
-check("ac last date", () => assert.match(ac.text, /Alpha Mock \(last this week: 10\/15\/2026\)/));
+const g = appointmentCheckGroups(data);
+check("ac running out", () => assert.deepEqual(g.runningOut.map((r) => r.patient.id), ["p1", "p3"]));
+check("ac running out ignores canceled future", () => assert.equal(g.runningOut.find((r) => r.patient.id === "p3")?.lastThisWeek, "2026-10-16"));
+check("ac none booked: no-show only = never seen", () => assert.deepEqual(g.noneBooked.map((r) => [r.patient.id, r.lastVisit, r.daysAgo]), [["p6", "", null]]));
+check("ac booked next week excluded", () => assert.ok(![...g.noneBooked, ...g.runningOut].some((r) => r.patient.id === "p2")));
+check("ac non-active excluded", () => assert.ok(![...g.noneBooked, ...g.runningOut].some((r) => ["p4", "p5", "p7"].includes(r.patient.id))));
+check("ac text", () => { assert.match(ac.text, /^Appointment Check — 3 active patients need to be scheduled/); assert.match(ac.text, /No appointments booked \(1\)\n- Foxtrot Mock — ⚠ no visits ever/); assert.match(ac.text, /Running out this week \(2\)\n- Alpha Mock — last this week 10\/15\/2026, nothing after 10\/18\/2026/); });
+check("ac links", () => assert.deepEqual(ac.links?.map((l) => l.href), ["/patients/p6", "/patients/p1", "/patients/p3"]));
+check("ac none", () => assert.match(appointmentCheck({ ...data, patients: data.patients.filter((p) => p.id === "p2") }).text, /^Every active patient has a visit booked/));
+// The reported miss: active, last visit 07/30/2026, nothing after (fictional patient).
+{
+  const d2: BriefData = {
+    ...data,
+    patients: [
+      { id: "m1", fullName: "Mock Julyvisit", caseStatus: "Active" },
+      { id: "m2", fullName: "Mock Augustvisit", caseStatus: "Active" },
+      { id: "m3", fullName: "Mock Neverseen", caseStatus: "Active" },
+      { id: "m4", fullName: "Mock Paidcase", caseStatus: "Paid" },
+      { id: "m5", fullName: "Mock Lastweek", caseStatus: "Active" },
+      { id: "m6", fullName: "Mock Future", caseStatus: "Active" },
+    ],
+    appointments: [
+      A("m1", "Mock Julyvisit", "2026-07-30", "Check Out"), A("m1", "Mock Julyvisit", "2026-07-10", "Check Out"), A("m1", "Mock Julyvisit", "2026-11-02", "Canceled"),
+      A("m2", "Mock Augustvisit", "2026-08-20", "Check Out"),
+      A("m4", "Mock Paidcase", "2026-06-01", "Check Out"),
+      A("m5", "Mock Lastweek", "2026-10-14", "Check Out"),
+      A("m6", "Mock Future", "2026-07-01", "Check Out"), A("m6", "Mock Future", "2026-10-27"),
+    ],
+  };
+  const g2 = appointmentCheckGroups(d2);
+  check("07/30 case now listed", () => assert.ok(g2.noneBooked.some((r) => r.patient.id === "m1" && r.lastVisit === "2026-07-30" && r.daysAgo === 77)));
+  check("urgency order", () => assert.deepEqual(g2.noneBooked.map((r) => r.patient.id), ["m3", "m1", "m2", "m5"]));
+  check("yesterday counts as past", () => assert.equal(g2.noneBooked.find((r) => r.patient.id === "m5")?.daysAgo, 1));
+  check("booked later excluded", () => assert.ok(!g2.noneBooked.some((r) => r.patient.id === "m6")));
+  check("paid excluded", () => assert.ok(!g2.noneBooked.some((r) => r.patient.id === "m4")));
+  check("07/30 text", () => assert.match(appointmentCheck(d2).text, /- Mock Julyvisit — last visit 07\/30\/2026 \(77 days ago\)/));
+  check("no running out", () => assert.match(appointmentCheck(d2).text, /Running out this week \(0\)\n- None/));
+}
 
 // Morning Rundown
 const mr = morningRundown(data);

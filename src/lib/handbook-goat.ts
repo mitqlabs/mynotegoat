@@ -29,7 +29,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
         "Morning Rundown (everyone) — today's schedule, to-dos due and unread team messages.",
-        "Appointment Check (admins) — active patients seen this week with nothing booked after it, as a clickable \"need to be scheduled\" list.",
+        "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
       why: "Appointment Check and Quick Biz are only shown to the owner and admins. If someone else types them, G.O.A.T. politely says they're for admins.",
