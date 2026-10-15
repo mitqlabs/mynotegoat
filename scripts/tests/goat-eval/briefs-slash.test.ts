@@ -5,6 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { openTodos, parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos } from "../../../src/lib/goat-briefs";
+import { ACCESS_LOADING_REPLY, adminStatsGate, isStatsOfficeKind } from "../../../src/lib/goat-briefs";
+import { answerOffice } from "../../../src/lib/goat-office";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
@@ -62,6 +64,21 @@ check("staff no apptCheck", () => assert.equal(briefAllowed("apptCheck", false),
 check("staff no business", () => assert.equal(briefAllowed("business", false), false));
 for (const q of ["Quick Biz", "how's business", "business numbers", "Appointment Check", "who needs to be scheduled", "know your business"]) {
   check(`staff typed "${q}" → admins only`, () => { const k = detectBrief(q); assert.ok(k && !briefAllowed(k, false)); assert.match(ADMIN_ONLY_REPLY, /for admins/); });
+}
+// Fail closed: unknown/loading role is never admin.
+check("gate loading", () => { assert.equal(adminStatsGate(false, true), ACCESS_LOADING_REPLY); assert.equal(adminStatsGate(false, false), ACCESS_LOADING_REPLY); });
+check("gate staff", () => assert.equal(adminStatsGate(true, false), ADMIN_ONLY_REPLY));
+check("gate admin", () => assert.equal(adminStatsGate(true, true), null));
+check("loading chips = staff chips", () => assert.deepEqual(chipsFor(false && true), ["Morning Rundown"]));
+check("stats kinds", () => { assert.ok(isStatsOfficeKind("caseCount")); assert.ok(isStatsOfficeKind("caseSummary")); for (const k of ["schedule", "todo", "contact", undefined]) assert.equal(isStatsOfficeKind(k), false); });
+{
+  const od = { today: TODAY, patients: [{ id: "a", fullName: "Mock A", caseStatus: "Submitted", attorney: "Mock Law", listYear: 2026 }, { id: "b", fullName: "Mock B", caseStatus: "Active", attorney: "", listYear: 2026 }], tasks: [], appointments: [], contacts: [] } as never;
+  for (const q of ["how many submitted cases", "how many submitted cases do we have", "how many active cases do we have", "how many cases do we have", "how many checks are we waiting on", "list submitted cases"]) {
+    check(`older stat "${q}" is a gated kind`, () => assert.ok(isStatsOfficeKind(answerOffice(q, od, null)?.memory?.kind), String(answerOffice(q, od, null)?.memory?.kind)));
+  }
+  for (const q of ["whats on the schedule today", "show our to-dos"]) {
+    check(`"${q}" stays open to staff`, () => assert.equal(isStatsOfficeKind(answerOffice(q, od, null)?.memory?.kind), false));
+  }
 }
 check("quickBiz alias", () => assert.equal(quickBiz, knowYourBusiness));
 check("week end thu", () => assert.equal(endOfWeek(TODAY), "2026-10-18"));

@@ -66,6 +66,7 @@ import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMem
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget } from "@/lib/goat-briefs";
+import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
@@ -289,9 +290,11 @@ export function GlobalGoatPopup({
   const practiceBusy = false;
   const { addAppointments, removeAppointment } = useScheduleAppointments();
   const { addTask } = useTasks();
-  const { roleTier } = useWorkspaceAccess();
-  /** Owner/admin: sees Appointment Check + Quick Biz. */
-  const isGoatAdmin = isAdminTier(roleTier);
+  const { roleTier, roleKnown } = useWorkspaceAccess();
+  /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
+  const isGoatAdmin = roleKnown && isAdminTier(roleTier);
+  /** Null when office stats are allowed, else the reply to give. */
+  const statsGate = () => adminStatsGate(roleKnown, isAdminTier(roleTier));
   const { addContactsBulk, removeContactsByIds, updateContact } = useContactDirectory();
   /** The step a "/" command flow is waiting on (case pick, note text…). */
   const flowRef = useRef<Pending | null>(null);
@@ -414,6 +417,11 @@ export function GlobalGoatPopup({
     if (!ans) return false;
     if (confidentPatient && !ans.memory?.contact && !ans.links) return false;
     push({ role: "user", text: question, practice: true });
+    const gate = isStatsOfficeKind(ans.memory?.kind) ? statsGate() : null;
+    if (gate) {
+      push({ role: "goat", text: gate, practice: true });
+      return true;
+    }
     push({ role: "goat", text: ans.text, practice: true, links: ans.links, office: ans.memory, choices: ans.choices?.map((c) => ({ label: c.label, question: c.question })) });
     return true;
   };
@@ -592,7 +600,10 @@ export function GlobalGoatPopup({
     const r = omTurn(question, omData(), mem, followUps);
     if (!r) return false;
     push({ role: "user", text: question, practice: true });
-    if (r.kind === "answer") push({ role: "goat", text: r.text, practice: true, omListed: r.listed });
+    // Money / case-list answers are office stats: admins only (fail closed).
+    const gate = r.kind === "answer" ? statsGate() : null;
+    if (gate) push({ role: "goat", text: gate, practice: true });
+    else if (r.kind === "answer") push({ role: "goat", text: r.text, practice: true, omListed: r.listed });
     else if (r.kind === "say") push({ role: "goat", text: r.text, practice: true });
     else if (r.kind === "confirm") push({ role: "goat", text: r.text, practice: true, om: { plan: r.plan, state: "open" } });
     else {
@@ -666,7 +677,7 @@ export function GlobalGoatPopup({
     }
     const kind: Record<ViewTarget, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
     if (!briefAllowed(kind[target], isGoatAdmin)) {
-      push({ role: "goat", text: ADMIN_ONLY_REPLY, practice: true });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true });
       return;
     }
     const data = briefData();
@@ -684,7 +695,7 @@ export function GlobalGoatPopup({
     if (!kind) return false;
     if (!briefAllowed(kind, isGoatAdmin)) {
       push({ role: "user", text: question, practice: true });
-      push({ role: "goat", text: ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
       return true;
     }
     const data = briefData();
@@ -910,6 +921,13 @@ export function GlobalGoatPopup({
       dialogRef.current = turn.state;
       const noteFlow = wasPendingNote || Boolean(turn.state.pendingNote) || isAddNote(question);
       const pp = (id: string | null | undefined) => patientById(id ?? null);
+      // Case counts reached through the dialog are office stats too (admins only, fail closed).
+      const dialogGate = r.kind === "office" && isStatsOfficeKind(turn.state.office?.kind) ? statsGate() : null;
+      if (dialogGate) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: dialogGate, practice: true });
+        return;
+      }
       if (r.kind === "noteConfirm") {
         const p = pp(r.patientId);
         if (p) {

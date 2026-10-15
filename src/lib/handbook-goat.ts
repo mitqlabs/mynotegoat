@@ -32,14 +32,14 @@ export const goatHandbookChapter: HandbookChapter = {
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
-      why: "Appointment Check and Quick Biz are only shown to the owner and admins. If someone else types them, G.O.A.T. politely says they're for admins.",
+      why: "Office numbers — Appointment Check, Quick Biz, case counts (\"how many submitted cases\") and money questions (\"who owes us\", \"what got paid this month\") — are for the owner and admins. Anyone else gets a polite \"that's for admins\". Right after sign-in, while G.O.A.T. is still checking your role, it shows only Morning Rundown and says \"still checking your access\" if you ask for numbers.",
     },
     {
       heading: "Look things up",
       steps: [
         "Patients: \"kara's attorney\", \"when was maria's last visit\", \"does alex have an mri\".",
         "Office: \"whats on the schedule tomorrow\", \"show our to-dos\", \"mock imaging fax number\".",
-        "Money and cases: \"how many submitted cases\", \"who owes us\", \"what got paid this month\".",
+        "Money and cases (admins): \"how many submitted cases\", \"who owes us\", \"what got paid this month\".",
       ],
     },
     {

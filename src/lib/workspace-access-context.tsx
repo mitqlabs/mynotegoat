@@ -42,6 +42,9 @@ export interface WorkspaceAccessValue {
   officeAdmin: boolean;
   /** owner | admin | manager | staff — see src/lib/admin-access.ts. */
   roleTier: RoleTier;
+  /** False while the membership is still loading (or no provider). Features
+   *  that must fail closed (G.O.A.T. admin stats) treat unknown as non-admin. */
+  roleKnown: boolean;
   /** Effective access level for a feature (module cap + member grant). */
   access: (feature: PortalFeature) => AccessLevel;
   /** Can the user open/read this feature at all? */
@@ -64,6 +67,7 @@ const OWNER_FULL: Omit<
   isMember: false,
   officeAdmin: false,
   roleTier: "owner",
+  roleKnown: false,
 };
 
 const Ctx = createContext<WorkspaceAccessValue | null>(null);
@@ -101,6 +105,7 @@ export function WorkspaceAccessProvider({
       isMember,
       officeAdmin,
       roleTier,
+      roleKnown: membership !== null,
       access,
       canView: (f) => access(f) !== "none",
       canEdit: (f) => access(f) === "edit",

@@ -108,6 +108,9 @@ check("clear chat resets flow + dialog", () => assert.match(ui, /clearChat\(\);[
 check("flow state not persisted", () => assert.doesNotMatch(ui, /localStorage[^\n]*flow|dualWriteKv[^\n]*flow/i));
 check("/view gated for non-admins", () => { const v = ui.slice(ui.indexOf("const runView"), ui.indexOf("const runChip")); assert.match(v, /briefAllowed\(kind\[target\], isGoatAdmin\)/); assert.match(v, /ADMIN_ONLY_REPLY/); assert.match(v, /viewTargetsFor\(isGoatAdmin\)/); });
 check("/view breaks a waiting step", () => assert.equal(step("/view todo", n0), null));
+check("goat admin is fail-closed", () => assert.match(ui, /const isGoatAdmin = roleKnown && isAdminTier\(roleTier\)/));
+check("office stats gated (practice, office manager, dialog)", () => { assert.match(ui, /isStatsOfficeKind\(ans\.memory\?\.kind\) \? statsGate\(\)/); assert.match(ui, /r\.kind === "answer" \? statsGate\(\)/); assert.match(ui, /r\.kind === "office" && isStatsOfficeKind\(turn\.state\.office\?\.kind\) \? statsGate\(\)/); });
+check("roleKnown false until membership loads", () => { const ctx = readFileSync("src/lib/workspace-access-context.tsx", "utf8"); assert.match(ctx, /roleKnown: membership !== null/); assert.match(ctx, /roleTier: "owner",\n  roleKnown: false,/); });
 check("import double-click guard", () => assert.match(ui, /importingRef\.current\.has\(msg\.id\)/));
 console.log(`slash-flows: ${pass}/${pass + fail} passed (mock data only)`);
 if (fail) process.exit(1);

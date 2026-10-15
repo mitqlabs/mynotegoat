@@ -69,7 +69,20 @@ export function chipsFor(isAdmin: boolean): string[] {
 export function briefAllowed(kind: BriefKind, isAdmin: boolean): boolean {
   return isAdmin || !ADMIN_BRIEFS.has(kind);
 }
-export const ADMIN_ONLY_REPLY = "Sorry — that's for admins. Ask the office owner or an admin if you need those numbers. I can still give you the Morning Rundown.";
+export const ACCESS_LOADING_REPLY = "One moment — I'm still checking your access. Try again in a few seconds.";
+/**
+ * Fail-closed admin check for office stats. Null = allowed; otherwise the
+ * reply to show (role still loading → "checking", known non-admin → "admins").
+ */
+export function adminStatsGate(roleKnown: boolean, isAdmin: boolean): string | null {
+  if (!roleKnown) return ACCESS_LOADING_REPLY;
+  return isAdmin ? null : ADMIN_ONLY_REPLY;
+}
+/** Office-answer kinds that are stats (Quick Biz territory). */
+export function isStatsOfficeKind(kind: string | undefined): boolean {
+  return kind === "caseCount" || kind === "caseSummary";
+}
+export const ADMIN_ONLY_REPLY = "Sorry — office numbers (case counts, money, Appointment Check, Quick Biz) are for admins. Ask the office owner or an admin if you need them. I can still give you the Morning Rundown.";
 
 export function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning!";
