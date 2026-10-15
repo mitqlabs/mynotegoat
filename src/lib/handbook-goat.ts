@@ -18,7 +18,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "How it works",
       steps: [
-        "Click the goat button. You'll see a greeting and three chips — tap one or just type.",
+        "Click the goat button. You'll see a greeting and chips — tap one or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
         "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
@@ -28,10 +28,11 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
-        "Morning Rundown — today's schedule, to-dos due, unread team messages and quick case counts.",
-        "Appointment Check — active patients seen this week with nothing booked after it, as a clickable \"need to be scheduled\" list.",
-        "Know Your Business — active and submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only.",
+        "Morning Rundown (everyone) — today's schedule, to-dos due and unread team messages.",
+        "Appointment Check (admins) — active patients seen this week with nothing booked after it, as a clickable \"need to be scheduled\" list.",
+        "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
+      why: "Appointment Check and Quick Biz are only shown to the owner and admins. If someone else types them, G.O.A.T. politely says they're for admins.",
     },
     {
       heading: "Look things up",
@@ -52,7 +53,10 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "\"/\" commands",
       steps: [
-        "Type / in the G.O.A.T. box to open the menu (Tab picks the first one).",
+        "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
+        "/note asks \"Which case?\" (tap the right one), then the text, then a confirm card.",
+        "/todo asks \"Just a to-do, or add to a case?\", then the text, then a confirm card.",
+        "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],
     },
@@ -94,7 +98,7 @@ export const goatHandbookChapter: HandbookChapter = {
 export function goatHelpText(): string {
   return [
     "Here's what I can do:",
-    `- Chips: ${CHIPS.join(", ")}`,
+    `- Chips: ${CHIPS.join(", ")} (the last two are for admins)`,
     "- Look up patients, the schedule, to-dos, contacts, cases and money",
     "- Add signed notes, to-dos, payments and case changes (with a confirm card)",
     "- Message the team with @ (🔒 Eyes only)",

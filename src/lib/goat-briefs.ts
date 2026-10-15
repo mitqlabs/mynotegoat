@@ -1,6 +1,6 @@
 /**
  * G.O.A.T. office briefs (rules only, read-only): greeting + chips, Morning
- * Rundown, Appointment Check, Know Your Business, and the "/" command menu.
+ * Rundown, Appointment Check, Quick Biz, and the "/" command menu.
  * Pure: everything comes in as plain data.
  */
 
@@ -57,7 +57,18 @@ export interface BriefAnswer {
   links?: BriefLink[];
 }
 
-export const CHIPS = ["Morning Rundown", "Appointment Check", "Know Your Business"] as const;
+export const CHIPS = ["Morning Rundown", "Appointment Check", "Quick Biz"] as const;
+/** Appointment Check and Quick Biz are for admins (workspace owner/admin). */
+export const ADMIN_BRIEFS = new Set<BriefKind>(["apptCheck", "business"]);
+export type BriefKind = "rundown" | "apptCheck" | "business";
+/** The greeting chips this person sees. */
+export function chipsFor(isAdmin: boolean): string[] {
+  return isAdmin ? [...CHIPS] : ["Morning Rundown"];
+}
+export function briefAllowed(kind: BriefKind, isAdmin: boolean): boolean {
+  return isAdmin || !ADMIN_BRIEFS.has(kind);
+}
+export const ADMIN_ONLY_REPLY = "Sorry — that's for admins. Ask the office owner or an admin if you need those numbers. I can still give you the Morning Rundown.";
 
 export function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning!";
@@ -103,11 +114,11 @@ const locName = (data: BriefData, id?: string) => {
 };
 
 /** Which brief a message asks for (chips and casual wording), or null. */
-export function detectBrief(raw: string): "rundown" | "apptCheck" | "business" | null {
+export function detectBrief(raw: string): BriefKind | null {
   const q = raw.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim();
   if (/^(morning )?rundown$|\bmorning (rundown|brief|briefing|report|summary)\b|\b(daily|day's|today's) (rundown|brief|briefing|summary)\b|^(give me|what's|whats) (the )?(rundown|run down)\b|\bhow does (today|my day) look\b|\bwhat's my day( look like)?\b/.test(q)) return "rundown";
   if (/^appointment check$|^appt check$|\bwho (needs|need) (to be )?(scheduled|rebooked|booked)\b|\b(not|isn't|aren't|nothing) (scheduled|booked) (for |past |after )?next week\b|\bno (future|next week) (appts?|appointments)\b|\bneed(s)? (to be )?scheduled\b|\bwho (isn't|is not|aren't|are not) (scheduled|booked)\b/.test(q)) return "apptCheck";
-  if (/^know (your|my|the) business$|\bhow('s| is) (the )?business\b|\bbusiness (stats|numbers|overview|summary)\b|\b(practice|office|clinic) (stats|numbers|overview)\b|\bkpis?\b|\bhow are we doing\b|\bour numbers\b/.test(q)) return "business";
+  if (/^quick ?biz$|\bquick (biz|business)( stats| numbers)?\b|^know (your|my|the) business$|\bhow('s| is) (the )?business\b|\bbusiness (stats|numbers|overview|summary)\b|\b(practice|office|clinic) (stats|numbers|overview)\b|\bkpis?\b|\bhow are we doing\b|\bour numbers\b/.test(q)) return "business";
   return null;
 }
 
@@ -135,7 +146,6 @@ export function morningRundown(data: BriefData): BriefAnswer {
     : "- Nothing on the schedule.";
   const due = data.tasks.filter((t) => !t.done && t.dueDate && t.dueDate <= data.today).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const todo = due.length ? due.slice(0, 10).map((t) => `- ${t.title}${t.dueDate < data.today ? ` (overdue, ${us(t.dueDate)})` : ""}${t.assignee ? ` · ${t.assignee}` : ""}`).join("\n") + (due.length > 10 ? `\n- …and ${due.length - 10} more` : "") : "- Nothing due.";
-  const n = (s: string) => data.patients.filter((p) => p.caseStatus === s).length;
   const unread = data.unreadMessages ?? 0;
   return {
     text: [
@@ -144,13 +154,13 @@ export function morningRundown(data: BriefData): BriefAnswer {
       `\nTo-dos due: ${due.length}`,
       todo,
       `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`,
-      `\nQuick counts: ${n("Active")} active · ${n("Ready To Submit")} ready to submit · ${n("Submitted")} submitted`,
     ].join("\n"),
     links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...(due.length ? [{ label: "Open To-Do", href: "/tasks" }] : []), ...(unread ? [{ label: "Open Messages", href: "/messages" }] : [])],
   };
 }
 
-export function knowYourBusiness(data: BriefData): BriefAnswer {
+/** Quick Biz (admins): case counts, new patients, visits, collections — by office. */
+export function quickBiz(data: BriefData): BriefAnswer {
   const month = data.today.slice(0, 7);
   const ws = startOfWeek(data.today);
   const visits = (from: string, pred: (a: BriefAppt) => boolean = () => true) => data.appointments.filter((a) => live(a) && a.date >= from && a.date <= data.today && pred(a)).length;
@@ -171,7 +181,7 @@ export function knowYourBusiness(data: BriefData): BriefAnswer {
       `${money(paidMonth(ps))} collected this month`,
     ];
   };
-  const lines = [`Know Your Business (${us(data.today)})`, ...block(data.patients, () => true).map((l) => `- ${l}`)];
+  const lines = [`Quick Biz (${us(data.today)})`, ...block(data.patients, () => true).map((l) => `- ${l}`)];
   if (data.locations.length > 1) {
     for (const l of data.locations) {
       const ps = data.patients.filter((p) => p.locationId === l.id);
@@ -194,8 +204,9 @@ export interface SlashCommand {
 }
 /** Add a command here and handle it in trySlash (global-goat); the menu picks it up. */
 export const SLASH_COMMANDS: SlashCommand[] = [
-  { cmd: "note", hint: "Add a signed note to a patient", example: "/note John Smith: spoke to atty" },
-  { cmd: "todo", hint: "Add a to-do (optionally for a patient)", example: "/todo call Nazaryan for John Smith tomorrow" },
+  { cmd: "note", hint: "Add a signed note to a case", example: "/note John Smith: spoke to atty" },
+  { cmd: "todo", hint: "Add a to-do, on its own or for a case", example: "/todo call Mock Law for John Smith friday" },
+  { cmd: "contact", hint: "Add contacts (one or a pasted list) or edit one", example: "/contact" },
 ];
 
 /** The "/" being typed at the start of the input ("/no" → "no"), or null. */
@@ -254,3 +265,6 @@ export function parseTodo(rest: string, today: string): { name: string | null; t
   const { due, rest: title } = takeDueDate(body, today);
   return { name, title: title.replace(/^[,\-–—\s]+|[,\-–—\s]+$/g, ""), due };
 }
+
+/** Old name, kept for callers. */
+export const knowYourBusiness = quickBiz;

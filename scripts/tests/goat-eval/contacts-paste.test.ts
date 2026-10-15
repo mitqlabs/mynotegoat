@@ -88,7 +88,7 @@ check("nameKey", () => { assert.equal(nameKey("The Ward Law Firm, PLLC (Rick War
 // Handbook + help
 const hb = JSON.stringify(goatHandbookChapter);
 check("handbook lists every / command", () => { for (const c of SLASH_COMMANDS) assert.ok(hb.includes(`/${c.cmd} — `), c.cmd); });
-check("handbook topics", () => { for (const t of ["Morning Rundown", "Appointment Check", "Know Your Business", "Eyes only", "Duplicate encounters", "contacts", "confirm card", "asks"]) assert.ok(hb.toLowerCase().includes(t.toLowerCase()), t); });
+check("handbook topics", () => { for (const t of ["Morning Rundown", "Appointment Check", "Quick Biz", "admins", "/contact", "Which case", "Eyes only", "Duplicate encounters", "contacts", "confirm card", "asks"]) assert.ok(hb.toLowerCase().includes(t.toLowerCase()), t); });
 check("help text commands", () => { for (const c of SLASH_COMMANDS) assert.match(goatHelpText(), new RegExp(`/${c.cmd}`)); });
 for (const q of ["help", "Help", "what can you do?", "what can you do", "What do you do", "what can i ask", "how do i use goat", "what are your features", "what else can you help me with"]) check(`help: ${q}`, () => assert.ok(isGoatHelpQuestion(q)));
 for (const q of ["help me find john smith's dob", "what can you do for kara", "add a note", "morning rundown"]) check(`not help: ${q}`, () => assert.equal(isGoatHelpQuestion(q), false));

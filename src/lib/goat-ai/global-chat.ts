@@ -90,6 +90,8 @@ export interface ChatMessage {
     addedIds?: string[];
     result?: string;
   };
+  /** "/contact" edit card. */
+  contactEdit?: { contactId: string; name: string; category: string; phone: string; fax: string; email: string; address: string; state: "open" | "saved" | "canceled"; result?: string };
   /** "/todo" confirm card. */
   todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
