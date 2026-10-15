@@ -10,7 +10,27 @@
  *                          → Edit: pick contact → edit card → confirm
  */
 import { matchPatientsByName } from "@/lib/goat-notes";
-import { parseTodo } from "@/lib/goat-briefs";
+import { CHIPS, detectBrief, parseTodo } from "@/lib/goat-briefs";
+import { isGoatHelpQuestion } from "@/lib/handbook-goat";
+import { looksLikeContactPaste } from "@/lib/goat-contacts-import";
+
+/**
+ * True when typed text is clearly a NEW request, not an answer to the waiting
+ * step: a chip / brief ("Appointment Check", "how's business"), help, a "/" or
+ * "@" command, or a pasted contact list. These always break out of a flow.
+ */
+export function breaksFlow(text: string, pending?: Pending | null): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (t.startsWith("/") && !t.startsWith(TOKEN)) return true;
+  if (t.startsWith("@")) return true;
+  if ((CHIPS as readonly string[]).some((c) => c.toLowerCase() === t.toLowerCase())) return true;
+  if (detectBrief(t) || isGoatHelpQuestion(t)) return true;
+  // A pasted list IS the answer when we asked for contacts.
+  return pending?.k !== "contactAdd" && looksLikeContactPaste(t) && t.includes("\n");
+}
+/** Name pickers give up on text that reads like a question/sentence instead of a name. */
+const notAName = (t: string) => /[?]/.test(t) || t.split(/\s+/).length > 5 || /^(how|what|who|when|where|why|show|list|mark|add|tell|schedule|book)\b/i.test(t);
 
 export interface FlowPatient { id: string; fullName: string; caseStatus: string }
 export interface FlowContact { id: string; name: string; category: string; phone?: string }
@@ -125,7 +145,8 @@ export function continueFlow(input: string, pending: Pending | null, ctx: FlowCt
     }
   }
   if (!pending) return null;
-  if (t.startsWith("/") || t.startsWith("@")) return null; // a new command replaces the old step
+  if (breaksFlow(t, pending)) return null; // a new request replaces the old step
+  if ((pending.k === "notePick" || pending.k === "todoPick" || pending.k === "contactPick") && notAName(t)) return null;
   if (CANCEL.test(t)) return { say: "Okay, cancelled.", pending: null };
   switch (pending.k) {
     case "notePick":

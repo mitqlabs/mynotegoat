@@ -6,7 +6,7 @@
  * ONE confirm card. Never merges on its own. Every merge first saves a
  * restorable backup to the cloud; "Restore" puts things back.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { logActivity } from "@/lib/activity-log";
 import type { CashPaymentEntry } from "@/lib/mock-data";
 import type { EncounterNoteRecord } from "@/lib/encounter-notes";
@@ -34,6 +34,8 @@ export function GoatDuplicateEncounters({ patientId, patientName, encounters, ca
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [backups, setBackups] = useState<EncounterMergeBackup[]>([]);
+  /** Blocks a double click from merging (or restoring) twice. */
+  const runningRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +55,8 @@ export function GoatDuplicateEncounters({ patientId, patientName, encounters, ca
       setMessage("This case is closed. Unlock the Appointments panel to merge.");
       return;
     }
+    if (runningRef.current) return;
+    runningRef.current = true;
     const plan = planMerge(g, mode);
     const removedIds = new Set(plan.remove.map((r) => r.id));
     const moved = cashPayments.filter((p) => p.encounterId && removedIds.has(p.encounterId)).map((p) => ({ paymentId: p.id, fromEncounterId: p.encounterId! }));
@@ -74,6 +78,7 @@ export function GoatDuplicateEncounters({ patientId, patientName, encounters, ca
       await saveMergeBackupOrThrow(backup);
     } catch (e) {
       setBusy(false);
+      runningRef.current = false;
       setMessage((e as Error).message);
       return;
     }
@@ -87,10 +92,13 @@ export function GoatDuplicateEncounters({ patientId, patientName, encounters, ca
     setBackups((b) => [backup, ...b]);
     setOpenDate(null);
     setBusy(false);
+    runningRef.current = false;
     setMessage(`Merged the ${g.date} encounters into one. A backup was saved, so you can restore it below.`);
   };
 
   const restore = async (b: EncounterMergeBackup) => {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setBusy(true);
     setMessage("");
     try {
@@ -107,6 +115,7 @@ export function GoatDuplicateEncounters({ patientId, patientName, encounters, ca
       setMessage(`Restore saved the encounters, but marking the backup failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
+      runningRef.current = false;
     }
   };
 

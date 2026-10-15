@@ -56,6 +56,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
         "/note asks \"Which case?\" (tap the right one), then the text, then a confirm card.",
         "/todo asks \"Just a to-do, or add to a case?\", then the text, then a confirm card.",
+        "Changed your mind halfway? Tap a chip, type another / or @ command, ask something new, or type cancel — the half-finished step is dropped.",
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],

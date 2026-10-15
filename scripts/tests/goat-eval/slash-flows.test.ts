@@ -3,8 +3,9 @@
  * Run: npx tsx scripts/tests/goat-eval/slash-flows.test.ts
  */
 import assert from "node:assert/strict";
-import { continueFlow, startFlow, TOKEN, type FlowCtx, type FlowTurn } from "../../../src/lib/goat-slash-flow";
+import { breaksFlow, continueFlow, startFlow, TOKEN, type FlowCtx, type FlowTurn } from "../../../src/lib/goat-slash-flow";
 import { parseSlash, slashQuery } from "../../../src/lib/goat-briefs";
+import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
 const check = (name: string, fn: () => void) => { try { fn(); pass++; } catch (e) { fail++; console.log(`FAIL ${name}: ${(e as Error).message.split("\n")[0]}`); } };
@@ -81,5 +82,30 @@ check("/contact add", () => assert.deepEqual(start("/contact add")!.pending, { k
 check("stale token ignored", () => assert.equal(step(`${TOKEN}contact-pick nope`, null), null));
 check("no pending → not a flow", () => assert.equal(step("hello", null), null));
 
+// Live bug 10/15: chips typed/tapped during a waiting step were treated as a patient name.
+for (const [name, prev] of [["/note picker", n0], ["/note text", n2], ["/todo kind", t0], ["/todo case pick", tc], ["/todo text", tp], ["/contact kind", c0], ["/contact add", ca], ["/contact edit pick", ce]] as const) {
+  for (const chip of ["Morning Rundown", "Appointment Check", "Quick Biz", "appointment check", "how's business", "help", "what can you do?", "@hannah call kara", "/todo", "/contact"]) {
+    check(`${name} + "${chip}" breaks out`, () => assert.equal(step(chip, prev), null));
+  }
+}
+check("breaksFlow chips", () => { for (const c of ["Morning Rundown", "Appointment Check", "Quick Biz"]) assert.ok(breaksFlow(c)); });
+check("breaksFlow not names", () => { for (const c of ["john mocksmith", "ann", "spoke to atty", "order supplies friday"]) assert.equal(breaksFlow(c), false); });
+check("breaksFlow pasted list", () => assert.ok(breaksFlow("A Mock Law\n817-555-0001\n1 Main St, Fort Worth, TX 76102\n\nB Mock Law\n817-555-0002")));
+check("tokens never break", () => assert.equal(breaksFlow(`${TOKEN}note-case ann`), false));
+check("picker gives up on a question", () => { assert.equal(step("how many submitted cases do we have?", n0), null); assert.equal(step("what's on the schedule today", tc), null); });
+check("picker still takes a name", () => assert.ok(step("ann sample", n0)!.choices));
+check("abandon then switch: /note → /todo", () => { assert.equal(step("/todo", n0), null); assert.match(start("/todo")!.say, /Just a to-do/); });
+check("chip token after reload (no pending) still works", () => assert.deepEqual(step(`${TOKEN}note-case ann`, null)!.pending, { k: "noteText", patientId: "ann" }));
+check("typed text after reload (no pending) is not swallowed", () => assert.equal(step("Appointment Check", null), null));
+
+// Wiring guards in the chat component.
+const ui = readFileSync("src/components/global-goat.tsx", "utf8");
+const sendSrc = ui.slice(ui.indexOf("const send = (raw: string"));
+check("send: briefs before flows", () => assert.ok(sendSrc.indexOf("detectBrief(question)") < sendSrc.indexOf("tryFlow(question)")));
+check("send: new request resets flow first", () => assert.ok(sendSrc.indexOf("breaksFlow(question, flowRef.current)) flowRef.current = null") < sendSrc.indexOf('question.startsWith("@")')));
+check("chips dispatch directly", () => { assert.match(ui, /onClick=\{\(\) => runChip\(c\)\}/); assert.match(ui, /const runChip = [\s\S]{0,80}flowRef\.current = null/); });
+check("clear chat resets flow + dialog", () => assert.match(ui, /clearChat\(\);[\s\S]{0,200}flowRef\.current = null;[\s\S]{0,60}dialogRef\.current = emptyDialog\(\)/));
+check("flow state not persisted", () => assert.doesNotMatch(ui, /localStorage[^\n]*flow|dualWriteKv[^\n]*flow/i));
+check("import double-click guard", () => assert.match(ui, /importingRef\.current\.has\(msg\.id\)/));
 console.log(`slash-flows: ${pass}/${pass + fail} passed (mock data only)`);
 if (fail) process.exit(1);
