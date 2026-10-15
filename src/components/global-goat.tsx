@@ -59,6 +59,11 @@ import { loadContactDirectory } from "@/lib/contact-directory";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
+import { CHIPS, appointmentCheck, detectBrief, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, type BriefData } from "@/lib/goat-briefs";
+import { useTasks } from "@/hooks/use-tasks";
+import { useUnreadMessages } from "@/hooks/use-unread-messages";
+import { loadOfficeSettings } from "@/lib/office-settings";
+import { loadPatientBillingMap } from "@/lib/patient-billing";
 
 // ---------------------------------------------------------------------------
 // Open/closed, shared by the nav button and the popup.
@@ -276,6 +281,12 @@ export function GlobalGoatPopup({
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
   const { addAppointments, removeAppointment } = useScheduleAppointments();
+  const { addTask } = useTasks();
+  const unreadMessages = useUnreadMessages();
+  // Shown under the greeting until the first message; computed when the popup opens.
+  const [greeting] = useState(() => greetingFor(new Date().getHours()));
+  /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
+  const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
   // "@" in the input: the team roster picker (owner included), like the Messages composer.
   const [mention, setMention] = useState<{ at: number; query: string } | null>(null);
@@ -327,7 +338,12 @@ export function GlobalGoatPopup({
   const patientById = (id: string | null) => findPatient(patientsOverride, id);
   const current = patientById(chat.patientId);
 
-  const push = useCallback((m: Omit<ChatMessage, "id" | "at">, patientId?: string | null) => {
+  const push = useCallback((m0: Omit<ChatMessage, "id" | "at">, patientId?: string | null) => {
+    let m = m0;
+    if (m.role === "user" && shownAsRef.current) {
+      m = { ...m, text: shownAsRef.current };
+      shownAsRef.current = null;
+    }
     setChat((c) => ({ messages: [...c.messages, { ...m, id: newId(), at: nowIso() }], patientId: patientId === undefined ? c.patientId : patientId }));
   }, []);
 
@@ -544,7 +560,7 @@ export function GlobalGoatPopup({
         mem = { ...mem, listed: m.omListed };
         sawListed = true;
       }
-      const action = Boolean(m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
+      const action = Boolean(m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
       if (action && !sawAction) {
         sawAction = true;
         followUps = Boolean(m.om || m.omUndo);
@@ -600,6 +616,99 @@ export function GlobalGoatPopup({
     setMsg(msg.id, { omUndo: { ...u, state: "done", result: `✓ Undone — ${target.om.snapshot.length} case${target.om.snapshot.length === 1 ? "" : "s"} back exactly as before.` } });
   };
 
+  // ---- Briefs (greeting chips) and "/" commands ----
+  const briefData = (): BriefData => {
+    const d = practiceData();
+    const billing = practiceOverride ? {} : loadPatientBillingMap();
+    const index = buildInitialExamIndex(d.appointments);
+    const locations = practiceOverride ? [] : (loadOfficeSettings().locations ?? []);
+    return {
+      today: d.today,
+      appointments: d.appointments,
+      tasks: d.tasks,
+      unreadMessages,
+      locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
+      patients: allPatients().map((p) => ({
+        id: p.id,
+        fullName: p.fullName,
+        caseStatus: p.caseStatus,
+        locationId: p.locationId,
+        firstVisit: p.matrix?.initialExam?.trim() || patientInitialExamIso(p, index),
+        billed: billing[p.id]?.billedAmount,
+        paid: billing[p.id]?.paidAmount ?? (Number.parseFloat(p.matrix?.paidAmount ?? "") || 0),
+        paidDate: billing[p.id]?.paidDate || (p.matrix?.paidDate ?? "").replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$2/$3/$1"),
+      })),
+    };
+  };
+  const tryBrief = (question: string): boolean => {
+    const kind = detectBrief(question);
+    if (!kind) return false;
+    const data = briefData();
+    const a = kind === "rundown" ? morningRundown(data) : kind === "apptCheck" ? appointmentCheck(data) : knowYourBusiness(data);
+    push({ role: "user", text: question, practice: true });
+    push({ role: "goat", text: a.text, practice: true, links: a.links });
+    return true;
+  };
+  /** "/note …" → the note dialog; "/todo …" → a to-do confirm card. True if handled. */
+  const trySlash = (question: string): boolean => {
+    const sl = parseSlash(question);
+    if (!sl) {
+      if (/^\/[a-z]*\b/i.test(question)) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: `I know these commands: ${slashMatches("").map((c) => `/${c.cmd}`).join(", ")}. Type / to see them.`, practice: true });
+        return true;
+      }
+      return false;
+    }
+    if (sl.cmd === "note") {
+      shownAsRef.current = question;
+      send(noteWording(sl.rest));
+      return true;
+    }
+    push({ role: "user", text: question, practice: true });
+    const t = parseTodo(sl.rest, practiceData().today);
+    if (!t.title) {
+      push({ role: "goat", text: 'What\'s the to-do? e.g. "/todo call Nazaryan for John Smith tomorrow" or "/todo John Smith: request records"', practice: true });
+      return true;
+    }
+    const people = allPatients();
+    let patient: PatientRecord | null = null;
+    let title = t.title;
+    if (t.name) {
+      const all = matchPatientsByName(t.name, people);
+      const split = activeFirst(all, (p) => isActiveCase(p.caseStatus));
+      if (!all.length) {
+        push({ role: "goat", text: `I couldn't find a patient named "${t.name}". Check the name, or leave it off for a to-do with no patient.`, practice: true });
+        return true;
+      }
+      if (all.length > 1) {
+        const ch = (p: PatientRecord) => ({ label: choiceLabel(toChatPatient(p)), question: `/todo ${p.fullName.replace(/,/g, "")}: ${sl.rest.replace(/^[^:]*:\s*/, "")}` });
+        push({ role: "goat", text: `Which ${t.name}?`, practice: true, ...withInactive(split.shown.map(ch), split.hidden.map(ch)) });
+        return true;
+      }
+      patient = all[0];
+    } else {
+      const found = findPatientsInQuestion(title, people.map(toChatPatient));
+      if (found.confident) {
+        patient = patientById(found.confident.patient.id);
+        if (patient) title = (stripPatientName(title, patient.fullName) || title).replace(/\s+(for|re|about|on)\s*$/i, "").trim();
+      } else if (found.candidates.length > 1) {
+        const ch = (c: ChatPatient) => ({ label: choiceLabel(c), question: `/todo ${c.fullName.replace(/,/g, "")}: ${title}${t.due ? ` ${t.due.slice(5, 7)}/${t.due.slice(8, 10)}` : ""}` });
+        push({ role: "goat", text: "Which patient is this to-do for?", practice: true, choices: [...found.candidates.map((m) => ch(m.patient)), { label: "No patient", question: `/todo none: ${title}` }] });
+        return true;
+      }
+    }
+    if (t.name && /^none$/i.test(t.name)) patient = null;
+    push({ role: "goat", text: "Add this to-do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
+    return true;
+  };
+  const confirmTodo = (msg: ChatMessage) => {
+    const d = msg.todoDraft;
+    if (!d || d.state !== "open") return;
+    const r = addTask({ title: d.title, priority: "Medium", dueDate: d.dueDate, patientId: d.patientId, patientName: d.patientName });
+    setMsg(msg.id, { todoDraft: { ...d, state: r.added ? "saved" : "canceled" } });
+  };
+
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
@@ -627,6 +736,9 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // "/note", "/todo" and the greeting chips (Morning Rundown, Appointment Check, Know Your Business).
+    if (!opts && trySlash(question)) return;
+    if (!opts && tryBrief(question)) return;
     // Office manager (mark paid, reductions, case status, attorney, money questions, undo).
     if (!opts && tryOfficeManager(question)) return;
     // Follow-ups to what G.O.A.T. just did (note / message / booking) come first.
@@ -927,7 +1039,8 @@ export function GlobalGoatPopup({
       {open && (
         <section
           aria-label="G.O.A.T. chat"
-          className="fixed inset-x-2 bottom-2 z-[60] flex h-[78vh] flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-[560px] sm:max-h-[calc(100vh-2rem)] sm:w-[400px]"
+          className="fixed inset-x-2 bottom-2 z-[60] flex h-[min(97.5vh,calc(100dvh-1rem))] flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-[min(700px,calc(100dvh-2rem))] sm:w-[min(600px,calc(100vw-2rem))]"
+          data-goat-panel
           data-goat-section="global-goat"
         >
           <header className="flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white">
@@ -972,10 +1085,18 @@ export function GlobalGoatPopup({
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <p className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
-                  Hi! Ask me anything about a patient.
-                  <span className="mt-0.5 block text-xs text-[var(--text-muted)]">Everything stays in NoteGoat.</span>
-                </p>
+                <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
+                  <p className="font-semibold">{greeting}</p>
+                  <p className="text-xs text-[var(--text-muted)]">Ask about a patient, or tap one:</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {CHIPS.map((c) => (
+                      <button className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white" data-goat-chip key={c} onClick={() => send(c)} type="button">
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="mt-1.5 block text-[11px] text-[var(--text-muted)]">Type / for commands, @ to message the team. Everything stays in NoteGoat.</span>
+                </div>
               </div>
             )}
             {chat.messages.map((m) =>
@@ -996,6 +1117,7 @@ export function GlobalGoatPopup({
                     ))}
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
+                    {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
@@ -1092,6 +1214,12 @@ export function GlobalGoatPopup({
                     syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
                   }}
                   onKeyDown={(e) => {
+                    const sq = !mention ? slashQuery(input) : null;
+                    if (sq !== null && e.key === "Tab" && slashMatches(sq).length) {
+                      e.preventDefault();
+                      setInput(`/${slashMatches(sq)[0].cmd} `);
+                      return;
+                    }
                     if (!mention || !mentionMatches.length) return;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
@@ -1112,10 +1240,31 @@ export function GlobalGoatPopup({
                     const t = e.target as HTMLInputElement;
                     syncMention(t.value, t.selectionStart ?? t.value.length);
                   }}
-                  placeholder="Ask about a patient… or type @ to message the team"
+                  placeholder="Ask about a patient… / for commands, @ to message the team"
                   ref={inputRef}
                   value={input}
                 />
+                {!mention && slashQuery(input) !== null && slashMatches(slashQuery(input) ?? "").length > 0 && (
+                  <div className="absolute bottom-full left-0 z-30 mb-1 w-72 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-white shadow-lg" data-goat-slash-menu role="listbox">
+                    {slashMatches(slashQuery(input) ?? "").map((c) => (
+                      <button
+                        className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-soft)]"
+                        key={c.cmd}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setInput(`/${c.cmd} `);
+                          inputRef.current?.focus();
+                        }}
+                        role="option"
+                        aria-selected={false}
+                        type="button"
+                      >
+                        <span className="text-sm font-semibold">/{c.cmd}</span> <span className="text-xs text-[var(--text-muted)]">{c.hint}</span>
+                        <span className="block truncate text-[11px] text-[var(--text-muted)]">{c.example}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {mention && mentionMatches.length > 0 && (
                   <div className="absolute bottom-full left-0 z-30 mb-1 max-h-60 w-64 overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg" data-goat-mention-picker role="listbox">
                     {mentionMatches.map((p, i) => (
@@ -1329,6 +1478,22 @@ function OmCard({ data, om, onConfirm, onCancel }: { data: OmData; om: NonNullab
         <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  const due = draft.dueDate ? `${draft.dueDate.slice(5, 7)}/${draft.dueDate.slice(8, 10)}/${draft.dueDate.slice(0, 4)}` : "no due date";
+  if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Added to To-Do · <Link className="text-[var(--brand-primary)] hover:underline" href="/tasks">Open To-Do ↗</Link></p>;
+  if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-todo>
+      <p className="rounded-md bg-[#eef8fb] px-2 py-1"><span className="font-semibold">{draft.title}</span><br />Due: {due}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
+      <div className="flex flex-wrap gap-1.5">
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">Confirm</button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
       </div>
     </div>
   );
