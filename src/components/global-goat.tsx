@@ -59,7 +59,7 @@ import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
-import { continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { breaksFlow, continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
@@ -294,6 +294,8 @@ export function GlobalGoatPopup({
   const { addContactsBulk, removeContactsByIds, updateContact } = useContactDirectory();
   /** The step a "/" command flow is waiting on (case pick, note text…). */
   const flowRef = useRef<Pending | null>(null);
+  /** Contact imports being saved (message ids). */
+  const importingRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
@@ -652,6 +654,12 @@ export function GlobalGoatPopup({
       })),
     };
   };
+  /** Greeting chip tap: drop any waiting step and run the brief directly. */
+  const runChip = (chip: string) => {
+    flowRef.current = null;
+    if (job || practiceBusy) return;
+    tryBrief(chip);
+  };
   const tryBrief = (question: string): boolean => {
     const kind = detectBrief(question);
     if (!kind) return false;
@@ -761,6 +769,7 @@ export function GlobalGoatPopup({
   };
   /** Chip taps and replies to a waiting "/" step. True if handled. */
   const tryFlow = (question: string): boolean => {
+    if (!isFlowToken(question) && breaksFlow(question, flowRef.current)) flowRef.current = null;
     if (!isFlowToken(question) && !flowRef.current) return false;
     const turn = continueFlow(question, flowRef.current, flowCtx());
     if (!turn) {
@@ -800,7 +809,9 @@ export function GlobalGoatPopup({
     return true;
   };
   const confirmContactImport = async (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
-    if (imp.state !== "open") return;
+    // A fast double click must not add the list twice.
+    if (imp.state !== "open" || importingRef.current.has(msg.id)) return;
+    importingRef.current.add(msg.id);
     const picked = imp.rows.filter((r) => r.checked);
     setMsg(msg.id, { contactImport: { ...imp, state: "saving" } });
     const res = await addContactsBulk(picked.map((r) => ({ name: r.name, phone: r.phone, fax: r.fax, email: r.email, address: r.address, category: (r.category || imp.category) as ContactCategory })));
@@ -816,6 +827,8 @@ export function GlobalGoatPopup({
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
+    // A chip, "/" or "@" command, help or a pasted list always ends a waiting "/" step.
+    if (!opts && !isFlowToken(question) && breaksFlow(question, flowRef.current)) flowRef.current = null;
     setInput("");
     setMention(null);
     // "@Leilani hi", "@Dr. Abi …", "@Hannah @Greg …" = "tell …" (one card for everyone mentioned).
@@ -845,6 +858,10 @@ export function GlobalGoatPopup({
       push({ role: "user", text: question, practice: true });
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
       return;
+    }
+    if (!opts && !isFlowToken(question) && detectBrief(question)) {
+      flowRef.current = null;
+      if (tryBrief(question)) return;
     }
     if (!opts && tryFlow(question)) return;
     if (!opts && tryContactPaste(question)) return;
@@ -1181,6 +1198,9 @@ export function GlobalGoatPopup({
                 if (window.confirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back.")) {
                   clearChat();
                   setChat({ messages: [], patientId: null });
+                  // Waiting steps belong to the old chat.
+                  flowRef.current = null;
+                  dialogRef.current = emptyDialog();
                 }
               }}
               type="button"
@@ -1201,7 +1221,7 @@ export function GlobalGoatPopup({
                   <p className="text-xs text-[var(--text-muted)]">Ask about a patient, or tap one:</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {chipsFor(isGoatAdmin).map((c) => (
-                      <button className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white" data-goat-chip key={c} onClick={() => send(c)} type="button">
+                      <button className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white" data-goat-chip key={c} onClick={() => runChip(c)} type="button">
                         {c}
                       </button>
                     ))}
