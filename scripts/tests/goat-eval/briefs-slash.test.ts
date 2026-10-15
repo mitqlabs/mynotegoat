@@ -4,6 +4,7 @@
  * Run: npx tsx scripts/tests/goat-eval/briefs-slash.test.ts
  */
 import assert from "node:assert/strict";
+import { openTodos, parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos } from "../../../src/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
@@ -126,12 +127,32 @@ check("ac none", () => assert.match(appointmentCheck({ ...data, patients: data.p
 const mr = morningRundown(data);
 check("mr visits", () => assert.match(mr.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock · Follow-Up Visit · Mock North/));
 check("mr no-show hidden", () => assert.doesNotMatch(mr.text, /Foxtrot/));
-check("mr todos", () => { assert.match(mr.text, /To-dos due: 2/); assert.match(mr.text, /Fax records \(overdue, 10\/10\/2026\) · Hannah/); assert.doesNotMatch(mr.text, /Future thing|Done thing/); });
+check("mr todos: all open", () => { assert.match(mr.text, /Open to-dos: 3/); assert.match(mr.text, /Fax records \(overdue, 10\/10\/2026\) · Hannah/); assert.match(mr.text, /Future thing \(due 10\/30\/2026\)/); assert.doesNotMatch(mr.text, /Done thing/); });
+{
+  const d3 = { ...data, tasks: [...data.tasks, { id: "t5", title: "Undated thing", done: false, dueDate: "" }, { id: "t6", title: "Call Mock Patient", done: false, dueDate: "", patientId: "p1", patientName: "Alpha Mock" }] };
+  const m3 = morningRundown(d3).text;
+  check("mr undated listed", () => { assert.match(m3, /Undated thing \(no due date\)/); assert.match(m3, /Call Mock Patient \(no due date\) · Alpha Mock/); });
+  check("todo order", () => assert.deepEqual(openTodos(d3).map((t) => t.id), ["t2", "t1", "t3", "t6", "t5"]));
+  check("mr caps at 15", () => assert.match(morningRundown({ ...data, tasks: Array.from({ length: 20 }, (_, i) => ({ id: `x${i}`, title: `Task ${i}`, done: false, dueDate: "" })) }).text, /…and 5 more \(\/view todo\)/));
+  const vt = viewTodos(d3);
+  check("view todo all", () => { assert.match(vt.text, /^Open to-dos \(5\):/); assert.match(vt.text, /Undated thing/); });
+  check("view todo links case", () => assert.deepEqual(vt.links?.map((l) => l.href), ["/tasks", "/patients/p1"]));
+  check("view todo empty", () => assert.match(viewTodos({ ...data, tasks: [] }).text, /No open to-dos/));
+}
+check("view schedule", () => { const v = viewSchedule(data); assert.match(v.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock/); assert.ok(v.links?.some((l) => l.href === "/patients/p1")); });
+check("view schedule empty", () => assert.match(viewSchedule({ ...data, appointments: [] }).text, /Nothing on the schedule today/));
+check("view messages", () => { assert.match(viewMessages(data).text, /3 unread/); assert.match(viewMessages({ ...data, unreadMessages: 0 }).text, /caught up/); });
+const VT: Array<[string, string | null]> = [["todo", "todo"], ["todos", "todo"], ["to do", "todo"], ["tasks", "todo"], ["schedule", "schedule"], ["today", "schedule"], ["schedule today", "schedule"], ["messages", "messages"], ["unread", "messages"], ["appointment check", "apptCheck"], ["appt check", "apptCheck"], ["quick biz", "business"], ["quickbiz", "business"], ["business", "business"], ["", null], ["banana", null]];
+for (const [q, want] of VT) check(`view target "${q}"`, () => assert.equal(parseViewTarget(q), want));
+check("viewQuery", () => { assert.equal(viewQuery("/view "), ""); assert.equal(viewQuery("/view qu"), "qu"); assert.equal(viewQuery("/view"), null); assert.equal(viewQuery("see /view x"), null); });
+check("view menu admin", () => assert.deepEqual(viewTargetsFor(true).map((v) => v.word), ["todo", "schedule", "messages", "appointment check", "quick biz"]));
+check("view menu staff", () => assert.deepEqual(viewTargetsFor(false).map((v) => v.word), ["todo", "schedule", "messages"]));
+check("view menu filter", () => { assert.deepEqual(viewMatches("q", true).map((v) => v.target), ["business"]); assert.deepEqual(viewMatches("q", false), []); assert.deepEqual(viewMatches("app", true).map((v) => v.target), ["apptCheck"]); });
 check("mr unread", () => assert.match(mr.text, /3 unread/));
 check("mr caught up", () => assert.match(morningRundown({ ...data, unreadMessages: 0 }).text, /all caught up/));
 check("mr no case counts (moved to Quick Biz)", () => assert.doesNotMatch(mr.text, /active ·|submitted/));
 check("mr links", () => assert.deepEqual(mr.links?.map((l) => l.label), ["Open Schedule", "Open To-Do", "Open Messages"]));
-check("mr empty", () => assert.match(morningRundown({ ...data, appointments: [], tasks: [] }).text, /Nothing on the schedule[\s\S]*Nothing due/));
+check("mr empty", () => assert.match(morningRundown({ ...data, appointments: [], tasks: [] }).text, /Nothing on the schedule[\s\S]*Nothing open/));
 
 // Know Your Business
 const kyb = knowYourBusiness(data).text;
@@ -151,7 +172,8 @@ check("sq /no", () => assert.equal(slashQuery("/no"), "no"));
 check("sq space", () => assert.equal(slashQuery("/note "), null));
 check("sq plain", () => assert.equal(slashQuery("note"), null));
 check("sq mid", () => assert.equal(slashQuery("a/b"), null));
-check("sm all", () => assert.deepEqual(slashMatches("").map((c) => c.cmd), ["note", "todo", "contact"]));
+check("sm all", () => assert.deepEqual(slashMatches("").map((c) => c.cmd), ["note", "todo", "view", "contact"]));
+check("sm v", () => assert.deepEqual(slashMatches("v").map((c) => c.cmd), ["view"]));
 check("sm c", () => assert.deepEqual(slashMatches("c").map((c) => c.cmd), ["contact"]));
 check("sq date text", () => { assert.equal(slashQuery("10/20"), null); assert.equal(slashQuery("see 10/"), null); assert.equal(parseSlash("call on 10/20"), null); });
 check("sm n", () => assert.deepEqual(slashMatches("n").map((c) => c.cmd), ["note"]));

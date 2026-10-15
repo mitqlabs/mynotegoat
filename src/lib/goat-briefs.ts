@@ -32,6 +32,7 @@ export interface BriefTask {
   title: string;
   done: boolean;
   dueDate: string;
+  patientId?: string;
   patientName?: string;
   assignee?: string;
 }
@@ -174,19 +175,84 @@ export function morningRundown(data: BriefData): BriefAnswer {
   const sched = todays.length
     ? todays.map((a) => `- ${time12(a.startTime)} ${a.patientName}${a.appointmentType ? ` · ${a.appointmentType}` : ""}${multi && a.location ? ` · ${a.location}` : ""}`).join("\n")
     : "- Nothing on the schedule.";
-  const due = data.tasks.filter((t) => !t.done && t.dueDate && t.dueDate <= data.today).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  const todo = due.length ? due.slice(0, 10).map((t) => `- ${t.title}${t.dueDate < data.today ? ` (overdue, ${us(t.dueDate)})` : ""}${t.assignee ? ` · ${t.assignee}` : ""}`).join("\n") + (due.length > 10 ? `\n- …and ${due.length - 10} more` : "") : "- Nothing due.";
+  const open = openTodos(data);
+  const due = open;
+  const todo = open.length ? open.slice(0, 15).map((t) => `- ${todoLine(t, data.today)}`).join("\n") + (open.length > 15 ? `\n- …and ${open.length - 15} more (/view todo)` : "") : "- Nothing open.";
   const unread = data.unreadMessages ?? 0;
   return {
     text: [
       `Today (${us(data.today)}): ${todays.length} visit${todays.length === 1 ? "" : "s"}`,
       sched,
-      `\nTo-dos due: ${due.length}`,
+      `\nOpen to-dos: ${due.length}`,
       todo,
       `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`,
     ].join("\n"),
     links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...(due.length ? [{ label: "Open To-Do", href: "/tasks" }] : []), ...(unread ? [{ label: "Open Messages", href: "/messages" }] : [])],
   };
+}
+
+/** All open to-dos: overdue first, then by due date, then undated. */
+export function openTodos(data: Pick<BriefData, "tasks" | "today">): BriefTask[] {
+  const rank = (t: BriefTask) => (!t.dueDate ? 2 : t.dueDate < data.today ? 0 : 1);
+  return data.tasks.filter((t) => !t.done).sort((a, b) => rank(a) - rank(b) || (a.dueDate || "").localeCompare(b.dueDate || "") || a.title.localeCompare(b.title));
+}
+function todoLine(t: BriefTask, today: string): string {
+  const due = !t.dueDate ? "no due date" : t.dueDate < today ? `overdue, ${us(t.dueDate)}` : t.dueDate === today ? "due today" : `due ${us(t.dueDate)}`;
+  return `${t.title} (${due})${t.patientName ? ` · ${t.patientName}` : ""}${t.assignee ? ` · ${t.assignee}` : ""}`;
+}
+
+// ---- /view ----
+export type ViewTarget = "todo" | "schedule" | "messages" | "apptCheck" | "business";
+export const VIEW_TARGETS: Array<{ target: ViewTarget; word: string; hint: string; admin?: boolean }> = [
+  { target: "todo", word: "todo", hint: "All open to-dos" },
+  { target: "schedule", word: "schedule", hint: "Today's schedule" },
+  { target: "messages", word: "messages", hint: "Unread team messages" },
+  { target: "apptCheck", word: "appointment check", hint: "Who needs to be scheduled", admin: true },
+  { target: "business", word: "quick biz", hint: "Cases, visits, collections", admin: true },
+];
+/** Targets this person may see. */
+export function viewTargetsFor(isAdmin: boolean) {
+  return VIEW_TARGETS.filter((v) => isAdmin || !v.admin);
+}
+/** "/view qu" → "qu" (the target being typed), else null. */
+export function viewQuery(input: string): string | null {
+  const m = /^\/view\s+([a-z ]*)$/i.exec(input);
+  return m ? m[1].toLowerCase() : null;
+}
+export function viewMatches(q: string, isAdmin: boolean) {
+  const t = q.trim().toLowerCase();
+  return viewTargetsFor(isAdmin).filter((v) => v.word.startsWith(t) || v.word.replace(/\s/g, "").startsWith(t.replace(/\s/g, "")));
+}
+export function parseViewTarget(rest: string): ViewTarget | null {
+  const t = rest.trim().toLowerCase().replace(/[^a-z ]/g, "").replace(/\s+/g, " ");
+  if (!t) return null;
+  if (/^(todos?|to dos?|tasks?)$/.test(t)) return "todo";
+  if (/^(schedule|today|appointments|appts|calendar)( today)?$/.test(t)) return "schedule";
+  if (/^(messages?|unread|msgs?|inbox)$/.test(t)) return "messages";
+  if (/^(appointment check|appt check|appointments check|apptcheck)$/.test(t)) return "apptCheck";
+  if (/^(quick ?biz|business|kyb|know your business)$/.test(t)) return "business";
+  return null;
+}
+export function viewTodos(data: BriefData): BriefAnswer {
+  const open = openTodos(data);
+  if (!open.length) return { text: "No open to-dos. 🎉", links: [{ label: "Open To-Do", href: "/tasks" }] };
+  const linked = open.filter((t) => t.patientId);
+  return {
+    text: `Open to-dos (${open.length}):\n${open.map((t) => `- ${todoLine(t, data.today)}`).join("\n")}`,
+    links: [{ label: "Open To-Do", href: "/tasks" }, ...linked.filter((t, i) => linked.findIndex((x) => x.patientId === t.patientId) === i).map((t) => ({ label: t.patientName || "Patient", href: `/patients/${encodeURIComponent(t.patientId!)}` }))],
+  };
+}
+export function viewSchedule(data: BriefData): BriefAnswer {
+  const todays = data.appointments.filter((a) => a.date === data.today && live(a)).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const multi = data.locations.length > 1;
+  return {
+    text: todays.length ? `Today (${us(data.today)}): ${todays.length} visit${todays.length === 1 ? "" : "s"}\n${todays.map((a) => `- ${time12(a.startTime)} ${a.patientName}${a.appointmentType ? ` · ${a.appointmentType}` : ""}${multi && a.location ? ` · ${a.location}` : ""}`).join("\n")}` : `Nothing on the schedule today (${us(data.today)}).`,
+    links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...todays.filter((a, i) => a.patientId && todays.findIndex((x) => x.patientId === a.patientId) === i).map((a) => ({ label: a.patientName, href: `/patients/${encodeURIComponent(a.patientId)}` }))],
+  };
+}
+export function viewMessages(data: BriefData): BriefAnswer {
+  const n = data.unreadMessages ?? 0;
+  return { text: n ? `You have ${n} unread team message${n === 1 ? "" : "s"}.` : "No unread team messages — all caught up.", links: [{ label: "Open Messages", href: "/messages" }] };
 }
 
 /** Quick Biz (admins): case counts, new patients, visits, collections — by office. */
@@ -236,6 +302,7 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "note", hint: "Add a signed note to a case", example: "/note John Smith: spoke to atty" },
   { cmd: "todo", hint: "Add a to-do, on its own or for a case", example: "/todo call Mock Law for John Smith friday" },
+  { cmd: "view", hint: "See a list: todo, schedule, messages (admins: appointment check, quick biz)", example: "/view todo" },
   { cmd: "contact", hint: "Add contacts (one or a pasted list) or edit one", example: "/contact" },
 ];
 

@@ -28,7 +28,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
-        "Morning Rundown (everyone) — today's schedule, to-dos due and unread team messages.",
+        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date) and unread team messages.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
@@ -57,6 +57,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "/note asks \"Which case?\" (tap the right one), then the text, then a confirm card.",
         "/todo asks \"Just a to-do, or add to a case?\", then the text, then a confirm card.",
         "Changed your mind halfway? Tap a chip, type another / or @ command, ask something new, or type cancel — the half-finished step is dropped.",
+        "/view shows a list: /view todo (every open to-do, with its case), /view schedule (today), /view messages (unread). Admins also get /view appointment check and /view quick biz. After typing \"/view \" the menu suggests them.",
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],
