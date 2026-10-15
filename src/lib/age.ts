@@ -38,3 +38,9 @@ export function ageTokenOn(dob: string | null | undefined, asOf?: string | Date 
   const age = ageOn(dob, asOf);
   return age !== null && age > 0 ? String(age) : "";
 }
+
+/** Header subline: "Male · Married · 34" — missing parts skipped; age from DOB as of today (or asOf). */
+export function demographicsLine(sex: string | null | undefined, marital: string | null | undefined, dob: string | null | undefined, asOf?: string | Date | null): string {
+  const age = ageOn(dob, asOf);
+  return [sex?.trim(), marital?.trim(), age === null ? "" : String(age)].filter(Boolean).join(" · ");
+}

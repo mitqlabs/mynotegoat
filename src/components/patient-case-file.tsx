@@ -1,5 +1,7 @@
 "use client";
 
+import { demographicsLine } from "@/lib/age";
+
 import { mainEmailOf } from "@/lib/contact-email";
 
 import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dates";
@@ -5174,9 +5176,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               / Patient File
             </p>
             <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
-            {(patientSex || maritalStatus) && (
+            {demographicsLine(patientSex, maritalStatus, patientDob) && (
               <p className="text-sm text-[var(--text-muted)]" data-patient-demographics>
-                {[patientSex, maritalStatus].filter(Boolean).join(" · ")}
+                {demographicsLine(patientSex, maritalStatus, patientDob)}
               </p>
             )}
             <p className="text-sm text-[var(--text-muted)]">
