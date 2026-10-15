@@ -3190,6 +3190,57 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setShowImagingRegionEditor(true);
   };
 
+  /**
+   * "Completed Prior Care" checkbox + inline Prior / outside study links.
+   * Shared by X-ray and MRI so both behave identically: checking opens the
+   * prior-study editor; Cancel keeps the box checked with no entry;
+   * unchecking keeps any prior entries (nothing is removed).
+   */
+  const renderPriorCareControls = (mode: ImagingMode) => {
+    const overrideKey = mode === "xray" ? "xray" : "mriCt";
+    const override = mode === "xray" ? xrayFollowUpOverride : mriCtFollowUpOverride;
+    const priorEntries = (mode === "xray" ? xrayReferrals : mriReferrals).filter((entry) => entry.isPrior);
+    return (
+      <>
+        <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+          <input
+            checked={override.completedPriorCare}
+            data-testid={`prior-${mode}-toggle`}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              void runOverrideToggle(overrideKey, "completedPriorCare", checked);
+              if (checked) openPriorImagingEditor(mode);
+            }}
+            type="checkbox"
+          />
+          Completed Prior Care
+        </label>
+        {override.completedPriorCare && (
+          <span className="-ml-3 inline-flex items-center gap-2 text-sm font-semibold">
+            {priorEntries.length > 0 && (
+              <button
+                className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                data-testid={`prior-${mode}-edit`}
+                onClick={(event) => openImagingEditor(mode, priorEntries[priorEntries.length - 1], event)}
+                type="button"
+              >
+                Edit findings
+              </button>
+            )}
+            <button
+              className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
+              data-testid={`prior-${mode}-add`}
+              onClick={(event) => openPriorImagingEditor(mode, event)}
+              type="button"
+            >
+              {priorEntries.length > 0 ? "+ Add another" : "+ Add findings"}
+            </button>
+          </span>
+        )}
+      </>
+    );
+  };
+
   const saveImagingEditor = () => {
     if (!editingImagingReferral) return;
     const { mode, ...referral } = editingImagingReferral;
@@ -5692,14 +5743,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     />
                     Patient Refused
                   </label>
-                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-                    <input
-                      checked={xrayFollowUpOverride.completedPriorCare}
-                      onChange={(event) => { void runOverrideToggle("xray", "completedPriorCare", event.target.checked); }}
-                      type="checkbox"
-                    />
-                    Completed Prior Care
-                  </label>
+                  {renderPriorCareControls("xray")}
                   <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
                     <input
                       checked={xrayFollowUpOverride.notNeeded}
@@ -5744,8 +5788,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
-                      {entry.modalityLabel} — {entry.center || "No Center"}
+                      {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
+                    {entry.isPrior && (
+                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                        Prior / outside
+                      </span>
+                    )}
                     {entry.patientRefused && (
                       <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
                         Patient Refused
@@ -5753,18 +5802,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     )}
                   </div>
                   <p>Regions: {formatImagingRegionsSummary(entry, "xray")}</p>
+                  {entry.isPrior ? (
+                    <p>Date done: {entry.doneDate || "-"}</p>
+                  ) : (
                   <p>
                     Sent: {entry.sentDate || "-"}
                     {" | Completed: "}{entry.doneDate || "-"}
                     {" | Received: "}{entry.reportReceivedDate || "-"}
                     {" | Reviewed: "}{entry.reportReviewedDate || "-"}
                   </p>
+                  )}
                   {entry.findings?.trim() && (
                     <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text-strong)]">Findings:</span> {entry.findings.trim()}
                     </p>
                   )}
                   <div className="mt-2 flex gap-2">
+                    {!entry.isPrior && (
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
                       onClick={() => generateImagingRequestPdf("xray", entry)}
@@ -5772,6 +5826,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     >
                       Generate PDF
                     </button>
+                    )}
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
                       onClick={(event) => openImagingEditor("xray", entry, event)}
@@ -5905,47 +5960,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     />
                     Patient Refused
                   </label>
-                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-                    <input
-                      checked={mriCtFollowUpOverride.completedPriorCare}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        // Checking opens the Prior / outside MRI editor so the
-                        // findings land in the file. Cancel keeps the box
-                        // checked with no entry. Unchecking keeps any prior
-                        // entries (nothing is removed).
-                        void runOverrideToggle("mriCt", "completedPriorCare", checked);
-                        if (checked) openPriorImagingEditor("mri");
-                      }}
-                      type="checkbox"
-                    />
-                    Completed Prior Care
-                  </label>
-                  {mriCtFollowUpOverride.completedPriorCare && (() => {
-                    const priorEntries = mriReferrals.filter((entry) => entry.isPrior);
-                    return (
-                      <span className="-ml-3 inline-flex items-center gap-2 text-sm font-semibold">
-                        {priorEntries.length > 0 && (
-                          <button
-                            className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
-                            data-testid="prior-mri-edit"
-                            onClick={(event) => openImagingEditor("mri", priorEntries[priorEntries.length - 1], event)}
-                            type="button"
-                          >
-                            Edit findings
-                          </button>
-                        )}
-                        <button
-                          className="text-[var(--brand-primary)] underline-offset-2 hover:underline"
-                          data-testid="prior-mri-add"
-                          onClick={(event) => openPriorImagingEditor("mri", event)}
-                          type="button"
-                        >
-                          {priorEntries.length > 0 ? "+ Add another" : "+ Add findings"}
-                        </button>
-                      </span>
-                    );
-                  })()}
+                  {renderPriorCareControls("mri")}
                   <label className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
                     <input
                       checked={mriCtFollowUpOverride.notNeeded}
