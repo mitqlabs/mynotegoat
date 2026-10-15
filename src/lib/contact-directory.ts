@@ -2,6 +2,7 @@ import { contacts as defaultContacts, type ContactEmail, type ContactRecord } fr
 import { migrateLegacyCategory } from "@/lib/contact-categories";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { notifyChange } from "@/lib/local-sync";
+import { withMainFirst } from "@/lib/contact-email";
 
 const STORAGE_KEY = "casemate.contact-directory.v1";
 export const STORAGE_KEY_CONTACT_DIRECTORY = STORAGE_KEY;
@@ -16,13 +17,13 @@ function normalizeText(value: unknown, fallback = "") {
 function normalizeEmails(value: unknown, legacyEmail: string): ContactEmail[] {
   const out: ContactEmail[] = [];
   const seen = new Set<string>();
-  const push = (name: string, label: string, email: string) => {
+  const push = (name: string, label: string, email: string, main = false) => {
     const em = email.trim();
     if (!em) return;
     const key = em.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ name: name.trim(), label: label.trim(), email: em });
+    out.push({ name: name.trim(), label: label.trim(), email: em, ...(main ? { main: true } : {}) });
   };
   if (Array.isArray(value)) {
     for (const entry of value) {
@@ -32,13 +33,14 @@ function normalizeEmails(value: unknown, legacyEmail: string): ContactEmail[] {
           normalizeText((entry as { name?: unknown }).name),
           normalizeText((entry as { label?: unknown }).label),
           normalizeText((entry as { email?: unknown }).email),
+          (entry as { main?: unknown }).main === true,
         );
       }
     }
   }
   // Migrate the legacy single email if the array didn't already include it.
   if (legacyEmail) push("", "", legacyEmail);
-  return out;
+  return withMainFirst(out);
 }
 
 function normalizeContact(value: unknown): ContactRecord | null {

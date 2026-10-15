@@ -1,5 +1,7 @@
 "use client";
 
+import { withMainFirst } from "@/lib/contact-email";
+
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { logActivity } from "@/lib/activity-log";
 import { useMemo, useState } from "react";
@@ -324,7 +326,7 @@ export default function MarketingPage() {
                       </a>
                     )}
                     {(row.contact.emails?.length
-                      ? row.contact.emails
+                      ? withMainFirst(row.contact.emails)
                       : row.contact.email
                         ? [{ name: "", label: "", email: row.contact.email }]
                         : []

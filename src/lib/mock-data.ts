@@ -155,6 +155,8 @@ export interface ContactEmail {
   /** Optional role/label for this address, e.g. "Paralegal". */
   label: string;
   email: string;
+  /** The contact's main email (exactly one; stored first). */
+  main?: boolean;
 }
 
 export interface ContactRecord {

@@ -1,5 +1,7 @@
 "use client";
 
+import { withMainFirst } from "@/lib/contact-email";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createContactId,
@@ -43,9 +45,10 @@ function resolveDraftEmails(draft: ContactDraft): { emails: ContactEmail[]; prim
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    emails.push({ name: (entry.name ?? "").trim(), label: (entry.label ?? "").trim(), email });
+    emails.push({ name: (entry.name ?? "").trim(), label: (entry.label ?? "").trim(), email, ...(entry.main ? { main: true } : {}) });
   }
-  return { emails, primary: emails[0]?.email ?? "" };
+  const ordered = withMainFirst(emails);
+  return { emails: ordered, primary: ordered[0]?.email ?? "" };
 }
 
 type AddContactResult =
