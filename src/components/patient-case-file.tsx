@@ -144,6 +144,7 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
+import { GoatDuplicateEncounters } from "@/components/goat-duplicate-encounters";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -1400,13 +1401,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm } = useEncounterNotes();
+  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm, putEncounterRecords } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
   // entries — otherwise the entry orphans (encounterId pointing to a
   // deleted encounter) and silently inflates Cash Payments totals.
-  const { updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
+  const { paymentsByPatient: cashPaymentsByPatient, updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
   const { entries: patientDiagnoses, addDiagnosis, addBulkDiagnoses, removeDiagnosis, reorderDiagnoses } = usePatientDiagnoses(patient.id);
   const {
     recordsByPatientId: followUpOverridesByPatientId,
@@ -6504,6 +6505,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
 
             {encounterMessage && <p className="mt-2 text-sm font-semibold text-[var(--brand-primary)]">{encounterMessage}</p>}
+
+            <GoatDuplicateEncounters
+              cashPayments={cashPaymentsByPatient[patient.id] ?? []}
+              deleteEncounter={deleteEncounter}
+              encounters={patientEncounterRecords}
+              locked={appointmentsLocked}
+              patientId={patient.id}
+              patientName={patient.fullName}
+              putEncounterRecords={putEncounterRecords}
+              updatePatientPayments={cascadeCashPaymentsOnEncounterDelete}
+            />
 
             {/* Single column now that the Open Encounters sidebar is
                 gone — the table takes the full panel width, which is
