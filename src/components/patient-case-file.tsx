@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dates";
+
 import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
@@ -1543,7 +1545,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   });
   const [xrayReferrals, setXrayReferrals] = useState<ImagingReferral[]>(() =>
     Array.isArray(patient.xrayReferrals)
-      ? (patient.xrayReferrals as ImagingReferral[]).map((r) => ({ ...r, findings: r.findings ?? "" }))
+      ? (patient.xrayReferrals as ImagingReferral[]).map((r) => normalizeReferralDates({ ...r, findings: r.findings ?? "" }))
       : [],
   );
   const [xrayMessage, setXrayMessage] = useState("");
@@ -1564,7 +1566,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   });
   const [mriReferrals, setMriReferrals] = useState<ImagingReferral[]>(() =>
     Array.isArray(patient.mriReferrals)
-      ? (patient.mriReferrals as ImagingReferral[]).map((r) => ({ ...r, findings: r.findings ?? "" }))
+      ? (patient.mriReferrals as ImagingReferral[]).map((r) => normalizeReferralDates({ ...r, findings: r.findings ?? "" }))
       : [],
   );
   const [mriMessage, setMriMessage] = useState("");
@@ -1579,7 +1581,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   });
   const [specialistReferrals, setSpecialistReferrals] = useState<SpecialistReferral[]>(() => {
     if (!Array.isArray(patient.specialistReferrals)) return [];
-    return (patient.specialistReferrals as Record<string, unknown>[]).map((raw) => ({
+    return (patient.specialistReferrals as Record<string, unknown>[]).map((raw) => normalizeReferralDates({
       id: typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID(),
       specialist: typeof raw.specialist === "string" ? raw.specialist : "",
       sentDate: typeof raw.sentDate === "string" ? raw.sentDate : "",
@@ -4780,9 +4782,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       locationId: (overrides.locationId ?? patientLocationId) || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
       relatedCases: effectiveRelated.length > 0 ? effectiveRelated : undefined,
-      xrayReferrals: effectiveXrays,
-      mriReferrals: effectiveMris,
-      specialistReferrals: effectiveSpecialists,
+      xrayReferrals: normalizeReferralList(effectiveXrays),
+      mriReferrals: normalizeReferralList(effectiveMris),
+      specialistReferrals: normalizeReferralList(effectiveSpecialists),
       alerts: patientAlerts.length > 0 ? patientAlerts : undefined,
       matrix: {
         initialExam: toIsoDateFromUsDate(initialExam),
