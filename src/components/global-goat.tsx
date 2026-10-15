@@ -56,6 +56,9 @@ import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
+import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
+import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
+import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 
 // ---------------------------------------------------------------------------
 // Open/closed, shared by the nav button and the popup.
@@ -523,6 +526,80 @@ export function GlobalGoatPopup({
     setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteEdit: { ...e, state: next === null ? "missing" : "done" } } : x)) }));
   };
 
+  // ---- Office manager (money + cases): rules only; one confirm card per change. ----
+  const omData = (): OmData => {
+    const d = practiceData();
+    return buildOmData({ patients: allPatients(), appointments: d.appointments, encounters: practiceOverride ? [] : loadEncounterNoteRecords(), contacts: d.contacts, today: d.today });
+  };
+  /** Memory from the chat itself: what was last listed, last confirmed card, and whether ours was the last action. */
+  const omMemory = (): { mem: OmMemory; followUps: boolean } => {
+    let mem = emptyOmMemory();
+    let followUps = false;
+    let sawAction = false;
+    let sawListed = false;
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const m = chat.messages[i];
+      if (m.role !== "goat") continue;
+      if (!sawListed && m.omListed) {
+        mem = { ...mem, listed: m.omListed };
+        sawListed = true;
+      }
+      const action = Boolean(m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
+      if (action && !sawAction) {
+        sawAction = true;
+        followUps = Boolean(m.om || m.omUndo);
+      }
+      if (m.om && (m.om.state === "done" || m.om.state === "undone") && !mem.lastPlan) {
+        mem = { ...mem, lastPlan: m.om.plan, canUndo: m.om.state === "done" };
+      }
+      if (sawListed && sawAction && mem.lastPlan) break;
+    }
+    return { mem, followUps };
+  };
+  const tryOfficeManager = (question: string): boolean => {
+    const { mem, followUps } = omMemory();
+    const r = omTurn(question, omData(), mem, followUps);
+    if (!r) return false;
+    push({ role: "user", text: question, practice: true });
+    if (r.kind === "answer") push({ role: "goat", text: r.text, practice: true, omListed: r.listed });
+    else if (r.kind === "say") push({ role: "goat", text: r.text, practice: true });
+    else if (r.kind === "confirm") push({ role: "goat", text: r.text, practice: true, om: { plan: r.plan, state: "open" } });
+    else {
+      const target = [...chat.messages].reverse().find((m) => m.om && m.om.state === "done");
+      if (!target) push({ role: "goat", text: "There's nothing of mine to undo.", practice: true });
+      else push({ role: "goat", text: r.text, practice: true, omUndo: { targetId: target.id, state: "open" } });
+    }
+    return true;
+  };
+  const setMsg = (id: string, patch: Partial<ChatMessage>) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+  const confirmOm = (msg: ChatMessage, plan: Exclude<OmPlan, { kind: "undo" }>, signLine: (text: string) => string) => {
+    if (!msg.om || msg.om.state !== "open") return;
+    const data = omData();
+    const changes = planChanges(plan, data);
+    if (!changes.length) {
+      setMsg(msg.id, { om: { ...msg.om, plan, state: "canceled", result: "Nothing to change (every line was skipped or needs a pick)." } });
+      return;
+    }
+    const patients = allPatients();
+    const snapshot = snapshotFor([...new Set(changes.map((c) => c.patientId))], patients);
+    applyOmChanges(changes, patients, signLine);
+    const name = (id: string) => displayName(patients.find((p) => p.id === id)?.fullName ?? id);
+    const result = `✓ Saved for ${changes.map((c) => name(c.patientId)).join(", ")} (signed note added to each).`;
+    setMsg(msg.id, { om: { plan, state: "done", snapshot, result }, omListed: changes.map((c) => c.patientId) });
+  };
+  const confirmOmUndo = (msg: ChatMessage) => {
+    const u = msg.omUndo;
+    if (!u || u.state !== "open") return;
+    const target = chat.messages.find((m) => m.id === u.targetId);
+    if (!target?.om?.snapshot || target.om.state !== "done") {
+      setMsg(msg.id, { omUndo: { ...u, state: "canceled", result: "That change was already undone." } });
+      return;
+    }
+    restoreOmSnapshot(target.om.snapshot);
+    setMsg(target.id, { om: { ...target.om, state: "undone" } });
+    setMsg(msg.id, { omUndo: { ...u, state: "done", result: `✓ Undone — ${target.om.snapshot.length} case${target.om.snapshot.length === 1 ? "" : "s"} back exactly as before.` } });
+  };
+
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
@@ -550,6 +627,8 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
+    // Office manager (mark paid, reductions, case status, attorney, money questions, undo).
+    if (!opts && tryOfficeManager(question)) return;
     // Follow-ups to what G.O.A.T. just did (note / message / booking) come first.
     if (tryFollowUp(question)) return;
     // Casual-language turn (goat-dialog): add-note across turns, "him/her/that
@@ -917,6 +996,8 @@ export function GlobalGoatPopup({
                     ))}
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
+                    {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
+                    {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -1161,6 +1242,107 @@ function useLoginSigner(): Pick<NoteSigner, "firstName" | "doctor"> | null {
     }
     return defaultSigner(loadSigners(), m?.userId ?? null, last).signer;
   }, [officeSettings.doctorName, officeSettings.doctors]);
+}
+
+function OmCard({ data, om, onConfirm, onCancel }: { data: OmData; om: NonNullable<ChatMessage["om"]>; onConfirm: (plan: Exclude<OmPlan, { kind: "undo" }>, sign: (text: string) => string) => void; onCancel: () => void }) {
+  const signer = useLoginSigner();
+  const [plan, setPlan] = useState(om.plan);
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
+  const nameOf = (id: string | null) => (id ? data.patients.find((p) => p.id === id) : undefined);
+  if (om.state !== "open") {
+    return (
+      <p className={`mt-1.5 text-xs ${om.state === "done" ? "font-semibold text-emerald-700" : "text-[var(--text-muted)]"}`}>
+        {om.state === "done" ? om.result : om.state === "undone" ? "Undone." : om.result ?? "Not saved."}
+      </p>
+    );
+  }
+  const moneyKind = plan.kind === "markPaid" || plan.kind === "addPaid" || plan.kind === "reduction";
+  const setRow = (i: number, patch: Partial<(typeof plan.rows)[number]>) => setPlan((p) => ({ ...p, rows: p.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) }) as typeof p);
+  const ready = plan.rows.filter((r) => !r.skip && r.patientId && (!moneyKind || (r.amount ?? 0) > 0));
+  const hasDate = plan.kind !== "attorney";
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-om>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="text-left text-[11px] text-[var(--text-muted)]">
+            <th className="py-0.5 pr-2 font-semibold">Patient</th>
+            {moneyKind && <th className="py-0.5 pr-2 font-semibold">{plan.kind === "addPaid" ? "Add" : "Paid"}</th>}
+            <th className="py-0.5 font-semibold">Now</th>
+          </tr>
+        </thead>
+        <tbody>
+          {plan.rows.map((r, i) => {
+            const p = nameOf(r.patientId);
+            const flagged = !r.patientId || r.flag === "noAmount";
+            return (
+              <tr className={`border-t border-[var(--line-soft)] ${r.skip ? "opacity-40" : ""}`} key={i}>
+                <td className="py-1 pr-2 align-top">
+                  {r.candidates.length > 1 || !r.patientId ? (
+                    <select aria-label={`Patient for "${r.typed}"`} className="max-w-[11rem] rounded border border-amber-400 bg-amber-50 px-1 py-0.5" onChange={(e) => setRow(i, e.target.value === "__skip" ? { skip: true, patientId: null } : { skip: false, patientId: e.target.value || null })} value={r.skip ? "__skip" : r.patientId ?? ""}>
+                      <option value="">{r.candidates.length ? `Pick for "${r.typed}"…` : `No match for "${r.typed}"`}</option>
+                      {r.candidates.map((id) => {
+                        const c = nameOf(id);
+                        return <option key={id} value={id}>{c ? `${c.fullName} · ${c.caseStatus}` : id}</option>;
+                      })}
+                      <option value="__skip">Skip this line</option>
+                    </select>
+                  ) : (
+                    <span className="font-semibold">{p?.fullName}</span>
+                  )}
+                  {flagged && !r.skip && r.patientId && r.flag === "noAmount" && <span className="ml-1 text-amber-700">(no amount typed)</span>}
+                  {r.patientId && r.candidates.length <= 1 && (
+                    <button className="ml-1 text-[11px] text-[var(--text-muted)] hover:underline" onClick={() => setRow(i, { skip: !r.skip })} type="button">{r.skip ? "include" : "skip"}</button>
+                  )}
+                </td>
+                {moneyKind && (
+                  <td className="py-1 pr-2 align-top">
+                    <input aria-label="Amount" className="w-20 rounded border border-[var(--line-soft)] px-1 py-0.5" inputMode="decimal" onChange={(e) => { const n = Number.parseFloat(e.target.value.replace(/[^0-9.]/g, "")); setRow(i, { amount: Number.isFinite(n) ? n : undefined }); }} value={r.amount ?? ""} />
+                  </td>
+                )}
+                <td className="py-1 align-top text-[var(--text-muted)]">
+                  {p ? (moneyKind ? `${p.caseStatus} · billed ${p.billed ? money(p.billed) : "—"}${p.paid ? ` · paid ${money(p.paid)}` : ""}` : plan.kind === "attorney" ? p.attorney || "no attorney" : p.caseStatus) : ""}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {hasDate && (
+        <label className="flex items-center gap-1.5">
+          <span className="text-[var(--text-muted)]">{plan.kind === "status" ? (plan.status === "Discharged" ? "Discharge date" : "Date") : "Paid date"}</span>
+          <input className="w-24 rounded border border-[var(--line-soft)] px-1 py-0.5" onChange={(e) => { const iso = usToIso(e.target.value); if (iso) setPlan((p) => ({ ...p, date: iso }) as typeof p); }} defaultValue={isoToUs((plan as { date: string }).date)} />
+        </label>
+      )}
+      {plan.kind === "reduction" && <p className="text-[var(--text-muted)]">Asked {money(plan.asked)} · reduction {money(Math.max(0, plan.asked - (plan.rows[0]?.amount ?? 0)))} logged as a billing adjustment · status → Paid</p>}
+      {(plan.kind === "markPaid" || plan.kind === "addPaid") && <p className="text-[var(--text-muted)]">Saves paid amount + date to billing, sets case status to Paid.</p>}
+      {plan.kind === "attorney" && plan.attorneyChoices.length > 1 && (
+        <select className="rounded border border-amber-400 bg-amber-50 px-1 py-0.5" onChange={(e) => setPlan((p) => ({ ...p, attorney: e.target.value, known: true }) as typeof p)} value={plan.attorney}>
+          {!plan.known && <option value={plan.attorney}>{`Pick the attorney for "${plan.attorney}"…`}</option>}
+          {plan.attorneyChoices.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      )}
+      {signer && <p className="text-[11px] text-[var(--text-muted)]">A note signed as {signatureFor(signer).slice(1)} is added to each patient.</p>}
+      <div className="flex flex-wrap gap-1.5">
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} disabled={!ready.length || (plan.kind === "attorney" && plan.attorneyChoices.length > 1 && !plan.known)} onClick={() => onConfirm(plan, (text) => formatNote(text, signer, new Date()))} style={{ fontSize: 12 }} type="button">
+          Confirm{ready.length !== plan.rows.length ? ` ${ready.length} of ${plan.rows.length}` : ""}
+        </button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OmUndoCard({ undo, onConfirm, onCancel }: { undo: NonNullable<ChatMessage["omUndo"]>; onConfirm: () => void; onCancel: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  if (undo.state !== "open") return <p className={`mt-1.5 text-xs ${undo.state === "done" ? "font-semibold text-emerald-700" : "text-[var(--text-muted)]"}`}>{undo.result ?? "Kept as is."}</p>;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">Confirm undo</button>
+      <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
+    </div>
+  );
 }
 
 function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
