@@ -56,6 +56,10 @@ import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
+import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
+import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
+import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
@@ -282,6 +286,7 @@ export function GlobalGoatPopup({
   const practiceBusy = false;
   const { addAppointments, removeAppointment } = useScheduleAppointments();
   const { addTask } = useTasks();
+  const { addContactsBulk, removeContactsByIds } = useContactDirectory();
   const unreadMessages = useUnreadMessages();
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
@@ -560,7 +565,7 @@ export function GlobalGoatPopup({
         mem = { ...mem, listed: m.omListed };
         sawListed = true;
       }
-      const action = Boolean(m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
+      const action = Boolean(m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
       if (action && !sawAction) {
         sawAction = true;
         followUps = Boolean(m.om || m.omUndo);
@@ -709,6 +714,37 @@ export function GlobalGoatPopup({
     setMsg(msg.id, { todoDraft: { ...d, state: r.added ? "saved" : "canceled" } });
   };
 
+  // ---- Bulk contacts from pasted text ----
+  const tryContactPaste = (text: string): boolean => {
+    if (!looksLikeContactPaste(text)) return false;
+    const drafts = parseContactPaste(text);
+    if (!drafts.length) return false;
+    const asked = categoryFromRequest(text);
+    const guess = asked || batchCategory(drafts);
+    const rows = buildImportRows(drafts, practiceOverride ? [] : loadContactDirectory(), guess as ContactCategory | "");
+    const first = text.split(/\r?\n/)[0].slice(0, 80);
+    push({ role: "user", text: `${first}${text.includes("\n") ? ` … (${drafts.length} contact${drafts.length === 1 ? "" : "s"} pasted)` : ""}`, practice: true });
+    const dupes = rows.filter((r) => r.flag).length;
+    const say = guess
+      ? `I found ${rows.length} contact${rows.length === 1 ? "" : "s"}. ${asked ? `Category: ${guess}.` : `They look like ${guess === "Attorney" ? "law firms" : guess} — I set the category to ${guess}; change it if that's wrong.`}${dupes ? ` ${dupes} start unticked (possible duplicates or missing info).` : ""} Check the list, then Confirm.`
+      : `I found ${rows.length} contact${rows.length === 1 ? "" : "s"}. What category are they? Pick one in the card (you can change single rows too).${dupes ? ` ${dupes} start unticked (possible duplicates or missing info).` : ""}`;
+    push({ role: "goat", text: say, practice: true, contactImport: { rows, category: guess, categoryGuessed: !asked && Boolean(guess), state: "open" } });
+    return true;
+  };
+  const confirmContactImport = async (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
+    if (imp.state !== "open") return;
+    const picked = imp.rows.filter((r) => r.checked);
+    setMsg(msg.id, { contactImport: { ...imp, state: "saving" } });
+    const res = await addContactsBulk(picked.map((r) => ({ name: r.name, phone: r.phone, fax: r.fax, email: r.email, address: r.address, category: (r.category || imp.category) as ContactCategory })));
+    const skipped = imp.rows.length - res.added.length;
+    const why = res.skipped.length ? ` (${res.skipped.length} couldn't be added: ${res.skipped.slice(0, 3).map((x) => `${x.name} — ${x.reason}`).join("; ")}${res.skipped.length > 3 ? "…" : ""})` : "";
+    setMsg(msg.id, { contactImport: { ...imp, state: "saved", addedIds: res.added.map((c) => c.id), result: `Added ${res.added.length}, skipped ${skipped}${why}.` } });
+  };
+  const undoContactImport = (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
+    const n = removeContactsByIds(imp.addedIds ?? []);
+    setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Undone: removed the ${n} contact${n === 1 ? "" : "s"} this import added.` } });
+  };
+
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
@@ -737,6 +773,12 @@ export function GlobalGoatPopup({
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
     // "/note", "/todo" and the greeting chips (Morning Rundown, Appointment Check, Know Your Business).
+    if (!opts && isGoatHelpQuestion(question)) {
+      push({ role: "user", text: question, practice: true });
+      push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
+      return;
+    }
+    if (!opts && tryContactPaste(question)) return;
     if (!opts && trySlash(question)) return;
     if (!opts && tryBrief(question)) return;
     // Office manager (mark paid, reductions, case status, attorney, money questions, undo).
@@ -1117,6 +1159,7 @@ export function GlobalGoatPopup({
                     ))}
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
+                    {m.contactImport && <ContactImportCard imp={m.contactImport} onCancel={() => setMsg(m.id, { contactImport: { ...m.contactImport!, state: "canceled" } })} onChange={(imp) => setMsg(m.id, { contactImport: imp })} onConfirm={(imp) => void confirmContactImport(m, imp)} onUndo={() => undoContactImport(m, m.contactImport!)} />}
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
@@ -1209,6 +1252,15 @@ export function GlobalGoatPopup({
                   aria-expanded={mentionMatches.length > 0}
                   className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                   onBlur={() => window.setTimeout(() => setMention(null), 150)}
+                  onPaste={(e) => {
+                    // A one-line box drops newlines, so a pasted contact list is handled here.
+                    const pasted = e.clipboardData.getData("text");
+                    const full = input.trim() ? `${input.trim()}\n${pasted}` : pasted;
+                    if (pasted.includes("\n") && looksLikeContactPaste(full)) {
+                      e.preventDefault();
+                      send(full);
+                    }
+                  }}
                   onChange={(e) => {
                     setInput(e.target.value);
                     syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
@@ -1478,6 +1530,82 @@ function OmCard({ data, om, onConfirm, onCancel }: { data: OmData; om: NonNullab
         <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ContactImportCard({ imp, onChange, onConfirm, onCancel, onUndo }: { imp: NonNullable<ChatMessage["contactImport"]>; onChange: (imp: NonNullable<ChatMessage["contactImport"]>) => void; onConfirm: (imp: NonNullable<ChatMessage["contactImport"]>) => void; onCancel: () => void; onUndo: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  const cell = "w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-[11px] hover:border-[var(--line-soft)] focus:border-[var(--brand-primary)] focus:bg-white focus:outline-none";
+  const open = imp.state === "open";
+  const setRow = (key: string, patch: Partial<(typeof imp.rows)[number]>) => onChange({ ...imp, rows: imp.rows.map((r) => (r.key === key ? { ...r, ...patch } : r)) });
+  const checked = imp.rows.filter((r) => r.checked);
+  const missingCat = checked.some((r) => !(r.category || imp.category));
+  const badPhone = checked.some((r) => r.phone.replace(/\D/g, "").length !== 10 || !r.name.trim());
+  if (imp.state === "saved" || imp.state === "undone") {
+    return (
+      <div className="mt-1.5 space-y-1 text-xs" data-goat-contacts-result>
+        <p className={`font-semibold ${imp.state === "saved" ? "text-emerald-700" : "text-[var(--text-muted)]"}`}>{imp.state === "saved" ? "✓ " : ""}{imp.result}</p>
+        {imp.state === "saved" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Link className="text-[var(--brand-primary)] hover:underline" href="/contacts">Open Contacts ↗</Link>
+            {(imp.addedIds?.length ?? 0) > 0 && <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onUndo} style={{ fontSize: 12 }} type="button">Undo this import</button>}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (imp.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-contacts>
+      <label className="flex items-center gap-1.5">
+        <span className="font-semibold">Category</span>
+        <select className="rounded border border-[var(--line-soft)] bg-white px-1 py-0.5 text-xs" disabled={!open} onChange={(e) => onChange({ ...imp, category: e.target.value, categoryGuessed: false, rows: imp.rows.map((r) => ({ ...r, category: e.target.value })) })} value={imp.category}>
+          <option value="">Choose…</option>
+          {CONTACT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {imp.categoryGuessed && <span className="text-[11px] text-[var(--text-muted)]">guessed — please confirm</span>}
+      </label>
+      <div className="max-h-72 overflow-auto rounded-md border border-[var(--line-soft)] bg-white">
+        <table className="w-full table-fixed border-collapse">
+          <colgroup><col style={{ width: 24 }} /><col /><col style={{ width: 96 }} /><col /><col style={{ width: 92 }} /></colgroup>
+          <thead className="sticky top-0 bg-[var(--bg-soft)] text-left text-[10px] uppercase text-[var(--text-muted)]">
+            <tr>
+              <th className="px-1 py-1"><input aria-label="Tick all" checked={checked.length === imp.rows.length} disabled={!open} onChange={(e) => onChange({ ...imp, rows: imp.rows.map((r) => ({ ...r, checked: e.target.checked })) })} type="checkbox" /></th>
+              <th className="px-1 py-1">Name</th><th className="px-1 py-1">Phone</th><th className="px-1 py-1">Address</th><th className="px-1 py-1">Category</th>
+            </tr>
+          </thead>
+          <tbody>
+            {imp.rows.map((r) => (
+              <tr className={`border-t border-[var(--line-soft)] align-top ${r.checked ? "" : "opacity-60"}`} key={r.key}>
+                <td className="px-1 py-1"><input aria-label={`Add ${r.name}`} checked={r.checked} disabled={!open} onChange={(e) => setRow(r.key, { checked: e.target.checked })} type="checkbox" /></td>
+                <td className="px-0.5 py-0.5">
+                  <input aria-label="Name" className={cell} disabled={!open} onChange={(e) => setRow(r.key, { name: e.target.value })} value={r.name} />
+                  {r.flag && <span className="block px-1 text-[10px] text-amber-700">{r.flag}</span>}
+                  {(r.email || r.fax) && <span className="block truncate px-1 text-[10px] text-[var(--text-muted)]">{[r.email, r.fax && `fax ${r.fax}`].filter(Boolean).join(" · ")}</span>}
+                </td>
+                <td className="px-0.5 py-0.5"><input aria-label="Phone" className={cell} disabled={!open} onChange={(e) => setRow(r.key, { phone: e.target.value })} value={r.phone} /></td>
+                <td className="px-0.5 py-0.5"><input aria-label="Address" className={cell} disabled={!open} onChange={(e) => setRow(r.key, { address: e.target.value })} title={r.address} value={r.address} /></td>
+                <td className="px-0.5 py-0.5">
+                  <select aria-label="Row category" className="w-full rounded border border-transparent bg-transparent text-[11px] hover:border-[var(--line-soft)]" disabled={!open} onChange={(e) => setRow(r.key, { category: e.target.value })} value={r.category || imp.category}>
+                    <option value="">—</option>
+                    {CONTACT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {missingCat && <p className="text-[11px] text-amber-700">Pick a category before confirming.</p>}
+      {!missingCat && badPhone && <p className="text-[11px] text-amber-700">Every ticked row needs a name and a 10-digit phone.</p>}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white disabled:opacity-50`} disabled={!open || !checked.length || missingCat || badPhone} onClick={() => onConfirm(imp)} style={{ fontSize: 12 }} type="button">
+          {imp.state === "saving" ? "Adding…" : `Add ${checked.length} contact${checked.length === 1 ? "" : "s"}`}
+        </button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} disabled={!open} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
+        <span className="text-[11px] text-[var(--text-muted)]">{imp.rows.length - checked.length} will be skipped</span>
       </div>
     </div>
   );

@@ -17,6 +17,7 @@
  */
 
 import type { PortalFeature } from "@/lib/plan-access";
+import { goatHandbookChapter } from "@/lib/handbook-goat";
 
 /** Who a chapter is for. "all" = anyone who can sign in. */
 export type HandbookAudience = "all" | "manager" | "admin";
@@ -160,6 +161,7 @@ export const handbookChapters: HandbookChapter[] = [
 ];
 
 export const handbookChaptersOffice: HandbookChapter[] = [
+  goatHandbookChapter,
   {
     id: "contacts",
     title: "Contacts",
