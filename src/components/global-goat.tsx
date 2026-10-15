@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { patients as patientList, type PatientRecord } from "@/lib/mock-data";
 import { askGoat, type GoatContext, type GoatResult } from "@/lib/goat";
@@ -55,6 +55,7 @@ import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-not
 import { notifyChange } from "@/lib/local-sync";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
+import { clearedIdSet, taskClearId } from "@/lib/cleared-tasks";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -119,7 +120,7 @@ export function GlobalGoatButton({ compact = false, className = "" }: { compact?
 // Answers as chat text
 // ---------------------------------------------------------------------------
 
-function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "quotes" | "warnings" | "copy"> {
+function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "quotes" | "warnings" | "copy" | "originals"> {
   const parts: string[] = [];
   for (const a of result.answers) {
     const lines = [...a.lines];
@@ -139,8 +140,10 @@ function ruleAnswerToMessage(result: GoatResult): Pick<ChatMessage, "text" | "qu
   if (!parts.length && quotes.length) parts.push(result.files?.title ? `${result.files.title}:` : "From the patient's files:");
   if (!parts.length && result.hits.length) parts.push(...result.hits.slice(0, 3).map((h) => `${h.kind} · ${h.title}: ${h.snippet}`));
   const copy = result.answers.find((a) => a.copyText)?.copyText;
+  const originals = result.answers.flatMap((a) => (a.groups ?? []).filter((g) => g.original).map((g) => ({ label: `${g.lead}`.replace(/:$/, ""), text: g.original! })));
   return {
     copy,
+    ...(originals.length ? { originals } : {}),
     text: parts.join("\n\n") || "I couldn't find that in this patient's file. I only read what's there and I won't guess.",
     quotes,
     warnings: result.files?.notes.length ? result.files.notes.slice(0, 2) : undefined,
@@ -177,7 +180,7 @@ interface AnswererProps {
   patient: PatientRecord;
   job: Job;
   onPartial: (text: string) => void;
-  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy">) => void;
+  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => void;
 }
 
 function PatientAnswerer(props: AnswererProps) {
@@ -251,6 +254,7 @@ function Answerer({ job, onDone, context, files }: AnswererProps & { context: Go
         quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
         warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
         copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
+        originals: answers.some((a) => a.originals?.length) ? answers.flatMap((a) => a.originals ?? []) : undefined,
         ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
       });
     })();
@@ -398,7 +402,8 @@ export function GlobalGoatPopup({
     const listYear = (p: PatientRecord) => yearOfDate(p.matrix?.initialExam?.trim() ? p.matrix.initialExam : patientInitialExamIso(p, index)) || yearOfDate(p.dateOfLoss);
     return {
       patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ ...p, listYear: listYear(p), cash: Boolean(p.isCashPatient) })),
-      tasks: loadTasks(),
+      // Cleared ("Clear task") to-dos never show in G.O.A.T.
+      tasks: (() => { const c = clearedIdSet(); return loadTasks().filter((t) => !c.has(taskClearId(t.id))); })(),
       appointments,
       contacts: loadContactDirectory(),
       today: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
@@ -682,7 +687,7 @@ export function GlobalGoatPopup({
     }
     const data = briefData();
     const a = target === "todo" ? viewTodos(data) : target === "schedule" ? viewSchedule(data) : target === "messages" ? viewMessages(data) : target === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
-    push({ role: "goat", text: a.text, practice: true, links: a.links });
+    push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
   };
   /** Greeting chip tap: drop any waiting step and run the brief directly. */
   const runChip = (chip: string) => {
@@ -701,7 +706,7 @@ export function GlobalGoatPopup({
     const data = briefData();
     const a = kind === "rundown" ? morningRundown(data) : kind === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
     push({ role: "user", text: question, practice: true });
-    push({ role: "goat", text: a.text, practice: true, links: a.links });
+    push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
     return true;
   };
   /** "/note …" → the note dialog; "/todo …" → a to-do confirm card. True if handled. */
@@ -1174,7 +1179,7 @@ export function GlobalGoatPopup({
 
   // Plain functions: they only touch refs and functional state updates, so a stale copy is fine.
   const onPartial = (t: string) => setPartial(t);
-  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy">) => {
+  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => {
     const j = jobRef.current;
     if (j) {
       const p = findPatient(patientsOverride, j.patientId);
@@ -1282,6 +1287,8 @@ export function GlobalGoatPopup({
                   <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <div className="whitespace-pre-line leading-snug">{m.text}</div>
+                    {m.todoRows && m.todoRows.length > 0 && <TodoRows rows={m.todoRows} />}
+                    {m.textAfter && <div className="whitespace-pre-line leading-snug">{m.textAfter}</div>}
                     {m.links?.map((l) => (
                       <Link key={l.href} className="mt-1 block font-semibold text-[var(--brand-primary)] hover:underline" href={l.href} style={{ fontSize: 13 }}>
                         {l.label} ↗
@@ -1318,6 +1325,17 @@ export function GlobalGoatPopup({
                           </button>
                         ))}
                       </div>
+                    )}
+                    {m.originals && m.originals.length > 0 && (
+                      <details className="mt-1.5 text-xs">
+                        <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show original</summary>
+                        {m.originals.map((o, i) => (
+                          <div key={i} className="mt-1">
+                            <p className="font-semibold">{o.label}</p>
+                            <p className="whitespace-pre-wrap text-[var(--text-muted)]">{o.text}</p>
+                          </div>
+                        ))}
+                      </details>
                     )}
                     {m.warnings?.map((w, i) => (
                       <p key={i} className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
@@ -1802,7 +1820,7 @@ function ContactImportCard({ imp, onChange, onConfirm, onCancel, onUndo }: { imp
 function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
   const due = draft.dueDate ? `${draft.dueDate.slice(5, 7)}/${draft.dueDate.slice(8, 10)}/${draft.dueDate.slice(0, 4)}` : "no due date";
-  if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Added to To-Do · <Link className="text-[var(--brand-primary)] hover:underline" href="/tasks">Open To-Do ↗</Link></p>;
+  if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Added to To-Do · <Link className="text-[var(--brand-primary)] hover:underline" href="/patients?view=toDo">Open To-Do ↗</Link></p>;
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-todo>
@@ -1996,5 +2014,33 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
         </button>
       </div>
     </div>
+  );
+}
+
+/** Each to-do line opens that to-do (To-Do page, highlighted); the patient name inside links to the patient. */
+function TodoRows({ rows }: { rows: NonNullable<ChatMessage["todoRows"]> }) {
+  const router = useRouter();
+  return (
+    <ul className="mt-0.5 grid gap-0.5">
+      {rows.map((r) => (
+        <li
+          className="cursor-pointer rounded-md px-1 leading-snug hover:bg-[rgba(13,121,191,0.08)]"
+          key={r.id}
+          onClick={() => router.push(r.href)}
+          onKeyDown={(e) => { if (e.key === "Enter") router.push(r.href); }}
+          role="link"
+          tabIndex={0}
+          title="Open this to-do"
+        >
+          - {r.before}
+          {r.patientName && (r.patientHref ? (
+            <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={r.patientHref} onClick={(e) => e.stopPropagation()}>
+              {r.patientName}
+            </Link>
+          ) : r.patientName)}
+          {r.after}
+        </li>
+      ))}
+    </ul>
   );
 }

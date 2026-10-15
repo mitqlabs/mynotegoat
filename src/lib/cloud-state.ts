@@ -8,6 +8,7 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.patient-packages.v1",
   "casemate.contact-subcategories.v1",
   "casemate.key-date-dismissals.v1",
+  "casemate.cleared-tasks.v1",
   "casemate.duplicate-dismissals.v1",
   "casemate.attorney-not-same.v1",
 ]);
@@ -927,6 +928,8 @@ async function bootstrapTableBackedEntities() {
           // Written to the cloud but never pulled back before, so a
           // workspace switch / sign-out lost them locally.
           "casemate.key-date-dismissals.v1",
+          // Case Flow / To-Do "Clear task" (ignore) records — union-merged.
+          "casemate.cleared-tasks.v1",
           "casemate.duplicate-dismissals.v1",
           "casemate.attorney-not-same.v1",
           "casemate.team-settings.v1",

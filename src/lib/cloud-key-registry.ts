@@ -55,6 +55,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.cash-payments.v1": "workspace",
   "casemate.patient-packages.v1": "workspace",
   "casemate.key-date-dismissals.v1": "workspace",
+  "casemate.cleared-tasks.v1": "workspace",
   "casemate.duplicate-dismissals.v1": "workspace",
   "casemate.attorney-not-same.v1": "workspace",
   "casemate.team-settings.v1": "workspace",

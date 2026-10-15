@@ -92,6 +92,12 @@ function AnswerGroups({ groups, highlight }: { groups: GoatAnswerGroup[]; highli
           {g.blocks.map((b, j) => (
             <FindingsBlock key={j} block={b} highlight={highlight} />
           ))}
+          {g.original && (
+            <details className="mt-1 text-xs">
+              <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show original</summary>
+              <p className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">{g.original}</p>
+            </details>
+          )}
         </div>
       ))}
     </div>

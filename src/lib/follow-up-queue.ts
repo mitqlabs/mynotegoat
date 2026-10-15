@@ -7,6 +7,7 @@ import type {
 } from "@/lib/dashboard-workspace-settings";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { PatientFollowUpOverrideMap } from "@/lib/patient-follow-up-overrides";
+import { clearedIdSet, followUpClearId } from "@/lib/cleared-tasks";
 
 export type FollowUpCategory =
   | "Initial Visit"
@@ -64,6 +65,10 @@ export type FollowUpQueueOptions = {
   mriCtClearStatuses?: string[];
   specialistClearStatuses?: string[];
   followUpOverrides?: PatientFollowUpOverrideMap;
+  /** "Clear task" ids (lib/cleared-tasks). Default: this browser's saved set. Cleared rows are left out everywhere. */
+  clearedIds?: Set<string>;
+  /** Keep cleared rows (for the "Show cleared" list). */
+  includeCleared?: boolean;
   maxItems?: number;
   closedCaseStatuses?: string[];
   xrayNoReportWarningDays?: number;
@@ -797,7 +802,9 @@ export function buildFollowUpItems(
     }
   });
 
-  const sorted = rows.sort((left, right) => {
+  const cleared = options.includeCleared ? new Set<string>() : options.clearedIds ?? clearedIdSet();
+  const kept = cleared.size ? rows.filter((r) => !cleared.has(followUpClearId(r.patientId, r.category))) : rows;
+  const sorted = kept.sort((left, right) => {
     const leftDays = left.daysFromAnchor ?? -99999;
     const rightDays = right.daysFromAnchor ?? -99999;
     if (leftDays !== rightDays) {

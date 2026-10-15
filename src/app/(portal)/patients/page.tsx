@@ -47,6 +47,8 @@ import { buildPrintTableHtml, formatPrintedAt, printHtmlDocument, type PrintCell
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patient-list-sort";
+import { useClearedTasks } from "@/hooks/use-cleared-tasks";
+import { followUpClearId, taskClearId, type ClearedRecord } from "@/lib/cleared-tasks";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -532,6 +534,13 @@ export default function PatientsPage() {
   const { dashboardWorkspaceSettings } = useDashboardWorkspaceSettings();
   const { recordsByPatientId: followUpOverridesByPatientId } = usePatientFollowUpOverrides();
   const { tasks, addTask, updateTask, toggleTaskDone, removeTask, clearCompleted } = useTasks();
+  // "Clear task" (ignore, not Done): hidden everywhere, restorable under "Show cleared".
+  const { clearedIds, clearedList, clear: clearTaskId, restore: restoreTaskId } = useClearedTasks();
+  const [showClearedCf, setShowClearedCf] = useState(false);
+  const [showClearedTodo, setShowClearedTodo] = useState(false);
+  const confirmClear = (id: string, label: string) => {
+    if (window.confirm(`Clear "${label}"? It stops showing in Case Flow, To-Do and G.O.A.T. and won't come back for this case. Restore it any time under "Show cleared".`)) clearTaskId(id, label);
+  };
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
   // Print "Include" picker: which view it's for, and the remembered extras.
   const [printPickerFor, setPrintPickerFor] = useState<"list" | "caseFlow" | null>(null);
@@ -1183,6 +1192,7 @@ export default function PatientsPage() {
       specialistNoScheduleWarningDays: followUpSettings.specialistNoScheduleWarningDays,
       followUpOverrides: followUpOverridesByPatientId,
       closedCaseStatuses,
+      clearedIds,
     });
   }, [
     closedCaseStatuses,
@@ -1205,6 +1215,7 @@ export default function PatientsPage() {
     followUpSettings.xrayAppearAuto,
     followUpSettings.xrayClearedBy,
     followUpOverridesByPatientId,
+    clearedIds,
   ]);
 
   const followUpCounts = useMemo(
@@ -1407,6 +1418,7 @@ export default function PatientsPage() {
   const filteredTasks = useMemo(() => {
     const query = taskSearch.trim().toLowerCase();
     return tasks.filter((task) => {
+      if (clearedIds.has(taskClearId(task.id))) return false;
       if (taskStatusFilter === "Done" && !task.done) return false;
       if (taskStatusFilter === "Open" && task.done) return false;
       if (taskPriorityFilter !== "All" && task.priority !== taskPriorityFilter) return false;
@@ -1414,9 +1426,22 @@ export default function PatientsPage() {
       const dueDateUs = formatUsDateFromIso(task.dueDate).toLowerCase();
       return task.title.toLowerCase().includes(query) || dueDateUs.includes(query);
     });
-  }, [tasks, taskSearch, taskStatusFilter, taskPriorityFilter]);
+  }, [tasks, taskSearch, taskStatusFilter, taskPriorityFilter, clearedIds]);
 
-  const taskOpenCount = tasks.filter((t) => !t.done).length;
+  const taskOpenCount = tasks.filter((t) => !t.done && !clearedIds.has(taskClearId(t.id))).length;
+  // G.O.A.T. to-do lines link here: /patients?view=toDo&task=<id> opens To-Do and highlights that task.
+  const taskFromQuery = searchParams.get("task");
+  const viewFromQuery = searchParams.get("view");
+  const [highlightTaskId, setHighlightTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    if (viewFromQuery !== "toDo" && !taskFromQuery) return;
+    setView("toDo");
+    if (!taskFromQuery) return;
+    setHighlightTaskId(taskFromQuery);
+    const t = window.setTimeout(() => document.getElementById(`task-${taskFromQuery}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+    const off = window.setTimeout(() => setHighlightTaskId(null), 6000);
+    return () => { window.clearTimeout(t); window.clearTimeout(off); };
+  }, [taskFromQuery, viewFromQuery]);
   const taskDoneCount = tasks.length - taskOpenCount;
 
   // formatTaskDateInput removed — <UsDateInput> does its own formatting.
@@ -2159,6 +2184,12 @@ export default function PatientsPage() {
                   <span className="font-semibold">{followUpCounts.specialist}</span> • {lienLabel}{" "}
                   <span className="font-semibold">{followUpCounts.lienLop}</span>
                 </p>
+                <ClearedToggle
+                  list={clearedList.filter((r) => r.id.startsWith("fu:"))}
+                  onRestore={restoreTaskId}
+                  open={showClearedCf}
+                  setOpen={setShowClearedCf}
+                />
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -2300,7 +2331,19 @@ export default function PatientsPage() {
                         );
                       }
                       if (colId === "followUp") {
-                        return <td key={colId} className="px-4 py-3">{item.stage}</td>;
+                        return (
+                          <td key={colId} className="px-4 py-3">
+                            {item.stage}
+                            <button
+                              className="ml-2 rounded-md border border-[var(--line-soft)] bg-white px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-muted)] hover:text-[#b43b34]"
+                              onClick={() => confirmClear(followUpClearId(item.patientId, item.category), `${item.category === "Lien / LOP" ? lienLabel : item.category} · ${item.patientName}`)}
+                              title="Clear (ignore) this task for this case — not Done. Restore under Show cleared."
+                              type="button"
+                            >
+                              Clear task
+                            </button>
+                          </td>
+                        );
                       }
                       if (colId === "anchorDate") {
                         return <td key={colId} className="px-4 py-3">{item.anchorDate ? formatUsDateDisplay(item.anchorDate) : "-"}</td>;
@@ -2468,12 +2511,13 @@ export default function PatientsPage() {
               </label>
               <div className="flex items-end md:col-span-1">
                 <button className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={() => { if (window.confirm("Clear all completed tasks?")) clearCompleted(); }} type="button">Clear Done</button>
+                <ClearedToggle list={clearedList.filter((r) => r.id.startsWith("task:"))} onRestore={restoreTaskId} open={showClearedTodo} setOpen={setShowClearedTodo} />
               </div>
             </div>
 
             <div className="mt-4 space-y-2">
               {filteredTasks.map((task) => (
-                <article className={`rounded-xl border px-3 py-3 ${task.done ? "border-[var(--line-soft)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)] bg-white"}`} key={task.id}>
+                <article className={`rounded-xl border px-3 py-3 ${task.done ? "border-[var(--line-soft)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)] bg-white"} ${highlightTaskId === task.id ? "ring-2 ring-[var(--brand-primary)]" : ""}`} id={`task-${task.id}`} key={task.id}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-start gap-3">
                       <input checked={task.done} className="mt-1" onChange={() => toggleTaskDone(task.id)} type="checkbox" />
@@ -2522,6 +2566,7 @@ export default function PatientsPage() {
                           <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => startEditingTask(task)} type="button">Edit</button>
                         </>
                       )}
+                      {!task.done && <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-muted)]" onClick={() => confirmClear(taskClearId(task.id), task.title)} title="Clear (ignore) — not Done. Restore under Show cleared." type="button">Clear task</button>}
                       <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!window.confirm("Remove this task?")) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
                     </div>
                   </div>
@@ -2972,6 +3017,29 @@ export default function PatientsPage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+/** "Show cleared (N)" → the cleared tasks with who/when and Restore. */
+function ClearedToggle({ list, open, setOpen, onRestore }: { list: ClearedRecord[]; open: boolean; setOpen: (v: boolean) => void; onRestore: (id: string) => void }) {
+  if (!list.length) return null;
+  return (
+    <div className="text-left text-xs">
+      <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => setOpen(!open)} type="button">
+        {open ? "Hide cleared" : `Show cleared (${list.length})`}
+      </button>
+      {open && (
+        <ul className="mt-1 grid gap-1">
+          {list.map((r) => (
+            <li className="flex flex-wrap items-center gap-2 rounded-md bg-[var(--bg-soft)] px-2 py-1" key={r.id}>
+              <span className="font-semibold">{r.label || r.id}</span>
+              <span className="text-[var(--text-muted)]">cleared{r.by ? ` by ${r.by}` : ""}{r.updatedAt ? ` · ${new Date(r.updatedAt).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}` : ""}</span>
+              <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => onRestore(r.id)} type="button">Restore</button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
