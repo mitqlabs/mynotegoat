@@ -28,11 +28,22 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
-        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date) and unread team messages.",
+        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date) and unread team messages. Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
       why: "Office numbers — Appointment Check, Quick Biz, case counts (\"how many submitted cases\") and money questions (\"who owes us\", \"what got paid this month\") — are for the owner and admins. Anyone else gets a polite \"that's for admins\". Right after sign-in, while G.O.A.T. is still checking your role, it shows only Morning Rundown and says \"still checking your access\" if you ask for numbers.",
+    },
+    {
+      heading: "Imaging findings (MRI, CT, X-ray)",
+      steps: [
+        "Ask \"mri findings\" or \"lumbar mri\". G.O.A.T. reads the impression and lists it by region (Cervical, Thoracic, Lumbar), one line per level in spine order: size, side, what it is, and what it presses on — e.g. \"C5-6: 3 mm left paracentral disc herniation — cord compression, neuroforaminal narrowing (L>R)\".",
+        "Things with no level (degeneration, desiccation, Modic changes) go on a General line. Boilerplate like \"correlation is recommended\" is left out.",
+        "Shared levels are split (\"C5-6 & C6-7 herniations\" shows on both). A size cut off in the PDF says so instead of guessing.",
+        "More than one study: the latest is first. Ask for one region to see just that one.",
+        "Show original opens the report text exactly as written.",
+      ],
+      why: "Rules only — no outside AI. If a report isn't written level by level (e.g. a knee MRI), you get the report text as before.",
     },
     {
       heading: "Look things up",
@@ -54,10 +65,11 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "\"/\" commands",
       steps: [
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
-        "/note asks \"Which case?\" (tap the right one), then the text, then a confirm card.",
-        "/todo asks \"Just a to-do, or add to a case?\", then the text, then a confirm card.",
+        "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK), takes the rest as the text, and goes straight to the confirm card with the patient's name on it.",
+        "It only asks \"Which case?\" when more than one patient matches, and only asks for the text when you typed just a name.",
+        "Just /note asks \"Which case?\", then the text. Just /todo asks \"Just a to-do, or add to a case?\". A /todo that doesn't start with a patient name is a plain to-do.",
         "Changed your mind halfway? Tap a chip, type another / or @ command, ask something new, or type cancel — the half-finished step is dropped.",
-        "/view shows a list: /view todo (every open to-do, with its case), /view schedule (today), /view messages (unread). Admins also get /view appointment check and /view quick biz. After typing \"/view \" the menu suggests them.",
+        "/view shows a list: /view todo (every open to-do; click a line to open it, click the name to open the patient), /view schedule (today), /view messages (unread). Admins also get /view appointment check and /view quick biz. After typing \"/view \" the menu suggests them.",
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],

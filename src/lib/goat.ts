@@ -13,6 +13,7 @@
  */
 
 import { sortByRegion } from "@/lib/goat-region-order";
+import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-findings";
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
@@ -172,6 +173,8 @@ export interface GoatAnswerGroup {
   lead: string;
   blocks: GoatBlock[];
   note?: string;
+  /** The report text as written, behind "Show original". */
+  original?: string;
 }
 
 export interface GoatAnswer {
@@ -550,6 +553,22 @@ function regionOfLevelName(level: string, regions: string[]): boolean {
 }
 
 /** Text → blocks by body region, filtered to what the question asked. Nothing is shortened. */
+/**
+ * Spine impressions read as structured lines (one per level, by region, plus
+ * General); anything else falls back to the region splitter.
+ */
+export function structuredFindingBlocks(text: string, recordRegions: string[], rq: RegionQuery | null): { blocks: GoatBlock[]; structured: boolean } {
+  const parsed = parseSpineFindings(plainText(text));
+  if (isStructurable(parsed)) {
+    const spineAsk = !rq || (!rq.regions.length && !rq.levels.length) || rq.levels.length > 0 || rq.regions.some((r) => r === "Cervical" || r === "Thoracic" || r === "Lumbar");
+    if (spineAsk) {
+      const b = spineBlocks(parsed, rq ? { levels: rq.levels, regions: rq.regions } : undefined);
+      if (b.some((x) => x.heading !== "General") || !rq) return { blocks: b.map((x) => ({ heading: x.heading, items: x.items, plain: true })), structured: true };
+    }
+  }
+  return { blocks: regionBlocks(text, recordRegions, rq), structured: false };
+}
+
 function regionBlocks(text: string, recordRegions: string[], rq: RegionQuery | null): GoatBlock[] {
   const sections = splitFindings(plainText(text), recordRegions);
   const picked: Array<RegionSection & { focus?: number[] }> = rq ? pickSections(sections, rq) : sections;
@@ -568,7 +587,10 @@ function regionLabel(rq: RegionQuery | null): string {
  * `onlyIfFound`: return null unless something matches (level-only questions).
  */
 function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery | null = null, onlyIfFound = false): GoatAnswer | null {
-  let list = ctx.imaging.filter((i) => (which === "xray" ? i.modality === "X-Ray" : i.modality !== "X-Ray"));
+  // Latest first (done date, then scheduled/sent).
+  let list = ctx.imaging
+    .filter((i) => (which === "xray" ? i.modality === "X-Ray" : i.modality !== "X-Ray"))
+    .sort((a, b) => (b.doneDate || b.scheduledDate || b.sentDate || "").localeCompare(a.doneDate || a.scheduledDate || a.sentDate || ""));
   if (which === "mri" && rq && rq.modalities.length === 1 && (rq.modalities[0] === "MRI" || rq.modalities[0] === "CT")) {
     const only = list.filter((i) => i.modality === rq.modalities[0]);
     if (only.length) list = only;
@@ -585,7 +607,8 @@ function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery 
     const place = [i.center, i.regions.length ? i.regions.join(", ") : ""].filter(Boolean).join(" · ");
     const status = imagingStatus(i, i.doneDate);
     const lead = `${i.modality}${place ? ` (${place})` : ""}: ${status.text}.`;
-    const blocks = i.findings.trim() ? regionBlocks(i.findings, i.regions, only) : [];
+    const sb = i.findings.trim() ? structuredFindingBlocks(i.findings, i.regions, only) : { blocks: [] as GoatBlock[], structured: false };
+    const blocks = sb.blocks;
     if (narrowed && !blocks.length) {
       const covers = i.regions.some((r) => rq!.regions.includes(regionOfWord(r) ?? regionsNamedIn(r)[0] ?? ("" as never)));
       elsewhere.push(
@@ -596,7 +619,7 @@ function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery 
       continue;
     }
     if (status.flag) flags.push(status.flag);
-    groups.push({ lead, blocks, ...(!i.findings.trim() ? { note: "No findings entered yet." } : {}) });
+    groups.push({ lead, blocks, ...(!i.findings.trim() ? { note: "No findings entered yet." } : {}), ...(sb.structured ? { original: i.findings.trim() } : {}) });
   }
   const panelFindings = which === "xray" ? ctx.xrayFindings : ctx.mriFindings;
   if (panelFindings.trim() && !list.some((i) => i.findings.trim() === panelFindings.trim())) {
@@ -606,8 +629,9 @@ function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery 
       // The case-matrix summary ("Cerv/Lumb/Knee"): one line, and only when no region was asked.
       if (!narrowed) lines.push(`Panel summary: ${short}`);
     } else {
-      const blocks = regionBlocks(panelFindings, [], only);
-      if (blocks.length) groups.push({ lead: `${label} findings (panel):`, blocks });
+      const sb = structuredFindingBlocks(panelFindings, [], only);
+      const blocks = sb.blocks;
+      if (blocks.length) groups.push({ lead: `${label} findings (panel):`, blocks, ...(sb.structured ? { original: panelFindings.trim() } : {}) });
       else if (!narrowed) groups.push({ lead: `${label} findings (panel):`, blocks: [{ heading: "", items: splitItems(short) }] });
     }
   }
@@ -618,6 +642,8 @@ function imagingAnswer(ctx: GoatContext, which: "xray" | "mri", rq: RegionQuery 
     lines.push(`No ${label} referrals or findings on file.`);
   }
   if (elsewhere.length) lines.push(...(groups.length ? [`Also on file: ${elsewhere.join(" ")}`] : elsewhere));
+  const studies = groups.filter((g) => g.blocks.length).length;
+  if (studies > 1 && !narrowed) lines.unshift(`${studies} ${which === "xray" ? "X-rays" : "MRI/CT studies"} on file — latest first. Ask about one (e.g. "lumbar MRI") to see just that one.`);
   return {
     title: narrowed ? `${label} · ${where}` : label,
     lines,

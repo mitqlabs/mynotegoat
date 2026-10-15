@@ -53,10 +53,26 @@ export interface BriefLink {
   label: string;
   href: string;
 }
+/** One to-do line: the whole line opens it in To-Do; the patient name links to the patient. */
+export interface BriefTodoRow {
+  id: string;
+  href: string;
+  /** Text before / after the patient name. */
+  before: string;
+  after: string;
+  patientName?: string;
+  patientHref?: string;
+}
 export interface BriefAnswer {
   text: string;
   links?: BriefLink[];
+  /** Clickable to-do lines shown after `text`, then `textAfter`. */
+  todoRows?: BriefTodoRow[];
+  textAfter?: string;
 }
+/** The To-Do page with this task highlighted. */
+export const todoHref = (id: string) => `/patients?view=toDo&task=${encodeURIComponent(id)}`;
+export const TODO_PAGE_HREF = "/patients?view=toDo";
 
 export const CHIPS = ["Morning Rundown", "Appointment Check", "Quick Biz"] as const;
 /** Appointment Check and Quick Biz are for admins (workspace owner/admin). */
@@ -190,17 +206,17 @@ export function morningRundown(data: BriefData): BriefAnswer {
     : "- Nothing on the schedule.";
   const open = openTodos(data);
   const due = open;
-  const todo = open.length ? open.slice(0, 15).map((t) => `- ${todoLine(t, data.today)}`).join("\n") + (open.length > 15 ? `\n- …and ${open.length - 15} more (/view todo)` : "") : "- Nothing open.";
   const unread = data.unreadMessages ?? 0;
   return {
     text: [
       `Today (${us(data.today)}): ${todays.length} visit${todays.length === 1 ? "" : "s"}`,
       sched,
       `\nOpen to-dos: ${due.length}`,
-      todo,
-      `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`,
+      ...(open.length ? [] : ["- Nothing open."]),
     ].join("\n"),
-    links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...(due.length ? [{ label: "Open To-Do", href: "/tasks" }] : []), ...(unread ? [{ label: "Open Messages", href: "/messages" }] : [])],
+    todoRows: open.slice(0, 15).map((t) => todoRow(t, data.today)),
+    textAfter: [...(open.length > 15 ? [`- …and ${open.length - 15} more (/view todo)`] : []), `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`].join("\n"),
+    links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...(unread ? [{ label: "Open Messages", href: "/messages" }] : [])],
   };
 }
 
@@ -209,7 +225,18 @@ export function openTodos(data: Pick<BriefData, "tasks" | "today">): BriefTask[]
   const rank = (t: BriefTask) => (!t.dueDate ? 2 : t.dueDate < data.today ? 0 : 1);
   return data.tasks.filter((t) => !t.done).sort((a, b) => rank(a) - rank(b) || (a.dueDate || "").localeCompare(b.dueDate || "") || a.title.localeCompare(b.title));
 }
-function todoLine(t: BriefTask, today: string): string {
+export function todoRow(t: BriefTask, today: string): BriefTodoRow {
+  const due = !t.dueDate ? "no due date" : t.dueDate < today ? `overdue, ${us(t.dueDate)}` : t.dueDate === today ? "due today" : `due ${us(t.dueDate)}`;
+  return {
+    id: t.id,
+    href: todoHref(t.id),
+    before: `${t.title} (${due})${t.patientName ? " · " : ""}`,
+    patientName: t.patientName || undefined,
+    patientHref: t.patientId ? `/patients/${encodeURIComponent(t.patientId)}` : undefined,
+    after: t.assignee ? ` · ${t.assignee}` : "",
+  };
+}
+export function todoLine(t: BriefTask, today: string): string {
   const due = !t.dueDate ? "no due date" : t.dueDate < today ? `overdue, ${us(t.dueDate)}` : t.dueDate === today ? "due today" : `due ${us(t.dueDate)}`;
   return `${t.title} (${due})${t.patientName ? ` · ${t.patientName}` : ""}${t.assignee ? ` · ${t.assignee}` : ""}`;
 }
@@ -248,12 +275,8 @@ export function parseViewTarget(rest: string): ViewTarget | null {
 }
 export function viewTodos(data: BriefData): BriefAnswer {
   const open = openTodos(data);
-  if (!open.length) return { text: "No open to-dos. 🎉", links: [{ label: "Open To-Do", href: "/tasks" }] };
-  const linked = open.filter((t) => t.patientId);
-  return {
-    text: `Open to-dos (${open.length}):\n${open.map((t) => `- ${todoLine(t, data.today)}`).join("\n")}`,
-    links: [{ label: "Open To-Do", href: "/tasks" }, ...linked.filter((t, i) => linked.findIndex((x) => x.patientId === t.patientId) === i).map((t) => ({ label: t.patientName || "Patient", href: `/patients/${encodeURIComponent(t.patientId!)}` }))],
-  };
+  if (!open.length) return { text: "No open to-dos. 🎉", links: [{ label: "Open To-Do", href: TODO_PAGE_HREF }] };
+  return { text: `Open to-dos (${open.length}):`, todoRows: open.map((t) => todoRow(t, data.today)) };
 }
 export function viewSchedule(data: BriefData): BriefAnswer {
   const todays = data.appointments.filter((a) => a.date === data.today && live(a)).sort((a, b) => a.startTime.localeCompare(b.startTime));

@@ -156,6 +156,16 @@ export const handbookChapters: HandbookChapter[] = [
         watchOut:
           "Marking a referral \"Patient Refused\" also clears it — that's the honest way to close something that's never coming, instead of leaving it to nag forever.",
       },
+      {
+        heading: "Clear task (ignore) — not the same as Done",
+        steps: [
+          "A row that will never clear on its own (e.g. a Lien task that stays \"needed\"): click Clear task on the row, then OK.",
+          "It stops showing in Case Flow, the Case Flow counts, To-Do, Morning Rundown and /view todo, and it is not created again for that case.",
+          "Nothing is deleted. Show cleared (N) lists every cleared item with who cleared it and when — Restore puts it back.",
+          "To-Do has the same Clear task button for open to-dos.",
+        ],
+        why: "Done means the work happened. Clear means \"stop reminding us\". Clears are saved to the workspace, so every computer sees them.",
+      },
     ],
   },
 ];

@@ -4,7 +4,8 @@
  *  - a specialist's visit with ROM / recommendations: "when was the pm appt, rom and recs"
  * and splitting two-part questions.
  */
-import type { GoatAnswer, GoatContext } from "@/lib/goat";
+import type { GoatAnswer, GoatAnswerGroup, GoatContext } from "@/lib/goat";
+import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-findings";
 import type { FileFacts } from "@/lib/goat-facts";
 import { findReferralFacts, SPECIALTIES } from "@/lib/goat-referrals";
 import { sortByRegion } from "@/lib/goat-region-order";
@@ -37,7 +38,9 @@ export function imagingFactsAnswer(ctx: GoatContext, question: string, facts: Fi
   if (!files.length && !box.length) return null;
   const who = firstName(ctx.patientName);
   const lines: string[] = [];
+  const groups: GoatAnswerGroup[] = [];
   const sources: Array<{ fileId: string; name: string }> = [];
+  if (files.length > 1) lines.push(`${files.length} ${mod.label} reports on file — latest first.`);
   if (files.length) {
     for (const f of files.slice(0, 2)) {
       const region = f.regions.filter((r) => /Cervical|Thoracic|Lumbar|Shoulder|Knee|Hip|Wrist/.test(r)).join(", ");
@@ -45,19 +48,29 @@ export function imagingFactsAnswer(ctx: GoatContext, question: string, facts: Fi
       const date = f.mainDate || (b?.doneDate ? isoToMdy(b.doneDate) : "");
       lines.push(`${who}'s ${region ? `${region} ` : ""}${mod.label} was ${date ? `done on ${date}` : "done (no date found in the report)"}.`);
       const imp = f.impressions.length ? f.impressions : f.findings;
-      if (asksFind || !asksWhen) lines.push(imp.length ? `It showed: ${sortByRegion(imp.slice(0, 5), (x) => x, ctx.recFormat?.regionOrder).join("; ")}.` : "I didn't find an impression or findings section in the report.");
+      if (asksFind || !asksWhen) {
+        const parsed = imp.length ? parseSpineFindings(imp.join("; ")) : null;
+        if (parsed && isStructurable(parsed)) {
+          groups.push({ lead: `${date ? `${date} · ` : ""}${f.fileName}`, blocks: spineBlocks(parsed).map((b) => ({ heading: b.heading, items: b.items, plain: true })), original: imp.join("\n") });
+        } else lines.push(imp.length ? `It showed: ${sortByRegion(imp.slice(0, 5), (x) => x, ctx.recFormat?.regionOrder).join("; ")}.` : "I didn't find an impression or findings section in the report.");
+      }
       sources.push({ fileId: f.fileId, name: f.fileName });
     }
   } else {
     for (const b of box.slice(0, 2)) {
       const date = isoToMdy(b.doneDate) || "";
       lines.push(`${who}'s ${b.regions.join(", ")} ${mod.label} ${date ? `was done on ${date}` : b.scheduledDate ? `is scheduled for ${isoToMdy(b.scheduledDate)}` : "hasn't been done yet"}${b.center ? ` at ${b.center}` : ""}.`);
-      if (asksFind || !asksWhen) lines.push(b.findings.trim() ? `Findings: ${b.findings.trim()}` : "No findings entered yet, and no report file was found.");
+      if (asksFind || !asksWhen) {
+        const parsed = b.findings.trim() ? parseSpineFindings(b.findings) : null;
+        if (parsed && isStructurable(parsed)) groups.push({ lead: "Findings:", blocks: spineBlocks(parsed).map((x) => ({ heading: x.heading, items: x.items, plain: true })), original: b.findings.trim() });
+        else lines.push(b.findings.trim() ? `Findings: ${b.findings.trim()}` : "No findings entered yet, and no report file was found.");
+      }
     }
   }
   return {
     title: `${mod.label}`,
     lines,
+    ...(groups.length ? { groups } : {}),
     source: sources.length ? `Patient Files — ${sources.map((s) => s.name).join(", ")}` : `${mod.label} panel`,
     section: mod.key === "xray" ? "xray" : "mri",
     fileId: sources[0]?.fileId,

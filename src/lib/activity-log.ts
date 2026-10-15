@@ -78,7 +78,7 @@ export function activityTime(value: string | undefined | null): string {
   return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
 }
 
-function actorLabel(): string {
+export function actorLabel(): string {
   const membership = getCurrentMembershipSync();
   if (membership?.isMember) return membership.label || "Team Member";
   try {

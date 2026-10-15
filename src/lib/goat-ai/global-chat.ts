@@ -63,6 +63,8 @@ export interface ChatMessage {
   pendingQuestion?: string;
   quotes?: ChatQuote[];
   warnings?: string[];
+  /** Raw report text behind structured findings ("Show original"). */
+  originals?: Array<{ label: string; text: string }>;
   ms?: number;
   /** Plain text for Copy (e.g. recommendations in the regular format). */
   copy?: string;
@@ -99,6 +101,9 @@ export interface ChatMessage {
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
   links?: Array<{ label: string; href: string }>;
+  /** Clickable to-do lines (Morning Rundown, /view todo), then textAfter. */
+  todoRows?: Array<{ id: string; href: string; before: string; after: string; patientName?: string; patientHref?: string }>;
+  textAfter?: string;
 }
 
 export interface ChatState {

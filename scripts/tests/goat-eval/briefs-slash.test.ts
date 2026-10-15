@@ -4,10 +4,14 @@
  * Run: npx tsx scripts/tests/goat-eval/briefs-slash.test.ts
  */
 import assert from "node:assert/strict";
-import { openTodos, parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos } from "../../../src/lib/goat-briefs";
+import { openTodos, parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos as viewTodosRaw, type BriefAnswer } from "../../../src/lib/goat-briefs";
 import { ACCESS_LOADING_REPLY, adminStatsGate, isStatsOfficeKind } from "../../../src/lib/goat-briefs";
 import { answerOffice } from "../../../src/lib/goat-office";
-import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown as morningRundownRaw, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
+// Rendered like the chat: text, then each clickable to-do line, then textAfter.
+const render = (a: BriefAnswer): BriefAnswer => ({ ...a, text: [a.text, ...(a.todoRows ?? []).map((r) => `- ${r.before}${r.patientName ?? ""}${r.after}`), ...(a.textAfter ? [a.textAfter] : [])].join("\n") });
+const morningRundown = (d: Parameters<typeof morningRundownRaw>[0]) => render(morningRundownRaw(d));
+const viewTodos = (d: Parameters<typeof viewTodosRaw>[0]) => render(viewTodosRaw(d));
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
 import type { PracticeData } from "../../../src/lib/goat-practice";
@@ -153,7 +157,11 @@ check("mr todos: all open", () => { assert.match(mr.text, /Open to-dos: 3/); ass
   check("mr caps at 15", () => assert.match(morningRundown({ ...data, tasks: Array.from({ length: 20 }, (_, i) => ({ id: `x${i}`, title: `Task ${i}`, done: false, dueDate: "" })) }).text, /…and 5 more \(\/view todo\)/));
   const vt = viewTodos(d3);
   check("view todo all", () => { assert.match(vt.text, /^Open to-dos \(5\):/); assert.match(vt.text, /Undated thing/); });
-  check("view todo links case", () => assert.deepEqual(vt.links?.map((l) => l.href), ["/tasks", "/patients/p1"]));
+  // User 10/15: each to-do line opens that to-do; the patient name links to the patient; no separate link list.
+  check("view todo: no separate link list", () => assert.equal(vt.links, undefined));
+  check("view todo rows open the to-do", () => assert.deepEqual(vt.todoRows!.map((r) => r.href), ["t2", "t1", "t3", "t6", "t5"].map((id) => `/patients?view=toDo&task=${id}`)));
+  check("view todo patient name links patient", () => { const r = vt.todoRows!.find((x) => x.id === "t6")!; assert.equal(r.patientName, "Alpha Mock"); assert.equal(r.patientHref, "/patients/p1"); });
+  check("mr rows clickable", () => assert.equal(morningRundownRaw(d3).todoRows!.length, 5));
   check("view todo empty", () => assert.match(viewTodos({ ...data, tasks: [] }).text, /No open to-dos/));
 }
 check("view schedule", () => { const v = viewSchedule(data); assert.match(v.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock/); assert.ok(v.links?.some((l) => l.href === "/patients/p1")); });
@@ -168,7 +176,7 @@ check("view menu filter", () => { assert.deepEqual(viewMatches("q", true).map((v
 check("mr unread", () => assert.match(mr.text, /3 unread/));
 check("mr caught up", () => assert.match(morningRundown({ ...data, unreadMessages: 0 }).text, /all caught up/));
 check("mr no case counts (moved to Quick Biz)", () => assert.doesNotMatch(mr.text, /active ·|submitted/));
-check("mr links", () => assert.deepEqual(mr.links?.map((l) => l.label), ["Open Schedule", "Open To-Do", "Open Messages"]));
+check("mr links (no Open To-Do list — lines are clickable)", () => assert.deepEqual(mr.links?.map((l) => l.label), ["Open Schedule", "Open Messages"]));
 check("mr empty", () => assert.match(morningRundown({ ...data, appointments: [], tasks: [] }).text, /Nothing on the schedule[\s\S]*Nothing open/));
 
 // Know Your Business

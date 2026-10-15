@@ -4,6 +4,8 @@
  * what G.O.A.T. says, chips to show, the next pending step, and — at the end —
  * an action for the chat to turn into ONE confirm card. Nothing is saved here.
  *
+ *  /note gisselle call atty → (one match) straight to the confirm card;
+ *           several matches → Which case? → confirm; no text → ask for it
  *  /note    → Which case? (picker) → the note text → confirm
  *  /todo    → Just a to-do, or add to a case? → (case picker) → text → confirm
  *  /contact → Add or edit? → Add: one contact or a pasted list → review card
@@ -37,10 +39,10 @@ export interface FlowContact { id: string; name: string; category: string; phone
 export interface FlowCtx { today: string; patients: FlowPatient[]; contacts: FlowContact[]; openPatientId?: string | null }
 
 export type Pending =
-  | { k: "notePick" }
+  | { k: "notePick"; text?: string }
   | { k: "noteText"; patientId: string }
   | { k: "todoKind" }
-  | { k: "todoPick" }
+  | { k: "todoPick"; text?: string }
   | { k: "todoText"; patientId?: string }
   | { k: "contactKind" }
   | { k: "contactAdd" }
@@ -64,9 +66,9 @@ const label = (p: FlowPatient) => `${p.fullName} · ${p.caseStatus || "No status
 const CANCEL = /^(cancel|never ?mind|nvm|stop|forget it)\b/i;
 
 /** Matching cases for a typed name, active first (max 8). */
-export function casePicker(name: string, ctx: FlowCtx, next: "note" | "todo"): FlowTurn {
-  const all = matchPatientsByName(name, ctx.patients);
-  const pend: Pending = next === "note" ? { k: "notePick" } : { k: "todoPick" };
+export function casePicker(name: string, ctx: FlowCtx, next: "note" | "todo", text?: string, found?: FlowPatient[]): FlowTurn {
+  const all = found ?? matchPatientsByName(name, ctx.patients);
+  const pend: Pending = next === "note" ? { k: "notePick", ...(text ? { text } : {}) } : { k: "todoPick", ...(text ? { text } : {}) };
   if (!all.length) return { say: `I couldn't find a case for "${name}". Type the patient's name again.`, pending: pend };
   const sorted = [...all].sort((a, b) => Number(ACTIVE.test(b.caseStatus)) - Number(ACTIVE.test(a.caseStatus)) || a.fullName.localeCompare(b.fullName));
   return {
@@ -85,16 +87,72 @@ function whichCase(ctx: FlowCtx, next: "note" | "todo"): FlowTurn {
   };
 }
 
+function dist(a: string, b: string): number {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length];
+}
+const nameParts = (n: string) => n.toLowerCase().replace(/[^a-z\s'-]/g, " ").split(/\s+/).filter(Boolean);
+/** One typed word vs one name part: exact, or a close spelling (4+ letters, 1 edit; 6+ letters, 2). */
+function wordHits(w: string, part: string): boolean {
+  if (w === part) return true;
+  if (w.length < 4 || part.length < 4) return false;
+  return dist(w, part) <= (Math.min(w.length, part.length) >= 6 ? 2 : 1);
+}
+
+/**
+ * "/note gisselle call atty" → the patient(s) named by the LONGEST leading run
+ * of words (first, last or full name, close spellings OK) and the rest as text.
+ * Every word of the run must hit the same patient, so "call" is never a name
+ * unless a patient is really called that.
+ */
+export function splitNameAndText(rest: string, patients: FlowPatient[]): { matches: FlowPatient[]; text: string } {
+  const words = rest.trim().split(/\s+/).filter(Boolean);
+  for (let n = Math.min(4, words.length); n >= 1; n--) {
+    const ws = words.slice(0, n).map((w) => w.toLowerCase().replace(/[^a-z'-]/g, "")).filter(Boolean);
+    if (ws.length !== n) continue;
+    const exact = patients.filter((p) => ws.every((w) => nameParts(p.fullName).includes(w)));
+    const hits = exact.length ? exact : patients.filter((p) => ws.every((w) => nameParts(p.fullName).some((x) => wordHits(w, x))));
+    if (hits.length) return { matches: hits, text: words.slice(n).join(" ").replace(/^[:\-–—,]\s*/, "").trim() };
+  }
+  return { matches: [], text: rest.trim() };
+}
+
+/** Name matched → confirm card (one case) or Which case? (several); ask for text only when none is left. */
+function namedFlow(next: "note" | "todo", m: FlowPatient[], text: string, ctx: FlowCtx): FlowTurn {
+  if (m.length > 1) return casePicker("", ctx, next, text, m);
+  return withCase(next, m[0], text, ctx);
+}
+function withCase(next: "note" | "todo", p: FlowPatient, text: string | undefined, ctx: FlowCtx): FlowTurn {
+  if (next === "note") {
+    return text ? { say: "", pending: null, action: { type: "noteConfirm", patientId: p.id, text } } : { say: `What should the note for ${p.fullName} say?`, pending: { k: "noteText", patientId: p.id } };
+  }
+  const td = text ? parseTodo(text, ctx.today) : null;
+  return td?.title ? { say: "", pending: null, action: { type: "todoConfirm", title: td.title, due: td.due, patientId: p.id } } : { say: `What's the to-do for ${p.fullName}?`, pending: { k: "todoText", patientId: p.id } };
+}
+
 /** Start a flow from "/note …", "/todo …" or "/contact …". Null = not a flow start (use the one-shot path). */
 export function startFlow(cmd: string, rest: string, ctx: FlowCtx): FlowTurn | null {
   if (cmd === "note") {
     if (!rest) return whichCase(ctx, "note");
-    // "/note john smith" (no text) → picker; "/note john smith: text" → one-shot path.
+    const { matches, text } = splitNameAndText(rest, ctx.patients);
+    if (matches.length) return namedFlow("note", matches, text, ctx);
     if (!/[:\-–—]/.test(rest)) return casePicker(rest, ctx, "note");
     return null;
   }
   if (cmd === "todo") {
     if (!rest) return { say: "Just a to-do, or add it to a case?", choices: [{ label: "Just a to-do", token: `${TOKEN}todo-plain` }, { label: "Add to a case", token: `${TOKEN}todo-case-pick` }], pending: { k: "todoKind" } };
+    // "/todo aram subpoena records friday" → Aram's case; no name up front → the one-shot path.
+    const { matches, text } = splitNameAndText(rest, ctx.patients);
+    if (matches.length) return namedFlow("todo", matches, text, ctx);
     return null;
   }
   if (cmd === "contact" || cmd === "contacts") {
@@ -127,13 +185,13 @@ export function continueFlow(input: string, pending: Pending | null, ctx: FlowCt
     const p = ctx.patients.find((x) => x.id === arg);
     switch (tok) {
       case "note-case":
-        return p ? { say: `What should the note for ${p.fullName} say?`, pending: { k: "noteText", patientId: p.id } } : null;
+        return p ? withCase("note", p, pending?.k === "notePick" ? pending.text : undefined, ctx) : null;
       case "todo-plain":
         return { say: "What's the to-do? (add a day if you like: \"order supplies friday\")", pending: { k: "todoText" } };
       case "todo-case-pick":
         return whichCase(ctx, "todo");
       case "todo-case":
-        return p ? { say: `What's the to-do for ${p.fullName}?`, pending: { k: "todoText", patientId: p.id } } : null;
+        return p ? withCase("todo", p, pending?.k === "todoPick" ? pending.text : undefined, ctx) : null;
       case "contact-add":
         return addPrompt();
       case "contact-edit":
@@ -150,9 +208,12 @@ export function continueFlow(input: string, pending: Pending | null, ctx: FlowCt
   if (CANCEL.test(t)) return { say: "Okay, cancelled.", pending: null };
   switch (pending.k) {
     case "notePick":
-      return casePicker(t, ctx, "note");
-    case "todoPick":
-      return casePicker(t, ctx, "todo");
+    case "todoPick": {
+      const next = pending.k === "notePick" ? "note" : "todo";
+      const m = matchPatientsByName(t, ctx.patients);
+      if (m.length === 1) return withCase(next, m[0], pending.text, ctx);
+      return casePicker(t, ctx, next, pending.text);
+    }
     case "noteText":
       return { say: "", pending: null, action: { type: "noteConfirm", patientId: pending.patientId, text: t } };
     case "todoText": {
