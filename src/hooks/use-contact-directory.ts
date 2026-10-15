@@ -149,6 +149,76 @@ export function useContactDirectory() {
     [persist],
   );
 
+  /**
+   * Add many contacts in ONE save (one cloud write, one version-history row).
+   * Merge-safe: first pulls the latest cloud list and unions it with this
+   * device's list by id, so a contact added elsewhere a moment ago survives.
+   * Skips names that already exist in the same category.
+   */
+  const addContactsBulk = useCallback(
+    async (drafts: ContactDraft[]): Promise<{ added: ContactRecord[]; skipped: Array<{ name: string; reason: string }> }> => {
+      let current = loadContactDirectory();
+      try {
+        const { fetchKvValue } = await import("@/lib/kv-cloud");
+        const cloud = await fetchKvValue<unknown>(STORAGE_KEY_CONTACT_DIRECTORY);
+        if (Array.isArray(cloud)) {
+          const { normalizeContactDirectory } = await import("@/lib/contact-directory");
+          const remote = normalizeContactDirectory(cloud);
+          const ids = new Set(current.map((c) => c.id));
+          current = [...current, ...remote.filter((c) => !ids.has(c.id))];
+        }
+      } catch {
+        // Offline: fall back to this device's list (still dual-written below).
+      }
+      const added: ContactRecord[] = [];
+      const skipped: Array<{ name: string; reason: string }> = [];
+      const taken = new Set(current.map((c) => `${c.category.toLowerCase()}|${c.name.toLowerCase()}`));
+      for (const draft of drafts) {
+        const name = draft.name.trim();
+        const category = normalizeCategory(draft.category);
+        const phone = formatUsPhoneInput(draft.phone);
+        if (!name || !phone) {
+          skipped.push({ name: name || "(no name)", reason: "Name and phone are required." });
+          continue;
+        }
+        const key = `${category.toLowerCase()}|${name.toLowerCase()}`;
+        if (taken.has(key)) {
+          skipped.push({ name, reason: "Contact already exists." });
+          continue;
+        }
+        taken.add(key);
+        const { emails, primary: email } = resolveDraftEmails(draft);
+        const subCategory = (draft.subCategory ?? "").trim() || undefined;
+        added.push({
+          id: `${createContactId()}-${added.length}`,
+          name,
+          category,
+          ...(subCategory ? { subCategory } : {}),
+          phone,
+          fax: formatUsPhoneInput(draft.fax ?? ""),
+          email,
+          ...(emails.length ? { emails } : {}),
+          address: (draft.address ?? "").trim(),
+        });
+      }
+      if (added.length) persist([...current, ...added]);
+      return { added, skipped };
+    },
+    [persist],
+  );
+
+  /** Remove exactly these ids in one save (undo of a bulk add). */
+  const removeContactsByIds = useCallback(
+    (ids: string[]): number => {
+      const drop = new Set(ids);
+      const current = loadContactDirectory();
+      const next = current.filter((c) => !drop.has(c.id));
+      if (next.length !== current.length) persist(next);
+      return current.length - next.length;
+    },
+    [persist],
+  );
+
   const updateContact = useCallback(
     (id: string, draft: ContactDraft): UpdateContactResult => {
       const name = draft.name.trim();
@@ -237,6 +307,8 @@ export function useContactDirectory() {
     addContact,
     updateContact,
     removeContact,
+    addContactsBulk,
+    removeContactsByIds,
     resetToDefaults,
   };
 }

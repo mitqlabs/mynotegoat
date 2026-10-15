@@ -4,7 +4,7 @@
  * Run: npx tsx scripts/tests/goat-eval/briefs-slash.test.ts
  */
 import assert from "node:assert/strict";
-import { CHIPS, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
 import type { PracticeData } from "../../../src/lib/goat-practice";
@@ -51,7 +51,18 @@ check("greet 12", () => assert.equal(greetingFor(12), "Good afternoon!"));
 check("greet 16", () => assert.equal(greetingFor(16), "Good afternoon!"));
 check("greet 17", () => assert.equal(greetingFor(17), "Good evening!"));
 check("greet 23", () => assert.equal(greetingFor(23), "Good evening!"));
-check("chips", () => assert.deepEqual([...CHIPS], ["Morning Rundown", "Appointment Check", "Know Your Business"]));
+check("chips", () => assert.deepEqual([...CHIPS], ["Morning Rundown", "Appointment Check", "Quick Biz"]));
+// Roles: admins see all three, everyone else only Morning Rundown.
+check("admin chips", () => assert.deepEqual(chipsFor(true), ["Morning Rundown", "Appointment Check", "Quick Biz"]));
+check("staff chips", () => assert.deepEqual(chipsFor(false), ["Morning Rundown"]));
+check("admin allowed all", () => { for (const k of ["rundown", "apptCheck", "business"] as const) assert.ok(briefAllowed(k, true)); });
+check("staff rundown ok", () => assert.ok(briefAllowed("rundown", false)));
+check("staff no apptCheck", () => assert.equal(briefAllowed("apptCheck", false), false));
+check("staff no business", () => assert.equal(briefAllowed("business", false), false));
+for (const q of ["Quick Biz", "how's business", "business numbers", "Appointment Check", "who needs to be scheduled", "know your business"]) {
+  check(`staff typed "${q}" → admins only`, () => { const k = detectBrief(q); assert.ok(k && !briefAllowed(k, false)); assert.match(ADMIN_ONLY_REPLY, /for admins/); });
+}
+check("quickBiz alias", () => assert.equal(quickBiz, knowYourBusiness));
 check("week end thu", () => assert.equal(endOfWeek(TODAY), "2026-10-18"));
 check("week end sun", () => assert.equal(endOfWeek("2026-10-18"), "2026-10-18"));
 check("week start", () => assert.equal(startOfWeek(TODAY), "2026-10-12"));
@@ -63,7 +74,7 @@ const BRIEFS: Array<[string, ReturnType<typeof detectBrief>]> = [
   ["morning briefing", "rundown"], ["daily summary", "rundown"], ["how does my day look", "rundown"], ["how does today look?", "rundown"], ["what's my day look like", "rundown"],
   ["Appointment Check", "apptCheck"], ["appt check", "apptCheck"], ["who needs to be scheduled", "apptCheck"], ["who needs scheduled", "apptCheck"],
   ["who isn't scheduled for next week", "apptCheck"], ["who needs to be rebooked", "apptCheck"], ["patients not booked next week", "apptCheck"],
-  ["Know Your Business", "business"], ["know my business", "business"], ["how's business", "business"], ["how is business", "business"],
+  ["Quick Biz", "business"], ["quick biz", "business"], ["quickbiz", "business"], ["quick business stats", "business"], ["Know Your Business", "business"], ["know my business", "business"], ["how's business", "business"], ["how is business", "business"],
   ["business numbers", "business"], ["practice stats", "business"], ["office overview", "business"], ["how are we doing", "business"], ["show kpis", "business"],
   ["how many submitted cases do we have", null], ["mark smith paid 3200", null], ["what's john smith's dob", null], ["add a note for john", null],
   ["whats on the schedule today", null], ["hi", null], ["schedule john smith next tuesday", null],
@@ -85,13 +96,15 @@ check("mr no-show hidden", () => assert.doesNotMatch(mr.text, /Foxtrot/));
 check("mr todos", () => { assert.match(mr.text, /To-dos due: 2/); assert.match(mr.text, /Fax records \(overdue, 10\/10\/2026\) · Hannah/); assert.doesNotMatch(mr.text, /Future thing|Done thing/); });
 check("mr unread", () => assert.match(mr.text, /3 unread/));
 check("mr caught up", () => assert.match(morningRundown({ ...data, unreadMessages: 0 }).text, /all caught up/));
-check("mr counts", () => assert.match(mr.text, /4 active · 0 ready to submit · 1 submitted/));
+check("mr no case counts (moved to Quick Biz)", () => assert.doesNotMatch(mr.text, /active ·|submitted/));
 check("mr links", () => assert.deepEqual(mr.links?.map((l) => l.label), ["Open Schedule", "Open To-Do", "Open Messages"]));
 check("mr empty", () => assert.match(morningRundown({ ...data, appointments: [], tasks: [] }).text, /Nothing on the schedule[\s\S]*Nothing due/));
 
 // Know Your Business
 const kyb = knowYourBusiness(data).text;
 const section = (label: string) => kyb.split("\n\n").find((s) => s.startsWith(label)) ?? "";
+check("kyb title", () => assert.match(kyb, /^Quick Biz \(10\/15\/2026\)/));
+check("kyb counts", () => assert.match(kyb, /4 active · 1 submitted · 0 ready to submit/));
 check("kyb total", () => { assert.match(kyb, /4 active · 1 submitted/); assert.match(kyb, /2 new patients this month/); assert.match(kyb, /\$1,500 collected this month/); });
 check("kyb visits", () => assert.match(kyb, /2 visits this week · 3 this month/));
 check("kyb north", () => { const s = section("Mock North"); assert.match(s, /3 active · 0 submitted/); assert.match(s, /1 new patients/); assert.match(s, /2 visits this week · 3 this month/); assert.match(s, /\$0 collected/); });
@@ -105,7 +118,9 @@ check("sq /no", () => assert.equal(slashQuery("/no"), "no"));
 check("sq space", () => assert.equal(slashQuery("/note "), null));
 check("sq plain", () => assert.equal(slashQuery("note"), null));
 check("sq mid", () => assert.equal(slashQuery("a/b"), null));
-check("sm all", () => assert.deepEqual(slashMatches("").map((c) => c.cmd), ["note", "todo"]));
+check("sm all", () => assert.deepEqual(slashMatches("").map((c) => c.cmd), ["note", "todo", "contact"]));
+check("sm c", () => assert.deepEqual(slashMatches("c").map((c) => c.cmd), ["contact"]));
+check("sq date text", () => { assert.equal(slashQuery("10/20"), null); assert.equal(slashQuery("see 10/"), null); assert.equal(parseSlash("call on 10/20"), null); });
 check("sm n", () => assert.deepEqual(slashMatches("n").map((c) => c.cmd), ["note"]));
 check("sm T", () => assert.deepEqual(slashMatches("T").map((c) => c.cmd), ["todo"]));
 check("sm x", () => assert.deepEqual(slashMatches("x"), []));

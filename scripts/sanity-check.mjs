@@ -224,6 +224,33 @@ walk(ROOT);
   }
 }
 
+// Rule 7: every G.O.A.T. feature updates the Handbook (src/lib/handbook-goat.ts).
+//   a) the chapter exists and is wired into the handbook;
+//   b) the "/" list is generated from SLASH_COMMANDS (no hand-written copy);
+//   c) when the branch changes G.O.A.T. feature code vs origin/main, it must
+//      also change handbook-goat.ts. Skipped when git/origin isn't available.
+{
+  const hbPath = join(ROOT, "lib/handbook-goat.ts");
+  let hb = "";
+  try { hb = readFileSync(hbPath, "utf8"); } catch { /* reported below */ }
+  if (!hb) failures.push({ file: "src/lib/handbook-goat.ts", rule: "G.O.A.T. handbook missing", hint: "Restore the Handbook → G.O.A.T. chapter." });
+  else {
+    if (!/SLASH_COMMANDS\.map/.test(hb)) failures.push({ file: "src/lib/handbook-goat.ts", rule: "G.O.A.T. handbook: command list not generated", hint: "Build the \"/\" command list from SLASH_COMMANDS so it stays in sync." });
+    if (!readFileSync(join(ROOT, "lib/handbook-content.ts"), "utf8").includes("goatHandbookChapter")) failures.push({ file: "src/lib/handbook-content.ts", rule: "G.O.A.T. handbook not wired", hint: "Add goatHandbookChapter to a handbook chapter list." });
+  }
+  try {
+    const { execSync } = await import("node:child_process");
+    const base = execSync("git merge-base HEAD origin/main", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    const changed = execSync(`git diff --name-only ${base} HEAD; git diff --name-only HEAD; git ls-files -o --exclude-standard src`, { stdio: ["ignore", "pipe", "ignore"], shell: "/bin/bash" }).toString().split("\n").filter(Boolean);
+    const goatCode = changed.filter((f) => /^src\/(lib\/goat-[^/]+\.ts|lib\/goat-ai\/|components\/(global-goat|goat-)[^/]*\.tsx)/.test(f));
+    if (goatCode.length && !changed.includes("src/lib/handbook-goat.ts")) {
+      failures.push({ file: goatCode.slice(0, 3).join(", "), rule: "G.O.A.T. change without Handbook update", hint: "Every new G.O.A.T. feature must update Handbook → G.O.A.T. (src/lib/handbook-goat.ts). Add or adjust the task that describes it. See CONTRIBUTING.md." });
+    }
+  } catch {
+    // No git / no origin (e.g. a tarball build): only a) and b) apply.
+  }
+}
+
 if (failures.length === 0) {
   console.log("✓ sanity-check: all rules pass");
   process.exit(0);
