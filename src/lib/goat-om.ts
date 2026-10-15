@@ -388,7 +388,7 @@ const byName = (a: OmPatient, b: OmPatient) => {
 function answerQuestion(q: string, data: OmData): OmReply | null {
   const l = q.toLowerCase();
   // Checks we're waiting on (Submitted cases), optionally from one attorney.
-  if (/\b(checks?|payments?|money|paid)\b/.test(l) && /\b(wait|waiting|pending|outstanding|owed|owe|expect|haven't|havent|still|not paid|unpaid|out)\b/.test(l) || /\bsubmitted\b.*\b(from|with|by|for)\b/.test(l) || /\b(owe|owes|owing|still out|outstanding)\b/.test(l)) {
+  if (/\b(checks?|payments?|money|paid)\b/.test(l) && /\b(wait|waiting|pending|outstanding|owed|owe|expect|haven't|havent|still|not paid|unpaid|out)\b/.test(l) || /\bsubmitted\b.*\b(from|with|by|for)\b/.test(l) || /\b(owe|owed|owes|owing|still out|outstanding)\b/.test(l)) {
     const tail = q.trim().replace(/[?.!]+$/, "");
     const fm0 = /.*\b(?:from|by|with)\s+(?:the\s+)?([a-z][a-z .&'-]+?)(?:\s+(?:cases?|right now|still|yet|atm))?$/i.exec(tail) ?? /.*\b(?:for|on)\s+(?:the\s+)?([a-z][a-z .&'-]+?)(?:\s+(?:cases?|right now|still|yet|atm))?$/i.exec(tail);
     const fm = fm0 && !/^(us|them|checks?|payments?|money|the month|this month|me|now|it)\b/i.test(fm0[1].trim()) ? fm0 : null;
@@ -431,7 +431,7 @@ function answerQuestion(q: string, data: OmData): OmReply | null {
     const total = ps.reduce((s, p) => s + p.paid, 0);
     return { kind: "answer", text: `${money(total)} came in ${r.label} from ${ps.length} case${ps.length === 1 ? "" : "s"}${ps.length ? ":\n" + listNames(ps, (p) => `${money(p.paid)} on ${p.paidDate}`) : "."}`, listed: ps.map((p) => p.id) };
   }
-  if (/\bwho\b.*\b(paid|pay|paying|checks?|payments?)\b|\b(list|show)\b.*\bpaid\b|\bpaid cases\b/.test(l) && !/\bnot\b|hasn'?t|haven'?t|waiting/.test(l)) {
+  if (/\b(who|how many)\b.*\b(paid|pay|paying|checks?|payments?)\b|\b(list|show)\b.*\bpaid\b|\bpaid cases\b/.test(l) && !/\bnot\b|hasn'?t|haven'?t|waiting/.test(l)) {
     const r = range ?? rangeFor("this month", data.today)!;
     const ps = paidIn(data, r).sort(byName);
     return { kind: "answer", text: ps.length ? `${ps.length} paid ${r.label} (${money(ps.reduce((s, p) => s + p.paid, 0))}):\n${listNames(ps, (p) => `${money(p.paid)} on ${p.paidDate}`)}` : `Nobody paid ${r.label}.`, listed: ps.map((p) => p.id) };
@@ -463,7 +463,7 @@ export function omTurn(raw: string, data: OmData, mem: OmMemory, followUps = tru
   const l = one.toLowerCase();
   if (!one) return null;
   // Leave messages, notes and bookings to the rest of G.O.A.T.
-  if (/^(tell|let|message|msg|text|ask|remind|ping|email|dm)\b/i.test(one) || /\b(add|put|write|leave|log)\s+(a\s+)?(quick\s+)?note\b/i.test(one) || /^note\b/i.test(one) || /^(book|schedule|reschedule)\b/i.test(one) || /\b(message|msg|dm|email|e-mail)\b/i.test(one) || (/^how many\b/i.test(one) && !/\b(seen|been in|come in|came in)\b/i.test(one))) return null;
+  if (/^(tell|let|message|msg|text|ask|remind|ping|email|dm)\b/i.test(one) || /\b(add|put|write|leave|log)\s+(a\s+)?(quick\s+)?note\b/i.test(one) || /^note\b/i.test(one) || /^(book|schedule|reschedule)\b/i.test(one) || /\b(message|msg|dm|email|e-mail)\b/i.test(one) || (/^how many\b/i.test(one) && !/\b(seen|been in|come in|came in|checks?|waiting|owe|owed|owes|owing|outstanding|ready to (bill|submit))\b/i.test(one) && !(/\bpaid\b/i.test(one) && /\b(today|yesterday|this|last|past|in (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))/i.test(one)))) return null;
 
   // Undo / same / add-more: only right after one of our own actions.
   if (followUps && mem.lastPlan) {

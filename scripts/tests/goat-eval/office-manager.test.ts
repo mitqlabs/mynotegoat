@@ -211,7 +211,12 @@ const cases: Array<[string, Check]> = [
   ["what's on the schedule today", notMine],
   ["hi", notMine],
   ["shoot hannah a message saying kara jones paid", notMine],
-  ["how many cases are waiting on checks", notMine],
+  ["how many cases are waiting on checks", answer(/4 submitted cases waiting on checks/, /\$12,700/)],
+  ["how many checks are we waiting on from nazaryan", answer(/2 submitted cases/, /Nazaryan Law/)],
+  ["how many cases are still owed", answer(/submitted cases/)],
+  ["how many people paid this month", answer(/3 paid this month/)],
+  ["how many are ready to bill", answer(/1 ready to submit/)],
+  ["how many active patients haven't been seen in 2 weeks", answer(/not seen in 2 weeks/)],
   ["how many paid cases do we have", notMine],
   ["thanks", notMine],
 ];

@@ -764,6 +764,8 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
 
   const nextPatients = patients.map((entry) => (entry.id === normalizedPatientId ? nextPatient : entry));
   persistPatients(nextPatients);
+  // Open patient pages (and other views) pick up the change — e.g. G.O.A.T. marking a case paid.
+  if (typeof window !== "undefined") void import("@/lib/local-sync").then((m) => m.notifyChange(PATIENTS_STORAGE_KEY));
   if (patch.caseStatus !== undefined && patch.caseStatus !== existingPatient.caseStatus) {
     logPatientActivity({
       action: "patient.case_status",
