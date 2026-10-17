@@ -32,7 +32,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(onlyPrior)), JSON.parse(JSON.stringif
 const pcf = readFileSync("src/components/patient-case-file.tsx", "utf8");
 assert.match(pcf, /renderPriorCareControls\("xray"\)/);
 assert.match(pcf, /renderPriorCareControls\("mri"\)/);
-assert.match(pcf, /if \(checked\) openPriorImagingEditor\(mode\)/);
+// User 10/17: ticking Completed Prior Care must NOT open the findings editor; "+ Findings" opens it.
+const priorUi = pcf.slice(pcf.indexOf("const renderPriorCareControls"), pcf.indexOf("const saveImagingEditor"));
+assert.doesNotMatch(priorUi.slice(priorUi.indexOf("onChange="), priorUi.indexOf("Completed Prior Care\n")), /openPriorImagingEditor|openImagingEditor/, "checkbox only saves the flag");
+assert.match(priorUi, /data-testid=\{`prior-\$\{mode\}-add`\}[\s\S]{0,120}onClick=\{\(event\) => openPriorImagingEditor\(mode, event\)\}[\s\S]{0,60}\+ Findings/, "+ Findings opens the editor");
+assert.doesNotMatch(pcf, /\+ Add findings|\+ Add Findings|\+ Add another/i, "no 'Add' in the findings button");
 const dash = readFileSync("src/app/(portal)/dashboard/page.tsx", "utf8");
 assert.equal((dash.match(/if \(ref\.isPrior === true\) continue;/g) ?? []).length, 2, "referral stats skip prior X-ray and MRI");
 console.log("PASS prior-outside-xray (mock data)");

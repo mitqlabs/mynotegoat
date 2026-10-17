@@ -3203,9 +3203,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   /**
    * "Completed Prior Care" checkbox + inline Prior / outside study links.
-   * Shared by X-ray and MRI so both behave identically: checking opens the
-   * prior-study editor; Cancel keeps the box checked with no entry;
-   * unchecking keeps any prior entries (nothing is removed).
+   * Shared by X-ray and MRI so both behave identically. Checking the box
+   * only saves the flag — it does NOT open the findings editor (user
+   * 10/17); "+ Findings" opens it when they're ready. Unchecking keeps any
+   * prior entries (nothing is removed).
    */
   const renderPriorCareControls = (mode: ImagingMode) => {
     const overrideKey = mode === "xray" ? "xray" : "mriCt";
@@ -3220,7 +3221,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             onChange={(event) => {
               const checked = event.target.checked;
               void runOverrideToggle(overrideKey, "completedPriorCare", checked);
-              if (checked) openPriorImagingEditor(mode);
             }}
             type="checkbox"
           />
@@ -3244,7 +3244,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               onClick={(event) => openPriorImagingEditor(mode, event)}
               type="button"
             >
-              {priorEntries.length > 0 ? "+ Add another" : "+ Add findings"}
+              + Findings
             </button>
           </span>
         )}

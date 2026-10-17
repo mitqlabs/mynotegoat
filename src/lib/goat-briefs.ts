@@ -1,3 +1,4 @@
+import type { PipelineKind } from "@/lib/goat-pipeline";
 /**
  * G.O.A.T. office briefs (rules only, read-only): greeting + chips, Morning
  * Rundown, Appointment Check, Quick Biz, and the "/" command menu.
@@ -74,7 +75,7 @@ export interface BriefAnswer {
 export const todoHref = (id: string) => `/patients?view=toDo&task=${encodeURIComponent(id)}`;
 export const TODO_PAGE_HREF = "/patients?view=toDo";
 
-export const CHIPS = ["Morning Rundown", "Appointment Check", "Quick Biz"] as const;
+export const CHIPS = ["Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"] as const;
 /** Appointment Check and Quick Biz are for admins (workspace owner/admin). */
 export const ADMIN_BRIEFS = new Set<BriefKind>(["apptCheck", "business"]);
 export type BriefKind = "rundown" | "apptCheck" | "business";
@@ -242,13 +243,21 @@ export function todoLine(t: BriefTask, today: string): string {
 }
 
 // ---- /view ----
-export type ViewTarget = "todo" | "schedule" | "messages" | "apptCheck" | "business";
+export type ViewTarget = "todo" | "schedule" | "messages" | "apptCheck" | "business" | "review" | `pipeline:${PipelineKind}`;
 export const VIEW_TARGETS: Array<{ target: ViewTarget; word: string; hint: string; admin?: boolean }> = [
   { target: "todo", word: "todo", hint: "All open to-dos" },
   { target: "schedule", word: "schedule", hint: "Today's schedule" },
   { target: "messages", word: "messages", hint: "Unread team messages" },
   { target: "apptCheck", word: "appointment check", hint: "Who needs to be scheduled", admin: true },
   { target: "business", word: "quick biz", hint: "Cases, visits, collections", admin: true },
+  { target: "review", word: "case review", hint: "What each case still needs (Case Flow)", admin: true },
+  { target: "pipeline:overview", word: "pipeline", hint: "Case pipeline counts", admin: true },
+  { target: "pipeline:needsMri", word: "needs mri", hint: "Who needs an MRI referral", admin: true },
+  { target: "pipeline:mriResults", word: "mri results", hint: "Waiting on MRI results", admin: true },
+  { target: "pipeline:waitingReport", word: "reports", hint: "Waiting for reports", admin: true },
+  { target: "pipeline:readyToSubmit", word: "ready to submit", hint: "Cases ready to submit", admin: true },
+  { target: "pipeline:submitted", word: "submitted", hint: "Submitted — checks waiting", admin: true },
+  { target: "pipeline:missing", word: "missing", hint: "Cases missing attorney / DOL / initial exam", admin: true },
 ];
 /** Targets this person may see. */
 export function viewTargetsFor(isAdmin: boolean) {
@@ -271,6 +280,14 @@ export function parseViewTarget(rest: string): ViewTarget | null {
   if (/^(messages?|unread|msgs?|inbox)$/.test(t)) return "messages";
   if (/^(appointment check|appt check|appointments check|apptcheck)$/.test(t)) return "apptCheck";
   if (/^(quick ?biz|business|kyb|know your business)$/.test(t)) return "business";
+  if (/^(case )?reviews?$/.test(t)) return "review";
+  if (/^(case )?pipeline$/.test(t)) return "pipeline:overview";
+  if (/^(needs? (an )?mri|mri needed|mri referrals?)$/.test(t)) return "pipeline:needsMri";
+  if (/^mri (results?|reports?|pending)$/.test(t)) return "pipeline:mriResults";
+  if (/^(waiting )?reports?( pending)?$|^waiting for reports?$/.test(t)) return "pipeline:waitingReport";
+  if (/^ready( to submit)?$/.test(t)) return "pipeline:readyToSubmit";
+  if (/^(submitted|checks|waiting for checks)$/.test(t)) return "pipeline:submitted";
+  if (/^missing( pieces| info)?$/.test(t)) return "pipeline:missing";
   return null;
 }
 export function viewTodos(data: BriefData): BriefAnswer {

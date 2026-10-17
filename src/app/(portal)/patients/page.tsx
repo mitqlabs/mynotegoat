@@ -48,6 +48,7 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patient-list-sort";
 import { useClearedTasks } from "@/hooks/use-cleared-tasks";
+import { caseFlowOptions } from "@/lib/case-flow-options";
 import { followUpClearId, taskClearId, type ClearedRecord } from "@/lib/cleared-tasks";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
@@ -1167,34 +1168,15 @@ export default function PatientsPage() {
 
   const followUpItems = useMemo(() => {
     return buildFollowUpItems(filteredPatients, {
+      // Same rules G.O.A.T.'s case-pipeline answers use (lib/case-flow-options).
+      ...caseFlowOptions(followUpSettings, closedCaseStatuses, followUpOverridesByPatientId),
       patientIdsWithVisit,
       // Initial Visit is checked off by the Patient Info Initial Exam date.
       effectiveInitialExam: (patient) => initialExamOf(patient, initialExamIndex),
-      includeXray: followUpSettings.includeXray,
-      includeMriCt: followUpSettings.includeMriCt,
-      includeSpecialist: followUpSettings.includeSpecialist,
-      includeLienLop: followUpSettings.includeLienLop,
-      xrayAppearAuto: followUpSettings.xrayAppearAuto,
-      mriAppearMode: followUpSettings.mriAppearMode,
-      mriAppearDays: followUpSettings.mriAppearDays,
-      specialistAppearWhen: followUpSettings.specialistAppearWhen,
-      xrayClearedBy: followUpSettings.xrayClearedBy,
-      mriCtClearedBy: followUpSettings.mriCtClearedBy,
-      specialistClearedBy: followUpSettings.specialistClearedBy,
-      lienLopClearStatuses: followUpSettings.lienLopClearStatuses,
-      xrayClearStatuses: followUpSettings.xrayClearStatuses,
-      mriCtClearStatuses: followUpSettings.mriCtClearStatuses,
-      specialistClearStatuses: followUpSettings.specialistClearStatuses,
-      xrayNoReportWarningDays: followUpSettings.xrayNoReportWarningDays,
-      mriNoReportWarningDays: followUpSettings.mriNoReportWarningDays,
-      mriNoScheduleWarningDays: followUpSettings.mriNoScheduleWarningDays,
-      specialistNoReportWarningDays: followUpSettings.specialistNoReportWarningDays,
-      specialistNoScheduleWarningDays: followUpSettings.specialistNoScheduleWarningDays,
-      followUpOverrides: followUpOverridesByPatientId,
-      closedCaseStatuses,
       clearedIds,
     });
   }, [
+    followUpSettings,
     closedCaseStatuses,
     filteredPatients,
     patientIdsWithVisit,

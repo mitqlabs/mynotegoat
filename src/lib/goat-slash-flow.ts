@@ -14,6 +14,7 @@
 import { matchPatientsByName } from "@/lib/goat-notes";
 import { CHIPS, detectBrief, parseTodo } from "@/lib/goat-briefs";
 import { isGoatHelpQuestion } from "@/lib/handbook-goat";
+import { detectPipeline, detectReview } from "@/lib/goat-pipeline";
 import { looksLikeContactPaste } from "@/lib/goat-contacts-import";
 
 /**
@@ -27,7 +28,7 @@ export function breaksFlow(text: string, pending?: Pending | null): boolean {
   if (t.startsWith("/") && !t.startsWith(TOKEN)) return true;
   if (t.startsWith("@")) return true;
   if ((CHIPS as readonly string[]).some((c) => c.toLowerCase() === t.toLowerCase())) return true;
-  if (detectBrief(t) || isGoatHelpQuestion(t)) return true;
+  if (detectBrief(t) || detectPipeline(t) || detectReview(t) || isGoatHelpQuestion(t)) return true;
   // A pasted list IS the answer when we asked for contacts.
   return pending?.k !== "contactAdd" && looksLikeContactPaste(t) && t.includes("\n");
 }
