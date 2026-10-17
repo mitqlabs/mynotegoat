@@ -35,6 +35,18 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Office numbers — Appointment Check, Quick Biz, case counts (\"how many submitted cases\") and money questions (\"who owes us\", \"what got paid this month\") — are for the owner and admins. Anyone else gets a polite \"that's for admins\". Right after sign-in, while G.O.A.T. is still checking your role, it shows only Morning Rundown and says \"still checking your access\" if you ask for numbers.",
     },
     {
+      heading: "Case pipeline and Case Review (admins)",
+      steps: [
+        "Ask in plain words: \"who needs an mri referral\", \"waiting on mri results\", \"waiting for report\", \"what's ready to submit\", \"waiting for checks\" (= Submitted), \"which cases have no attorney\". \"case pipeline\" gives all the counts.",
+        "Each list shows the count and the patients (tap a name to open them), most urgent first: longest waiting on Case Flow, earliest discharge for Ready to submit, oldest R&B Sent (with days waiting) for Submitted.",
+        "After each list, 1–2 chips offer the next step (e.g. Needs MRI → \"Waiting on MRI results?\"; Waiting for reports → \"Ready to submit?\").",
+        "Case Review (greeting chip, \"do a case review\", \"what's missing\", /view case review): counts per Case Flow need — e.g. X-rays: 4, MRI/CT: 7, Specialist: 3. Tap a count to see those patients, longest open first.",
+        "\"case review for <name>\" lists everything that case still needs on Case Flow.",
+        "/view also takes: case review, pipeline, needs mri, mri results, reports, ready to submit, submitted, missing.",
+      ],
+      why: "These use the same rules as Patient List → Case Flow and your case statuses — nothing new to set up — and tasks you've cleared with Clear task stay out. Narrative reports aren't a tracked step, so \"waiting for report\" means the X-ray, MRI/CT and specialist reports Case Flow tracks. Case lists are for the owner and admins, like other case numbers.",
+    },
+    {
       heading: "Imaging findings (MRI, CT, X-ray)",
       steps: [
         "Ask \"mri findings\" or \"lumbar mri\". G.O.A.T. reads the impression and lists it by region (Cervical, Thoracic, Lumbar), one line per level in spine order: size, side, what it is, and what it presses on — e.g. \"C5-6: 3 mm left paracentral disc herniation — cord compression, neuroforaminal narrowing (L>R)\".",

@@ -56,6 +56,12 @@ import { notifyChange } from "@/lib/local-sync";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { clearedIdSet, taskClearId } from "@/lib/cleared-tasks";
+import { caseReviewAnswer, detectPipeline, detectReview, pipelineAnswer, type PipelineKind, type ReviewAsk } from "@/lib/goat-pipeline";
+import { buildFollowUpItems } from "@/lib/follow-up-queue";
+import { caseFlowOptions } from "@/lib/case-flow-options";
+import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
+import { loadCaseStatuses } from "@/lib/case-statuses";
+import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -671,6 +677,60 @@ export function GlobalGoatPopup({
       })),
     };
   };
+  /** Case pipeline lists: the Case Flow screen's own rules (lib/case-flow-options), cleared tasks left out. */
+  const pipelineData = () => {
+    const d = practiceData();
+    const index = buildInitialExamIndex(d.appointments);
+    const pts = d.patients as unknown as PatientRecord[];
+    const closed = practiceOverride ? [] : loadCaseStatuses().filter((c) => c.isCaseClosed).map((c) => c.name);
+    const items = buildFollowUpItems(pts.filter((p) => !p.isCashPatient), practiceOverride ? {} : caseFlowOptions(loadDashboardWorkspaceSettings().patientFollowUp, closed, loadPatientFollowUpOverridesMap()));
+    return {
+      today: d.today,
+      items,
+      closedStatuses: closed,
+      patients: pts.map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, attorney: p.attorney, dateOfLoss: p.dateOfLoss, initialExam: p.matrix?.initialExam?.trim() || patientInitialExamIso(p, index), rbSent: p.matrix?.rbSent, discharge: p.matrix?.discharge, cash: Boolean(p.isCashPatient) })),
+    };
+  };
+  /** Admin-only (case status lists, like PR #96): staff get the polite reply. */
+  const runPipeline = (kind: PipelineKind, question: string | null) => {
+    if (question !== null) push({ role: "user", text: question, practice: true });
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      return;
+    }
+    const a = pipelineAnswer(kind, pipelineData());
+    push({ role: "goat", text: a.text, practice: true, todoRows: a.rows, textAfter: a.textAfter, choices: a.choices });
+  };
+  const runReview = (ask: ReviewAsk, question: string | null) => {
+    if (question !== null) push({ role: "user", text: question, practice: true });
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      return;
+    }
+    const d = pipelineData();
+    let patient: { id: string; fullName: string } | undefined;
+    if (ask.mode === "patient") {
+      const m = matchPatientsByName(ask.name, d.patients);
+      if (m.length > 1) {
+        push({ role: "goat", text: `Which case? (${m.length} match)`, practice: true, choices: m.slice(0, 8).map((p) => ({ label: `${p.fullName} · ${p.caseStatus || "No status"}`, question: `case review for ${p.fullName}` })) });
+        return;
+      }
+      patient = m[0];
+    }
+    const a = caseReviewAnswer(ask, d, patient);
+    push({ role: "goat", text: a.text, practice: true, todoRows: a.rows, textAfter: a.textAfter, choices: a.choices });
+  };
+  const tryPipeline = (question: string): boolean => {
+    const review = detectReview(question);
+    if (review) {
+      runReview(review, question);
+      return true;
+    }
+    const kind = detectPipeline(question);
+    if (!kind) return false;
+    runPipeline(kind, question);
+    return true;
+  };
   /** "/view <target>": read-only lists (admin targets gated). */
   const runView = (question: string, rest: string) => {
     push({ role: "user", text: question, practice: true });
@@ -680,7 +740,15 @@ export function GlobalGoatPopup({
       push({ role: "goat", text: rest ? `I can't show "${rest}". What would you like to see?` : "What would you like to see?", practice: true, choices: opts.map((v) => ({ label: v.word[0].toUpperCase() + v.word.slice(1), question: `/view ${v.word}` })) });
       return;
     }
-    const kind: Record<ViewTarget, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
+    if (target === "review") {
+      runReview({ mode: "summary" }, null);
+      return;
+    }
+    if (target.startsWith("pipeline:")) {
+      runPipeline(target.slice("pipeline:".length) as PipelineKind, null);
+      return;
+    }
+    const kind: Record<string, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
     if (!briefAllowed(kind[target], isGoatAdmin)) {
       push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true });
       return;
@@ -693,7 +761,7 @@ export function GlobalGoatPopup({
   const runChip = (chip: string) => {
     flowRef.current = null;
     if (job || practiceBusy) return;
-    tryBrief(chip);
+    if (!tryBrief(chip)) tryPipeline(chip);
   };
   const tryBrief = (question: string): boolean => {
     const kind = detectBrief(question);
@@ -901,6 +969,11 @@ export function GlobalGoatPopup({
     if (!opts && !isFlowToken(question) && detectBrief(question)) {
       flowRef.current = null;
       if (tryBrief(question)) return;
+    }
+    // Case pipeline ("who needs an mri", "ready to submit?", chips) — office-wide, admin-only.
+    if (!opts && !isFlowToken(question) && (detectReview(question) || detectPipeline(question))) {
+      flowRef.current = null;
+      if (tryPipeline(question)) return;
     }
     if (!opts && tryFlow(question)) return;
     if (!opts && tryContactPaste(question)) return;

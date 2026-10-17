@@ -58,9 +58,9 @@ check("greet 12", () => assert.equal(greetingFor(12), "Good afternoon!"));
 check("greet 16", () => assert.equal(greetingFor(16), "Good afternoon!"));
 check("greet 17", () => assert.equal(greetingFor(17), "Good evening!"));
 check("greet 23", () => assert.equal(greetingFor(23), "Good evening!"));
-check("chips", () => assert.deepEqual([...CHIPS], ["Morning Rundown", "Appointment Check", "Quick Biz"]));
+check("chips", () => assert.deepEqual([...CHIPS], ["Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
 // Roles: admins see all three, everyone else only Morning Rundown.
-check("admin chips", () => assert.deepEqual(chipsFor(true), ["Morning Rundown", "Appointment Check", "Quick Biz"]));
+check("admin chips", () => assert.deepEqual(chipsFor(true), ["Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
 check("staff chips", () => assert.deepEqual(chipsFor(false), ["Morning Rundown"]));
 check("admin allowed all", () => { for (const k of ["rundown", "apptCheck", "business"] as const) assert.ok(briefAllowed(k, true)); });
 check("staff rundown ok", () => assert.ok(briefAllowed("rundown", false)));
@@ -170,7 +170,7 @@ check("view messages", () => { assert.match(viewMessages(data).text, /3 unread/)
 const VT: Array<[string, string | null]> = [["todo", "todo"], ["todos", "todo"], ["to do", "todo"], ["tasks", "todo"], ["schedule", "schedule"], ["today", "schedule"], ["schedule today", "schedule"], ["messages", "messages"], ["unread", "messages"], ["appointment check", "apptCheck"], ["appt check", "apptCheck"], ["quick biz", "business"], ["quickbiz", "business"], ["business", "business"], ["", null], ["banana", null]];
 for (const [q, want] of VT) check(`view target "${q}"`, () => assert.equal(parseViewTarget(q), want));
 check("viewQuery", () => { assert.equal(viewQuery("/view "), ""); assert.equal(viewQuery("/view qu"), "qu"); assert.equal(viewQuery("/view"), null); assert.equal(viewQuery("see /view x"), null); });
-check("view menu admin", () => assert.deepEqual(viewTargetsFor(true).map((v) => v.word), ["todo", "schedule", "messages", "appointment check", "quick biz"]));
+check("view menu admin", () => assert.deepEqual(viewTargetsFor(true).map((v) => v.word), ["todo", "schedule", "messages", "appointment check", "quick biz", "case review", "pipeline", "needs mri", "mri results", "reports", "ready to submit", "submitted", "missing"]));
 check("view menu staff", () => assert.deepEqual(viewTargetsFor(false).map((v) => v.word), ["todo", "schedule", "messages"]));
 check("view menu filter", () => { assert.deepEqual(viewMatches("q", true).map((v) => v.target), ["business"]); assert.deepEqual(viewMatches("q", false), []); assert.deepEqual(viewMatches("app", true).map((v) => v.target), ["apptCheck"]); });
 check("mr unread", () => assert.match(mr.text, /3 unread/));
