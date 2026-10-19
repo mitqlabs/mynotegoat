@@ -100,6 +100,19 @@ export function setGlobalGoatOpen(open: boolean) {
   popupOpen = open;
   openListeners.forEach((l) => l());
 }
+/** Text waiting to be sent once the popup is open (from the patient-page box). */
+let pendingAsk: string | null = null;
+/** Open the global G.O.A.T. chat and send `text` there, as if typed. On a
+ *  patient page its "him / her / this patient" is that page's patient. */
+export function askGlobalGoat(text: string) {
+  pendingAsk = text;
+  setGlobalGoatOpen(true);
+}
+function takePendingAsk(): string | null {
+  const t = pendingAsk;
+  pendingAsk = null;
+  return t;
+}
 function useGlobalGoatOpen(): boolean {
   return useSyncExternalStore(
     (l) => {
@@ -1769,6 +1782,19 @@ export function GlobalGoatPopup({
     }
     startAnswer(p, question, Boolean(current));
   };
+  // Patient-page box handed us an action ("remind me to do his report"): send it here.
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+  const isOpenNow = useGlobalGoatOpen();
+  useEffect(() => {
+    if (!(isOpenNow || fullScreen)) return;
+    const text = takePendingAsk();
+    if (!text) return;
+    const t = window.setTimeout(() => sendRef.current(text), 0);
+    return () => window.clearTimeout(t);
+  }, [isOpenNow, fullScreen]);
 
   // A tapped patient answers the ORIGINAL question; nothing needs retyping.
   const pick = (msg: ChatMessage, patientId: string | undefined, question?: string, showMore?: boolean) => {
