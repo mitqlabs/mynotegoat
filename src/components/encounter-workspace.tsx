@@ -23,7 +23,7 @@ import {
 import { QuestionnaireInsertBanner } from "@/components/questionnaire-insert-banner";
 import { logActivity } from "@/lib/activity-log";
 import { refreshFormRequests } from "@/hooks/use-form-requests";
-import { answersToMacroFills, findSectionMacro } from "@/lib/patient-forms";
+import { answersToMacroFills, customAnswersHtml, findSectionMacro } from "@/lib/patient-forms";
 import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
@@ -2104,7 +2104,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     const snapshot = row.raw_submission?.snapshot ?? row.snapshot;
     const answers = row.raw_submission?.answers ?? row.answers ?? {};
     const fills = answersToMacroFills(snapshot, answers);
-    if (!fills.length) {
+    // The practice's own questions (not from a macro) go in as plain "Question: answer" lines.
+    const customHtml = customAnswersHtml(snapshot, answers);
+    if (!fills.length && !customHtml) {
       setMessage("That questionnaire has no answers to insert.");
       return;
     }
@@ -2143,6 +2145,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       });
       applied += 1;
     }
+    if (customHtml) appendSoapSection(selectedEncounter.id, "objective", customHtml);
     const { added, removed } = reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
     setActiveSection("objective");
     const res = await manageFormRequest(row.id, "inserted", selectedEncounter.id);
@@ -2155,7 +2158,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       patientName: selectedEncounter.patientName,
     });
     setMessage(
-      `Questionnaire inserted into Objective: ${applied} macro${applied === 1 ? "" : "s"}.` +
+      `Questionnaire inserted into Objective: ${applied} macro${applied === 1 ? "" : "s"}${customHtml ? " + your own questions" : ""}.` +
         (lost.length ? ` Not found in your Objective macros: ${lost.join(", ")}.` : "") +
         (res.ok ? "" : " (Couldn't mark it reviewed — it may show again; dismiss it from the patient file.)") +
         formatChargeDelta(added, removed),

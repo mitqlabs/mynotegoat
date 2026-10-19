@@ -234,6 +234,33 @@ export function PatientFormPage({ token }: { token: string }) {
     const picks = a.picks ?? [];
     const label = pick(q.label, q.labelEs);
     const onlyNo = q.kind === "single" && q.options.length === 1 && /^no\b/i.test(q.options[0].label);
+    if (q.kind === "text" && q.input === "long") {
+      return (
+        <label className="block" key={q.key}>
+          <span className="mb-2 block font-semibold">{label}</span>
+          <textarea
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3"
+            onChange={(e) => setAnswer(q.key, { other: e.target.value })}
+            placeholder={t.typeAnswer}
+            rows={4}
+            value={a.other ?? ""}
+          />
+        </label>
+      );
+    }
+    if (q.kind === "text" && q.input === "number") {
+      return (
+        <label className="block" key={q.key}>
+          <span className="mb-2 block font-semibold">{label}</span>
+          <input
+            className="w-40 rounded-xl border border-slate-300 bg-white px-4 py-3"
+            inputMode="decimal"
+            onChange={(e) => setAnswer(q.key, { other: e.target.value.replace(/[^\d.,-]/g, "").slice(0, 14) })}
+            value={a.other ?? ""}
+          />
+        </label>
+      );
+    }
     if (q.kind === "text") {
       return (
         <label className="block" key={q.key}>

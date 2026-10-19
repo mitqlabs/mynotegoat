@@ -30,9 +30,36 @@ export interface FormQuestionOverride {
   optionLabelsEs?: Record<string, string>;
 }
 
+/** A question the practice writes itself (not from a macro). */
+export type CustomQuestionType = "short" | "long" | "yesno" | "single" | "multi" | "number";
+export const CUSTOM_QUESTION_TYPES: Array<{ value: CustomQuestionType; label: string }> = [
+  { value: "short", label: "Short answer" },
+  { value: "long", label: "Long answer" },
+  { value: "yesno", label: "Yes / No" },
+  { value: "single", label: "Pick one" },
+  { value: "multi", label: "Pick any" },
+  { value: "number", label: "Number" },
+];
+
+export interface CustomQuestion {
+  id: string;
+  label: string;
+  labelEs?: string;
+  type: CustomQuestionType;
+  /** Choices for "single" / "multi" (one per line in the builder). */
+  options?: string[];
+  /** Off = kept in the form but not asked. */
+  enabled: boolean;
+}
+
+/** "macro" = one of the practice's Objective macros; "custom" = the practice's own questions. */
+export type FormSectionKind = "macro" | "custom";
+
 export interface FormSection {
   id: string;
-  /** The Objective macro's button name, e.g. "MVC HX". Matched loosely (case, "&"/"and", plural). */
+  /** Missing = "macro" (forms saved before custom questions existed). */
+  kind?: FormSectionKind;
+  /** The Objective macro's button name, e.g. "MVC HX". Matched loosely (case, "&"/"and", plural). Empty for custom sections. */
   macroName: string;
   /** Heading the patient sees. Empty = a friendly default for the macro. */
   title: string;
@@ -43,6 +70,8 @@ export interface FormSection {
   onlyQuestions?: string[];
   /** Per-question wording / hide, keyed by macro question id. */
   questions?: Record<string, FormQuestionOverride>;
+  /** Custom sections: the practice's own questions, in order. */
+  customQuestions?: CustomQuestion[];
 }
 
 export interface FormTemplate {
@@ -52,7 +81,9 @@ export interface FormTemplate {
   intro: string;
   introEs?: string;
   sections: FormSection[];
-  /** Ships with the app (can be edited, not hard-deleted). */
+  /** Turned off: kept, but not offered in Send form. */
+  disabled?: boolean;
+  /** Legacy flag from the first preview (no form ships with the app any more). */
   builtIn?: boolean;
   /** Tombstone so a merge from another computer can't bring it back. */
   deleted?: boolean;
@@ -60,44 +91,44 @@ export interface FormTemplate {
   updatedAt: string;
 }
 
-// ---------------------------------------------------------------------------
-// Default "New Patient Questionnaire"
-// ---------------------------------------------------------------------------
-
-export const NEW_PATIENT_FORM_ID = "form-new-patient-questionnaire";
 const EPOCH = "2026-10-19T00:00:00.000Z";
 
-export function getDefaultPatientForms(): FormTemplate[] {
-  const s = (id: string, macroName: string, title: string, titleEs: string, extra: Partial<FormSection> = {}): FormSection => ({
-    id,
-    macroName,
-    title,
-    titleEs,
-    enabled: true,
-    includeWhen: "always",
-    ...extra,
-  });
-  return [
-    {
-      id: NEW_PATIENT_FORM_ID,
-      name: "New Patient Questionnaire",
-      intro: "Please answer a few questions before your first visit. It takes about 5 minutes. Your answers save as you go.",
-      introEs: "Por favor conteste unas preguntas antes de su primera visita. Toma unos 5 minutos. Sus respuestas se guardan mientras avanza.",
-      builtIn: true,
-      createdAt: EPOCH,
-      updatedAt: EPOCH,
-      sections: [
-        s("mvc-hx", "MVC HX", "About the accident", "Sobre el accidente"),
-        // Only for spinal decompression cases; questions it shares with MVC HX are asked once.
-        s("mvc-hx-sd", "MVC HX SD", "Care after the accident", "Atención después del accidente", { includeWhen: "decompression" }),
-        // Blood pressure / heart rate are taken in the office.
-        s("vitals", "Vitals", "Height and weight", "Estatura y peso", { onlyQuestions: ["height", "weight"] }),
-        s("medical-family-hx", "Medical & Family HX", "Your health history", "Su historial médico"),
-        s("functional-limitations", "Functional Limitations", "Daily activities", "Actividades diarias"),
-        s("chief-complaints", "Chief Complaints", "Where it hurts", "Dónde le duele"),
-      ],
-    },
-  ];
+// NOTE: no form ships with the app. Every practice starts with zero forms and
+// builds its own (Settings -> Forms). An owner's existing questionnaire is a
+// saved cloud form, seeded per workspace by scripts/seed/patient-forms-seed.mjs.
+
+export function macroSection(id: string, macroName: string): FormSection {
+  return { id, kind: "macro", macroName, title: macroName, enabled: true, includeWhen: "always" };
+}
+
+export function customSection(id: string, title = "More questions"): FormSection {
+  return { id, kind: "custom", macroName: "", title, enabled: true, includeWhen: "always", customQuestions: [] };
+}
+
+export const isCustomSection = (s: Pick<FormSection, "kind">) => s.kind === "custom";
+
+/** Builder helper: a new, empty form. */
+export function blankForm(id: string, now: string): FormTemplate {
+  return { id, name: "Untitled form", intro: "Please answer a few questions before your visit. Your answers save as you go.", sections: [], createdAt: now, updatedAt: now };
+}
+
+/** A copy with fresh ids everywhere (Duplicate), never sharing ids with the original. */
+export function duplicateForm(f: FormTemplate, ids: { form: string; next: () => string }, now: string): FormTemplate {
+  const copy = structuredClone(f);
+  return {
+    ...copy,
+    id: ids.form,
+    name: `${f.name} (copy)`,
+    builtIn: undefined,
+    deleted: undefined,
+    createdAt: now,
+    updatedAt: now,
+    sections: copy.sections.map((s) => ({
+      ...s,
+      id: ids.next(),
+      ...(s.customQuestions ? { customQuestions: s.customQuestions.map((q) => ({ ...q, id: ids.next() })) } : {}),
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -126,14 +157,38 @@ function normalizeOverride(v: unknown): FormQuestionOverride | null {
   return o;
 }
 
+const CUSTOM_TYPES = new Set<CustomQuestionType>(["short", "long", "yesno", "single", "multi", "number"]);
+
+function normalizeCustomQuestion(v: unknown): CustomQuestion | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  const id = str(r.id, 120).trim();
+  if (!id) return null;
+  const type = CUSTOM_TYPES.has(r.type as CustomQuestionType) ? (r.type as CustomQuestionType) : "short";
+  const q: CustomQuestion = { id, label: str(r.label, 500), type, enabled: r.enabled !== false };
+  if (str(r.labelEs).trim()) q.labelEs = str(r.labelEs, 500);
+  if (type === "single" || type === "multi") {
+    q.options = Array.isArray(r.options)
+      ? r.options.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 500)).slice(0, FORM_LIMITS.options)
+      : [];
+  }
+  return q;
+}
+
 function normalizeSection(v: unknown): FormSection | null {
   if (!v || typeof v !== "object") return null;
   const r = v as Record<string, unknown>;
   const id = str(r.id, 120).trim();
-  const macroName = str(r.macroName, 200).trim();
-  if (!id || !macroName) return null;
+  const kind: FormSectionKind = r.kind === "custom" ? "custom" : "macro";
+  const macroName = kind === "custom" ? "" : str(r.macroName, 200).trim();
+  if (!id || (kind === "macro" && !macroName)) return null;
   const includeWhen: FormIncludeWhen = r.includeWhen === "decompression" || r.includeWhen === "notDecompression" ? r.includeWhen : "always";
-  const section: FormSection = { id, macroName, title: str(r.title, 200), enabled: r.enabled !== false, includeWhen };
+  const section: FormSection = { id, kind, macroName, title: str(r.title, 200), enabled: r.enabled !== false, includeWhen };
+  if (kind === "custom") {
+    section.customQuestions = Array.isArray(r.customQuestions)
+      ? r.customQuestions.map(normalizeCustomQuestion).filter((x): x is CustomQuestion => Boolean(x)).slice(0, FORM_LIMITS.questionsPerSection)
+      : [];
+  }
   if (str(r.titleEs).trim()) section.titleEs = str(r.titleEs, 200);
   if (Array.isArray(r.onlyQuestions)) {
     const only = r.onlyQuestions.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
@@ -160,12 +215,13 @@ export function normalizeFormTemplate(v: unknown): FormTemplate | null {
   const createdAt = str(r.createdAt, 40) || EPOCH;
   const t: FormTemplate = { id, name, intro: str(r.intro), sections, createdAt, updatedAt: str(r.updatedAt, 40) || createdAt };
   if (str(r.introEs).trim()) t.introEs = str(r.introEs);
+  if (r.disabled === true) t.disabled = true;
   if (r.builtIn === true) t.builtIn = true;
   if (r.deleted === true) t.deleted = true;
   return t;
 }
 
-/** Stored list → templates. Built-in defaults are added when missing (never duplicated). */
+/** Stored list → templates (deduped by id). Nothing is ever added: an empty list stays empty. */
 export function normalizePatientForms(v: unknown): FormTemplate[] {
   const rows = Array.isArray(v) ? v.map(normalizeFormTemplate).filter((x): x is FormTemplate => Boolean(x)) : [];
   const seen = new Set<string>();
@@ -175,11 +231,12 @@ export function normalizePatientForms(v: unknown): FormTemplate[] {
     seen.add(r.id);
     out.push(r);
   }
-  for (const d of getDefaultPatientForms()) if (!seen.has(d.id)) out.unshift(d);
   return out;
 }
 
 export const liveForms = (forms: FormTemplate[]) => forms.filter((f) => !f.deleted);
+/** Forms offered in Send form: not deleted, not turned off. */
+export const sendableForms = (forms: FormTemplate[]) => liveForms(forms).filter((f) => !f.disabled);
 
 // ---------------------------------------------------------------------------
 // Macro matching + friendly wording
@@ -199,7 +256,8 @@ export function macroNameKey(name: string): string {
 }
 
 /** The active Objective macro a section points at (exact key match). */
-export function findSectionMacro(section: Pick<FormSection, "macroName">, macros: MacroTemplate[]): MacroTemplate | null {
+export function findSectionMacro(section: Pick<FormSection, "macroName"> & { kind?: FormSectionKind }, macros: MacroTemplate[]): MacroTemplate | null {
+  if (section.kind === "custom") return null;
   const key = macroNameKey(section.macroName);
   if (!key) return null;
   return macros.find((m) => m.section === "objective" && m.active && macroNameKey(m.buttonName) === key) ?? null;
@@ -244,6 +302,7 @@ export function friendlyOptionLabel(option: string, opts: { onlyOption?: boolean
 // ---------------------------------------------------------------------------
 
 export type SnapshotKind = "single" | "multi" | "text";
+export type SnapshotInput = "short" | "long" | "number";
 
 export interface SnapshotOption {
   /** Exact macro option text (what gets saved and inserted). */
@@ -263,6 +322,8 @@ export interface SnapshotQuestion {
   /** A free-text "something else / explain" box (always on for choice questions). */
   allowOther: boolean;
   dateInput?: boolean;
+  /** Text questions: the box to show. Missing = one-line answer. */
+  input?: SnapshotInput;
   /** Same question in another included section (asked once, fills both). */
   alsoFills?: Array<{ sectionId: string; macroQuestionId: string }>;
 }
@@ -273,6 +334,8 @@ export interface SnapshotSection {
   macroName: string;
   title: string;
   titleEs?: string;
+  /** The practice's own questions: inserted as plain text, not through a macro. */
+  custom?: boolean;
   questions: SnapshotQuestion[];
 }
 
@@ -308,6 +371,30 @@ function questionPicked(section: FormSection, q: MacroQuestion): boolean {
 
 const optionSetKey = (q: MacroQuestion) => [...(q.options ?? [])].map(normLabel).sort().join("|");
 
+const YES_NO: SnapshotOption[] = [
+  { value: "Yes", label: "Yes", labelEs: "Sí" },
+  { value: "No", label: "No", labelEs: "No" },
+];
+
+function resolveCustomQuestions(section: FormSection): SnapshotQuestion[] {
+  const out: SnapshotQuestion[] = [];
+  for (const q of section.customQuestions ?? []) {
+    const label = q.label.trim();
+    if (!q.enabled || !label) continue;
+    const base = { key: `${section.id}.${q.id}`, macroQuestionId: q.id, label, ...(q.labelEs?.trim() ? { labelEs: q.labelEs.trim() } : {}) };
+    if (q.type === "yesno") {
+      out.push({ ...base, kind: "single", options: YES_NO.map((o) => ({ ...o })), allowOther: false });
+    } else if (q.type === "single" || q.type === "multi") {
+      const opts = [...new Set((q.options ?? []).map((o) => o.trim()).filter(Boolean))];
+      if (!opts.length) continue; // a choice question with no choices isn't asked
+      out.push({ ...base, kind: q.type, options: opts.map((value) => ({ value, label: value })), allowOther: false });
+    } else {
+      out.push({ ...base, kind: "text", options: [], allowOther: false, ...(q.type === "short" ? {} : { input: q.type }) });
+    }
+  }
+  return out;
+}
+
 /** Freeze a form against the practice's current Objective macros. */
 export function resolveForm(form: FormTemplate, macros: MacroTemplate[], ctx: { decompression: boolean }): ResolveResult {
   const missing: string[] = [];
@@ -316,6 +403,14 @@ export function resolveForm(form: FormTemplate, macros: MacroTemplate[], ctx: { 
   const asked = new Map<string, SnapshotQuestion>();
   for (const section of form.sections) {
     if (!sectionIncluded(section, ctx.decompression)) continue;
+    if (isCustomSection(section)) {
+      const questions = resolveCustomQuestions(section);
+      if (!questions.length) continue;
+      const out: SnapshotSection = { id: section.id, macroId: "", macroName: "", title: section.title.trim() || "More questions", custom: true, questions };
+      if (section.titleEs?.trim()) out.titleEs = section.titleEs.trim();
+      sections.push(out);
+      continue;
+    }
     const macro = findSectionMacro(section, macros);
     if (!macro) {
       missing.push(section.macroName);
@@ -410,7 +505,8 @@ export function sanitizeAnswers(snapshot: FormSnapshot, raw: unknown): PatientAn
       picks = [...new Set(picks)];
       if (q.kind === "single") picks = picks.slice(0, 1);
       if (q.kind === "text") picks = [];
-      const other = q.kind === "text" || q.allowOther ? clip(r.other, FORM_LIMITS.otherChars).trim() : "";
+      let other = q.kind === "text" || q.allowOther ? clip(r.other, FORM_LIMITS.otherChars).trim() : "";
+      if (q.input === "number" && !/^-?\d{0,9}([.,]\d{0,4})?$/.test(other)) other = "";
       if (picks.length || other) out[q.key] = { ...(picks.length ? { picks } : {}), ...(other ? { other } : {}) };
     }
   }
@@ -467,6 +563,7 @@ export function validateSnapshot(raw: unknown): FormSnapshot | null {
         options,
         allowOther: qr.allowOther === true,
         ...(qr.dateInput === true ? { dateInput: true } : {}),
+        ...(qr.input === "long" || qr.input === "number" || qr.input === "short" ? { input: qr.input as SnapshotInput } : {}),
         ...(alsoFills.length ? { alsoFills } : {}),
       });
     }
@@ -476,6 +573,7 @@ export function validateSnapshot(raw: unknown): FormSnapshot | null {
       macroName: clip(sr.macroName, 200),
       title: clip(sr.title, 200),
       ...(clip(sr.titleEs, 200) ? { titleEs: clip(sr.titleEs, 200) } : {}),
+      ...(sr.custom === true ? { custom: true } : {}),
       questions,
     });
   }
@@ -514,8 +612,9 @@ export interface MacroFill {
 /** Patient answers → one macro fill per section that has any answer. */
 export function answersToMacroFills(snapshot: FormSnapshot, answers: PatientAnswers): MacroFill[] {
   const bySection = new Map<string, MacroFill>();
-  for (const s of snapshot.sections) bySection.set(s.id, { sectionId: s.id, macroId: s.macroId, macroName: s.macroName, answers: {} });
-  for (const s of snapshot.sections) {
+  const macroSections = snapshot.sections.filter((s) => !s.custom);
+  for (const s of macroSections) bySection.set(s.id, { sectionId: s.id, macroId: s.macroId, macroName: s.macroName, answers: {} });
+  for (const s of macroSections) {
     for (const q of s.questions) {
       const v = toMacroValue(q, answers[q.key]);
       if (v === null) continue;
@@ -527,6 +626,28 @@ export function answersToMacroFills(snapshot: FormSnapshot, answers: PatientAnsw
     }
   }
   return [...bySection.values()].filter((f) => Object.keys(f.answers).length > 0);
+}
+
+const escapeHtml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * The practice's own (custom) questions -> plain HTML for Objective:
+ * a bold section heading, then "Question: answer" lines. Blank answers are left out.
+ */
+export function customAnswersHtml(snapshot: FormSnapshot, answers: PatientAnswers): string {
+  const blocks: string[] = [];
+  for (const s of snapshot.sections) {
+    if (!s.custom) continue;
+    const lines: string[] = [];
+    for (const q of s.questions) {
+      const v = toMacroValue(q, answers[q.key]);
+      if (v === null) continue;
+      const text = Array.isArray(v) ? v.join(", ") : v;
+      lines.push(`${escapeHtml(q.label)}: ${escapeHtml(text).replace(/\n/g, "<br>")}`);
+    }
+    if (lines.length) blocks.push(`<p><strong>${escapeHtml(s.title)}</strong><br>${lines.join("<br>")}</p>`);
+  }
+  return blocks.join("");
 }
 
 /** Readable rows for the staff review card: section → question → answer text. */

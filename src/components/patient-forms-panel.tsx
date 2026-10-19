@@ -15,7 +15,7 @@ import {
   answerSummary,
   displayStatus,
   formMessage,
-  liveForms,
+  sendableForms,
   looksLikeDecompressionCase,
   resolveForm,
 } from "@/lib/patient-forms";
@@ -83,7 +83,7 @@ function SendFormDialog({ patientId, patientName, firstName, phone, email, visit
   const { macroLibrary } = useMacroTemplates();
   const { officeSettings } = useOfficeSettings();
   const { rows, available } = useFormRequests({ patientId });
-  const choices = liveForms(forms);
+  const choices = sendableForms(forms);
   const [formId, setFormId] = useState(choices[0]?.id ?? "");
   const [decompression, setDecompression] = useState(() => looksLikeDecompressionCase(visitTypes));
   const [days, setDays] = useState(14);
@@ -132,7 +132,7 @@ function SendFormDialog({ patientId, patientName, firstName, phone, email, visit
         {!link ? (
           <div className="space-y-3">
             {choices.length === 0 ? (
-              <p className="text-sm">No forms yet. Add one in Settings → Templates → Forms.</p>
+              <p className="text-sm">No forms yet. Build one in Settings → Templates → Forms (New form).</p>
             ) : (
               <label className="grid gap-1 text-sm">
                 <span className="font-semibold text-[var(--text-muted)]">Form</span>
