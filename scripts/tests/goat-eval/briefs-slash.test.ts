@@ -217,7 +217,7 @@ check("nw empty", () => assert.equal(noteWording(""), "add a note"));
 // Due dates / parseTodo
 const DUE: Array<[string, string, string]> = [
   ["call atty today", "2026-10-15", "call atty"], ["call atty tomorrow", "2026-10-16", "call atty"], ["call atty tmrw", "2026-10-16", "call atty"],
-  ["call atty friday", "2026-10-16", "call atty"], ["call atty by monday", "2026-10-19", "call atty"], ["call atty thursday", "2026-10-22", "call atty"],
+  ["call atty friday", "2026-10-16", "call atty"], ["call atty by monday", "2026-10-19", "call atty"], ["call atty thursday", "2026-10-15", "call atty"],
   ["call atty 10/20", "2026-10-20", "call atty"], ["call atty due 1/5", "2027-01-05", "call atty"], ["call atty 11/02/2026", "2026-11-02", "call atty"],
   ["call atty in 3 days", "2026-10-18", "call atty"], ["call atty next week", "2026-10-19", "call atty"], ["call atty", "", "call atty"],
 ];

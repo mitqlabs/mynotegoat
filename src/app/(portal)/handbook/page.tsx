@@ -10,7 +10,8 @@
  * never rendered for a manager or a staff member.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { taskAnchorId } from "@/lib/handbook-search";
 import {
   handbookChapters,
   handbookChaptersClinical,
@@ -30,6 +31,22 @@ export default function HandbookPage() {
   const { roleTier, canView } = useWorkspaceAccess();
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Links from G.O.A.T. ("/handbook#task-<chapter>-<section>" or "#chapter-<id>"): open that chapter and jump there.
+  useEffect(() => {
+    const jump = () => {
+      const hash = decodeURIComponent(window.location.hash.slice(1));
+      if (!hash) return;
+      const all = [...handbookChapters, ...handbookChaptersClinical, ...handbookChaptersOffice];
+      const ch = all.find((c) => hash === `chapter-${c.id}` || hash.startsWith(`task-${c.id}-`));
+      if (!ch) return;
+      setOpenId(ch.id);
+      window.setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    };
+    jump();
+    window.addEventListener("hashchange", jump);
+    return () => window.removeEventListener("hashchange", jump);
+  }, []);
 
   const chapters = useMemo(() => {
     const admin = isAdminTier(roleTier);
@@ -155,7 +172,8 @@ export default function HandbookPage() {
               <div className="space-y-3 border-t border-[var(--line-soft)] p-4">
                 {chapter.tasks.map((task) => (
                   <article
-                    className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3"
+                    className="scroll-mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3"
+                    id={taskAnchorId(chapter.id, task.heading)}
                     key={`${chapter.id}-${task.heading}`}
                   >
                     <h3 className="text-sm font-semibold">{task.heading}</h3>

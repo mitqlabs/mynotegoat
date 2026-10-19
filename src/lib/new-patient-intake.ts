@@ -238,3 +238,39 @@ export function newPtFromPrefill<T extends Record<string, string>>(empty: T, pre
   }
   return out;
 }
+
+/**
+ * "+ Case" Appt Date + Time → the New Patient visit to book (patient page and New Patient popup).
+ * Blank date → nothing to book. Already booked (same patient, day and time) → nothing new (no duplicate).
+ * Bad date/time, outside office hours (when enforced) or a full slot → an error to show; never silent.
+ */
+export type CaseVisitPlan =
+  | { kind: "none" }
+  | { kind: "exists"; appointmentId: string }
+  | { kind: "error"; message: string }
+  | { kind: "book"; date: string; time: string; type: string; durationMin: number; note: string };
+
+export function planCaseFirstVisit(
+  input: { dateMdy: string; timeText: string; patientId?: string },
+  appointments: ScheduleAppointmentRecord[],
+  settings: ScheduleSettingsConfig,
+  types: Array<{ name: string; durationMin: number; isDefault?: boolean }>,
+): CaseVisitPlan {
+  if (!input.dateMdy.trim()) return { kind: "none" };
+  const iso = mdyToIso(input.dateMdy);
+  if (!iso) return { kind: "error", message: "Appt Date must be MM/DD/YYYY." };
+  if (!input.timeText.trim()) return { kind: "error", message: "Add the appointment time (e.g. 10:00 AM)." };
+  const t = intakeTime(input.timeText, iso, settings);
+  if (!t) return { kind: "error", message: "Appointment time should look like 10:00 AM." };
+  const type = newPatientVisitType(types);
+  if (!type) return { kind: "error", message: "No appointment types are set up (Settings → Schedule)." };
+  if (input.patientId) {
+    const same = appointments.find((a) => a.patientId === input.patientId && a.date === iso && a.startTime === t.time && a.status !== "Canceled");
+    if (same) return { kind: "exists", appointmentId: same.id };
+  }
+  const check = finishDraft({ patientId: input.patientId ?? "__new__", patientName: "", date: iso, time: t.time, type: type.name, durationMin: type.durationMin, notes: [] }, appointments, settings);
+  const fmt = (x: string) => { const [h, m] = x.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+  if (check.outsideHours && settings.enforceOfficeHours) return { kind: "error", message: `${fmt(t.time)} is outside office hours that day.${check.suggestions.length ? ` Open: ${check.suggestions.map(fmt).join(", ")}.` : ""}` };
+  if (check.taken) return { kind: "error", message: `${fmt(t.time)} is taken.${check.suggestions.length ? ` Open nearby: ${check.suggestions.map(fmt).join(", ")}.` : ""}` };
+  return { kind: "book", date: iso, time: t.time, type: type.name, durationMin: type.durationMin, note: t.note };
+}

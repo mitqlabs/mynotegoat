@@ -5,6 +5,7 @@
  */
 import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
 import { detectPlainTodo } from "@/lib/goat-intents";
+import { answerScheduleQuery } from "@/lib/goat-schedule-query";
 import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
@@ -102,6 +103,9 @@ export function answerOffice(question: string, data: PracticeData, last: OfficeM
   if (detectPlainTodo(question)) return null;
   const f = followUp(question, data, last);
   if (f) return f;
+  // Plain-wording schedule lookups by type and time range ("any upcoming new patients?").
+  const sq = answerScheduleQuery(question, data);
+  if (sq) return sq;
   if (SETTING_QUESTION.test(question)) {
     const links = findSettings(question);
     return { text: links.length ? "You can change that here:" : "I couldn't find a Settings page for that. Settings has every option, grouped by page.", links: links.length ? links : [{ label: "Settings", href: "/settings" }] };

@@ -93,6 +93,8 @@ export interface HowToAnswer {
   text: string;
   links: ToolLink[];
   found: boolean;
+  /** Where it came from: the built-in app how-to list, Settings, a page name, or nothing. */
+  source?: "app" | "settings" | "page" | "none";
 }
 
 export const HOWTO_UNSURE =
@@ -103,12 +105,12 @@ export function answerHowTo(question: string): HowToAnswer {
   const scored = APP_HOWTO.map((e) => ({ e, n: Math.max(0, ...e.aliases.filter((a) => aliasHits(question, a)).map((a) => norm(a).split(" ").length)) }))
     .filter((x) => x.n > 0)
     .sort((a, b) => b.n - a.n);
-  if (scored.length) return { text: scored[0].e.steps, links: [scored[0].e.link], found: true };
+  if (scored.length) return { text: scored[0].e.steps, links: [scored[0].e.link], found: true, source: "app" };
   const settings = findSettings(question);
-  if (settings.length) return { text: `That's in Settings: ${settings.map((l) => l.label.replace(/^Settings → /, "")).join(", or ")}.`, links: settings, found: true };
+  if (settings.length) return { text: `That's in Settings: ${settings.map((l) => l.label.replace(/^Settings → /, "")).join(", or ")}.`, links: settings, found: true, source: "settings" };
   const page = PAGES.find((p) => p.words.some((w) => aliasHits(question, w)));
-  if (page) return { text: `Open ${page.label} in the sidebar.`, links: [{ label: `Open ${page.label}`, href: page.href }], found: true };
-  return { text: HOWTO_UNSURE, links: [{ label: "Open the Handbook", href: "/handbook" }], found: false };
+  if (page) return { text: `Open ${page.label} in the sidebar.`, links: [{ label: `Open ${page.label}`, href: page.href }], found: true, source: "page" };
+  return { text: HOWTO_UNSURE, links: [{ label: "Open the Handbook", href: "/handbook" }], found: false, source: "none" };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +167,17 @@ export interface ResolvedDay {
   note: string;
 }
 
+/**
+ * G.O.A.T. weekday rule (shared by every intent):
+ * a bare weekday or "this <weekday>" = the coming occurrence (today if today is that weekday);
+ * "next <weekday>" = the occurrence after that (one week later).
+ * On Mon 10/19/2026: "wednesday" = 10/21, "next wednesday" = 10/28, "this monday" = 10/19, "next monday" = 10/26.
+ */
+export function weekdayOccurrence(todayIso: string, weekday: number, next: boolean): string {
+  const ahead = (weekday - fromIso(todayIso).getDay() + 7) % 7;
+  return addDays(todayIso, ahead + (next ? 7 : 0));
+}
+
 /** The day a booking request talks about (weekday names with typos, today/tomorrow, MM/DD). */
 export function resolveRequestedDay(question: string, todayIso: string): ResolvedDay | null {
   const q = norm(question);
@@ -187,15 +200,11 @@ export function resolveRequestedDay(question: string, todayIso: string): Resolve
     let day = SHORT[w] ?? -1;
     if (day < 0 && w.length >= 5) day = WEEKDAYS.findIndex((d) => w === d || editDistance(w, d) <= 1 || w === `${d}s`);
     if (day < 0) continue;
-    const today = fromIso(todayIso).getDay();
-    let ahead = (day - today + 7) % 7;
-    if (ahead === 0) ahead = 7;
-    const iso = addDays(todayIso, ahead);
     const name = WEEKDAYS[day].replace(/^./, (c) => c.toUpperCase());
     const said = ws[i - 1];
-    if (said === "next") {
-      return { iso, note: `I read "next ${name}" as the coming ${name}. If you meant the week after, that's ${dayLabel(addDays(iso, 7))}.` };
-    }
+    const iso = weekdayOccurrence(todayIso, day, said === "next");
+    if (said === "next") return { iso, note: `next ${name} (${dayLabel(iso)})` };
+    if (iso === todayIso) return { iso, note: `today (${dayLabel(iso)})` };
     return { iso, note: `the coming ${name}` };
   }
   return null;

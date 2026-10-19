@@ -50,9 +50,10 @@ test("booking intent (typos too), not schedule lookups", () => {
 });
 test("date resolution", () => {
   const r = resolveRequestedDay("schedule armen next thursdau", MON)!;
-  assert.equal(r.iso, "2026-10-15");
+  // Weekday rule: "next <day>" = the occurrence after the coming one; a bare weekday on that day = today.
+  assert.equal(r.iso, "2026-10-22");
   assert.match(r.note, /10\/22\/2026/);
-  assert.equal(resolveRequestedDay("book him thursday", "2026-10-15")!.iso, "2026-10-22");
+  assert.equal(resolveRequestedDay("book him thursday", "2026-10-15")!.iso, "2026-10-15");
   assert.equal(resolveRequestedDay("book tomorrow", MON)!.iso, "2026-10-13");
   assert.equal(resolveRequestedDay("book 10/20", MON)!.iso, "2026-10-20");
   assert.equal(resolveRequestedDay("book 01/05", MON)!.iso, "2027-01-05");

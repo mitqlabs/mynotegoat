@@ -1,3 +1,4 @@
+import { weekdayOccurrence } from "@/lib/goat-howto";
 import type { PipelineKind } from "@/lib/goat-pipeline";
 /**
  * G.O.A.T. office briefs (rules only, read-only): greeting + chips, Morning
@@ -435,9 +436,7 @@ export function takeDueDate(text: string, today: string): { due: string; rest: s
     if (!y && due < today) due = `${year + 1}-${pad(+mo)}-${pad(+d)}`;
   } else {
     const t = DAYS.indexOf(w.replace(/^next\s+/, ""));
-    let ahead = (t - dow(today) + 7) % 7;
-    if (ahead === 0 || /^next/.test(w)) ahead += ahead === 0 ? 7 : 0;
-    due = addDays(today, ahead);
+    due = weekdayOccurrence(today, t, /^next/.test(w));
   }
   return { due, rest: (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length)).replace(/\s+/g, " ").trim() };
 }

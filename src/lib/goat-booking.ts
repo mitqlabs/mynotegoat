@@ -89,12 +89,16 @@ export function snapToOfficeHours(t: { hh: number; mm: number; meridiem: "am" | 
   return { time: toHHMM(total), note };
 }
 
+/** "initial appointment", "initial", "new appt", "first visit", "NP", "eval", "new patient" → the New Patient type. */
+export const NEW_PATIENT_ASK = /\bnew\s*(?:patient|pt|appt|appointment|visit|intake)s?\b|\binitial\b|\bfirst\s+(?:visit|appt|appointment)\b|\bnp\b|\b(?:new\s+patient\s+)?eval(?:uation)?\b|\bintake\b/i;
+
 const TYPE_HINTS: Array<[RegExp, RegExp]> = [
   [/re-?exam|reeval|re-?eval/i, /re-?exam/i],
   [/decomp\w*/i, /decompression/i],
   [/discharg\w*/i, /discharge/i],
   [/follow[\s-]?up|f\/u|\bfu\b|regular|adjust\w*|treatment|tx\b/i, /follow-?up/i],
-  [/new patient|initial|first visit|consult\w*|office visit|\bov\b/i, /office visit|initial|new patient/i],
+  [NEW_PATIENT_ASK, /new patient|initial|\bnp\b/i],
+  [/consult\w*|office visit|\bov\b/i, /office visit|initial|new patient/i],
 ];
 
 /** Appointment type from the request (typos ok), else the patient's last type, else Follow-Up Visit. */

@@ -64,6 +64,9 @@ export function detectNewPatientRequest(raw: string): boolean {
   if (/^\/new\b/i.test(q)) return true;
   if (q.startsWith("/") || HOWTO.test(q) || detectPlainTodo(q)) return false;
   if (!NEW_PT.test(q)) return false;
+  // Schedule questions ("any new patients this week", "new patients tomorrow?") are lookups, not intake.
+  if (/\b(any|upcoming|coming up|how many|next one)\b/i.test(q) || /\?\s*$/.test(q)) return false;
+  if (/\bnew\s+(?:patients|pts|clients|intakes)\b/i.test(q) && !NEW_PT_VERB.test(q)) return false;
   // "new patient" + a verb, or the message starts with it ("new patient: Jane Doe …").
   return NEW_PT_VERB.test(q) || /^(?:a\s+)?new\s+(?:patient|pt)\b/i.test(q) || /\b(i|we)\s+(have|got)\b/i.test(q);
 }

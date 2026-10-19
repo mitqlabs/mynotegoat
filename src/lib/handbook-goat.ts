@@ -145,6 +145,43 @@ export const goatHandbookChapter: HandbookChapter = {
       watchOut: "The Android app-store (APK) version isn't built yet. The home-screen app is the phone version for now.",
     },
     {
+      heading: "Book someone who isn't a patient yet",
+      steps: [
+        "Type it like you'd say it: \"schedule john smith next thursday for initial appointment\". \"initial\", \"new appt\", \"first visit\", \"NP\" and \"eval\" all mean the New Patient visit type.",
+        "If nobody is named John Smith, G.O.A.T. says so and adds him as a new patient right in the chat. It asks only for what's missing, one short question at a time: phone first, then the day or time if you didn't give them.",
+        "Then you get one card with the new patient (name, phone) and the New Patient visit (date, time, provider and office). Confirm adds the patient and books the visit together. Edit in New Appointment opens the filled-in popup instead.",
+        "Office hours and open times are checked the same way as on the Schedule. If the time doesn't work, the card shows open times nearby.",
+      ],
+      watchOut: "When you type a first AND last name, G.O.A.T. only picks patients with that last name (small typos are OK). It never jumps from John Smith to a different John. If two patients have the same name, it asks which one you mean.",
+    },
+    {
+      heading: "How G.O.A.T. reads days",
+      steps: [
+        "A weekday on its own, or \"this Wednesday\", means the coming one. On a Monday, \"Wednesday\" is two days away and \"this Monday\" is today.",
+        "\"Next Wednesday\" means the one after that, one week later. On Mon 10/19/2026, that's Wed 10/28/2026.",
+        "Every card shows the exact date (e.g. Wed 10/28/2026), so you can catch a mix-up before you confirm.",
+      ],
+    },
+    {
+      heading: "Ask about the schedule in plain words",
+      steps: [
+        "Ask by visit type and time: \"any upcoming new patients?\", \"new patients this week\", \"any re-exams friday\", \"when is the next new patient\", \"who's coming in tomorrow\", \"how many appointments today\".",
+        "G.O.A.T. answers with a short list: date, time, patient, visit type and office. Each patient's name is a link (shown once), plus a link to that day on the Schedule.",
+        "Typos and stray punctuation are fine (\"new patients>\" works). Canceled and no-show visits are left out.",
+        "It only sees the offices you can see. Admin-only numbers (case counts, money) stay admin-only.",
+        "If G.O.A.T. isn't sure what you mean, it asks a short question with buttons (schedule, to-dos, case, contact) instead of listing everything.",
+      ],
+    },
+    {
+      heading: "Ask \"how do I…\" about anything in the Handbook",
+      steps: [
+        "Ask G.O.A.T. \"how do I send a form\", \"where do I change office hours\" or \"how to merge duplicate encounters\".",
+        "G.O.A.T. searches the whole Handbook on your device (no cloud AI), gives you the short version of the best section and links straight to it.",
+        "If two or three sections fit, it lists them so you can pick one. If nothing fits, it asks what you're trying to do.",
+        "New Handbook sections are searchable as soon as they're added. Admin-only sections only show up for admins.",
+      ],
+    },
+    {
       heading: "Ask for help",
       steps: ["Type \"what can you do?\" or \"help\" and G.O.A.T. sums this up and links here."],
     },

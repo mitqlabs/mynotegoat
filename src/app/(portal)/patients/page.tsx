@@ -2964,7 +2964,7 @@ export default function PatientsPage() {
 
               {!newPatientDraft.isCashPatient && (
                 <section data-row="new-patient-case">
-                  {!showNewPatientCase && !newPatientDraft.attorney.trim() && !newPatientDraft.dateOfLoss.trim() ? (
+                  {!showNewPatientCase && !newPatientDraft.attorney.trim() && !newPatientDraft.dateOfLoss.trim() && !newPatientDraft.evalDate.trim() ? (
                     <button
                       className="rounded-lg border border-dashed border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
                       data-testid="new-patient-add-case"
@@ -2981,14 +2981,14 @@ export default function PatientsPage() {
                           className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
                           onClick={() => {
                             setShowNewPatientCase(false);
-                            setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "" }));
+                            setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" }));
                           }}
                           type="button"
                         >
                           Remove
                         </button>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-row="new-patient-case-fields">
                         <label className="grid min-w-0 gap-1">
                           <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
                           <input
@@ -3035,7 +3035,33 @@ export default function PatientsPage() {
                             value={newPatientCaseNumberPreview}
                           />
                         </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            data-testid="new-patient-appt-date"
+                            inputMode="numeric"
+                            maxLength={10}
+                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
+                            placeholder="MM/DD/YYYY"
+                            title="Books a New Patient visit on the Schedule when you save"
+                            value={newPatientDraft.evalDate}
+                          />
+                        </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            data-testid="new-patient-appt-time"
+                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
+                            placeholder="10:00 AM"
+                            value={newPatientDraft.evalTime}
+                          />
+                        </label>
                       </div>
+                      {newPatientDraft.evalDate.trim() && (
+                        <p className="mt-1.5 text-xs text-[var(--text-muted)]">Save books a New Patient visit on the Schedule (office hours and open times are checked first).</p>
+                      )}
                       <datalist id="new-patient-attorney-options">
                         {attorneyContacts.map((contact) => (
                           <option key={contact.id} value={contact.name} />

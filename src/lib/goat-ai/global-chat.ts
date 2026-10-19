@@ -73,7 +73,9 @@ export interface ChatMessage {
   /** Memory of an office answer, for follow-ups ("and tomorrow?", "list them"). */
   office?: OfficeMemory;
   /** A booking waiting for Confirm (nothing is saved before that). */
-  booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string };
+  booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
+  /** In-chat new patient + first visit: waiting for one missing detail (phone / day / time). */
+  npAsk?: { field: "phone" | "time" | "day"; pending: import("@/lib/goat-new-patient-booking").PendingNewPatientBooking; state: "open" | "done" };
   /** A change to a Case Notes line G.O.A.T. just added (redate / retext / undo), waiting for Confirm. */
   noteEdit?: { patientId: string; patientName: string; oldLine: string; newLine: string | null; state: "open" | "done" | "canceled" | "missing" };
   /** "Which patient is this about?" for a team message; "no patient" sends it as a general message. */
@@ -296,6 +298,32 @@ export function scorePatients(question: string, patients: ChatPatient[]): Patien
   return out.sort((a, b) => b.score - a.score || a.patient.fullName.localeCompare(b.patient.fullName));
 }
 
+const COMMON_AFTER_NAME = /^(?:needs?|wants?|says?|said|came|comes|left|owes|paid|is|has|was|had|will|can|cancel\w*|resched\w*|booked|sent|got|gets|called|calls|asked|asks|says|still|also|just|needs|reduction|lop|lien|records|report|chart|info|number|phone|email|address|dob|doi|their|his|her|ok|okay|again|back|in|out|now|later|soon)$/;
+const SURNAME_STOP = new Set("for at on in to tomorrow tmrw today next this new initial first appt appointment visit eval np follow followup re reexam exam massage friday monday tuesday wednesday thursday saturday sunday morning afternoon evening pm am please pls asap balance bill attorney atty file note notes mri xray x-ray case status".split(" "));
+
+/**
+ * "John Smith" typed as first + last name, where the first word is some patient's first name.
+ * Returns the text and the ids of patients with that first AND last name (typos ≤ small).
+ */
+export function typedFullName(question: string, patients: ChatPatient[]): { text: string; ids: Set<string> } | null {
+  const q = question.replace(/\b(?:dr|doctor)\.?\s+[A-Za-z'-]+/gi, " ");
+  const re = /\b([A-Za-z][A-Za-z'-]{1,})\s+([A-Za-z][A-Za-z'-]{2,})(?:'s)?\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q))) {
+    const [w1, w2] = [m[1].toLowerCase(), m[2].toLowerCase().replace(/'s$/, "")];
+    if (NOT_A_NAME.has(w1) || NOT_A_NAME.has(w2) || SURNAME_STOP.has(w1) || SURNAME_STOP.has(w2)) { re.lastIndex = m.index + m[1].length; continue; }
+    if (/(?:ed|ing|ly)$/.test(w2) || COMMON_AFTER_NAME.test(w2)) { re.lastIndex = m.index + m[1].length; continue; }
+    const firstHits = patients.filter((p) => namePartScore(w1, nameParts(p.fullName).first, true) >= 0.8);
+    if (!firstHits.length) { re.lastIndex = m.index + m[1].length; continue; }
+    // w2 is someone's first-name too ("kara john")? then it isn't a surname claim.
+    const lastFits = (p: ChatPatient) => nameParts(p.fullName).last.split(/[\s-]+/).some((part) => namePartScore(w2, part, true) >= 0.8);
+    const ids = new Set(firstHits.filter(lastFits).map((p) => p.id));
+    const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+    return { text: `${cap(m[1])} ${cap(m[2].replace(/'s$/i, ""))}`, ids };
+  }
+  return null;
+}
+
 export interface PatientLookup {
   /** The words of the question that look like a name (even if nobody matched), e.g. "sam". */
   named: string | null;
@@ -321,6 +349,14 @@ export function findPatientsInQuestion(question: string, patients: ChatPatient[]
     // Only an explicit "for / about Someone" counts as naming a patient nobody matches.
     const m = /\b(?:for|about|patient)\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,2})\b/.exec(question.replace(/\b(?:dr|doctor)\.?\s+[A-Za-z'-]+/gi, " "));
     return { named: m && !NOT_A_NAME.has(m[1].toLowerCase()) ? m[1] : null, confident: null, candidates: [], inactive: [], matches: [] };
+  }
+  // A typed first AND last name ("john smith") only matches patients with that last name
+  // (small typos allowed). Never jump to another John just because the first name fits.
+  const full = typedFullName(question, patients);
+  if (full) {
+    const same = scored.filter((m) => full.ids.has(m.patient.id));
+    if (!same.length) return { named: full.text, confident: null, candidates: [], inactive: [], matches: [] };
+    scored.splice(0, scored.length, ...same);
   }
   const [top, second] = scored;
   const named = top.words.join(" ");
