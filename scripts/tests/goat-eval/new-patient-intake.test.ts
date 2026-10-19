@@ -63,10 +63,10 @@ check("tidy keeps 'the'", () => assert.equal(tidyTodoText("call the adjuster"), 
 // ── 2. New patient visit (New Appointment, New-patient mode) ──────────
 type Want = { first?: string; last?: string; date?: string; time?: string; phone?: string; attorney?: string; newPt: boolean };
 const VISITS: Array<[string, Want]> = [
-  ["schedule armen barmen for new appt next Thursday at 3pm", { first: "Armen", last: "Barmen", date: "2026-10-22", time: "15:00", newPt: false }],
-  ["Schedule new patient for next Wednesday", { date: "2026-10-21", newPt: true }],
+  ["schedule armen barmen for new appt next Thursday at 3pm", { first: "Armen", last: "Barmen", date: "2026-10-29", time: "15:00", newPt: false }],
+  ["Schedule new patient for next Wednesday", { date: "2026-10-28", newPt: true }],
   ["schedule john smith new patient", { first: "John", last: "Smith", newPt: true }],
-  ["schedule new patient John Smith for next Wednesday at 10", { first: "John", last: "Smith", date: "2026-10-21", time: "10:00", newPt: true }],
+  ["schedule new patient John Smith for next Wednesday at 10", { first: "John", last: "Smith", date: "2026-10-28", time: "10:00", newPt: true }],
   ["book a new patient Jane Mockley 817-555-0142 tomorrow at 3", { first: "Jane", last: "Mockley", date: "2026-10-20", time: "15:00", phone: "817-555-0142", newPt: true }],
   ["schedule new patient Carla Doe 10/22 2pm atty Ward Mock Law Firm", { first: "Carla", last: "Doe", date: "2026-10-22", time: "14:00", attorney: "Ward Mock Law Firm", newPt: true }],
   ["can you schedule a new patient tomorrow at 9", { date: "2026-10-20", time: "09:00", newPt: true }],

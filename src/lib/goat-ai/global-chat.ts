@@ -2,6 +2,7 @@ import type { OfficeMemory } from "@/lib/goat-office";
 import type { BookingDraft } from "@/lib/goat-booking";
 import type { OmPlan } from "@/lib/goat-om";
 import type { OmSnapshot } from "@/lib/goat-om-apply";
+import type { IdAsk, IdCardState } from "@/lib/goat-id";
 /**
  * Global G.O.A.T. (sidebar popup) — who is the question about, and the chat
  * history. Pure helpers plus browser-only storage.
@@ -55,6 +56,12 @@ export interface ChatMessage {
   omUndo?: { targetId: string; state: "open" | "done" | "canceled"; result?: string };
   patientId?: string;
   patientName?: string;
+  /** ID picture read in the browser: one confirm card (new patient / update + visit + save ID). */
+  idCard?: IdCardState;
+  /** Card held back while G.O.A.T. asks for phone / marital status. */
+  idAsk?: IdAsk;
+  /** Text read from an attached screenshot (ask about it). */
+  screenText?: string;
   /** Clarifying question: pick one of these patients. */
   choices?: ChatChoice[];
   /** The choice the user tapped (shown highlighted in the same bubble). */

@@ -50,6 +50,8 @@ export function normalizeCasual(raw: string): string {
   q = words.join(" ").replace(/\s+/g, " ").trim();
   // Polite lead-ins and trailing pleasantries.
   for (let i = 0; i < 3; i++) {
+    // Follow-up lead-ins before an action ("oh also add a note…", "and also book her…").
+    q = q.replace(/^(?:oh|oh and|and|also|plus|ok|okay|oh ok)[,!]?\s+(?:also\s+)?(?=(?:please\s+)?(?:add|put|write|jot|make|create|remind|book|schedule|tell|text|send|message|note)\b)/i, "");
     q = q.replace(/^(please|can you|could you|would you|will you|can i|could i|i need you to|i need to|i want to|i wanna|i'd like to|go ahead and|quick(ly)?|just)\s+/i, "");
   }
   q = q.replace(/[\s,]+(please|for me|asap|real quick|thank you|thanks)[.!?]*$/i, "").replace(/[?!]+$/, "").trim();
