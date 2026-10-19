@@ -81,7 +81,7 @@ export interface ChatMessage {
   /** Inactive-case choices revealed by "Show inactive (N)". */
   moreChoices?: ChatChoice[];
   /** A team message waiting for Confirm (posted to Messages only then). */
-  msgDraft?: { toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
+  msgDraft?: { /** Everyone (General), no @mention. */ toTeam?: boolean; toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
   /** A note waiting for Confirm before it's added to the patient's Notes. */
   /** Pasted-contacts review card (one card for the whole batch). */
   contactImport?: {

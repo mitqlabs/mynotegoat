@@ -64,6 +64,8 @@ import { loadCaseStatuses } from "@/lib/case-statuses";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
+import { TEAM, caseQuestion, parseTeamMessage, type TeamMessageRequest } from "@/lib/goat-team-message";
+import { GOAT_APP_PATH, GOAT_INSTALL_TIP_KEY, goatQueryPrefill, installTipKind, isStandalone } from "@/lib/goat-app";
 import { detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -76,7 +78,7 @@ import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/l
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget } from "@/lib/goat-briefs";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
-import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
 import { loadOfficeSettings } from "@/lib/office-settings";
@@ -275,23 +277,121 @@ function Answerer({ job, onDone, context, files }: AnswererProps & { context: Go
 // The popup
 // ---------------------------------------------------------------------------
 
+/** A team message waiting on a step (who / what / which case). */
+type TellPending = {
+  req: TeamMessageRequest;
+  stage: "to" | "text" | "case" | "caseName";
+  /** undefined = not resolved yet; null = the whole team (General). */
+  to?: { label: string; userId?: string } | null;
+  options?: TeamPerson[];
+  /** undefined = not asked yet; null = no case. */
+  patientId?: string | null;
+};
+const TELL_TOKEN = "/:tm:";
+
+/** Chrome/Android's install event (not in the DOM typings). */
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
+
+const ShareIcon = () => (
+  <svg aria-label="Share" className="inline h-4 w-4 align-[-3px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <path d="M12 3v12M8 7l4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" strokeLinecap="round" />
+  </svg>
+);
+const AddBoxIcon = () => (
+  <svg aria-label="Add to Home Screen" className="inline h-4 w-4 align-[-3px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <rect height="16" rx="3" width="16" x="4" y="4" />
+    <path d="M12 8v8M8 12h8" strokeLinecap="round" />
+  </svg>
+);
+
+/** Small, dismissible "put G.O.A.T. on your Home Screen" hint at the top of the chat. */
+function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | "android"; onDismiss: () => void; onInstall: () => void; onGoatPage: boolean }) {
+  return (
+    <div className="flex items-start gap-2 border-b border-[var(--line-soft)] bg-[#eef8fb] px-3 py-2 text-xs text-[var(--text-main)]" data-goat-install={kind} role="note">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" className="h-8 w-8 shrink-0 rounded-lg" height={32} src="/goat-app/icon-192.png" width={32} />
+      <div className="min-w-0 flex-1 leading-snug">
+        {kind === "ios" ? (
+          <>
+            <strong>Add G.O.A.T. to your Home Screen:</strong>{" "}
+            {onGoatPage ? null : (
+              <>
+                open the <Link className="font-semibold text-[var(--brand-primary)] underline" href="/goat">G.O.A.T. app page</Link>, then{" "}
+              </>
+            )}
+            tap Share <ShareIcon />, then Add to Home Screen <AddBoxIcon />.
+          </>
+        ) : (
+          <>
+            <strong>Install G.O.A.T.</strong> as an app on this device — opens straight to the chat.
+            <button className="ml-2 rounded-md bg-[var(--brand-primary)] px-2 py-0.5 font-semibold text-white" onClick={onInstall} type="button">
+              Install
+            </button>
+          </>
+        )}
+      </div>
+      <button aria-label="Dismiss install tip" className="shrink-0 rounded px-1 text-base leading-none text-[var(--text-muted)] hover:bg-white" onClick={onDismiss} type="button">
+        ×
+      </button>
+    </div>
+  );
+}
+
 export function GlobalGoatPopup({
   patientsOverride,
   practiceOverride,
   contextOverride,
+  fullScreen = false,
 }: {
+  /** The /goat home-screen app: always open, fills the screen, no site nav. */
+  fullScreen?: boolean;
   /** Test harness only: a fixed patient list and contexts instead of the workspace's. */
   patientsOverride?: PatientRecord[];
   /** Test harness only: office data instead of this browser's stores. */
   practiceOverride?: () => PracticeData;
   contextOverride?: (patientId: string) => GoatContext | null;
 } = {}) {
-  const open = useGlobalGoatOpen();
+  const popupOpen = useGlobalGoatOpen();
+  const open = popupOpen || fullScreen;
   const pathname = usePathname();
   const { canView } = useWorkspaceAccess();
   // Read once on the client; the popup only renders after a click, so there's no hydration mismatch.
   const [chat, setChat] = useState<ChatState>(() => loadChat());
-  const [input, setInput] = useState("");
+  // /goat?q=… prefills the box (the user still taps Send). The portal only renders after auth on the client, so no SSR mismatch.
+  const [input, setInput] = useState(() => (fullScreen && typeof window !== "undefined" ? goatQueryPrefill(window.location.search) : ""));
+  // Home-screen install hint: iPhone Safari → Share → Add to Home Screen tip; Android/Chrome → a real Install button.
+  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installDismissed, setInstallDismissed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(GOAT_INSTALL_TIP_KEY) === "dismissed";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallEvt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallEvt(null);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+  const dismissInstallTip = () => {
+    setInstallDismissed(true);
+    try {
+      // A "user" key: mirrored to the user's cloud prefs row, so it stays dismissed on every device.
+      window.localStorage.setItem(GOAT_INSTALL_TIP_KEY, "dismissed");
+    } catch {
+      /* storage full: hidden for this session */
+    }
+  };
   const [job, setJobState] = useState<Job | null>(null);
   const jobRef = useRef<Job | null>(null);
   const setJob = useCallback((j: Job | null) => {
@@ -366,6 +466,7 @@ export function GlobalGoatPopup({
   }, [pathname]);
   const allPatients = () => livePatients(patientsOverride);
   const formRouter = useRouter();
+  const tellRef = useRef<TellPending | null>(null);
   const patientById = (id: string | null) => findPatient(patientsOverride, id);
   const current = patientById(chat.patientId);
 
@@ -780,6 +881,143 @@ export function GlobalGoatPopup({
     push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
     return true;
   };
+  // ── Team message in plain words ("message hannah about john smith", "let the team know …") ──
+  // Steps: who (ask if several / none) → what (ask if missing) → which case (ALWAYS confirmed when one is named) → confirm card.
+  const tellNext = (st0: TellPending) => {
+    const st: TellPending = { ...st0 };
+    if (st.to === undefined) {
+      if (st.req.to === TEAM) st.to = null;
+      else {
+        const team = buildTeam(loadSigners(), teamLogins);
+        const hits = matchRecipient(st.req.to, team);
+        if (!hits.length) {
+          const options = team.slice(0, 8);
+          tellRef.current = { ...st, stage: "to", options };
+          push({
+            role: "goat",
+            text: `I couldn't find a team member named "${st.req.to}". Who should get it?`,
+            practice: true,
+            choices: [...options.map((p, i) => ({ label: p.label, question: `${TELL_TOKEN}to:${i}` })), { label: "The whole team (General)", question: `${TELL_TOKEN}team` }],
+            links: [{ label: "Add team members (G.O.A.T. Settings)", href: "/settings/goat" }],
+          });
+          return;
+        }
+        if (hits.length > 1) {
+          tellRef.current = { ...st, stage: "to", options: hits };
+          push({ role: "goat", text: `Which ${st.req.to}?`, practice: true, choices: hits.map((p, i) => ({ label: p.lastName ? `${p.label} ${p.lastName}` : p.label, question: `${TELL_TOKEN}to:${i}` })) });
+          return;
+        }
+        st.to = { label: hits[0].label, userId: hits[0].userId };
+      }
+    }
+    const who = st.to ? st.to.label : "the team";
+    if (!st.req.text.trim()) {
+      tellRef.current = { ...st, stage: "text" };
+      push({ role: "goat", text: `What should I tell ${who}?`, practice: true });
+      return;
+    }
+    if (st.patientId === undefined) {
+      const pool = allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map(toChatPatient);
+      let cands: ChatPatient[] = [];
+      if (st.req.patientName) {
+        const f = findPatientsInQuestion(`about ${st.req.patientName} `, pool);
+        cands = f.confident ? [f.confident.patient] : [...f.candidates, ...f.inactive].map((c) => c.patient);
+      } else {
+        cands = patientsMentionedInMessage(st.req.text, pool);
+      }
+      if (!cands.length && st.req.patientName) {
+        tellRef.current = { ...st, stage: "case" };
+        push({ role: "goat", text: `I couldn't find a patient named "${st.req.patientName}". Pick the patient, or send it with no case?`, practice: true, choices: [{ label: "Pick a patient", question: `${TELL_TOKEN}case:other` }, { label: "No patient (general)", question: `${TELL_TOKEN}case:none` }] });
+        return;
+      }
+      if (cands.length) {
+        // Always confirmed, even with one match: the message gets linked to that case.
+        tellRef.current = { ...st, stage: "case" };
+        const shown = cands.slice(0, 6);
+        push({
+          role: "goat",
+          text: caseQuestion(shown.map((c) => ({ label: choiceLabel(c) }))),
+          practice: true,
+          choices: [
+            ...shown.map((c) => ({ label: shown.length === 1 ? `Yes — ${choiceLabel(c)}` : choiceLabel(c), question: `${TELL_TOKEN}case:${c.id}` })),
+            { label: "Different patient", question: `${TELL_TOKEN}case:other` },
+            { label: "No patient (general)", question: `${TELL_TOKEN}case:none` },
+          ],
+        });
+        return;
+      }
+      st.patientId = null;
+    }
+    tellRef.current = null;
+    const pt = st.patientId ? allPatients().map(toChatPatient).find((p) => p.id === st.patientId) ?? null : null;
+    const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+    push({
+      role: "goat",
+      text: "Send this message?",
+      practice: true,
+      msgDraft: {
+        toTeam: st.to ? undefined : true,
+        toLabel: st.to ? st.to.label : "Everyone (General)",
+        toUserId: st.to?.userId,
+        text: st.req.text.trim(),
+        patientId: pt?.id,
+        patientName: pt?.fullName,
+        caseLabel: pt ? (caseNo ? `${caseNo} ${pt.fullName}` : pt.fullName) : undefined,
+        state: "open",
+      },
+    });
+  };
+  /** A tapped step button ("/:tm:…"). */
+  const tellToken = (token: string) => {
+    const st = tellRef.current;
+    if (!st) {
+      push({ role: "goat", text: "That message was already finished or canceled. Say it again and I'll start over.", practice: true });
+      return;
+    }
+    const v = token.slice(TELL_TOKEN.length);
+    if (v === "team") return tellNext({ ...st, to: null });
+    if (v.startsWith("to:")) {
+      const p = st.options?.[Number(v.slice(3))];
+      if (p) return tellNext({ ...st, to: { label: p.label, userId: p.userId } });
+      return;
+    }
+    if (v === "case:none") return tellNext({ ...st, patientId: null });
+    if (v === "case:other") {
+      tellRef.current = { ...st, stage: "caseName" };
+      push({ role: "goat", text: "Which patient? Type their name.", practice: true });
+      return;
+    }
+    if (v.startsWith("case:")) return tellNext({ ...st, patientId: v.slice(5) });
+  };
+  /** Typed reply while a team message is waiting on a step. True if it was used. */
+  const tellReply = (question: string): boolean => {
+    const st = tellRef.current;
+    if (!st) return false;
+    if (/^(cancel|never ?mind|stop|forget it)\b/i.test(question)) {
+      tellRef.current = null;
+      push({ role: "user", text: question, practice: true });
+      push({ role: "goat", text: "OK, not sent.", practice: true });
+      return true;
+    }
+    // A new request ("/", "@", a chip, or another team message) drops the waiting step.
+    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || parseTeamMessage(question)) {
+      tellRef.current = null;
+      return false;
+    }
+    push({ role: "user", text: question, practice: true });
+    if (st.stage === "text") tellNext({ ...st, req: { ...st.req, text: question } });
+    else if (st.stage === "to") tellNext({ ...st, to: undefined, req: { ...st.req, to: question } });
+    else tellNext({ ...st, patientId: undefined, req: { ...st.req, patientName: question } });
+    return true;
+  };
+  const tryTeamMessage = (question: string): boolean => {
+    const req = parseTeamMessage(question);
+    if (!req) return false;
+    push({ role: "user", text: question, practice: true });
+    tellNext({ req, stage: "to" });
+    return true;
+  };
+
   /** New patient request → a card that opens the existing New Patient form prefilled. Never creates the patient. */
   const newPatientCard = (raw: string, shownAs?: string) => {
     push({ role: "user", text: shownAs ?? raw, practice: true });
@@ -907,7 +1145,7 @@ export function GlobalGoatPopup({
       const named = t.name ? matchPatientsByName(t.name, people) : [];
       if (named.length === 1) {
         const p = named[0];
-        push({ role: "goat", text: "Add this to-do?", practice: true, patientName: displayName(p.fullName), todoDraft: { title: t.title, dueDate: t.due, patientId: p.id, patientName: p.fullName, state: "open" } });
+        push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: displayName(p.fullName), todoDraft: { title: t.title, dueDate: t.due, patientId: p.id, patientName: p.fullName, state: "open" } });
         return true;
       }
       const title = t.name ? takeDueDate(td.text, practiceData().today).rest.replace(/[,\-–—\s]+$/, "") : t.title;
@@ -915,7 +1153,7 @@ export function GlobalGoatPopup({
       const offer = found.confident ? [found.confident.patient] : found.candidates.slice(0, 4).map((c) => c.patient);
       push({
         role: "goat",
-        text: offer.length ? "Add this to-do? (Not linked to a patient — tap one below to link it.)" : "Add this to-do?",
+        text: offer.length ? "Add to To-Do? (Not linked to a patient — tap one below to link it.)" : "Add this to-do?",
         practice: true,
         todoDraft: { title, dueDate: t.due, state: "open" },
         choices: offer.length ? offer.map((c) => ({ label: `Link to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${td.text}` })) : undefined,
@@ -1013,7 +1251,7 @@ export function GlobalGoatPopup({
       }
     }
     if (t.name && /^none$/i.test(t.name)) patient = null;
-    push({ role: "goat", text: "Add this to-do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
+    push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
     return true;
   };
   const confirmTodo = (msg: ChatMessage) => {
@@ -1040,7 +1278,7 @@ export function GlobalGoatPopup({
       if (p) push({ role: "goat", text: "Add this to the Notes in the patient file?", practice: true, patientName: displayName(p.fullName), noteDraft: { patientId: p.id, patientName: p.fullName, text: a.text, state: "open" } });
     } else if (a.type === "todoConfirm") {
       const p = a.patientId ? patientById(a.patientId) : null;
-      push({ role: "goat", text: "Add this to-do?", practice: true, patientName: p ? displayName(p.fullName) : undefined, todoDraft: { title: a.title, dueDate: a.due, patientId: p?.id, patientName: p?.fullName, state: "open" } });
+      push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: p ? displayName(p.fullName) : undefined, todoDraft: { title: a.title, dueDate: a.due, patientId: p?.id, patientName: p?.fullName, state: "open" } });
     } else if (a.type === "contactPaste") {
       if (!showContactImport(a.text, true)) push({ role: "goat", text: "I couldn't find a phone number in that. Each contact needs a name and a phone — try again, or type cancel.", practice: true });
       if (!looksLikeContactPaste(a.text) && parseContactPaste(a.text).every((d) => !d.phone)) flowRef.current = { k: "contactAdd" };
@@ -1141,8 +1379,15 @@ export function GlobalGoatPopup({
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
       return;
     }
-    // Plain-language to-do / new patient (no "/" needed).
+    // Team-message steps (tapped buttons, or the typed answer to "What should I tell Hannah?").
+    if (question.startsWith(TELL_TOKEN)) {
+      tellToken(question);
+      return;
+    }
+    if (!opts && tellReply(question)) return;
+    // Plain-language to-do / new patient / team message (no "/" needed).
     if (!opts && !isFlowToken(question) && !question.startsWith("/") && tryPlainIntent(question)) return;
+    if (!opts && !isFlowToken(question) && tryTeamMessage(question)) return;
     if (!opts && !isFlowToken(question) && detectBrief(question)) {
       flowRef.current = null;
       if (tryBrief(question)) return;
@@ -1457,7 +1702,16 @@ export function GlobalGoatPopup({
         ? "notFound"
         : "found";
 
-  if (!canView("patients")) return null;
+  if (!canView("patients")) {
+    return fullScreen ? (
+      <div className="flex min-h-[100dvh] items-center justify-center p-6 text-center text-sm text-[var(--text-muted)]">
+        G.O.A.T. isn&apos;t turned on for your account. Ask the office owner for Patients access.
+      </div>
+    ) : null;
+  }
+  const installKind = open && typeof window !== "undefined"
+    ? installTipKind({ ua: window.navigator.userAgent, standalone: isStandalone(), hasPrompt: Boolean(installEvt), dismissed: installDismissed, maxTouchPoints: window.navigator.maxTouchPoints })
+    : null;
   return (
     <>
       {jobPatient && job && (contextOverride ? (
@@ -1469,13 +1723,18 @@ export function GlobalGoatPopup({
       {open && (
         <section
           aria-label="G.O.A.T. chat"
-          className="fixed inset-x-2 bottom-2 z-[60] flex h-[min(97.5vh,calc(100dvh-1rem))] flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-[min(700px,calc(100dvh-2rem))] sm:w-[min(600px,calc(100vw-2rem))]"
+          className={
+            fullScreen
+              ? "fixed inset-0 z-[60] flex h-[100dvh] flex-col overflow-hidden bg-white pb-[env(safe-area-inset-bottom)]"
+              : "fixed inset-x-2 bottom-2 z-[60] flex h-[min(97.5vh,calc(100dvh-1rem))] flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-[min(700px,calc(100dvh-2rem))] sm:w-[min(600px,calc(100vw-2rem))]"
+          }
+          data-goat-app={fullScreen ? "" : undefined}
           data-goat-panel
           data-goat-section="global-goat"
         >
-          <header className="flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white">
+          <header className={`flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white ${fullScreen ? "pt-[max(0.5rem,env(safe-area-inset-top))]" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="G.O.A.T." className="h-11 w-11 shrink-0 rounded-full bg-white/80 object-cover" height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
+            <img alt="G.O.A.T." className={`shrink-0 rounded-full bg-white/80 object-cover ${fullScreen ? "h-[46px] w-[46px] ring-2 ring-white/55" : "h-11 w-11"}`} height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-lg font-semibold leading-tight">
                 G.O.A.T. <GoatStatusLine className="font-medium text-white/95" status={status} />
@@ -1489,12 +1748,12 @@ export function GlobalGoatPopup({
                     </button>
                   </>
                 ) : (
-                  "Ask about any patient by name"
+                  fullScreen ? "Ask about any patient" : "Ask about any patient by name"
                 )}
               </div>
             </div>
             <button style={{ fontSize: 12 }}
-              className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40"
+              className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
               disabled={!chat.messages.length || Boolean(job)}
               onClick={() => {
                 if (window.confirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back.")) {
@@ -1509,26 +1768,58 @@ export function GlobalGoatPopup({
             >
               Clear chat
             </button>
-            <button aria-label="Close G.O.A.T." className="rounded-lg px-2 py-0.5 text-xl leading-none hover:bg-white/20" onClick={() => setGlobalGoatOpen(false)} type="button">
-              ×
-            </button>
+            {fullScreen ? (
+              <Link aria-label="Close G.O.A.T. and open the full app" className="rounded-lg px-2 py-0.5 text-2xl font-light leading-none hover:bg-white/20" href="/patients" title="Open the full My Note Goat app">
+                ×
+              </Link>
+            ) : (
+              <button aria-label="Close G.O.A.T." className="rounded-lg px-2 py-0.5 text-xl leading-none hover:bg-white/20" onClick={() => setGlobalGoatOpen(false)} type="button">
+                ×
+              </button>
+            )}
           </header>
+          {installKind && (
+            <InstallTip
+              kind={installKind}
+              onDismiss={dismissInstallTip}
+              onInstall={async () => {
+                const evt = installEvt;
+                if (!evt) return;
+                await evt.prompt();
+                const choice = await evt.userChoice.catch(() => null);
+                setInstallEvt(null);
+                if (choice?.outcome === "accepted") dismissInstallTip();
+              }}
+              onGoatPage={pathname === GOAT_APP_PATH}
+            />
+          )}
 
-          <div ref={listRef} className="flex-1 space-y-2.5 overflow-y-auto bg-[var(--bg-soft,#f6f9fa)] px-3 py-3">
+          <div ref={listRef} className={`flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[#e4f0f7]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
                 <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
-                  <p className="font-semibold">{greeting}</p>
-                  <p className="text-xs text-[var(--text-muted)]">Ask about a patient, or tap one:</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
+                  <p><span className="font-semibold">{greeting}</span> What can I help with?</p>
+                  <p className="text-xs text-[var(--text-muted)]">Everything stays in NoteGoat.</p>
+                  <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
-                      <button className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white" data-goat-chip key={c} onClick={() => runChip(c)} type="button">
+                      <button
+                        className={
+                          fullScreen
+                            ? "flex items-center gap-2 rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-main)] active:bg-[#dff1f6]"
+                            : "rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white"
+                        }
+                        data-goat-chip
+                        key={c}
+                        onClick={() => runChip(c)}
+                        type="button"
+                      >
+                        {fullScreen && <span aria-hidden className="text-[15px]">{CHIP_ICONS[c] ?? "💬"}</span>}
                         {c}
                       </button>
                     ))}
                   </div>
-                  <span className="mt-1.5 block text-[11px] text-[var(--text-muted)]">Type / for commands, @ to message the team. Everything stays in NoteGoat.</span>
                 </div>
               </div>
             )}
@@ -1541,6 +1832,7 @@ export function GlobalGoatPopup({
                 <div key={m.id} className="flex gap-2">
                   <GoatAvatar size={28} />
                   <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                    {m.todoDraft?.state === "open" && <div className="mb-0.5 text-[11px] font-bold tracking-wide text-[#2f7f93]">NEW TO-DO</div>}
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <div className="whitespace-pre-line leading-snug">{m.text}</div>
                     {m.todoRows && m.todoRows.length > 0 && <TodoRows rows={m.todoRows} />}
@@ -1652,7 +1944,7 @@ export function GlobalGoatPopup({
             )}
           </div>
 
-          <div className="border-t border-[var(--line-soft)] bg-white px-3 pb-2 pt-2">
+          <div className={`border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -1665,7 +1957,9 @@ export function GlobalGoatPopup({
                   aria-label="Ask G.O.A.T."
                   aria-autocomplete="list"
                   aria-expanded={mentionMatches.length > 0}
-                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  // 16px in the phone app: iOS zooms the page on focus for anything smaller.
+                  className={fullScreen ? "h-11 w-full rounded-2xl border border-[var(--line-soft)] bg-white px-3.5 text-base" : "w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"}
+                  enterKeyHint="send"
                   onBlur={() => window.setTimeout(() => setMention(null), 150)}
                   onPaste={(e) => {
                     // A one-line box drops newlines, so a pasted contact list is handled here.
@@ -1713,7 +2007,7 @@ export function GlobalGoatPopup({
                     const t = e.target as HTMLInputElement;
                     syncMention(t.value, t.selectionStart ?? t.value.length);
                   }}
-                  placeholder="Ask about a patient… / for commands, @ to message the team"
+                  placeholder="Ask or say anything…"
                   ref={inputRef}
                   value={input}
                 />
@@ -1787,7 +2081,7 @@ export function GlobalGoatPopup({
                   </div>
                 )}
               </div>
-              <button style={{ fontSize: 14 }} className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
+              <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
                 Ask
               </button>
             </form>
@@ -2083,6 +2377,14 @@ function ContactImportCard({ imp, onChange, onConfirm, onCancel, onUndo }: { imp
   );
 }
 
+/** "Call Armen Barmen 555-555-5588" → text "Call Armen Barmen" + phone (shown on its own line). Saved title is unchanged. */
+function todoTitleParts(title: string): { text: string; phone: string } {
+  const m = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.exec(title);
+  if (!m || title.trim().length - m[0].length < 3 || title.indexOf(m[0]) + m[0].length < title.trim().length - 1) return { text: title, phone: "" };
+  return { text: title.slice(0, m.index).replace(/[\s,:-]+$/, ""), phone: m[0] };
+}
+const CHIP_ICONS: Record<string, string> = { "Morning Rundown": "☀️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
+
 function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
   const due = draft.dueDate ? `${draft.dueDate.slice(5, 7)}/${draft.dueDate.slice(8, 10)}/${draft.dueDate.slice(0, 4)}` : "no due date";
@@ -2090,10 +2392,14 @@ function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessa
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-todo>
-      <p className="rounded-md bg-[#eef8fb] px-2 py-1"><span className="font-semibold">{draft.title}</span><br />Due: {due}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
+      <div className="rounded-lg bg-[#eef8fb] px-2.5 py-2 text-[13px] leading-snug">
+        <span className="block font-semibold">{todoTitleParts(draft.title).text}</span>
+        {todoTitleParts(draft.title).phone && <span className="font-semibold text-[var(--brand-primary)]">{todoTitleParts(draft.title).phone}</span>}
+      </div>
+      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${due}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
       <div className="flex flex-wrap gap-1.5">
-        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">Confirm</button>
-        <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3.5 text-white`} onClick={onConfirm} style={{ fontSize: 13 }} type="button">Confirm</button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white px-3.5 text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 13 }} type="button">Cancel</button>
       </div>
     </div>
   );
@@ -2197,6 +2503,12 @@ function MessageCard(props: { draft: NonNullable<ChatMessage["msgDraft"]>; onSen
     return (
       <div className="mt-1.5 text-xs">
         <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.sent}</p>
+        {draft.patientId && draft.caseLabel && (
+          <p className="mt-1">
+            Case:{" "}
+            <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`}>{draft.caseLabel} ↗</Link>
+          </p>
+        )}
         <p className="mt-1 font-semibold text-emerald-700">
           ✓ Sent ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href="/messages">
@@ -2219,18 +2531,24 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
   const [error, setError] = useState("");
   const [eyesOnly, setEyesOnly] = useState(false);
   const sig = signer ? signatureFor(signer) : "";
-  const all = [{ label: draft.toLabel, userId: draft.toUserId }, ...(draft.alsoTo ?? [])];
+  // "Message the team": General, no @mention (everyone sees it in Messages).
+  const all = draft.toTeam ? [] : [{ label: draft.toLabel, userId: draft.toUserId }, ...(draft.alsoTo ?? [])];
   // No signature on messages (the author is shown); every recipient @mentioned.
-  const body = `${all.map((p) => `@${p.label}`).join(" ")} ${draft.text.trim()}`;
+  const body = draft.toTeam ? draft.text.trim() : `${all.map((p) => `@${p.label}`).join(" ")} ${draft.text.trim()}`;
   const allLabels = all.map((p) => p.label).join(" and ");
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
     <div className="mt-2 space-y-1 text-xs" data-goat-message>
       <p>
-        <span className="text-[var(--text-muted)]">To:</span> <strong>{all.map((p) => p.label).join(", ")}</strong>
+        <span className="text-[var(--text-muted)]">To:</span> <strong>{draft.toTeam ? draft.toLabel : all.map((p) => p.label).join(", ")}</strong>
       </p>
       <p>
-        <span className="text-[var(--text-muted)]">Case:</span> {draft.caseLabel ?? "None (general message)"}
+        <span className="text-[var(--text-muted)]">Case:</span>{" "}
+        {draft.caseLabel && draft.patientId ? (
+          <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`}>{draft.caseLabel} ↗</Link>
+        ) : (
+          draft.caseLabel ?? "None (general message)"
+        )}
       </p>
       <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1">{body}</p>
       <p className="text-[11px] text-[var(--text-muted)]">From: {sig ? sig.slice(1) : "you"}</p>
@@ -2270,7 +2588,7 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
           aria-pressed={eyesOnly}
           className={`${btn} ${eyesOnly ? "border-amber-500 bg-amber-100 text-amber-900" : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] opacity-70"}`}
           data-goat-eyes-only={eyesOnly ? "on" : "off"}
-          disabled={sending || all.some((p) => !p.userId)}
+          disabled={sending || !all.length || all.some((p) => !p.userId)}
           onClick={() => setEyesOnly((v) => !v)}
           style={{ fontSize: 12 }}
           title={!draft.toUserId ? `${draft.toLabel} has no login, so Eyes only isn't possible` : eyesOnly ? "Eyes only: just you and " + allLabels : "Posts to General. Tap for Eyes only"}

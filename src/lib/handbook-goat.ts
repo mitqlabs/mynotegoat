@@ -74,8 +74,9 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
-      heading: "\"/\" commands",
+      heading: "\"/\" commands (optional shortcuts)",
       steps: [
+        "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
         "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK), takes the rest as the text, and goes straight to the confirm card with the patient's name on it.",
         "It only asks \"Which case?\" when more than one patient matches, and only asks for the text when you typed just a name.",
@@ -102,6 +103,11 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Message the team (@mentions)",
       steps: [
+        "Just say it: \"message Hannah about John Smith\", \"tell hannah john smith's MRI is in\", \"text hannah can you call Mock Law\", \"let the team know the fax is down\". This is NoteGoat Messages (team chat), never an SMS to a phone.",
+        "Who: G.O.A.T. finds the team member. Two Hannahs? It asks which one. No match? It shows the team to pick from (or the whole team).",
+        "What: no message yet (\"message Hannah about John Smith\")? It asks \"What should I tell Hannah?\".",
+        "Which case: when a patient is named, G.O.A.T. always asks before linking — \"About Smith, John (Active)?\" (Yes / Different patient / No patient), or a list when several match. The sent message links to that case (tap it to open the patient).",
+        "\"Message the team …\" / \"let everyone know …\" posts to General with no @mention.",
         "Type @ and pick a teammate: \"@hannah please call kara back\".",
         "Tap 🔒 on the card for Eyes only — just you and them see it. Otherwise it posts to General.",
       ],
@@ -127,6 +133,17 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Every contacts save is also kept in the cloud's version history, so an admin can restore an earlier list if needed.",
     },
     {
+      heading: "G.O.A.T. on your phone (home-screen app)",
+      steps: [
+        "Open mynotegoat.com/goat: just the G.O.A.T. chat, full screen, made for phones. Same login, same patients, same confirm cards; admin-only answers stay admin-only. \"Full app\" (top right) opens the rest of My Note Goat.",
+        "iPhone/iPad (Safari): open /goat, tap Share, then Add to Home Screen. G.O.A.T. shows this tip at the top of the chat until you close it (×). Closing it is saved to your account, so it stays closed on your other devices too.",
+        "The first time you open the Home Screen icon, log in once. The app keeps its own login after that, and it comes straight back to G.O.A.T.",
+        "Android (Chrome): the tip has an Install button. Long-press the icon for shortcuts: Ask G.O.A.T., New to-do, Schedule.",
+        "A link like /goat?q=add to-do call Mock Law puts that text in the box. Nothing runs until you tap Send.",
+      ],
+      watchOut: "The Android app-store (APK) version isn't built yet. The home-screen app is the phone version for now.",
+    },
+    {
       heading: "Ask for help",
       steps: ["Type \"what can you do?\" or \"help\" and G.O.A.T. sums this up and links here."],
     },
@@ -140,10 +157,12 @@ export function goatHelpText(): string {
     `- Chips: ${CHIPS.join(", ")} (the last two are for admins)`,
     "- Look up patients, the schedule, to-dos, contacts, cases and money",
     "- Add signed notes, to-dos, payments and case changes (with a confirm card)",
-    "- Message the team with @ (🔒 Eyes only)",
-    `- Commands: ${SLASH_COMMANDS.map((c) => `/${c.cmd}`).join(", ")}`,
+    "- Message the team (\"tell hannah john smith's MRI is in\", or @; 🔒 Eyes only)",
+    "- Just say what you need in plain words; nothing needs a special command",
+    `- Optional shortcuts: ${SLASH_COMMANDS.map((c) => `/${c.cmd}`).join(", ")}`,
     "- Merge duplicate encounters on the patient page (with a backup)",
     "- Paste a list of contacts to add them all at once",
+    "- On your phone: open /goat and add G.O.A.T. to your Home Screen",
     "If I'm not sure, I'll ask. Full guide: Handbook → G.O.A.T.",
   ].join("\n");
 }
