@@ -807,7 +807,7 @@ export function GlobalGoatPopup({
     push({ role: "user", text: question, practice: true });
     const t = parseTodo(sl.rest, practiceData().today);
     if (!t.title) {
-      push({ role: "goat", text: 'What\'s the to-do? e.g. "/todo call Nazaryan for John Smith tomorrow" or "/todo John Smith: request records"', practice: true });
+      push({ role: "goat", text: 'What\'s the to-do? e.g. "/todo call Doe Law for John Smith tomorrow" or "/todo John Smith: request records"', practice: true });
       return true;
     }
     const people = allPatients();

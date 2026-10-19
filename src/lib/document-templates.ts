@@ -1,3 +1,4 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 export type DocumentTemplateScope = "specialistReferral" | "imagingRequest" | "generalLetter";
 
 export interface DocumentTemplate {
@@ -243,14 +244,37 @@ To Whom It May Concern,
 Please contact our office if additional information is needed.
 `;
 
+// New practices: the referral and imaging buttons need one letter of each
+// kind, so they get short fill-in skeletons instead of the full letters.
+const blankSpecialistReferralBody = `Date: {{TODAY_DATE}}
+
+Dear {{SPECIALIST_NAME}},
+
+Patient: {{PATIENT_FULL_NAME}}
+Date of Birth: {{PATIENT_DOB}}
+`;
+
+const blankImagingRequestBody = `Date: {{TODAY_DATE}}
+
+Imaging: {{IMAGING_TYPE}} {{IMAGING_REGIONS}}
+
+Patient: {{PATIENT_FULL_NAME}}
+Date of Birth: {{PATIENT_DOB}}
+`;
+
+const blankGeneralLetterBody = `Date: {{TODAY_DATE}}
+
+`;
+
 export function getDefaultBodyForDocumentScope(scope: DocumentTemplateScope) {
+  const blank = isBlankStarterWorkspace();
   if (scope === "imagingRequest") {
-    return defaultImagingRequestBody;
+    return blank ? blankImagingRequestBody : defaultImagingRequestBody;
   }
   if (scope === "generalLetter") {
-    return defaultGeneralLetterBody;
+    return blank ? blankGeneralLetterBody : defaultGeneralLetterBody;
   }
-  return defaultSpecialistReferralBody;
+  return blank ? blankSpecialistReferralBody : defaultSpecialistReferralBody;
 }
 
 function createTemplate(
@@ -338,13 +362,13 @@ export function getDefaultDocumentTemplateLibrary(): DocumentTemplateLibrary {
         "doc-specialist-referral",
         "Specialist Referral",
         "specialistReferral",
-        defaultSpecialistReferralBody,
+        getDefaultBodyForDocumentScope("specialistReferral"),
       ),
       createTemplate(
         "doc-imaging-request",
         "Imaging Request",
         "imagingRequest",
-        defaultImagingRequestBody,
+        getDefaultBodyForDocumentScope("imagingRequest"),
       ),
     ],
   };
@@ -364,7 +388,7 @@ function ensureRequiredTemplates(templates: DocumentTemplate[]) {
         "doc-specialist-referral",
         "Specialist Referral",
         "specialistReferral",
-        defaultSpecialistReferralBody,
+        getDefaultBodyForDocumentScope("specialistReferral"),
       ),
     );
   }
@@ -377,7 +401,7 @@ function ensureRequiredTemplates(templates: DocumentTemplate[]) {
         "doc-imaging-request",
         "Imaging Request",
         "imagingRequest",
-        defaultImagingRequestBody,
+        getDefaultBodyForDocumentScope("imagingRequest"),
       ),
     );
   }

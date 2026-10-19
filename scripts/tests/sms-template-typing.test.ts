@@ -3,7 +3,7 @@ import { applyExternalValue, createDebouncer } from "../../src/lib/draft-field";
 import { markLocalWrite, wasRecentlyWrittenLocally } from "../../src/lib/local-sync";
 import { readFileSync } from "node:fs";
 import { renderReminderText } from "../../src/lib/reminder-automation";
-import { DEFAULT_REMINDER_BODY, getDefaultSmsTemplates } from "../../src/lib/sms-templates";
+import { LEGACY_REMINDER_BODY, getDefaultSmsTemplates } from "../../src/lib/sms-templates";
 
 // Mock data only. Regression: typing in the Text Reminders template box
 // kept reverting because cloud echoes of each keystroke overwrote the field.
@@ -51,7 +51,7 @@ console.log("sms-template-typing: ok");
 
 // 4. {{DATE}}/{{TIME}} are the APPOINTMENT's date/time, and the default reminder text.
 const text = renderReminderText(
-  DEFAULT_REMINDER_BODY,
+  LEGACY_REMINDER_BODY,
   { appointmentId: "a", patientId: "p", patientName: "Doe, Jane", phone: "5550100", date: "2026-10-19", time: "14:30", appointmentType: "Office Visit" },
   undefined,
   { officeName: "Mock", doctorName: "Dr. Mock", phone: "5550199" },
@@ -61,5 +61,5 @@ assert.equal(
   "Hello Jane, just wanted to send over a reminder for your appointment on 10/19/2026 at 2:30 PM. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness",
 );
 assert.ok(!/Office Visit/.test(text), "no appointment type");
-assert.equal(getDefaultSmsTemplates().find((t) => /remind/i.test(t.name))?.body, DEFAULT_REMINDER_BODY);
+assert.equal(getDefaultSmsTemplates().find((t) => /remind/i.test(t.name))?.body, LEGACY_REMINDER_BODY);
 console.log("sms-template defaults: ok");

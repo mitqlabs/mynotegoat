@@ -1,5 +1,6 @@
 "use client";
 
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
@@ -325,7 +326,7 @@ function createInitialDraft(
     patientId: "",
     provider: defaultScheduleProvider,
     location: defaultScheduleLocation,
-    appointmentType: defaultType?.name ?? "Personal Injury Office Visit",
+    appointmentType: defaultType?.name ?? (isBlankStarterWorkspace() ? "" : "Personal Injury Office Visit"),
     caseLabel: "",
     room: "",
     startDate: selectedDate,
@@ -636,8 +637,8 @@ export default function AppointmentsPage() {
   // Provider / Location dropdowns read from Office Settings only — the
   // single canonical source. The previous logic also scanned every past
   // appointment for unique provider / location strings, which meant any
-  // historical typo ("Galstyan, Mike (Dr. Mike)" alongside "Dr. Mike
-  // Galstyan", or "Prime Spine Glendale" alongside "Prime Spine &
+  // historical typo ("Doe, Jane (Dr. Jane)" alongside "Dr. Jane
+  // Doe", or "Sample Clinic North" alongside "Sample Clinic &
   // Wellness") stuck around in the dropdown forever with no UI to remove
   // it. Office Settings is editable from Settings → Office.
   const providers = useMemo(() => {

@@ -1425,6 +1425,16 @@ export default function PatientsPage() {
     return () => { window.clearTimeout(t); window.clearTimeout(off); };
   }, [taskFromQuery, viewFromQuery]);
   const taskDoneCount = tasks.length - taskOpenCount;
+  // Setup guide "Add your first patient" links here with ?new=1.
+  const newFromQuery = searchParams.get("new");
+  useEffect(() => {
+    if (newFromQuery !== "1") return;
+    openNewPatientModal();
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new");
+    window.history.replaceState(null, "", url.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFromQuery]);
 
   // formatTaskDateInput removed — <UsDateInput> does its own formatting.
 
@@ -2777,7 +2787,7 @@ export default function PatientsPage() {
                         phone: formatUsPhoneInput(event.target.value),
                       }))
                     }
-                    placeholder="818-555-0123"
+                    placeholder="(555) 555-5555"
                     value={newPatientDraft.phone}
                   />
                 </label>
@@ -2831,7 +2841,7 @@ export default function PatientsPage() {
                         addressState: event.target.value.toUpperCase().replace(/[^A-Z]/g, ""),
                       }))
                     }
-                    placeholder="CA"
+                    placeholder="ST"
                     value={newPatientDraft.addressState}
                   />
                 </label>
@@ -2848,7 +2858,7 @@ export default function PatientsPage() {
                         addressZip: event.target.value.replace(/[^\d-]/g, ""),
                       }))
                     }
-                    placeholder="91205"
+                    placeholder="12345"
                     value={newPatientDraft.addressZip}
                   />
                 </label>

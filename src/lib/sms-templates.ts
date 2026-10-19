@@ -1,6 +1,7 @@
 "use client";
 
 import type { OfficeSettings } from "@/lib/office-settings";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export interface SmsTemplate {
   id: string;
@@ -16,9 +17,19 @@ export { expandTokens } from "@/lib/sms-render";
 
 export const SMS_TEMPLATES_STORAGE_KEY = "casemate.sms-templates.v1";
 
-/** Built-in appointment reminder text. */
-export const DEFAULT_REMINDER_BODY =
+/** Reminder text for practices that existed before the blank starter
+ *  (kept word for word so nothing changes for them). */
+export const LEGACY_REMINDER_BODY =
   "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
+
+/** Reminder text for new practices: signed with their own office name. */
+export const NEUTRAL_REMINDER_BODY =
+  "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-{{OFFICE_NAME}}";
+
+/** Built-in appointment reminder text for this workspace. */
+export function getDefaultReminderBody(): string {
+  return isBlankStarterWorkspace() ? NEUTRAL_REMINDER_BODY : LEGACY_REMINDER_BODY;
+}
 
 /**
  * Placeholders shown in the UI. {{DATE}} (old alias of {{APPT_DATE}}) and
@@ -60,7 +71,7 @@ export function getDefaultSmsTemplates(): SmsTemplate[] {
   });
   return [
     mk("🎂 Birthday", "Happy birthday, {{FIRST_NAME}}!"),
-    mk("⏰ Appointment Reminder", DEFAULT_REMINDER_BODY),
+    mk("⏰ Appointment Reminder", getDefaultReminderBody()),
     mk("✅ Records Received", "Hi {{FIRST_NAME}}, we've received your records."),
     mk("🗓️ Follow-Up", "Hi {{FIRST_NAME}}, following up on your last visit."),
     mk("💳 Payment Due", "Hi {{FIRST_NAME}}, this is a reminder about your outstanding balance."),

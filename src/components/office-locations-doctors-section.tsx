@@ -392,7 +392,7 @@ export function OfficeLocationsDoctorsSection() {
                               inputMode="numeric"
                               maxLength={10}
                               onCommit={(v) => updateLocation(loc.id, { zip: v })}
-                              placeholder="76133"
+                              placeholder="12345"
                               transform={(v) => v.replace(/[^\d-]/g, "")}
                               value={loc.zip}
                             />

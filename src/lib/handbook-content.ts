@@ -437,6 +437,17 @@ export const handbookChaptersOffice: HandbookChapter[] = [
     audience: "admin",
     tasks: [
       {
+        heading: "Set up a new practice (Setup guide)",
+        steps: [
+          "A new practice sees the Setup guide when it first signs in. It shows your progress, like Setup 3/6.",
+          "Work through the steps: Practice info (name, phone, address), Offices & hours, Doctors (pick the main doctor), Appointment types, Team members, then your first patient.",
+          "\u201cChange hours in Settings\u201d and the other Settings buttons open the real Settings section and shrink the guide to a small \u201cSetup 3/6 · Back to setup\u201d pill in the bottom-left corner, so nothing is covered.",
+          "Close it any time with × or Not now. Reopen it from Settings → Setup guide (next to the search box) or the Setup card on the Dashboard.",
+        ],
+        why: "A new practice starts clean: no appointment types, macros, charges or prices, saved diagnosis codes, letter or report templates, or texts from anyone else. You add your own. The official ICD-10 code search works from day one.",
+        watchOut: "A step only counts as done when the real setting is filled in. Typing just the practice name doesn't finish Practice info; it also needs a phone and an address.",
+      },
+      {
         heading: "Use the search box",
         steps: [
           "Settings → the 🔎 box at the top.",

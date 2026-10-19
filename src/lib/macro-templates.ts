@@ -1,3 +1,4 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 export const macroSections = [
   "subjective",
   "objective",
@@ -180,6 +181,18 @@ function defaultMacroTemplate(
 }
 
 export function getDefaultMacroLibrary(): MacroLibraryConfig {
+  // New practices start with an empty macro library they build themselves.
+  if (isBlankStarterWorkspace()) {
+    return {
+      setName: "My Macros",
+      enabledAutoFields: [...macroAutoFields],
+      saltDefaults: {
+        enabled: true,
+        sections: { subjective: true, objective: true, assessment: true, plan: true },
+      },
+      templates: [],
+    };
+  }
   return {
     setName: "Default PI Macros",
     enabledAutoFields: [...macroAutoFields],

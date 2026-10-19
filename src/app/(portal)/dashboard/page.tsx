@@ -1,5 +1,6 @@
 "use client";
 
+import { SetupProgressCard } from "@/components/onboarding-modal";
 import { DRILL_SORT_KEY, nextDrillSort, parseDrillSort, sortDrillPatients, type DrillSort } from "@/lib/referral-drill-sort";
 import { useReferralTicks } from "@/hooks/use-referral-ticks";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
@@ -983,6 +984,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {/* New practice: "Setup 3/6 · Continue setup" until setup is done. */}
+      <SetupProgressCard />
       {visibleSections === 0 && (
         <section className="panel-card p-4 text-sm text-[var(--text-muted)]">
           Your role doesn&apos;t include any Dashboard sections. An admin can change that in Settings → Admin Access.

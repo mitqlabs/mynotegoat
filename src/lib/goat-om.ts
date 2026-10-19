@@ -3,11 +3,11 @@
  *
  * Understands casual front-desk wording:
  *   "mark these paid: John Smith, 3200 / Alex Malex 5400"
- *   "Nazaryan paid 2800 on Smith, we asked 3200"
- *   "what's still waiting on checks from Nazaryan", "how much came in this month"
+ *   "Doe Law paid 2800 on Smith, we asked 3200"
+ *   "what's still waiting on checks from Doe Law", "how much came in this month"
  *   "discharge Smith, Malex and Lee today", "move these to ready to submit"
  *   "who's ready to bill", "who hasn't been seen in 2 weeks"
- *   "Smith switched to Yepremyan", "add 500 more to her", "do the same for Lee", "undo that"
+ *   "Smith switched to Examplar", "add 500 more to her", "do the same for Lee", "undo that"
  *
  * Pure: no React, no storage, no network. Every data change comes back as a
  * plan for ONE confirm card; nothing is written here. Names are matched
@@ -503,7 +503,7 @@ export function omTurn(raw: string, data: OmData, mem: OmMemory, followUps = tru
     return null;
   }
   {
-    // Bare question shapes without a question word ("checks still waiting from nazaryan", "money in last week").
+    // Bare question shapes without a question word ("checks still waiting from doe law", "money in last week").
     if (/^(checks?|payments?|money|collections?|total)\b/.test(l) && ![...one.matchAll(MONEY_RE)].some((m) => (parseMoney(m[0]) ?? 0) >= 10)) {
       const a = answerQuestion(one, data);
       if (a) return a;
@@ -528,7 +528,7 @@ export function omTurn(raw: string, data: OmData, mem: OmMemory, followUps = tru
     }
   }
 
-  // Reduction: "Nazaryan paid 2800 on Smith, we asked 3200".
+  // Reduction: "Doe Law paid 2800 on Smith, we asked 3200".
   if (/\b(asked|requested|req|billed|wanted|reduc\w*|instead of|accepted|took|settled|from\s+\$?[\d.,]+k?\s+to)\b/i.test(one) && /\bpaid|accept|settled|took|reduc|came in|check\b/i.test(one)) {
     const amts = [...one.matchAll(MONEY_RE)].map((m) => ({ n: parseMoney(m[0]), at: m.index ?? 0, s: m[0] })).filter((x) => x.n !== null && x.n! >= 10) as Array<{ n: number; at: number; s: string }>;
     if (amts.length >= 2) {
@@ -546,7 +546,7 @@ export function omTurn(raw: string, data: OmData, mem: OmMemory, followUps = tru
       let text = one;
       for (const a of amts) text = text.replace(a.s, " ");
       const { iso, rest } = takeDate(text, data.today);
-      // Payer: "Nazaryan paid … on Smith" / "from Nazaryan". The patient: "on/for Smith" or the name before "paid".
+      // Payer: "Doe Law paid … on Smith" / "from Doe Law". The patient: "on/for Smith" or the name before "paid".
       let who = "";
       let payer = "";
       const on = /\b(?:on|for)\s+([a-z][a-z' -]+?)(?:'s)?(?:\s+(?:case|file|bill))?(?:,|:|\s+we\b|\s+they\b|\s+but\b|\s+asked\b|\s+accepted\b|\s+after\b|$)/i.exec(rest);

@@ -43,6 +43,8 @@ export function expandTokens(body: string, ctx: SmsTokenContext): string {
     // No longer offered in the UI; still renders for old templates.
     "{{APPOINTMENT_TYPE}}": ctx.appointment?.type ?? "",
     "{{OFFICE_NAME}}": ctx.office?.officeName ?? "",
+    // Same as {{OFFICE_NAME}} (the practice name from Settings).
+    "{{PRACTICE_NAME}}": ctx.office?.officeName ?? "",
     "{{DOCTOR_NAME}}": ctx.office?.doctorName ?? "",
     "{{OFFICE_PHONE}}": ctx.office?.phone ?? "",
   };

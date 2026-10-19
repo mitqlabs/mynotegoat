@@ -23,9 +23,9 @@ export function useOnboarding() {
     });
   }, []);
 
-  const update = useCallback((patch: Partial<OnboardingState>) => {
+  const update = useCallback((fn: (current: OnboardingState) => OnboardingState) => {
     setState((current) => {
-      const next: OnboardingState = { ...current, ...patch };
+      const next = fn(current);
       saveOnboardingState(next);
       selfWriteCountRef.current++;
       notifyChange(onboardingStorageKey);
@@ -34,25 +34,26 @@ export function useOnboarding() {
   }, []);
 
   const markComplete = useCallback(() => {
-    update({ completedAt: new Date().toISOString() });
+    update((c) => ({ ...c, completedAt: new Date().toISOString() }));
   }, [update]);
 
-  const addSkipped = useCallback(
-    (stepId: string) => {
-      setState((current) => {
-        if (current.skippedSteps.includes(stepId)) return current;
-        const next: OnboardingState = {
-          ...current,
-          skippedSteps: [...current.skippedSteps, stepId],
+  const dismiss = useCallback(() => {
+    update((c) => (c.dismissedAt ? c : { ...c, dismissedAt: new Date().toISOString() }));
+  }, [update]);
+
+  const confirmStep = useCallback(
+    (stepId: string, on = true) => {
+      update((c) => {
+        const has = c.confirmedSteps.includes(stepId);
+        if (on === has) return c;
+        return {
+          ...c,
+          confirmedSteps: on ? [...c.confirmedSteps, stepId] : c.confirmedSteps.filter((s) => s !== stepId),
         };
-        saveOnboardingState(next);
-        selfWriteCountRef.current++;
-        notifyChange(onboardingStorageKey);
-        return next;
       });
     },
-    [],
+    [update],
   );
 
-  return { onboardingState: state, markComplete, addSkipped };
+  return { onboardingState: state, markComplete, dismiss, confirmStep };
 }

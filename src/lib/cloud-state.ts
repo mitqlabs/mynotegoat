@@ -686,6 +686,55 @@ export async function prepareCloudStateBeforeMount() {
 }
 
 /**
+ * Blank-starter decision (see workspace-starter.ts). Writes the marker only
+ * for a brand-new practice's owner; never touches an existing workspace.
+ * Never throws: a failure here leaves the workspace on legacy defaults.
+ */
+async function decideWorkspaceStarter(remoteKv: Map<string, unknown> | null) {
+  try {
+    const {
+      WORKSPACE_STARTER_KEY,
+      makeBlankStarterMarker,
+      parseWorkspaceStarter,
+      shouldMarkBlankStarter,
+    } = await import("@/lib/workspace-starter");
+    const cloudMarker = remoteKv?.get(WORKSPACE_STARTER_KEY);
+    if (parseWorkspaceStarter(cloudMarker) === "blank") {
+      window.localStorage.setItem(WORKSPACE_STARTER_KEY, JSON.stringify(cloudMarker));
+      return;
+    }
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) return;
+    const membership = getCurrentMembershipSync();
+    const workspaceOwnerId = (window.localStorage.getItem(ACTIVE_WORKSPACE_KEY) ?? "").split(":")[0];
+    const isOwner = !(membership && membership.isMember) && workspaceOwnerId === user.id;
+    const localRaw = window.localStorage.getItem(WORKSPACE_STARTER_KEY);
+    const mark = shouldMarkBlankStarter({
+      isOwner,
+      userCreatedAt: user.created_at,
+      cloudKeys: remoteKv ? Array.from(remoteKv.keys()) : null,
+      cloudMarker,
+      localMarker: localRaw,
+    });
+    if (!mark) return;
+    const marker =
+      parseWorkspaceStarter(localRaw) === "blank" ? JSON.parse(localRaw as string) : makeBlankStarterMarker();
+    window.localStorage.setItem(WORKSPACE_STARTER_KEY, JSON.stringify(marker));
+    const { upsertKvValue } = await import("@/lib/kv-cloud");
+    await upsertKvValue(WORKSPACE_STARTER_KEY, marker).catch((err: unknown) =>
+      console.error("[Cloud Sync] Saving the starter marker failed (will retry next load):", err),
+    );
+  } catch (err) {
+    console.error("[Cloud Sync] Starter decision failed (keeping legacy defaults):", err);
+  }
+}
+
+/**
  * Phase-1 bootstrap for table-backed entities.
  *
  * When the `patients` feature flag is on (via localStorage override or
@@ -935,6 +984,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.team-settings.v1",
           "casemate.team-member-order.v1",
           "casemate.onboarding.v1",
+          // Blank vs legacy starting defaults (workspace-starter.ts).
+          "casemate.workspace-starter.v1",
         ],
       };
 
@@ -951,6 +1002,10 @@ async function bootstrapTableBackedEntities() {
       const remoteKv: Map<string, unknown> | null = remoteKvRows
         ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
         : null;
+      // Starting defaults: decide ONCE whether this is a brand-new practice
+      // that should start blank (see workspace-starter.ts). Existing
+      // workspaces never get a marker and keep the legacy defaults.
+      await decideWorkspaceStarter(remoteKv);
       if (remoteKv !== null) {
         if (remoteKv.size === 0) {
           // First-run migration: push all enabled localStorage keys to the table.

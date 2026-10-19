@@ -1,5 +1,6 @@
 "use client";
 
+import { OPEN_SETTINGS_SECTION_EVENT } from "@/lib/onboarding";
 import { logActivity } from "@/lib/activity-log";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -66,8 +67,18 @@ export function TeamSettingsSection() {
   // the "Admin (You)" card. An office-admin member can still manage the
   // roster, but must not be shown as the account holder.
   const { isOwner } = useWorkspaceAccess();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "team",
+  );
   const [members, setMembers] = useState<Member[]>([]);
+  // The setup guide opens this section while Settings is already showing.
+  useEffect(() => {
+    const handleOpenSection = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === "team") setOpen(true);
+    };
+    window.addEventListener(OPEN_SETTINGS_SECTION_EVENT, handleOpenSection);
+    return () => window.removeEventListener(OPEN_SETTINGS_SECTION_EVENT, handleOpenSection);
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notReady, setNotReady] = useState(false);
@@ -402,7 +413,7 @@ export function TeamSettingsSection() {
   };
 
   return (
-    <section className="panel-card p-4">
+    <section className="panel-card p-4" id="settings-team">
       <button
         aria-expanded={open}
         className="group flex w-full items-start justify-between gap-3 text-left"

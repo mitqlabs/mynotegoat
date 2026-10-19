@@ -23,8 +23,8 @@ type Props = {
  * Parses the incoming single-string value on mount / external change,
  * holds the parts in local state, and emits a composed single string
  * on every user edit. Existing stored values with all sorts of shapes
- * ("123 Main St", "Glendale, CA", "1234 Fake St., Unit 111, Glendale,
- *  CA 91206") all survive the round-trip.
+ * ("123 Main St", "Anytown, ST", "1234 Fake St., Unit 111, Anytown,
+ *  ST 12345") all survive the round-trip.
  */
 export function AddressFieldGroup({
   value,
@@ -111,7 +111,7 @@ export function AddressFieldGroup({
               state: event.target.value.replace(/[^A-Za-z]/g, "").toUpperCase(),
             })
           }
-          placeholder="CA"
+          placeholder="ST"
           value={parts.state}
         />
       </label>
@@ -127,7 +127,7 @@ export function AddressFieldGroup({
               zip: event.target.value.replace(/[^\d-]/g, ""),
             })
           }
-          placeholder="91206"
+          placeholder="12345"
           value={parts.zip}
         />
       </label>

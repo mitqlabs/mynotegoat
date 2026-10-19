@@ -1,151 +1,153 @@
 "use client";
 
-import type { AppointmentTypeConfig } from "@/lib/schedule-appointment-types";
-import type { BillingMacroLibraryConfig } from "@/lib/billing-macros";
-import type { MacroTemplate } from "@/lib/macro-templates";
-import type { OfficeSettings } from "@/lib/office-settings";
+/**
+ * Setup guide (the welcome popup) state + progress.
+ *
+ * State lives in the workspace_kv row "casemate.onboarding.v1" so closing
+ * the guide on one computer closes it everywhere. Progress is DERIVED from
+ * the real settings (office info, doctors, appointment types, team,
+ * patients) plus two "confirmed" ticks for steps that have no data of their
+ * own (office hours look right; working without a team).
+ */
 
 export interface OnboardingState {
-  /** Steps the user explicitly skipped in this session. */
+  /** Steps the user explicitly skipped (kept for old saved copies). */
   skippedSteps: string[];
-  /** ISO timestamp of the moment the onboarding modal was dismissed as complete. */
+  /** Steps the user confirmed by hand ("Hours look right", "I work alone"). */
+  confirmedSteps: string[];
+  /** When the guide was finished from its last screen. */
   completedAt?: string;
+  /** When the guide was closed with ×. It reopens from Settings or the Dashboard. */
+  dismissedAt?: string;
 }
 
 const STORAGE_KEY = "casemate.onboarding.v1";
 
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((s): s is string => typeof s === "string") : [];
+}
+
+function isoOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export function normalizeOnboardingState(value: unknown): OnboardingState {
+  const parsed = value && typeof value === "object" ? (value as Partial<OnboardingState>) : {};
+  return {
+    skippedSteps: stringList(parsed.skippedSteps),
+    confirmedSteps: stringList(parsed.confirmedSteps),
+    completedAt: isoOrUndefined(parsed.completedAt),
+    dismissedAt: isoOrUndefined(parsed.dismissedAt),
+  };
+}
+
 export function loadOnboardingState(): OnboardingState {
-  if (typeof window === "undefined") return { skippedSteps: [] };
+  if (typeof window === "undefined") return normalizeOnboardingState(null);
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { skippedSteps: [] };
-    const parsed = JSON.parse(raw) as Partial<OnboardingState>;
-    return {
-      skippedSteps: Array.isArray(parsed.skippedSteps)
-        ? parsed.skippedSteps.filter((s): s is string => typeof s === "string")
-        : [],
-      completedAt:
-        typeof parsed.completedAt === "string" && parsed.completedAt.trim()
-          ? parsed.completedAt
-          : undefined,
-    };
+    return normalizeOnboardingState(raw ? JSON.parse(raw) : null);
   } catch {
-    return { skippedSteps: [] };
+    return normalizeOnboardingState(null);
   }
 }
 
 export function saveOnboardingState(state: OnboardingState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  void import("@/lib/kv-cloud").then((m) =>
-    m.dualWriteKv(STORAGE_KEY, "tasks", state),
-  );
+  void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "tasks", state));
 }
-
-export function markOnboardingComplete() {
-  const current = loadOnboardingState();
-  saveOnboardingState({
-    ...current,
-    completedAt: new Date().toISOString(),
-  });
-}
-
-export function addSkippedStep(stepId: string) {
-  const current = loadOnboardingState();
-  if (current.skippedSteps.includes(stepId)) return;
-  saveOnboardingState({
-    ...current,
-    skippedSteps: [...current.skippedSteps, stepId],
-  });
-}
-
-export function isOnboardingComplete(state: OnboardingState): boolean {
-  return Boolean(state.completedAt);
-}
-
-/**
- * Derived check: does the workspace have enough data for us to assume
- * the user has configured the basics? Used to detect a first-time user
- * who hasn't touched the override flag yet.
- */
-export function isWorkspaceBootstrapped(input: {
-  office: Pick<OfficeSettings, "officeName">;
-  appointmentTypes: AppointmentTypeConfig[];
-  macroTemplates: MacroTemplate[];
-  billingMacros: BillingMacroLibraryConfig;
-}): boolean {
-  if (!input.office.officeName.trim()) return false;
-  if (input.appointmentTypes.length === 0) return false;
-  if (input.macroTemplates.length < 4) return false;
-  if (input.billingMacros.treatments.length === 0) return false;
-  return true;
-}
-
-/**
- * SOAP coverage — returns true when every S/O/A/P section has at least one
- * macro. Used by the onboarding Step 4 gate and the persistent Setup
- * Checklist on the dashboard.
- */
-export function hasMacroInEverySection(templates: MacroTemplate[]): boolean {
-  const sections = new Set(templates.map((t) => t.section));
-  return (
-    sections.has("subjective") &&
-    sections.has("objective") &&
-    sections.has("assessment") &&
-    sections.has("plan")
-  );
-}
-
-/**
- * Starter pack of 7 generic SOAP macros — written per the handoff brief.
- * Bodies use double-bracket prompt slots (`[[name]]`) which the macro
- * template system already knows how to render. No hardcoded PII.
- *
- * Stored as a simplified shape so we can lazily import the full
- * `MacroTemplate` factory when the user commits to importing.
- */
-export interface StarterMacroPackEntry {
-  section: MacroTemplate["section"];
-  buttonName: string;
-  body: string;
-}
-
-export const starterMacroPack: StarterMacroPackEntry[] = [
-  {
-    section: "subjective",
-    buttonName: "Pain Intake",
-    body: "{{MR_MRS_MS_LAST_NAME}} reports pain in the [[region]] at [[pain_scale]]/10, frequency [[frequency]], aggravating factors [[aggravating]].",
-  },
-  {
-    section: "subjective",
-    buttonName: "Cervical Pain",
-    body: "Patient reports neck pain rated [[pain_scale]]/10, with [[character]] quality. Radiating to [[radiation]].",
-  },
-  {
-    section: "objective",
-    buttonName: "Vitals",
-    body: "BP [[bp]] · HR [[hr]] · Weight [[weight]] · Posture: [[posture]].",
-  },
-  {
-    section: "objective",
-    buttonName: "Cervical Exam",
-    body: "ROM cervical: flexion [[flex]], extension [[ext]]. Palpation: [[findings]]. Ortho tests: [[tests]].",
-  },
-  {
-    section: "assessment",
-    buttonName: "Progress",
-    body: "Patient demonstrates [[progress]] progress. Continue care plan.",
-  },
-  {
-    section: "plan",
-    buttonName: "Standard Visit",
-    body: "Treatment today: [[treatment]]. Frequency: [[frequency]] visits/week for [[duration]] weeks. Next visit: [[next]].",
-  },
-  {
-    section: "plan",
-    buttonName: "Referral",
-    body: "Refer to [[specialist]] for [[reason]]. Patient advised of next steps.",
-  },
-];
 
 export const onboardingStorageKey = STORAGE_KEY;
+
+// ── Progress ────────────────────────────────────────────────────────────
+
+export type SetupStepId = "practice" | "offices" | "doctors" | "appointmentTypes" | "team" | "firstPatient";
+
+export const SETUP_STEPS: { id: SetupStepId; title: string }[] = [
+  { id: "practice", title: "Practice info" },
+  { id: "offices", title: "Offices & hours" },
+  { id: "doctors", title: "Doctors" },
+  { id: "appointmentTypes", title: "Appointment types" },
+  { id: "team", title: "Team members" },
+  { id: "firstPatient", title: "First patient" },
+];
+
+export interface SetupProgressInput {
+  office: {
+    officeName: string;
+    phone: string;
+    address: string;
+    doctorName: string;
+    multiLocation: boolean;
+    locations: { addr1?: string; address?: string; phone?: string }[];
+    doctors: { id: string; name: string }[];
+  };
+  appointmentTypeCount: number;
+  /** Team members other than the owner. */
+  teamMemberCount: number;
+  patientCount: number;
+  confirmedSteps: string[];
+}
+
+export interface SetupProgress {
+  steps: { id: SetupStepId; title: string; done: boolean }[];
+  doneCount: number;
+  total: number;
+  complete: boolean;
+  /** First step that isn't done yet (or the last step). */
+  nextStepId: SetupStepId;
+}
+
+/** Practice info counts only when name, phone AND an address are filled in. */
+export function isPracticeInfoDone(office: SetupProgressInput["office"]): boolean {
+  if (!office.officeName.trim()) return false;
+  if (office.multiLocation && office.locations.length > 0) {
+    // With several offices, phone and address live per office.
+    return office.locations.some(
+      (l) => (l.addr1 ?? l.address ?? "").trim() && (l.phone ?? "").trim(),
+    );
+  }
+  return Boolean(office.phone.trim() && office.address.trim());
+}
+
+export function computeSetupProgress(input: SetupProgressInput): SetupProgress {
+  const confirmed = new Set(input.confirmedSteps);
+  const doneById: Record<SetupStepId, boolean> = {
+    practice: isPracticeInfoDone(input.office),
+    offices: confirmed.has("offices"),
+    doctors: input.office.doctors.some((d) => d.name.trim()) || Boolean(input.office.doctorName.trim()),
+    appointmentTypes: input.appointmentTypeCount > 0,
+    team: input.teamMemberCount > 0 || confirmed.has("team"),
+    firstPatient: input.patientCount > 0,
+  };
+  const steps = SETUP_STEPS.map((s) => ({ ...s, done: doneById[s.id] }));
+  const doneCount = steps.filter((s) => s.done).length;
+  const next = steps.find((s) => !s.done) ?? steps[steps.length - 1];
+  return { steps, doneCount, total: steps.length, complete: doneCount === steps.length, nextStepId: next.id };
+}
+
+/**
+ * Should the guide pop up by itself? Only for a brand-new practice (blank
+ * starter) that hasn't finished or closed it. Existing practices can still
+ * open it from Settings, it just never pops up on them.
+ */
+export function shouldAutoOpenSetupGuide(input: {
+  isBlankStarter: boolean;
+  isMember: boolean;
+  state: OnboardingState;
+}): boolean {
+  if (input.isMember || !input.isBlankStarter) return false;
+  return !input.state.completedAt && !input.state.dismissedAt;
+}
+
+// ── Open from anywhere ──────────────────────────────────────────────────
+
+export const OPEN_SETUP_GUIDE_EVENT = "notegoat:open-setup-guide";
+
+/** Open the setup guide (Settings button, Dashboard card). */
+export function openSetupGuide(step?: SetupStepId) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(OPEN_SETUP_GUIDE_EVENT, { detail: step ?? null }));
+}
+
+export const OPEN_SETTINGS_SECTION_EVENT = "notegoat:open-settings-section";

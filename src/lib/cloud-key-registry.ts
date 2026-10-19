@@ -61,6 +61,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.team-settings.v1": "workspace",
   "casemate.team-member-order.v1": "workspace",
   "casemate.onboarding.v1": "workspace",
+  "casemate.workspace-starter.v1": "workspace",
   "casemate.admin-access.v1": "workspace",
   "casemate.activity-log-settings.v1": "workspace",
   // dedicated tables

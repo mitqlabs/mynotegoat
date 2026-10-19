@@ -4,34 +4,10 @@ import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-type BillingPeriod = "monthly" | "annual";
-
-type PeriodOption = {
-  period: BillingPeriod;
-  name: string;
-  price: string;
-  cadence: string;
-  note?: string;
-  highlight?: boolean;
-};
-
-// One all-access plan, billed monthly or annually.
-const PERIOD_OPTIONS: PeriodOption[] = [
-  {
-    period: "monthly",
-    name: "Monthly",
-    price: "$199.99",
-    cadence: "/mo",
-  },
-  {
-    period: "annual",
-    name: "Annual",
-    price: "$1,999.99",
-    cadence: "/yr",
-    note: "2 months free",
-    highlight: true,
-  },
-];
+// One plan, everything included. Payment is waived for now (no card, no
+// charge); new accounts still wait for admin approval.
+const PLAN_PRICE = "$199.99";
+const PLAN_CADENCE = "/month";
 
 // Everything is included — one plan, full access.
 const PLAN_FEATURES = [
@@ -46,7 +22,6 @@ const PLAN_FEATURES = [
 ];
 
 export default function SignupPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState<BillingPeriod | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -59,11 +34,6 @@ export default function SignupPage() {
     event.preventDefault();
     setError("");
     setMessage("");
-
-    if (!selectedPeriod) {
-      setError("Please choose monthly or annual billing first.");
-      return;
-    }
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
@@ -81,7 +51,8 @@ export default function SignupPage() {
       options: {
         emailRedirectTo: redirectTo,
         data: {
-          selected_period: selectedPeriod,
+          // Single plan; kept for older admin tooling that reads it.
+          selected_period: "monthly",
         },
       },
     });
@@ -104,11 +75,11 @@ export default function SignupPage() {
         <img src="/mynotegoatlogo.png" alt="My Note Goat" className="mx-auto mb-3 h-24 w-auto" />
         <h1 className="mt-2 text-3xl font-semibold text-[var(--text-main)]">Create Account</h1>
         <p className="mt-2 text-[15px] text-[var(--text-muted)]">
-          Choose your plan, then sign up with your clinic email.
+          Sign up with your clinic email.
         </p>
       </div>
 
-      {/* One all-access plan — choose billing period */}
+      {/* One all-access plan */}
       <div>
         <span className="text-sm font-semibold text-[var(--text-main)]">Your plan</span>
         <div className="mt-2 rounded-[14px] border-2 border-[var(--line-strong)] bg-white p-4">
@@ -127,43 +98,18 @@ export default function SignupPage() {
             ))}
           </ul>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {PERIOD_OPTIONS.map((option) => {
-              const isSelected = selectedPeriod === option.period;
-              return (
-                <button
-                  key={option.period}
-                  type="button"
-                  onClick={() => setSelectedPeriod(option.period)}
-                  className={`relative rounded-[14px] border-2 px-4 py-3 text-left transition ${
-                    isSelected
-                      ? "border-[var(--brand-primary)] bg-[#ecf4fa]"
-                      : "border-[var(--line-strong)] bg-white hover:border-[#9ab8cc]"
-                  }`}
-                >
-                  {isSelected && (
-                    <span className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                      </svg>
-                    </span>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-bold text-[var(--text-main)]">{option.name}</span>
-                    {option.note && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-                        {option.note}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-xl font-bold text-[var(--text-main)]">{option.price}</span>
-                    <span className="text-sm text-[var(--text-muted)]">{option.cadence}</span>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2 rounded-[14px] bg-[#ecf4fa] px-4 py-3">
+            <div>
+              <span className="text-xl font-bold text-[var(--text-main)]">{PLAN_PRICE}</span>
+              <span className="text-sm text-[var(--text-muted)]">{PLAN_CADENCE}</span>
+            </div>
+            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+              Payment waived for now
+            </span>
           </div>
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            No card needed today, and you won&apos;t be charged. Your account opens once it&apos;s approved.
+          </p>
         </div>
       </div>
 
@@ -213,7 +159,7 @@ export default function SignupPage() {
 
         <button
           type="submit"
-          disabled={loading || supabaseMissing || !selectedPeriod}
+          disabled={loading || supabaseMissing}
           className="rounded-[14px] bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-white disabled:opacity-50"
         >
           {loading ? "Creating account..." : "Create Account"}
