@@ -5,6 +5,7 @@ type PageProps = {
     patientId?: string;
     encounterId?: string;
     appointmentId?: string;
+    questionnaire?: string;
   }>;
 };
 
@@ -30,11 +31,18 @@ export default async function EncountersPage({ searchParams }: PageProps) {
       ? params.appointmentId.trim()
       : undefined;
 
+  // Patient file → "Insert into Objective": which questionnaire to put first.
+  const initialQuestionnaireId =
+    typeof params.questionnaire === "string" && /^[0-9a-f-]{36}$/i.test(params.questionnaire.trim())
+      ? params.questionnaire.trim()
+      : undefined;
+
   return (
     <EncounterWorkspace
       initialAppointmentId={initialAppointmentId}
       initialEncounterId={initialEncounterId}
       initialPatientId={initialPatientId}
+      initialQuestionnaireId={initialQuestionnaireId}
     />
   );
 }

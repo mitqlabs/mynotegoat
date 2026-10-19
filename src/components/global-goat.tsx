@@ -77,6 +77,7 @@ import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
+import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 
@@ -311,6 +312,8 @@ export function GlobalGoatPopup({
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
+  // Questionnaires received, not reviewed yet (Morning Rundown line).
+  const { rows: receivedForms } = useFormRequests({ awaitingReview: true }, !practiceOverride);
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
@@ -664,6 +667,13 @@ export function GlobalGoatPopup({
       appointments: d.appointments,
       tasks: d.tasks,
       unreadMessages,
+      questionnaires: practiceOverride
+        ? []
+        : receivedForms.map((r) => ({
+            patientId: r.patient_id,
+            patientName: allPatients().find((p) => p.id === r.patient_id)?.fullName ?? "a patient",
+            formName: r.form_name,
+          })),
       locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
       patients: allPatients().map((p) => ({
         id: p.id,

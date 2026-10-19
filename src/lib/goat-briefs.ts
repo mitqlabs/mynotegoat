@@ -49,6 +49,8 @@ export interface BriefData {
   tasks: BriefTask[];
   locations: BriefLocation[];
   unreadMessages?: number;
+  /** Patient questionnaires received and not reviewed yet (Send form). */
+  questionnaires?: Array<{ patientId: string; patientName: string; formName: string }>;
 }
 export interface BriefLink {
   label: string;
@@ -208,6 +210,7 @@ export function morningRundown(data: BriefData): BriefAnswer {
   const open = openTodos(data);
   const due = open;
   const unread = data.unreadMessages ?? 0;
+  const forms = data.questionnaires ?? [];
   return {
     text: [
       `Today (${us(data.today)}): ${todays.length} visit${todays.length === 1 ? "" : "s"}`,
@@ -216,8 +219,16 @@ export function morningRundown(data: BriefData): BriefAnswer {
       ...(open.length ? [] : ["- Nothing open."]),
     ].join("\n"),
     todoRows: open.slice(0, 15).map((t) => todoRow(t, data.today)),
-    textAfter: [...(open.length > 15 ? [`- …and ${open.length - 15} more (/view todo)`] : []), `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`].join("\n"),
-    links: [{ label: "Open Schedule", href: `/appointments?date=${data.today}` }, ...(unread ? [{ label: "Open Messages", href: "/messages" }] : [])],
+    textAfter: [
+      ...(open.length > 15 ? [`- …and ${open.length - 15} more (/view todo)`] : []),
+      `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`,
+      ...(forms.length ? [`\n${forms.length} questionnaire${forms.length === 1 ? "" : "s"} received: ${forms.map((f) => f.patientName).join(", ")}`] : []),
+    ].join("\n"),
+    links: [
+      { label: "Open Schedule", href: `/appointments?date=${data.today}` },
+      ...(unread ? [{ label: "Open Messages", href: "/messages" }] : []),
+      ...forms.slice(0, 5).map((f) => ({ label: `Review ${f.patientName}'s questionnaire`, href: `/patients/${encodeURIComponent(f.patientId)}` })),
+    ],
   };
 }
 

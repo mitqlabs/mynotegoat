@@ -450,7 +450,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Office Settings — office details and logo, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, Case Flow rules, which patient-page sections start open.",
           "Macros — SOAP macros, billing macros (treatments, diagnosis codes, bundles), package builder.",
-          "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording.",
+          "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
           "Team Members — logins, roles, doctor flag, per-person patient-page sections.",
           "Admin Access — roles, what managers see, who can delete what, the delete password.",
@@ -862,6 +862,46 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         ],
         watchOut:
           "Generate PDF opens the print dialog — it does not save a file into the chart. If the letter belongs in the file, save it and upload it back under Patient Files.",
+      },
+    ],
+  },
+  {
+    id: "patient-forms",
+    title: "Patient forms (questionnaires)",
+    summary: "Text or email a patient a questionnaire; their answers drop into Objective exactly as if you clicked the macros.",
+    audience: "all",
+    feature: "patients",
+    tasks: [
+      {
+        heading: "Send a form",
+        steps: [
+          "Open the patient → Send form (next to + To Do).",
+          "Pick the form (New Patient Questionnaire ships ready). Tick Spinal decompression case if it applies — it's already ticked when the schedule has a decompression visit.",
+          "Create secure link, then Copy link, Text it (opens Messages) or Email it (opens your mail app). Nothing is sent until you press send there.",
+        ],
+        why: "The link is long and random, works for one patient only, needs no login, and stops working after the days you chose (14 by default) or when you Revoke it from the same window. The patient's answers save to the cloud as they go, so they can stop and finish later from the same link.",
+        watchOut: "The link opens that patient's answers to whoever has it. Send it only to the patient's own phone or email.",
+      },
+      {
+        heading: "When it comes back",
+        steps: [
+          "The patient file shows a green \"Questionnaire received\" card with every answer; G.O.A.T.'s Morning Rundown lists it too.",
+          "Pick the visit and click Insert into Objective — or open the patient's note: the same card waits above the SOAP macros.",
+          "Each section fills its own Objective macro (MVC HX, Vitals, Medical & Family HX…) through the same path as clicking it, so the wording, the clickable answers and any linked charges are identical.",
+          "Dismiss if you don't want it in a note. The answers stay saved; Show past questionnaires → Review again brings it back.",
+        ],
+        why: "Insert only ever ADDS to Objective. If Objective already has text (or that macro was already run), it asks first and still changes nothing that's there. Who inserted or dismissed it, and when, is saved with the questionnaire and in the Activity Log.",
+      },
+      {
+        heading: "Change a form (Settings → Templates → Forms)",
+        steps: [
+          "Each section is one of your Objective macros. Tick or untick it, move it up or down, and choose when it's included: Always, Decompression cases only, or Not for decompression cases.",
+          "Questions → untick any you don't want patients to see (Vitals ships with just Height and Weight; blood pressure is taken in the office).",
+          "Optionally reword a question or an option the way a patient would say it, and add Spanish. Hover an option to see the exact words that go in the note.",
+          "+ New form, Duplicate, Delete, or Restore default for the shipped one.",
+        ],
+        why: "Options come straight from your macros, so a change to a macro shows up in the next form you send. Forms already sent keep the questions they were sent with. Options that are blanks to fill (\"smoke ___ pack a ___\") or the word DELETE aren't shown to patients; they can type in the \"something else\" box instead.",
+        watchOut: "Renaming an Objective macro? Check Settings → Forms: a section whose macro can't be found is left out of the form (the Send form window tells you which).",
       },
     ],
   },

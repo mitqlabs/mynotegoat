@@ -19,6 +19,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.key-dates.v1": "workspace",
   "casemate.schedule-settings.v1": "workspace",
   "casemate.sms-templates.v1": "workspace",
+  "casemate.patient-forms.v1": "workspace",
   "casemate.sms-reminders.v1": "workspace",
   "casemate.contact-directory.v1": "workspace",
   "casemate.contact-categories.v1": "workspace",

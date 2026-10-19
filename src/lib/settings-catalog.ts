@@ -30,6 +30,8 @@ export type SettingsSectionKey =
   | "documents"
   | "reports"
   | "smsTemplates"
+  // Patient questionnaires (Send form on the patient file).
+  | "forms"
   | "textReminders"
   | "emailSettings"
   // "admin" is the outer wrapper that nests the five admin-y subsections
@@ -216,6 +218,13 @@ export const settingsSearchCatalog: Array<{
     key: "smsTemplates",
     title: "SMS / Text Templates",
     aliases: ["sms", "text", "text message", "messages", "imessage"],
+    parent: "templates",
+  },
+  {
+    key: "forms",
+    title: "Forms (patient questionnaires)",
+    description: "Questionnaires you text or email to a patient, built from your Objective macros.",
+    aliases: ["form", "forms", "questionnaire", "intake", "new patient questionnaire", "send form", "patient form", "survey"],
     parent: "templates",
   },
   {

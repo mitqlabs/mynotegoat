@@ -98,6 +98,7 @@ import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-
 import { EditAppointmentModal } from "@/components/edit-appointment-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { QuestionnaireReviewCards, SendFormButton } from "@/components/patient-forms-panel";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
 import { TreatmentPlanSection } from "@/components/treatment-plan-section";
@@ -5164,6 +5165,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     return out;
   })();
 
+  // Questionnaires (Send form / Questionnaire received).
+  const formVisitTypes = scheduleAppointments.filter((a) => a.patientId === patient.id).map((a) => a.appointmentType);
+  const formEncounters = encountersByNewest.filter((e) => e.patientId === patient.id);
+
   return (
     <div className="space-y-5">
       {checkoutNoteDialog}
@@ -5207,6 +5212,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               >
                 + To Do
               </button>
+              <SendFormButton
+                email={patientEmail}
+                firstName={firstName}
+                patientId={patient.id}
+                patientName={patient.fullName}
+                phone={patientPhone}
+                visitTypes={formVisitTypes}
+              />
             </div>
             {quickTaskStatusMessage && (
               <p className="text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
@@ -5274,6 +5287,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </button>
         </div>
       </section>
+
+      <QuestionnaireReviewCards encounters={formEncounters} patientId={patient.id} patientName={patient.fullName} />
 
       <section className="panel-card overflow-hidden" data-goat-section="info">
         <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">

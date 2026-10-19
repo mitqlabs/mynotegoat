@@ -18,6 +18,7 @@ import { PackageBuilderSettingsPanel } from "@/components/package-builder-settin
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
+import { PatientFormsSettingsPanel } from "@/components/patient-forms-settings-panel";
 import { TextRemindersSettingsPanel } from "@/components/text-reminders-settings-panel";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
@@ -101,6 +102,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   documents: false,
   reports: false,
   smsTemplates: false,
+  forms: false,
   textReminders: false,
   emailSettings: false,
   admin: false,
@@ -133,6 +135,7 @@ type BackupModuleId =
   | "documentTemplates"
   | "reportTemplates"
   | "smsTemplates"
+  | "patientForms"
   | "appointments"
   | "encounters"
   | "patientDiagnoses"
@@ -258,6 +261,12 @@ const backupModules: BackupModuleDefinition[] = [
     label: "SMS / Text Templates",
     description: "Patient text message templates (sent manually via Messages.app)",
     keys: ["casemate.sms-templates.v1"],
+  },
+  {
+    id: "patientForms",
+    label: "Forms",
+    description: "Patient questionnaire templates (Settings → Forms)",
+    keys: ["casemate.patient-forms.v1"],
   },
   {
     id: "appointments",
@@ -2811,6 +2820,7 @@ export default function SettingsPage() {
         resolvedSection === "contactCategories" ||
         resolvedSection === "documents" ||
         resolvedSection === "smsTemplates" ||
+        resolvedSection === "forms" ||
         resolvedSection === "textReminders" ||
         resolvedSection === "emailSettings"
       ) {
@@ -5093,6 +5103,16 @@ export default function SettingsPage() {
         title="SMS / Text Templates"
       >
         <SmsTemplateSettingsPanel />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        description="Questionnaires you send a patient from their file (Send form). Built from your Objective macros, so answers drop straight into the note."
+        hidden={!showSection("forms")}
+        isOpen={sectionIsOpen("forms")}
+        onToggle={() => toggleSection("forms")}
+        title="Forms"
+      >
+        <PatientFormsSettingsPanel />
       </CollapsibleSection>
 
       <CollapsibleSection

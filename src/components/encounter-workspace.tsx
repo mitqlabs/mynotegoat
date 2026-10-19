@@ -20,6 +20,11 @@ import {
   listImportCandidateMacros,
   type ImportPlan,
 } from "@/lib/chirotouch-import";
+import { QuestionnaireInsertBanner } from "@/components/questionnaire-insert-banner";
+import { logActivity } from "@/lib/activity-log";
+import { refreshFormRequests } from "@/hooks/use-form-requests";
+import { answersToMacroFills, findSectionMacro } from "@/lib/patient-forms";
+import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
@@ -81,6 +86,8 @@ type EncounterWorkspaceProps = {
   initialEncounterId?: string;
   /** Appointment handed over from the patient page's "+ Encounter" button. */
   initialAppointmentId?: string;
+  /** Patient file → "Insert into Objective" for this questionnaire. */
+  initialQuestionnaireId?: string;
 };
 
 /**
@@ -961,7 +968,7 @@ function AppointmentsOverview({
   );
 }
 
-export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId }: EncounterWorkspaceProps) {
+export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId, initialQuestionnaireId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
   const { getPlansForPatient, updatePlan } = useTreatmentPlans();
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
@@ -2083,6 +2090,76 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setImportPlan(null);
     setImportCandidates([]);
     setImportExcludedMacroIds(new Set());
+  };
+
+  // Patient questionnaire → Objective, through the same macro-run path as a
+  // click: each section's answers render its own Objective macro. Only ever
+  // appends; asks first when Objective already has text.
+  const applyQuestionnaire = async (row: FormRequestRow) => {
+    if (!selectedEncounter) return;
+    if (selectedEncounter.signed) {
+      setMessage("Encounter is closed. Reopen it to insert the questionnaire.");
+      return;
+    }
+    const snapshot = row.raw_submission?.snapshot ?? row.snapshot;
+    const answers = row.raw_submission?.answers ?? row.answers ?? {};
+    const fills = answersToMacroFills(snapshot, answers);
+    if (!fills.length) {
+      setMessage("That questionnaire has no answers to insert.");
+      return;
+    }
+    const resolved = fills.map((fill) => ({
+      fill,
+      macro: macroLibraryById.get(fill.macroId) ?? findSectionMacro({ macroName: fill.macroName }, macroLibrary.templates),
+    }));
+    const lost = resolved.filter((r) => !r.macro).map((r) => r.fill.macroName);
+    const existingText = (selectedEncounter.soap.objective ?? "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    const repeats = resolved
+      .filter((r) => r.macro && selectedEncounter.macroRuns.some((run) => run.section === "objective" && run.macroId === r.macro!.id))
+      .map((r) => r.macro!.buttonName);
+    if (existingText || repeats.length) {
+      const ok = window.confirm(
+        `Objective already has text${repeats.length ? ` (including ${repeats.join(", ")})` : ""}.\n\n` +
+          "Add the questionnaire answers BELOW it? Nothing already in the note is changed or removed.",
+      );
+      if (!ok) return;
+    }
+    const context = buildMacroContext(selectedEncounter.patientId, selectedEncounter.encounterDate);
+    let applied = 0;
+    for (const { fill, macro } of resolved) {
+      if (!macro) continue;
+      const snippetId = createEncounterMacroRunId();
+      const html = renderMacroTemplateWithPromptSpans(macro.body, fill.answers, context, snippetId);
+      if (!html.trim()) continue;
+      appendSoapSection(selectedEncounter.id, "objective", html);
+      addMacroRun(selectedEncounter.id, {
+        id: snippetId,
+        section: "objective",
+        macroId: macro.id,
+        macroName: macro.buttonName,
+        body: macro.body,
+        answers: { ...fill.answers },
+        generatedText: html,
+      });
+      applied += 1;
+    }
+    const { added, removed } = reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
+    setActiveSection("objective");
+    const res = await manageFormRequest(row.id, "inserted", selectedEncounter.id);
+    refreshFormRequests();
+    logActivity({
+      category: "notes",
+      action: "form.inserted",
+      summary: `Inserted ${row.form_name} into Objective (${selectedEncounter.encounterDate})`,
+      patientId: selectedEncounter.patientId,
+      patientName: selectedEncounter.patientName,
+    });
+    setMessage(
+      `Questionnaire inserted into Objective: ${applied} macro${applied === 1 ? "" : "s"}.` +
+        (lost.length ? ` Not found in your Objective macros: ${lost.join(", ")}.` : "") +
+        (res.ok ? "" : " (Couldn't mark it reviewed — it may show again; dismiss it from the patient file.)") +
+        formatChargeDelta(added, removed),
+    );
   };
 
   /**
@@ -4345,6 +4422,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               </section>
 
               <section className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                <QuestionnaireInsertBanner
+                  focusId={initialQuestionnaireId}
+                  onInsert={applyQuestionnaire}
+                  patientId={selectedEncounter.patientId}
+                  signed={selectedEncounter.signed}
+                />
 
                 <div className="mt-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                   <div className="flex items-center justify-between gap-2">
