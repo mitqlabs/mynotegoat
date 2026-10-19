@@ -5300,7 +5300,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         // nudge, never a blocker. Fields are right below (Case info).
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
           <span className="font-semibold text-[#8a5a00]">Case info missing</span>
-          <span className="text-[var(--text-muted)]">Attorney, Date Of Injury and Initial Exam can be added any time; the Case # builds itself from the Date Of Injury.</span>
+          <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
           <button
             className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
             onClick={() => {
