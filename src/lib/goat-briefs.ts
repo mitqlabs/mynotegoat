@@ -357,6 +357,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: "todo", hint: "Add a to-do, on its own or for a case", example: "/todo call Mock Law for John Smith friday" },
   { cmd: "view", hint: "See a list: todo, schedule, messages (admins: appointment check, quick biz)", example: "/view todo" },
   { cmd: "contact", hint: "Add contacts (one or a pasted list) or edit one", example: "/contact" },
+  { cmd: "new", hint: "New patient from a call/text — opens the New Patient form prefilled", example: "/new Jane Doe 817-555-0100 atty Mock Law DOI 10/12 appt tomorrow 3pm" },
+  { cmd: "schedule", hint: "Book a visit for an existing patient (confirm card)", example: "/schedule John Smith friday at 3" },
 ];
 
 /** The "/" being typed at the start of the input ("/no" → "no"), or null. */

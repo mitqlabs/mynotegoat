@@ -69,7 +69,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Notes, to-dos and payments",
       steps: [
         "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
-        "To-dos: \"/todo call Mock Law for John Smith friday\".",
+        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. offers to link it — tap or ignore.",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },
@@ -85,6 +85,19 @@ export const goatHandbookChapter: HandbookChapter = {
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],
+    },
+    {
+      heading: "Schedule visits and new patients (no / needed)",
+      steps: [
+        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
+        "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
+        "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, attorney, DOI, day and time filled in. You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
+        "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",
+        "Name matches an existing patient and you said \"new appt\"? G.O.A.T. asks: \"Existing patient Armen Barmen, or a new patient?\".",
+        "A call or text about a new patient (\"I have a new patient for you …\" or /new …): G.O.A.T. opens Patient List → New Patient prefilled, including the New Patient Evaluation date and time. It asks only about what's unclear (e.g. which part is the last name).",
+        "Days and times: tomorrow, next Wednesday, friday, 10/22; \"3\" or \"10\" are read inside office hours (3 PM, 10 AM).",
+      ],
+      watchOut: "G.O.A.T. never creates a patient or books on its own — you always save the form or tap Confirm.",
     },
     {
       heading: "Message the team (@mentions)",

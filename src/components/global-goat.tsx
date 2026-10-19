@@ -64,6 +64,8 @@ import { loadCaseStatuses } from "@/lib/case-statuses";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
+import { detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
+import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
 import { breaksFlow, continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
@@ -74,7 +76,7 @@ import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/l
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget } from "@/lib/goat-briefs";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
-import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, type BriefData } from "@/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
 import { loadOfficeSettings } from "@/lib/office-settings";
@@ -299,7 +301,7 @@ export function GlobalGoatPopup({
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
   const { addAppointments, removeAppointment } = useScheduleAppointments();
-  const { addTask } = useTasks();
+  const { addTask, tasks: openTaskRows } = useTasks();
   const { roleTier, roleKnown } = useWorkspaceAccess();
   /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
   const isGoatAdmin = roleKnown && isAdminTier(roleTier);
@@ -363,6 +365,7 @@ export function GlobalGoatPopup({
     return m ? decodeURIComponent(m[1]) : null;
   }, [pathname]);
   const allPatients = () => livePatients(patientsOverride);
+  const formRouter = useRouter();
   const patientById = (id: string | null) => findPatient(patientsOverride, id);
   const current = patientById(chat.patientId);
 
@@ -446,11 +449,11 @@ export function GlobalGoatPopup({
     const step = planBooking({ question, patient: { id: patient.id, fullName: patient.fullName }, todayIso: data.today, appointments: data.appointments, settings, types: [...new Set(data.appointments.map((a) => a.appointmentType).filter(Boolean))] });
     const name = displayName(patient.fullName);
     if (step.kind === "needDay") {
-      push({ role: "goat", text: `What day should I book ${name}? (e.g. "Thursday at 3" or "10/20 9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question } });
+      push({ role: "goat", text: `What day should I book ${name}? (e.g. "Thursday at 3" or "10/20 9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question }, formLaunch: { kind: "newAppointment", label: "Or open New Appointment", patientId: patient.id } });
       return;
     }
     if (step.kind === "needTime") {
-      push({ role: "goat", text: `What time on ${dayLabel(step.date)} for ${name}? (e.g. "3" or "9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question } });
+      push({ role: "goat", text: `What time on ${dayLabel(step.date)} for ${name}? (e.g. "3" or "9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question }, formLaunch: { kind: "newAppointment", label: "Or open New Appointment", patientId: patient.id, date: step.date } });
       return;
     }
     push({ role: "goat", text: draftSummary(step.draft), patientName: name, booking: { ...step.draft, state: "open" } });
@@ -777,6 +780,159 @@ export function GlobalGoatPopup({
     push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
     return true;
   };
+  /** New patient request → a card that opens the existing New Patient form prefilled. Never creates the patient. */
+  const newPatientCard = (raw: string, shownAs?: string) => {
+    push({ role: "user", text: shownAs ?? raw, practice: true });
+    const settings = scheduleSettings() ?? loadScheduleSettings();
+    const attorneys = practiceOverride ? [] : loadContactDirectory().filter((c) => c.category.toLowerCase() === "attorney").map((c) => c.name);
+    const parsed = parseIntakeText(newPatientIntakeText(raw), { todayIso: practiceData().today, attorneys, settings });
+    const d = parsed.draft;
+    const name = [d.firstName, d.lastName].filter(Boolean).join(" ");
+    const lines = [
+      name && `- Name: ${name}`,
+      d.phone && `- Phone: ${d.phone}`,
+      d.attorney && `- Attorney: ${d.attorney}`,
+      d.nonPi && "- Non-PI (cash)",
+      d.dateOfInjury && `- Date of Injury: ${d.dateOfInjury}`,
+      d.apptDate && `- New Patient Evaluation: ${dayLabel(d.apptDate)}${d.apptTime ? ` at ${to12hLabel(d.apptTime)}` : ""}`,
+      d.note && `- Note: ${d.note}`,
+    ].filter(Boolean);
+    const text = [
+      lines.length ? "New patient — I'll fill in the New Patient form with:" : "New patient — I'll open the New Patient form.",
+      ...lines,
+      parsed.ask.length ? `Please check: ${parsed.ask.join(" ")}` : "",
+      "Nothing is saved until you click Create Patient.",
+    ].filter(Boolean).join("\n");
+    // Already a patient with that name? Offer to book them instead (never required).
+    const existing = name ? matchPatientsByName(name, allPatients()).slice(0, 3) : [];
+    const when = d.apptDate ? ` ${d.apptDate.slice(5, 7)}/${d.apptDate.slice(8, 10)}${d.apptTime ? ` at ${to12hLabel(d.apptTime)}` : ""}` : "";
+    push({
+      role: "goat",
+      text,
+      practice: true,
+      formLaunch: { kind: "newPatient", label: "Open New Patient form", draft: d as Record<string, string | boolean | number | undefined>, ask: parsed.ask },
+      choices: existing.length ? existing.map((p) => ({ label: `${choiceLabel(toChatPatient(p))} is already a patient — book them instead`, question: `book ${p.fullName.replace(/,/g, "")}${when}` })) : undefined,
+    });
+  };
+  /**
+   * Booking someone who may be new ("schedule armen barmen for new appt next Thursday at 3pm"):
+   * an existing match → "Existing patient … or a new patient?" (unless they said "new patient");
+   * otherwise a button that opens New Appointment in New-patient mode, prefilled (phone from a
+   * matching open "call …" to-do). Nothing is created until Save Appointment.
+   */
+  const newVisitFlow = (shown: string, text: string, saysNewPatient: boolean, pushUser = true) => {
+    if (pushUser) push({ role: "user", text: shown, practice: true });
+    const settings = scheduleSettings() ?? loadScheduleSettings();
+    const attorneys = practiceOverride ? [] : loadContactDirectory().filter((c) => c.category.toLowerCase() === "attorney").map((c) => c.name);
+    const parsed = parseIntakeText(text, { todayIso: practiceData().today, attorneys, settings });
+    const d = parsed.draft;
+    const name = [d.firstName, d.lastName].filter(Boolean).join(" ");
+    const people = allPatients();
+    let existing = name ? matchPatientsByName(name, people) : [];
+    if (!existing.length) {
+      const f = findPatientsInQuestion(shown, people.map(toChatPatient));
+      existing = (f.confident ? [f.confident.patient] : f.candidates.map((c) => c.patient)).map((c) => patientById(c.id)).filter((p): p is PatientRecord => Boolean(p));
+    }
+    existing = existing.slice(0, 3);
+    const when = d.apptDate ? ` ${d.apptDate.slice(5, 7)}/${d.apptDate.slice(8, 10)}${d.apptTime ? ` at ${to12hLabel(d.apptTime)}` : ""}` : "";
+    const bookExisting = (p: PatientRecord) => `book ${p.fullName.split(",").map((x) => x.trim()).reverse().join(" ")}${when}`;
+    if (existing.length && !saysNewPatient) {
+      const who = existing.length === 1 ? `Existing patient ${displayName(existing[0].fullName)}` : "One of these existing patients";
+      push({
+        role: "goat",
+        text: `${who}, or a new patient?`,
+        practice: true,
+        choices: [
+          ...existing.map((p) => ({ label: `Existing: ${choiceLabel(toChatPatient(p))}`, question: bookExisting(p) })),
+          { label: "New patient", question: `schedule new patient ${name || displayName(existing[0].fullName)}${when}` },
+        ],
+      });
+      return;
+    }
+    const todo = findTodoPhone(d, openTaskRows);
+    const phone = d.phone || todo?.phone || "";
+    const lines = [
+      name && `- Name: ${name}`,
+      phone && `- Phone: ${phone}${!d.phone && todo ? " (from your to-do)" : ""}`,
+      d.attorney && `- Attorney: ${d.attorney}`,
+      d.dateOfInjury && `- Date of Injury: ${d.dateOfInjury}`,
+      d.apptDate && `- Visit: ${dayLabel(d.apptDate)}${d.apptTime ? ` at ${to12hLabel(d.apptTime)}` : ""} (New Patient)`,
+      d.note && `- Note: ${d.note}`,
+    ].filter(Boolean);
+    const ask = parsed.ask.filter((a) => !/patient's name|last name/i.test(a) || !name);
+    push({
+      role: "goat",
+      text: [
+        `New patient visit — I'll open New Appointment in New-patient mode${lines.length ? " with:" : "."}`,
+        ...lines,
+        ask.length ? `Please check: ${ask.join(" ")}` : "",
+        "Fill in the rest; Save Appointment adds the patient and books the visit.",
+      ].filter(Boolean).join("\n"),
+      practice: true,
+      formLaunch: {
+        kind: "newAppointment",
+        label: "Open New Appointment (new patient)",
+        date: d.apptDate,
+        time: d.apptTime,
+        newPatient: { lastName: d.lastName, firstName: d.firstName, phone, attorney: d.attorney, dateOfLoss: d.dateOfInjury, notes: d.note },
+        taskId: todo?.taskId,
+      },
+      choices: existing.length ? existing.map((p) => ({ label: `${choiceLabel(toChatPatient(p))} is already a patient — book them instead`, question: bookExisting(p) })) : undefined,
+    });
+  };
+  /** Open the form behind a formLaunch button (prefill handed over in sessionStorage). */
+  const openForm = (f: NonNullable<ChatMessage["formLaunch"]>) => {
+    if (f.kind === "newPatient") {
+      stashNewPatientPrefill({ draft: f.draft as Partial<IntakeDraft>, ask: f.ask });
+      formRouter.push("/patients?new=1");
+      return;
+    }
+    stashNewAppointmentPrefill({ patientId: f.patientId, date: f.date, time: f.time, newPatient: f.newPatient, taskId: f.taskId });
+    formRouter.push("/appointments?new=1");
+    // Already on the Schedule: the URL change alone doesn't remount it.
+    window.setTimeout(() => window.dispatchEvent(new Event("goat:new-appointment")), 60);
+  };
+  /** Plain wording, no "/" needed: "add to-do call vartan …", "schedule new patient John Smith next Wednesday at 10". */
+  const tryPlainIntent = (question: string): boolean => {
+    const td = detectPlainTodo(question);
+    if (td) {
+      push({ role: "user", text: question, practice: true });
+      if (!td.text) {
+        push({ role: "goat", text: 'What\'s the to-do? e.g. "add to-do call Mock Law about records friday"', practice: true });
+        return true;
+      }
+      const t = parseTodo(td.text, practiceData().today);
+      const people = allPatients();
+      // "Name: text" picks the case outright; otherwise the text stays as typed and a match is only offered.
+      const named = t.name ? matchPatientsByName(t.name, people) : [];
+      if (named.length === 1) {
+        const p = named[0];
+        push({ role: "goat", text: "Add this to-do?", practice: true, patientName: displayName(p.fullName), todoDraft: { title: t.title, dueDate: t.due, patientId: p.id, patientName: p.fullName, state: "open" } });
+        return true;
+      }
+      const title = t.name ? takeDueDate(td.text, practiceData().today).rest.replace(/[,\-–—\s]+$/, "") : t.title;
+      const found = findPatientsInQuestion(title, people.map(toChatPatient));
+      const offer = found.confident ? [found.confident.patient] : found.candidates.slice(0, 4).map((c) => c.patient);
+      push({
+        role: "goat",
+        text: offer.length ? "Add this to-do? (Not linked to a patient — tap one below to link it.)" : "Add this to-do?",
+        practice: true,
+        todoDraft: { title, dueDate: t.due, state: "open" },
+        choices: offer.length ? offer.map((c) => ({ label: `Link to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${td.text}` })) : undefined,
+      });
+      return true;
+    }
+    const nv = detectNewVisitBooking(question);
+    if (nv) {
+      newVisitFlow(question, nv.text, nv.saysNewPatient);
+      return true;
+    }
+    if (detectNewPatientRequest(question)) {
+      newPatientCard(question);
+      return true;
+    }
+    return false;
+  };
   /** "/note …" → the note dialog; "/todo …" → a to-do confirm card. True if handled. */
   const trySlash = (question: string): boolean => {
     const sl = parseSlash(question);
@@ -790,6 +946,25 @@ export function GlobalGoatPopup({
     }
     if (sl.cmd === "view") {
       runView(question, sl.rest);
+      return true;
+    }
+    if (sl.cmd === "new") {
+      newPatientCard(sl.rest, question);
+      return true;
+    }
+    if (sl.cmd === "schedule") {
+      if (!sl.rest) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: 'Who and when? e.g. "/schedule John Smith friday at 3". For a new patient: "/new Jane Doe 817-555-0100 appt tomorrow 3pm".', practice: true, formLaunch: { kind: "newAppointment", label: "Open New Appointment" } });
+        return true;
+      }
+      const nv = detectNewVisitBooking(`schedule ${sl.rest}`);
+      if (nv) {
+        newVisitFlow(question, nv.text, nv.saysNewPatient);
+        return true;
+      }
+      shownAsRef.current = question;
+      send(scheduleSlashToBooking(sl.rest));
       return true;
     }
     const started = startFlow(sl.cmd, sl.rest, flowCtx());
@@ -966,6 +1141,8 @@ export function GlobalGoatPopup({
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
       return;
     }
+    // Plain-language to-do / new patient (no "/" needed).
+    if (!opts && !isFlowToken(question) && !question.startsWith("/") && tryPlainIntent(question)) return;
     if (!opts && !isFlowToken(question) && detectBrief(question)) {
       flowRef.current = null;
       if (tryBrief(question)) return;
@@ -1169,7 +1346,13 @@ export function GlobalGoatPopup({
       }
       const p = found.named ? null : current ?? patientById(openPatientId);
       if (p) return startBooking(question, p);
-      push({ role: "goat", text: found.named ? `I couldn't find a patient named "${found.named}". Who should I book?` : "Who should I book? Type their name, the day and the time." });
+      if (found.named) {
+        // No existing patient by that name → treat as new: New Appointment in New-patient mode, prefilled.
+        push({ role: "goat", text: `I couldn't find an existing patient named "${found.named}".`, practice: true });
+        newVisitFlow(question, newVisitBookingText(question), true, false);
+        return;
+      }
+      push({ role: "goat", text: "Who should I book? Type their name, the day and the time.", formLaunch: { kind: "newAppointment", label: "Open New Appointment" } });
       return;
     }
     if (!(waitingForName && found.named) && tryPractice(question, Boolean(found.confident))) return;
@@ -1367,6 +1550,16 @@ export function GlobalGoatPopup({
                         {l.label} ↗
                       </Link>
                     ))}
+                    {m.formLaunch && (
+                      <button
+                        className="mt-2 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                        data-goat-form={m.formLaunch.kind}
+                        onClick={() => openForm(m.formLaunch!)}
+                        type="button"
+                      >
+                        {m.formLaunch.label} ↗
+                      </button>
+                    )}
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
                     {m.contactEdit && <ContactEditCard d={m.contactEdit} onCancel={() => setMsg(m.id, { contactEdit: { ...m.contactEdit!, state: "canceled" } })} onChange={(d) => setMsg(m.id, { contactEdit: d })} onConfirm={(d) => confirmContactEdit(m, d)} />}

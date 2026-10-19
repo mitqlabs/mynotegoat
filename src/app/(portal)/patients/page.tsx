@@ -3,6 +3,11 @@
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
+import { useScheduleSettings } from "@/hooks/use-schedule-settings";
+import { checkIntakeAppointment, intakeTime, mdyToIso, newPatientVisitType, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
+import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import { to12hLabel } from "@/lib/time-12h";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -299,6 +304,11 @@ type NewPatientDraft = {
   notes: string;
   isCashPatient: boolean;
   locationId: string;
+  /** New Patient Evaluation (first visit): MM/DD/YYYY + typed 12h time. */
+  evalDate: string;
+  evalTime: string;
+  evalProvider: string;
+  evalLocation: string;
 };
 
 const detailRowsTemplate: DetailRow[] = [
@@ -526,7 +536,13 @@ export default function PatientsPage() {
   }, [savedFromQuery]);
 
   const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
-  const { scheduleAppointments } = useScheduleAppointments();
+  const { scheduleAppointments, addAppointments } = useScheduleAppointments();
+  const { appointmentTypes } = useScheduleAppointmentTypes();
+  const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
+  /** After Create Patient: booking result (shown in the form when the visit couldn't be booked). */
+  const [newPatientBookingIssue, setNewPatientBookingIssue] = useState<{ patientId: string; name: string; reason: string } | null>(null);
+  /** G.O.A.T. /new: things to double-check on the prefilled form. */
+  const [newPatientAsk, setNewPatientAsk] = useState<string[]>([]);
   // Discharge dates as the patient page's Discharge box shows them.
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   // Initial Exam dates as the patient page's Initial Exam box shows them.
@@ -675,6 +691,10 @@ export default function PatientsPage() {
     notes: "",
     isCashPatient: false,
     locationId: "",
+    evalDate: "",
+    evalTime: "",
+    evalProvider: "",
+    evalLocation: "",
   });
 
   const resetNewPatientDraft = () => {
@@ -696,14 +716,49 @@ export default function PatientsPage() {
       notes: "",
       isCashPatient: false,
       locationId: "",
+      evalDate: "",
+      evalTime: "",
+      evalProvider: "",
+      evalLocation: "",
     });
   };
 
   const openNewPatientModal = () => {
     setNewPatientMessage("");
+    setNewPatientBookingIssue(null);
+    setNewPatientAsk([]);
     resetNewPatientDraft();
+    const office = loadOfficeSettings();
+    setNewPatientDraft((c) => ({ ...c, locationId: c.locationId || (selectedLocationId && selectedLocationId !== NO_OFFICE_FILTER ? selectedLocationId : ""), evalProvider: office.doctorName?.trim() ?? "", evalLocation: office.officeName?.trim() ?? "" }));
     setShowNewPatientModal(true);
   };
+  // G.O.A.T. "/new …" lands here (/patients?new=1) with the pasted call parsed into the form.
+  const newFromQuery = searchParams.get("new");
+  useEffect(() => {
+    if (newFromQuery !== "1") return;
+    const pre = takeNewPatientPrefill();
+    openNewPatientModal();
+    if (pre) {
+      const d = pre.draft;
+      setNewPatientDraft((c) => ({
+        ...c,
+        lastName: d.lastName ?? c.lastName,
+        firstName: d.firstName ?? c.firstName,
+        phone: d.phone ?? c.phone,
+        attorney: d.attorney ?? c.attorney,
+        dateOfLoss: d.dateOfInjury ?? c.dateOfLoss,
+        isCashPatient: d.nonPi ?? c.isCashPatient,
+        notes: d.note ?? c.notes,
+        evalDate: d.apptDate ? `${d.apptDate.slice(5, 7)}/${d.apptDate.slice(8, 10)}/${d.apptDate.slice(0, 4)}` : c.evalDate,
+        evalTime: d.apptTime ? to12hLabel(d.apptTime) : c.evalTime,
+      }));
+      setNewPatientAsk(pre.ask);
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new");
+    window.history.replaceState({}, "", url.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ?new=1
+  }, [newFromQuery]);
 
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
@@ -737,6 +792,39 @@ export default function PatientsPage() {
     if (!newPatientDraft.isCashPatient && !newPatientDraft.dateOfLoss.trim()) {
       setNewPatientMessage("Date Of Injury is required.");
       return;
+    }
+
+    // New Patient Evaluation → the first appointment. Checked BEFORE the
+    // patient is created so a bad date/time or a full slot is fixed first.
+    let firstVisit: { iso: string; time: string; type: string; durationMin: number; settings: typeof globalScheduleSettings } | null = null;
+    if (newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) {
+      const iso = mdyToIso(newPatientDraft.evalDate);
+      if (!iso) {
+        setNewPatientMessage("New Patient Evaluation date must be MM/DD/YYYY.");
+        return;
+      }
+      const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
+      const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+      const t = intakeTime(newPatientDraft.evalTime, iso, settings);
+      if (!t) {
+        setNewPatientMessage("Add the New Patient Evaluation time (e.g. 3:00 PM).");
+        return;
+      }
+      const type = newPatientVisitType(appointmentTypes);
+      if (!type) {
+        setNewPatientMessage("No appointment types are set up (Settings → Schedule).");
+        return;
+      }
+      const check = checkIntakeAppointment({ apptDate: iso, apptTime: t.time, appointmentType: type.name, durationMin: type.durationMin }, scheduleAppointments, settings);
+      if (check.outsideHours && settings.enforceOfficeHours) {
+        setNewPatientMessage(`${to12hLabel(t.time)} is outside office hours that day.${check.suggestions.length ? ` Open: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
+        return;
+      }
+      if (check.taken) {
+        setNewPatientMessage(`${to12hLabel(t.time)} is taken.${check.suggestions.length ? ` Open nearby: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
+        return;
+      }
+      firstVisit = { iso, time: t.time, type: type.name, durationMin: type.durationMin, settings };
     }
 
     const attorneyName = newPatientDraft.isCashPatient
@@ -775,7 +863,8 @@ export default function PatientsPage() {
       attorney: attorneyName,
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
-      initialExam: "",
+      // The evaluation date IS the Initial Exam date.
+      initialExam: firstVisit ? newPatientDraft.evalDate.trim() : "",
       phone: formatUsPhoneInput(newPatientDraft.phone),
       email: "",
       address: composePatientAddress(
@@ -800,6 +889,34 @@ export default function PatientsPage() {
     if (!createdPatient) {
       setNewPatientMessage("Could not create patient. Check required fields and try again.");
       return;
+    }
+
+    // Book the first visit. The patient is already saved; if this fails we
+    // say so and leave the patient in place (book it from the Schedule).
+    if (firstVisit) {
+      const record: ScheduleAppointmentRecord = {
+        id: createAppointmentId(),
+        patientId: createdPatient.id,
+        patientName: createdPatient.fullName,
+        provider: newPatientDraft.evalProvider.trim(),
+        location: newPatientDraft.evalLocation.trim(),
+        appointmentType: firstVisit.type,
+        caseLabel: newPatientDraft.isCashPatient ? "" : scheduleCaseLabel(createdPatient.dateOfLoss, createdPatient.fullName),
+        room: "",
+        date: firstVisit.iso,
+        startTime: firstVisit.time,
+        durationMin: firstVisit.durationMin,
+        status: "Scheduled",
+        note: "",
+        overrideOfficeHours: false,
+      };
+      try {
+        addAppointments([record]);
+      } catch (error) {
+        setNewPatientBookingIssue({ patientId: createdPatient.id, name: createdPatient.fullName, reason: error instanceof Error ? error.message : "the schedule couldn't be saved" });
+        setNewPatientMessage("");
+        return;
+      }
     }
 
     setShowNewPatientModal(false);
@@ -2659,6 +2776,12 @@ export default function PatientsPage() {
                 </button>
               </div>
 
+              {newPatientAsk.length > 0 && (
+                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
+                  <p className="font-semibold">Filled in by G.O.A.T. — please check:</p>
+                  <ul className="ml-4 list-disc">{newPatientAsk.map((q) => <li key={q}>{q}</li>)}</ul>
+                </div>
+              )}
               <label className="mt-4 flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2">
                 <input
                   checked={newPatientDraft.isCashPatient}
@@ -2857,8 +2980,8 @@ export default function PatientsPage() {
               {!newPatientDraft.isCashPatient && (
                 <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
                   <h4 className="text-sm font-semibold">Attorney Information</h4>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <label className="grid gap-1">
+                  <div className="mt-2 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                    <label className="grid min-w-0 gap-1">
                       <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
                       <input
                         className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -2926,7 +3049,103 @@ export default function PatientsPage() {
                         value={newPatientCaseNumberPreview}
                       />
                     </label>
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-sm font-semibold text-[var(--text-muted)]">{newPatientDraft.isCashPatient ? "First Visit" : "New Patient Evaluation"}</span>
+                      <input
+                        aria-label={newPatientDraft.isCashPatient ? "First visit date" : "New Patient Evaluation date"}
+                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                        data-testid="new-patient-eval-date"
+                        inputMode="numeric"
+                        maxLength={10}
+                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
+                        placeholder="MM/DD/YYYY"
+                        value={newPatientDraft.evalDate}
+                      />
+                    </label>
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
+                      <input
+                        aria-label="Evaluation time"
+                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                        data-testid="new-patient-eval-time"
+                        onBlur={() => {
+                          const iso = mdyToIso(newPatientDraft.evalDate);
+                          const t = iso ? intakeTime(newPatientDraft.evalTime, iso, globalScheduleSettings) : null;
+                          if (t) setNewPatientDraft((current) => ({ ...current, evalTime: to12hLabel(t.time) }));
+                        }}
+                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
+                        placeholder="3:00 PM"
+                        value={newPatientDraft.evalTime}
+                      />
+                    </label>
                   </div>
+                  {(newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
+                    <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" data-row="new-patient-eval-details">
+                      <p className="self-end text-xs text-[var(--text-muted)] sm:col-span-2">
+                        Books a <span className="font-semibold">{newPatientVisitType(appointmentTypes)?.name ?? "New Patient"}</span> visit and sets the Initial Exam date. Time snaps to office hours.
+                      </p>
+                      <label className="grid min-w-0 gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">Provider</span>
+                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalProvider: event.target.value }))} value={newPatientDraft.evalProvider} />
+                      </label>
+                      <label className="grid min-w-0 gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">Location</span>
+                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalLocation: event.target.value }))} value={newPatientDraft.evalLocation} />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {newPatientDraft.isCashPatient && (
+                <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3" data-row="new-patient-first-visit">
+                  <h4 className="text-sm font-semibold">First Visit</h4>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-sm font-semibold text-[var(--text-muted)]">{newPatientDraft.isCashPatient ? "First Visit" : "New Patient Evaluation"}</span>
+                      <input
+                        aria-label={newPatientDraft.isCashPatient ? "First visit date" : "New Patient Evaluation date"}
+                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                        data-testid="new-patient-eval-date"
+                        inputMode="numeric"
+                        maxLength={10}
+                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
+                        placeholder="MM/DD/YYYY"
+                        value={newPatientDraft.evalDate}
+                      />
+                    </label>
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
+                      <input
+                        aria-label="Evaluation time"
+                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                        data-testid="new-patient-eval-time"
+                        onBlur={() => {
+                          const iso = mdyToIso(newPatientDraft.evalDate);
+                          const t = iso ? intakeTime(newPatientDraft.evalTime, iso, globalScheduleSettings) : null;
+                          if (t) setNewPatientDraft((current) => ({ ...current, evalTime: to12hLabel(t.time) }));
+                        }}
+                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
+                        placeholder="3:00 PM"
+                        value={newPatientDraft.evalTime}
+                      />
+                    </label>
+                  </div>
+                  {(newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
+                    <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" data-row="new-patient-eval-details">
+                      <p className="self-end text-xs text-[var(--text-muted)] sm:col-span-2">
+                        Books a <span className="font-semibold">{newPatientVisitType(appointmentTypes)?.name ?? "New Patient"}</span> visit and sets the Initial Exam date. Time snaps to office hours.
+                      </p>
+                      <label className="grid min-w-0 gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">Provider</span>
+                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalProvider: event.target.value }))} value={newPatientDraft.evalProvider} />
+                      </label>
+                      <label className="grid min-w-0 gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">Location</span>
+                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalLocation: event.target.value }))} value={newPatientDraft.evalLocation} />
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2970,6 +3189,12 @@ export default function PatientsPage() {
                 />
               </label>
 
+              {newPatientBookingIssue && (
+                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
+                  {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
+                  <Link className="text-[var(--brand-primary)] underline" href={`/patients/${newPatientBookingIssue.patientId}`}>Open patient</Link>
+                </div>
+              )}
               {newPatientMessage && (
                 <p className="mt-3 text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>
               )}

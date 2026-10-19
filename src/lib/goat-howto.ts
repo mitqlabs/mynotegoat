@@ -20,7 +20,7 @@ export interface HowToEntry {
 }
 
 /** Labels verified in: patients/page.tsx ("New Patient"), appointments/page.tsx
- *  ("New Appointment", "+ New Patient"), contacts/page.tsx ("Add Contact"),
+ *  ("New Appointment", "New patient"), contacts/page.tsx ("Add Contact"),
  *  patient-case-file.tsx ("+ To Do", "Open Encounters For This Patient"),
  *  plan-access.ts (sidebar names). Update this list when a label changes. */
 export const APP_HOWTO: HowToEntry[] = [
@@ -28,7 +28,7 @@ export const APP_HOWTO: HowToEntry[] = [
     id: "newPatient",
     aliases: ["add patient", "new patient", "create patient", "add a patient", "enter patient", "register patient", "add new patient"],
     steps:
-      "Open Patient List in the sidebar and click New Patient (top right). You can also add one while booking: in the Schedule's New Appointment window, click + New Patient.",
+      "Open Patient List in the sidebar and click New Patient (top right). You can also add one while booking: in the Schedule's New Appointment window, switch the Patient field to New patient — Save Appointment adds the patient and books the visit. Or tell G.O.A.T. 'schedule new patient Jane Doe tomorrow at 3'.",
     link: { label: "Open Patient List", href: "/patients" },
   },
   {

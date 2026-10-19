@@ -111,6 +111,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.cloud-sync-at": "system",
   "casemate.cloud-sync-at.": "system",
   "casemate.draft.v1.": "system",
+  // G.O.A.T. → form handoffs (sessionStorage, read once, 10-min expiry). The data lands in the
+  // cloud only when the user saves the form (patients / appointments are cloud-backed).
+  "casemate.new-patient-prefill.v1": "system",
+  "casemate.new-appointment-prefill.v1": "system",
   "casemate.cache.v1.": "system",
   "casemate.feature-flag.": "system",
   "casemate.user-prefs-mirror.v1": "system",

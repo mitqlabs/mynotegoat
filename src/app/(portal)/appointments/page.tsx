@@ -6,11 +6,9 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollLock } from "@/components/scroll-lock";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
-import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -19,10 +17,15 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { createPatientRecord, patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { takeNewAppointmentPrefill } from "@/lib/goat-intents";
+import { mdyToIso, newPatientVisitType } from "@/lib/new-patient-intake";
+import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { useTasks } from "@/hooks/use-tasks";
+import { formatUsPhoneInput } from "@/lib/phone-format";
 import { onLocalChange } from "@/lib/local-sync";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
-import { formatUsPhoneInput } from "@/lib/phone-format";
 import {
   findClosedKeyDateForDate,
   findKeyDatesForDate,
@@ -472,31 +475,6 @@ export default function AppointmentsPage() {
   // Lumbar Spinal Decompression visits together, etc.
   const [patientFlowSort, setPatientFlowSort] = useState<"time" | "type-time">("time");
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false);
-  const { contacts } = useContactDirectory();
-  const [showQuickNewPatient, setShowQuickNewPatient] = useState(false);
-  const [quickNewPatientDraft, setQuickNewPatientDraft] = useState({
-    firstName: "",
-    lastName: "",
-    phone: "",
-    attorney: "",
-    dateOfLoss: "",
-    notes: "",
-  });
-  const [quickNewPatientError, setQuickNewPatientError] = useState("");
-  const [quickAttorneyFocused, setQuickAttorneyFocused] = useState(false);
-  const [contactGap, setContactGap] = useState<ContactGap | null>(null);
-
-  const attorneyContactOptions = useMemo(
-    () => contacts.filter((c) => c.category.toLowerCase() === "attorney"),
-    [contacts],
-  );
-  const quickAttorneyMatches = useMemo(() => {
-    const q = quickNewPatientDraft.attorney.trim().toLowerCase();
-    if (!q) return [];
-    // Hide list if exact match (already picked)
-    if (attorneyContactOptions.some((c) => c.name.trim().toLowerCase() === q)) return [];
-    return attorneyContactOptions.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [attorneyContactOptions, quickNewPatientDraft.attorney]);
   const [newAppointmentDraft, setNewAppointmentDraft] = useState<NewAppointmentDraft>(() =>
     createInitialDraft(getTodayIsoDate(), null),
   );
@@ -730,6 +708,10 @@ export default function AppointmentsPage() {
   };
 
   const openNewAppointmentModal = () => {
+    setPatientMode("existing");
+    setNewPtDraft(emptyNewPt);
+    setNewPtSourceTaskId(null);
+    setDoneTaskOffer(null);
     setNewAppointmentDraft(createInitialDraft(selectedDate, defaultAppointmentType));
     setPatientSearchDraft("");
     setShowPatientSuggestions(false);
@@ -737,6 +719,82 @@ export default function AppointmentsPage() {
     setScheduleAlert("");
     setShowNewAppointmentModal(true);
   };
+
+  // New patient, baked into New Appointment (Existing / New patient toggle).
+  const { contacts } = useContactDirectory();
+  const { tasks, toggleTaskDone } = useTasks();
+  const [contactGap, setContactGap] = useState<ContactGap | null>(null);
+  const [patientMode, setPatientMode] = useState<"existing" | "new">("existing");
+  const emptyNewPt = { lastName: "", firstName: "", phone: "", attorney: "", dateOfLoss: "", notes: "" };
+  const [newPtDraft, setNewPtDraft] = useState(emptyNewPt);
+  const [newPtAttorneyFocused, setNewPtAttorneyFocused] = useState(false);
+  /** The G.O.A.T. to-do this new-patient visit came from ("call armen barmen 555…"), offered as done after Save. */
+  const [newPtSourceTaskId, setNewPtSourceTaskId] = useState<string | null>(null);
+  const [doneTaskOffer, setDoneTaskOffer] = useState<{ id: string; title: string } | null>(null);
+  const newPtAttorneyMatches = useMemo(() => {
+    const q = newPtDraft.attorney.trim().toLowerCase();
+    if (!q) return [];
+    const attys = contacts.filter((c) => c.category.toLowerCase() === "attorney");
+    if (attys.some((c) => c.name.trim().toLowerCase() === q)) return [];
+    return attys.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [contacts, newPtDraft.attorney]);
+  const switchPatientMode = (mode: "existing" | "new") => {
+    setPatientMode(mode);
+    setNewAppointmentError("");
+    if (mode === "new") {
+      // A new patient's first visit: the office's New Patient visit type.
+      const np = newPatientVisitType(appointmentTypes);
+      const parts = toDurationParts(np?.durationMin ?? 30);
+      setNewAppointmentDraft((c) => ({ ...c, patientId: "", caseLabel: "", ...(np ? { appointmentType: np.name, durationHours: parts.durationHours, durationMinutes: parts.durationMinutes } : {}), isRecurring: false }));
+      setPatientSearchDraft("");
+    } else {
+      setNewAppointmentDraft((c) => ({ ...c, appointmentType: defaultAppointmentType?.name ?? c.appointmentType, ...(defaultAppointmentType ? toDurationParts(defaultAppointmentType.durationMin) : {}) }));
+    }
+  };
+
+  // G.O.A.T. "Open New Appointment" (/appointments?new=1): the modal opens prefilled
+  // with whatever it knew (patient, day, time). Nothing saves until Save.
+  const openFromGoatRef = useRef<() => void>(() => {});
+  openFromGoatRef.current = () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    params.delete("new");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    const pre = takeNewAppointmentPrefill();
+    const date = pre?.date && /^\d{4}-\d{2}-\d{2}$/.test(pre.date) ? pre.date : selectedDate;
+    const patient = pre?.patientId ? patients.find((p) => p.id === pre.patientId) : undefined;
+    const base = createInitialDraft(date, defaultAppointmentType);
+    setNewAppointmentDraft({
+      ...base,
+      ...(pre?.time && /^\d{2}:\d{2}$/.test(pre.time) ? { startTime: pre.time } : {}),
+      ...(patient ? { patientId: patient.id, caseLabel: buildCaseLabelFromPatient(patient) } : {}),
+    });
+    setPatientSearchDraft(patient?.fullName ?? "");
+    setNewPtSourceTaskId(pre?.taskId ?? null);
+    setDoneTaskOffer(null);
+    if (pre?.newPatient) {
+      const np = newPatientVisitType(appointmentTypes);
+      const parts = toDurationParts(np?.durationMin ?? 30);
+      setPatientMode("new");
+      setNewPtDraft({ ...emptyNewPt, ...pre.newPatient });
+      setNewAppointmentDraft((c) => ({ ...c, patientId: "", caseLabel: "", ...(np ? { appointmentType: np.name, durationHours: parts.durationHours, durationMinutes: parts.durationMinutes } : {}) }));
+    } else {
+      setPatientMode("existing");
+      setNewPtDraft(emptyNewPt);
+    }
+    setShowPatientSuggestions(false);
+    setNewAppointmentError("");
+    setScheduleAlert("");
+    if (date !== selectedDate) setSelectedDate(date);
+    setShowNewAppointmentModal(true);
+  };
+  useEffect(() => {
+    const run = () => openFromGoatRef.current();
+    run();
+    window.addEventListener("goat:new-appointment", run);
+    return () => window.removeEventListener("goat:new-appointment", run);
+  }, []);
 
   const handlePatientSearchChange = (value: string) => {
     setPatientSearchDraft(value);
@@ -764,57 +822,6 @@ export default function AppointmentsPage() {
     }));
     setShowPatientSuggestions(false);
     setNewAppointmentError("");
-  };
-
-  const resetQuickNewPatientPanel = () => {
-    setShowQuickNewPatient(false);
-    setQuickNewPatientDraft({ firstName: "", lastName: "", phone: "", attorney: "", dateOfLoss: "", notes: "" });
-    setQuickNewPatientError("");
-  };
-
-  const handleCreateQuickPatient = () => {
-    const firstName = quickNewPatientDraft.firstName.trim();
-    const lastName = quickNewPatientDraft.lastName.trim();
-    if (!firstName || !lastName) {
-      setQuickNewPatientError("First and last name are required.");
-      return;
-    }
-    let dolIso = "";
-    if (quickNewPatientDraft.dateOfLoss.trim()) {
-      const match = quickNewPatientDraft.dateOfLoss.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (!match) {
-        setQuickNewPatientError("Date of Injury must be MM/DD/YYYY.");
-        return;
-      }
-      dolIso = `${match[3]}-${match[1]}-${match[2]}`;
-    }
-    const created = createPatientRecord({
-      firstName,
-      lastName,
-      attorney: quickNewPatientDraft.attorney.trim() || undefined,
-      phone: quickNewPatientDraft.phone.trim() || undefined,
-      dateOfLoss: dolIso,
-      notes: quickNewPatientDraft.notes.trim() || undefined,
-    });
-    if (!created) {
-      setQuickNewPatientError("Could not create patient.");
-      return;
-    }
-    // Select the new patient in the appointment draft
-    handleSelectPatient(created);
-    // Check attorney against contacts — prompt to add if missing
-    const attorneyName = created.attorney;
-    if (attorneyName && attorneyName.toLowerCase() !== "self") {
-      const found = findContactByName(contacts, attorneyName, "Attorney");
-      if (!found) {
-        setContactGap({
-          name: attorneyName,
-          categoryHint: "Attorney",
-          message: `"${attorneyName}" isn't in your Contacts yet — add them now?`,
-        });
-      }
-    }
-    resetQuickNewPatientPanel();
   };
 
   const handleQuickStatusUpdate = (appointmentId: string, nextStatus: AppointmentStatus) => {
@@ -964,10 +971,25 @@ export default function AppointmentsPage() {
 
   const handleSubmitNewAppointment = () => {
     const draft = newAppointmentDraft;
-    const selectedPatient = findPatientById(draft.patientId);
-    if (!selectedPatient) {
-      setNewAppointmentError("Select a patient.");
+    const isNewPatient = patientMode === "new";
+    let selectedPatient = isNewPatient ? null : findPatientById(draft.patientId);
+    if (!isNewPatient && !selectedPatient) {
+      setNewAppointmentError("Select a patient (or switch to New patient).");
       return;
+    }
+    let newPtDolIso = "";
+    if (isNewPatient) {
+      if (!newPtDraft.lastName.trim() || !newPtDraft.firstName.trim()) {
+        setNewAppointmentError("New patient: last and first name are required.");
+        return;
+      }
+      if (newPtDraft.dateOfLoss.trim()) {
+        newPtDolIso = mdyToIso(newPtDraft.dateOfLoss);
+        if (!newPtDolIso) {
+          setNewAppointmentError("Date of Injury must be MM/DD/YYYY.");
+          return;
+        }
+      }
     }
     if (!draft.provider.trim() || !draft.location.trim() || !draft.appointmentType.trim()) {
       setNewAppointmentError("Patient, provider, location, and appointment type are required.");
@@ -1016,7 +1038,6 @@ export default function AppointmentsPage() {
     }
 
     const durationMin = getDurationMinutes(sanitizedDraft.durationHours, sanitizedDraft.durationMinutes);
-    const caseLabel = sanitizedDraft.caseLabel.trim() || buildCaseLabelFromPatient(selectedPatient);
     const scheduleDates = getDatesForDraft(sanitizedDraft);
     if (!scheduleDates.length) {
       setNewAppointmentError("Recurring rule did not generate any appointment dates.");
@@ -1066,11 +1087,36 @@ export default function AppointmentsPage() {
       }
     }
 
+    // Every check passed: now (and only now) add the new patient, with the
+    // visit date as their Initial Exam.
+    if (isNewPatient) {
+      const created = createPatientRecord({
+        firstName: newPtDraft.firstName.trim(),
+        lastName: newPtDraft.lastName.trim(),
+        attorney: newPtDraft.attorney.trim() || undefined,
+        phone: newPtDraft.phone.trim() || undefined,
+        dateOfLoss: newPtDolIso,
+        notes: newPtDraft.notes.trim() || undefined,
+        initialExam: formatUsDateFromIso(scheduleDates[0]),
+      });
+      if (!created) {
+        setNewAppointmentError("Could not add the new patient. Nothing was saved.");
+        return;
+      }
+      selectedPatient = created;
+      const attorneyName = created.attorney;
+      if (attorneyName && attorneyName.toLowerCase() !== "self" && !findContactByName(contacts, attorneyName, "Attorney")) {
+        setContactGap({ name: attorneyName, categoryHint: "Attorney", message: `"${attorneyName}" isn't in your Contacts yet — add them now?` });
+      }
+    }
+    if (!selectedPatient) return;
+    const patientForRecords = selectedPatient;
+    const caseLabel = sanitizedDraft.caseLabel.trim() || buildCaseLabelFromPatient(patientForRecords);
     const seriesId = sanitizedDraft.isRecurring ? createAppointmentId() : undefined;
     const records: ScheduleAppointmentRecord[] = scheduleDates.map((dateIso) => ({
       id: createAppointmentId(),
-      patientId: selectedPatient.id,
-      patientName: selectedPatient.fullName,
+      patientId: patientForRecords.id,
+      patientName: patientForRecords.fullName,
       provider: sanitizedDraft.provider.trim(),
       location: sanitizedDraft.location.trim(),
       appointmentType: sanitizedDraft.appointmentType.trim(),
@@ -1100,6 +1146,14 @@ export default function AppointmentsPage() {
     }
     setShowNewAppointmentModal(false);
     setSelectedDate(records[0]?.date ?? selectedDate);
+    // Booked from a G.O.A.T. "call …" to-do: offer to mark it done (confirm, never automatic).
+    if (newPtSourceTaskId) {
+      const task = tasks.find((t) => t.id === newPtSourceTaskId && !t.done);
+      if (task) setDoneTaskOffer({ id: task.id, title: task.title });
+      setNewPtSourceTaskId(null);
+    }
+    setPatientMode("existing");
+    setNewPtDraft(emptyNewPt);
   };
 
   const handleSaveAppointmentUpdates = async () => {
@@ -1675,18 +1729,103 @@ export default function AppointmentsPage() {
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="relative grid gap-1">
-                <div className="flex items-center justify-between gap-2">
+              {/* Patient: Existing / New toggle. New = a compact grid; Save Appointment
+                  creates the patient and the visit together (no separate Create step). */}
+              <div className={`relative grid gap-1 ${patientMode === "new" ? "md:col-span-2" : ""}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
-                  <button
-                    className="text-xs font-semibold text-[var(--brand-primary)] underline"
-                    onClick={() => setShowQuickNewPatient((v) => !v)}
-                    type="button"
-                  >
-                    {showQuickNewPatient ? "Cancel new patient" : "+ New Patient"}
-                  </button>
+                  <div className="inline-flex overflow-hidden rounded-lg border border-[var(--line-soft)] text-xs font-semibold" role="group" aria-label="Patient type" data-testid="patient-mode-toggle">
+                    {(["existing", "new"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        aria-pressed={patientMode === mode}
+                        className={`px-3 py-1 ${patientMode === mode ? "bg-[var(--brand-primary)] text-white" : "bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"}`}
+                        onClick={() => switchPatientMode(mode)}
+                        type="button"
+                      >
+                        {mode === "existing" ? "Existing" : "New patient"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {patientMode === "new" ? (
+                  <div className="grid gap-x-3 gap-y-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:grid-cols-2 lg:grid-cols-3" data-row="new-patient-fields">
+                    {([
+                      ["lastName", "Last name *", "Last"],
+                      ["firstName", "First name *", "First"],
+                      ["phone", "Phone", "(817) 555-0100"],
+                    ] as const).map(([key, label, ph]) => (
+                      <label key={key} className="grid min-w-0 gap-1">
+                        <span className="text-xs font-semibold text-[var(--text-muted)]">{label}</span>
+                        <input
+                          className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
+                          data-testid={`new-pt-${key}`}
+                          onChange={(e) => setNewPtDraft((c) => ({ ...c, [key]: key === "phone" ? formatUsPhoneInput(e.target.value) : e.target.value }))}
+                          placeholder={ph}
+                          value={newPtDraft[key]}
+                        />
+                      </label>
+                    ))}
+                    <label className="relative grid min-w-0 gap-1">
+                      <span className="text-xs font-semibold text-[var(--text-muted)]">Attorney</span>
+                      <input
+                        className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
+                        data-testid="new-pt-attorney"
+                        onBlur={() => window.setTimeout(() => setNewPtAttorneyFocused(false), 120)}
+                        onChange={(e) => setNewPtDraft((c) => ({ ...c, attorney: e.target.value }))}
+                        onFocus={() => setNewPtAttorneyFocused(true)}
+                        placeholder="Law firm (or Self)"
+                        value={newPtDraft.attorney}
+                      />
+                      {newPtAttorneyFocused && newPtAttorneyMatches.length > 0 && (
+                        <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-10 max-h-48 overflow-y-auto rounded-lg border border-[var(--line-soft)] bg-white shadow-[0_12px_24px_rgba(14,41,62,0.14)]">
+                          {newPtAttorneyMatches.map((entry) => (
+                            <button
+                              key={entry.id}
+                              className="block w-full border-b border-[var(--line-soft)] px-2.5 py-1.5 text-left text-sm last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => { setNewPtDraft((c) => ({ ...c, attorney: entry.name })); setNewPtAttorneyFocused(false); }}
+                              type="button"
+                            >
+                              {entry.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </label>
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
+                      <input
+                        className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
+                        data-testid="new-pt-doi"
+                        inputMode="numeric"
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+                          const v = digits.length > 4 ? `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+                          setNewPtDraft((c) => ({ ...c, dateOfLoss: v }));
+                        }}
+                        placeholder="MM/DD/YYYY"
+                        value={newPtDraft.dateOfLoss}
+                      />
+                    </label>
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-xs font-semibold text-[var(--text-muted)]">Note</span>
+                      <input
+                        className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
+                        data-testid="new-pt-notes"
+                        onChange={(e) => setNewPtDraft((c) => ({ ...c, notes: e.target.value }))}
+                        placeholder="e.g. rear-ended, neck pain"
+                        value={newPtDraft.notes}
+                      />
+                    </label>
+                    <p className="text-xs text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
+                      Save Appointment adds the patient and books this visit. The visit date becomes their Initial Exam.
+                    </p>
+                  </div>
+                ) : (
+                <>
                 <input
+                  aria-label="Patient"
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                   onBlur={() => window.setTimeout(() => setShowPatientSuggestions(false), 120)}
                   onChange={(event) => handlePatientSearchChange(event.target.value)}
@@ -1716,135 +1855,9 @@ export default function AppointmentsPage() {
                     )}
                   </div>
                 )}
-              </label>
-
-              {showQuickNewPatient && (
-                <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 md:col-span-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h5 className="text-sm font-semibold">Quick New Patient</h5>
-                    <span className="text-xs text-[var(--text-muted)]">Complete the rest of the chart later</span>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-5">
-                    <label className="grid gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Last Name *</span>
-                      <input
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                        onChange={(e) =>
-                          setQuickNewPatientDraft((c) => ({ ...c, lastName: e.target.value }))
-                        }
-                        value={quickNewPatientDraft.lastName}
-                      />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">First Name *</span>
-                      <input
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                        onChange={(e) =>
-                          setQuickNewPatientDraft((c) => ({ ...c, firstName: e.target.value }))
-                        }
-                        value={quickNewPatientDraft.firstName}
-                      />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Phone</span>
-                      <input
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                        inputMode="numeric"
-                        maxLength={12}
-                        onChange={(e) =>
-                          setQuickNewPatientDraft((c) => ({
-                            ...c,
-                            phone: formatUsPhoneInput(e.target.value),
-                          }))
-                        }
-                        placeholder="(555) 555-5555"
-                        value={quickNewPatientDraft.phone}
-                      />
-                    </label>
-                    <label className="relative grid gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Attorney</span>
-                      <input
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                        onBlur={() => window.setTimeout(() => setQuickAttorneyFocused(false), 120)}
-                        onChange={(e) =>
-                          setQuickNewPatientDraft((c) => ({ ...c, attorney: e.target.value }))
-                        }
-                        onFocus={() => setQuickAttorneyFocused(true)}
-                        placeholder="Search or type attorney"
-                        value={quickNewPatientDraft.attorney}
-                      />
-                      {quickAttorneyFocused && quickAttorneyMatches.length > 0 && (
-                        <ul className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-56 overflow-auto rounded-lg border border-[var(--line-soft)] bg-white shadow-[0_12px_24px_rgba(14,41,62,0.14)]">
-                          {quickAttorneyMatches.map((entry) => (
-                            <li key={entry.id}>
-                              <button
-                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[rgba(13,121,191,0.08)]"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  setQuickNewPatientDraft((c) => ({ ...c, attorney: entry.name }));
-                                  setQuickAttorneyFocused(false);
-                                }}
-                                type="button"
-                              >
-                                <span className="font-medium">{entry.name}</span>
-                                <span className="text-xs text-[var(--text-muted)]">{entry.phone || ""}</span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
-                      <input
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                        inputMode="numeric"
-                        maxLength={10}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/\D/g, "").slice(0, 8);
-                          let formatted = raw;
-                          if (raw.length > 4) formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
-                          else if (raw.length > 2) formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
-                          setQuickNewPatientDraft((c) => ({ ...c, dateOfLoss: formatted }));
-                        }}
-                        placeholder="MM/DD/YYYY"
-                        value={quickNewPatientDraft.dateOfLoss}
-                      />
-                    </label>
-                  </div>
-                  <label className="mt-3 grid gap-1">
-                    <span className="text-xs font-semibold text-[var(--text-muted)]">Note</span>
-                    <textarea
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                      onChange={(e) =>
-                        setQuickNewPatientDraft((c) => ({ ...c, notes: e.target.value }))
-                      }
-                      placeholder="Anything from the call: chief complaint, referral source, language, ride needs, etc."
-                      rows={2}
-                      value={quickNewPatientDraft.notes}
-                    />
-                  </label>
-                  {quickNewPatientError && (
-                    <p className="mt-2 text-xs font-semibold text-[#b43b34]">{quickNewPatientError}</p>
-                  )}
-                  <div className="mt-3 flex justify-end gap-2">
-                    <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold"
-                      onClick={resetQuickNewPatientPanel}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
-                      onClick={handleCreateQuickPatient}
-                      type="button"
-                    >
-                      Create Patient
-                    </button>
-                  </div>
-                </div>
-              )}
+                </>
+                )}
+              </div>
 
               <label className="grid gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Provider *</span>
@@ -2192,9 +2205,12 @@ export default function AppointmentsPage() {
               </div>
             )}
 
-            <div className="mt-4 space-y-2">
-              <label className="inline-flex items-center gap-2 text-sm font-semibold">
+            {/* One row that wraps: each checkbox keeps its own space (they used
+                to run into each other as inline labels in a space-y stack). */}
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2" data-row="appointment-flags">
+              <label className="flex items-center gap-2 text-sm font-semibold">
                 <input
+                  className="h-4 w-4 shrink-0"
                   checked={newAppointmentDraft.walkIn}
                   onChange={(event) =>
                     setNewAppointmentDraft((current) => ({ ...current, walkIn: event.target.checked }))
@@ -2205,8 +2221,9 @@ export default function AppointmentsPage() {
               </label>
 
               {scheduleSettings.allowOverride && (
-                <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                <label className="flex items-center gap-2 text-sm font-semibold">
                   <input
+                    className="h-4 w-4 shrink-0"
                     checked={newAppointmentDraft.overrideOfficeHours}
                     onChange={(event) =>
                       setNewAppointmentDraft((current) => ({
@@ -2626,6 +2643,13 @@ export default function AppointmentsPage() {
       )}
 
       <ContactGapPrompt gap={contactGap} onClose={() => setContactGap(null)} />
+      {doneTaskOffer && (
+        <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-4 py-3 text-sm shadow-[0_12px_24px_rgba(14,41,62,0.18)]" role="dialog" aria-label="Mark to-do done" data-testid="done-task-offer">
+          <span>Booked. Mark the to-do &ldquo;{doneTaskOffer.title}&rdquo; done?</span>
+          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
+          <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
+        </div>
+      )}
     </div>
   );
 }

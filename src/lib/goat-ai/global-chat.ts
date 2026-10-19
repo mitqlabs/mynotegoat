@@ -97,6 +97,10 @@ export interface ChatMessage {
   /** "/todo" confirm card. */
   todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
+  /** A button that opens an existing form prefilled (New Patient / New Appointment). Nothing is saved until the user saves the form. */
+  formLaunch?:
+    | { kind: "newPatient"; label: string; draft: Record<string, string | boolean | number | undefined>; ask: string[] }
+    | { kind: "newAppointment"; label: string; patientId?: string; date?: string; time?: string; newPatient?: { lastName?: string; firstName?: string; phone?: string; attorney?: string; dateOfLoss?: string; notes?: string }; taskId?: string };
   /** Waiting for the day/time of a booking. */
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
