@@ -9,9 +9,11 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 type LoginClientProps = {
   verifyNotice: boolean;
   disabledNotice?: boolean;
+  /** Already validated by safeNextPath (the G.O.A.T. app). */
+  next?: string;
 };
 
-export default function LoginClient({ verifyNotice, disabledNotice }: LoginClientProps) {
+export default function LoginClient({ verifyNotice, disabledNotice, next }: LoginClientProps) {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -57,7 +59,7 @@ export default function LoginClient({ verifyNotice, disabledNotice }: LoginClien
     }
 
     if (access.state === "access-granted") {
-      router.replace("/patients");
+      router.replace(next ?? "/patients");
       return;
     }
 

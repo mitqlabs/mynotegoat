@@ -9,6 +9,7 @@ import type { TaskRecord } from "@/lib/tasks";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { mainEmailOf } from "@/lib/contact-email";
 import { editDistance } from "@/lib/goat-ai/global-chat";
+import { detectPlainTodo } from "@/lib/goat-intents";
 import { settingsHref, settingsSearchCatalog, GOAT_SETTINGS_PAGE } from "@/lib/settings-catalog";
 
 export interface PracticePatient {
@@ -62,6 +63,8 @@ const CONTACT_STOP = new Set(
 
 /** Which practice question this is, or null (patient question / unknown). */
 export function detectPracticeIntent(question: string): PracticeIntent | null {
+  // "remind me to call <contact> …" is a new to-do, never a contact/list lookup.
+  if (detectPlainTodo(question)) return null;
   const q = question.toLowerCase();
   const ws = words(q);
   const joined = ws.join(" ");

@@ -113,11 +113,14 @@ export const handbookChapters: HandbookChapter[] = [
           "Fill the first row: Last Name, First Name, DOB, Sex, Phone. Last and first name are required.",
           "Fill the address row if you have it.",
           "Under Attorney Information: attorney, their phone, and the Date Of Injury (required). The Case # builds itself.",
+          "New Patient Evaluation (optional, same box): a date and time. When filled, Create Patient also books their first visit — the New Patient visit type, your office's provider and location (change them in the small fields that appear), time snapped to office hours — and sets the Initial Exam date. Full slot or outside office hours? It says so and suggests nearby open times before anything is saved.",
+          "Non-PI patients get the same thing as a \"First Visit\" box.",
           "Add anything worth knowing under Notes, then Create Patient.",
+          "Booking from the Schedule instead? New Appointment → switch Patient to \"New patient\" (Last, First, Phone, Attorney, DOI, Note). Save Appointment adds the patient and books the visit in one step.",
         ],
         why: "A new case always starts the same way, so the app sets it for you: Case Status Active, Lien/LOP Pending, and a \"Schedule Initial Visit\" item on their Case Flow. You change those on the patient's page as things move.",
         watchOut:
-          "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow.",
+          "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow. If the first visit can't be booked (e.g. a cloud save error), the patient is still saved and a yellow note tells you to book it from the Schedule.",
       },
       {
         heading: "Attorney's phone fills itself",

@@ -23,7 +23,7 @@ test("labels in the catalog exist in the UI code", () => {
   const has = (f: string, label: string) => assert.ok(readFileSync(f, "utf8").includes(label), `${label} in ${f}`);
   has("src/app/(portal)/patients/page.tsx", "New Patient");
   has("src/app/(portal)/appointments/page.tsx", "New Appointment");
-  has("src/app/(portal)/appointments/page.tsx", "+ New Patient");
+  has("src/app/(portal)/appointments/page.tsx", "New patient");
   has("src/app/(portal)/contacts/page.tsx", "Add Contact");
   has("src/components/patient-case-file.tsx", "+ To Do");
   has("src/components/patient-case-file.tsx", "Open Encounters For This Patient");

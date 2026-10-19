@@ -10,6 +10,7 @@
  *
  * One blob per workspace, dual-written to the "billing" KV namespace.
  */
+import { markLocalWrite } from "@/lib/local-sync";
 
 const STORAGE_KEY = "casemate.treatment-plans.v1";
 export const STORAGE_KEY_TREATMENT_PLANS = STORAGE_KEY;
@@ -264,6 +265,9 @@ export function loadTreatmentPlans(): TreatmentPlansByPatient {
 
 export function saveTreatmentPlans(map: TreatmentPlansByPatient) {
   if (typeof window === "undefined") return;
+  // Mark before writing: the cloud echo of this save (or of the previous
+  // keystroke, arriving out of order) must not overwrite what's being typed.
+  markLocalWrite(STORAGE_KEY);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(STORAGE_KEY, "billing", map));
 }

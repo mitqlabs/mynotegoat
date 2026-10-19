@@ -81,7 +81,7 @@ export interface ChatMessage {
   /** Inactive-case choices revealed by "Show inactive (N)". */
   moreChoices?: ChatChoice[];
   /** A team message waiting for Confirm (posted to Messages only then). */
-  msgDraft?: { toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
+  msgDraft?: { /** Everyone (General), no @mention. */ toTeam?: boolean; toLabel: string; toUserId?: string; /** More @mentioned recipients on the same card. */ alsoTo?: Array<{ label: string; userId?: string }>; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled"; sent?: string };
   /** A note waiting for Confirm before it's added to the patient's Notes. */
   /** Pasted-contacts review card (one card for the whole batch). */
   contactImport?: {
@@ -97,6 +97,10 @@ export interface ChatMessage {
   /** "/todo" confirm card. */
   todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
+  /** A button that opens an existing form prefilled (New Patient / New Appointment). Nothing is saved until the user saves the form. */
+  formLaunch?:
+    | { kind: "newPatient"; label: string; draft: Record<string, string | boolean | number | undefined>; ask: string[] }
+    | { kind: "newAppointment"; label: string; patientId?: string; date?: string; time?: string; newPatient?: { lastName?: string; firstName?: string; phone?: string; attorney?: string; dateOfLoss?: string; notes?: string }; taskId?: string };
   /** Waiting for the day/time of a booking. */
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
