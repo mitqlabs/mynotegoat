@@ -170,6 +170,8 @@ export async function fetchAllPatientsFromTable(): Promise<PatientRecord[] | nul
       .from("patients")
       .select("*")
       .eq("workspace_id", workspaceId)
+      // Stable order so pages never overlap or skip rows.
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       console.error("[patients-cloud] fetchAll failed:", error.message);

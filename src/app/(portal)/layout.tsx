@@ -123,6 +123,16 @@ export default function PortalLayout({
     let active = true;
 
     async function bootstrap() {
+      // Speed: look up team membership at the same time as the access check
+      // instead of after it. Its result is only USED once access is granted,
+      // so nothing protected is shown any earlier.
+      const supabaseForSession = getSupabaseBrowserClient();
+      const membershipEarly: Promise<WorkspaceMembership | null> = supabaseForSession
+        ? supabaseForSession.auth
+            .getSession()
+            .then(({ data }) => (data.session?.user?.id ? resolveWorkspaceMembership(data.session.user.id) : null))
+            .catch(() => null)
+        : Promise.resolve(null);
       const access = await resolveAuthAccessState();
       if (!active) {
         return;
@@ -161,7 +171,9 @@ export default function PortalLayout({
 
       // Team members work INSIDE their owner's workspace, not their own. Resolve
       // membership first so we point localStorage + cloud at the owner's data.
-      const resolvedMembership = await resolveWorkspaceMembership(access.userId);
+      const early = await membershipEarly;
+      const resolvedMembership =
+        early && early.userId === access.userId ? early : await resolveWorkspaceMembership(access.userId);
       if (!active) return;
 
       // A member the owner has deactivated may no longer use the app. Sign

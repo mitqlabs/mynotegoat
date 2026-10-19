@@ -155,6 +155,8 @@ export async function fetchAllAppointmentsFromTable(): Promise<ScheduleAppointme
       .from("schedule_appointments")
       .select("*")
       .eq("workspace_id", workspaceId)
+      // Stable order so pages never overlap or skip rows.
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       console.error("[appointments-cloud] fetchAll failed:", error.message);
