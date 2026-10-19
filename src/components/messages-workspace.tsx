@@ -30,7 +30,7 @@ function conversationKeyOf(m: WorkspaceMessage) {
 
 function initialsOf(label: string) {
   // Prefer the alphabetic words (so a case-number label like
-  // "072726GAMI Galstyan, Mike" yields "GM", not "0M").
+  // "072726DOJA Doe, Jane" yields "DJ", not "0M").
   const words = label
     .replace(/,/g, " ")
     .split(/\s+/)
@@ -83,8 +83,8 @@ export function MessagesWorkspace() {
   const ownerName = (officeSettings.doctorName ?? "").trim();
   const people = useWorkspacePeople(ownerName);
 
-  // Case options, keyed by case number + name (e.g. "072726GAMI Galstyan,
-  // Mike") so the tag makes it unambiguous which case a message is about.
+  // Case options, keyed by case number + name (e.g. "072726DOJA Doe,
+  // Jane") so the tag makes it unambiguous which case a message is about.
   const caseOptions = useMemo(() => {
     return patients
       .filter((p) => !p.deleted)
@@ -472,7 +472,7 @@ export function MessagesWorkspace() {
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                     list="messages-case-list"
                     onChange={(e) => setCaseQuery(e.target.value)}
-                    placeholder="Case # or name — e.g. 072726GAMI"
+                    placeholder="Case # or name — e.g. 072726DOJA"
                     value={caseQuery}
                   />
                   <datalist id="messages-case-list">

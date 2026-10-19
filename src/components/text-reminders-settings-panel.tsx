@@ -12,7 +12,7 @@ import { DraftTextarea } from "@/components/draft-textarea";
 import { markLocalWrite } from "@/lib/local-sync";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { createSmsTemplate, DEFAULT_REMINDER_BODY, SMS_TOKENS } from "@/lib/sms-templates";
+import { createSmsTemplate, getDefaultReminderBody, SMS_TOKENS } from "@/lib/sms-templates";
 import {
   defaultSmsReminderSettings,
   normalizeSmsReminderSettings,
@@ -290,7 +290,7 @@ export function TextRemindersSettingsPanel() {
               onClick={() => {
                 const created = createSmsTemplate(
                   "⏰ Appointment Reminder",
-                  DEFAULT_REMINDER_BODY,
+                  getDefaultReminderBody(),
                 );
                 updateSmsTemplates((current) => [...current, created]);
                 update({ templateId: created.id });

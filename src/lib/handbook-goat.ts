@@ -69,7 +69,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Notes, to-dos and payments",
       steps: [
         "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
-        "To-dos: \"/todo call Mock Law for John Smith friday\".",
+        "To-dos: \"/todo call Mock Law for John Smith friday\". Typing just /todo asks what the to-do is, with an example.",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },

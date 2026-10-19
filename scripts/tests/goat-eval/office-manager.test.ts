@@ -9,22 +9,22 @@ const TODAY = "2026-10-15"; // Thursday
 const P = (id: string, fullName: string, caseStatus: string, attorney: string, billed = 0, paid = 0, paidDate = "", lastVisit = "") => ({ id, fullName, caseStatus, attorney, billed, paid, paidDate, lastVisit });
 const data: OmData = {
   today: TODAY,
-  attorneys: ["Nazaryan Law", "Yepremyan Law Group", "Sample Legal", "Mock & Mock Law"],
+  attorneys: ["Sampleton Law", "Example Law Group", "Sample Legal", "Mock & Mock Law"],
   patients: [
-    P("smith", "John Smith", "Submitted", "Nazaryan Law", 3200, 0, "", "2026-09-01"),
-    P("malex", "Alex Malex", "Submitted", "Nazaryan Law", 5400),
+    P("smith", "John Smith", "Submitted", "Sampleton Law", 3200, 0, "", "2026-09-01"),
+    P("malex", "Alex Malex", "Submitted", "Sampleton Law", 5400),
     P("lee", "Kevin Lee", "Active", "Sample Legal", 0, 0, "", "2026-10-10"),
     P("lopez", "Maria Lopez", "Ready To Submit", "Mock & Mock Law", 4100),
-    P("petro", "Ani Petrosyan", "Active", "Yepremyan Law Group", 0, 0, "", "2026-09-20"),
+    P("petro", "Ani Petrosyan", "Active", "Example Law Group", 0, 0, "", "2026-09-20"),
     P("jsmith", "Jane Smithers", "Active", "Sample Legal", 0, 0, "", ""),
     P("kara1", "Kara Jones", "Paid", "Sample Legal", 2000, 1800, "10/05/2026"),
     P("kara2", "Kara Jonas", "Submitted", "Sample Legal", 2600),
-    P("paid1", "Tom Brady", "Paid", "Nazaryan Law", 3000, 2500, "10/01/2026"),
+    P("paid1", "Tom Brady", "Paid", "Sampleton Law", 3000, 2500, "10/01/2026"),
     P("paid2", "Ray Allen", "Paid", "Sample Legal", 2200, 2200, "10/08/2026"),
     P("paid3", "Gina Carano", "Paid", "Sample Legal", 1500, 1500, "09/20/2026"),
     P("dave1", "David Kim", "Active", "Sample Legal", 0, 0, "", "2026-10-14"),
     P("dave2", "David Park", "Active", "Sample Legal", 0, 0, "", "2026-09-25"),
-    P("ohan", "Ohanian, Rafi", "Submitted", "Yepremyan Law Group", 1500, 0, "", "2026-10-14"),
+    P("ohan", "Ohanian, Rafi", "Submitted", "Example Law Group", 1500, 0, "", "2026-10-14"),
   ],
 };
 
@@ -94,30 +94,30 @@ const cases: Array<[string, Check]> = [
   ["collected 4100 from lopez", isConfirm("markPaid", rows(["lopez", 4100]))],
 
   // 2) Reduction
-  ["Nazaryan paid 2800 on Smith, we asked 3200", isConfirm("reduction", (p) => { rows(["smith", 2800])(p); assert.equal((p as { asked: number }).asked, 3200); assert.equal((p as { payer: string }).payer, "Nazaryan Law"); })],
+  ["Sampleton paid 2800 on Smith, we asked 3200", isConfirm("reduction", (p) => { rows(["smith", 2800])(p); assert.equal((p as { asked: number }).asked, 3200); assert.equal((p as { payer: string }).payer, "Sampleton Law"); })],
   ["smith settled for 2800, we asked 3200", isConfirm("reduction", (p) => { rows(["smith", 2800])(p); assert.equal((p as { asked: number }).asked, 3200); })],
   ["smith paid 2800 instead of 3200", isConfirm("reduction", rows(["smith", 2800]))],
   ["reduction on smith: asked 3200 accepted 2800", isConfirm("reduction", rows(["smith", 2800]))],
   ["smith reduced from 3200 to 2800, paid today", isConfirm("reduction", rows(["smith", 2800]))],
   ["we accepted 2800 on smith, requested 3200", isConfirm("reduction", rows(["smith", 2800]))],
-  ["nazaryan paid 4800 for malex, we billed 5400", isConfirm("reduction", rows(["malex", 4800]))],
+  ["sampleton paid 4800 for malex, we billed 5400", isConfirm("reduction", rows(["malex", 4800]))],
   ["malex paid 4.8k, asked for 5.4k", isConfirm("reduction", rows(["malex", 4800]))],
   ["they took 2800 on smith, we wanted 3200", isConfirm("reduction", rows(["smith", 2800]))],
-  ["Nazaryan Law paid $2,800 on John Smith yesterday, we asked $3,200", isConfirm("reduction", all(rows(["smith", 2800]), date("2026-10-14")))],
+  ["Sampleton Law paid $2,800 on John Smith yesterday, we asked $3,200", isConfirm("reduction", all(rows(["smith", 2800]), date("2026-10-14")))],
   ["lopez settled 3500 req was 4100", isConfirm("reduction", rows(["lopez", 3500]))],
   ["sample legal paid 2000 on kara jonas, we requested 2600", isConfirm("reduction", rows(["kara2", 2000]))],
 
   // 3) Money questions
-  ["what's still waiting on checks from Nazaryan", answer(/2 submitted cases/, /Nazaryan Law/, /\$8,600/, /John Smith/, /Alex Malex/)],
-  ["whats waiting on checks from nazaryan law", answer(/Nazaryan Law/, /\$8,600/)],
+  ["what's still waiting on checks from Sampleton", answer(/2 submitted cases/, /Sampleton Law/, /\$8,600/, /John Smith/, /Alex Malex/)],
+  ["whats waiting on checks from sampleton law", answer(/Sampleton Law/, /\$8,600/)],
   ["what checks are we still waiting on", answer(/4 submitted cases/, /\$12,700/)],
   ["which cases are waiting on payment", answer(/submitted case/)],
   ["any checks pending from sample legal?", answer(/1 submitted case/, /Kara Jonas/)],
-  ["what's nazaryan still owe us", answer(/Nazaryan Law/, /\$8,600/)],
-  ["how much is nazaryan still owing", answer(/Nazaryan Law/)],
-  ["checks still waiting from nazaryan", answer(/Nazaryan Law/, /2 submitted/)],
-  ["which nazaryan cases haven't paid yet", answer(/Nazaryan Law/)],
-  ["are we still waiting on any checks from yepremyan?", answer(/1 submitted case waiting on checks from Yepremyan Law Group/, /Ohanian/)],
+  ["what's sampleton still owe us", answer(/Sampleton Law/, /\$8,600/)],
+  ["how much is sampleton still owing", answer(/Sampleton Law/)],
+  ["checks still waiting from sampleton", answer(/Sampleton Law/, /2 submitted/)],
+  ["which sampleton cases haven't paid yet", answer(/Sampleton Law/)],
+  ["are we still waiting on any checks from examplar?", answer(/1 submitted case waiting on checks from Example Law Group/, /Ohanian/)],
   ["what's still out with sample legal", answer(/Kara Jonas/)],
   ["who still owes us", answer(/submitted case/)],
   ["how much came in this month", answer(/\$6,500/, /3 cases/)],
@@ -167,16 +167,16 @@ const cases: Array<[string, Check]> = [
   ["who hasn't come in for a couple weeks", answer(/not seen in 2 weeks/)],
 
   // 6) Attorney
-  ["Smith switched to Yepremyan", isConfirm("attorney", (p) => { ids("smith")(p); assert.equal((p as { attorney: string }).attorney, "Yepremyan Law Group"); })],
-  ["lee switched attorneys to nazaryan", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Nazaryan Law"))],
+  ["Smith switched to Examplar", isConfirm("attorney", (p) => { ids("smith")(p); assert.equal((p as { attorney: string }).attorney, "Example Law Group"); })],
+  ["lee switched attorneys to sampleton", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Sampleton Law"))],
   ["change lee's attorney to sample legal", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Sample Legal"))],
-  ["lee's new attorney is yepremyan", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Yepremyan Law Group"))],
-  ["lee has a new attorney: nazaryan", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Nazaryan Law"))],
-  ["set petrosyan's atty to nazaryan law", isConfirm("attorney", ids("petro"))],
-  ["kevin lee went with yepremyan", isConfirm("attorney", ids("lee"))],
+  ["lee's new attorney is examplar", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Example Law Group"))],
+  ["lee has a new attorney: sampleton", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Sampleton Law"))],
+  ["set petrosyan's atty to sampleton law", isConfirm("attorney", ids("petro"))],
+  ["kevin lee went with examplar", isConfirm("attorney", ids("lee"))],
   ["lee moved to unknown firm llp", isConfirm("attorney", (p) => assert.equal((p as { known: boolean }).known, false))],
-  ["smith's atty is now nazarian", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Nazaryan Law"))],
-  ["switch smith's lawyer to yepremyan", isConfirm("attorney", ids("smith"))],
+  ["smith's atty is now sampletin", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Sampleton Law"))],
+  ["switch smith's lawyer to examplar", isConfirm("attorney", ids("smith"))],
 
   ["what came in today", answer(/today/)],
   ["how much did we make this week", answer(/this week/)],
@@ -198,9 +198,9 @@ const cases: Array<[string, Check]> = [
   ["who's not been seen in 14 days", answer(/not seen in 14 days/)],
   ["what can we bill", answer(/Maria Lopez/)],
   ["who needs to be submitted", answer(/Maria Lopez/)],
-  ["attorney for lee is now yepremyan", isConfirm("attorney", ids("lee"))],
+  ["attorney for lee is now examplar", isConfirm("attorney", ids("lee"))],
   ["petrosyan changed to sample legal", isConfirm("attorney", (p) => assert.equal((p as { attorney: string }).attorney, "Sample Legal"))],
-  ["lee switched over to nazaryan law", isConfirm("attorney", ids("lee"))],
+  ["lee switched over to sampleton law", isConfirm("attorney", ids("lee"))],
 
   // not ours
   ["tell hannah smith paid", notMine],
@@ -212,7 +212,7 @@ const cases: Array<[string, Check]> = [
   ["hi", notMine],
   ["shoot hannah a message saying kara jones paid", notMine],
   ["how many cases are waiting on checks", answer(/4 submitted cases waiting on checks/, /\$12,700/)],
-  ["how many checks are we waiting on from nazaryan", answer(/2 submitted cases/, /Nazaryan Law/)],
+  ["how many checks are we waiting on from sampleton", answer(/2 submitted cases/, /Sampleton Law/)],
   ["how many cases are still owed", answer(/submitted cases/)],
   ["how many people paid this month", answer(/3 paid this month/)],
   ["how many are ready to bill", answer(/1 ready to submit/)],
@@ -243,7 +243,7 @@ const flows: Array<{ name: string; turns: Turn[] }> = [
   { name: "same for (amount carried)", turns: [["mark smith paid 3200", isConfirm("markPaid", rows(["smith", 3200]))], ["same for malex", isConfirm("markPaid", rows(["malex", 3200]))]] },
   { name: "undo that", turns: [["discharge smith today", isConfirm("status")], ["undo that", (r) => assert.equal(r?.kind, "undo")]] },
   { name: "oops undo", turns: [["mark smith paid 3200", isConfirm("markPaid")], ["oops undo", (r) => assert.equal(r?.kind, "undo")]] },
-  { name: "take that back", turns: [["smith switched to yepremyan", isConfirm("attorney")], ["take that back", (r) => assert.equal(r?.kind, "undo")]] },
+  { name: "take that back", turns: [["smith switched to examplar", isConfirm("attorney")], ["take that back", (r) => assert.equal(r?.kind, "undo")]] },
   { name: "and lee too", turns: [["move smith to ready to submit", isConfirm("status")], ["lee too", isConfirm("status", ids("lee"))]] },
   { name: "add another 250 to smith", turns: [["mark smith paid 3200", isConfirm("markPaid")], ["add another 250 to smith", isConfirm("addPaid", rows(["smith", 250]))]] },
 ];
@@ -273,7 +273,7 @@ assert.equal(takeDate("last monday", TODAY).iso, "2026-10-12");
 assert.deepEqual(matchName("Smith", data.patients).candidates, ["smith"]);
 assert.deepEqual(matchName("kara", data.patients).candidates.sort(), ["kara1", "kara2"]);
 {
-  const r = omTurn("Nazaryan paid 2800 on Smith, we asked 3200", data, emptyOmMemory(), false);
+  const r = omTurn("Sampleton paid 2800 on Smith, we asked 3200", data, emptyOmMemory(), false);
   assert.ok(r?.kind === "confirm");
   const ch = planChanges(r.plan, data);
   assert.equal(ch.length, 1);

@@ -1,3 +1,4 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import { to12hLabel } from "./time-12h";
 export interface DailyOfficeHours {
   dayOfWeek: number;
@@ -58,7 +59,24 @@ function normalizeMaxAppointmentsPerSlot(value: unknown, fallback: number) {
   return Math.max(1, Math.min(20, Math.round(value)));
 }
 
+/** Neutral hours for a brand-new practice: Mon–Fri 9–5, weekends closed. */
+function getBlankStarterScheduleSettings(): ScheduleSettingsConfig {
+  return {
+    enforceOfficeHours: true,
+    allowOverride: true,
+    appointmentIntervalMin: 15,
+    maxAppointmentsPerSlot: 4,
+    officeHours: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+      dayOfWeek,
+      enabled: dayOfWeek >= 1 && dayOfWeek <= 5,
+      start: "09:00",
+      end: "17:00",
+    })),
+  };
+}
+
 export function getDefaultScheduleSettings(): ScheduleSettingsConfig {
+  if (isBlankStarterWorkspace()) return getBlankStarterScheduleSettings();
   return {
     enforceOfficeHours: true,
     allowOverride: true,

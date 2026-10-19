@@ -5210,7 +5210,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   // answer (or the joined multi-select answers) so the user can edit
                   // it like a "live preview". Picking a radio overwrites the field
                   // with that option text; the user can then click into the field
-                  // and append a detail (e.g. "Yes" -> "Yes - Glendale Adventist").
+                  // and append a detail (e.g. "Yes" -> "Yes - Valley Hospital").
                   const freeTextEditableValue = Array.isArray(answerValue)
                     ? answerValue.join(", ")
                     : (answerValue ?? "");
@@ -5255,8 +5255,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           {/* Live-preview / edit field — always shows the current
                               answer and is always editable. Picking a radio above
                               updates this field; typing here overwrites the answer.
-                              Lets the user pick "Yes" then type " - Glendale Adventist"
-                              to end up with "Yes - Glendale Adventist" without losing
+                              Lets the user pick "Yes" then type " - Valley Hospital"
+                              to end up with "Yes - Valley Hospital" without losing
                               the macro structure. */}
                           <div className="mt-2">
                             <label className="flex items-start gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm">

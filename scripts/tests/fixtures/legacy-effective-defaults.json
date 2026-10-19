@@ -1,0 +1,2520 @@
+{
+ "nothingSaved": {
+  "appointmentTypes": [
+   {
+    "name": "Personal Injury Office Visit",
+    "color": "#ef7984",
+    "durationMin": 45,
+    "isDefault": true,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-1-ID"
+   },
+   {
+    "name": "Personal Injury New Patient",
+    "color": "#e4e64a",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-2-ID"
+   },
+   {
+    "name": "Personal Injury Re-Exam",
+    "color": "#f39a1f",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-3-ID"
+   },
+   {
+    "name": "Personal Injury Discharge Visit",
+    "color": "#c93b1d",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-4-ID"
+   },
+   {
+    "name": "Spinal Decompression - C/S",
+    "color": "#73b4e4",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": true
+    },
+    "id": "default-5-ID"
+   },
+   {
+    "name": "Spinal Decompression - L/S",
+    "color": "#1f66e5",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": true
+    },
+    "id": "default-6-ID"
+   },
+   {
+    "name": "Cash New Patient",
+    "color": "#5b862b",
+    "durationMin": 50,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": false,
+     "cash": true
+    },
+    "id": "default-7-ID"
+   },
+   {
+    "name": "Cash Office Visit",
+    "color": "#84cd15",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": false,
+     "cash": true
+    },
+    "id": "default-8-ID"
+   }
+  ],
+  "scheduleSettings": {
+   "enforceOfficeHours": true,
+   "allowOverride": true,
+   "appointmentIntervalMin": 15,
+   "maxAppointmentsPerSlot": 4,
+   "officeHours": [
+    {
+     "dayOfWeek": 0,
+     "enabled": false,
+     "start": "08:00",
+     "end": "17:00"
+    },
+    {
+     "dayOfWeek": 1,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 2,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 3,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 4,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 5,
+     "enabled": true,
+     "start": "08:00",
+     "end": "16:00"
+    },
+    {
+     "dayOfWeek": 6,
+     "enabled": false,
+     "start": "08:00",
+     "end": "14:00"
+    }
+   ]
+  },
+  "billing": {
+   "treatments": [
+    {
+     "id": "tx-cmt12",
+     "name": "CMT 1-2",
+     "procedureCode": "98940",
+     "modifier": "",
+     "unitPrice": 85,
+     "defaultUnits": 1,
+     "active": true
+    },
+    {
+     "id": "tx-cmt34",
+     "name": "CMT 3-4",
+     "procedureCode": "98941",
+     "modifier": "",
+     "unitPrice": 95,
+     "defaultUnits": 1,
+     "active": true
+    },
+    {
+     "id": "tx-ems",
+     "name": "Electrical Muscle Stimulation",
+     "procedureCode": "97014",
+     "modifier": "",
+     "unitPrice": 35,
+     "defaultUnits": 1,
+     "active": true
+    },
+    {
+     "id": "tx-ultrasound",
+     "name": "Ultrasound",
+     "procedureCode": "97035",
+     "modifier": "",
+     "unitPrice": 50,
+     "defaultUnits": 1,
+     "active": true
+    },
+    {
+     "id": "tx-traction",
+     "name": "Mechanical Traction",
+     "procedureCode": "97012",
+     "modifier": "",
+     "unitPrice": 45,
+     "defaultUnits": 1,
+     "active": true
+    },
+    {
+     "id": "tx-decompression",
+     "name": "Spinal Decompression",
+     "procedureCode": "S9090",
+     "modifier": "",
+     "unitPrice": 250,
+     "defaultUnits": 1,
+     "active": true
+    }
+   ],
+   "diagnosisFolders": [
+    {
+     "id": "folder-general",
+     "name": "General"
+    },
+    {
+     "id": "folder-cervical",
+     "name": "Cervical"
+    },
+    {
+     "id": "folder-thoracic",
+     "name": "Thoracic"
+    },
+    {
+     "id": "folder-lumbar",
+     "name": "Lumbar"
+    },
+    {
+     "id": "folder-shoulder",
+     "name": "Shoulder"
+    },
+    {
+     "id": "folder-leg-knee-foot",
+     "name": "Leg/Knee/Foot"
+    },
+    {
+     "id": "folder-misc",
+     "name": "Misc."
+    }
+   ],
+   "diagnoses": [
+    {
+     "id": "dx-cervical-sprain",
+     "code": "S13.4XXA",
+     "description": "Sprain of ligaments of cervical spine, initial encounter",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-strain",
+     "code": "S16.1XXA",
+     "description": "Strain of muscle, fascia and tendon at neck level, initial encounter",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-spondylolysis",
+     "code": "M43.02",
+     "description": "Spondylolysis, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-spondylolisthesis",
+     "code": "M43.12",
+     "description": "Spondylolisthesis, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-disc-displacement",
+     "code": "M50.20",
+     "description": "Other cervical disc displacement, unspecified cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-disc-radiculopathy",
+     "code": "M50.10",
+     "description": "Cervical disc disorder with radiculopathy, unspecified cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervicothoracic-disc-disorder",
+     "code": "M50.93",
+     "description": "Cervical disc disorder, unspecified, cervicothoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-dorsopathy",
+     "code": "M53.82",
+     "description": "Other specified dorsopathies, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-rad",
+     "code": "M54.12",
+     "description": "Radiculopathy, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-pain",
+     "code": "M54.2",
+     "description": "Cervicalgia",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-segmental-dysfunction",
+     "code": "M99.01",
+     "description": "Segmental and somatic dysfunction of cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-neural-stenosis",
+     "code": "M99.51",
+     "description": "Intervertebral disc stenosis of neural canal of cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-strain",
+     "code": "S29.012A",
+     "description": "Strain of muscle and tendon of back wall of thorax, initial encounter",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-sprain",
+     "code": "S23.3XXA",
+     "description": "Sprain of ligaments of thoracic spine, initial encounter",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-pain",
+     "code": "M54.6",
+     "description": "Pain in thoracic spine",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-spondylolysis",
+     "code": "M43.04",
+     "description": "Spondylolysis, thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-spondylolisthesis",
+     "code": "M43.14",
+     "description": "Spondylolisthesis, thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-segmental-dysfunction",
+     "code": "M99.02",
+     "description": "Segmental and somatic dysfunction of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-osseous-stenosis",
+     "code": "M99.32",
+     "description": "Osseous stenosis of neural canal of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-disc-stenosis",
+     "code": "M99.52",
+     "description": "Intervertebral disc stenosis of neural canal of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-sprain",
+     "code": "S33.5XXA",
+     "description": "Sprain of ligaments of lumbar spine, initial encounter",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-strain",
+     "code": "S39.012A",
+     "description": "Strain of muscle, fascia and tendon of lower back, initial encounter",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-spondylolysis",
+     "code": "M43.06",
+     "description": "Spondylolysis, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-spondylolisthesis",
+     "code": "M43.16",
+     "description": "Spondylolisthesis, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-annulus-defect",
+     "code": "M51.A0",
+     "description": "Intervertebral annulus fibrosus defect, lumbar region, unspecified size",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbosacral-annulus-defect",
+     "code": "M51.A3",
+     "description": "Intervertebral annulus fibrosus defect, lumbosacral region, unspecified size",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-radiculopathy",
+     "code": "M51.16",
+     "description": "Intervertebral disc disorders with radiculopathy, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbosacral-disc-radiculopathy",
+     "code": "M51.17",
+     "description": "Intervertebral disc disorders with radiculopathy, lumbosacral region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-displacement",
+     "code": "M51.26",
+     "description": "Other intervertebral disc displacement, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-dorsopathy",
+     "code": "M53.86",
+     "description": "Other specified dorsopathies, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-rad",
+     "code": "M54.16",
+     "description": "Radiculopathy, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-sciatica-unspecified",
+     "code": "M54.30",
+     "description": "Sciatica, unspecified side",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-pain",
+     "code": "M54.50",
+     "description": "Low back pain, unspecified",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-back-muscle-spasm",
+     "code": "M62.830",
+     "description": "Muscle spasm of back",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-segmental-dysfunction",
+     "code": "M99.03",
+     "description": "Segmental and somatic dysfunction of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-osseous-stenosis",
+     "code": "M99.33",
+     "description": "Osseous stenosis of neural canal of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-stenosis",
+     "code": "M99.53",
+     "description": "Intervertebral disc stenosis of neural canal of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-sprain",
+     "code": "S43.401A",
+     "description": "Unspecified sprain of right shoulder joint, initial encounter",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-pain",
+     "code": "M25.511",
+     "description": "Pain in right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-bicipital-tendinitis",
+     "code": "M75.21",
+     "description": "Bicipital tendinitis, right shoulder",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-rotator-cuff-tear",
+     "code": "M75.111",
+     "description": "Incomplete rotator cuff tear or rupture of right shoulder, not specified as traumatic",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-bursitis",
+     "code": "M75.51",
+     "description": "Bursitis of right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-labrum-lesion",
+     "code": "S43.431A",
+     "description": "Superior glenoid labrum lesion of right shoulder, initial encounter",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-bone-density-disorder",
+     "code": "M85.811",
+     "description": "Other specified disorders of bone density and structure, right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-other-shoulder-lesion",
+     "code": "M75.81",
+     "description": "Other shoulder lesions, right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-sprain",
+     "code": "S43.402A",
+     "description": "Unspecified sprain of left shoulder joint, initial encounter",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-pain",
+     "code": "M25.512",
+     "description": "Pain in left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-bicipital-tendinitis",
+     "code": "M75.22",
+     "description": "Bicipital tendinitis, left shoulder",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-rotator-cuff-tear",
+     "code": "M75.112",
+     "description": "Incomplete rotator cuff tear or rupture of left shoulder, not specified as traumatic",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-bursitis",
+     "code": "M75.52",
+     "description": "Bursitis of left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-labrum-lesion",
+     "code": "S43.432A",
+     "description": "Superior glenoid labrum lesion of left shoulder, initial encounter",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-bone-density-disorder",
+     "code": "M85.812",
+     "description": "Other specified disorders of bone density and structure, left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-other-shoulder-lesion",
+     "code": "M75.82",
+     "description": "Other shoulder lesions, left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-pain",
+     "code": "M25.561",
+     "description": "Pain in right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-acl-sprain",
+     "code": "S83.511A",
+     "description": "Sprain of anterior cruciate ligament of right knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-pcl-sprain",
+     "code": "S83.521A",
+     "description": "Sprain of posterior cruciate ligament of right knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-effusion",
+     "code": "M25.461",
+     "description": "Effusion, right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-chondromalacia",
+     "code": "M94.261",
+     "description": "Chondromalacia, right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-foot-pain",
+     "code": "M79.671",
+     "description": "Pain in right foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-foot-contusion",
+     "code": "S90.31XA",
+     "description": "Contusion of right foot, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-ankle-foot-pain",
+     "code": "M25.571",
+     "description": "Pain in right ankle and joints of right foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-pain",
+     "code": "M25.562",
+     "description": "Pain in left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-acl-sprain",
+     "code": "S83.512A",
+     "description": "Sprain of anterior cruciate ligament of left knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-effusion",
+     "code": "M25.462",
+     "description": "Effusion, left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-chondromalacia",
+     "code": "M94.262",
+     "description": "Chondromalacia, left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-foot-pain",
+     "code": "M79.672",
+     "description": "Pain in left foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-foot-contusion",
+     "code": "S90.32XA",
+     "description": "Contusion of left foot, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-ankle-foot-pain",
+     "code": "M25.572",
+     "description": "Pain in left ankle and joints of left foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-mva-driver-collision",
+     "code": "V43.52XA",
+     "description": "Car driver injured in collision with other type car in traffic accident, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-mva-passenger-collision",
+     "code": "V43.62XA",
+     "description": "Car passenger injured in collision with other type car in traffic accident, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-post-traumatic-headache",
+     "code": "G44.309",
+     "description": "Post-traumatic headache, unspecified, not intractable",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-sleep-disorder",
+     "code": "G47.9",
+     "description": "Sleep disorder, unspecified",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-tinnitus",
+     "code": "H93.19",
+     "description": "Tinnitus, unspecified ear",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-dizziness",
+     "code": "R42",
+     "description": "Dizziness and giddiness",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-concussion-without-loc",
+     "code": "S06.0X0A",
+     "description": "Concussion without loss of consciousness, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-concussion-with-loc",
+     "code": "S06.0X9A",
+     "description": "Concussion with loss of consciousness of unspecified duration, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    }
+   ],
+   "bundles": [
+    {
+     "id": "bundle-cervical",
+     "name": "Cervical PI Bundle",
+     "diagnosisIds": [
+      "dx-cervical-sprain",
+      "dx-cervical-strain",
+      "dx-cervical-disc-radiculopathy",
+      "dx-cervical-disc-displacement",
+      "dx-cervical-rad",
+      "dx-cervical-pain",
+      "dx-cervical-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-thoracic",
+     "name": "Thoracic PI Bundle",
+     "diagnosisIds": [
+      "dx-thoracic-sprain",
+      "dx-thoracic-strain",
+      "dx-thoracic-pain",
+      "dx-thoracic-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-lumbar",
+     "name": "Lumbar PI Bundle",
+     "diagnosisIds": [
+      "dx-lumbar-sprain",
+      "dx-lumbar-strain",
+      "dx-lumbar-disc-radiculopathy",
+      "dx-lumbosacral-disc-radiculopathy",
+      "dx-lumbar-rad",
+      "dx-lumbar-pain",
+      "dx-lumbar-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-right-shoulder",
+     "name": "Right Shoulder Bundle",
+     "diagnosisIds": [
+      "dx-right-shoulder-sprain",
+      "dx-right-shoulder-pain",
+      "dx-right-bicipital-tendinitis",
+      "dx-right-rotator-cuff-tear"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-left-shoulder",
+     "name": "Left Shoulder Bundle",
+     "diagnosisIds": [
+      "dx-left-shoulder-sprain",
+      "dx-left-shoulder-pain",
+      "dx-left-bicipital-tendinitis",
+      "dx-left-rotator-cuff-tear"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-right-leg-knee-foot",
+     "name": "Right Leg/Knee/Foot Bundle",
+     "diagnosisIds": [
+      "dx-right-knee-pain",
+      "dx-right-acl-sprain",
+      "dx-right-knee-effusion",
+      "dx-right-ankle-foot-pain",
+      "dx-right-foot-pain"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-left-leg-knee-foot",
+     "name": "Left Leg/Knee/Foot Bundle",
+     "diagnosisIds": [
+      "dx-left-knee-pain",
+      "dx-left-acl-sprain",
+      "dx-left-knee-effusion",
+      "dx-left-ankle-foot-pain",
+      "dx-left-foot-pain"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-mva-misc",
+     "name": "MVC / Misc Bundle",
+     "diagnosisIds": [
+      "dx-mva-driver-collision",
+      "dx-mva-passenger-collision",
+      "dx-post-traumatic-headache",
+      "dx-dizziness",
+      "dx-concussion-without-loc"
+     ],
+     "active": true
+    }
+   ],
+   "packages": []
+  },
+  "macroLibrary": {
+   "setName": "Default PI Macros",
+   "enabledAutoFields": [
+    "FIRST_NAME",
+    "LAST_NAME",
+    "FULL_NAME",
+    "AGE",
+    "SEX",
+    "MARITAL_STATUS",
+    "DOB",
+    "INJURY_DATE",
+    "ATTORNEY",
+    "HE_SHE",
+    "HIM_HER",
+    "HIS_HER",
+    "MR_MRS_MS_LAST_NAME",
+    "MR_MRS_MS_FULL_NAME",
+    "SPECIALIST_REFERRED"
+   ],
+   "saltDefaults": {
+    "enabled": true,
+    "sections": {
+     "subjective": true,
+     "objective": true,
+     "assessment": true,
+     "plan": true
+    }
+   },
+   "templates": [
+    {
+     "id": "macro-objective-mvc-hx",
+     "section": "objective",
+     "buttonName": "MVC HX",
+     "body": "{{FIRST_NAME}} {{LAST_NAME}} is a {{AGE}} year old {{SEX}} who stated that they were the [[where_seated]] in a [[vehicle_type_driven]], wearing their seatbelt involved in a motor vehicle collision with a [[other_vehicle_type]].\n\nPatient describes the collision occurred while {{HE_SHE}} was [[vehicle_motion]].\n{{MR_MRS_MS_LAST_NAME}} stated the area of impact was [[impact_area]].\n{{MR_MRS_MS_LAST_NAME}} states that the vehicle was [[vehicle_pushed]].\nPatient stated that {{HE_SHE}} was [[prepared_for_impact]].\nUpon impact, {{MR_MRS_MS_LAST_NAME}} felt [[thrown_around]].\n{{MR_MRS_MS_LAST_NAME}} mentioned that the airbags [[airbag_deployed]].\nImmediately after impact they felt [[post_impact_feeling]].\nPatient reported that they [[lost_consciousness]].\n{{MR_MRS_MS_LAST_NAME}} stated they [[body_strike]] in the vehicle.\n{{MR_MRS_MS_LAST_NAME}} developed pain [[pain_onset]].\nSince the collision, {{HE_SHE}} has been experiencing [[symptoms_since_collision]].\nPatient reported police [[police_arrival]].\n{{MR_MRS_MS_LAST_NAME}} was seen at emergency/urgent care: [[seen_urgent_care]].\nTaken by ambulance: [[taken_ambulance]].\nMedications prescribed: [[medications_prescribed]].\nDiagnostic imaging taken: [[diagnostic_imaging_taken]].\n\n{{MR_MRS_MS_LAST_NAME}} stated symptoms persisted and continued to get worse. At that time {{HE_SHE}} presented {{HIM_HER}}self for evaluation and treatment.\n{{MR_MRS_MS_LAST_NAME}} stated that {{HE_SHE}} did not have these presenting complaints prior to the collision on {{INJURY_DATE}}.",
+     "questions": [
+      {
+       "id": "where_seated",
+       "label": "Where were you seated?",
+       "options": [
+        "driver",
+        "front seat passenger",
+        "rear right seat passenger",
+        "rear left seat passenger",
+        "rear middle seat passenger"
+       ]
+      },
+      {
+       "id": "vehicle_type_driven",
+       "label": "What type of vehicle were you driving?",
+       "options": []
+      },
+      {
+       "id": "other_vehicle_type",
+       "label": "What type of vehicle was the other vehicle?",
+       "options": []
+      },
+      {
+       "id": "vehicle_motion",
+       "label": "Was your vehicle stopped/moving, etc.?",
+       "options": []
+      },
+      {
+       "id": "impact_area",
+       "label": "Where was the area of impact?",
+       "options": []
+      },
+      {
+       "id": "vehicle_pushed",
+       "label": "Was your vehicle pushed into another vehicle?",
+       "options": []
+      },
+      {
+       "id": "prepared_for_impact",
+       "label": "Were you prepared for impact?",
+       "options": []
+      },
+      {
+       "id": "thrown_around",
+       "label": "Were you thrown around in the vehicle?",
+       "options": []
+      },
+      {
+       "id": "airbag_deployed",
+       "label": "Did your airbags deploy?",
+       "options": []
+      },
+      {
+       "id": "post_impact_feeling",
+       "label": "How did you feel after the impact?",
+       "options": []
+      },
+      {
+       "id": "lost_consciousness",
+       "label": "Did you lose consciousness?",
+       "options": []
+      },
+      {
+       "id": "body_strike",
+       "label": "Did you strike any part of your body in the vehicle?",
+       "options": []
+      },
+      {
+       "id": "pain_onset",
+       "label": "When did you develop the pains?",
+       "options": []
+      },
+      {
+       "id": "symptoms_since_collision",
+       "label": "Symptoms since collision",
+       "options": []
+      },
+      {
+       "id": "police_arrival",
+       "label": "Did police arrive to the scene?",
+       "options": []
+      },
+      {
+       "id": "seen_urgent_care",
+       "label": "Were you seen at emergency/urgent care?",
+       "options": []
+      },
+      {
+       "id": "taken_ambulance",
+       "label": "Were you taken by ambulance?",
+       "options": []
+      },
+      {
+       "id": "medications_prescribed",
+       "label": "Were medications prescribed?",
+       "options": []
+      },
+      {
+       "id": "diagnostic_imaging_taken",
+       "label": "Was diagnostic imaging taken?",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-subjective-pain-intake",
+     "section": "subjective",
+     "buttonName": "Pain Intake",
+     "body": "{{MR_MRS_MS_LAST_NAME}} reports pain level [[pain_scale]]/10 in the [[pain_region]], with frequency [[frequency]] and aggravating factors [[aggravating_factors]].",
+     "questions": [
+      {
+       "id": "pain_scale",
+       "label": "Pain scale",
+       "options": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10"
+       ]
+      },
+      {
+       "id": "pain_region",
+       "label": "Primary region",
+       "options": []
+      },
+      {
+       "id": "frequency",
+       "label": "Frequency",
+       "options": [
+        "intermittent",
+        "constant",
+        "daily"
+       ]
+      },
+      {
+       "id": "aggravating_factors",
+       "label": "Aggravating factors",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-assessment-progress",
+     "section": "assessment",
+     "buttonName": "Progress Note",
+     "body": "Patient demonstrates [[progress_level]] progress with ongoing complaints in the [[focus_area]]. Continue monitoring functional limitations.",
+     "questions": [
+      {
+       "id": "progress_level",
+       "label": "Progress level",
+       "options": [
+        "improving",
+        "plateau",
+        "worsening"
+       ]
+      },
+      {
+       "id": "focus_area",
+       "label": "Focus area",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-plan-followup",
+     "section": "plan",
+     "buttonName": "Follow-Up Plan",
+     "body": "Continue care plan with [[treatment_frequency]] visits per week for [[duration_weeks]] weeks. Re-evaluate on [[re_eval_date]].",
+     "questions": [
+      {
+       "id": "treatment_frequency",
+       "label": "Visits per week",
+       "options": [
+        "1",
+        "2",
+        "3"
+       ]
+      },
+      {
+       "id": "duration_weeks",
+       "label": "Duration (weeks)",
+       "options": [
+        "2",
+        "4",
+        "6",
+        "8"
+       ]
+      },
+      {
+       "id": "re_eval_date",
+       "label": "Re-evaluation date",
+       "options": []
+      }
+     ],
+     "active": true
+    }
+   ]
+  },
+  "soapMacros": {
+   "subjective": [
+    "Headaches",
+    "Cervical",
+    "Thoracic",
+    "Lumbar",
+    "Pain Scale"
+   ],
+   "objective": [
+    "MVC HX",
+    "Vitals",
+    "Cervical",
+    "Lumbar/Hip",
+    "Gap In Care"
+   ],
+   "assessment": [
+    "Improving",
+    "Plateau",
+    "Needs MRI",
+    "Needs Specialist"
+   ],
+   "plan": [
+    "CMT 1-2",
+    "EMS",
+    "Re-Exam 2 Weeks",
+    "Referral to Specialist"
+   ]
+  },
+  "documentTemplates": {
+   "header": {
+    "active": true,
+    "body": "{{OFFICE_NAME}}\n{{OFFICE_ADDRESS}}\nT. {{OFFICE_PHONE}}   F. {{OFFICE_FAX}}\nE. {{OFFICE_EMAIL}}\n",
+    "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+    "showOfficeLogo": true
+   },
+   "templates": [
+    {
+     "id": "doc-specialist-referral",
+     "name": "Specialist Referral",
+     "scope": "specialistReferral",
+     "body": "Specialist Referral\n\nDate: {{TODAY_DATE}}\n\nDear {{SPECIALIST_NAME}},\n\nI am writing to refer {{PATIENT_FULL_NAME}} for specialist evaluation and care.\n\nPatient Information:\nName: {{PATIENT_FULL_NAME}}\nDate of Birth: {{PATIENT_DOB}}\nDate of Injury: {{DATE_OF_INJURY}}\nPatient Contact: {{PATIENT_PHONE}}\nCase #: {{CASE_NUMBER}}\n\nReferral Information:\nDoctor: {{DOCTOR_NAME}}\nDate of Referral: {{REFERRAL_SENT_DATE}}\nScheduled Date: {{REFERRAL_SCHEDULED_DATE}}\n\nAttorney Information:\n{{ATTORNEY_NAME}}\nT. {{ATTORNEY_PHONE}}   F. {{ATTORNEY_FAX}}\nE. {{ATTORNEY_EMAIL}}\n{{ATTORNEY_ADDRESS}}\n\nPlease send the consultation report once available.\n",
+     "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+     "showOfficeLogo": true,
+     "active": true
+    },
+    {
+     "id": "doc-imaging-request",
+     "name": "Imaging Request",
+     "scope": "imagingRequest",
+     "body": "Imaging Request\n\nDate: {{TODAY_DATE}}\n\nPlease perform the following imaging for this patient:\n\nPatient Information:\nName: {{PATIENT_FULL_NAME}}\nDate of Birth: {{PATIENT_DOB}}\nDate of Injury: {{DATE_OF_INJURY}}\nPatient Contact: {{PATIENT_PHONE}}\nCase #: {{CASE_NUMBER}}\n\nImaging Details:\nType: {{IMAGING_TYPE}}\nSent Date: {{IMAGING_SENT_DATE}}\nDone Date: {{IMAGING_DONE_DATE}}\nImaging Center: {{IMAGING_CENTER}}\nRequested Regions: {{IMAGING_REGIONS}}\nReport Received Date: {{IMAGING_REPORT_RECEIVED_DATE}}\nReport Reviewed Date: {{IMAGING_REPORT_REVIEWED_DATE}}\nX-Ray Findings: {{XRAY_FINDINGS}}\nMRI / CT Findings: {{MRI_CT_FINDINGS}}\n\nAttorney Information:\n{{ATTORNEY_NAME}}\nT. {{ATTORNEY_PHONE}}   F. {{ATTORNEY_FAX}}\nE. {{ATTORNEY_EMAIL}}\n{{ATTORNEY_ADDRESS}}\n\nSpecialist Recommendations:\n{{SPECIALIST_RECOMMENDATIONS}}\n",
+     "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+     "showOfficeLogo": true,
+     "active": true
+    }
+   ]
+  },
+  "reportTemplates": {
+   "templates": [
+    {
+     "id": "report-full-narrative",
+     "name": "Full Narrative Report",
+     "body": "Narrative Report\n\nPatient: {{PATIENT_FULL_NAME}}\nDOB: {{PATIENT_DOB}}\nDate Of Injury: {{DATE_OF_INJURY}}\nCase #: {{CASE_NUMBER}}\nAttorney: {{ATTORNEY_NAME}}\n\nHistory of Injury:\n{{FIRST_OBJECTIVE}}\n\nClinical Progress (Objective):\n{{ALL_OBJECTIVE}}\n\nAssessment Overview:\n{{ALL_ASSESSMENT}}\n\nPlan Of Care:\n{{ALL_PLAN}}\n\nDiagnoses:\n{{DIAGNOSIS_LIST}}\n\nEncounter Charges:\n{{CHARGE_LEDGER}}\n\nImaging Summary:\n{{IMAGING_SUMMARY}}\n\nX-Ray Findings:\n{{XRAY_FINDINGS}}\n\nMRI / CT Findings:\n{{MRI_CT_FINDINGS}}\n\nSpecialist Summary:\n{{SPECIALIST_SUMMARY}}\n\nSpecialist Recommendations:\n{{SPECIALIST_RECOMMENDATIONS}}\n\nAdditional Notes:\n{{PATIENT_NOTES}}\n\nCustom Input:\n{{PROMPT_CUSTOM_NOTE}}",
+     "fontFamily": "Georgia, 'Times New Roman', serif",
+     "active": true,
+     "prompts": [
+      {
+       "id": "prompt-custom-note",
+       "label": "Custom note",
+       "token": "PROMPT_CUSTOM_NOTE",
+       "options": [],
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  "caseStatuses": {
+   "statuses": [
+    {
+     "name": "Active",
+     "showOnDashboard": true,
+     "color": "#1f9d60",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Discharged",
+     "showOnDashboard": true,
+     "color": "#5f75ff",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Ready To Submit",
+     "showOnDashboard": true,
+     "color": "#f0a43f",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Submitted",
+     "showOnDashboard": true,
+     "color": "#f4e526",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Dropped",
+     "showOnDashboard": true,
+     "color": "#c9423a",
+     "isCaseClosed": true,
+     "autoFolder": true
+    },
+    {
+     "name": "Paid",
+     "showOnDashboard": true,
+     "color": "#80e74b",
+     "isCaseClosed": true,
+     "autoFolder": true
+    }
+   ],
+   "lienLabel": "Lien",
+   "lienOptions": [
+    "Pending",
+    "Not Set",
+    "Not Sent",
+    "Requested",
+    "Received"
+   ],
+   "reviewOptions": [
+    "Not Requested",
+    "Requested",
+    "Received"
+   ]
+  },
+  "smsStarterTemplates": [
+   {
+    "id": "SMS-ID",
+    "name": "🎂 Birthday",
+    "body": "Happy birthday, {{FIRST_NAME}}!",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "⏰ Appointment Reminder",
+    "body": "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "✅ Records Received",
+    "body": "Hi {{FIRST_NAME}}, we've received your records.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "🗓️ Follow-Up",
+    "body": "Hi {{FIRST_NAME}}, following up on your last visit.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "💳 Payment Due",
+    "body": "Hi {{FIRST_NAME}}, this is a reminder about your outstanding balance.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   }
+  ],
+  "generalLetterBody": "Letter\n\nDate: {{TODAY_DATE}}\n\nTo Whom It May Concern,\n\n{{PATIENT_FULL_NAME}} was seen in our office for evaluation and treatment related to date of injury {{DATE_OF_INJURY}}.\n\nPlease contact our office if additional information is needed.\n"
+ },
+ "partlySaved": {
+  "appointmentTypes": [
+   {
+    "name": "Personal Injury Office Visit",
+    "color": "#ef7984",
+    "durationMin": 45,
+    "isDefault": true,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-1-ID"
+   },
+   {
+    "name": "Personal Injury New Patient",
+    "color": "#e4e64a",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-2-ID"
+   },
+   {
+    "name": "Personal Injury Re-Exam",
+    "color": "#f39a1f",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-3-ID"
+   },
+   {
+    "name": "Personal Injury Discharge Visit",
+    "color": "#c93b1d",
+    "durationMin": 60,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": false
+    },
+    "id": "default-4-ID"
+   },
+   {
+    "name": "Spinal Decompression - C/S",
+    "color": "#73b4e4",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": true
+    },
+    "id": "default-5-ID"
+   },
+   {
+    "name": "Spinal Decompression - L/S",
+    "color": "#1f66e5",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": true,
+     "cash": true
+    },
+    "id": "default-6-ID"
+   },
+   {
+    "name": "Cash New Patient",
+    "color": "#5b862b",
+    "durationMin": 50,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": false,
+     "cash": true
+    },
+    "id": "default-7-ID"
+   },
+   {
+    "name": "Cash Office Visit",
+    "color": "#84cd15",
+    "durationMin": 30,
+    "isDefault": false,
+    "patientTypes": {
+     "pi": false,
+     "cash": true
+    },
+    "id": "default-8-ID"
+   }
+  ],
+  "scheduleSettings": {
+   "enforceOfficeHours": true,
+   "allowOverride": true,
+   "appointmentIntervalMin": 15,
+   "maxAppointmentsPerSlot": 4,
+   "officeHours": [
+    {
+     "dayOfWeek": 0,
+     "enabled": false,
+     "start": "08:00",
+     "end": "17:00"
+    },
+    {
+     "dayOfWeek": 1,
+     "enabled": true,
+     "start": "07:00",
+     "end": "19:00"
+    },
+    {
+     "dayOfWeek": 2,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 3,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 4,
+     "enabled": true,
+     "start": "08:00",
+     "end": "18:00"
+    },
+    {
+     "dayOfWeek": 5,
+     "enabled": true,
+     "start": "08:00",
+     "end": "16:00"
+    },
+    {
+     "dayOfWeek": 6,
+     "enabled": true,
+     "start": "09:00",
+     "end": "12:00"
+    }
+   ]
+  },
+  "billing": {
+   "treatments": [
+    {
+     "id": "tx-a",
+     "name": "Exam",
+     "procedureCode": "99203",
+     "modifier": "",
+     "unitPrice": 100,
+     "defaultUnits": 1,
+     "active": true
+    }
+   ],
+   "diagnosisFolders": [
+    {
+     "id": "folder-general",
+     "name": "General"
+    },
+    {
+     "id": "folder-cervical",
+     "name": "Cervical"
+    },
+    {
+     "id": "folder-thoracic",
+     "name": "Thoracic"
+    },
+    {
+     "id": "folder-lumbar",
+     "name": "Lumbar"
+    },
+    {
+     "id": "folder-shoulder",
+     "name": "Shoulder"
+    },
+    {
+     "id": "folder-leg-knee-foot",
+     "name": "Leg/Knee/Foot"
+    },
+    {
+     "id": "folder-misc",
+     "name": "Misc."
+    }
+   ],
+   "diagnoses": [
+    {
+     "id": "dx-own",
+     "code": "M54.2",
+     "description": "Cervicalgia",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-sprain",
+     "code": "S13.4XXA",
+     "description": "Sprain of ligaments of cervical spine, initial encounter",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-strain",
+     "code": "S16.1XXA",
+     "description": "Strain of muscle, fascia and tendon at neck level, initial encounter",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-spondylolysis",
+     "code": "M43.02",
+     "description": "Spondylolysis, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-spondylolisthesis",
+     "code": "M43.12",
+     "description": "Spondylolisthesis, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-disc-displacement",
+     "code": "M50.20",
+     "description": "Other cervical disc displacement, unspecified cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-disc-radiculopathy",
+     "code": "M50.10",
+     "description": "Cervical disc disorder with radiculopathy, unspecified cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervicothoracic-disc-disorder",
+     "code": "M50.93",
+     "description": "Cervical disc disorder, unspecified, cervicothoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-dorsopathy",
+     "code": "M53.82",
+     "description": "Other specified dorsopathies, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-rad",
+     "code": "M54.12",
+     "description": "Radiculopathy, cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-segmental-dysfunction",
+     "code": "M99.01",
+     "description": "Segmental and somatic dysfunction of cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-cervical-neural-stenosis",
+     "code": "M99.51",
+     "description": "Intervertebral disc stenosis of neural canal of cervical region",
+     "folderId": "folder-cervical",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-strain",
+     "code": "S29.012A",
+     "description": "Strain of muscle and tendon of back wall of thorax, initial encounter",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-sprain",
+     "code": "S23.3XXA",
+     "description": "Sprain of ligaments of thoracic spine, initial encounter",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-pain",
+     "code": "M54.6",
+     "description": "Pain in thoracic spine",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-spondylolysis",
+     "code": "M43.04",
+     "description": "Spondylolysis, thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-spondylolisthesis",
+     "code": "M43.14",
+     "description": "Spondylolisthesis, thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-segmental-dysfunction",
+     "code": "M99.02",
+     "description": "Segmental and somatic dysfunction of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-osseous-stenosis",
+     "code": "M99.32",
+     "description": "Osseous stenosis of neural canal of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-thoracic-disc-stenosis",
+     "code": "M99.52",
+     "description": "Intervertebral disc stenosis of neural canal of thoracic region",
+     "folderId": "folder-thoracic",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-sprain",
+     "code": "S33.5XXA",
+     "description": "Sprain of ligaments of lumbar spine, initial encounter",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-strain",
+     "code": "S39.012A",
+     "description": "Strain of muscle, fascia and tendon of lower back, initial encounter",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-spondylolysis",
+     "code": "M43.06",
+     "description": "Spondylolysis, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-spondylolisthesis",
+     "code": "M43.16",
+     "description": "Spondylolisthesis, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-annulus-defect",
+     "code": "M51.A0",
+     "description": "Intervertebral annulus fibrosus defect, lumbar region, unspecified size",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbosacral-annulus-defect",
+     "code": "M51.A3",
+     "description": "Intervertebral annulus fibrosus defect, lumbosacral region, unspecified size",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-radiculopathy",
+     "code": "M51.16",
+     "description": "Intervertebral disc disorders with radiculopathy, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbosacral-disc-radiculopathy",
+     "code": "M51.17",
+     "description": "Intervertebral disc disorders with radiculopathy, lumbosacral region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-displacement",
+     "code": "M51.26",
+     "description": "Other intervertebral disc displacement, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-dorsopathy",
+     "code": "M53.86",
+     "description": "Other specified dorsopathies, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-rad",
+     "code": "M54.16",
+     "description": "Radiculopathy, lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-sciatica-unspecified",
+     "code": "M54.30",
+     "description": "Sciatica, unspecified side",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-pain",
+     "code": "M54.50",
+     "description": "Low back pain, unspecified",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-back-muscle-spasm",
+     "code": "M62.830",
+     "description": "Muscle spasm of back",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-segmental-dysfunction",
+     "code": "M99.03",
+     "description": "Segmental and somatic dysfunction of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-osseous-stenosis",
+     "code": "M99.33",
+     "description": "Osseous stenosis of neural canal of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-lumbar-disc-stenosis",
+     "code": "M99.53",
+     "description": "Intervertebral disc stenosis of neural canal of lumbar region",
+     "folderId": "folder-lumbar",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-sprain",
+     "code": "S43.401A",
+     "description": "Unspecified sprain of right shoulder joint, initial encounter",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-pain",
+     "code": "M25.511",
+     "description": "Pain in right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-bicipital-tendinitis",
+     "code": "M75.21",
+     "description": "Bicipital tendinitis, right shoulder",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-rotator-cuff-tear",
+     "code": "M75.111",
+     "description": "Incomplete rotator cuff tear or rupture of right shoulder, not specified as traumatic",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-bursitis",
+     "code": "M75.51",
+     "description": "Bursitis of right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-labrum-lesion",
+     "code": "S43.431A",
+     "description": "Superior glenoid labrum lesion of right shoulder, initial encounter",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-right-shoulder-bone-density-disorder",
+     "code": "M85.811",
+     "description": "Other specified disorders of bone density and structure, right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-other-shoulder-lesion",
+     "code": "M75.81",
+     "description": "Other shoulder lesions, right shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-sprain",
+     "code": "S43.402A",
+     "description": "Unspecified sprain of left shoulder joint, initial encounter",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-pain",
+     "code": "M25.512",
+     "description": "Pain in left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-bicipital-tendinitis",
+     "code": "M75.22",
+     "description": "Bicipital tendinitis, left shoulder",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-rotator-cuff-tear",
+     "code": "M75.112",
+     "description": "Incomplete rotator cuff tear or rupture of left shoulder, not specified as traumatic",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-bursitis",
+     "code": "M75.52",
+     "description": "Bursitis of left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-labrum-lesion",
+     "code": "S43.432A",
+     "description": "Superior glenoid labrum lesion of left shoulder, initial encounter",
+     "folderId": "folder-general",
+     "active": true
+    },
+    {
+     "id": "dx-left-shoulder-bone-density-disorder",
+     "code": "M85.812",
+     "description": "Other specified disorders of bone density and structure, left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-left-other-shoulder-lesion",
+     "code": "M75.82",
+     "description": "Other shoulder lesions, left shoulder",
+     "folderId": "folder-shoulder",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-pain",
+     "code": "M25.561",
+     "description": "Pain in right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-acl-sprain",
+     "code": "S83.511A",
+     "description": "Sprain of anterior cruciate ligament of right knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-pcl-sprain",
+     "code": "S83.521A",
+     "description": "Sprain of posterior cruciate ligament of right knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-effusion",
+     "code": "M25.461",
+     "description": "Effusion, right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-knee-chondromalacia",
+     "code": "M94.261",
+     "description": "Chondromalacia, right knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-foot-pain",
+     "code": "M79.671",
+     "description": "Pain in right foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-foot-contusion",
+     "code": "S90.31XA",
+     "description": "Contusion of right foot, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-right-ankle-foot-pain",
+     "code": "M25.571",
+     "description": "Pain in right ankle and joints of right foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-pain",
+     "code": "M25.562",
+     "description": "Pain in left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-acl-sprain",
+     "code": "S83.512A",
+     "description": "Sprain of anterior cruciate ligament of left knee, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-effusion",
+     "code": "M25.462",
+     "description": "Effusion, left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-knee-chondromalacia",
+     "code": "M94.262",
+     "description": "Chondromalacia, left knee",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-foot-pain",
+     "code": "M79.672",
+     "description": "Pain in left foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-foot-contusion",
+     "code": "S90.32XA",
+     "description": "Contusion of left foot, initial encounter",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-left-ankle-foot-pain",
+     "code": "M25.572",
+     "description": "Pain in left ankle and joints of left foot",
+     "folderId": "folder-leg-knee-foot",
+     "active": true
+    },
+    {
+     "id": "dx-mva-driver-collision",
+     "code": "V43.52XA",
+     "description": "Car driver injured in collision with other type car in traffic accident, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-mva-passenger-collision",
+     "code": "V43.62XA",
+     "description": "Car passenger injured in collision with other type car in traffic accident, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-post-traumatic-headache",
+     "code": "G44.309",
+     "description": "Post-traumatic headache, unspecified, not intractable",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-sleep-disorder",
+     "code": "G47.9",
+     "description": "Sleep disorder, unspecified",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-tinnitus",
+     "code": "H93.19",
+     "description": "Tinnitus, unspecified ear",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-dizziness",
+     "code": "R42",
+     "description": "Dizziness and giddiness",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-concussion-without-loc",
+     "code": "S06.0X0A",
+     "description": "Concussion without loss of consciousness, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    },
+    {
+     "id": "dx-concussion-with-loc",
+     "code": "S06.0X9A",
+     "description": "Concussion with loss of consciousness of unspecified duration, initial encounter",
+     "folderId": "folder-misc",
+     "active": true
+    }
+   ],
+   "bundles": [
+    {
+     "id": "bundle-cervical",
+     "name": "Cervical PI Bundle",
+     "diagnosisIds": [
+      "dx-cervical-sprain",
+      "dx-cervical-strain",
+      "dx-cervical-disc-radiculopathy",
+      "dx-cervical-disc-displacement",
+      "dx-cervical-rad",
+      "dx-cervical-pain",
+      "dx-cervical-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-thoracic",
+     "name": "Thoracic PI Bundle",
+     "diagnosisIds": [
+      "dx-thoracic-sprain",
+      "dx-thoracic-strain",
+      "dx-thoracic-pain",
+      "dx-thoracic-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-lumbar",
+     "name": "Lumbar PI Bundle",
+     "diagnosisIds": [
+      "dx-lumbar-sprain",
+      "dx-lumbar-strain",
+      "dx-lumbar-disc-radiculopathy",
+      "dx-lumbosacral-disc-radiculopathy",
+      "dx-lumbar-rad",
+      "dx-lumbar-pain",
+      "dx-lumbar-segmental-dysfunction"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-right-shoulder",
+     "name": "Right Shoulder Bundle",
+     "diagnosisIds": [
+      "dx-right-shoulder-sprain",
+      "dx-right-shoulder-pain",
+      "dx-right-bicipital-tendinitis",
+      "dx-right-rotator-cuff-tear"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-left-shoulder",
+     "name": "Left Shoulder Bundle",
+     "diagnosisIds": [
+      "dx-left-shoulder-sprain",
+      "dx-left-shoulder-pain",
+      "dx-left-bicipital-tendinitis",
+      "dx-left-rotator-cuff-tear"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-right-leg-knee-foot",
+     "name": "Right Leg/Knee/Foot Bundle",
+     "diagnosisIds": [
+      "dx-right-knee-pain",
+      "dx-right-acl-sprain",
+      "dx-right-knee-effusion",
+      "dx-right-ankle-foot-pain",
+      "dx-right-foot-pain"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-left-leg-knee-foot",
+     "name": "Left Leg/Knee/Foot Bundle",
+     "diagnosisIds": [
+      "dx-left-knee-pain",
+      "dx-left-acl-sprain",
+      "dx-left-knee-effusion",
+      "dx-left-ankle-foot-pain",
+      "dx-left-foot-pain"
+     ],
+     "active": true
+    },
+    {
+     "id": "bundle-mva-misc",
+     "name": "MVC / Misc Bundle",
+     "diagnosisIds": [
+      "dx-mva-driver-collision",
+      "dx-mva-passenger-collision",
+      "dx-post-traumatic-headache",
+      "dx-dizziness",
+      "dx-concussion-without-loc"
+     ],
+     "active": true
+    }
+   ],
+   "packages": []
+  },
+  "macroLibrary": {
+   "setName": "Mine",
+   "enabledAutoFields": [
+    "FIRST_NAME",
+    "LAST_NAME",
+    "FULL_NAME",
+    "AGE",
+    "SEX",
+    "MARITAL_STATUS",
+    "DOB",
+    "INJURY_DATE",
+    "ATTORNEY",
+    "HE_SHE",
+    "HIM_HER",
+    "HIS_HER",
+    "MR_MRS_MS_LAST_NAME",
+    "MR_MRS_MS_FULL_NAME",
+    "SPECIALIST_REFERRED"
+   ],
+   "saltDefaults": {
+    "enabled": true,
+    "sections": {
+     "subjective": true,
+     "objective": true,
+     "assessment": true,
+     "plan": true
+    }
+   },
+   "templates": [
+    {
+     "id": "macro-objective-mvc-hx",
+     "section": "objective",
+     "buttonName": "MVC HX",
+     "body": "{{FIRST_NAME}} {{LAST_NAME}} is a {{AGE}} year old {{SEX}} who stated that they were the [[where_seated]] in a [[vehicle_type_driven]], wearing their seatbelt involved in a motor vehicle collision with a [[other_vehicle_type]].\n\nPatient describes the collision occurred while {{HE_SHE}} was [[vehicle_motion]].\n{{MR_MRS_MS_LAST_NAME}} stated the area of impact was [[impact_area]].\n{{MR_MRS_MS_LAST_NAME}} states that the vehicle was [[vehicle_pushed]].\nPatient stated that {{HE_SHE}} was [[prepared_for_impact]].\nUpon impact, {{MR_MRS_MS_LAST_NAME}} felt [[thrown_around]].\n{{MR_MRS_MS_LAST_NAME}} mentioned that the airbags [[airbag_deployed]].\nImmediately after impact they felt [[post_impact_feeling]].\nPatient reported that they [[lost_consciousness]].\n{{MR_MRS_MS_LAST_NAME}} stated they [[body_strike]] in the vehicle.\n{{MR_MRS_MS_LAST_NAME}} developed pain [[pain_onset]].\nSince the collision, {{HE_SHE}} has been experiencing [[symptoms_since_collision]].\nPatient reported police [[police_arrival]].\n{{MR_MRS_MS_LAST_NAME}} was seen at emergency/urgent care: [[seen_urgent_care]].\nTaken by ambulance: [[taken_ambulance]].\nMedications prescribed: [[medications_prescribed]].\nDiagnostic imaging taken: [[diagnostic_imaging_taken]].\n\n{{MR_MRS_MS_LAST_NAME}} stated symptoms persisted and continued to get worse. At that time {{HE_SHE}} presented {{HIM_HER}}self for evaluation and treatment.\n{{MR_MRS_MS_LAST_NAME}} stated that {{HE_SHE}} did not have these presenting complaints prior to the collision on {{INJURY_DATE}}.",
+     "questions": [
+      {
+       "id": "where_seated",
+       "label": "Where were you seated?",
+       "options": [
+        "driver",
+        "front seat passenger",
+        "rear right seat passenger",
+        "rear left seat passenger",
+        "rear middle seat passenger"
+       ]
+      },
+      {
+       "id": "vehicle_type_driven",
+       "label": "What type of vehicle were you driving?",
+       "options": []
+      },
+      {
+       "id": "other_vehicle_type",
+       "label": "What type of vehicle was the other vehicle?",
+       "options": []
+      },
+      {
+       "id": "vehicle_motion",
+       "label": "Was your vehicle stopped/moving, etc.?",
+       "options": []
+      },
+      {
+       "id": "impact_area",
+       "label": "Where was the area of impact?",
+       "options": []
+      },
+      {
+       "id": "vehicle_pushed",
+       "label": "Was your vehicle pushed into another vehicle?",
+       "options": []
+      },
+      {
+       "id": "prepared_for_impact",
+       "label": "Were you prepared for impact?",
+       "options": []
+      },
+      {
+       "id": "thrown_around",
+       "label": "Were you thrown around in the vehicle?",
+       "options": []
+      },
+      {
+       "id": "airbag_deployed",
+       "label": "Did your airbags deploy?",
+       "options": []
+      },
+      {
+       "id": "post_impact_feeling",
+       "label": "How did you feel after the impact?",
+       "options": []
+      },
+      {
+       "id": "lost_consciousness",
+       "label": "Did you lose consciousness?",
+       "options": []
+      },
+      {
+       "id": "body_strike",
+       "label": "Did you strike any part of your body in the vehicle?",
+       "options": []
+      },
+      {
+       "id": "pain_onset",
+       "label": "When did you develop the pains?",
+       "options": []
+      },
+      {
+       "id": "symptoms_since_collision",
+       "label": "Symptoms since collision",
+       "options": []
+      },
+      {
+       "id": "police_arrival",
+       "label": "Did police arrive to the scene?",
+       "options": []
+      },
+      {
+       "id": "seen_urgent_care",
+       "label": "Were you seen at emergency/urgent care?",
+       "options": []
+      },
+      {
+       "id": "taken_ambulance",
+       "label": "Were you taken by ambulance?",
+       "options": []
+      },
+      {
+       "id": "medications_prescribed",
+       "label": "Were medications prescribed?",
+       "options": []
+      },
+      {
+       "id": "diagnostic_imaging_taken",
+       "label": "Was diagnostic imaging taken?",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-subjective-pain-intake",
+     "section": "subjective",
+     "buttonName": "Pain Intake",
+     "body": "{{MR_MRS_MS_LAST_NAME}} reports pain level [[pain_scale]]/10 in the [[pain_region]], with frequency [[frequency]] and aggravating factors [[aggravating_factors]].",
+     "questions": [
+      {
+       "id": "pain_scale",
+       "label": "Pain scale",
+       "options": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10"
+       ]
+      },
+      {
+       "id": "pain_region",
+       "label": "Primary region",
+       "options": []
+      },
+      {
+       "id": "frequency",
+       "label": "Frequency",
+       "options": [
+        "intermittent",
+        "constant",
+        "daily"
+       ]
+      },
+      {
+       "id": "aggravating_factors",
+       "label": "Aggravating factors",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-assessment-progress",
+     "section": "assessment",
+     "buttonName": "Progress Note",
+     "body": "Patient demonstrates [[progress_level]] progress with ongoing complaints in the [[focus_area]]. Continue monitoring functional limitations.",
+     "questions": [
+      {
+       "id": "progress_level",
+       "label": "Progress level",
+       "options": [
+        "improving",
+        "plateau",
+        "worsening"
+       ]
+      },
+      {
+       "id": "focus_area",
+       "label": "Focus area",
+       "options": []
+      }
+     ],
+     "active": true
+    },
+    {
+     "id": "macro-plan-followup",
+     "section": "plan",
+     "buttonName": "Follow-Up Plan",
+     "body": "Continue care plan with [[treatment_frequency]] visits per week for [[duration_weeks]] weeks. Re-evaluate on [[re_eval_date]].",
+     "questions": [
+      {
+       "id": "treatment_frequency",
+       "label": "Visits per week",
+       "options": [
+        "1",
+        "2",
+        "3"
+       ]
+      },
+      {
+       "id": "duration_weeks",
+       "label": "Duration (weeks)",
+       "options": [
+        "2",
+        "4",
+        "6",
+        "8"
+       ]
+      },
+      {
+       "id": "re_eval_date",
+       "label": "Re-evaluation date",
+       "options": []
+      }
+     ],
+     "active": true
+    }
+   ]
+  },
+  "soapMacros": {
+   "subjective": [
+    "Own S"
+   ],
+   "objective": [
+    "MVC HX",
+    "Vitals",
+    "Cervical",
+    "Lumbar/Hip",
+    "Gap In Care"
+   ],
+   "assessment": [
+    "Improving",
+    "Plateau",
+    "Needs MRI",
+    "Needs Specialist"
+   ],
+   "plan": [
+    "CMT 1-2",
+    "EMS",
+    "Re-Exam 2 Weeks",
+    "Referral to Specialist"
+   ]
+  },
+  "documentTemplates": {
+   "header": {
+    "active": true,
+    "body": "{{OFFICE_NAME}}\n{{OFFICE_ADDRESS}}\nT. {{OFFICE_PHONE}}   F. {{OFFICE_FAX}}\nE. {{OFFICE_EMAIL}}\n",
+    "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+    "showOfficeLogo": true
+   },
+   "templates": [
+    {
+     "id": "doc-specialist-referral",
+     "name": "Specialist Referral",
+     "scope": "specialistReferral",
+     "body": "Specialist Referral\n\nDate: {{TODAY_DATE}}\n\nDear {{SPECIALIST_NAME}},\n\nI am writing to refer {{PATIENT_FULL_NAME}} for specialist evaluation and care.\n\nPatient Information:\nName: {{PATIENT_FULL_NAME}}\nDate of Birth: {{PATIENT_DOB}}\nDate of Injury: {{DATE_OF_INJURY}}\nPatient Contact: {{PATIENT_PHONE}}\nCase #: {{CASE_NUMBER}}\n\nReferral Information:\nDoctor: {{DOCTOR_NAME}}\nDate of Referral: {{REFERRAL_SENT_DATE}}\nScheduled Date: {{REFERRAL_SCHEDULED_DATE}}\n\nAttorney Information:\n{{ATTORNEY_NAME}}\nT. {{ATTORNEY_PHONE}}   F. {{ATTORNEY_FAX}}\nE. {{ATTORNEY_EMAIL}}\n{{ATTORNEY_ADDRESS}}\n\nPlease send the consultation report once available.\n",
+     "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+     "showOfficeLogo": true,
+     "active": true
+    },
+    {
+     "id": "doc-imaging-request",
+     "name": "Imaging Request",
+     "scope": "imagingRequest",
+     "body": "Imaging Request\n\nDate: {{TODAY_DATE}}\n\nPlease perform the following imaging for this patient:\n\nPatient Information:\nName: {{PATIENT_FULL_NAME}}\nDate of Birth: {{PATIENT_DOB}}\nDate of Injury: {{DATE_OF_INJURY}}\nPatient Contact: {{PATIENT_PHONE}}\nCase #: {{CASE_NUMBER}}\n\nImaging Details:\nType: {{IMAGING_TYPE}}\nSent Date: {{IMAGING_SENT_DATE}}\nDone Date: {{IMAGING_DONE_DATE}}\nImaging Center: {{IMAGING_CENTER}}\nRequested Regions: {{IMAGING_REGIONS}}\nReport Received Date: {{IMAGING_REPORT_RECEIVED_DATE}}\nReport Reviewed Date: {{IMAGING_REPORT_REVIEWED_DATE}}\nX-Ray Findings: {{XRAY_FINDINGS}}\nMRI / CT Findings: {{MRI_CT_FINDINGS}}\n\nAttorney Information:\n{{ATTORNEY_NAME}}\nT. {{ATTORNEY_PHONE}}   F. {{ATTORNEY_FAX}}\nE. {{ATTORNEY_EMAIL}}\n{{ATTORNEY_ADDRESS}}\n\nSpecialist Recommendations:\n{{SPECIALIST_RECOMMENDATIONS}}\n",
+     "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+     "showOfficeLogo": true,
+     "active": true
+    },
+    {
+     "id": "doc-own",
+     "name": "Own letter",
+     "scope": "generalLetter",
+     "body": "Hello {{PATIENT_FULL_NAME}}",
+     "fontFamily": "Georgia, 'Times New Roman', 'Baskerville Old Face', serif",
+     "showOfficeLogo": true,
+     "active": true
+    }
+   ]
+  },
+  "reportTemplates": {
+   "templates": [
+    {
+     "id": "report-full-narrative",
+     "name": "Full Narrative Report",
+     "body": "Narrative Report\n\nPatient: {{PATIENT_FULL_NAME}}\nDOB: {{PATIENT_DOB}}\nDate Of Injury: {{DATE_OF_INJURY}}\nCase #: {{CASE_NUMBER}}\nAttorney: {{ATTORNEY_NAME}}\n\nHistory of Injury:\n{{FIRST_OBJECTIVE}}\n\nClinical Progress (Objective):\n{{ALL_OBJECTIVE}}\n\nAssessment Overview:\n{{ALL_ASSESSMENT}}\n\nPlan Of Care:\n{{ALL_PLAN}}\n\nDiagnoses:\n{{DIAGNOSIS_LIST}}\n\nEncounter Charges:\n{{CHARGE_LEDGER}}\n\nImaging Summary:\n{{IMAGING_SUMMARY}}\n\nX-Ray Findings:\n{{XRAY_FINDINGS}}\n\nMRI / CT Findings:\n{{MRI_CT_FINDINGS}}\n\nSpecialist Summary:\n{{SPECIALIST_SUMMARY}}\n\nSpecialist Recommendations:\n{{SPECIALIST_RECOMMENDATIONS}}\n\nAdditional Notes:\n{{PATIENT_NOTES}}\n\nCustom Input:\n{{PROMPT_CUSTOM_NOTE}}",
+     "fontFamily": "Georgia, 'Times New Roman', serif",
+     "active": true,
+     "prompts": [
+      {
+       "id": "prompt-custom-note",
+       "label": "Custom note",
+       "token": "PROMPT_CUSTOM_NOTE",
+       "options": [],
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  "caseStatuses": {
+   "statuses": [
+    {
+     "name": "Active",
+     "showOnDashboard": true,
+     "color": "#1f9d60",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Discharged",
+     "showOnDashboard": true,
+     "color": "#5f75ff",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Ready To Submit",
+     "showOnDashboard": true,
+     "color": "#f0a43f",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Submitted",
+     "showOnDashboard": true,
+     "color": "#f4e526",
+     "isCaseClosed": false,
+     "autoFolder": false
+    },
+    {
+     "name": "Dropped",
+     "showOnDashboard": true,
+     "color": "#c9423a",
+     "isCaseClosed": true,
+     "autoFolder": true
+    },
+    {
+     "name": "Paid",
+     "showOnDashboard": true,
+     "color": "#80e74b",
+     "isCaseClosed": true,
+     "autoFolder": true
+    }
+   ],
+   "lienLabel": "LOP",
+   "lienOptions": [
+    "Pending",
+    "Not Set",
+    "Not Sent",
+    "Requested",
+    "Received"
+   ],
+   "reviewOptions": [
+    "Not Requested",
+    "Requested",
+    "Received"
+   ]
+  },
+  "smsStarterTemplates": [
+   {
+    "id": "SMS-ID",
+    "name": "🎂 Birthday",
+    "body": "Happy birthday, {{FIRST_NAME}}!",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "⏰ Appointment Reminder",
+    "body": "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "✅ Records Received",
+    "body": "Hi {{FIRST_NAME}}, we've received your records.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "🗓️ Follow-Up",
+    "body": "Hi {{FIRST_NAME}}, following up on your last visit.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   },
+   {
+    "id": "SMS-ID",
+    "name": "💳 Payment Due",
+    "body": "Hi {{FIRST_NAME}}, this is a reminder about your outstanding balance.",
+    "createdAt": "ISO",
+    "updatedAt": "ISO"
+   }
+  ],
+  "generalLetterBody": "Letter\n\nDate: {{TODAY_DATE}}\n\nTo Whom It May Concern,\n\n{{PATIENT_FULL_NAME}} was seen in our office for evaluation and treatment related to date of injury {{DATE_OF_INJURY}}.\n\nPlease contact our office if additional information is needed.\n"
+ }
+}

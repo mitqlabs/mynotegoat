@@ -1,5 +1,6 @@
 "use client";
 
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
@@ -286,7 +287,7 @@ function createInitialDraft(
     patientId: "",
     provider: defaultScheduleProvider,
     location: defaultScheduleLocation,
-    appointmentType: defaultType?.name ?? "Personal Injury Office Visit",
+    appointmentType: defaultType?.name ?? (isBlankStarterWorkspace() ? "" : "Personal Injury Office Visit"),
     caseLabel: "",
     room: "",
     startDate: selectedDate,
@@ -807,7 +808,7 @@ export function NewAppointmentModal({
   // truth for "who works here" and "where they work". The previous version
   // also scanned every past appointment for unique provider / location
   // strings, which meant any historical typo or format variation
-  // ("Galstyan, Mike (Dr. Mike)" vs "Dr. Mike Galstyan") stuck around in
+  // ("Doe, Jane (Dr. Jane)" vs "Dr. Jane Doe") stuck around in
   // the dropdown forever with no way to remove it. Office Settings is
   // editable from Settings → Office, so the user has a clear place to
   // manage the value.
@@ -1708,12 +1709,18 @@ export function NewAppointmentModal({
               }}
               value={draft.appointmentType}
             >
+              {visibleAppointmentTypes.length === 0 && <option value="">No appointment types yet</option>}
               {visibleAppointmentTypes.map((type) => (
                 <option key={`type-option-${type.id}`} value={type.name}>
                   {type.name}
                 </option>
               ))}
             </select>
+            {appointmentTypes.length === 0 && (
+              <span className="text-xs text-[var(--text-muted)]">
+                Add your appointment types in Settings → Office Settings → Schedule.
+              </span>
+            )}
             {selectedDraftType && (
               <span className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
                 <span

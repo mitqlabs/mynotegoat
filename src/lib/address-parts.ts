@@ -5,7 +5,7 @@
  *   Address 1, Address 2, City, State, ZIP
  *
  * Storage stays as ONE composed string (e.g.
- *   "1234 Fake St., Unit 111, Glendale, CA 91206"
+ *   "1234 Fake St., Unit 111, Anytown, ST 12345"
  * ) so every existing record, template token, and PDF renderer keeps
  * working without a migration. The five-field inputs just parse the
  * stored value on mount and compose a fresh string on every change.
@@ -68,7 +68,7 @@ export function parseAddressString(raw: string): AddressParts {
       segments.pop();
     }
     // Or it might be "STATE ZIP" concatenated with city when no comma
-    // separated city from state (e.g. "Glendale CA 91206"). Try to
+    // separated city from state (e.g. "Anytown ST 12345"). Try to
     // peel STATE ZIP off the end of whatever remains at the tail.
     tail = segments[segments.length - 1] ?? "";
     const embeddedStateZip = tail.match(

@@ -12,7 +12,7 @@
 /** Strip leading whitespace from each line ONLY IF the line is HTML
  *  source-formatting whitespace (line begins with whitespace followed by
  *  `<`). Lines whose first non-whitespace char is text content (e.g. a
- *  user-aligned column like `                          818-548-0022`)
+ *  user-aligned column like `                          555-555-0100`)
  *  keep their leading whitespace so `white-space: pre-wrap` rendering
  *  preserves the alignment the template author intended.
  *

@@ -1,3 +1,4 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 export interface TreatmentMacro {
   id: string;
   name: string;
@@ -68,6 +69,8 @@ function createDiagnosisFolder(id: string, name: string): DiagnosisFolder {
 }
 
 function getDefaultDiagnosisFolders(): DiagnosisFolder[] {
+  // New practices: just the one folder the app files unsorted codes into.
+  if (isBlankStarterWorkspace()) return [createDiagnosisFolder(GENERAL_DIAGNOSIS_FOLDER_ID, "General")];
   return [
     createDiagnosisFolder(GENERAL_DIAGNOSIS_FOLDER_ID, "General"),
     createDiagnosisFolder("folder-cervical", "Cervical"),
@@ -166,6 +169,17 @@ function createBundle(id: string, name: string, diagnosisIds: string[]): Diagnos
 }
 
 export function getDefaultBillingMacroLibrary(): BillingMacroLibraryConfig {
+  // New practices start with no charges, prices, saved Dx codes or bundles.
+  // (The full official ICD-10 search stays available everywhere.)
+  if (isBlankStarterWorkspace()) {
+    return {
+      treatments: [],
+      diagnosisFolders: getDefaultDiagnosisFolders(),
+      diagnoses: [],
+      bundles: [],
+      packages: [],
+    };
+  }
   const diagnoses = [
     createDiagnosis("dx-cervical-sprain", "S13.4XXA", "Sprain of ligaments of cervical spine, initial encounter"),
     createDiagnosis("dx-cervical-strain", "S16.1XXA", "Strain of muscle, fascia and tendon at neck level, initial encounter"),

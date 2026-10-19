@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupGuideButton } from "@/components/onboarding-modal";
+import { OPEN_SETTINGS_SECTION_EVENT } from "@/lib/onboarding";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
@@ -301,6 +303,71 @@ type ParsedImportPayload = {
 
 function isSettingsSectionKey(value: string): value is SettingsSectionKey {
   return Object.prototype.hasOwnProperty.call(defaultExpandedSections, value);
+}
+
+/** Expand a deep-linked section (and its parent wrapper). */
+function expandSettingsForSection(
+  next: Record<SettingsSectionKey, boolean>,
+  section: string | null,
+): Record<SettingsSectionKey, boolean> {
+  // Legacy "reports" deep link now expands the merged Document
+  // Templates section (which contains the narrative-report panel as
+  // a sub-section). Keeps onboarding + setup-checklist + patient-
+  // file deep links working without every caller having to change.
+  const resolvedSection = section === "reports" ? "documents" : section;
+  if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
+    next[resolvedSection] = true;
+    // Admin children — Office moved out of here and into the new
+    // Office Settings wrapper below, so it's no longer in this list.
+    if (
+      resolvedSection === "diagnostics" ||
+      resolvedSection === "backup" ||
+      resolvedSection === "recovery" ||
+      resolvedSection === "security" ||
+      resolvedSection === "subscription"
+    ) {
+      next.admin = true;
+    }
+    // New Office Settings wrapper hosts Office Information,
+    // Schedule, Reminders, Case Status Categories, Patient Page
+    // Sections. Deep links to any child also expand the wrapper.
+    if (
+      resolvedSection === "office" ||
+      resolvedSection === "schedule" ||
+      resolvedSection === "dashboard" ||
+      resolvedSection === "caseStatuses" ||
+      resolvedSection === "patientPage"
+    ) {
+      next.officeSettings = true;
+    }
+    // Same idea for the Templates wrapper. Contact Categories was
+    // just moved inside Templates too.
+    if (
+      resolvedSection === "contactCategories" ||
+      resolvedSection === "documents" ||
+      resolvedSection === "smsTemplates" ||
+      resolvedSection === "textReminders" ||
+      resolvedSection === "emailSettings"
+    ) {
+      next.templates = true;
+    }
+    // And the Macros wrapper (SOAP Macros, Billing Macros, Package
+    // Builder). Onboarding + setup-checklist deep-link into the
+    // children, so the parent has to expand to surface them.
+    if (
+      resolvedSection === "soapMacros" ||
+      resolvedSection === "billingMacros" ||
+      resolvedSection === "packageBuilder"
+    ) {
+      next.macros = true;
+    }
+  }
+  return next;
+}
+
+function scrollToSettingsSection(section: string) {
+  const id = section === "reports" ? "documents" : section;
+  document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /**
@@ -930,6 +997,8 @@ type CollapsibleSectionProps = {
    *  by the Settings smart-search filter — a non-matching section is
    *  hidden rather than rendered in a collapsed state. */
   hidden?: boolean;
+  /** Makes the section a scroll target: id="settings-<anchorId>". */
+  anchorId?: string;
 };
 
 function CollapsibleSection({
@@ -940,10 +1009,11 @@ function CollapsibleSection({
   actions,
   children,
   hidden,
+  anchorId,
 }: CollapsibleSectionProps) {
   if (hidden) return null;
   return (
-    <section className="panel-card p-4">
+    <section className="panel-card p-4" id={anchorId ? `settings-${anchorId}` : undefined}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button
           aria-expanded={isOpen}
@@ -2774,61 +2844,28 @@ export default function SettingsPage() {
     if (typeof window === "undefined") {
       return next;
     }
-    const section = new URLSearchParams(window.location.search).get("section");
-    // Legacy "reports" deep link now expands the merged Document
-    // Templates section (which contains the narrative-report panel as
-    // a sub-section). Keeps onboarding + setup-checklist + patient-
-    // file deep links working without every caller having to change.
-    const resolvedSection = section === "reports" ? "documents" : section;
-    if (resolvedSection && isSettingsSectionKey(resolvedSection)) {
-      next[resolvedSection] = true;
-      // Admin children — Office moved out of here and into the new
-      // Office Settings wrapper below, so it's no longer in this list.
-      if (
-        resolvedSection === "diagnostics" ||
-        resolvedSection === "backup" ||
-        resolvedSection === "recovery" ||
-        resolvedSection === "security" ||
-        resolvedSection === "subscription"
-      ) {
-        next.admin = true;
-      }
-      // New Office Settings wrapper hosts Office Information,
-      // Schedule, Reminders, Case Status Categories, Patient Page
-      // Sections. Deep links to any child also expand the wrapper.
-      if (
-        resolvedSection === "office" ||
-        resolvedSection === "schedule" ||
-        resolvedSection === "dashboard" ||
-        resolvedSection === "caseStatuses" ||
-        resolvedSection === "patientPage"
-      ) {
-        next.officeSettings = true;
-      }
-      // Same idea for the Templates wrapper. Contact Categories was
-      // just moved inside Templates too.
-      if (
-        resolvedSection === "contactCategories" ||
-        resolvedSection === "documents" ||
-        resolvedSection === "smsTemplates" ||
-        resolvedSection === "textReminders" ||
-        resolvedSection === "emailSettings"
-      ) {
-        next.templates = true;
-      }
-      // And the Macros wrapper (SOAP Macros, Billing Macros, Package
-      // Builder). Onboarding + setup-checklist deep-link into the
-      // children, so the parent has to expand to surface them.
-      if (
-        resolvedSection === "soapMacros" ||
-        resolvedSection === "billingMacros" ||
-        resolvedSection === "packageBuilder"
-      ) {
-        next.macros = true;
-      }
-    }
-    return next;
+    return expandSettingsForSection(next, new URLSearchParams(window.location.search).get("section"));
   });
+
+  // The setup guide can open a section while Settings is already showing
+  // (no remount), so expand + scroll to it on its event too.
+  useEffect(() => {
+    const handleOpenSection = (event: Event) => {
+      const section = (event as CustomEvent<string>).detail;
+      if (typeof section !== "string") return;
+      setExpandedSections((current) => expandSettingsForSection({ ...current }, section));
+      window.setTimeout(() => scrollToSettingsSection(section), 50);
+    };
+    window.addEventListener(OPEN_SETTINGS_SECTION_EVENT, handleOpenSection);
+    return () => window.removeEventListener(OPEN_SETTINGS_SECTION_EVENT, handleOpenSection);
+  }, []);
+  // Deep link on first load (?section=office): scroll to it once it renders.
+  useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get("section");
+    if (!section) return;
+    const t = window.setTimeout(() => scrollToSettingsSection(section), 150);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Smart search across all Settings sections. Filters the visible
   // section list as the user types; matches against section title,
@@ -3320,6 +3357,8 @@ export default function SettingsPage() {
             Clear
           </button>
         )}
+        {/* Owner's practice setup checklist (reopens the welcome guide). */}
+        <SetupGuideButton />
       </div>
       {/* Empty-results helper. Only shows when the user has typed a
           query that matches nothing in the catalog — keeps the page
@@ -3345,6 +3384,7 @@ export default function SettingsPage() {
         hidden={!showSection("officeSettings")}
         isOpen={sectionIsOpen("officeSettings")}
         onToggle={() => toggleSection("officeSettings")}
+        anchorId="officeSettings"
         title="Office Settings"
       >
         <div className="space-y-3">
@@ -3367,6 +3407,7 @@ export default function SettingsPage() {
         hidden={!showSection("office")}
         isOpen={sectionIsOpen("office")}
         onToggle={() => toggleSection("office")}
+        anchorId="office"
         title="Office Information"
       >
         <div className="mb-4">
@@ -3599,6 +3640,7 @@ export default function SettingsPage() {
         hidden={!showSection("schedule")}
         isOpen={sectionIsOpen("schedule")}
         onToggle={() => toggleSection("schedule")}
+        anchorId="schedule"
         title="Schedule"
       >
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
@@ -4090,6 +4132,7 @@ export default function SettingsPage() {
         hidden={!showSection("dashboard")}
         isOpen={sectionIsOpen("dashboard")}
         onToggle={() => toggleSection("dashboard")}
+        anchorId="dashboard"
         title="Reminders"
       >
         <div className="grid gap-4 xl:grid-cols-3">
@@ -4555,6 +4598,7 @@ export default function SettingsPage() {
         hidden={!showSection("caseStatuses")}
         isOpen={sectionIsOpen("caseStatuses")}
         onToggle={() => toggleSection("caseStatuses")}
+        anchorId="caseStatuses"
         title="Case Status Categories"
       >
         <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
@@ -4805,6 +4849,7 @@ export default function SettingsPage() {
         hidden={!showSection("patientPage")}
         isOpen={sectionIsOpen("patientPage")}
         onToggle={() => toggleSection("patientPage")}
+        anchorId="patientPage"
         title="Patient Page Sections"
       >
         <div className="space-y-3">
@@ -4859,6 +4904,7 @@ export default function SettingsPage() {
         hidden={!showSection("macros")}
         isOpen={sectionIsOpen("macros")}
         onToggle={() => toggleSection("macros")}
+        anchorId="macros"
         title="Macros"
       >
         <div className="space-y-3">
@@ -4867,6 +4913,7 @@ export default function SettingsPage() {
         hidden={!showSection("soapMacros")}
         isOpen={sectionIsOpen("soapMacros")}
         onToggle={() => toggleSection("soapMacros")}
+        anchorId="soapMacros"
         title="SOAP Macro Settings"
       >
         <MacroSettingsPanel />
@@ -4877,6 +4924,7 @@ export default function SettingsPage() {
         hidden={!showSection("billingMacros")}
         isOpen={sectionIsOpen("billingMacros")}
         onToggle={() => toggleSection("billingMacros")}
+        anchorId="billingMacros"
         title="Billing Macro Settings"
       >
         <BillingMacroSettingsPanel />
@@ -4887,6 +4935,7 @@ export default function SettingsPage() {
         hidden={!showSection("packageBuilder")}
         isOpen={sectionIsOpen("packageBuilder")}
         onToggle={() => toggleSection("packageBuilder")}
+        anchorId="packageBuilder"
         title="Package Builder"
       >
         <PackageBuilderSettingsPanel />
@@ -4902,6 +4951,7 @@ export default function SettingsPage() {
         hidden={!showSection("goat")}
         isOpen={sectionIsOpen("goat")}
         onToggle={() => toggleSection("goat")}
+        anchorId="goat"
         title="G.O.A.T."
       >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
@@ -4933,6 +4983,7 @@ export default function SettingsPage() {
         hidden={!showSection("templates")}
         isOpen={sectionIsOpen("templates")}
         onToggle={() => toggleSection("templates")}
+        anchorId="templates"
         title="Templates"
       >
         <div className="space-y-3">
@@ -4950,6 +5001,7 @@ export default function SettingsPage() {
         hidden={!showSection("contactCategories")}
         isOpen={sectionIsOpen("contactCategories")}
         onToggle={() => toggleSection("contactCategories")}
+        anchorId="contactCategories"
         title="Contact Categories"
       >
         <div className="space-y-3">
@@ -5056,6 +5108,7 @@ export default function SettingsPage() {
         hidden={!showSection("documents")}
         isOpen={sectionIsOpen("documents")}
         onToggle={() => toggleSection("documents")}
+        anchorId="documents"
         title="Document Templates"
       >
         <div className="space-y-6">
@@ -5090,6 +5143,7 @@ export default function SettingsPage() {
         hidden={!showSection("smsTemplates")}
         isOpen={sectionIsOpen("smsTemplates")}
         onToggle={() => toggleSection("smsTemplates")}
+        anchorId="smsTemplates"
         title="SMS / Text Templates"
       >
         <SmsTemplateSettingsPanel />
@@ -5100,6 +5154,7 @@ export default function SettingsPage() {
         hidden={!showSection("textReminders")}
         isOpen={sectionIsOpen("textReminders")}
         onToggle={() => toggleSection("textReminders")}
+        anchorId="textReminders"
         title="Text Reminders"
       >
         <TextRemindersSettingsPanel />
@@ -5121,6 +5176,7 @@ export default function SettingsPage() {
         hidden={!showSection("emailSettings")}
         isOpen={sectionIsOpen("emailSettings")}
         onToggle={() => toggleSection("emailSettings")}
+        anchorId="emailSettings"
         title="Email Settings"
       >
         <div className="grid gap-4">
@@ -5191,6 +5247,7 @@ export default function SettingsPage() {
         hidden={!showSection("adminAccess")}
         isOpen={sectionIsOpen("adminAccess")}
         onToggle={() => toggleSection("adminAccess")}
+        anchorId="adminAccess"
         title="Admin Access"
       >
         <AdminAccessSection />
@@ -5213,6 +5270,7 @@ export default function SettingsPage() {
         hidden={!showSection("admin")}
         isOpen={sectionIsOpen("admin")}
         onToggle={() => toggleSection("admin")}
+        anchorId="admin"
         title="Admin"
       >
         <div className="space-y-3">
@@ -5223,6 +5281,7 @@ export default function SettingsPage() {
         hidden={!showSection("diagnostics")}
         isOpen={sectionIsOpen("diagnostics")}
         onToggle={() => toggleSection("diagnostics")}
+        anchorId="diagnostics"
         title="Diagnostics"
         description="Live view of your account, workspace, cloud row counts, and local storage — useful when data looks wrong."
       >
@@ -5234,6 +5293,7 @@ export default function SettingsPage() {
         hidden={!showSection("backup")}
         isOpen={sectionIsOpen("backup")}
         onToggle={() => toggleSection("backup")}
+        anchorId="backup"
         title="Backup & Restore"
       >
         <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
@@ -5358,6 +5418,7 @@ export default function SettingsPage() {
         hidden={!showSection("recovery")}
         isOpen={sectionIsOpen("recovery")}
         onToggle={() => toggleSection("recovery")}
+        anchorId="recovery"
         title="Data Recovery"
         description="Recover lost data from cloud backup or local safety snapshot."
       >
@@ -5481,6 +5542,7 @@ export default function SettingsPage() {
         hidden={!showSection("security")}
         isOpen={sectionIsOpen("security")}
         onToggle={() => toggleSection("security")}
+        anchorId="security"
         title="Security Baseline (Pre-PHI Checklist)"
       >
         <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--text-muted)]">
@@ -5496,6 +5558,7 @@ export default function SettingsPage() {
         hidden={!showSection("subscription")}
         isOpen={sectionIsOpen("subscription")}
         onToggle={() => toggleSection("subscription")}
+        anchorId="subscription"
         title="Subscription"
         description="Manage your plan and billing details through Stripe."
       >
