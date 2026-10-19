@@ -156,7 +156,7 @@ const goat = read("src/components/global-goat.tsx");
 const hb = read("src/lib/handbook-goat.ts") + read("src/lib/handbook-content.ts");
 check("schedule: Existing / New patient toggle", () => { assert.ok(sched.includes('data-testid="patient-mode-toggle"')); assert.ok(sched.includes('"New patient"')); assert.ok(!sched.includes("Create Patient")); assert.ok(!sched.includes("Quick New Patient")); });
 check("schedule: new patient fields grid", () => { for (const k of ["new-pt-${key}", "new-pt-dob", "new-pt-notes"]) assert.ok(sched.includes(k), k); assert.ok(!sched.includes('data-testid="new-pt-attorney"') && !sched.includes('data-testid="new-pt-doi"'), "attorney / DOI go on the patient page (+ Case)"); assert.ok(/data-row="new-patient-fields"/.test(sched)); });
-check("schedule: one Save creates patient + visit (Initial Exam)", () => { assert.ok(/createPatientRecord\(\{[\s\S]{0,400}initialExam:/.test(sched)); assert.ok(sched.includes("newPatientVisitType(appointmentTypes)")); });
+check("schedule: one Save creates patient + visit (Initial Exam)", () => { assert.ok(!/createPatientRecord\(\{[\s\S]{0,400}initialExam:/.test(sched), "Initial Exam comes from the visit while blank, never saved at booking"); assert.ok(sched.includes("newPatientVisitType(appointmentTypes)")); });
 check("schedule: checkboxes wrap instead of colliding", () => assert.ok(/flex flex-wrap items-center gap-x-6 gap-y-2" data-row="appointment-flags"/.test(sched)));
 check("schedule: offers to mark the to-do done", () => assert.ok(sched.includes('data-testid="done-task-offer"') && sched.includes("toggleTaskDone")));
 check("modal component: checkboxes wrap", () => assert.ok(read("src/components/new-appointment-modal.tsx").includes('data-row="appointment-flags"')));

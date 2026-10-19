@@ -2361,6 +2361,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [initialExam, patientAppointmentRecords, patientEncounterRecords],
   );
   const effectiveInitialExam = initialExamInfo.date;
+  // Case info (Attorney, Attorney Phone, Date Of Injury, Case #): hidden behind
+  // "+ Case" until there's something in it; nothing is lost, only not shown.
+  const caseInfoMissing = !dateOfLoss.trim() && (!attorney.trim() || attorney.trim().toLowerCase() === "self");
+  const [caseFieldsOpen, setCaseFieldsOpen] = useState(false);
+  const showCaseFields = !caseInfoMissing || caseFieldsOpen;
   // Auto-fill the Discharge date when the case moves to a closed
   // status (Discharged / Settled / Reduced / etc.) and the user
   // hasn't already entered one. The most-recent encounter date is the
@@ -5290,7 +5295,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <QuestionnaireReviewCards encounters={formEncounters} patientId={patient.id} patientName={patient.fullName} />
 
-      {!isCashPatient && !dateOfLoss.trim() && (!attorney.trim() || attorney.trim().toLowerCase() === "self") && (
+      {!isCashPatient && caseInfoMissing && !caseFieldsOpen && (
         // Added before the case details (e.g. quick add from a text): a gentle
         // nudge, never a blocker. Fields are right below (Case info).
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
@@ -5299,8 +5304,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <button
             className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
             onClick={() => {
-              attorneyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-              attorneyInputRef.current?.focus();
+              setCaseFieldsOpen(true);
+              window.setTimeout(() => {
+                attorneyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                attorneyInputRef.current?.focus();
+              }, 50);
             }}
             type="button"
           >
@@ -5452,7 +5460,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             />
           </label>
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
               <input
@@ -5464,7 +5472,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
               <input
@@ -5478,7 +5486,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
@@ -5490,7 +5498,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
               <input

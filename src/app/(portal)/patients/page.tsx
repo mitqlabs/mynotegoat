@@ -868,7 +868,8 @@ export default function PatientsPage() {
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
       // The evaluation date IS the Initial Exam date.
-      initialExam: firstVisit ? newPatientDraft.evalDate.trim() : "",
+      // Never saved from a booking: the first New Patient visit fills the box while it's blank.
+      initialExam: "",
       phone: formatUsPhoneInput(newPatientDraft.phone),
       email: "",
       address: composePatientAddress(

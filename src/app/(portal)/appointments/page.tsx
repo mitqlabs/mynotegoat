@@ -1111,7 +1111,9 @@ export default function AppointmentsPage() {
         dateOfLoss: newPtDolIso,
         dob: mdyToIso(newPtDraft.dob) || undefined,
         notes: newPtDraft.notes.trim() || undefined,
-        initialExam: formatUsDateFromIso(scheduleDates[0]),
+        // Initial Exam is NOT saved here: while the box is blank it shows the
+        // first New Patient visit's date (lib/initial-exam-date), so moving or
+        // canceling the visit keeps it right. Once staff type a date, theirs wins.
       });
       if (!created) {
         setNewAppointmentError("Could not add the new patient. Nothing was saved.");
