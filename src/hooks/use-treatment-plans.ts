@@ -10,7 +10,7 @@ import {
   type TreatmentPlansByPatient,
   type WeekdayRegion,
 } from "@/lib/treatment-plans";
-import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { markLocalWrite, notifyChange, onLocalChange } from "@/lib/local-sync";
 import { logActivity } from "@/lib/activity-log";
 import { patients as patientDirectory } from "@/lib/mock-data";
 
@@ -55,6 +55,9 @@ export function useTreatmentPlans() {
   const scheduleSave = useCallback(
     (map: TreatmentPlansByPatient, immediate: boolean) => {
       pendingSaveRef.current = map;
+      // Unsaved edits are the newest truth: hold off cloud echoes now,
+      // not only once the debounced write lands.
+      markLocalWrite(STORAGE_KEY_TREATMENT_PLANS);
       if (immediate) {
         flushSave();
         return;
@@ -173,7 +176,13 @@ export function useTreatmentPlans() {
   );
 
   const updatePlan = useCallback(
-    (patientId: string, planId: string, patch: Partial<Omit<TreatmentPlan, "id" | "patientId" | "createdAt">>) => {
+    (
+      patientId: string,
+      planId: string,
+      patch: Partial<Omit<TreatmentPlan, "id" | "patientId" | "createdAt">>,
+      /** Typing (e.g. decompression weights) debounces; other edits write at once. */
+      options: { immediate?: boolean } = {},
+    ) => {
       // Log the plan-level changes that matter (dates, on/off). Treatment
       // picks change click-by-click while editing, so they aren't logged.
       const before = (plansByPatient[patientId.trim()] ?? []).find((p) => p.id === planId);
@@ -190,7 +199,7 @@ export function useTreatmentPlans() {
       updatePatientList(
         patientId,
         (current) => current.map((p) => (p.id === planId ? { ...p, ...patch, updatedAt: nowIso() } : p)),
-        { immediate: true },
+        { immediate: options.immediate ?? true },
       );
     },
     [updatePatientList, plansByPatient],

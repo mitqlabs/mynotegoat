@@ -757,7 +757,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               ...(dc?.region ? { region: dc.region } : {}),
                               ...patch,
                             },
-                          });
+                          }, { immediate: false });
                         const toggleSegment = (t: string) => {
                           const cur = dcRegion.treatments;
                           writeDecomp({

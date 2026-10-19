@@ -26,6 +26,7 @@ import {
 } from "@/lib/workspace-membership";
 import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
 import { RouteAccessGuard } from "@/components/route-access-guard";
+import { safeNextPath } from "@/lib/goat-app";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -128,7 +129,9 @@ export default function PortalLayout({
       }
 
       if (access.state === "signed-out") {
-        routerRef.current.replace("/auth/login");
+        // From the G.O.A.T. home-screen app: come back to it after login (iOS standalone keeps its own session).
+        const next = safeNextPath(`${window.location.pathname}${window.location.search}`);
+        routerRef.current.replace(next ? `/auth/login?next=${encodeURIComponent(next)}` : "/auth/login");
         return;
       }
 

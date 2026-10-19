@@ -16,6 +16,7 @@ import { CHIPS, detectBrief, parseTodo } from "@/lib/goat-briefs";
 import { isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { detectPipeline, detectReview } from "@/lib/goat-pipeline";
 import { looksLikeContactPaste } from "@/lib/goat-contacts-import";
+import { detectPlainTodo, isNoPatientName } from "@/lib/goat-intents";
 
 /**
  * True when typed text is clearly a NEW request, not an answer to the waiting
@@ -28,6 +29,7 @@ export function breaksFlow(text: string, pending?: Pending | null): boolean {
   if (t.startsWith("/") && !t.startsWith(TOKEN)) return true;
   if (t.startsWith("@")) return true;
   if ((CHIPS as readonly string[]).some((c) => c.toLowerCase() === t.toLowerCase())) return true;
+  if (detectPlainTodo(t)) return true; // "remind me to …" is a new request, never a name answer
   if (detectBrief(t) || detectPipeline(t) || detectReview(t) || isGoatHelpQuestion(t)) return true;
   // A pasted list IS the answer when we asked for contacts.
   return pending?.k !== "contactAdd" && looksLikeContactPaste(t) && t.includes("\n");
@@ -151,6 +153,9 @@ export function startFlow(cmd: string, rest: string, ctx: FlowCtx): FlowTurn | n
   }
   if (cmd === "todo") {
     if (!rest) return { say: "Just a to-do, or add it to a case?", choices: [{ label: "Just a to-do", token: `${TOKEN}todo-plain` }, { label: "Add to a case", token: `${TOKEN}todo-case-pick` }], pending: { k: "todoKind" } };
+    // "/todo none: …" (the No patient chip) → the one-shot path, never a name match ("none" ≠ Nune).
+    const lead = /^([^:]{1,20}):/.exec(rest);
+    if (lead && isNoPatientName(lead[1])) return null;
     // "/todo aram subpoena records friday" → Aram's case; no name up front → the one-shot path.
     const { matches, text } = splitNameAndText(rest, ctx.patients);
     if (matches.length) return namedFlow("todo", matches, text, ctx);

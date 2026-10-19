@@ -75,6 +75,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.contacts-sort.v1": "user",
   "casemate.referral-drill-sort.v1": "user",
   "casemate.sidebar-collapsed": "user",
+  // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
+  "casemate.goat-install-tip.v1": "user",
   "casemate.soap-split-height.v1": "user",
   "casemate.quick-glance.open.v1": "user",
   "casemate.files-view-mode": "user",
@@ -112,6 +114,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.cloud-sync-at": "system",
   "casemate.cloud-sync-at.": "system",
   "casemate.draft.v1.": "system",
+  // G.O.A.T. → form handoffs (sessionStorage, read once, 10-min expiry). The data lands in the
+  // cloud only when the user saves the form (patients / appointments are cloud-backed).
+  "casemate.new-patient-prefill.v1": "system",
+  "casemate.new-appointment-prefill.v1": "system",
   "casemate.cache.v1.": "system",
   "casemate.feature-flag.": "system",
   "casemate.user-prefs-mirror.v1": "system",

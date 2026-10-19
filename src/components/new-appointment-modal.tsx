@@ -1441,15 +1441,7 @@ export function NewAppointmentModal({
           <label className="relative grid gap-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
-              {!lockedPatientId && (
-                <button
-                  className="text-xs font-semibold text-[var(--brand-primary)] underline"
-                  onClick={() => setShowQuickNewPatient((v) => !v)}
-                  type="button"
-                >
-                  {showQuickNewPatient ? "Cancel new patient" : "+ New Patient"}
-                </button>
-              )}
+              {/* Existing patients only — new patients come from Patient List → New Patient (or G.O.A.T. /new). */}
             </div>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 disabled:bg-[var(--bg-soft)]"
@@ -2276,9 +2268,10 @@ export function NewAppointmentModal({
           </div>
         )}
 
-        <div className="mt-4 space-y-2">
-          <label className="inline-flex items-center gap-2 text-sm font-semibold">
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2" data-row="appointment-flags">
+          <label className="flex items-center gap-2 text-sm font-semibold">
             <input
+              className="h-4 w-4 shrink-0"
               checked={draft.walkIn}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, walkIn: event.target.checked }))
@@ -2289,8 +2282,9 @@ export function NewAppointmentModal({
           </label>
 
           {scheduleSettings.allowOverride && (
-            <label className="inline-flex items-center gap-2 text-sm font-semibold">
+            <label className="flex items-center gap-2 text-sm font-semibold">
               <input
+                className="h-4 w-4 shrink-0"
                 checked={draft.overrideOfficeHours}
                 onChange={(event) =>
                   setDraft((current) => ({

@@ -69,13 +69,14 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Notes, to-dos and payments",
       steps: [
         "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
-        "To-dos: \"/todo call Mock Law for John Smith friday\".",
+        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do. A contact, law firm or patient named inside a reminder never turns it into a lookup: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },
     {
-      heading: "\"/\" commands",
+      heading: "\"/\" commands (optional shortcuts)",
       steps: [
+        "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
         "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK), takes the rest as the text, and goes straight to the confirm card with the patient's name on it.",
         "It only asks \"Which case?\" when more than one patient matches, and only asks for the text when you typed just a name.",
@@ -87,8 +88,26 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "Schedule visits and new patients (no / needed)",
+      steps: [
+        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
+        "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
+        "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, attorney, DOI, day and time filled in. You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
+        "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",
+        "Name matches an existing patient and you said \"new appt\"? G.O.A.T. asks: \"Existing patient Armen Barmen, or a new patient?\".",
+        "A call or text about a new patient (\"I have a new patient for you …\" or /new …): G.O.A.T. opens Patient List → New Patient prefilled, including the New Patient Evaluation date and time. It asks only about what's unclear (e.g. which part is the last name).",
+        "Days and times: tomorrow, next Wednesday, friday, 10/22; \"3\" or \"10\" are read inside office hours (3 PM, 10 AM).",
+      ],
+      watchOut: "G.O.A.T. never creates a patient or books on its own — you always save the form or tap Confirm.",
+    },
+    {
       heading: "Message the team (@mentions)",
       steps: [
+        "Just say it: \"message Hannah about John Smith\", \"tell hannah john smith's MRI is in\", \"text hannah can you call Mock Law\", \"let the team know the fax is down\". This is NoteGoat Messages (team chat), never an SMS to a phone.",
+        "Who: G.O.A.T. finds the team member. Two Hannahs? It asks which one. No match? It shows the team to pick from (or the whole team).",
+        "What: no message yet (\"message Hannah about John Smith\")? It asks \"What should I tell Hannah?\".",
+        "Which case: when a patient is named, G.O.A.T. always asks before linking — \"About Smith, John (Active)?\" (Yes / Different patient / No patient), or a list when several match. The sent message links to that case (tap it to open the patient).",
+        "\"Message the team …\" / \"let everyone know …\" posts to General with no @mention.",
         "Type @ and pick a teammate: \"@hannah please call kara back\".",
         "Tap 🔒 on the card for Eyes only — just you and them see it. Otherwise it posts to General.",
       ],
@@ -114,6 +133,17 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Every contacts save is also kept in the cloud's version history, so an admin can restore an earlier list if needed.",
     },
     {
+      heading: "G.O.A.T. on your phone (home-screen app)",
+      steps: [
+        "Open mynotegoat.com/goat: just the G.O.A.T. chat, full screen, made for phones. Same login, same patients, same confirm cards; admin-only answers stay admin-only. \"Full app\" (top right) opens the rest of My Note Goat.",
+        "iPhone/iPad (Safari): open /goat, tap Share, then Add to Home Screen. G.O.A.T. shows this tip at the top of the chat until you close it (×). Closing it is saved to your account, so it stays closed on your other devices too.",
+        "The first time you open the Home Screen icon, log in once. The app keeps its own login after that, and it comes straight back to G.O.A.T.",
+        "Android (Chrome): the tip has an Install button. Long-press the icon for shortcuts: Ask G.O.A.T., New to-do, Schedule.",
+        "A link like /goat?q=add to-do call Mock Law puts that text in the box. Nothing runs until you tap Send.",
+      ],
+      watchOut: "The Android app-store (APK) version isn't built yet. The home-screen app is the phone version for now.",
+    },
+    {
       heading: "Ask for help",
       steps: ["Type \"what can you do?\" or \"help\" and G.O.A.T. sums this up and links here."],
     },
@@ -127,10 +157,12 @@ export function goatHelpText(): string {
     `- Chips: ${CHIPS.join(", ")} (the last two are for admins)`,
     "- Look up patients, the schedule, to-dos, contacts, cases and money",
     "- Add signed notes, to-dos, payments and case changes (with a confirm card)",
-    "- Message the team with @ (🔒 Eyes only)",
-    `- Commands: ${SLASH_COMMANDS.map((c) => `/${c.cmd}`).join(", ")}`,
+    "- Message the team (\"tell hannah john smith's MRI is in\", or @; 🔒 Eyes only)",
+    "- Just say what you need in plain words; nothing needs a special command",
+    `- Optional shortcuts: ${SLASH_COMMANDS.map((c) => `/${c.cmd}`).join(", ")}`,
     "- Merge duplicate encounters on the patient page (with a backup)",
     "- Paste a list of contacts to add them all at once",
+    "- On your phone: open /goat and add G.O.A.T. to your Home Screen",
     "If I'm not sure, I'll ask. Full guide: Handbook → G.O.A.T.",
   ].join("\n");
 }

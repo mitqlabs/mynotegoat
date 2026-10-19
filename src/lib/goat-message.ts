@@ -65,14 +65,22 @@ export function matchRecipient(name: string, team: TeamPerson[]): TeamPerson[] {
 }
 
 function dedupe(list: TeamPerson[]): TeamPerson[] {
-  const seen = new Map<string, TeamPerson>();
+  // The same person from the signatures list and a login: keep the one that can be notified.
+  // Two different logins with the same first name (two Hannahs) both stay, so the chat can ask which.
+  const out: TeamPerson[] = [];
   for (const p of list) {
     const k = p.firstName.toLowerCase();
-    const cur = seen.get(k);
-    // The same person from the signatures list and a login: keep the one that can be notified.
-    if (!cur || (!cur.userId && p.userId)) seen.set(k, { ...p, ...(cur && !p.userId ? { userId: cur.userId } : {}) });
+    const same = out.filter((x) => x.firstName.toLowerCase() === k);
+    if (p.userId && same.some((x) => x.userId === p.userId)) continue;
+    if (!p.userId && same.length) continue;
+    const unlinked = same.find((x) => !x.userId);
+    if (p.userId && unlinked) {
+      out[out.indexOf(unlinked)] = { ...unlinked, ...p };
+      continue;
+    }
+    out.push(p);
   }
-  return [...seen.values()];
+  return out;
 }
 
 /** The team to match against: the Note signatures list plus logins (first word of a person-like label, or the email name). */

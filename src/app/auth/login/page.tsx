@@ -1,3 +1,4 @@
+import { safeNextPath } from "@/lib/goat-app";
 import LoginClient from "./login-client";
 
 type PageProps = {
@@ -11,5 +12,9 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const disabled = params.disabled;
   const disabledNotice = Array.isArray(disabled) ? disabled.includes("1") : disabled === "1";
 
-  return <LoginClient verifyNotice={verifyNotice} disabledNotice={disabledNotice} />;
+  const nextRaw = Array.isArray(params.next) ? params.next[0] : params.next;
+  // Only the G.O.A.T. app path is allowed (no open redirects).
+  const next = safeNextPath(nextRaw) ?? undefined;
+
+  return <LoginClient verifyNotice={verifyNotice} disabledNotice={disabledNotice} next={next} />;
 }

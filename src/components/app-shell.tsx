@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { GlobalGoatButton, GlobalGoatPopup } from "@/components/global-goat";
+import { isGoatAppPath } from "@/lib/goat-app";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -179,6 +180,15 @@ export function AppShell({
     wipeLocalWorkspaceForSignOut();
     window.location.href = "/auth/login";
   };
+
+  // The G.O.A.T. home-screen app (/goat): only the chat, full screen — no sidebar or top nav.
+  if (isGoatAppPath(pathname)) {
+    return (
+      <div className="min-h-[100dvh] bg-white">
+        <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
