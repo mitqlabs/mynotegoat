@@ -190,13 +190,16 @@ export function resolveRequestedDay(question: string, todayIso: string): Resolve
     const today = fromIso(todayIso).getDay();
     let ahead = (day - today + 7) % 7;
     if (ahead === 0) ahead = 7;
-    const iso = addDays(todayIso, ahead);
+    // Shared rule (kept in sync with every G.O.A.T. date reader): a bare weekday or
+    // "this Wednesday" = the coming Wednesday; "next Wednesday" = the one after that.
+    const coming = addDays(todayIso, ahead);
     const name = WEEKDAYS[day].replace(/^./, (c) => c.toUpperCase());
     const said = ws[i - 1];
     if (said === "next") {
-      return { iso, note: `I read "next ${name}" as the coming ${name}. If you meant the week after, that's ${dayLabel(addDays(iso, 7))}.` };
+      const iso = addDays(coming, 7);
+      return { iso, note: `I read "next ${name}" as ${dayLabel(iso)}, the ${name} after this coming one (${dayLabel(coming)}).` };
     }
-    return { iso, note: `the coming ${name}` };
+    return { iso: coming, note: `the coming ${name}` };
   }
   return null;
 }

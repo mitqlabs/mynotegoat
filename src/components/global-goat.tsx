@@ -84,6 +84,8 @@ import { useUnreadMessages } from "@/hooks/use-unread-messages";
 import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
+import { useGoatIdIntake } from "@/hooks/use-goat-id-intake";
+import { GoatAttachButtons, IdCard } from "@/components/goat-id-card";
 
 // ---------------------------------------------------------------------------
 // Open/closed, shared by the nav button and the popup.
@@ -1377,6 +1379,25 @@ export function GlobalGoatPopup({
     setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Undone: removed the ${n} contact${n === 1 ? "" : "s"} this import added.` } });
   };
 
+  // ---- Attached pictures: ID → one confirm card; screenshot → text to ask about (read in this browser). ----
+  const idIntake = useGoatIdIntake({
+    push,
+    setMsg,
+    setPatient: (id) => setChat((c) => ({ ...c, patientId: id })),
+    messages: () => chat.messages,
+    patients: () => allPatients(),
+    openPatientId,
+    namedPatient: (text) => findPatientsInQuestion(text, allPatients().map(toChatPatient)).confident?.patient.id ?? null,
+    today: () => practiceData().today,
+    appointments: () => practiceData().appointments,
+    settings: () => scheduleSettings() ?? loadScheduleSettings(),
+    addAppointments,
+  });
+  const attachFiles = (files: File[]) => {
+    const typed = input.trim();
+    setInput("");
+    void idIntake.attach(files, typed);
+  };
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     const question = raw.trim();
     if (!question || job || practiceBusy) return;
@@ -1384,6 +1405,8 @@ export function GlobalGoatPopup({
     if (!opts && !isFlowToken(question) && breaksFlow(question, flowRef.current)) flowRef.current = null;
     setInput("");
     setMention(null);
+    // Answers to an ID card's questions (phone, marital status, "wednesday 1pm") and questions about a screenshot.
+    if (!opts && idIntake.handleReply(question)) return;
     // "@Leilani hi", "@Dr. Abi …", "@Hannah @Greg …" = "tell …" (one card for everyone mentioned).
     if (!opts && question.startsWith("@")) {
       const team = buildTeam(loadSigners(), teamLogins);
@@ -1893,6 +1916,7 @@ export function GlobalGoatPopup({
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
+                    {m.idCard && <IdCard busy={idIntake.busy} card={m.idCard} onCancel={() => idIntake.cancel(m)} onChange={(c) => setMsg(m.id, { idCard: c })} onConfirm={() => void idIntake.confirm(m)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
                       <div className="mt-2 space-y-1.5" data-goat-choices>
@@ -1978,13 +2002,24 @@ export function GlobalGoatPopup({
           </div>
 
           <div className={`border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
+            {idIntake.reading && <p className="mb-1.5 text-xs text-[var(--text-muted)]" data-goat-reading>{idIntake.reading}</p>}
             <form
               className="flex gap-2"
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                const files = Array.from(e.dataTransfer.files ?? []);
+                if (!files.length) return;
+                e.preventDefault();
+                attachFiles(files.filter((f) => /^image\//.test(f.type) || f.type === "application/pdf"));
+              }}
               onSubmit={(e) => {
                 e.preventDefault();
                 send(input);
               }}
             >
+              <GoatAttachButtons camera={fullScreen} disabled={Boolean(job) || Boolean(idIntake.reading)} onFiles={attachFiles} />
               <div className="relative min-w-0 flex-1">
                 <input
                   aria-label="Ask G.O.A.T."
@@ -1995,6 +2030,13 @@ export function GlobalGoatPopup({
                   enterKeyHint="send"
                   onBlur={() => window.setTimeout(() => setMention(null), 150)}
                   onPaste={(e) => {
+                    // A pasted picture (screenshot, ID photo) is read in the browser.
+                    const pics = Array.from(e.clipboardData.files ?? []).filter((f) => /^image\//.test(f.type));
+                    if (pics.length) {
+                      e.preventDefault();
+                      attachFiles(pics);
+                      return;
+                    }
                     // A one-line box drops newlines, so a pasted contact list is handled here.
                     const pasted = e.clipboardData.getData("text");
                     const full = input.trim() ? `${input.trim()}\n${pasted}` : pasted;

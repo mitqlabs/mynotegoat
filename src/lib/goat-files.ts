@@ -271,6 +271,29 @@ async function ocrCanvas(canvas: HTMLCanvasElement | Blob, onProgress: (p: numbe
   }
 }
 
+/** OCR one image/canvas with the same local engine (G.O.A.T. ID / screenshot reading). */
+export function ocrImage(img: HTMLCanvasElement | Blob, onProgress: (p: number) => void = () => {}): Promise<string> {
+  return ocrCanvas(img, onProgress);
+}
+
+/** Render page 1 of a PDF to a canvas (local pdf.js), e.g. a scanned ID saved as PDF. */
+export async function renderPdfFirstPage(bytes: ArrayBuffer, scale = 2): Promise<HTMLCanvasElement> {
+  const lib = await pdfjs();
+  const task = lib.getDocument({ data: new Uint8Array(bytes) });
+  const doc = await task.promise;
+  try {
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport }).promise;
+    return canvas;
+  } finally {
+    void task.destroy();
+  }
+}
+
 const textChars = (s: string) => s.replace(/\s+/g, "").length;
 
 // ---------------------------------------------------------------------------

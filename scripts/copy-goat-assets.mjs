@@ -9,6 +9,7 @@
  *   public/goat/tesseract/worker.min.js            tesseract.js OCR worker
  *   public/goat/tesseract/core/*-lstm.wasm.js      OCR engine (wasm, 3 CPU variants)
  *   public/goat/tesseract/lang/eng.traineddata.gz  English model (tessdata best_int)
+ *   public/goat/zxing/zxing_reader.wasm            barcode reader (ID card PDF417, AAMVA)
  *
  * Runs before `npm run dev` and `npm run build`. public/goat/ is gitignored (generated).
  */
@@ -27,6 +28,7 @@ const copies = [
     (f) => [nm("tesseract.js-core", f), out("tesseract", "core", f)],
   ),
   [nm("@tesseract.js-data", "eng", "4.0.0_best_int", "eng.traineddata.gz"), out("tesseract", "lang", "eng.traineddata.gz")],
+  [nm("zxing-wasm", "dist", "reader", "zxing_reader.wasm"), out("zxing", "zxing_reader.wasm")],
 ];
 
 let missing = 0;
