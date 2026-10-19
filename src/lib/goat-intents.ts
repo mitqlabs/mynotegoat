@@ -155,6 +155,11 @@ export function stashNewAppointmentPrefill(p: Omit<NewAppointmentPrefill, "at">)
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(NEW_APPOINTMENT_PREFILL_KEY, JSON.stringify({ ...p, at: Date.now() }));
 }
+/** Is a G.O.A.T. prefill waiting? (Doesn't consume it.) */
+export function hasNewAppointmentPrefill(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(NEW_APPOINTMENT_PREFILL_KEY) !== null;
+}
 /** Read once (and clear). Stale (> 10 min) prefills are ignored. */
 export function takeNewAppointmentPrefill(): NewAppointmentPrefill | null {
   if (typeof window === "undefined") return null;
@@ -166,4 +171,49 @@ export function takeNewAppointmentPrefill(): NewAppointmentPrefill | null {
   } catch {
     return null;
   }
+}
+
+/** Words that point at "the patient whose page is open". */
+export const PAGE_PATIENT_REF = /\b(him|her|them|he|she|his|hers|their|this (?:person|patient|pt|client|guy|lady|case)|the (?:patient|pt|client)|that (?:person|patient))\b/i;
+const CONTACT_VERB = /^(call|text|email|e-mail|message|msg|follow up with|follow-up with|followup with|check (?:on|in with)|remind|ask|contact|reach out to|confirm with|tell)\b\s*/i;
+
+const pageName = (fullName: string) => {
+  const [last = "", first = ""] = fullName.split(",").map((x) => x.trim());
+  return first ? `${first} ${last}`.trim() : last;
+};
+
+/**
+ * G.O.A.T. opened on a patient's page: "remind me to call her for appointment"
+ * / "call for appointment" → "Call John Smith for appointment", linked to that
+ * patient. Pronouns become the name; a bare contact verb gets the name after
+ * it. Returns null when the text has no implicit reference AND no contact verb
+ * (then the page patient is only linked, title unchanged).
+ */
+export function todoTitleForPagePatient(title: string, fullName: string): string {
+  const name = pageName(fullName);
+  if (!name) return title;
+  let t = title.trim();
+  if (PAGE_PATIENT_REF.test(t)) {
+    t = t.replace(new RegExp(PAGE_PATIENT_REF.source, "i"), (m) => (/^(his|hers|their)$/i.test(m) ? `${name}'s` : name));
+  } else {
+    const v = CONTACT_VERB.exec(t);
+    if (v && !t.toLowerCase().includes(name.toLowerCase())) t = `${v[0].trim()} ${name} ${t.slice(v[0].length)}`.replace(/\s+/g, " ").trim();
+  }
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * Which patient a to-do belongs to when G.O.A.T. is opened on a patient page.
+ *   named another patient (one clear match) → that patient
+ *   pronoun / "this patient" / nobody named → the page's patient
+ *   several possible other names, no pronoun → null (ask)
+ */
+export function pickTodoPatient<T extends { id: string }>(opts: { text: string; page: T | null; confident: T | null; candidates: T[] }): { patient: T | null; via: "named" | "page" | "ask" | "none" } {
+  const { text, page, confident, candidates } = opts;
+  const pronoun = PAGE_PATIENT_REF.test(text);
+  if (confident && (!page || confident.id !== page.id) && !pronoun) return { patient: confident, via: "named" };
+  if (page && (pronoun || !candidates.length || confident?.id === page.id)) return { patient: page, via: "page" };
+  if (confident) return { patient: confident, via: "named" };
+  if (candidates.length) return { patient: null, via: "ask" };
+  return { patient: null, via: "none" };
 }

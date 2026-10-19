@@ -28,7 +28,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
-        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date) and unread team messages. Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
+        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date), unread team messages, and patient questionnaires that came back and still need review (\"1 questionnaire received: Jane Example\" with a Review link to her patient file). Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
@@ -69,7 +69,8 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Notes, to-dos and payments",
       steps: [
         "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
-        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do. A contact, law firm or patient named inside a reminder never turns it into a lookup: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
+        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
+        "Open on a patient's page? \"him\", \"her\", \"them\", \"this patient\" — or no name at all — mean that patient. \"remind me to call for appointment\" on John Smith's page → \"Call John Smith for appointment\", attached to his case, one confirm. Name someone else (\"remind me to call Jane Doe\") and it's theirs; if the name could be several people, it asks. The same goes for notes (\"add a note that he called\"), team messages (\"tell Hannah to call her about the MRI\"), booking (\"book him friday at 3\") and lookups (\"when is his next appt\").",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },
@@ -92,10 +93,10 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
         "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
-        "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, attorney, DOI, day and time filled in. You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
+        "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, day, time and the New Patient visit type filled in (one provider and one location are picked for you). You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
         "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",
         "Name matches an existing patient and you said \"new appt\"? G.O.A.T. asks: \"Existing patient Armen Barmen, or a new patient?\".",
-        "A call or text about a new patient (\"I have a new patient for you …\" or /new …): G.O.A.T. opens Patient List → New Patient prefilled, including the New Patient Evaluation date and time. It asks only about what's unclear (e.g. which part is the last name).",
+        "A call or text about a new patient (\"I have a new patient for you …\" or /new …): G.O.A.T. opens Patient List → New Patient prefilled (patient info only). If it also has a visit day/time, it opens New Appointment in New-patient mode instead, so the visit is booked there. It asks only about what's unclear (e.g. which part is the last name).",
         "Days and times: tomorrow, next Wednesday, friday, 10/22; \"3\" or \"10\" are read inside office hours (3 PM, 10 AM).",
       ],
       watchOut: "G.O.A.T. never creates a patient or books on its own — you always save the form or tap Confirm.",

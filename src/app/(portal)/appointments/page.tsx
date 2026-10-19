@@ -17,7 +17,8 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { createPatientRecord, patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
-import { takeNewAppointmentPrefill } from "@/lib/goat-intents";
+import { hasNewAppointmentPrefill, takeNewAppointmentPrefill } from "@/lib/goat-intents";
+import { newPtFromPrefill, officeDefaultsForDraft } from "@/lib/new-patient-intake";
 import { mdyToIso, newPatientVisitType } from "@/lib/new-patient-intake";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -707,12 +708,14 @@ export default function AppointmentsPage() {
     setEditError("");
   };
 
+  // One provider and one location in this workspace → picked for you (no asking).
+  const withOfficeDefaults = (d: NewAppointmentDraft): NewAppointmentDraft => officeDefaultsForDraft(d, officeSettings);
   const openNewAppointmentModal = () => {
     setPatientMode("existing");
     setNewPtDraft(emptyNewPt);
     setNewPtSourceTaskId(null);
     setDoneTaskOffer(null);
-    setNewAppointmentDraft(createInitialDraft(selectedDate, defaultAppointmentType));
+    setNewAppointmentDraft(withOfficeDefaults(createInitialDraft(selectedDate, defaultAppointmentType)));
     setPatientSearchDraft("");
     setShowPatientSuggestions(false);
     setNewAppointmentError("");
@@ -725,7 +728,7 @@ export default function AppointmentsPage() {
   const { tasks, toggleTaskDone } = useTasks();
   const [contactGap, setContactGap] = useState<ContactGap | null>(null);
   const [patientMode, setPatientMode] = useState<"existing" | "new">("existing");
-  const emptyNewPt = { lastName: "", firstName: "", phone: "", attorney: "", dateOfLoss: "", notes: "" };
+  const emptyNewPt = { lastName: "", firstName: "", phone: "", dob: "", attorney: "", dateOfLoss: "", notes: "" };
   const [newPtDraft, setNewPtDraft] = useState(emptyNewPt);
   const [newPtAttorneyFocused, setNewPtAttorneyFocused] = useState(false);
   /** The G.O.A.T. to-do this new-patient visit came from ("call armen barmen 555…"), offered as done after Save. */
@@ -757,14 +760,16 @@ export default function AppointmentsPage() {
   const openFromGoatRef = useRef<() => void>(() => {});
   openFromGoatRef.current = () => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("new") !== "1") return;
+    // The URL may not show ?new=1 yet when G.O.A.T. fires the event on this
+    // page (router push is async) — a waiting prefill is enough.
+    if (params.get("new") !== "1" && !hasNewAppointmentPrefill()) return;
     params.delete("new");
     const qs = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     const pre = takeNewAppointmentPrefill();
     const date = pre?.date && /^\d{4}-\d{2}-\d{2}$/.test(pre.date) ? pre.date : selectedDate;
     const patient = pre?.patientId ? patients.find((p) => p.id === pre.patientId) : undefined;
-    const base = createInitialDraft(date, defaultAppointmentType);
+    const base = withOfficeDefaults(createInitialDraft(date, defaultAppointmentType));
     setNewAppointmentDraft({
       ...base,
       ...(pre?.time && /^\d{2}:\d{2}$/.test(pre.time) ? { startTime: pre.time } : {}),
@@ -777,7 +782,7 @@ export default function AppointmentsPage() {
       const np = newPatientVisitType(appointmentTypes);
       const parts = toDurationParts(np?.durationMin ?? 30);
       setPatientMode("new");
-      setNewPtDraft({ ...emptyNewPt, ...pre.newPatient });
+      setNewPtDraft(newPtFromPrefill(emptyNewPt, pre.newPatient));
       setNewAppointmentDraft((c) => ({ ...c, patientId: "", caseLabel: "", ...(np ? { appointmentType: np.name, durationHours: parts.durationHours, durationMinutes: parts.durationMinutes } : {}) }));
     } else {
       setPatientMode("existing");
@@ -983,6 +988,14 @@ export default function AppointmentsPage() {
         setNewAppointmentError("New patient: last and first name are required.");
         return;
       }
+      if (newPtDraft.phone.replace(/\D/g, "").length < 10) {
+        setNewAppointmentError("New patient: add their phone number (10 digits).");
+        return;
+      }
+      if (newPtDraft.dob.trim() && !mdyToIso(newPtDraft.dob)) {
+        setNewAppointmentError("DOB must be MM/DD/YYYY.");
+        return;
+      }
       if (newPtDraft.dateOfLoss.trim()) {
         newPtDolIso = mdyToIso(newPtDraft.dateOfLoss);
         if (!newPtDolIso) {
@@ -1096,8 +1109,11 @@ export default function AppointmentsPage() {
         attorney: newPtDraft.attorney.trim() || undefined,
         phone: newPtDraft.phone.trim() || undefined,
         dateOfLoss: newPtDolIso,
+        dob: mdyToIso(newPtDraft.dob) || undefined,
         notes: newPtDraft.notes.trim() || undefined,
-        initialExam: formatUsDateFromIso(scheduleDates[0]),
+        // Initial Exam is NOT saved here: while the box is blank it shows the
+        // first New Patient visit's date (lib/initial-exam-date), so moving or
+        // canceling the visit keeps it right. Once staff type a date, theirs wins.
       });
       if (!created) {
         setNewAppointmentError("Could not add the new patient. Nothing was saved.");
@@ -1753,7 +1769,7 @@ export default function AppointmentsPage() {
                     {([
                       ["lastName", "Last name *", "Last"],
                       ["firstName", "First name *", "First"],
-                      ["phone", "Phone", "(817) 555-0100"],
+                      ["phone", "Phone *", "818-555-0123"],
                     ] as const).map(([key, label, ph]) => (
                       <label key={key} className="grid min-w-0 gap-1">
                         <span className="text-xs font-semibold text-[var(--text-muted)]">{label}</span>
@@ -1766,46 +1782,19 @@ export default function AppointmentsPage() {
                         />
                       </label>
                     ))}
-                    <label className="relative grid min-w-0 gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Attorney</span>
-                      <input
-                        className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
-                        data-testid="new-pt-attorney"
-                        onBlur={() => window.setTimeout(() => setNewPtAttorneyFocused(false), 120)}
-                        onChange={(e) => setNewPtDraft((c) => ({ ...c, attorney: e.target.value }))}
-                        onFocus={() => setNewPtAttorneyFocused(true)}
-                        placeholder="Law firm (or Self)"
-                        value={newPtDraft.attorney}
-                      />
-                      {newPtAttorneyFocused && newPtAttorneyMatches.length > 0 && (
-                        <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-10 max-h-48 overflow-y-auto rounded-lg border border-[var(--line-soft)] bg-white shadow-[0_12px_24px_rgba(14,41,62,0.14)]">
-                          {newPtAttorneyMatches.map((entry) => (
-                            <button
-                              key={entry.id}
-                              className="block w-full border-b border-[var(--line-soft)] px-2.5 py-1.5 text-left text-sm last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => { setNewPtDraft((c) => ({ ...c, attorney: entry.name })); setNewPtAttorneyFocused(false); }}
-                              type="button"
-                            >
-                              {entry.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </label>
                     <label className="grid min-w-0 gap-1">
-                      <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
+                      <span className="text-xs font-semibold text-[var(--text-muted)]">DOB</span>
                       <input
                         className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm"
-                        data-testid="new-pt-doi"
+                        data-testid="new-pt-dob"
                         inputMode="numeric"
                         onChange={(e) => {
                           const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
                           const v = digits.length > 4 ? `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-                          setNewPtDraft((c) => ({ ...c, dateOfLoss: v }));
+                          setNewPtDraft((c) => ({ ...c, dob: v }));
                         }}
-                        placeholder="MM/DD/YYYY"
-                        value={newPtDraft.dateOfLoss}
+                        placeholder="MM/DD/YYYY (optional)"
+                        value={newPtDraft.dob}
                       />
                     </label>
                     <label className="grid min-w-0 gap-1">
@@ -1819,8 +1808,16 @@ export default function AppointmentsPage() {
                       />
                     </label>
                     <p className="text-xs text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
-                      Save Appointment adds the patient and books this visit. The visit date becomes their Initial Exam.
+                      Save Appointment adds the patient and books this visit. The visit date becomes their Initial Exam. Attorney and Date of Injury go on their page later (Case info).
                     </p>
+                    {(newPtDraft.attorney.trim() || newPtDraft.dateOfLoss.trim()) && (
+                      <p className="text-xs sm:col-span-2 lg:col-span-3" data-testid="new-pt-goat-extra">
+                        <span className="font-semibold">Also from G.O.A.T. (saved to Case info):</span>
+                        {newPtDraft.attorney.trim() ? ` Attorney ${newPtDraft.attorney.trim()}` : ""}
+                        {newPtDraft.dateOfLoss.trim() ? ` · DOI ${newPtDraft.dateOfLoss.trim()}` : ""}{" "}
+                        <button className="font-semibold text-[var(--brand-primary)] hover:underline" onClick={() => setNewPtDraft((c) => ({ ...c, attorney: "", dateOfLoss: "" }))} type="button">Remove</button>
+                      </p>
+                    )}
                   </div>
                 ) : (
                 <>

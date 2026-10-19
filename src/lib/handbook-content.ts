@@ -109,18 +109,15 @@ export const handbookChapters: HandbookChapter[] = [
       {
         heading: "Take in a new patient",
         steps: [
-          "Patient List → New Patient.",
-          "Fill the first row: Last Name, First Name, DOB, Sex, Phone. Last and first name are required.",
-          "Fill the address row if you have it.",
-          "Under Attorney Information: attorney, their phone, and the Date Of Injury (required). The Case # builds itself.",
-          "New Patient Evaluation (optional, same box): a date and time. When filled, Create Patient also books their first visit — the New Patient visit type, your office's provider and location (change them in the small fields that appear), time snapped to office hours — and sets the Initial Exam date. Full slot or outside office hours? It says so and suggests nearby open times before anything is saved.",
-          "Non-PI patients get the same thing as a \"First Visit\" box.",
-          "Add anything worth knowing under Notes, then Create Patient.",
-          "Booking from the Schedule instead? New Appointment → switch Patient to \"New patient\" (Last, First, Phone, Attorney, DOI, Note). Save Appointment adds the patient and books the visit in one step.",
+          "Got a text with just a name and number? Patient List → New Patient. Only Last Name, First Name and Phone are required; DOB, Sex, Marital Status and the address are optional.",
+          "Know the case details already? Tap + Case in the same popup: Attorney, Attorney Phone, Date of Injury (the Case # builds itself from it). Otherwise skip it.",
+          "Create Patient. Their page shows a gentle \"Case info missing\" note with a + Case button until there's an attorney or Date of Injury. It never blocks anything.",
+          "Book the first visit from the Schedule: New Appointment → Existing (pick them) or New patient (Last, First and Phone required, DOB optional). With one provider and one location, those are filled in for you. While their Initial Exam box is blank it shows the first New Patient visit's date (in blue) and follows that visit if it's moved or canceled. Type a date in the box (e.g. 06/26/2026) and yours sticks: moving, rescheduling or canceling visits never changes it, and changing the box never moves or deletes a visit.",
+          "Non-PI (cash) patients: tick Non-PI in the popup. They have no case info and never appear in Case Flow.",
         ],
         why: "A new case always starts the same way, so the app sets it for you: Case Status Active, Lien/LOP Pending, and a \"Schedule Initial Visit\" item on their Case Flow. You change those on the patient's page as things move.",
         watchOut:
-          "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow. If the first visit can't be booked (e.g. a cloud save error), the patient is still saved and a yellow note tells you to book it from the Schedule.",
+          "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow.",
       },
       {
         heading: "Attorney's phone fills itself",
@@ -453,7 +450,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Office Settings — office details and logo, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, Case Flow rules, which patient-page sections start open.",
           "Macros — SOAP macros, billing macros (treatments, diagnosis codes, bundles), package builder.",
-          "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording.",
+          "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
           "Team Members — logins, roles, doctor flag, per-person patient-page sections.",
           "Admin Access — roles, what managers see, who can delete what, the delete password.",
@@ -865,6 +862,49 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         ],
         watchOut:
           "Generate PDF opens the print dialog — it does not save a file into the chart. If the letter belongs in the file, save it and upload it back under Patient Files.",
+      },
+    ],
+  },
+  {
+    id: "patient-forms",
+    title: "Patient forms (questionnaires)",
+    summary: "Build your own questionnaires, text or email one to a patient, and drop their answers into Objective exactly as if you clicked the macros.",
+    audience: "all",
+    feature: "patients",
+    tasks: [
+      {
+        heading: "Send a form",
+        steps: [
+          "Open the patient → Send form (next to + To Do).",
+          "Pick one of your forms (only forms that are turned On show here). Tick Spinal decompression case if it applies — it's already ticked when the schedule has a decompression visit.",
+          "Create secure link, then Copy link, Text it (opens Messages) or Email it (opens your mail app). Nothing is sent until you press send there.",
+        ],
+        why: "The link is long and random, works for one patient only, needs no login, and stops working after the days you chose (14 by default) or when you Revoke it from the same window. The patient's answers save to the cloud as they go, so they can stop and finish later from the same link.",
+        watchOut: "The link opens that patient's answers to whoever has it. Send it only to the patient's own phone or email.",
+      },
+      {
+        heading: "When it comes back",
+        steps: [
+          "The patient file shows a green \"Questionnaire received\" card with every answer; G.O.A.T.'s Morning Rundown lists it too.",
+          "Pick the visit and click Insert into Objective — or open the patient's note: the same card waits above the SOAP macros.",
+          "Each macro section fills its own Objective macro through the same path as clicking it, so the wording, the clickable answers and any linked charges are identical. Your own questions go in underneath as plain \"Question: answer\" lines.",
+          "Dismiss if you don't want it in a note. The answers stay saved; Show past questionnaires → Review again brings it back.",
+        ],
+        why: "Insert only ever ADDS to Objective. If Objective already has text (or that macro was already run), it asks first and still changes nothing that's there. Who inserted or dismissed it, and when, is saved with the questionnaire and in the Activity Log.",
+      },
+      {
+        heading: "Build a form (Settings → Templates → Forms)",
+        steps: [
+          "No form comes pre-made: every office starts with \"No forms yet\". Click + New form and give it a name.",
+          "+ Objective macros → tick the macros (buttons) you want to ask about → Add. The patient picks from the same options you click in the note.",
+          "+ Your own questions → type the question and pick its type: Short answer, Long answer, Yes / No, Pick one, Pick any, or Number. For Pick one / Pick any, put one choice per line.",
+          "Rename any section heading, move sections and questions up or down, and switch a section or question off without deleting it. Choose when a section is asked: Always, Decompression only, or Not decompression.",
+          "On a macro section, Questions → untick any the patient shouldn't see and, if you like, reword a question or option the way a patient would say it (Spanish optional).",
+          "Connect answer to (under every question): None puts it in Objective as a plain \"Question: answer\" line. Objective or Subjective → pick one of your macros → the field it fills, and optionally \"Picks: <option>\" so a Yes (or any answer) ticks exactly that option and a No leaves it blank. Patient info → Phone, Email, Address, DOB, Sex or Marital Status. Questions in a macro section start connected to their own macro (\"This macro\"); change it or set it to None.",
+          "The On / Off switch next to the name decides whether the form shows in Send form. Duplicate makes a copy to start a variation; Delete asks first.",
+        ],
+        why: "Forms save to the cloud for your whole office (every computer sees the same forms; edits on two computers merge, and every change is kept in version history). Options come straight from your macros, so a macro change shows up in the next form you send; forms already sent keep the questions they were sent with. Options that are blanks to fill (\"smoke ___ pack a ___\") or the word DELETE aren't shown to patients; they can type in the \"something else\" box instead.",
+        watchOut: "Renaming an Objective macro? Check Settings → Forms: a section whose macro can't be found is marked ⚠ and left out of the form (the Send form window tells you which). A Pick one / Pick any question with no choices isn't asked. A connection whose macro or field was renamed or removed is marked ⚠; that answer goes in as a plain line instead. Patient info answers only fill a field that's blank, never change one you already have (Insert says which it skipped).",
       },
     ],
   },

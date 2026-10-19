@@ -11,6 +11,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.cleared-tasks.v1",
   "casemate.duplicate-dismissals.v1",
   "casemate.attorney-not-same.v1",
+  // Settings → Forms templates: merged by id (newest wins), deletes are tombstones.
+  "casemate.patient-forms.v1",
 ]);
 
 /**
@@ -919,6 +921,8 @@ async function bootstrapTableBackedEntities() {
           // it. Listing the key makes SMS templates cloud-as-truth like
           // every other synced key.
           "casemate.sms-templates.v1",
+          // Patient questionnaire templates (Settings → Forms). Union-merged.
+          "casemate.patient-forms.v1",
           // Automatic text reminder settings (Settings → Text Reminders).
           "casemate.sms-reminders.v1",
           // G.O.A.T. words & synonym groups (Settings → G.O.A.T.).

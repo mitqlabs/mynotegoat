@@ -66,7 +66,7 @@ import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
 import { TEAM, caseQuestion, parseTeamMessage, type TeamMessageRequest } from "@/lib/goat-team-message";
 import { GOAT_APP_PATH, GOAT_INSTALL_TIP_KEY, goatQueryPrefill, installTipKind, isStandalone } from "@/lib/goat-app";
-import { isNoPatientName, detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
+import { isNoPatientName, pickTodoPatient, todoTitleForPagePatient, detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
@@ -81,6 +81,7 @@ import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
+import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 
@@ -413,6 +414,8 @@ export function GlobalGoatPopup({
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
+  // Questionnaires received, not reviewed yet (Morning Rundown line).
+  const { rows: receivedForms } = useFormRequests({ awaitingReview: true }, !practiceOverride);
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
@@ -509,7 +512,7 @@ export function GlobalGoatPopup({
     const index = buildInitialExamIndex(appointments);
     // Same year the Patients list files each patient under: Initial Exam box, else the
     // schedule's New Patient visit, else date of injury (so counts match its Status filter).
-    const listYear = (p: PatientRecord) => yearOfDate(p.matrix?.initialExam?.trim() ? p.matrix.initialExam : patientInitialExamIso(p, index)) || yearOfDate(p.dateOfLoss);
+    const listYear = (p: PatientRecord) => yearOfDate(p.matrix?.initialExam?.trim() ? p.matrix.initialExam : patientInitialExamIso(p, index)) || yearOfDate(p.dateOfLoss) || yearOfDate(p.lastUpdate ?? "");
     return {
       patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ ...p, listYear: listYear(p), cash: Boolean(p.isCashPatient) })),
       // Cleared ("Clear task") to-dos never show in G.O.A.T.
@@ -768,6 +771,13 @@ export function GlobalGoatPopup({
       appointments: d.appointments,
       tasks: d.tasks,
       unreadMessages,
+      questionnaires: practiceOverride
+        ? []
+        : receivedForms.map((r) => ({
+            patientId: r.patient_id,
+            patientName: allPatients().find((p) => p.id === r.patient_id)?.fullName ?? "a patient",
+            formName: r.form_name,
+          })),
       locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
       patients: allPatients().map((p) => ({
         id: p.id,
@@ -1025,6 +1035,12 @@ export function GlobalGoatPopup({
     const attorneys = practiceOverride ? [] : loadContactDirectory().filter((c) => c.category.toLowerCase() === "attorney").map((c) => c.name);
     const parsed = parseIntakeText(newPatientIntakeText(raw), { todayIso: practiceData().today, attorneys, settings });
     const d = parsed.draft;
+    // A visit day/time in the request → New Appointment (New patient), which books it.
+    // The New Patient form itself is patient info only.
+    if (d.apptDate) {
+      newVisitFlow(raw, newPatientIntakeText(raw), true, false);
+      return;
+    }
     const name = [d.firstName, d.lastName].filter(Boolean).join(" ");
     const lines = [
       name && `- Name: ${name}`,
@@ -1150,6 +1166,22 @@ export function GlobalGoatPopup({
       }
       const title = t.name ? takeDueDate(td.text, practiceData().today).rest.replace(/[,\-–—\s]+$/, "") : t.title;
       const found = findPatientsInQuestion(title, people.map(toChatPatient));
+      // Opened on a patient's page: "her" / "this patient" / no name → that patient (one confirm).
+      const pagePt = patientById(openPatientId);
+      if (pagePt) {
+        const pick = pickTodoPatient({
+          text: title,
+          page: pagePt,
+          confident: found.confident ? people.find((x) => x.id === found.confident!.patient.id) ?? null : null,
+          candidates: found.candidates.map((c) => people.find((x) => x.id === c.patient.id)).filter((x): x is NonNullable<typeof x> => Boolean(x)),
+        });
+        if (pick.patient) {
+          const p = pick.patient;
+          const finalTitle = p.id === pagePt.id ? todoTitleForPagePatient(title, p.fullName) : title;
+          push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: displayName(p.fullName), todoDraft: { title: finalTitle, dueDate: t.due, patientId: p.id, patientName: p.fullName, state: "open" } });
+          return true;
+        }
+      }
       const offer = found.confident ? [found.confident.patient] : found.candidates.slice(0, 4).map((c) => c.patient);
       push({
         role: "goat",

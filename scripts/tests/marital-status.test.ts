@@ -37,13 +37,13 @@ test("tokens: {{MARITAL_STATUS}} in macros, reports and documents", () => {
     assert.ok(readFileSync(f, "utf8").includes("MARITAL_STATUS"), f);
   }
 });
-test("New Patient: Marital Status right after Sex; 6 even columns; same input classes", () => {
+test("New Patient: Marital Status right after Sex; tidy 3-column grid; same input classes", () => {
   const s = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
   const at = s.indexOf('data-row="new-patient-identity"');
   const row = s.slice(s.lastIndexOf("<div", at), s.indexOf("</div>", at));
-  assert.ok(row.includes("xl:grid-cols-6"));
+  assert.ok(row.includes("sm:grid-cols-3"));
   const labels = [...row.matchAll(/text-\[var\(--text-muted\)\]">([^<]+)</g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Patient Last Name *", "Patient First Name *", "Patient DOB", "Sex", "Marital Status", "Phone Number"]);
+  assert.deepEqual(labels, ["Last Name *", "First Name *", "Phone *", "DOB", "Sex", "Marital Status"]);
   const classes = [...row.matchAll(/<(?:input|select)\s+className="([^"]+)"/g)].map((m) => m[1]);
   assert.equal(new Set(classes).size, 1, classes.join(" | "));
   assert.ok(s.includes("maritalStatus: newPatientDraft.maritalStatus || undefined"));

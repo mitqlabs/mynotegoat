@@ -98,6 +98,7 @@ import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-
 import { EditAppointmentModal } from "@/components/edit-appointment-modal";
 import { DocumentScannerModal } from "@/components/document-scanner-modal";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { QuestionnaireReviewCards, SendFormButton } from "@/components/patient-forms-panel";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
 import { TreatmentPlanSection } from "@/components/treatment-plan-section";
@@ -2360,6 +2361,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [initialExam, patientAppointmentRecords, patientEncounterRecords],
   );
   const effectiveInitialExam = initialExamInfo.date;
+  // Case info (Attorney, Attorney Phone, Date Of Injury, Case #): hidden behind
+  // "+ Case" until there's something in it; nothing is lost, only not shown.
+  const caseInfoMissing = !dateOfLoss.trim() && (!attorney.trim() || attorney.trim().toLowerCase() === "self");
+  const [caseFieldsOpen, setCaseFieldsOpen] = useState(false);
+  const showCaseFields = !caseInfoMissing || caseFieldsOpen;
   // Auto-fill the Discharge date when the case moves to a closed
   // status (Discharged / Settled / Reduced / etc.) and the user
   // hasn't already entered one. The most-recent encounter date is the
@@ -5164,6 +5170,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     return out;
   })();
 
+  // Questionnaires (Send form / Questionnaire received).
+  const formVisitTypes = scheduleAppointments.filter((a) => a.patientId === patient.id).map((a) => a.appointmentType);
+  const formEncounters = encountersByNewest.filter((e) => e.patientId === patient.id);
+
   return (
     <div className="space-y-5">
       {checkoutNoteDialog}
@@ -5207,6 +5217,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               >
                 + To Do
               </button>
+              <SendFormButton
+                email={patientEmail}
+                firstName={firstName}
+                patientId={patient.id}
+                patientName={patient.fullName}
+                phone={patientPhone}
+                visitTypes={formVisitTypes}
+              />
             </div>
             {quickTaskStatusMessage && (
               <p className="text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
@@ -5274,6 +5292,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </button>
         </div>
       </section>
+
+      <QuestionnaireReviewCards encounters={formEncounters} patientId={patient.id} patientName={patient.fullName} />
+
+      {!isCashPatient && caseInfoMissing && !caseFieldsOpen && (
+        // Added before the case details (e.g. quick add from a text): a gentle
+        // nudge, never a blocker. Fields are right below (Case info).
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
+          <span className="font-semibold text-[#8a5a00]">Case info missing</span>
+          <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
+          <button
+            className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+            onClick={() => {
+              setCaseFieldsOpen(true);
+              window.setTimeout(() => {
+                attorneyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                attorneyInputRef.current?.focus();
+              }, 50);
+            }}
+            type="button"
+          >
+            + Case
+          </button>
+        </div>
+      )}
 
       <section className="panel-card overflow-hidden" data-goat-section="info">
         <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
@@ -5418,7 +5460,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             />
           </label>
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
               <input
@@ -5430,7 +5472,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
               <input
@@ -5444,7 +5486,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
@@ -5456,7 +5498,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && (
+          {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
               <input
