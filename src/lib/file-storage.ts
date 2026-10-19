@@ -2,6 +2,22 @@
 
 import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { forgetGoatText, goatSidecarPath, readUploadedFile } from "@/lib/goat-files";
+import { patientIdForFolder, withCaseNumberPrefix } from "@/lib/file-naming";
+import { loadFileManagerState } from "@/lib/file-manager";
+import { getPatientById } from "@/lib/mock-data";
+import { buildCaseNumber } from "@/lib/follow-up-queue";
+
+/** "<CASE#> <name>" for a file going into a patient's folder (or its subfolders). */
+export function caseNamedUpload(folderId: string, name: string): string {
+  try {
+    const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
+    const patient = pid ? getPatientById(pid) : null;
+    if (!patient) return name;
+    return withCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName));
+  } catch {
+    return name;
+  }
+}
 
 const BUCKET_NAME = "user-files";
 
@@ -22,13 +38,18 @@ async function getAuthUserId(): Promise<string | null> {
 
 export async function uploadFileToStorage(
   folderId: string,
-  file: File,
-): Promise<{ storagePath: string; error: string | null }> {
+  original: File,
+): Promise<{ storagePath: string; name: string; error: string | null }> {
   const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { storagePath: "", error: "Supabase not configured" };
+  if (!supabase) return { storagePath: "", name: original.name, error: "Supabase not configured" };
 
   const userId = await getAuthUserId();
-  if (!userId) return { storagePath: "", error: "Not authenticated" };
+  if (!userId) return { storagePath: "", name: original.name, error: "Not authenticated" };
+
+  // Patient/case uploads get the case # in front of the name.
+  const name = caseNamedUpload(folderId, original.name);
+  const file =
+    name === original.name ? original : new File([original], name, { type: original.type, lastModified: original.lastModified });
 
   // Prefix with timestamp to avoid name collisions
   const timestamp = Date.now();
@@ -43,14 +64,14 @@ export async function uploadFileToStorage(
     });
 
   if (error) {
-    return { storagePath: "", error: error.message };
+    return { storagePath: "", name, error: error.message };
   }
 
   // G.O.A.T.: read the new file's text in the background, in this browser,
   // from the bytes we already have (PDF text layer, OCR for scans/images).
   readUploadedFile(file, storagePath);
 
-  return { storagePath, error: null };
+  return { storagePath, name, error: null };
 }
 
 // ---------------------------------------------------------------------------

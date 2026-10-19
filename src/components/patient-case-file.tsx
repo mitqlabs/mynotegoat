@@ -1937,12 +1937,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       if (!files || files.length === 0) return;
       setFileUploading(true);
       for (const file of Array.from(files)) {
-        const { storagePath, error } = await uploadFileToStorage(patientFolderId, file);
+        const { storagePath, name: savedName, error } = await uploadFileToStorage(patientFolderId, file);
         if (!error && storagePath) {
           setFileManagerState((current) => {
             const next = addFileRecord(current, {
               folderId: patientFolderId,
-              name: file.name,
+              name: savedName,
               storagePath,
               mimeType: file.type || "application/octet-stream",
               sizeBytes: file.size,
