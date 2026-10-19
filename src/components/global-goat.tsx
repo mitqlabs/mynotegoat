@@ -66,7 +66,7 @@ import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
 import { TEAM, caseQuestion, parseTeamMessage, type TeamMessageRequest } from "@/lib/goat-team-message";
 import { GOAT_APP_PATH, GOAT_INSTALL_TIP_KEY, goatQueryPrefill, installTipKind, isStandalone } from "@/lib/goat-app";
-import { detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
+import { isNoPatientName, detectNewPatientRequest, detectNewVisitBooking, detectPlainTodo, findTodoPhone, newPatientIntakeText, newVisitBookingText, scheduleSlashToBooking, stashNewAppointmentPrefill } from "@/lib/goat-intents";
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
@@ -76,7 +76,7 @@ import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
-import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget } from "@/lib/goat-briefs";
+import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget, briefName, splitLinks } from "@/lib/goat-briefs";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
@@ -771,7 +771,7 @@ export function GlobalGoatPopup({
       locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
       patients: allPatients().map((p) => ({
         id: p.id,
-        fullName: p.fullName,
+        fullName: briefName(p.fullName, p.id),
         caseStatus: p.caseStatus,
         locationId: p.locationId,
         firstVisit: p.matrix?.initialExam?.trim() || patientInitialExamIso(p, index),
@@ -1000,7 +1000,7 @@ export function GlobalGoatPopup({
       return true;
     }
     // A new request ("/", "@", a chip, or another team message) drops the waiting step.
-    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || parseTeamMessage(question)) {
+    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || parseTeamMessage(question) || detectPlainTodo(question)) {
       tellRef.current = null;
       return false;
     }
@@ -1142,7 +1142,7 @@ export function GlobalGoatPopup({
       const t = parseTodo(td.text, practiceData().today);
       const people = allPatients();
       // "Name: text" picks the case outright; otherwise the text stays as typed and a match is only offered.
-      const named = t.name ? matchPatientsByName(t.name, people) : [];
+      const named = t.name && !isNoPatientName(t.name) ? matchPatientsByName(t.name, people) : [];
       if (named.length === 1) {
         const p = named[0];
         push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: displayName(p.fullName), todoDraft: { title: t.title, dueDate: t.due, patientId: p.id, patientName: p.fullName, state: "open" } });
@@ -1226,7 +1226,7 @@ export function GlobalGoatPopup({
     const people = allPatients();
     let patient: PatientRecord | null = null;
     let title = t.title;
-    if (t.name) {
+    if (t.name && !isNoPatientName(t.name)) {
       const all = matchPatientsByName(t.name, people);
       const split = activeFirst(all, (p) => isActiveCase(p.caseStatus));
       if (!all.length) {
@@ -1244,13 +1244,14 @@ export function GlobalGoatPopup({
       if (found.confident) {
         patient = patientById(found.confident.patient.id);
         if (patient) title = (stripPatientName(title, patient.fullName) || title).replace(/\s+(for|re|about|on)\s*$/i, "").trim();
-      } else if (found.candidates.length > 1) {
-        const ch = (c: ChatPatient) => ({ label: choiceLabel(c), question: `/todo ${c.fullName.replace(/,/g, "")}: ${title}${t.due ? ` ${t.due.slice(5, 7)}/${t.due.slice(8, 10)}` : ""}` });
-        push({ role: "goat", text: "Which patient is this to-do for?", practice: true, choices: [...found.candidates.map((m) => ch(m.patient)), { label: "No patient", question: `/todo none: ${title}` }] });
+      } else if (found.candidates.length) {
+        // A first-name hit ("call Vahe …") never forces a question: the card goes up as a general to-do, linking is optional.
+        const ch = (c: ChatPatient) => ({ label: `Attach to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${sl.rest}` });
+        push({ role: "goat", text: "Add this to-do? (Not attached to a case — tap one below to attach it.)", practice: true, todoDraft: { title, dueDate: t.due, state: "open" }, choices: found.candidates.slice(0, 4).map((m) => ch(m.patient)) });
         return true;
       }
     }
-    if (t.name && /^none$/i.test(t.name)) patient = null;
+    if (isNoPatientName(t.name)) patient = null;
     push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
     return true;
   };
@@ -1834,10 +1835,10 @@ export function GlobalGoatPopup({
                   <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
                     {m.todoDraft?.state === "open" && <div className="mb-0.5 text-[11px] font-bold tracking-wide text-[#2f7f93]">NEW TO-DO</div>}
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
-                    <div className="whitespace-pre-line leading-snug">{m.text}</div>
+                    <LinkedText text={m.text} links={m.links} />
                     {m.todoRows && m.todoRows.length > 0 && <TodoRows rows={m.todoRows} />}
                     {m.textAfter && <div className="whitespace-pre-line leading-snug">{m.textAfter}</div>}
-                    {m.links?.map((l) => (
+                    {splitLinks(m.text, m.links).rest.map((l) => (
                       <Link key={l.href} className="mt-1 block font-semibold text-[var(--brand-primary)] hover:underline" href={l.href} style={{ fontSize: 13 }}>
                         {l.label} ↗
                       </Link>
@@ -2626,5 +2627,27 @@ function TodoRows({ rows }: { rows: NonNullable<ChatMessage["todoRows"]> }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Patient links whose name starts a "- " / "• " line in the reply render inline on that line; the rest stay below (no duplicate chip block). */
+function LinkedText({ text, links }: { text: string; links?: Array<{ label: string; href: string }> }) {
+  const { inline } = splitLinks(text, links);
+  if (!inline.size) return <div className="whitespace-pre-line leading-snug">{text}</div>;
+  return (
+    <div className="leading-snug">
+      {text.split("\n").map((line, i) => {
+        const hit = inline.get(i);
+        if (!hit) return <div key={i} className="min-h-[1em] whitespace-pre-line">{line}</div>;
+        const at = line.indexOf(hit.label);
+        return (
+          <div key={i} className="whitespace-pre-line">
+            {line.slice(0, at)}
+            <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={hit.href}>{hit.label}</Link>
+            {line.slice(at + hit.label.length)}
+          </div>
+        );
+      })}
+    </div>
   );
 }

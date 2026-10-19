@@ -69,7 +69,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Notes, to-dos and payments",
       steps: [
         "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
-        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. offers to link it — tap or ignore.",
+        "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do. A contact, law firm or patient named inside a reminder never turns it into a lookup: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },

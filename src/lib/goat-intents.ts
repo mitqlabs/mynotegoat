@@ -13,9 +13,13 @@ const TODO_START =
 const TODO_LABEL = /^(?:to[\s-]?do|todo|task)\s*[:\-–—]\s*/i;
 const REMIND = /^(?:please\s+)?remind\s+me\s+to\s+/i;
 
+/** "none", "no patient", "general" … as the case name in "/todo none: …" = a to-do with no patient (never a name match: "none" ≠ Nune). */
+export const NO_PATIENT_NAME = /^(?:none|no\s+(?:patient|case|one)|general|nobody|n\/a|na|-)$/i;
+export const isNoPatientName = (name: string | null | undefined): boolean => Boolean(name && NO_PATIENT_NAME.test(name.trim()));
+
 /** The word after these is usually a person ("call vartan" → "Call Vartan"). */
 const PERSON_VERBS = /^(call|text|email|e-mail|phone|ask|tell|remind|message|msg|fax|see|meet|ping|contact|follow up with|f\/u with|followup with|check with|check on|call back|text back)$/i;
-const NOT_A_NAME = /^(the|a|an|back|her|him|them|his|their|our|my|me|us|office|attorney|atty|lawyer|insurance|adjuster|pt|patient|client|doctor|dr|mri|imaging|records?|about|re|to|for|and|again|today|tomorrow|tmrw|asap|soon|later|everyone|all)$/i;
+const NOT_A_NAME = /^(the|a|an|back|her|him|them|his|their|our|my|me|us|office|attorney|atty|lawyer|insurance|adjuster|pt|patient|client|doctor|dr|mri|imaging|records?|about|re|to|for|and|again|today|tomorrow|tmrw|asap|soon|later|everyone|all|number|numbers|phone|fax|email|info|address|new|case)$/i;
 
 /** Tidy the to-do text: first letter up, and the name after "call/text/…" capitalized ("call armen barmen" → "Call Armen Barmen"). Phones, dates kept. */
 export function tidyTodoText(raw: string): string {

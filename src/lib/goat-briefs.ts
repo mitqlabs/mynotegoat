@@ -137,6 +137,28 @@ function time12(t: string): string {
   const h = +m[1];
   return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
 }
+/** A name with no letters ("†, †", "", ", ") is a junk/placeholder record: show "(No name) · Case #…" instead. */
+export function briefName(fullName: string | null | undefined, id: string): string {
+  const n = (fullName ?? "").trim();
+  if (/\p{L}/u.test(n)) return n;
+  const tail = /(\d+)$/.exec(id)?.[1] ?? id.slice(-6);
+  return `(No name) · Case #${tail}`;
+}
+/**
+ * Which links belong inline: a /patients/ link whose label appears on a list line ("- Name — …", "• 9:00 AM Name").
+ * inline: line index → link; rest: links still shown below. One line per link, so no name shows twice.
+ */
+export function splitLinks(text: string, links?: Array<{ label: string; href: string }>): { inline: Map<number, { label: string; href: string }>; rest: Array<{ label: string; href: string }> } {
+  const inline = new Map<number, { label: string; href: string }>();
+  const rest: Array<{ label: string; href: string }> = [];
+  const lines = text.split("\n");
+  for (const l of links ?? []) {
+    const i = l.href.startsWith("/patients/") && l.label ? lines.findIndex((ln, k) => !inline.has(k) && /^\s*[-•]\s/.test(ln) && ln.includes(l.label)) : -1;
+    if (i >= 0) inline.set(i, l);
+    else rest.push(l);
+  }
+  return { inline, rest };
+}
 const patientLink = (p: { id: string; fullName: string }): BriefLink => ({ label: p.fullName, href: `/patients/${encodeURIComponent(p.id)}` });
 const byName = (a: { fullName: string }, b: { fullName: string }) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: "base" });
 const locName = (data: BriefData, id?: string) => {

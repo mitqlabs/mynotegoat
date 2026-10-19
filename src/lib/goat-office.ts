@@ -4,6 +4,7 @@
  * follow-up memory ("and tomorrow?", "list them", "their fax?"). Read-only.
  */
 import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
+import { detectPlainTodo } from "@/lib/goat-intents";
 import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
@@ -97,6 +98,8 @@ function followUp(question: string, data: PracticeData, last: OfficeMemory | nul
  * `last` is the memory of the previous office answer (for follow-ups).
  */
 export function answerOffice(question: string, data: PracticeData, last: OfficeMemory | null = null): OfficeAnswer | null {
+  // A new to-do ("remind me to call YMPK …") is never an office lookup, even if it names a contact.
+  if (detectPlainTodo(question)) return null;
   const f = followUp(question, data, last);
   if (f) return f;
   if (SETTING_QUESTION.test(question)) {
