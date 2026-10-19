@@ -152,7 +152,7 @@ export async function isKvTableReady(): Promise<boolean> {
 
   const { error } = await supabase
     .from("workspace_kv")
-    .select("key", { count: "exact", head: true })
+    .select("key", { head: true })
     .eq("workspace_id", workspaceId)
     .limit(1);
 

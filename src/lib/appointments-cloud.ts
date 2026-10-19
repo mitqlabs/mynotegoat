@@ -148,24 +148,47 @@ export async function fetchAllAppointmentsFromTable(): Promise<ScheduleAppointme
   // 1726, cloud has only 1000". Loop with .range() until we get a
   // short page (<1000 rows back).
   const pageSize = 1000;
-  const all: AppointmentRow[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
+  // Speed: first page also returns the total, then every remaining page is
+  // fetched AT ONCE instead of one after another (5,685 rows = 6 pages).
+  const page = (from: number, withCount: boolean) =>
+    supabase
       .from("schedule_appointments")
-      .select("*")
+      .select("*", withCount ? { count: "exact" } : undefined)
       .eq("workspace_id", workspaceId)
       // Stable order so pages never overlap or skip rows.
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
-    if (error) {
-      console.error("[appointments-cloud] fetchAll failed:", error.message);
-      return null;
+  const first = await page(0, true);
+  if (first.error) {
+    console.error("[appointments-cloud] fetchAll failed:", first.error.message);
+    return null;
+  }
+  const all: AppointmentRow[] = [...((first.data ?? []) as AppointmentRow[])];
+  if (all.length === pageSize) {
+    const total = typeof first.count === "number" ? first.count : 0;
+    const starts: number[] = [];
+    for (let from = pageSize; from < total; from += pageSize) starts.push(from);
+    const rest = await Promise.all(starts.map((from) => page(from, false)));
+    for (const r of rest) {
+      if (r.error) {
+        console.error("[appointments-cloud] fetchAll failed:", r.error.message);
+        return null;
+      }
+      all.push(...((r.data ?? []) as AppointmentRow[]));
     }
-    const rows = (data ?? []) as AppointmentRow[];
-    all.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
+    // Rows added between requests: keep paging until a short page.
+    let from = pageSize * (starts.length + 1);
+    while (all.length === from) {
+      const r = await page(from, false);
+      if (r.error) {
+        console.error("[appointments-cloud] fetchAll failed:", r.error.message);
+        return null;
+      }
+      const rows = (r.data ?? []) as AppointmentRow[];
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
   }
   return all.map(rowToAppointment);
 }
@@ -269,7 +292,7 @@ export async function isAppointmentsTableReady(): Promise<boolean> {
 
   const { error } = await supabase
     .from("schedule_appointments")
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .eq("workspace_id", workspaceId)
     .limit(1);
 

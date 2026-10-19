@@ -56,7 +56,7 @@
  */
 
 import { useEffect } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { notifyChange, wasRecentlyWrittenLocally } from "@/lib/local-sync";
 
 export function GlobalKvRealtime() {
@@ -66,7 +66,7 @@ export function GlobalKvRealtime() {
     const setup = async () => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } = await getSessionUser(supabase);
       const workspaceId = userData.user?.id;
       if (!workspaceId || cancelled) return;
       const channel = supabase

@@ -10,7 +10,7 @@
  */
 import { isMirroredUserKey } from "@/lib/cloud-key-registry";
 import { notifyChange } from "@/lib/local-sync";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 
 export type PrefEntry = { v: string; at: number };
@@ -51,7 +51,7 @@ function writeMirror(map: PrefMap) {
 async function cloudKey(): Promise<string | null> {
   if (userKey) return userKey;
   const client = getSupabaseBrowserClient();
-  const { data } = (await client?.auth.getUser()) ?? { data: { user: null } };
+  const { data } = (await getSessionUser(client)) ?? { data: { user: null } };
   if (!data.user?.id) return null;
   userKey = `casemate.user-prefs.v1.u.${data.user.id}`;
   return userKey;

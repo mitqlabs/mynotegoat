@@ -1,6 +1,6 @@
 "use client";
 
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { forgetGoatText, goatSidecarPath, readUploadedFile } from "@/lib/goat-files";
 
 const BUCKET_NAME = "user-files";
@@ -12,7 +12,7 @@ const BUCKET_NAME = "user-files";
 async function getAuthUserId(): Promise<string | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
-  const { data } = await supabase.auth.getUser();
+  const { data } = await getSessionUser(supabase);
   return data.user?.id ?? null;
 }
 

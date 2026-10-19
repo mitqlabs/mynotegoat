@@ -36,7 +36,7 @@ import { activityDate, logActivity } from "@/lib/activity-log";
 
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
 import { notifyChange } from "@/lib/local-sync";
 import {
@@ -71,7 +71,7 @@ function normalizeReason(value: string) {
 async function getActiveWorkspaceId(): Promise<string | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
-  const { data } = await supabase.auth.getUser();
+  const { data } = await getSessionUser(supabase);
   const userId = data.user?.id;
   if (!userId) return null;
   // Must match the workspace_id the rest of the app uses:

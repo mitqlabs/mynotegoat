@@ -256,7 +256,22 @@ export default function PortalLayout({
       // hard error screen instead. Mounting on stale/empty localStorage is
       // exactly how the 2026-04-08 data loss happened.
       try {
-        await prepareCloudStateBeforeMount();
+        // Hard deadline: never sit on "Checking account access…" forever.
+        // Past 45s show the locked error screen with Retry instead.
+        let deadline: ReturnType<typeof setTimeout> | null = null;
+        try {
+          await Promise.race([
+            prepareCloudStateBeforeMount(),
+            new Promise<never>((_, reject) => {
+              deadline = setTimeout(
+                () => reject(new CloudBootstrapError("Loading your data from the cloud took too long. Check your connection and tap Retry.")),
+                45_000,
+              );
+            }),
+          ]);
+        } finally {
+          if (deadline) clearTimeout(deadline);
+        }
         // Bring back this user's prefs (sorts, columns, chat…) from the cloud.
         void import("@/lib/user-prefs-cloud").then((m) =>
           m.syncUserPrefs().catch((err: unknown) => console.warn("[user-prefs] restore failed:", err)),

@@ -297,7 +297,7 @@ export async function isPatientsTableReady(): Promise<boolean> {
 
   const { error } = await supabase
     .from("patients")
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .eq("workspace_id", workspaceId)
     .limit(1);
 
