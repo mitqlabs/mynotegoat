@@ -5290,6 +5290,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <QuestionnaireReviewCards encounters={formEncounters} patientId={patient.id} patientName={patient.fullName} />
 
+      {!isCashPatient && !dateOfLoss.trim() && (!attorney.trim() || attorney.trim().toLowerCase() === "self") && (
+        // Added before the case details (e.g. quick add from a text): a gentle
+        // nudge, never a blocker. Fields are right below (Case info).
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
+          <span className="font-semibold text-[#8a5a00]">Case info missing</span>
+          <span className="text-[var(--text-muted)]">Attorney, Date Of Injury and Initial Exam can be added any time; the Case # builds itself from the Date Of Injury.</span>
+          <button
+            className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+            onClick={() => {
+              attorneyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+              attorneyInputRef.current?.focus();
+            }}
+            type="button"
+          >
+            + Case
+          </button>
+        </div>
+      )}
+
       <section className="panel-card overflow-hidden" data-goat-section="info">
         <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
           {/* Field order is deliberate, four to a row on xl:

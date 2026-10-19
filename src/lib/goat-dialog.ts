@@ -75,13 +75,15 @@ function shortName(p: { fullName: string }): string {
 }
 
 /** Patients a message points at: a name, else a pronoun → the last patient. */
-function patientRef(msg: string, st: DialogState, pts: CommandPatient[]): { ids: string[]; via: "name" | "pronoun" | "none"; nameText?: string } {
+function patientRef(msg: string, st: DialogState, pts: CommandPatient[], pageId: string | null = null): { ids: string[]; via: "name" | "pronoun" | "none"; nameText?: string } {
   const named = findNameAnywhere(msg, pts);
   if (named) {
     const active = named.matches.filter((p) => p.active !== false);
     return { ids: (active.length ? active : named.matches).map((p) => p.id), via: "name", nameText: named.nameText };
   }
-  if (PRONOUN.test(msg) && st.lastPatientId) return { ids: [st.lastPatientId], via: "pronoun" };
+  // "him / her / this patient": the one we were just talking about, else the patient page that's open.
+  const pronounId = st.lastPatientId ?? (pageId && pts.some((p) => p.id === pageId) ? pageId : null);
+  if (PRONOUN.test(msg) && pronounId) return { ids: [pronounId], via: "pronoun" };
   return { ids: [], via: "none" };
 }
 
@@ -170,7 +172,7 @@ export function goatTurn(raw: string, st0: DialogState, ctx: DialogCtx): { reply
   }
 
   const cmd = detectCommand(raw);
-  const ref = patientRef(msg, st, pts);
+  const ref = patientRef(msg, st, pts, ctx.openPatientId);
   const one = ref.ids.length === 1 ? byId(ref.ids[0]) : null;
   const remember = (id: string | null, action: string) => ({ ...st, lastPatientId: id ?? st.lastPatientId, lastAction: action, lastCandidates: ref.ids.length > 1 ? ref.ids : st.lastCandidates });
 
@@ -192,7 +194,7 @@ export function goatTurn(raw: string, st0: DialogState, ctx: DialogCtx): { reply
       const to = matchRecipient(t.to, ctx.team);
       if (!to.length) return { reply: { kind: "ask", say: `I couldn't find a team member named "${t.to}".` }, state: st };
       const about = findNameAnywhere(t.text, pts);
-      const pid = about?.matches.length === 1 ? about.matches[0].id : PRONOUN.test(t.text) ? st.lastPatientId : null;
+      const pid = about?.matches.length === 1 ? about.matches[0].id : PRONOUN.test(t.text) ? st.lastPatientId ?? ctx.openPatientId : null;
       if (about && about.matches.length > 1) return { reply: { kind: "choose", say: "Which patient is this about?", patientIds: about.matches.map((p) => p.id) }, state: { ...st, lastCandidates: about.matches.map((p) => p.id), lastAction: raw } };
       return { reply: { kind: "messageConfirm", to: to[0].label, text: t.text, patientId: pid, say: `Send to ${to[0].label}: "${t.text}"${pid ? ` (about ${byId(pid)!.fullName})` : ""}?` }, state: remember(pid, raw) };
     }

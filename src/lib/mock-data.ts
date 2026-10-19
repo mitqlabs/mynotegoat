@@ -355,8 +355,11 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
   }
 
   const fallbackDate = new Date().toISOString().slice(0, 10);
-  const dateOfLoss = toIsoDate(value.dateOfLoss) || toIsoDate(value.dateOfInjury) || fallbackDate;
-  const lastUpdate = toIsoDate(value.lastUpdate) || toIsoDate(value.updatedAt) || dateOfLoss;
+  // A patient added before their case details (quick add from a text) saves
+  // dateOfLoss: "" on purpose; keep it blank rather than inventing today.
+  const blankDoiOnPurpose = value.dateOfLoss === "" && !cleanString(value.dateOfInjury);
+  const dateOfLoss = blankDoiOnPurpose ? "" : toIsoDate(value.dateOfLoss) || toIsoDate(value.dateOfInjury) || fallbackDate;
+  const lastUpdate = toIsoDate(value.lastUpdate) || toIsoDate(value.updatedAt) || dateOfLoss || fallbackDate;
   const id = cleanString(value.id) || cleanString(value.patientId) || `PT-IMP-${String(index + 1).padStart(4, "0")}`;
 
   return {
@@ -684,7 +687,9 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
   // Cash patients don't track a date-of-injury. Synthesize the created
   // date so downstream code that expects a non-empty dateOfLoss (case
   // number builder, follow-up queue, etc.) still behaves consistently.
-  const dateOfLoss = toIsoDate(draft.dateOfLoss) || getTodayIsoDate();
+  // A PI patient can be added before the case details are known (just name +
+  // phone from a text): the Date Of Injury stays blank until it's filled in.
+  const dateOfLoss = toIsoDate(draft.dateOfLoss) || (isCashPatient ? getTodayIsoDate() : "");
   const dob = toIsoDate(draft.dob);
   const matrix: Partial<Record<PatientMatrixField, string>> = {};
   const phone = cleanString(draft.phone) || "-";

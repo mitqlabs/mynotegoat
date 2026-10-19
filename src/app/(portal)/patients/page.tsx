@@ -672,6 +672,7 @@ export default function PatientsPage() {
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
+  const [showNewPatientCase, setShowNewPatientCase] = useState(false);
   const [newPatientMessage, setNewPatientMessage] = useState("");
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>({
     lastName: "",
@@ -728,6 +729,7 @@ export default function PatientsPage() {
     setNewPatientBookingIssue(null);
     setNewPatientAsk([]);
     resetNewPatientDraft();
+    setShowNewPatientCase(false);
     const office = loadOfficeSettings();
     setNewPatientDraft((c) => ({ ...c, locationId: c.locationId || (selectedLocationId && selectedLocationId !== NO_OFFICE_FILTER ? selectedLocationId : ""), evalProvider: office.doctorName?.trim() ?? "", evalLocation: office.officeName?.trim() ?? "" }));
     setShowNewPatientModal(true);
@@ -749,8 +751,6 @@ export default function PatientsPage() {
         dateOfLoss: d.dateOfInjury ?? c.dateOfLoss,
         isCashPatient: d.nonPi ?? c.isCashPatient,
         notes: d.note ?? c.notes,
-        evalDate: d.apptDate ? `${d.apptDate.slice(5, 7)}/${d.apptDate.slice(8, 10)}/${d.apptDate.slice(0, 4)}` : c.evalDate,
-        evalTime: d.apptTime ? to12hLabel(d.apptTime) : c.evalTime,
       }));
       setNewPatientAsk(pre.ask);
     }
@@ -787,10 +787,14 @@ export default function PatientsPage() {
       setNewPatientMessage("Patient first and last name are required.");
       return;
     }
-    // Cash patients don't track a date-of-injury — they walk in and pay
-    // at the desk. Skip the DOI requirement entirely in cash mode.
-    if (!newPatientDraft.isCashPatient && !newPatientDraft.dateOfLoss.trim()) {
-      setNewPatientMessage("Date Of Injury is required.");
+    // Only name + phone are required, so a patient can be added straight
+    // from a text and the case details (attorney, DOI, exam) filled later.
+    if (newPatientDraft.phone.replace(/\D/g, "").length < 10) {
+      setNewPatientMessage("Add the patient's phone number (10 digits).");
+      return;
+    }
+    if (newPatientDraft.dateOfLoss.trim() && !mdyToIso(newPatientDraft.dateOfLoss)) {
+      setNewPatientMessage("Date Of Injury must be MM/DD/YYYY (or leave it blank for now).");
       return;
     }
 
@@ -955,7 +959,8 @@ export default function PatientsPage() {
       for (const patient of patients) {
         const y =
           extractYearFromDateString(initialExamOf(patient, initialExamIndex)) ||
-          extractYearFromDateString(patient.dateOfLoss);
+          extractYearFromDateString(patient.dateOfLoss) ||
+          extractYearFromDateString(patient.lastUpdate ?? "");
         if (y) collected.add(y);
       }
       // Newest year first so the dropdown opens to recent years
@@ -1069,9 +1074,12 @@ export default function PatientsPage() {
       // Filter by INITIAL EXAM date (year + optional month range within
       // it), falling back to the date of injury — a patient taken in today
       // has no initial exam yet and must not drop out of this year's list.
+      // First real date of: initial exam, date of injury, or (added before any
+      // case details) the day they were added. -1 = no date, so skip it.
       const examYm =
-        extractYearMonthNumber(initialExamOf(patient, initialExamIndex)) ||
-        extractYearMonthNumber(patient.dateOfLoss);
+        [initialExamOf(patient, initialExamIndex), patient.dateOfLoss, patient.lastUpdate ?? ""]
+          .map(extractYearMonthNumber)
+          .find((n) => n > 0) ?? -1;
       const matchesYear =
         year === "ALL" ||
         (examYm > 0 && String(Math.floor(examYm / 100)) === year);
@@ -2759,105 +2767,76 @@ export default function PatientsPage() {
       {showNewPatientModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
-          <form className="panel-card mx-auto w-full max-w-6xl p-4 md:p-5" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-xl font-semibold">New Patient</h3>
-                  <p className="text-sm text-[var(--text-muted)]">
-                    Enter core patient details to create a new case file.
-                  </p>
-                </div>
-                <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
-                  onClick={closeNewPatientModal}
-                  type="button"
-                >
-                  Close
-                </button>
+          {/* Quick add: patient info only (from a text: name + phone is enough).
+              Case info (attorney, DOI, case #, initial exam) is added later on
+              the patient page; the first visit is booked from New Appointment. */}
+          <form className="panel-card mx-auto w-full max-w-3xl overflow-hidden p-0" data-testid="new-patient-modal" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
+              <div>
+                <h3 className="text-xl font-semibold">New Patient</h3>
+                <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. Add case info on their page later.</p>
               </div>
+              <button aria-label="Close" className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={closeNewPatientModal} type="button">
+                Close
+              </button>
+            </div>
 
+            <div className="space-y-5 px-5 py-4">
               {newPatientAsk.length > 0 && (
-                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
                   <p className="font-semibold">Filled in by G.O.A.T. — please check:</p>
                   <ul className="ml-4 list-disc">{newPatientAsk.map((q) => <li key={q}>{q}</li>)}</ul>
                 </div>
               )}
-              <label className="mt-4 flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2">
-                <input
-                  checked={newPatientDraft.isCashPatient}
-                  className="h-4 w-4"
-                  onChange={(event) =>
-                    setNewPatientDraft((current) => ({
-                      ...current,
-                      isCashPatient: event.target.checked,
-                    }))
-                  }
-                  type="checkbox"
-                />
-                <span>
-                  <span className="block text-sm font-semibold">Non-PI Patient</span>
-                  <span className="block text-xs text-[var(--text-muted)]">
-                    No attorney, no injury date, no case-number workflow. Just the essentials.
-                  </span>
-                </span>
-              </label>
 
-              {/* Taking in a new patient: name, who they are, how to reach
-                  them, where they live — then the attorney side. Email and
-                  the initial-exam date were dropped; they
-                  are set on the patient file once the case is open, and the
-                  lien, case status and "schedule the initial visit" step
-                  start themselves (see createNewPatient). */}
-              <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" data-row="new-patient-identity">
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Last Name *</span>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Patient</h4>
+                <div className="grid gap-3 sm:grid-cols-3" data-row="new-patient-identity">
+                <label className="grid min-w-0 gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Last Name *</span>
                   <input
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, lastName: event.target.value }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, lastName: event.target.value }))}
+                    placeholder=""
                     value={newPatientDraft.lastName}
                   />
                 </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Patient First Name *</span>
+                <label className="grid min-w-0 gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">First Name *</span>
                   <input
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, firstName: event.target.value }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, firstName: event.target.value }))}
+                    placeholder=""
                     value={newPatientDraft.firstName}
                   />
                 </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
+                <label className="grid min-w-0 gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Phone *</span>
+                  <input
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    inputMode="numeric"
+                    maxLength={12}
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, phone: formatUsPhoneInput(event.target.value) }))}
+                    placeholder="818-555-0123"
+                    value={newPatientDraft.phone}
+                  />
+                </label>
+                <label className="grid min-w-0 gap-1">
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">DOB</span>
                   <input
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     inputMode="numeric"
                     maxLength={10}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        dob: formatUsDateInput(event.target.value),
-                      }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, dob: formatUsDateInput(event.target.value) }))}
                     placeholder="MM/DD/YYYY"
                     value={newPatientDraft.dob}
                   />
                 </label>
-
-                <label className="grid gap-1">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
                   <select
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        sex: event.target.value as NewPatientDraft["sex"],
-                      }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, sex: event.target.value as NewPatientDraft["sex"] }))}
                     value={newPatientDraft.sex}
                   >
                     <option value="">—</option>
@@ -2865,18 +2844,12 @@ export default function PatientsPage() {
                     <option value="Female">Female</option>
                   </select>
                 </label>
-
-                <label className="grid gap-1">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
                   <select
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     data-field="marital-status"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        maritalStatus: event.target.value as NewPatientDraft["maritalStatus"],
-                      }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, maritalStatus: event.target.value as NewPatientDraft["maritalStatus"] }))}
                     value={newPatientDraft.maritalStatus}
                   >
                     <option value="">—</option>
@@ -2887,340 +2860,209 @@ export default function PatientsPage() {
                     ))}
                   </select>
                 </label>
+                </div>
+              </section>
 
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Phone Number</span>
-                  <input
-                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    inputMode="numeric"
-                    maxLength={12}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        phone: formatUsPhoneInput(event.target.value),
-                      }))
-                    }
-                    placeholder="818-555-0123"
-                    value={newPatientDraft.phone}
-                  />
-                </label>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1.2fr_0.6fr_0.8fr]">
-                <label className="grid gap-1">
+              <section>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Address</h4>
+                <div className="grid gap-3 sm:grid-cols-6" data-row="new-patient-address">
+                  <div className="sm:col-span-4">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Address 1</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, addressStreet: event.target.value }))
-                    }
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressStreet: event.target.value }))}
                     placeholder="Street address"
                     value={newPatientDraft.addressStreet}
                   />
                 </label>
-
-                <label className="grid gap-1">
+                  </div>
+                  <div className="sm:col-span-2">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Address 2</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, addressUnit: event.target.value }))
-                    }
-                    placeholder="Unit / Apt / Suite"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressUnit: event.target.value }))}
+                    placeholder="Unit / Apt"
                     value={newPatientDraft.addressUnit}
                   />
                 </label>
-
-                <label className="grid gap-1">
+                  </div>
+                  <div className="sm:col-span-3">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">City</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, addressCity: event.target.value }))
-                    }
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressCity: event.target.value }))}
                     placeholder="City"
                     value={newPatientDraft.addressCity}
                   />
                 </label>
-
-                <label className="grid gap-1">
+                  </div>
+                  <div className="sm:col-span-1">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">State</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 uppercase"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     maxLength={2}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        addressState: event.target.value.toUpperCase().replace(/[^A-Z]/g, ""),
-                      }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressState: event.target.value.toUpperCase().replace(/[^A-Z]/g, "") }))}
                     placeholder="CA"
                     value={newPatientDraft.addressState}
                   />
                 </label>
-
-                <label className="grid gap-1">
+                  </div>
+                  <div className="sm:col-span-2">
+                <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">ZIP</span>
                   <input
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     inputMode="numeric"
                     maxLength={10}
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({
-                        ...current,
-                        addressZip: event.target.value.replace(/[^\d-]/g, ""),
-                      }))
-                    }
+                    onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressZip: event.target.value.replace(/[^\d-]/g, "") }))}
                     placeholder="91205"
                     value={newPatientDraft.addressZip}
                   />
                 </label>
-              </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-3 sm:grid-cols-3">
+                <div className="grid content-start gap-3">
+                  {multiLocation && (
+                    <label className="grid min-w-0 gap-1">
+                      <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
+                      <select
+                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, locationId: event.target.value }))}
+                        value={newPatientDraft.locationId}
+                      >
+                        <option value="">Select location…</option>
+                        {locations.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {locationLabel(loc)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <label className="flex items-start gap-2 text-sm" title="Cash / self-pay: no attorney, injury date or case-number workflow">
+                    <input
+                      checked={newPatientDraft.isCashPatient}
+                      className="mt-0.5 h-4 w-4"
+                      onChange={(event) => setNewPatientDraft((current) => ({ ...current, isCashPatient: event.target.checked }))}
+                      type="checkbox"
+                    />
+                    <span>
+                      <span className="block font-semibold">Non-PI (cash) patient</span>
+                      <span className="block text-xs text-[var(--text-muted)]">No attorney or case info</span>
+                    </span>
+                  </label>
+                </div>
+              </section>
 
               {!newPatientDraft.isCashPatient && (
-                <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
-                  <h4 className="text-sm font-semibold">Attorney Information</h4>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                    <label className="grid min-w-0 gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-                      <input
-                        className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        list="new-patient-attorney-options"
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          const matchedAttorney = attorneyContacts.find(
-                            (contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value),
-                          );
-                          setNewPatientDraft((current) => ({
-                            ...current,
-                            attorney: value,
-                            attorneyPhone: matchedAttorney
-                              ? formatUsPhoneInput(matchedAttorney.phone)
-                              : value.trim()
-                                ? current.attorneyPhone
-                                : "",
-                          }));
-                        }}
-                        placeholder="Self"
-                        value={newPatientDraft.attorney}
-                      />
-                    </label>
-
-                    <label className="grid gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Phone Number</span>
-                      <input
-                        className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        inputMode="numeric"
-                        maxLength={12}
-                        onChange={(event) =>
-                          setNewPatientDraft((current) => ({
-                            ...current,
-                            attorneyPhone: formatUsPhoneInput(event.target.value),
-                          }))
-                        }
-                        placeholder="Fills in from Contacts"
-                        value={newPatientDraft.attorneyPhone}
-                      />
-                    </label>
-
-                    <label className="grid gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury *</span>
-                      <input
-                        className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        inputMode="numeric"
-                        maxLength={10}
-                        onChange={(event) =>
-                          setNewPatientDraft((current) => ({
-                            ...current,
-                            dateOfLoss: formatUsDateInput(event.target.value),
-                          }))
-                        }
-                        placeholder="MM/DD/YYYY"
-                        value={newPatientDraft.dateOfLoss}
-                      />
-                    </label>
-
-                    <label className="grid gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-                      <input
-                        className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
-                        placeholder="MMDDYYLASTFIRST"
-                        readOnly
-                        value={newPatientCaseNumberPreview}
-                      />
-                    </label>
-                    <label className="grid min-w-0 gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">{newPatientDraft.isCashPatient ? "First Visit" : "New Patient Evaluation"}</span>
-                      <input
-                        aria-label={newPatientDraft.isCashPatient ? "First visit date" : "New Patient Evaluation date"}
-                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        data-testid="new-patient-eval-date"
-                        inputMode="numeric"
-                        maxLength={10}
-                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
-                        placeholder="MM/DD/YYYY"
-                        value={newPatientDraft.evalDate}
-                      />
-                    </label>
-                    <label className="grid min-w-0 gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                      <input
-                        aria-label="Evaluation time"
-                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        data-testid="new-patient-eval-time"
-                        onBlur={() => {
-                          const iso = mdyToIso(newPatientDraft.evalDate);
-                          const t = iso ? intakeTime(newPatientDraft.evalTime, iso, globalScheduleSettings) : null;
-                          if (t) setNewPatientDraft((current) => ({ ...current, evalTime: to12hLabel(t.time) }));
-                        }}
-                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
-                        placeholder="3:00 PM"
-                        value={newPatientDraft.evalTime}
-                      />
-                    </label>
-                  </div>
-                  {(newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
-                    <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" data-row="new-patient-eval-details">
-                      <p className="self-end text-xs text-[var(--text-muted)] sm:col-span-2">
-                        Books a <span className="font-semibold">{newPatientVisitType(appointmentTypes)?.name ?? "New Patient"}</span> visit and sets the Initial Exam date. Time snaps to office hours.
-                      </p>
-                      <label className="grid min-w-0 gap-1">
-                        <span className="text-xs font-semibold text-[var(--text-muted)]">Provider</span>
-                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalProvider: event.target.value }))} value={newPatientDraft.evalProvider} />
-                      </label>
-                      <label className="grid min-w-0 gap-1">
-                        <span className="text-xs font-semibold text-[var(--text-muted)]">Location</span>
-                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalLocation: event.target.value }))} value={newPatientDraft.evalLocation} />
-                      </label>
-                    </div>
+                <section data-row="new-patient-case">
+                  {!showNewPatientCase && !newPatientDraft.attorney.trim() && !newPatientDraft.dateOfLoss.trim() ? (
+                    <button
+                      className="rounded-lg border border-dashed border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+                      data-testid="new-patient-add-case"
+                      onClick={() => setShowNewPatientCase(true)}
+                      type="button"
+                    >
+                      + Case
+                    </button>
+                  ) : (
+                    <>
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Case (optional)</h4>
+                        <button
+                          className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
+                          onClick={() => {
+                            setShowNewPatientCase(false);
+                            setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "" }));
+                          }}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            list="new-patient-attorney-options"
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value));
+                              setNewPatientDraft((current) => ({ ...current, attorney: value, attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : value.trim() ? current.attorneyPhone : "" }));
+                            }}
+                            placeholder="Law firm"
+                            value={newPatientDraft.attorney}
+                          />
+                        </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            inputMode="numeric"
+                            maxLength={12}
+                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, attorneyPhone: formatUsPhoneInput(event.target.value) }))}
+                            placeholder="From Contacts"
+                            value={newPatientDraft.attorneyPhone}
+                          />
+                        </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Date of Injury</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            inputMode="numeric"
+                            maxLength={10}
+                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, dateOfLoss: formatUsDateInput(event.target.value) }))}
+                            placeholder="MM/DD/YYYY"
+                            value={newPatientDraft.dateOfLoss}
+                          />
+                        </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
+                          <input
+                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.04em]"
+                            placeholder="From DOI + name"
+                            readOnly
+                            title="MMDDYY + first 2 letters of last and first name"
+                            value={newPatientCaseNumberPreview}
+                          />
+                        </label>
+                      </div>
+                      <datalist id="new-patient-attorney-options">
+                        {attorneyContacts.map((contact) => (
+                          <option key={contact.id} value={contact.name} />
+                        ))}
+                      </datalist>
+                    </>
                   )}
-                </div>
+                </section>
               )}
-
-              {newPatientDraft.isCashPatient && (
-                <div className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3" data-row="new-patient-first-visit">
-                  <h4 className="text-sm font-semibold">First Visit</h4>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <label className="grid min-w-0 gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">{newPatientDraft.isCashPatient ? "First Visit" : "New Patient Evaluation"}</span>
-                      <input
-                        aria-label={newPatientDraft.isCashPatient ? "First visit date" : "New Patient Evaluation date"}
-                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        data-testid="new-patient-eval-date"
-                        inputMode="numeric"
-                        maxLength={10}
-                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
-                        placeholder="MM/DD/YYYY"
-                        value={newPatientDraft.evalDate}
-                      />
-                    </label>
-                    <label className="grid min-w-0 gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                      <input
-                        aria-label="Evaluation time"
-                        className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                        data-testid="new-patient-eval-time"
-                        onBlur={() => {
-                          const iso = mdyToIso(newPatientDraft.evalDate);
-                          const t = iso ? intakeTime(newPatientDraft.evalTime, iso, globalScheduleSettings) : null;
-                          if (t) setNewPatientDraft((current) => ({ ...current, evalTime: to12hLabel(t.time) }));
-                        }}
-                        onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
-                        placeholder="3:00 PM"
-                        value={newPatientDraft.evalTime}
-                      />
-                    </label>
-                  </div>
-                  {(newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
-                    <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4" data-row="new-patient-eval-details">
-                      <p className="self-end text-xs text-[var(--text-muted)] sm:col-span-2">
-                        Books a <span className="font-semibold">{newPatientVisitType(appointmentTypes)?.name ?? "New Patient"}</span> visit and sets the Initial Exam date. Time snaps to office hours.
-                      </p>
-                      <label className="grid min-w-0 gap-1">
-                        <span className="text-xs font-semibold text-[var(--text-muted)]">Provider</span>
-                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalProvider: event.target.value }))} value={newPatientDraft.evalProvider} />
-                      </label>
-                      <label className="grid min-w-0 gap-1">
-                        <span className="text-xs font-semibold text-[var(--text-muted)]">Location</span>
-                        <input className="w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5" onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalLocation: event.target.value }))} value={newPatientDraft.evalLocation} />
-                      </label>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {multiLocation && (
-                <label className="mt-3 grid max-w-xs gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Location</span>
-                  <select
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(event) =>
-                      setNewPatientDraft((current) => ({ ...current, locationId: event.target.value }))
-                    }
-                    value={newPatientDraft.locationId}
-                  >
-                    <option value="">Select location…</option>
-                    {locations.map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {locationLabel(loc)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              <label className="mt-3 grid gap-1">
-                <span className="text-sm font-semibold text-[var(--text-muted)]">Notes</span>
-                <textarea
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) =>
-                    setNewPatientDraft((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                  placeholder={
-                    newPatientDraft.isCashPatient
-                      ? "Anything relevant — chief complaint, preferences, reminders."
-                      : "Optional notes about the patient."
-                  }
-                  rows={3}
-                  value={newPatientDraft.notes}
-                />
-              </label>
 
               {newPatientBookingIssue && (
-                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
                   {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
                   <Link className="text-[var(--brand-primary)] underline" href={`/patients/${newPatientBookingIssue.patientId}`}>Open patient</Link>
                 </div>
               )}
-              {newPatientMessage && (
-                <p className="mt-3 text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>
-              )}
+              {newPatientMessage && <p className="text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>}
+            </div>
 
-              <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-                <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-                  onClick={closeNewPatientModal}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
-                  type="submit"
-                >
-                  Create Patient
-                </button>
-              </div>
-
-              <datalist id="new-patient-attorney-options">
-                {attorneyContacts.map((contact) => (
-                  <option key={contact.id} value={contact.name} />
-                ))}
-              </datalist>
-            </form>
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--line-soft)] bg-[var(--bg-soft)] px-5 py-3">
+              <button className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold" onClick={closeNewPatientModal} type="button">
+                Cancel
+              </button>
+              <button className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white" type="submit">
+                Create Patient
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

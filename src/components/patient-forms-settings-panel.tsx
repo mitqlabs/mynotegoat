@@ -28,7 +28,12 @@ import {
   liveForms,
   macroNameKey,
   macroSection,
+  findMacroByName,
+  PATIENT_INFO_FIELDS,
   resolveForm,
+  type AnswerConnect,
+  type ConnectSection,
+  type PatientInfoField,
   type CustomQuestion,
   type CustomQuestionType,
   type FormIncludeWhen,
@@ -391,9 +396,9 @@ function SectionCard({
             value={s.titleEs ?? ""}
           />
           {custom ? (
-            <CustomQuestionsEditor patch={patch} section={s} />
+            <CustomQuestionsEditor macros={macros} patch={patch} section={s} />
           ) : macro ? (
-            <MacroQuestionsEditor macro={macro} patch={patch} section={s} />
+            <MacroQuestionsEditor macro={macro} macros={macros} patch={patch} section={s} />
           ) : (
             <p className="text-sm text-amber-800">No active Objective macro is named “{s.macroName}”. Pick one above.</p>
           )}
@@ -403,7 +408,7 @@ function SectionCard({
   );
 }
 
-function CustomQuestionsEditor({ section: s, patch }: { section: FormSection; patch: (fn: (s: FormSection) => FormSection) => void }) {
+function CustomQuestionsEditor({ section: s, macros, patch }: { section: FormSection; macros: MacroTemplate[]; patch: (fn: (s: FormSection) => FormSection) => void }) {
   const qs = s.customQuestions ?? [];
   const setQs = (fn: (list: CustomQuestion[]) => CustomQuestion[]) => patch((x) => ({ ...x, customQuestions: fn(x.customQuestions ?? []) }));
   const patchQ = (id: string, fn: (q: CustomQuestion) => CustomQuestion) => setQs((list) => list.map((q) => (q.id === id ? fn(q) : q)));
@@ -463,6 +468,9 @@ function CustomQuestionsEditor({ section: s, patch }: { section: FormSection; pa
               )}
               {choice && !(q.options ?? []).some((o) => o.trim()) && <p className="text-xs text-amber-800 md:col-span-2">Add at least one choice, or it won&apos;t be asked.</p>}
             </div>
+            <div className="pl-[52px]">
+              <ConnectPicker macros={macros} onChange={(c) => patchQ(q.id, (x) => ({ ...x, connect: c }))} value={q.connect} />
+            </div>
           </div>
         );
       })}
@@ -473,7 +481,7 @@ function CustomQuestionsEditor({ section: s, patch }: { section: FormSection; pa
   );
 }
 
-function MacroQuestionsEditor({ section: s, macro, patch }: { section: FormSection; macro: MacroTemplate; patch: (fn: (s: FormSection) => FormSection) => void }) {
+function MacroQuestionsEditor({ section: s, macro, macros, patch }: { section: FormSection; macro: MacroTemplate; macros: MacroTemplate[]; patch: (fn: (s: FormSection) => FormSection) => void }) {
   const patchQuestion = (qid: string, fn: (o: FormQuestionOverride) => FormQuestionOverride) =>
     patch((sec) => ({ ...sec, questions: { ...(sec.questions ?? {}), [qid]: fn(sec.questions?.[qid] ?? {}) } }));
   return (
@@ -535,11 +543,130 @@ function MacroQuestionsEditor({ section: s, macro, patch }: { section: FormSecti
                 {q.options.some(isStaffOnlyOption) && (
                   <p className="text-xs text-[var(--text-muted)] md:col-span-2">Not shown to patients: {q.options.filter(isStaffOnlyOption).join(" · ")} (blanks to fill / staff-only).</p>
                 )}
+                <div className="md:col-span-2">
+                  <ConnectPicker
+                    macros={macros}
+                    onChange={(c) => patchQuestion(q.id, (x) => ({ ...x, connect: c }))}
+                    own={{ macroName: macro.buttonName, questionLabel: q.label }}
+                    value={o.connect}
+                  />
+                </div>
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+type ConnectKind = "default" | "none" | ConnectSection | "patient";
+
+/**
+ * "Connect answer to": None (a plain "Question: answer" line) / Objective or
+ * Subjective → macro → that macro's field (and optionally one option it
+ * picks) / a patient-file field. Macro-section questions show their own
+ * macro field as the prefilled default.
+ */
+function ConnectPicker({
+  value,
+  onChange,
+  macros,
+  own,
+}: {
+  value: AnswerConnect | undefined;
+  onChange: (c: AnswerConnect | undefined) => void;
+  macros: MacroTemplate[];
+  /** Macro-section question: its default target. */
+  own?: { macroName: string; questionLabel: string };
+}) {
+  const kind: ConnectKind = !value ? (own ? "default" : "none") : value.to === "none" ? "none" : value.to === "patient" ? "patient" : value.section;
+  const bySection = (sec: ConnectSection) => macros.filter((m) => m.section === sec && m.active);
+  const macroC = value?.to === "macro" ? value : null;
+  const target = macroC ? findMacroByName(macroC.macroName, macros, macroC.section) : null;
+  const targetQ = target?.questions.find((q) => q.id === macroC?.questionId) ?? null;
+  const pickKind = (k: ConnectKind) => {
+    if (k === "default") return onChange(undefined);
+    if (k === "none") return onChange(own ? { to: "none" } : undefined);
+    if (k === "patient") return onChange({ to: "patient", field: "phone" });
+    const first = bySection(k)[0];
+    if (!first?.questions.length) return onChange({ to: "none" });
+    onChange({ to: "macro", section: k, macroName: first.buttonName, questionId: first.questions[0].id });
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="connect-picker">
+      <span className={`${label} w-36 shrink-0`}>Connect answer to</span>
+      <select aria-label="Connect answer to" className={`${field} w-40`} onChange={(e) => pickKind(e.target.value as ConnectKind)} value={kind}>
+        {own && <option value="default">This macro</option>}
+        <option value="none">None (text line)</option>
+        <option disabled={!bySection("objective").length} value="objective">Objective</option>
+        <option disabled={!bySection("subjective").length} value="subjective">Subjective</option>
+        <option value="patient">Patient info</option>
+      </select>
+      {kind === "default" && own && (
+        <span className={`${field} inline-flex w-auto max-w-full items-center truncate text-[var(--text-muted)]`} title="Fills this question in its own macro">
+          {own.macroName} → {own.questionLabel}
+        </span>
+      )}
+      {macroC && (
+        <>
+          <select
+            aria-label="Macro"
+            className={`${field} w-44`}
+            onChange={(e) => {
+              const m = bySection(macroC.section).find((x) => x.buttonName === e.target.value);
+              if (m?.questions.length) onChange({ to: "macro", section: macroC.section, macroName: m.buttonName, questionId: m.questions[0].id });
+            }}
+            value={target?.buttonName ?? macroC.macroName}
+          >
+            {!target && <option value={macroC.macroName}>⚠ {macroC.macroName} (not found)</option>}
+            {bySection(macroC.section).map((m) => (
+              <option key={m.id} value={m.buttonName}>
+                {m.buttonName}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Macro field"
+            className={`${field} w-44`}
+            onChange={(e) => onChange({ to: "macro", section: macroC.section, macroName: macroC.macroName, questionId: e.target.value })}
+            value={targetQ?.id ?? macroC.questionId}
+          >
+            {!targetQ && <option value={macroC.questionId}>⚠ field not found</option>}
+            {(target?.questions ?? []).map((q) => (
+              <option key={q.id} value={q.id}>
+                {q.label || q.id}
+              </option>
+            ))}
+          </select>
+          {targetQ && targetQ.options.length > 0 && (
+            <select
+              aria-label="Option it fills"
+              className={`${field} w-48`}
+              onChange={(e) => onChange({ ...macroC, option: e.target.value || undefined })}
+              title="Whole answer: the patient's words (matched to an option when they're the same). An option: a Yes / any answer picks exactly that option; No leaves it blank."
+              value={macroC.option ?? ""}
+            >
+              <option value="">Whole answer</option>
+              {targetQ.options.map((opt) => (
+                <option key={opt} value={opt}>
+                  Picks: {opt}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+      {value?.to === "patient" && (
+        <select aria-label="Patient field" className={`${field} w-40`} onChange={(e) => onChange({ to: "patient", field: e.target.value as PatientInfoField })} value={value.field}>
+          {PATIENT_INFO_FIELDS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      )}
+      {value?.to === "patient" && <span className="text-xs text-[var(--text-muted)]">Fills it only if blank</span>}
     </div>
   );
 }

@@ -701,19 +701,7 @@ export function NewAppointmentModal({
     isCashPatient: false,
   });
   const [quickNewPatientError, setQuickNewPatientError] = useState("");
-  const [quickAttorneyFocused, setQuickAttorneyFocused] = useState(false);
   const [contactGap, setContactGap] = useState<ContactGap | null>(null);
-
-  const attorneyContactOptions = useMemo(
-    () => contacts.filter((c) => c.category.toLowerCase() === "attorney"),
-    [contacts],
-  );
-  const quickAttorneyMatches = useMemo(() => {
-    const q = quickNewPatientDraft.attorney.trim().toLowerCase();
-    if (!q) return [];
-    if (attorneyContactOptions.some((c) => c.name.trim().toLowerCase() === q)) return [];
-    return attorneyContactOptions.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [attorneyContactOptions, quickNewPatientDraft.attorney]);
 
   const resetQuickNewPatientPanel = () => {
     setShowQuickNewPatient(false);
@@ -1011,6 +999,10 @@ export function NewAppointmentModal({
     const lastName = quickNewPatientDraft.lastName.trim();
     if (!firstName || !lastName) {
       setQuickNewPatientError("First and last name are required.");
+      return;
+    }
+    if (quickNewPatientDraft.phone.replace(/\D/g, "").length < 10) {
+      setQuickNewPatientError("Add the patient's phone number (10 digits).");
       return;
     }
     const isCash = quickNewPatientDraft.isCashPatient;
@@ -1539,7 +1531,7 @@ export function NewAppointmentModal({
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Phone</span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Phone *</span>
                   <input
                     className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
                     inputMode="numeric"
@@ -1554,57 +1546,7 @@ export function NewAppointmentModal({
                     value={quickNewPatientDraft.phone}
                   />
                 </label>
-                {!quickNewPatientDraft.isCashPatient && (
-                <label className="relative grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Attorney</span>
-                  <input
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                    onBlur={() =>
-                      window.setTimeout(() => setQuickAttorneyFocused(false), 120)
-                    }
-                    onChange={(e) =>
-                      setQuickNewPatientDraft((c) => ({ ...c, attorney: e.target.value }))
-                    }
-                    onFocus={() => setQuickAttorneyFocused(true)}
-                    placeholder="Search or type attorney"
-                    value={quickNewPatientDraft.attorney}
-                  />
-                  {quickAttorneyFocused && quickAttorneyMatches.length > 0 && (
-                    <ul className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-56 overflow-auto rounded-lg border border-[var(--line-soft)] bg-white shadow-[0_12px_24px_rgba(14,41,62,0.14)]">
-                      {quickAttorneyMatches.map((entry) => (
-                        <li key={entry.id}>
-                          <button
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-[rgba(13,121,191,0.08)]"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              setQuickNewPatientDraft((c) => ({ ...c, attorney: entry.name }));
-                              setQuickAttorneyFocused(false);
-                            }}
-                            type="button"
-                          >
-                            <span className="font-medium">{entry.name}</span>
-                            <span className="text-xs text-[var(--text-muted)]">
-                              {entry.phone || ""}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </label>
-                )}
-                {!quickNewPatientDraft.isCashPatient && (
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-muted)]">Date of Injury</span>
-                  <UsDateInput
-                    className="w-full rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                    onChange={(formatted) =>
-                      setQuickNewPatientDraft((c) => ({ ...c, dateOfLoss: formatted }))
-                    }
-                    value={quickNewPatientDraft.dateOfLoss}
-                  />
-                </label>
-                )}
+                {/* Attorney / Date of Injury: added later on the patient page (Case info). */}
               </div>
               <label className="mt-3 grid gap-1">
                 <span className="text-xs font-semibold text-[var(--text-muted)]">Note</span>

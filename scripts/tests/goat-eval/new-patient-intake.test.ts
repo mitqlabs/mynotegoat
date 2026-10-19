@@ -155,15 +155,15 @@ const pts = read("src/app/(portal)/patients/page.tsx");
 const goat = read("src/components/global-goat.tsx");
 const hb = read("src/lib/handbook-goat.ts") + read("src/lib/handbook-content.ts");
 check("schedule: Existing / New patient toggle", () => { assert.ok(sched.includes('data-testid="patient-mode-toggle"')); assert.ok(sched.includes('"New patient"')); assert.ok(!sched.includes("Create Patient")); assert.ok(!sched.includes("Quick New Patient")); });
-check("schedule: new patient fields grid", () => { for (const k of ["new-pt-${key}", "new-pt-attorney", "new-pt-doi", "new-pt-notes"]) assert.ok(sched.includes(k), k); assert.ok(/data-row="new-patient-fields"/.test(sched)); });
+check("schedule: new patient fields grid", () => { for (const k of ["new-pt-${key}", "new-pt-dob", "new-pt-notes"]) assert.ok(sched.includes(k), k); assert.ok(!sched.includes('data-testid="new-pt-attorney"') && !sched.includes('data-testid="new-pt-doi"'), "attorney / DOI go on the patient page (+ Case)"); assert.ok(/data-row="new-patient-fields"/.test(sched)); });
 check("schedule: one Save creates patient + visit (Initial Exam)", () => { assert.ok(/createPatientRecord\(\{[\s\S]{0,400}initialExam:/.test(sched)); assert.ok(sched.includes("newPatientVisitType(appointmentTypes)")); });
 check("schedule: checkboxes wrap instead of colliding", () => assert.ok(/flex flex-wrap items-center gap-x-6 gap-y-2" data-row="appointment-flags"/.test(sched)));
 check("schedule: offers to mark the to-do done", () => assert.ok(sched.includes('data-testid="done-task-offer"') && sched.includes("toggleTaskDone")));
 check("modal component: checkboxes wrap", () => assert.ok(read("src/components/new-appointment-modal.tsx").includes('data-row="appointment-flags"')));
-check("patients: evaluation fields", () => { assert.ok(pts.includes('data-testid="new-patient-eval-date"')); assert.ok(pts.includes('data-testid="new-patient-eval-time"')); assert.ok(pts.includes("addAppointments")); assert.ok(pts.includes("newPatientBookingIssue")); });
+check("patients: New Patient popup has no evaluation date/time (first visit is booked on the Schedule)", () => { assert.ok(!pts.includes('data-testid="new-patient-eval-date"')); assert.ok(!pts.includes('data-testid="new-patient-eval-time"')); assert.ok(pts.includes('data-testid="new-patient-add-case"')); });
 check("goat: plain intents routed before briefs", () => { const i = goat.indexOf("tryPlainIntent(question)) return;"); assert.ok(i > 0 && i < goat.indexOf("detectBrief(question)) {")); });
 check("goat: form buttons", () => assert.ok(goat.includes("data-goat-form") && goat.includes('formRouter.push("/appointments?new=1")') && goat.includes('formRouter.push("/patients?new=1")')));
-check("handbook: new flows", () => { for (const t of ["remind me to call armen barmen", "schedule new patient John Smith", "Existing patient Armen Barmen, or a new patient?", "New Patient Evaluation", "New patient"]) assert.ok(hb.includes(t), t); });
+check("handbook: new flows", () => { for (const t of ["remind me to call armen barmen", "schedule new patient John Smith", "Existing patient Armen Barmen, or a new patient?", "+ Case", "New patient"]) assert.ok(hb.includes(t), t); });
 
 console.log(`new-patient-intake: ${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

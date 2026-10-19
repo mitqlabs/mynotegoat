@@ -12,13 +12,59 @@
  * Mock/fictional data only in tests. Nothing here stores anything.
  */
 import type { MacroAnswerMap, MacroQuestion, MacroTemplate } from "@/lib/macro-templates";
+import { normalizeMaritalStatus } from "@/lib/marital-status";
 
 export const PATIENT_FORMS_STORAGE_KEY = "casemate.patient-forms.v1";
 
 /** When a section is part of the form. */
 export type FormIncludeWhen = "always" | "decompression" | "notDecompression";
 
+/** Patient-file fields a form answer can fill (only ever fills a BLANK field). */
+export type PatientInfoField = "phone" | "email" | "address" | "dob" | "sex" | "maritalStatus";
+export const PATIENT_INFO_FIELDS: Array<{ value: PatientInfoField; label: string }> = [
+  { value: "phone", label: "Phone" },
+  { value: "email", label: "Email" },
+  { value: "address", label: "Address" },
+  { value: "dob", label: "DOB" },
+  { value: "sex", label: "Sex" },
+  { value: "maritalStatus", label: "Marital Status" },
+];
+const PATIENT_FIELD_SET = new Set<PatientInfoField>(PATIENT_INFO_FIELDS.map((f) => f.value));
+
+export type ConnectSection = "objective" | "subjective";
+
+/**
+ * "Connect answer to": where a question's answer lands on Insert.
+ *   none      → a plain "Question: answer" line in Objective
+ *   macro     → one field (question) of one of the practice's own macros; with
+ *               `option`, a Yes / any answer picks exactly that option
+ *   patient   → a patient-file field (filled only when that field is blank)
+ * Macro-section questions without a connection fill their own macro (as before).
+ */
+export type AnswerConnect =
+  | { to: "none" }
+  | { to: "macro"; section: ConnectSection; macroName: string; questionId: string; option?: string }
+  | { to: "patient"; field: PatientInfoField };
+
+export function normalizeConnect(v: unknown): AnswerConnect | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const r = v as Record<string, unknown>;
+  if (r.to === "none") return { to: "none" };
+  if (r.to === "patient") return PATIENT_FIELD_SET.has(r.field as PatientInfoField) ? { to: "patient", field: r.field as PatientInfoField } : undefined;
+  if (r.to === "macro") {
+    const macroName = str(r.macroName, 200).trim();
+    const questionId = str(r.questionId, 200).trim();
+    if (!macroName || !questionId) return undefined;
+    const c: AnswerConnect = { to: "macro", section: r.section === "subjective" ? "subjective" : "objective", macroName, questionId };
+    if (str(r.option, 500).trim()) c.option = str(r.option, 500);
+    return c;
+  }
+  return undefined;
+}
+
 export interface FormQuestionOverride {
+  /** Send this answer somewhere other than its own macro (Connect answer to). */
+  connect?: AnswerConnect;
   /** Hide this question from patients. */
   hidden?: boolean;
   /** Patient-facing wording (English). Empty = the macro's own label. */
@@ -50,6 +96,8 @@ export interface CustomQuestion {
   options?: string[];
   /** Off = kept in the form but not asked. */
   enabled: boolean;
+  /** Connect answer to (missing = a plain "Question: answer" line). */
+  connect?: AnswerConnect;
 }
 
 /** "macro" = one of the practice's Objective macros; "custom" = the practice's own questions. */
@@ -148,6 +196,8 @@ function normalizeOverride(v: unknown): FormQuestionOverride | null {
   const r = v as Record<string, unknown>;
   const o: FormQuestionOverride = {};
   if (r.hidden === true) o.hidden = true;
+  const c = normalizeConnect(r.connect);
+  if (c) o.connect = c;
   if (str(r.label).trim()) o.label = str(r.label, 500);
   if (str(r.labelEs).trim()) o.labelEs = str(r.labelEs, 500);
   const ol = strMap(r.optionLabels);
@@ -167,6 +217,8 @@ function normalizeCustomQuestion(v: unknown): CustomQuestion | null {
   const type = CUSTOM_TYPES.has(r.type as CustomQuestionType) ? (r.type as CustomQuestionType) : "short";
   const q: CustomQuestion = { id, label: str(r.label, 500), type, enabled: r.enabled !== false };
   if (str(r.labelEs).trim()) q.labelEs = str(r.labelEs, 500);
+  const c = normalizeConnect(r.connect);
+  if (c && c.to !== "none") q.connect = c;
   if (type === "single" || type === "multi") {
     q.options = Array.isArray(r.options)
       ? r.options.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 500)).slice(0, FORM_LIMITS.options)
@@ -255,6 +307,13 @@ export function macroNameKey(name: string): string {
     .join(" ");
 }
 
+/** An active macro of one SOAP section, by button name (loose match). */
+export function findMacroByName(name: string, macros: MacroTemplate[], section: ConnectSection = "objective"): MacroTemplate | null {
+  const key = macroNameKey(name);
+  if (!key) return null;
+  return macros.find((m) => m.section === section && m.active && macroNameKey(m.buttonName) === key) ?? null;
+}
+
 /** The active Objective macro a section points at (exact key match). */
 export function findSectionMacro(section: Pick<FormSection, "macroName"> & { kind?: FormSectionKind }, macros: MacroTemplate[]): MacroTemplate | null {
   if (section.kind === "custom") return null;
@@ -324,8 +383,34 @@ export interface SnapshotQuestion {
   dateInput?: boolean;
   /** Text questions: the box to show. Missing = one-line answer. */
   input?: SnapshotInput;
+  /** Resolved "Connect answer to" (missing = default: own macro, or a plain line for custom questions). */
+  connect?: SnapshotConnect;
   /** Same question in another included section (asked once, fills both). */
   alsoFills?: Array<{ sectionId: string; macroQuestionId: string }>;
+}
+
+export type SnapshotConnect =
+  | { to: "none" }
+  | { to: "macro"; section: ConnectSection; macroId: string; macroName: string; questionId: string; option?: string; multi?: boolean; options?: string[] }
+  | { to: "patient"; field: PatientInfoField };
+
+/** Builder connection → frozen target (null = its macro / field isn't in the library any more). */
+export function resolveConnect(c: AnswerConnect, macros: MacroTemplate[]): SnapshotConnect | null {
+  if (c.to !== "macro") return { ...c };
+  const macro = findMacroByName(c.macroName, macros, c.section);
+  const q = macro?.questions.find((x) => x.id === c.questionId);
+  if (!macro || !q) return null;
+  if (c.option && !(q.options ?? []).includes(c.option)) return null;
+  return {
+    to: "macro",
+    section: c.section,
+    macroId: macro.id,
+    macroName: macro.buttonName,
+    questionId: q.id,
+    ...(c.option ? { option: c.option } : {}),
+    ...(q.multiSelect ? { multi: true } : {}),
+    ...(q.options?.length ? { options: [...q.options] } : {}),
+  };
 }
 
 export interface SnapshotSection {
@@ -376,12 +461,18 @@ const YES_NO: SnapshotOption[] = [
   { value: "No", label: "No", labelEs: "No" },
 ];
 
-function resolveCustomQuestions(section: FormSection): SnapshotQuestion[] {
+function resolveCustomQuestions(section: FormSection, macros: MacroTemplate[], missing: string[]): SnapshotQuestion[] {
   const out: SnapshotQuestion[] = [];
   for (const q of section.customQuestions ?? []) {
     const label = q.label.trim();
     if (!q.enabled || !label) continue;
-    const base = { key: `${section.id}.${q.id}`, macroQuestionId: q.id, label, ...(q.labelEs?.trim() ? { labelEs: q.labelEs.trim() } : {}) };
+    let connect: SnapshotConnect | undefined;
+    if (q.connect && q.connect.to !== "none") {
+      const rc = resolveConnect(q.connect, macros);
+      if (rc) connect = rc;
+      else if (q.connect.to === "macro") missing.push(`${q.connect.macroName} (for "${label}")`);
+    }
+    const base = { key: `${section.id}.${q.id}`, macroQuestionId: q.id, label, ...(q.labelEs?.trim() ? { labelEs: q.labelEs.trim() } : {}), ...(connect ? { connect } : {}) };
     if (q.type === "yesno") {
       out.push({ ...base, kind: "single", options: YES_NO.map((o) => ({ ...o })), allowOther: false });
     } else if (q.type === "single" || q.type === "multi") {
@@ -404,7 +495,7 @@ export function resolveForm(form: FormTemplate, macros: MacroTemplate[], ctx: { 
   for (const section of form.sections) {
     if (!sectionIncluded(section, ctx.decompression)) continue;
     if (isCustomSection(section)) {
-      const questions = resolveCustomQuestions(section);
+      const questions = resolveCustomQuestions(section, macros, missing);
       if (!questions.length) continue;
       const out: SnapshotSection = { id: section.id, macroId: "", macroName: "", title: section.title.trim() || "More questions", custom: true, questions };
       if (section.titleEs?.trim()) out.titleEs = section.titleEs.trim();
@@ -419,13 +510,19 @@ export function resolveForm(form: FormTemplate, macros: MacroTemplate[], ctx: { 
     const questions: SnapshotQuestion[] = [];
     for (const q of macro.questions) {
       if (!questionPicked(section, q)) continue;
+      const o = section.questions?.[q.id] ?? {};
+      let connect: SnapshotConnect | undefined;
+      if (o.connect) {
+        const rc = resolveConnect(o.connect, macros);
+        if (rc) connect = rc;
+        else if (o.connect.to === "macro") missing.push(`${o.connect.macroName} (for "${o.label?.trim() || q.label}")`);
+      }
       const dupKey = `${q.id}::${optionSetKey(q)}::${q.multiSelect ? "m" : "s"}`;
-      const prior = asked.get(dupKey);
+      const prior = connect ? undefined : asked.get(dupKey);
       if (prior) {
         prior.alsoFills = [...(prior.alsoFills ?? []), { sectionId: section.id, macroQuestionId: q.id }];
         continue;
       }
-      const o = section.questions?.[q.id] ?? {};
       const visible = (q.options ?? []).filter((opt) => !isStaffOnlyOption(opt));
       const kind: SnapshotKind = visible.length === 0 ? "text" : q.multiSelect ? "multi" : "single";
       const sq: SnapshotQuestion = {
@@ -443,7 +540,8 @@ export function resolveForm(form: FormTemplate, macros: MacroTemplate[], ctx: { 
       };
       if (o.labelEs?.trim()) sq.labelEs = o.labelEs.trim();
       if (q.dateInput) sq.dateInput = true;
-      asked.set(dupKey, sq);
+      if (connect) sq.connect = connect;
+      else asked.set(dupKey, sq);
       questions.push(sq);
     }
     const out: SnapshotSection = { id: section.id, macroId: macro.id, macroName: macro.buttonName, title: section.title.trim() || macro.buttonName, questions };
@@ -565,6 +663,7 @@ export function validateSnapshot(raw: unknown): FormSnapshot | null {
         ...(qr.dateInput === true ? { dateInput: true } : {}),
         ...(qr.input === "long" || qr.input === "number" || qr.input === "short" ? { input: qr.input as SnapshotInput } : {}),
         ...(alsoFills.length ? { alsoFills } : {}),
+        ...(validConnect(qr.connect) ? { connect: validConnect(qr.connect)! } : {}),
       });
     }
     sections.push({
@@ -588,6 +687,28 @@ export function validateSnapshot(raw: unknown): FormSnapshot | null {
   };
 }
 
+function validConnect(v: unknown): SnapshotConnect | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  if (r.to === "none") return { to: "none" };
+  if (r.to === "patient") return PATIENT_FIELD_SET.has(r.field as PatientInfoField) ? { to: "patient", field: r.field as PatientInfoField } : null;
+  if (r.to !== "macro") return null;
+  const macroId = clip(r.macroId, 200);
+  const questionId = clip(r.questionId, 200);
+  if (!macroId || !questionId) return null;
+  const options = Array.isArray(r.options) ? r.options.filter((x): x is string => typeof x === "string").map((x) => clip(x, FORM_LIMITS.labelChars)).slice(0, FORM_LIMITS.options) : [];
+  return {
+    to: "macro",
+    section: r.section === "subjective" ? "subjective" : "objective",
+    macroId,
+    macroName: clip(r.macroName, 200),
+    questionId,
+    ...(clip(r.option, FORM_LIMITS.labelChars) ? { option: clip(r.option, FORM_LIMITS.labelChars) } : {}),
+    ...(r.multi === true ? { multi: true } : {}),
+    ...(options.length ? { options } : {}),
+  };
+}
+
 /** The patient's answer as one macro value (string or option list), or null if blank. */
 function toMacroValue(q: SnapshotQuestion, a: PatientAnswer | undefined): string | string[] | null {
   if (!a) return null;
@@ -606,26 +727,134 @@ export interface MacroFill {
   sectionId: string;
   macroId: string;
   macroName: string;
+  /** SOAP section the macro renders into (missing = objective). */
+  section?: ConnectSection;
   answers: MacroAnswerMap;
 }
 
-/** Patient answers → one macro fill per section that has any answer. */
+const isNo = (v: string) => /^(no|none|n\/a|na|nope)$/i.test(v.trim());
+
+/** One answer → the value for a connected macro field. null = nothing to fill. */
+function connectedValue(c: Extract<SnapshotConnect, { to: "macro" }>, v: string | string[]): string | string[] | null {
+  const list = (Array.isArray(v) ? v : [v]).map((x) => x.trim()).filter(Boolean);
+  if (!list.length) return null;
+  if (c.option) {
+    // "Fills this option": a Yes / any answer picks it; a No leaves it blank.
+    if (list.every(isNo)) return null;
+    return c.multi ? [c.option] : c.option;
+  }
+  // Same wording as one of the field's options → the exact option text.
+  const opts = c.options ?? [];
+  const mapped = list.map((x) => opts.find((o) => normLabel(o) === normLabel(x)) ?? x);
+  return c.multi ? mapped : mapped.join(", ");
+}
+
+/** Patient answers → one macro fill per macro that receives any answer (own macro or connected). */
 export function answersToMacroFills(snapshot: FormSnapshot, answers: PatientAnswers): MacroFill[] {
-  const bySection = new Map<string, MacroFill>();
+  const fills = new Map<string, MacroFill>();
+  const fillFor = (key: string, init: () => MacroFill) => {
+    let f = fills.get(key);
+    if (!f) fills.set(key, (f = init()));
+    return f;
+  };
   const macroSections = snapshot.sections.filter((s) => !s.custom);
-  for (const s of macroSections) bySection.set(s.id, { sectionId: s.id, macroId: s.macroId, macroName: s.macroName, answers: {} });
-  for (const s of macroSections) {
+  // Keep section order first (unchanged behavior), connected targets after.
+  for (const s of macroSections) fillFor(s.id, () => ({ sectionId: s.id, macroId: s.macroId, macroName: s.macroName, answers: {} }));
+  for (const s of snapshot.sections) {
     for (const q of s.questions) {
       const v = toMacroValue(q, answers[q.key]);
       if (v === null) continue;
-      bySection.get(s.id)!.answers[q.macroQuestionId] = v;
+      const c = q.connect;
+      if (c) {
+        if (c.to !== "macro") continue; // patient field / plain line
+        const cv = connectedValue(c, v);
+        if (cv === null) continue;
+        const own = macroSections.find((m) => m.macroId === c.macroId && (c.section ?? "objective") === "objective");
+        const target = own
+          ? fills.get(own.id)!
+          : fillFor(`connect:${c.section}:${c.macroId}`, () => ({ sectionId: `connect:${c.macroId}`, macroId: c.macroId, macroName: c.macroName, ...(c.section === "subjective" ? { section: "subjective" as const } : {}), answers: {} }));
+        const prev = target.answers[c.questionId];
+        if (Array.isArray(prev) && Array.isArray(cv)) target.answers[c.questionId] = [...new Set([...prev, ...cv])];
+        else if (typeof prev === "string" && prev && typeof cv === "string" && !c.option) target.answers[c.questionId] = `${prev}, ${cv}`;
+        else target.answers[c.questionId] = cv;
+        continue;
+      }
+      if (s.custom) continue;
+      fills.get(s.id)!.answers[q.macroQuestionId] = v;
       for (const extra of q.alsoFills ?? []) {
-        const target = bySection.get(extra.sectionId);
+        const target = fills.get(extra.sectionId);
         if (target) target.answers[extra.macroQuestionId] = v;
       }
     }
   }
-  return [...bySection.values()].filter((f) => Object.keys(f.answers).length > 0);
+  return [...fills.values()].filter((f) => Object.keys(f.answers).length > 0);
+}
+
+/** Answers connected to patient-file fields (field → text). The caller fills only blank fields. */
+export function answersToPatientInfo(snapshot: FormSnapshot, answers: PatientAnswers): Partial<Record<PatientInfoField, string>> {
+  const out: Partial<Record<PatientInfoField, string>> = {};
+  for (const s of snapshot.sections)
+    for (const q of s.questions) {
+      if (q.connect?.to !== "patient") continue;
+      const v = toMacroValue(q, answers[q.key]);
+      if (v === null) continue;
+      const text = (Array.isArray(v) ? v.join(", ") : v).trim();
+      if (text && !out[q.connect.field]) out[q.connect.field] = text.slice(0, 300);
+    }
+  return out;
+}
+
+export interface PatientInfoLike {
+  phone?: string;
+  email?: string;
+  address?: string;
+  dob?: string;
+  sex?: string;
+  maritalStatus?: string;
+}
+
+const blankish = (v: string | undefined) => !v || !v.trim() || /^[-–—†]+$/.test(v.trim());
+
+/** "01/26/1990", "1-26-1990", "1990-01-26" → "1990-01-26"; anything else → "". */
+export function formDateToIso(v: string): string {
+  const t = v.trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+  if (!m) return "";
+  const y = m[3].length === 2 ? (Number(m[3]) > 30 ? `19${m[3]}` : `20${m[3]}`) : m[3];
+  const mo = Number(m[1]);
+  const d = Number(m[2]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Connected patient-info answers → a patch that fills ONLY blank fields
+ * (never overwrites what staff already have). `skipped` lists answers that
+ * differ from a value already on file, or couldn't be read (shown to staff).
+ */
+export function patientInfoPatch(
+  patient: PatientInfoLike,
+  info: Partial<Record<PatientInfoField, string>>,
+): { patch: Partial<Record<PatientInfoField, string>>; skipped: PatientInfoField[] } {
+  const patch: Partial<Record<PatientInfoField, string>> = {};
+  const skipped: PatientInfoField[] = [];
+  for (const f of PATIENT_INFO_FIELDS) {
+    const raw = info[f.value]?.trim();
+    if (!raw) continue;
+    let value = raw;
+    if (f.value === "dob") value = formDateToIso(raw);
+    if (f.value === "sex") value = /^(m|male|man|masculino|hombre)$/i.test(raw) ? "Male" : /^(f|female|woman|femenino|mujer)$/i.test(raw) ? "Female" : "";
+    if (f.value === "maritalStatus") value = normalizeMaritalStatus(raw) ?? "";
+    if (!value) {
+      skipped.push(f.value);
+      continue;
+    }
+    if (blankish(patient[f.value])) patch[f.value] = value;
+    else if (patient[f.value]!.trim().toLowerCase() !== value.toLowerCase()) skipped.push(f.value);
+  }
+  return { patch, skipped };
 }
 
 const escapeHtml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -637,9 +866,11 @@ const escapeHtml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 export function customAnswersHtml(snapshot: FormSnapshot, answers: PatientAnswers): string {
   const blocks: string[] = [];
   for (const s of snapshot.sections) {
-    if (!s.custom) continue;
     const lines: string[] = [];
     for (const q of s.questions) {
+      // Plain lines: custom questions with no connection, or any question set to "None".
+      const plain = q.connect ? q.connect.to === "none" : Boolean(s.custom);
+      if (!plain) continue;
       const v = toMacroValue(q, answers[q.key]);
       if (v === null) continue;
       const text = Array.isArray(v) ? v.join(", ") : v;

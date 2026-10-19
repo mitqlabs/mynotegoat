@@ -211,3 +211,30 @@ export function scheduleCaseLabel(dateOfLossIso: string, fullName: string): stri
   const two = (x: string) => x.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
   return `${m[2]}${m[3]}${m[1].slice(-2)}${two(last)}${two(first)}`;
 }
+
+/**
+ * One provider and one location in this workspace (Office Settings holds a
+ * single doctor and office name) → fill them into a new appointment / visit
+ * so nobody has to pick. Never overwrites a value already there.
+ */
+export function officeDefaultsForDraft<T extends { provider: string; location: string }>(d: T, office: { doctorName?: string; officeName?: string }): T {
+  return {
+    ...d,
+    provider: d.provider.trim() || (office.doctorName ?? "").trim(),
+    location: d.location.trim() || (office.officeName ?? "").trim(),
+  };
+}
+
+/** G.O.A.T.'s new-patient prefill → the New Appointment new-patient fields (blank keys ignored, phone formatted). */
+export function newPtFromPrefill<T extends Record<string, string>>(empty: T, pre: Partial<Record<keyof T, string | undefined>> | undefined): T {
+  const out = { ...empty };
+  for (const k of Object.keys(empty) as Array<keyof T>) {
+    const v = pre?.[k];
+    if (typeof v === "string" && v.trim()) out[k] = v.trim() as T[keyof T];
+  }
+  if ("phone" in out && out.phone) {
+    const d = String(out.phone).replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+    if (d.length === 10) (out as Record<string, string>).phone = `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return out;
+}
