@@ -635,6 +635,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "The Subjective / Objective / Assessment / Plan tabs sit BELOW the macro buttons, above the note box.",
           "Type straight into the box, use macros, or mix both.",
+          "In Plan, one-paragraph macros run together: tap Begin Decompression, then a second-region macro, and the second text follows on the same paragraph after one space.",
           "Copy From pulls a previous visit's section across when today is much the same.",
         ],
       },
