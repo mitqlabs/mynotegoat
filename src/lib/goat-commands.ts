@@ -343,16 +343,12 @@ export function detectCommand(raw: string): CommandKind | null {
 export function clarifyForPatient(patientName: string, leftover: string): { text: string; options: Array<{ label: string; question: string }> } {
   const note = leftover.trim();
   const options = [
-    ...(note ? [{ label: "Yes, add it", question: `add a note for ${patientName}: ${note}` }] : [
-      { label: "Add a note", question: `add a note for ${patientName}` },
-      { label: "Check the bill", question: `what is ${patientName}'s balance` },
-      { label: "Book a visit", question: `book ${patientName}` },
-    ]),
+    ...(note ? [{ label: "Yes, add it", question: `add a note for ${patientName}: ${note}` }] : []),
   ];
   return {
     text: note
       ? `Want me to add "${note}" as a note for ${patientName}?`
-      : `Sure — what do you need for ${patientName}? I can add a note, check the bill, or book a visit.`,
+      : `Sure — what do you need for ${patientName.split(/\s+/)[0]}?`,
     options,
   };
 }

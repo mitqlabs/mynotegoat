@@ -66,20 +66,20 @@ export function nudges(data: BriefData, people: AssistantPatient[], max = 3): Nu
   const overdue = data.tasks.filter((t) => !t.done && t.dueDate && t.dueDate < data.today);
   if (overdue.length) {
     const t = overdue.sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
-    out.push({ id: `todo-overdue-${overdue.length}`, text: overdue.length === 1 ? `"${t.title}" is overdue.` : `${overdue.length} to-dos are overdue — the oldest is "${t.title}".`, href: "/patients?view=toDo" });
+    out.push({ id: `todo-overdue-${overdue.length}-${t.title.slice(0, 24)}`, text: overdue.length === 1 ? `"${t.title}" is overdue.` : `${overdue.length} to-dos are overdue — the oldest is "${t.title}".`, href: "/patients?view=toDo" });
   }
   const noIe = active.filter((p) => !(p.firstVisit ?? "").trim());
   if (noIe.length) {
-    out.push({ id: `no-ie-${noIe.length}`, text: noIe.length === 1 ? `${firstName(noIe[0].fullName)} doesn't have an Initial Exam date yet.` : `${noIe.length} active cases don't have an Initial Exam date yet (like ${firstName(noIe[0].fullName)}).`, href: `/patients/${noIe[0].id}` });
+    out.push({ id: `no-ie-${noIe.length}-${noIe[0].id}`, text: noIe.length === 1 ? `${firstName(noIe[0].fullName)} doesn't have an Initial Exam date yet.` : `${noIe.length} active cases don't have an Initial Exam date yet (like ${firstName(noIe[0].fullName)}).`, href: `/patients/${noIe[0].id}` });
   }
   const noAtty = active.filter((p) => !p.cash && !/\S/.test((p.attorney ?? "").replace(/^self$/i, "")));
   if (noAtty.length) {
-    out.push({ id: `no-atty-${noAtty.length}`, text: noAtty.length === 1 ? `${firstName(noAtty[0].fullName)}'s case has no attorney on file.` : `${noAtty.length} PI cases have no attorney on file (like ${firstName(noAtty[0].fullName)}).`, href: `/patients/${noAtty[0].id}` });
+    out.push({ id: `no-atty-${noAtty.length}-${noAtty[0].id}`, text: noAtty.length === 1 ? `${firstName(noAtty[0].fullName)}'s case has no attorney on file.` : `${noAtty.length} PI cases have no attorney on file (like ${firstName(noAtty[0].fullName)}).`, href: `/patients/${noAtty[0].id}` });
   }
   const booked = new Set(data.appointments.filter((a) => a.date >= data.today && live(a.status)).map((a) => a.patientId));
   const unbooked = active.filter((p) => !booked.has(p.id) && (p.firstVisit ?? "").trim());
   if (unbooked.length) {
-    out.push({ id: `unbooked-${unbooked.length}`, text: unbooked.length === 1 ? `${firstName(unbooked[0].fullName)} is active but has nothing booked.` : `${unbooked.length} active patients have nothing booked (like ${firstName(unbooked[0].fullName)}).`, href: `/patients/${unbooked[0].id}` });
+    out.push({ id: `unbooked-${unbooked.length}-${unbooked[0].id}`, text: unbooked.length === 1 ? `${firstName(unbooked[0].fullName)} is active but has nothing booked.` : `${unbooked.length} active patients have nothing booked (like ${firstName(unbooked[0].fullName)}).`, href: `/patients/${unbooked[0].id}` });
   }
   return out.slice(0, max);
 }
@@ -137,6 +137,9 @@ export function splitSteps(text: string): string[] {
 export function carryPatient(step: string, fullName: string): string {
   const name = fullName.includes(",") ? `${firstName(fullName)} ${fullName.split(",")[0].trim()}` : fullName;
   if (step.toLowerCase().includes(name.toLowerCase())) return step;
+  // "call her back" / "text her tomorrow" → her is the person, not "her lawyer".
+  const objectHer = /\bher\b(?=\s*(?:$|[,.!?]|\b(?:back|up|about|at|on|in|to|re|and|today|tomorrow|tonight|this|next|monday|tuesday|wednesday|thursday|friday|saturday|sunday|before|after|when|if)\b))/i;
+  if (objectHer.test(step)) return step.replace(objectHer, name);
   if (/\b(his|her|their)\b/i.test(step)) return step.replace(/\b(his|her|their)\b/i, `${name}'s`);
   if (/\b(him|them)\b/i.test(step)) return step.replace(/\b(him|them)\b/i, name);
   return step;

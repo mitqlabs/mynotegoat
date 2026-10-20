@@ -60,3 +60,36 @@ assert.equal(carryPatient("tell Greg to call him", "Smith, John"), "tell Greg to
 assert.equal(firstName("Smith, John A"), "John");
 assert.equal(cardDate("2026-10-22"), "Thu, 10/22/2026");
 console.log("goat-assistant ok");
+
+// ── Pass 2: memory, hidden heads-ups, natural clarify ──
+import { mergeDismissed, recallLine } from "../../src/lib/goat-recall";
+import { clarifyIntent } from "../../src/lib/goat-schedule-query";
+import { NOT_CAUGHT } from "../../src/lib/goat-memory";
+{
+  const now = Date.parse("2026-10-20T12:00:00Z");
+  const m = mergeDismissed({ a: "2026-10-19T00:00:00Z", old: "2026-08-01T00:00:00Z" }, { b: "2026-10-20T00:00:00Z", a: "2026-10-18T00:00:00Z" }, now);
+  assert.deepEqual(Object.keys(m).sort(), ["a", "b"]);
+  assert.equal(m.a, "2026-10-19T00:00:00Z");
+  assert.match(recallLine({ patientId: "P1", patientName: "Smith, John", action: "visit booking", at: "2026-10-19T00:00:00Z" }, now) ?? "", /John's visit booking/);
+  assert.equal(recallLine({ patientId: "P1", patientName: "John Smith", action: "file", at: "2026-09-01T00:00:00Z" }, now), null);
+  for (const q of ["blah blah", "what about the mri", "appointments?", "contact"]) {
+    const c = clarifyIntent(q, { name: "John" });
+    assert.equal(c.choices.length, 0, q);
+    assert.ok(c.text.split(/[?]/).length <= 3 && c.text.length < 90, c.text);
+  }
+  assert.match(clarifyIntent("what about the mri", { name: "John" }).text, /John/);
+  assert.ok(!/I can add notes/.test(NOT_CAUGHT));
+  // No-Initial-Exam heads-up uses the real field (matrix.initialExam → firstVisit) and only active cases.
+  const data = { today: "2026-10-20", appointments: [], tasks: [], patients: [] } as unknown as Parameters<typeof nudges>[0];
+  const ns = nudges(data, [
+    { id: "A", fullName: "Smith, John", caseStatus: "Active", attorney: "Mock Law", firstVisit: "09/05/2026" },
+    { id: "B", fullName: "Kim, Cara", caseStatus: "Active", attorney: "Mock Law", firstVisit: "" },
+    { id: "C", fullName: "Diaz, Dan", caseStatus: "Discharged", attorney: "Mock Law", firstVisit: "" },
+  ], 5);
+  const ie = ns.find((n) => n.id.startsWith("no-ie"));
+  assert.equal(ie?.text, "Cara doesn't have an Initial Exam date yet.");
+}
+console.log("goat-assistant pass 2 ok");
+assert.equal(carryPatient("call her back friday", "Rivera, Ana"), "call Ana Rivera back friday");
+assert.equal(carryPatient("call her lawyer", "Rivera, Ana"), "call Ana Rivera's lawyer");
+console.log("carry ok");

@@ -47,6 +47,7 @@ import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
+import { dismissNudge, readDismissed, readRecall, recallLine, saveRecall } from "@/lib/goat-recall";
 import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
@@ -438,7 +439,8 @@ export function GlobalGoatPopup({
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
   // Dismissed nudges: this chat session only (nothing saved, so nothing is browser-only).
-  const [dismissedNudges, setDismissedNudges] = useState<string[]>([]);
+  // Hidden heads-ups are a cloud-backed user pref (casemate.goat-nudges-dismissed.v1).
+  const [dismissedNudges, setDismissedNudges] = useState<string[]>(() => Object.keys(readDismissed()));
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
   const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
@@ -493,6 +495,15 @@ export function GlobalGoatPopup({
   const tellRef = useRef<TellPending | null>(null);
   const patientById = (id: string | null) => findPatient(patientsOverride, id);
   const current = patientById(chat.patientId);
+  /** Who "his/her/them" means: the patient carried from earlier in this message, this chat's patient, the last one mentioned, else last session's. */
+  const carryRef = useRef<{ id: string; until: number } | null>(null);
+  const contextPatient = (): PatientRecord | null => {
+    const carried = carryRef.current && carryRef.current.until > Date.now() ? patientById(carryRef.current.id) : null;
+    if (carried) return carried;
+    if (current) return current;
+    const lastMentioned = [...chat.messages].reverse().find((m) => m.patientId)?.patientId ?? null;
+    return patientById(lastMentioned) ?? patientById(readRecall()?.patientId ?? null) ?? null;
+  };
 
   const push = useCallback((m0: Omit<ChatMessage, "id" | "at">, patientId?: string | null) => {
     let m = m0;
@@ -501,6 +512,15 @@ export function GlobalGoatPopup({
       shownAsRef.current = null;
     }
     setChat((c) => ({ messages: [...c.messages, { ...m, id: newId(), at: nowIso() }], patientId: patientId === undefined ? c.patientId : patientId }));
+    // Cross-session memory (cloud-backed user pref): the last patient + action.
+    const rec = m.booking?.patientId
+      ? { patientId: m.booking.patientId, patientName: m.booking.patientName, action: "visit booking" }
+      : m.todoDraft?.patientId && m.todoDraft.patientName
+        ? { patientId: m.todoDraft.patientId, patientName: m.todoDraft.patientName, action: "to-do" }
+        : m.noteDraft?.patientId
+          ? { patientId: m.noteDraft.patientId, patientName: m.noteDraft.patientName, action: "notes" }
+          : null;
+    if (rec) saveRecall(rec);
   }, []);
 
   const lastExchange = (patientId: string): { question: string; answer: string } | null => {
@@ -517,6 +537,7 @@ export function GlobalGoatPopup({
     const q = stripPatientName(question, patient.fullName) || question;
     setPartial("");
     setChat((c) => ({ ...c, patientId: patient.id }));
+    saveRecall({ patientId: patient.id, patientName: patient.fullName, action: "file" });
     setJob({ id: newId(), patientId: patient.id, question: q, previous: followUp && q.split(/\s+/).length < 7 ? lastExchange(patient.id) : null });
   };
 
@@ -846,7 +867,7 @@ export function GlobalGoatPopup({
   const briefData = (): BriefData => {
     const d = practiceData();
     const billing = practiceOverride ? {} : loadPatientBillingMap();
-    const index = buildInitialExamIndex(d.appointments);
+    const index = buildInitialExamIndex(d.appointments, loadEncounterNoteRecords());
     const locations = practiceOverride ? [] : (loadOfficeSettings().locations ?? []);
     return {
       today: d.today,
@@ -1293,6 +1314,16 @@ export function GlobalGoatPopup({
           return true;
         }
       }
+      // "…and remind me to call his lawyer" / "call her back": link to the patient already in play.
+      const ctxPt = contextPatient();
+      const carried = carryRef.current && carryRef.current.until > Date.now() ? carryRef.current.id : null;
+      const pronoun = /\b(his|her|hers|him|their|them|this patient)\b/i.test(title) && !found.named;
+      if (ctxPt && ((carried === ctxPt.id && found.confident?.patient.id === ctxPt.id) || pronoun)) {
+        const linked = pronoun ? carryPatient(title, ctxPt.fullName.includes(",") ? `${ctxPt.fullName.split(",")[1].trim()} ${ctxPt.fullName.split(",")[0].trim()}` : ctxPt.fullName) : title;
+        const finalTitle = linked.charAt(0).toUpperCase() + linked.slice(1);
+        push({ role: "goat", text: `Add to To-Do for ${displayName(ctxPt.fullName)}?`, practice: true, patientName: displayName(ctxPt.fullName), todoDraft: { title: finalTitle, dueDate: t.due, patientId: ctxPt.id, patientName: ctxPt.fullName, state: "open" } });
+        return true;
+      }
       const offer = found.confident ? [found.confident.patient] : found.candidates.slice(0, 4).map((c) => c.patient);
       push({
         role: "goat",
@@ -1530,6 +1561,7 @@ export function GlobalGoatPopup({
       if (steps.length > 1) {
         const hit = findPatientsInQuestion(steps[0], allPatients().map(toChatPatient)).confident?.patient;
         const rest = steps.slice(1).map((st) => (hit ? carryPatient(st, hit.fullName) : st));
+        if (hit) carryRef.current = { id: hit.id, until: Date.now() + 450 * steps.length + 1500 };
         send(steps[0]);
         rest.forEach((st, i) => window.setTimeout(() => sendRef.current(st), 450 * (i + 1)));
         return;
@@ -1667,7 +1699,7 @@ export function GlobalGoatPopup({
         const opts = r.kind === "clarify" && p && named ? clarifyForPatient(p.fullName, question.replace(new RegExp(p.fullName.split(" ")[0], "i"), "").replace(new RegExp(p.fullName.split(" ").slice(1).join(" ") || "^$", "i"), "").trim()).options : [];
         push({
           role: "goat",
-          text: r.kind === "clarify" && p && !named ? `Sorry, I'm not sure what you mean. Is this about ${displayName(p.fullName)}, or something else?` : r.say,
+          text: r.kind === "clarify" && p && !named ? `Sorry, I didn't catch that — is this about ${displayName(p.fullName).split(/\s+/)[0]}?` : r.say,
           practice: true,
           choices: opts.length ? opts : undefined,
           links: r.kind === "unsupported" ? [{ label: "Open Schedule", href: "/appointments" }] : undefined,
@@ -1841,7 +1873,7 @@ export function GlobalGoatPopup({
     if (found.candidates.length) {
       push({
         role: "goat",
-        text: "Did you mean:",
+        text: "Which one did you mean?",
         ...withInactive(
           found.candidates.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
           found.inactive.map((c) => ({ patientId: c.patient.id, label: choiceLabel(c.patient) })),
@@ -1856,7 +1888,7 @@ export function GlobalGoatPopup({
     }
     // Practice-wide wording ("how many…", "do we have", "our…") is never answered from the open patient's file.
     if (isPracticeWide(question)) {
-      { const c = clarifyIntent(question); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
+      { const cp = contextPatient(); const c = clarifyIntent(question, { name: cp ? displayName(cp.fullName).split(/\s+/)[0] : null }); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
       return;
     }
     // No name: stay on the chat's patient (or the last one mentioned), else the patient page that's open.
@@ -1874,7 +1906,7 @@ export function GlobalGoatPopup({
     if (!p) {
       // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
       if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
-      else { const c = clarifyIntent(question); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
+      else { const cp = contextPatient(); const c = clarifyIntent(question, { name: cp ? displayName(cp.fullName).split(/\s+/)[0] : null }); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
       return;
     }
     // Not clearly about the file: never "I couldn't find that in this patient's file".
@@ -1893,7 +1925,9 @@ export function GlobalGoatPopup({
       const people = allPatients()
         .filter((p) => !(p as { deleted?: boolean }).deleted)
         .map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, attorney: p.attorney, cash: p.isCashPatient, firstVisit: data.patients.find((x) => x.id === p.id)?.firstVisit }));
-      return { brief: dailyBrief(data, new Date().getHours(), isGoatAdmin), nudges: nudges(data, people) };
+      const rc = readRecall();
+      const recall = rc && patientById(rc.patientId) ? recallLine(rc) : null;
+      return { brief: dailyBrief(data, new Date().getHours(), isGoatAdmin), nudges: nudges(data, people), recall };
     } catch {
       return null;
     }
@@ -2063,11 +2097,12 @@ export function GlobalGoatPopup({
                           <span className="flex-1">
                             {x.href ? <Link className="hover:underline" href={x.href}>{x.text}</Link> : x.text}
                           </span>
-                          <button aria-label="Dismiss" className="text-[var(--text-muted)] hover:text-[var(--text-main)]" onClick={() => setDismissedNudges((d) => [...d, x.id])} title="Not now" type="button">×</button>
+                          <button aria-label="Dismiss" className="text-[var(--text-muted)] hover:text-[var(--text-main)]" onClick={() => setDismissedNudges(Object.keys(dismissNudge(x.id)))} title="Not now" type="button">×</button>
                         </li>
                       ))}
                     </ul>
                   )}
+                  {opening?.recall && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
                   <p className="mt-1 text-xs text-[var(--text-muted)]">What can I do for you? Everything stays in NoteGoat.</p>
                   <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
