@@ -178,7 +178,7 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
       folderId: string,
       file: File,
     ): Promise<{ success: boolean; error?: string }> => {
-      const { storagePath, error } = await uploadFileToStorage(folderId, file);
+      const { storagePath, name: savedName, error } = await uploadFileToStorage(folderId, file);
       if (error || !storagePath) {
         return { success: false, error: error ?? "Upload failed" };
       }
@@ -186,7 +186,7 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
       setState((current) => {
         const next = addFileRecord(current, {
           folderId,
-          name: file.name,
+          name: savedName,
           storagePath,
           mimeType: file.type || "application/octet-stream",
           sizeBytes: file.size,
@@ -194,7 +194,7 @@ export function useFileManager(patients: PatientRecord[], caseStatuses: CaseStat
         saveFileManagerState(next);
         return next;
       });
-      logFile("file.uploaded", "Uploaded", file.name, folderId);
+      logFile("file.uploaded", "Uploaded", savedName, folderId);
 
       return { success: true };
     },

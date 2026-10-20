@@ -28,13 +28,18 @@ import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { splitPatientQuestion, typedDateAnswer } from "@/lib/goat-split";
-import { HOWTO_QUESTION, answerHowTo, dayLabel, isBookingRequest } from "@/lib/goat-howto";
+import { HOWTO_QUESTION, dayLabel, isBookingRequest } from "@/lib/goat-howto";
+import { clarifyIntent } from "@/lib/goat-schedule-query";
+import { answerHowToFull } from "@/lib/goat-howto-handbook";
 import { PRACTICE_HELP, isPatientSpecific, isPracticeWide, yearOfDate, type PracticeData } from "@/lib/goat-practice";
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
 import { bookingRecord, draftSummary, finishDraft, planBooking, retime } from "@/lib/goat-booking";
 import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
+import { continueNewPatientBooking, startNewPatientBooking, type NewPatientCtx, type NewPatientStep } from "@/lib/goat-new-patient-booking";
+import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
+import { createPatientRecord } from "@/lib/mock-data";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
@@ -94,6 +99,19 @@ const openListeners = new Set<() => void>();
 export function setGlobalGoatOpen(open: boolean) {
   popupOpen = open;
   openListeners.forEach((l) => l());
+}
+/** Text waiting to be sent once the popup is open (from the patient-page box). */
+let pendingAsk: string | null = null;
+/** Open the global G.O.A.T. chat and send `text` there, as if typed. On a
+ *  patient page its "him / her / this patient" is that page's patient. */
+export function askGlobalGoat(text: string) {
+  pendingAsk = text;
+  setGlobalGoatOpen(true);
+}
+function takePendingAsk(): string | null {
+  const t = pendingAsk;
+  pendingAsk = null;
+  return t;
 }
 function useGlobalGoatOpen(): boolean {
   return useSyncExternalStore(
@@ -577,11 +595,29 @@ export function GlobalGoatPopup({
       updateBooking(msg.id, { ...fresh, state: "open" }, draftSummary(fresh));
       return;
     }
-    const record = bookingRecord({ ...fresh, override }, createAppointmentId(), data.appointments);
+    let draftForRecord = { ...fresh, override };
+    const np = b.newPatient;
+    if (np) {
+      // Same as the New Patient popup: add the patient (cloud-saved by the patients store), then book.
+      // Saved twice? The patient id is remembered on the card, so no duplicate patient or visit.
+      let pid = np.patientId;
+      if (!pid) {
+        const created = createPatientRecord({ firstName: np.firstName, lastName: np.lastName, phone: np.phone || undefined, dateOfLoss: "" });
+        if (!created) {
+          push({ role: "goat", text: "I couldn't add the new patient. Nothing was saved. Try Edit in New Appointment.", practice: true });
+          return;
+        }
+        pid = created.id;
+        updateBooking(msg.id, { ...b, newPatient: { ...np, patientId: pid } });
+      }
+      draftForRecord = { ...draftForRecord, patientId: pid, patientName: patientById(pid)?.fullName ?? draftForRecord.patientName };
+    }
+    const base = bookingRecord(draftForRecord, createAppointmentId(), data.appointments);
+    const record = np ? { ...base, provider: base.provider || np.provider, location: base.location || np.location } : base;
     addAppointments([record]);
     // "make it 2pm instead" after it was booked: the new time replaces the old appointment.
     if (b.replacesId) removeAppointment(b.replacesId);
-    updateBooking(msg.id, { ...fresh, override, state: "booked", appointmentId: record.id, replacesId: b.replacesId });
+    updateBooking(msg.id, { ...draftForRecord, override, state: "booked", appointmentId: record.id, replacesId: b.replacesId, newPatient: np ? { ...np, patientId: record.patientId } : undefined });
     push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
   };
 
@@ -1134,6 +1170,35 @@ export function GlobalGoatPopup({
       choices: existing.length ? existing.map((p) => ({ label: `${choiceLabel(toChatPatient(p))} is already a patient — book them instead`, question: bookExisting(p) })) : undefined,
     });
   };
+  const npCtx = (): NewPatientCtx => {
+    const office = loadOfficeSettings();
+    let types: Array<{ name: string; durationMin: number }> = [];
+    try { types = loadAppointmentTypes().filter((t) => (t as { active?: boolean }).active !== false).map((t) => ({ name: t.name, durationMin: t.durationMin })); } catch { types = []; }
+    const data = practiceData();
+    return { todayIso: data.today, settings: scheduleSettings() ?? loadScheduleSettings(), appointments: data.appointments, types, provider: office.doctorName?.trim() ?? "", location: office.officeName?.trim() ?? "" };
+  };
+  /** Show the next step of the in-chat new patient + New Patient visit. */
+  const showNewPatientStep = (step: NewPatientStep) => {
+    if (step.kind === "ask") {
+      push({ role: "goat", text: step.say, practice: true, npAsk: { field: step.field, pending: step.pending, state: "open" } });
+      return;
+    }
+    const c = step.card;
+    const d = c.draft;
+    const lines = [
+      `New patient: ${c.firstName} ${c.lastName} · ${c.phone}`,
+      `${d.type}: ${dayLabel(d.date)} at ${to12hLabel(d.time)}${c.provider ? ` · ${c.provider}` : ""}${c.location ? ` · ${c.location}` : ""}`,
+      d.taken ? "That time is taken. Pick an open time below, or override." : d.outsideHours ? "That's outside office hours. Pick an open time below, or override." : "Confirm adds the patient and books the visit.",
+      ...d.notes,
+    ];
+    push({
+      role: "goat",
+      text: lines.join("\n"),
+      practice: true,
+      booking: { ...d, state: "open", newPatient: { firstName: c.firstName, lastName: c.lastName, phone: c.phone, provider: c.provider, location: c.location } },
+      formLaunch: { kind: "newAppointment", label: "Edit in New Appointment", date: d.date, time: d.time, newPatient: { lastName: c.lastName, firstName: c.firstName, phone: c.phone } },
+    });
+  };
   /** Open the form behind a formLaunch button (prefill handed over in sessionStorage). */
   const openForm = (f: NonNullable<ChatMessage["formLaunch"]>) => {
     if (f.kind === "newPatient") {
@@ -1412,6 +1477,24 @@ export function GlobalGoatPopup({
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
       return;
     }
+    // In-chat new patient: the answer to "What's John's phone number?" / "What time?".
+    if (!opts) {
+      const lastG = [...chat.messages].reverse().find((m) => m.role === "goat");
+      if (lastG?.npAsk?.state === "open") {
+        const ask = lastG.npAsk;
+        setChat((c) => ({ ...c, messages: c.messages.map((m) => (m.id === lastG.id ? { ...m, npAsk: { ...ask, state: "done" } } : m)) }));
+        if (!/^(cancel|never ?mind|stop|no)\b/i.test(question.trim())) {
+          const step = continueNewPatientBooking(ask.pending, ask.field, question, npCtx());
+          push({ role: "user", text: question, practice: true });
+          if (step) showNewPatientStep(step);
+          else push({ role: "goat", text: ask.field === "phone" ? `I need a 10-digit phone number for ${ask.pending.firstName}.` : ask.field === "day" ? "Which day? (e.g. \"Thursday\" or \"10/22\")" : "What time? (e.g. \"10am\" or \"2:30pm\")", practice: true, npAsk: { ...ask, state: "open" } });
+          return;
+        }
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: "Okay, I won't add them.", practice: true });
+        return;
+      }
+    }
     // Team-message steps (tapped buttons, or the typed answer to "What should I tell Hannah?").
     if (question.startsWith(TELL_TOKEN)) {
       tellToken(question);
@@ -1605,7 +1688,7 @@ export function GlobalGoatPopup({
       }
     }
     // "How do I…" answers come only from NoteGoat's page/button and Settings catalogs; unknown ones say "I'm not sure".
-    const how = HOWTO_QUESTION.test(question) && !waitingForName ? answerHowTo(question) : null;
+    const how = HOWTO_QUESTION.test(question) && !waitingForName ? answerHowToFull(question, { admin: isGoatAdmin, manager: isGoatAdmin || roleTier === "manager", canView: (f) => canView(f as never) }) : null;
     if (how && (how.found || !found.confident)) {
       push({ role: "user", text: question, practice: true });
       push({ role: "goat", text: how.text, practice: true, links: how.links });
@@ -1625,7 +1708,16 @@ export function GlobalGoatPopup({
       const p = found.named ? null : current ?? patientById(openPatientId);
       if (p) return startBooking(question, p);
       if (found.named) {
-        // No existing patient by that name → treat as new: New Appointment in New-patient mode, prefilled.
+        // No patient with that full name → add them as a new patient right here in chat.
+        if (found.named.trim().split(/\s+/).length >= 2) {
+          const ctx = npCtx();
+          const step = startNewPatientBooking(found.named, question, ctx);
+          const first = found.named.trim().split(/\s+/)[0];
+          push({ role: "goat", text: `No ${found.named} yet — I'll add ${first} as a new patient.`, practice: true });
+          showNewPatientStep(step);
+          return;
+        }
+        // Only one name given: New Appointment in New-patient mode, prefilled.
         push({ role: "goat", text: `I couldn't find an existing patient named "${found.named}".`, practice: true });
         newVisitFlow(question, newVisitBookingText(question), true, false);
         return;
@@ -1662,7 +1754,7 @@ export function GlobalGoatPopup({
     }
     // Practice-wide wording ("how many…", "do we have", "our…") is never answered from the open patient's file.
     if (isPracticeWide(question)) {
-      push({ role: "goat", text: PRACTICE_HELP, practice: true });
+      { const c = clarifyIntent(question); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
       return;
     }
     // No name: stay on the chat's patient (or the last one mentioned), else the patient page that's open.
@@ -1680,7 +1772,7 @@ export function GlobalGoatPopup({
     if (!p) {
       // Only ask "which patient" when the question is clearly about one; otherwise say what G.O.A.T. can answer.
       if (isPatientSpecific(question)) push({ role: "goat", text: "Which patient is this about? Type their name and I'll answer it.", pendingQuestion: question });
-      else push({ role: "goat", text: PRACTICE_HELP, practice: true });
+      else { const c = clarifyIntent(question); push({ role: "goat", text: c.text, practice: true, choices: c.choices.length ? c.choices : undefined }); }
       return;
     }
     // Not clearly about the file: never "I couldn't find that in this patient's file".
@@ -1690,6 +1782,19 @@ export function GlobalGoatPopup({
     }
     startAnswer(p, question, Boolean(current));
   };
+  // Patient-page box handed us an action ("remind me to do his report"): send it here.
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+  const isOpenNow = useGlobalGoatOpen();
+  useEffect(() => {
+    if (!(isOpenNow || fullScreen)) return;
+    const text = takePendingAsk();
+    if (!text) return;
+    const t = window.setTimeout(() => sendRef.current(text), 0);
+    return () => window.clearTimeout(t);
+  }, [isOpenNow, fullScreen]);
 
   // A tapped patient answers the ORIGINAL question; nothing needs retyping.
   const pick = (msg: ChatMessage, patientId: string | undefined, question?: string, showMore?: boolean) => {

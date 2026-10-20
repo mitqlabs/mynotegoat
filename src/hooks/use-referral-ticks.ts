@@ -14,7 +14,7 @@ import {
   ticksFromSafetyBackup,
   type TickMap,
 } from "@/lib/referral-ticks";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 
 function readLocal(key: string): TickMap {
@@ -64,7 +64,7 @@ export function useReferralTicks() {
     const workspaceId = getActiveWorkspaceIdSync();
     if (!client || !workspaceId) return;
     if (!cloudKeyRef.current) {
-      const { data } = await client.auth.getUser();
+      const { data } = await getSessionUser(client);
       if (!data.user?.id) return;
       cloudKeyRef.current = referralTicksCloudKey(data.user.id);
     }

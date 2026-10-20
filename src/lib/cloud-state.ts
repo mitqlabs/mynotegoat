@@ -580,6 +580,28 @@ export async function prepareCloudStateBeforeMount() {
     }
     const localHasData = hasMeaningfulLocalData(localSnapshot);
 
+    // Speed: the snapshot can be ~1 MB. If this browser already holds the
+    // latest copy (its last push is as new as the cloud row), skip the
+    // download — the cloud row's timestamp is still the deciding check.
+    try {
+      const lastPushMs = parseTimestamp(window.localStorage.getItem(getSyncAtKey(authed.workspaceId)));
+      if (localHasData && !Number.isNaN(lastPushMs)) {
+        const { data: head, error: headError } = await authed.supabase
+          .from(authed.table)
+          .select("updated_at")
+          .eq("workspace_id", authed.workspaceId)
+          .limit(1)
+          .maybeSingle();
+        const remoteMs = parseTimestamp((head as { updated_at?: string | null } | null)?.updated_at ?? null);
+        if (!headError && head && !Number.isNaN(remoteMs) && lastPushMs >= remoteMs) {
+          console.info("[Cloud Sync] Local data is same age or newer than remote — keeping local (skipped download).");
+          return;
+        }
+      }
+    } catch (headErr) {
+      console.warn("[Cloud Sync] Freshness check failed; doing a full read:", headErr);
+    }
+
     let remote: Awaited<ReturnType<typeof fetchRemoteSnapshot>> = null;
     try {
       remote = await fetchRemoteSnapshot(authed.workspaceId);
@@ -711,7 +733,28 @@ async function bootstrapTableBackedEntities() {
   const { patients, replacePatientsFromCloud } = await import("@/lib/mock-data");
   const { pauseSync, resumeSync } = await import("@/lib/storage-sync-interceptor");
 
-  const ready = await isPatientsTableReady();
+  // Speed: every table read below used to run one after another (probe,
+  // then fetch, per table — 10+ round trips before the app could open).
+  // Start them all at once; each phase still awaits its own results and
+  // applies them in the same order with the same safety checks.
+  const apptsOn = isCloudEntityEnabled("scheduleAppointments");
+  const kvOn =
+    isCloudEntityEnabled("billing") ||
+    isCloudEntityEnabled("macros") ||
+    isCloudEntityEnabled("schedulingSettings") ||
+    isCloudEntityEnabled("contacts") ||
+    isCloudEntityEnabled("tasks");
+  const swallow = <T,>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
+  const patientsReadyP = swallow(isPatientsTableReady(), false);
+  const patientsRowsP = swallow(fetchAllPatientsFromTable(), null);
+  const apptsModP = apptsOn ? import("@/lib/appointments-cloud") : null;
+  const apptsReadyP = apptsModP ? swallow(apptsModP.then((m) => m.isAppointmentsTableReady()), false) : null;
+  const apptsRowsP = apptsModP ? swallow(apptsModP.then((m) => m.fetchAllAppointmentsFromTable()), null) : null;
+  const kvModP = kvOn ? import("@/lib/kv-cloud") : null;
+  const kvReadyP = kvModP ? swallow(kvModP.then((m) => m.isKvTableReady()), false) : null;
+  const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchAllKvRows()), null) : null;
+
+  const ready = await patientsReadyP;
   if (!ready) {
     console.warn(
       "[Cloud Sync] patients flag is on but the table isn't ready. " +
@@ -720,7 +763,7 @@ async function bootstrapTableBackedEntities() {
     return;
   }
 
-  const tableRows = await fetchAllPatientsFromTable();
+  const tableRows = await patientsRowsP;
   if (tableRows === null) {
     // Couldn't reach the table — leave legacy cache in place.
     return;
@@ -770,14 +813,14 @@ async function bootstrapTableBackedEntities() {
       replaceAppointmentsFromCloud,
     } = await import("@/lib/schedule-appointments");
 
-    const apptsReady = await isAppointmentsTableReady();
+    const apptsReady = apptsReadyP ? await apptsReadyP : await isAppointmentsTableReady();
     if (!apptsReady) {
       console.warn(
         "[Cloud Sync] scheduleAppointments flag is on but table isn't ready. " +
         "Run supabase/schedule_appointments_table.sql in the SQL editor.",
       );
     } else {
-      const apptsRows = await fetchAllAppointmentsFromTable();
+      const apptsRows = apptsRowsP ? await apptsRowsP : await fetchAllAppointmentsFromTable();
       if (apptsRows !== null) {
         const localAppts = loadScheduleAppointments();
         if (apptsRows.length === 0 && localAppts.length > 0) {
@@ -854,7 +897,7 @@ async function bootstrapTableBackedEntities() {
     const { isKvTableReady, fetchAllKvRows, bulkUpsertKvValues, upsertKvValue } =
       await import("@/lib/kv-cloud");
 
-    const kvReady = await isKvTableReady();
+    const kvReady = kvReadyP ? await kvReadyP : await isKvTableReady();
     if (!kvReady) {
       console.warn(
         "[Cloud Sync] KV flags are on but workspace_kv table isn't ready. " +
@@ -951,7 +994,7 @@ async function bootstrapTableBackedEntities() {
       }
 
       // Fetch all kv values in one query.
-      const remoteKvRows = await fetchAllKvRows();
+      const remoteKvRows = kvRowsP ? await kvRowsP : await fetchAllKvRows();
       const remoteKv: Map<string, unknown> | null = remoteKvRows
         ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
         : null;

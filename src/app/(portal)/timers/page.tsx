@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 
 /* ─── Types ─── */
 
@@ -102,7 +102,7 @@ async function getWorkspaceId(): Promise<string | null> {
     if (!sb) return null;
     const {
       data: { user },
-    } = await sb.auth.getUser();
+    } = await getSessionUser(sb);
     if (!user) return null;
     const officeId =
       (typeof process !== "undefined" &&

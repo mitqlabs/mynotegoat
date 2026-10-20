@@ -1429,7 +1429,7 @@ export function NewAppointmentModal({
           </button>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 grid items-start gap-3 md:grid-cols-2">
           <label className="relative grid gap-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
@@ -1660,19 +1660,20 @@ export function NewAppointmentModal({
             )}
           </label>
 
-          <label className="grid gap-1">
+          <label className="grid content-start gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Case</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
               onChange={(event) =>
                 setDraft((current) => ({ ...current, caseLabel: event.target.value }))
               }
-              placeholder="Auto-filled from DOI + patient name (example: 072726DOJO)"
+              placeholder="Auto-filled (e.g. 072726DOJO)"
+                  title="Auto-filled from DOI + patient name (example: 072726DOJO)"
               value={draft.caseLabel}
             />
           </label>
 
-          <label className="grid gap-1 md:col-span-2">
+          <label className="grid content-start gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Scheduled Room</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"

@@ -8,6 +8,7 @@
  * owns (add-note across turns, corrections, clarifying questions); the
  * office-day eval drives every turn through it.
  */
+import { clarifyIntent } from "@/lib/goat-schedule-query";
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
 import { isPracticeWide, type PracticeData, type PracticePatient } from "@/lib/goat-practice";
 import { matchRecipient, parseTell, type TeamPerson } from "@/lib/goat-message";
@@ -246,7 +247,7 @@ export function goatTurn(raw: string, st0: DialogState, ctx: DialogCtx): { reply
     const c = clarifyForPatient(target.fullName, leftover);
     return { reply: { kind: "clarify", patientId: target.id, say: c.text }, state: { ...remember(target.id, raw), pendingNote: leftover ? null : st.pendingNote } };
   }
-  return { reply: { kind: "help", say: "I can check the schedule, to-dos, cases and contacts, add notes, message the team, book visits and look up bills. What do you need?" }, state: st };
+  return { reply: { kind: "help", say: clarifyIntent(raw).text }, state: st };
 }
 
 function escapeRe(t: string): string {

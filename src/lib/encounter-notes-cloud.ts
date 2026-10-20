@@ -320,7 +320,7 @@ export async function isEncounterNotesTableReady(): Promise<boolean> {
 
   const { error } = await supabase
     .from("encounter_notes")
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .eq("workspace_id", workspaceId)
     .limit(1);
 

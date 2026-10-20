@@ -1744,7 +1744,7 @@ export default function AppointmentsPage() {
               </button>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="mt-4 grid items-start gap-3 md:grid-cols-2">
               {/* Patient: Existing / New toggle. New = a compact grid; Save Appointment
                   creates the patient and the visit together (no separate Create step). */}
               <div className={`relative grid gap-1 ${patientMode === "new" ? "md:col-span-2" : ""}`}>
@@ -1890,7 +1890,7 @@ export default function AppointmentsPage() {
                 </datalist>
               </label>
 
-              <label className="grid gap-1">
+              <label className={`grid gap-1 ${patientMode === "new" ? "md:col-span-2" : ""}`}>
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Type *</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1928,19 +1928,20 @@ export default function AppointmentsPage() {
                 )}
               </label>
 
-              <label className="grid gap-1">
+              <label className="grid content-start gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Case</span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                   onChange={(event) =>
                     setNewAppointmentDraft((current) => ({ ...current, caseLabel: event.target.value }))
                   }
-                  placeholder="Auto-filled from DOI + patient name (example: 072726DOJO)"
+                  placeholder="Auto-filled (e.g. 072726DOJO)"
+                  title="Auto-filled from DOI + patient name (example: 072726DOJO)"
                   value={newAppointmentDraft.caseLabel}
                 />
               </label>
 
-              <label className="grid gap-1 md:col-span-2">
+              <label className="grid content-start gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Scheduled Room</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"

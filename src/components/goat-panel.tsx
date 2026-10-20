@@ -10,6 +10,8 @@ import { CopyButton } from "@/components/copy-button";
 import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
+import { isGoatActionPhrase } from "@/lib/goat-intents";
+import { askGlobalGoat } from "@/components/global-goat";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -324,6 +326,13 @@ export function GoatPanel({
   const ask = (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+    // Actions go to the global G.O.A.T. chat (same confirm card, this page's
+    // patient as "him/her"); nothing changes until Confirm there.
+    if (scope === "page" && isGoatActionPhrase(trimmed)) {
+      setQuestion("");
+      askGlobalGoat(trimmed);
+      return;
+    }
     setQuestion(trimmed);
     setAsked(trimmed);
     setSearchingFor(trimmed);

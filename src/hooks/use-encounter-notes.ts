@@ -1,4 +1,5 @@
 "use client";
+import { getSessionUser } from "@/lib/supabase-browser";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -220,7 +221,7 @@ export function useEncounterNotes() {
       const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } = await getSessionUser(supabase);
       const workspaceId = userData.user?.id;
       if (!workspaceId || cancelled) return;
       const channel = supabase

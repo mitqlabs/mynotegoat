@@ -27,7 +27,7 @@
  */
 
 import { useEffect } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 
 export function GlobalRecordRealtime() {
   useEffect(() => {
@@ -36,7 +36,7 @@ export function GlobalRecordRealtime() {
     const setup = async () => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } = await getSessionUser(supabase);
       const workspaceId = userData.user?.id;
       if (!workspaceId || cancelled) return;
       const channel = supabase

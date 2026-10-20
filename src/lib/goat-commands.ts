@@ -11,7 +11,7 @@ import { joinDrTitle } from "@/lib/goat-message";
  *
  * Pure: no React, no storage. Patients come in as a plain list.
  */
-import { editDistance } from "@/lib/goat-ai/global-chat";
+import { editDistance, typedFullName, type ChatPatient } from "@/lib/goat-ai/global-chat";
 import { isBookingRequest } from "@/lib/goat-howto";
 import { isTellRequest, parseTell } from "@/lib/goat-message";
 
@@ -169,6 +169,12 @@ export function splitLeadingName<T extends CommandPatient>(text: string, patient
 
 /** Patient name mentioned ANYWHERE in the message (longest run wins). */
 export function findNameAnywhere<T extends CommandPatient>(text: string, patients: T[]): { matches: T[]; nameText: string } | null {
+  // First + last name typed: only that last name counts ("john smith" never means John Margaryan).
+  const full = typedFullName(text, patients as unknown as ChatPatient[]);
+  if (full) {
+    const same = patients.filter((p) => full.ids.has(p.id));
+    return same.length ? { matches: same, nameText: full.text } : null;
+  }
   const raw = text.trim().split(/\s+/).map((w) => w.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, ""));
   let best: { matches: T[]; nameText: string; len: number } | null = null;
   for (let i = 0; i < raw.length; i++) {

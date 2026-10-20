@@ -170,6 +170,8 @@ export async function fetchAllPatientsFromTable(): Promise<PatientRecord[] | nul
       .from("patients")
       .select("*")
       .eq("workspace_id", workspaceId)
+      // Stable order so pages never overlap or skip rows.
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       console.error("[patients-cloud] fetchAll failed:", error.message);
@@ -295,7 +297,7 @@ export async function isPatientsTableReady(): Promise<boolean> {
 
   const { error } = await supabase
     .from("patients")
-    .select("id", { count: "exact", head: true })
+    .select("id", { head: true })
     .eq("workspace_id", workspaceId)
     .limit(1);
 

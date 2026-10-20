@@ -1,3 +1,4 @@
+import { isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 /**
  * Plain-language G.O.A.T. requests that used to need a "/" command:
  *  - "add to-do call vartan 555-555-8855 to schedule new appt" → a to-do card
@@ -64,6 +65,9 @@ export function detectNewPatientRequest(raw: string): boolean {
   if (/^\/new\b/i.test(q)) return true;
   if (q.startsWith("/") || HOWTO.test(q) || detectPlainTodo(q)) return false;
   if (!NEW_PT.test(q)) return false;
+  // Schedule questions ("any new patients this week", "new patients tomorrow?") are lookups, not intake.
+  if (/\b(any|upcoming|coming up|how many|next one)\b/i.test(q) || /\?\s*$/.test(q)) return false;
+  if (/\bnew\s+(?:patients|pts|clients|intakes)\b/i.test(q) && !NEW_PT_VERB.test(q)) return false;
   // "new patient" + a verb, or the message starts with it ("new patient: Jane Doe …").
   return NEW_PT_VERB.test(q) || /^(?:a\s+)?new\s+(?:patient|pt)\b/i.test(q) || /\b(i|we)\s+(have|got)\b/i.test(q);
 }
@@ -216,4 +220,19 @@ export function pickTodoPatient<T extends { id: string }>(opts: { text: string; 
   if (confident) return { patient: confident, via: "named" };
   if (candidates.length) return { patient: null, via: "ask" };
   return { patient: null, via: "none" };
+}
+
+/**
+ * The patient-page G.O.A.T. box only answers questions about that patient.
+ * Action wording ("remind me to…", "add a to-do", "add note", "schedule",
+ * "book", "tell …") is handed to the global G.O.A.T. chat instead, which
+ * already treats "him / her / this patient" as the open page's patient and
+ * shows its usual confirm card. Questions stay in the box.
+ */
+export function isGoatActionPhrase(raw: string): boolean {
+  const q = raw.replace(/\s+/g, " ").trim();
+  if (!q) return false;
+  if (detectPlainTodo(q)) return true;
+  if (/^(how|where|what|whats|what's|when|who|which|why|is|are|was|were|does|did|has|have|any)\b/i.test(q) || /\?\s*$/.test(q)) return false;
+  return Boolean(isAddNote(q) || isBooking(q) || isTell(q) || detectNewVisitBooking(q) || detectNewPatientRequest(q));
 }

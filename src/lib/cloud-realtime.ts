@@ -21,14 +21,14 @@
  */
 
 import { useEffect } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 
 type Unsubscribe = () => void;
 
 async function resolveWorkspaceId(): Promise<string | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
-  const { data } = await supabase.auth.getUser();
+  const { data } = await getSessionUser(supabase);
   return data.user?.id ?? null;
 }
 
