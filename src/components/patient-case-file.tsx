@@ -85,6 +85,10 @@ import {
   type PeriodRange,
 } from "@/lib/treatment-periods";
 import { UsDateInput } from "@/components/us-date-input";
+import { TimeInput12h } from "@/components/time-input-12h";
+
+/** "MM/DD/YYYY" → "YYYY-MM-DD" (for office-hours AM/PM snapping). */
+const mdyIso = (s: string) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim()); return m ? `${m[3]}-${m[1]}-${m[2]}` : undefined; };
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -5525,24 +5529,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="grid content-start gap-1" data-row="case-first-visit">
               <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
                 <label className="grid min-w-0 gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date</span>
-                  <input
+                  <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date <span className="font-normal">(optional)</span></span>
+                  <UsDateInput
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    data-testid="case-appt-date"
-                    inputMode="numeric"
-                    maxLength={10}
-                    onChange={(event) => { setCaseApptDate(formatUsDateInput(event.target.value)); setCaseApptMsg(null); }}
+                    onChange={(formatted) => { setCaseApptDate(formatted); setCaseApptMsg(null); }}
                     placeholder="MM/DD/YYYY"
                     value={caseApptDate}
                   />
                 </label>
                 <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                  <input
-                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    data-testid="case-appt-time"
-                    onChange={(event) => { setCaseApptTime(event.target.value); setCaseApptMsg(null); }}
-                    placeholder="10:00 AM"
+                  <TimeInput12h
+                    allowEmpty
+                    ariaLabel="Appointment time"
+                    dateIso={mdyIso(caseApptDate)}
+                    inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                    onChange={(v) => { setCaseApptTime(v); setCaseApptMsg(null); }}
+                    placeholder=""
+                    smart
                     value={caseApptTime}
                   />
                 </label>
