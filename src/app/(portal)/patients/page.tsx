@@ -45,6 +45,10 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { UsDateInput } from "@/components/us-date-input";
+import { TimeInput12h } from "@/components/time-input-12h";
+
+/** "MM/DD/YYYY" → "YYYY-MM-DD" (for office-hours AM/PM snapping). */
+const mdyIso = (s: string) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim()); return m ? `${m[3]}-${m[1]}-${m[2]}` : undefined; };
 import { ScrollLock } from "@/components/scroll-lock";
 import { buildDischargeIndex, formatMonthDaySpan, monthDaySpan, patientDischargeIso } from "@/lib/discharge-date";
 import { buildInitialExamIndex, patientInitialExamIso, type InitialExamIndex } from "@/lib/initial-exam-date";
@@ -3036,25 +3040,24 @@ export default function PatientsPage() {
                           />
                         </label>
                         <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date</span>
-                          <input
+                          <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date <span className="font-normal">(optional)</span></span>
+                          <UsDateInput
                             className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            data-testid="new-patient-appt-date"
-                            inputMode="numeric"
-                            maxLength={10}
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalDate: formatUsDateInput(event.target.value) }))}
+                            onChange={(formatted) => { setNewPatientDraft((current) => ({ ...current, evalDate: formatted })); }}
                             placeholder="MM/DD/YYYY"
-                            title="Books a New Patient visit on the Schedule when you save"
                             value={newPatientDraft.evalDate}
                           />
                         </label>
                         <label className="grid min-w-0 gap-1">
                           <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            data-testid="new-patient-appt-time"
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, evalTime: event.target.value }))}
-                            placeholder="10:00 AM"
+                          <TimeInput12h
+                            allowEmpty
+                            ariaLabel="Appointment time"
+                            dateIso={mdyIso(newPatientDraft.evalDate)}
+                            inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                            onChange={(v) => { setNewPatientDraft((current) => ({ ...current, evalTime: v })); }}
+                            placeholder=""
+                            smart
                             value={newPatientDraft.evalTime}
                           />
                         </label>
