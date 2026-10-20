@@ -94,6 +94,8 @@ export interface ChatMessage {
     addedIds?: string[];
     result?: string;
   };
+  /** Recategorize (or undo) exactly the contacts one import added. One confirm card. */
+  contactRecat?: { importMsgId: string; ids: string[]; from: string; to: string; mode: "recat" | "undo"; state: "open" | "done" | "canceled" | "reverted"; prev?: Record<string, string>; result?: string };
   /** "/contact" edit card. */
   contactEdit?: { contactId: string; name: string; category: string; phone: string; fax: string; email: string; address: string; state: "open" | "saved" | "canceled"; result?: string };
   /** "/todo" confirm card. */

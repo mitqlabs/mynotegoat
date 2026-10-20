@@ -47,7 +47,7 @@ import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
-import { clarifyFor, editNoteLine, followUpFor, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
+import { clarifyFor, editNoteLine, followUpFor, lastActSummary, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
@@ -654,6 +654,13 @@ export function GlobalGoatPopup({
       if (m.msgAsk) return { kind: "msgAsk", msgId: m.id, ...m.msgAsk };
       if (m.msgDraft) return { kind: "message", msgId: m.id, toLabel: m.msgDraft.toLabel, toUserId: m.msgDraft.toUserId, text: m.msgDraft.text, patientId: m.msgDraft.patientId, patientName: m.msgDraft.patientName, caseLabel: m.msgDraft.caseLabel, state: m.msgDraft.state };
       if (m.booking) return { kind: "booking", msgId: m.id, state: m.booking.state };
+      if (m.contactRecat) {
+        if (m.contactRecat.state === "done" && m.contactRecat.mode === "recat") return { kind: "contactImport", msgId: m.contactRecat.importMsgId, ids: m.contactRecat.ids, category: m.contactRecat.to };
+        if (m.contactRecat.state === "done") return null;
+        continue;
+      }
+      if (m.contactImport) return m.contactImport.state === "saved" && m.contactImport.addedIds?.length ? { kind: "contactImport", msgId: m.id, ids: m.contactImport.addedIds, category: m.contactImport.rows.find((r) => r.checked)?.category || m.contactImport.category } : null;
+      if (m.todoDraft) return m.todoDraft.state === "saved" ? { kind: "todo", msgId: m.id, title: m.todoDraft.title } : null;
     }
     return null;
   };
@@ -661,9 +668,44 @@ export function GlobalGoatPopup({
   /** Act on a follow-up to the last action. True if handled. */
   const tryFollowUp = (question: string): boolean => {
     const last = lastAct();
+    const fixAsk = /^fix the (time|recipient|to-do)$/i.exec(question.trim());
+    if (fixAsk && last) {
+      push({ role: "user", text: question, practice: true });
+      const say = fixAsk[1] === "time" ? `What time should it be? (e.g. "make it 2pm instead")` : fixAsk[1] === "recipient" ? `Who should get it? (e.g. "send it to Greg instead")` : "Open To-Do to change or remove it.";
+      push({ role: "goat", text: say, practice: true, links: fixAsk[1] === "to-do" ? [{ label: "Open To-Do", href: "/patients?view=toDo" }] : undefined });
+      return true;
+    }
     const f = followUpFor(question, last, practiceData().today);
     if (!f || !last) return false;
     push({ role: "user", text: question, practice: true });
+    if (f.kind === "leave") {
+      push({ role: "goat", text: "Okay, I left it as is.", practice: true });
+      return true;
+    }
+    if (f.kind === "correct") {
+      const fix = last.kind === "contactImport" ? "fix the category" : last.kind === "note" ? "fix the note" : last.kind === "booking" ? "fix the time" : last.kind === "message" ? "fix the recipient" : "fix the to-do";
+      const undo = last.kind === "contactImport" ? "undo the import" : last.kind === "note" ? "undo that" : null;
+      push({ role: "goat", text: `${lastActSummary(last)} What should I do?`, practice: true, choices: [{ label: "Fix it", question: fix }, ...(undo ? [{ label: "Undo", question: undo }] : []), { label: "Leave it", question: "leave it" }] });
+      return true;
+    }
+    if (last.kind === "contactImport" && (f.kind === "importRecat" || f.kind === "importUndo")) {
+      if (f.kind === "importUndo") {
+        push({ role: "goat", text: `Remove the ${last.ids.length} contacts that import added?`, practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: "", mode: "undo", state: "open" } });
+        return true;
+      }
+      if (!f.to) {
+        push({ role: "goat", text: `${lastActSummary(last)} Which category should they be?`, practice: true, choices: CONTACT_CATEGORIES.filter((c) => c !== last.category).map((c) => ({ label: c, question: `change them to ${c}` })) });
+        return true;
+      }
+      push({ role: "goat", text: `Move the ${last.ids.length} contacts from that import from ${last.category || "no category"} to ${f.to}?`, practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: f.to, mode: "recat", state: "open" } });
+      return true;
+    }
+    if (f.kind === "importRecat" || f.kind === "importUndo") return true;
+    if (last.kind !== "note" && /^fix the (time|recipient|to-do)$/i.test(question.trim())) return true;
+    if (last.kind === "note" && /^fix the note$/i.test(question.trim())) {
+      push({ role: "goat", text: `What should change? Type the new text ("change it to …") or the right date ("it was yesterday").`, practice: true });
+      return true;
+    }
     if (last.kind === "note") {
       const edit = (newLine: string | null, say: string) => push({ role: "goat", text: say, practice: true, noteEdit: { patientId: last.patientId, patientName: last.patientName, oldLine: last.line, newLine, state: "open" } });
       if (f.kind === "noteDate") edit(withNoteDate(last.line, f.iso), `Change the date on the note I just added for ${displayName(last.patientName)}?`);
@@ -1437,6 +1479,32 @@ export function GlobalGoatPopup({
     const why = res.skipped.length ? ` (${res.skipped.length} couldn't be added: ${res.skipped.slice(0, 3).map((x) => `${x.name} — ${x.reason}`).join("; ")}${res.skipped.length > 3 ? "…" : ""})` : "";
     setMsg(msg.id, { contactImport: { ...imp, state: "saved", addedIds: res.added.map((c) => c.id), result: `Added ${res.added.length}, skipped ${skipped}${why}.` } });
   };
+  const confirmContactRecat = (msg: ChatMessage) => {
+    const r = msg.contactRecat;
+    if (!r || r.state !== "open") return;
+    if (r.mode === "undo") {
+      const n = removeContactsByIds(r.ids);
+      setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, contactRecat: { ...r, state: "done", result: `Removed the ${n} contact${n === 1 ? "" : "s"} that import added.` } } : x.id === r.importMsgId && x.contactImport ? { ...x, contactImport: { ...x.contactImport, state: "undone", result: `Undone: removed ${n}.` } } : x)) }));
+      return;
+    }
+    const prev: Record<string, string> = {};
+    let n = 0;
+    for (const c of loadContactDirectory().filter((x) => r.ids.includes(x.id))) {
+      prev[c.id] = JSON.stringify({ category: c.category, subCategory: c.subCategory ?? "" });
+      const res = updateContact(c.id, { name: c.name, category: r.to as ContactCategory, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "" });
+      if (res.updated) n++;
+    }
+    setMsg(msg.id, { contactRecat: { ...r, prev, state: "done", result: `Moved ${n} contact${n === 1 ? "" : "s"} to ${r.to}.` } });
+  };
+  const revertContactRecat = (msg: ChatMessage) => {
+    const r = msg.contactRecat;
+    if (!r || r.state !== "done" || !r.prev) return;
+    for (const c of loadContactDirectory().filter((x) => r.prev![x.id])) {
+      const was = JSON.parse(r.prev[c.id]) as { category: string; subCategory: string };
+      updateContact(c.id, { name: c.name, category: was.category as ContactCategory, subCategory: was.subCategory || undefined, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "" });
+    }
+    setMsg(msg.id, { contactRecat: { ...r, state: "reverted", result: `Undone: back to ${r.from}.` } });
+  };
   const undoContactImport = (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
     const n = removeContactsByIds(imp.addedIds ?? []);
     setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Undone: removed the ${n} contact${n === 1 ? "" : "s"} this import added.` } });
@@ -1493,6 +1561,15 @@ export function GlobalGoatPopup({
         push({ role: "user", text: question, practice: true });
         push({ role: "goat", text: "Okay, I won't add them.", practice: true });
         return;
+      }
+    }
+    // "you did it wrong" / "you put them under acute care" / "undo that" refer to G.O.A.T.'s LAST
+    // action — they win over any older patient context (never the patient's note/bill/booking menu).
+    if (!opts && !isFlowToken(question) && !question.startsWith("/")) {
+      const fu = followUpFor(question, lastAct(), practiceData().today);
+      if ((fu && ["correct", "leave", "importRecat", "importUndo"].includes(fu.kind)) || /^fix the (time|recipient|to-do)$/i.test(question.trim())) {
+        flowRef.current = null;
+        if (tryFollowUp(question)) return;
       }
     }
     // Team-message steps (tapped buttons, or the typed answer to "What should I tell Hannah?").
@@ -1993,6 +2070,7 @@ export function GlobalGoatPopup({
                     {m.msgDraft && <MessageCard draft={m.msgDraft} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "canceled" } } : x)) }))} onSent={(body) => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, msgDraft: { ...x.msgDraft!, state: "sent", sent: body } } : x)) }))} />}
                     {m.noteEdit && <NoteEditCard edit={m.noteEdit} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteEdit: { ...x.noteEdit!, state: "canceled" } } : x)) }))} onConfirm={() => applyNoteEdit(m)} />}
                     {m.contactEdit && <ContactEditCard d={m.contactEdit} onCancel={() => setMsg(m.id, { contactEdit: { ...m.contactEdit!, state: "canceled" } })} onChange={(d) => setMsg(m.id, { contactEdit: d })} onConfirm={(d) => confirmContactEdit(m, d)} />}
+                    {m.contactRecat && <ContactRecatCard r={m.contactRecat} onCancel={() => setMsg(m.id, { contactRecat: { ...m.contactRecat!, state: "canceled" } })} onConfirm={() => confirmContactRecat(m)} onUndo={() => revertContactRecat(m)} />}
                     {m.contactImport && <ContactImportCard imp={m.contactImport} onCancel={() => setMsg(m.id, { contactImport: { ...m.contactImport!, state: "canceled" } })} onChange={(imp) => setMsg(m.id, { contactImport: imp })} onConfirm={(imp) => void confirmContactImport(m, imp)} onUndo={() => undoContactImport(m, m.contactImport!)} />}
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
@@ -2435,6 +2513,26 @@ function ContactEditCard({ d, onChange, onConfirm, onCancel }: { d: NonNullable<
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={() => onConfirm(d)} style={{ fontSize: 12 }} type="button">Confirm</button>
         <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
       </div>
+    </div>
+  );
+}
+
+function ContactRecatCard({ r, onConfirm, onCancel, onUndo }: { r: NonNullable<ChatMessage["contactRecat"]>; onConfirm: () => void; onCancel: () => void; onUndo: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  if (r.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">No changes made.</p>;
+  if (r.state === "done" || r.state === "reverted") {
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs" data-goat-recat-result>
+        <span className={`font-semibold ${r.state === "done" ? "text-emerald-700" : "text-[var(--text-muted)]"}`}>{r.state === "done" ? "✓ " : ""}{r.result}</span>
+        <Link className="text-[var(--brand-primary)] hover:underline" href="/contacts">Open Contacts ↗</Link>
+        {r.state === "done" && r.mode === "recat" && <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onUndo} style={{ fontSize: 12 }} type="button">Undo</button>}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 flex gap-1.5" data-goat-recat>
+      <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">{r.mode === "undo" ? `Remove ${r.ids.length}` : `Move ${r.ids.length} to ${r.to}`}</button>
+      <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
     </div>
   );
 }

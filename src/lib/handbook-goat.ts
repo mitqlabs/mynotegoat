@@ -135,11 +135,21 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Add many contacts at once (paste)",
       steps: [
         "Paste a list into G.O.A.T. (\"add these as contacts\" is optional). One contact per block: name, phone, address — emails and fax are picked up too.",
-        "G.O.A.T. suggests a category (law firms → Attorney) — change it if it's wrong.",
+        "G.O.A.T. suggests a category from the names (Law, Esq, APC, LLP, Firm, Legal → Attorney, even if a name also says Injury, Accident or Care). If it isn't sure, it asks you to pick before anything is added.",
         "Review the table: edit any cell, untick rows you don't want. Likely duplicates of existing contacts start unticked.",
         "Confirm adds the ticked ones and tells you how many were added and skipped. \"Undo this import\" on the same card removes exactly those.",
+        "Wrong category? Just say so: \"you put them under Acute Care\", \"they should be attorneys\" or \"change them to Imaging\". G.O.A.T. asks which category if you didn't say, then shows one card to move exactly the contacts from that import (with Undo).",
       ],
       why: "Every contacts save is also kept in the cloud's version history, so an admin can restore an earlier list if needed.",
+    },
+    {
+      heading: "Tell G.O.A.T. it got something wrong",
+      steps: [
+        "Right after G.O.A.T. does something (a note, to-do, booking, message or contact import), say \"you did it wrong\", \"that's wrong\", \"not that\" or \"no\".",
+        "It says plainly what it did last, then gives you Fix it, Undo (where it can) and Leave it.",
+        "Nothing changes until you tap Confirm on the card it shows.",
+      ],
+      why: "A follow-up about what G.O.A.T. just did always refers to that, never to an older patient you looked at.",
     },
     {
       heading: "G.O.A.T. on your phone (home-screen app)",

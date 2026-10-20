@@ -17,7 +17,10 @@ export type LastAct =
   | { kind: "note"; msgId: string; patientId: string; patientName: string; line: string }
   | { kind: "msgAsk"; msgId: string; toLabel: string; toUserId?: string; alsoTo?: Array<{ label: string; userId?: string }>; text: string }
   | { kind: "message"; msgId: string; toLabel: string; toUserId?: string; text: string; patientId?: string; patientName?: string; caseLabel?: string; state: "open" | "sent" | "canceled" }
-  | { kind: "booking"; msgId: string; state: "open" | "booked" | "canceled" };
+  | { kind: "booking"; msgId: string; state: "open" | "booked" | "canceled" }
+  /** A saved contact import (or its recategorize). ids = exactly the contacts it added. */
+  | { kind: "contactImport"; msgId: string; ids: string[]; category: string }
+  | { kind: "todo"; msgId: string; title: string };
 
 export type FollowUpAction =
   | { kind: "noteDate"; iso: string }
@@ -27,7 +30,51 @@ export type FollowUpAction =
   | { kind: "generalMessage" }
   | { kind: "messageTo"; to: string; mode: "instead" | "also" }
   | { kind: "bookingTime"; time: string }
-  | { kind: "clarify"; say: string; choice?: { label: string; question: string } };
+  | { kind: "clarify"; say: string; choice?: { label: string; question: string } }
+  /** "you did it wrong" / "that's wrong" / "not that": say what was done, offer Fix it / Undo / Leave it. */
+  | { kind: "correct" }
+  /** "Leave it" — no change. */
+  | { kind: "leave" }
+  /** Recategorize the last import; to = "" means ask which category. */
+  | { kind: "importRecat"; to: string }
+  | { kind: "importUndo" };
+
+const CATEGORY_WORDS: Array<[RegExp, string]> = [
+  [/\b(attorneys?|lawyers?|law ?firms?|law|legal)\b/, "Attorney"],
+  [/\b(imaging(?: centers?)?|mri|radiology|x-?rays?)\b/, "Imaging Center"],
+  [/\b(specialists?|ortho\w*|pain management|pm|neuro\w*|doctors?)\b/, "Specialist"],
+  [/\b(acute care|acute|hospitals?|urgent care|er|emergency)\b/, "Acute Care"],
+  [/\b(insurance(?: agents?)?|agents?)\b/, "Insurance Agent"],
+];
+/** Contact categories named in a message, in the order they appear. */
+export function categoriesIn(text: string): string[] {
+  const q = text.toLowerCase();
+  return CATEGORY_WORDS.map(([re, c]) => ({ c, at: q.search(re) })).filter((x) => x.at >= 0).sort((a, b) => a.at - b.at).map((x) => x.c);
+}
+
+const WRONG = /^(?:no+|nope|not that(?: one)?|wrong|(?:that|it|this)(?:'?s| is| was) (?:wrong|not right|incorrect|a mistake)|you (?:did|got|made) (?:it|that|this|them) wrong|you did (?:it|that) wrong|you messed (?:it|that|this) up|that'?s not (?:it|right|what i (?:meant|wanted|asked(?: for)?))|(?:you )?(?:did|got) (?:it|that) wrong|that'?s not correct|fix (?:it|that|this)|wrong one)[.!]*$/i;
+const LEAVE = /^(?:leave it|leave (?:it|them) (?:as is|alone)|keep it|it'?s fine|that'?s fine|never ?mind|no change)[.!]*$/i;
+const UNDO_ANY = /^(?:please\s+|pls\s+|actually\s+|oops,?\s+)?(?:undo(?:\s+(?:that|it|this|the import|them))?|take (?:it|that|them) back|scratch that|remove (?:them|those|these)|delete (?:them|those|these))[.!]*$/i;
+const ABOUT_IMPORT = /\b(them|they|they'?re|those|these|it|that|import(?:ed)?|contacts?|categor\w*|list)\b/i;
+const CHANGE_WORD = /\b(put|under|wrong|should|change|move|switch|make|set|are|as|instead|not|categor\w*|fix|label\w*|mark\w*|file\w*)\b/i;
+
+/** Correction / undo / recategorize follow-ups to a contact import (and any other last action). */
+function correctionFor(q: string, last: LastAct): FollowUpAction | null {
+  if (LEAVE.test(q)) return { kind: "leave" };
+  if (last.kind === "contactImport") {
+    if (UNDO_ANY.test(q)) return { kind: "importUndo" };
+    if (WRONG.test(q) && !/^fix\b/i.test(q)) return { kind: "correct" };
+    const named = categoriesIn(q);
+    const others = named.filter((c) => c !== last.category);
+    const refers = ABOUT_IMPORT.test(q) && CHANGE_WORD.test(q);
+    if (others.length && (refers || named.length === q.split(" ").length || /^(?:change|move|switch|make|set|recategori[sz]e)\b/i.test(q))) return { kind: "importRecat", to: others[others.length - 1] };
+    if (/^fix (?:it|that|the import|them)[.!]*$/i.test(q) || (refers && /\b(wrong|should|change|not|under|categor\w*|fix)\b/i.test(q))) return { kind: "importRecat", to: "" };
+    if (WRONG.test(q)) return { kind: "correct" };
+    return null;
+  }
+  if (WRONG.test(q)) return { kind: "correct" };
+  return null;
+}
 
 export const NOT_CAUGHT = "I didn't catch that. I can add notes, message the team, book, or look things up.";
 
@@ -105,6 +152,9 @@ export function followUpFor(text: string, last: LastAct | null, todayIso: string
   if (!last) return null;
   const q = text.trim().replace(/\s+/g, " ");
   if (!q) return null;
+  // "no" / "none" after "which patient?" is an answer, not a correction.
+  const corr = last.kind === "msgAsk" ? null : correctionFor(q, last);
+  if (corr) return corr;
   if (last.kind === "note") {
     if (UNDO.test(q)) return { kind: "noteDelete" };
     const rep = REPLACE.exec(q);
@@ -139,6 +189,16 @@ export function followUpFor(text: string, last: LastAct | null, todayIso: string
 }
 
 /** Context-aware "didn't catch that" for a message that isn't a file question. */
+/** Plain words for what G.O.A.T. did last ("Last I added 22 contacts under Acute Care."). */
+export function lastActSummary(last: LastAct): string {
+  if (last.kind === "contactImport") return `Last I added ${last.ids.length} contact${last.ids.length === 1 ? "" : "s"} under ${last.category || "no category"}.`;
+  if (last.kind === "note") return `Last I added this note for ${last.patientName}: "${last.line}".`;
+  if (last.kind === "message") return `Last I ${last.state === "sent" ? "sent" : "drafted"} a message to ${last.toLabel}: "${last.text}".`;
+  if (last.kind === "msgAsk") return `Last I was writing a message to ${last.toLabel}.`;
+  if (last.kind === "todo") return `Last I added the to-do "${last.title}".`;
+  return last.state === "booked" ? "Last I booked an appointment." : "Last I drafted an appointment.";
+}
+
 export function clarifyFor(last: LastAct | null): string {
   if (last?.kind === "note") return `I didn't catch that. Want me to change the date or the text of the note I just added for ${last.patientName}, or undo it? I can also add notes, message the team, book, or look things up.`;
   if (last?.kind === "message") return `I didn't catch that. I can send that message to someone else ("send it to Greg instead"), or add notes, book, or look things up.`;
