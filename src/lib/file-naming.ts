@@ -1,14 +1,18 @@
 /**
- * New uploads to a patient/case are named "<CASE#> <original name>",
- * e.g. "101526MANA MRI Report.pdf". Unchanged when there's no case # or
- * the name already starts with it (any case). Extension is kept as-is.
+ * New uploads to a patient/case are named "<CASE#> <Last>, <First> <original name>",
+ * e.g. "101526SMJO Smith, John MRI Report.pdf". Unchanged when there's no
+ * case # or the name already starts with it (any case). A name that already
+ * starts with "Last, First" just gets the case # in front. Extension kept.
  */
-export function withCaseNumberPrefix(name: string, caseNumber: string | null | undefined): string {
+export function withCaseNumberPrefix(name: string, caseNumber: string | null | undefined, fullName = ""): string {
   const cn = (caseNumber ?? "").trim();
   const original = name.trim();
   if (!cn || !original) return name;
   if (original.toLowerCase().startsWith(cn.toLowerCase())) return name;
-  return `${cn} ${original}`;
+  const [last = "", first = ""] = fullName.split(",").map((x) => x.trim());
+  const who = last && first ? `${last}, ${first}` : last || first;
+  if (!who || original.toLowerCase().startsWith(who.toLowerCase())) return `${cn} ${original}`;
+  return `${cn} ${who} ${original}`;
 }
 
 /** Walk up from a folder to the patient it belongs to (folders carry patientId). */

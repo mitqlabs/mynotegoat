@@ -7,13 +7,13 @@ import { loadFileManagerState } from "@/lib/file-manager";
 import { getPatientById } from "@/lib/mock-data";
 import { buildCaseNumber } from "@/lib/follow-up-queue";
 
-/** "<CASE#> <name>" for a file going into a patient's folder (or its subfolders). */
+/** "<CASE#> <Last>, <First> <name>" for a file going into a patient's folder (or its subfolders). */
 export function caseNamedUpload(folderId: string, name: string): string {
   try {
     const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
     const patient = pid ? getPatientById(pid) : null;
     if (!patient) return name;
-    return withCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName));
+    return withCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName), patient.fullName);
   } catch {
     return name;
   }
