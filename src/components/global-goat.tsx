@@ -47,7 +47,7 @@ import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
-import { clarifyFor, editNoteLine, followUpFor, lastActSummary, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
+import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
@@ -671,7 +671,7 @@ export function GlobalGoatPopup({
     const fixAsk = /^fix the (time|recipient|to-do)$/i.exec(question.trim());
     if (fixAsk && last) {
       push({ role: "user", text: question, practice: true });
-      const say = fixAsk[1] === "time" ? `What time should it be? (e.g. "make it 2pm instead")` : fixAsk[1] === "recipient" ? `Who should get it? (e.g. "send it to Greg instead")` : "Open To-Do to change or remove it.";
+      const say = fixAsk[1] === "time" ? `Sure — what time works better?` : fixAsk[1] === "recipient" ? `No problem — who should get it?` : "You can change or remove it in To-Do.";
       push({ role: "goat", text: say, practice: true, links: fixAsk[1] === "to-do" ? [{ label: "Open To-Do", href: "/patients?view=toDo" }] : undefined });
       return true;
     }
@@ -679,31 +679,32 @@ export function GlobalGoatPopup({
     if (!f || !last) return false;
     push({ role: "user", text: question, practice: true });
     if (f.kind === "leave") {
-      push({ role: "goat", text: "Okay, I left it as is.", practice: true });
+      push({ role: "goat", text: "Okay, I'll leave it as is.", practice: true });
       return true;
     }
     if (f.kind === "correct") {
-      const fix = last.kind === "contactImport" ? "fix the category" : last.kind === "note" ? "fix the note" : last.kind === "booking" ? "fix the time" : last.kind === "message" ? "fix the recipient" : "fix the to-do";
-      const undo = last.kind === "contactImport" ? "undo the import" : last.kind === "note" ? "undo that" : null;
-      push({ role: "goat", text: `${lastActSummary(last)} What should I do?`, practice: true, choices: [{ label: "Fix it", question: fix }, ...(undo ? [{ label: "Undo", question: undo }] : []), { label: "Leave it", question: "leave it" }] });
+      const r = correctionReply(last);
+      push({ role: "goat", text: r.say, practice: true, choices: r.choices });
       return true;
     }
     if (last.kind === "contactImport" && (f.kind === "importRecat" || f.kind === "importUndo")) {
       if (f.kind === "importUndo") {
-        push({ role: "goat", text: `Remove the ${last.ids.length} contacts that import added?`, practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: "", mode: "undo", state: "open" } });
+        push({ role: "goat", text: importUndoText(last.ids.length), practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: "", mode: "undo", state: "open" } });
         return true;
       }
       if (!f.to) {
-        push({ role: "goat", text: `${lastActSummary(last)} Which category should they be?`, practice: true, choices: CONTACT_CATEGORIES.filter((c) => c !== last.category).map((c) => ({ label: c, question: `change them to ${c}` })) });
+        const names = loadContactDirectory().filter((c) => last.ids.includes(c.id)).map((c) => ({ name: c.name }));
+        const r = recatAsk(last, f.noSuggest ? "" : batchCategory(names), CONTACT_CATEGORIES);
+        push({ role: "goat", text: r.say, practice: true, choices: r.choices });
         return true;
       }
-      push({ role: "goat", text: `Move the ${last.ids.length} contacts from that import from ${last.category || "no category"} to ${f.to}?`, practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: f.to, mode: "recat", state: "open" } });
+      push({ role: "goat", text: recatConfirmText(last.ids.length, last.category, f.to), practice: true, contactRecat: { importMsgId: last.msgId, ids: last.ids, from: last.category, to: f.to, mode: "recat", state: "open" } });
       return true;
     }
     if (f.kind === "importRecat" || f.kind === "importUndo") return true;
     if (last.kind !== "note" && /^fix the (time|recipient|to-do)$/i.test(question.trim())) return true;
     if (last.kind === "note" && /^fix the note$/i.test(question.trim())) {
-      push({ role: "goat", text: `What should change? Type the new text ("change it to …") or the right date ("it was yesterday").`, practice: true });
+      push({ role: "goat", text: `Sure — what should it say? Or tell me the right date, like "it was yesterday".`, practice: true });
       return true;
     }
     if (last.kind === "note") {
@@ -1462,9 +1463,13 @@ export function GlobalGoatPopup({
     const guess = asked || batchCategory(drafts);
     const rows = buildImportRows(drafts, practiceOverride ? [] : loadContactDirectory(), guess as ContactCategory | "");
     const dupes = rows.filter((r) => r.flag).length;
+    const n = rows.length;
+    const unticked = dupes ? ` ${dupes === 1 ? "One's" : `${dupes} are`} unticked — ${dupes === 1 ? "it looks like a duplicate or is missing info" : "they look like duplicates or are missing info"}.` : "";
     const say = guess
-      ? `I found ${rows.length} contact${rows.length === 1 ? "" : "s"}. ${asked ? `Category: ${guess}.` : `They look like ${guess === "Attorney" ? "law firms" : guess} — I set the category to ${guess}; change it if that's wrong.`}${dupes ? ` ${dupes} start unticked (possible duplicates or missing info).` : ""} Check the list, then Confirm.`
-      : `I found ${rows.length} contact${rows.length === 1 ? "" : "s"}. What category are they? Pick one in the card (you can change single rows too).${dupes ? ` ${dupes} start unticked (possible duplicates or missing info).` : ""}`;
+      ? asked
+        ? `Got ${n} contact${n === 1 ? "" : "s"} — filing ${n === 1 ? "it" : "them"} under ${guess} like you said.${unticked} Look it over and tap Add.`
+        : `Got ${n} contact${n === 1 ? "" : "s"}. ${guess === "Attorney" ? "They look like law firms" : `They look like ${categoryPlural(guess)}`}, so I put ${guess} — change it if I'm off.${unticked} Look it over and tap Add.`
+      : `Got ${n} contact${n === 1 ? "" : "s"}. I'm not sure what kind ${n === 1 ? "it is" : "they are"} — pick a category in the card and I'll add ${n === 1 ? "it" : "them"}.${unticked}`;
     push({ role: "goat", text: say, practice: true, contactImport: { rows, category: guess, categoryGuessed: !asked && Boolean(guess), state: "open" } });
     return true;
   };
@@ -1477,14 +1482,14 @@ export function GlobalGoatPopup({
     const res = await addContactsBulk(picked.map((r) => ({ name: r.name, phone: r.phone, fax: r.fax, email: r.email, address: r.address, category: (r.category || imp.category) as ContactCategory })));
     const skipped = imp.rows.length - res.added.length;
     const why = res.skipped.length ? ` (${res.skipped.length} couldn't be added: ${res.skipped.slice(0, 3).map((x) => `${x.name} — ${x.reason}`).join("; ")}${res.skipped.length > 3 ? "…" : ""})` : "";
-    setMsg(msg.id, { contactImport: { ...imp, state: "saved", addedIds: res.added.map((c) => c.id), result: `Added ${res.added.length}, skipped ${skipped}${why}.` } });
+    setMsg(msg.id, { contactImport: { ...imp, state: "saved", addedIds: res.added.map((c) => c.id), result: `Done! Added ${res.added.length}${skipped ? ` (skipped ${skipped}${why})` : ""}.` } });
   };
   const confirmContactRecat = (msg: ChatMessage) => {
     const r = msg.contactRecat;
     if (!r || r.state !== "open") return;
     if (r.mode === "undo") {
       const n = removeContactsByIds(r.ids);
-      setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, contactRecat: { ...r, state: "done", result: `Removed the ${n} contact${n === 1 ? "" : "s"} that import added.` } } : x.id === r.importMsgId && x.contactImport ? { ...x, contactImport: { ...x.contactImport, state: "undone", result: `Undone: removed ${n}.` } } : x)) }));
+      setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, contactRecat: { ...r, state: "done", result: `Done — took out ${n === 1 ? "that one" : `all ${n}`}.` } } : x.id === r.importMsgId && x.contactImport ? { ...x, contactImport: { ...x.contactImport, state: "undone", result: `Undone: removed ${n}.` } } : x)) }));
       return;
     }
     const prev: Record<string, string> = {};
@@ -1494,7 +1499,7 @@ export function GlobalGoatPopup({
       const res = updateContact(c.id, { name: c.name, category: r.to as ContactCategory, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "" });
       if (res.updated) n++;
     }
-    setMsg(msg.id, { contactRecat: { ...r, prev, state: "done", result: `Moved ${n} contact${n === 1 ? "" : "s"} to ${r.to}.` } });
+    setMsg(msg.id, { contactRecat: { ...r, prev, state: "done", result: `Done — ${n === 1 ? "it's" : `all ${n} are`} under ${r.to} now.` } });
   };
   const revertContactRecat = (msg: ChatMessage) => {
     const r = msg.contactRecat;
@@ -1503,7 +1508,7 @@ export function GlobalGoatPopup({
       const was = JSON.parse(r.prev[c.id]) as { category: string; subCategory: string };
       updateContact(c.id, { name: c.name, category: was.category as ContactCategory, subCategory: was.subCategory || undefined, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "" });
     }
-    setMsg(msg.id, { contactRecat: { ...r, state: "reverted", result: `Undone: back to ${r.from}.` } });
+    setMsg(msg.id, { contactRecat: { ...r, state: "reverted", result: `Okay, put ${r.ids.length === 1 ? "it" : "them"} back under ${r.from || "no category"}.` } });
   };
   const undoContactImport = (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
     const n = removeContactsByIds(imp.addedIds ?? []);
@@ -1639,10 +1644,13 @@ export function GlobalGoatPopup({
       if (r.kind === "clarify" || r.kind === "unsupported") {
         push({ role: "user", text: question, practice: true });
         const p = pp(r.patientId);
-        const opts = r.kind === "clarify" && p ? clarifyForPatient(p.fullName, question.replace(new RegExp(p.fullName.split(" ")[0], "i"), "").replace(new RegExp(p.fullName.split(" ").slice(1).join(" ") || "^$", "i"), "").trim()).options : [];
+        // Generic note/bill/booking buttons only when this message names the patient —
+        // never for a "them/it" that most likely means something G.O.A.T. just did.
+        const named = p ? p.fullName.split(/[,\s]+/).filter((w) => w.length > 2).some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(question)) : false;
+        const opts = r.kind === "clarify" && p && named ? clarifyForPatient(p.fullName, question.replace(new RegExp(p.fullName.split(" ")[0], "i"), "").replace(new RegExp(p.fullName.split(" ").slice(1).join(" ") || "^$", "i"), "").trim()).options : [];
         push({
           role: "goat",
-          text: r.say,
+          text: r.kind === "clarify" && p && !named ? `Sorry, I'm not sure what you mean. Is this about ${displayName(p.fullName)}, or something else?` : r.say,
           practice: true,
           choices: opts.length ? opts : undefined,
           links: r.kind === "unsupported" ? [{ label: "Open Schedule", href: "/appointments" }] : undefined,
@@ -2531,7 +2539,7 @@ function ContactRecatCard({ r, onConfirm, onCancel, onUndo }: { r: NonNullable<C
   }
   return (
     <div className="mt-2 flex gap-1.5" data-goat-recat>
-      <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">{r.mode === "undo" ? `Remove ${r.ids.length}` : `Move ${r.ids.length} to ${r.to}`}</button>
+      <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">{r.mode === "undo" ? `Yes, remove ${r.ids.length}` : `Yes, switch ${r.ids.length}`}</button>
       <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
     </div>
   );
