@@ -1744,11 +1744,11 @@ export default function AppointmentsPage() {
               </button>
             </div>
 
-            <div className="mt-4 grid items-start gap-3 md:grid-cols-2">
+            <div className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {/* Patient: Existing / New toggle. New = a compact grid; Save Appointment
                   creates the patient and the visit together (no separate Create step). */}
-              <div className={`relative grid gap-1 ${patientMode === "new" ? "md:col-span-2" : ""}`}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className={`relative grid content-start gap-1 ${patientMode === "new" ? "sm:col-span-2 lg:col-span-3" : ""}`}>
+                <div className="flex h-5 flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
                   <div className="inline-flex overflow-hidden rounded-lg border border-[var(--line-soft)] text-xs font-semibold" role="group" aria-label="Patient type" data-testid="patient-mode-toggle">
                     {(["existing", "new"] as const).map((mode) => (
@@ -1856,7 +1856,7 @@ export default function AppointmentsPage() {
                 )}
               </div>
 
-              <label className="grid gap-1">
+              <label className="grid content-start gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Provider *</span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1873,7 +1873,7 @@ export default function AppointmentsPage() {
                 </datalist>
               </label>
 
-              <label className="grid gap-1">
+              <label className="grid content-start gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Location *</span>
                 <input
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1890,7 +1890,7 @@ export default function AppointmentsPage() {
                 </datalist>
               </label>
 
-              <label className={`grid gap-1 ${patientMode === "new" ? "md:col-span-2" : ""}`}>
+              <label className="grid content-start gap-1">
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Type *</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1959,11 +1959,11 @@ export default function AppointmentsPage() {
                 </select>
                 {roomOptions.length > 0 ? (
                   <span className="text-xs text-[var(--text-muted)]">
-                    Add/edit rooms in Settings → Schedule Settings → Room Settings.
+                    Change in Settings → Schedule (rooms).
                   </span>
                 ) : (
                   <span className="text-xs text-[var(--text-muted)]">
-                    No rooms configured yet. You can add them in Settings.
+                    No rooms yet. Add them in Settings → Schedule.
                   </span>
                 )}
               </label>
