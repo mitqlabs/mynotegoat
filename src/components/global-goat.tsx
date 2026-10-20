@@ -47,6 +47,7 @@ import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
+import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
@@ -436,6 +437,8 @@ export function GlobalGoatPopup({
   const { rows: receivedForms } = useFormRequests({ awaitingReview: true }, !practiceOverride);
   // Shown under the greeting until the first message; computed when the popup opens.
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
+  // Dismissed nudges: this chat session only (nothing saved, so nothing is browser-only).
+  const [dismissedNudges, setDismissedNudges] = useState<string[]>([]);
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
   const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
@@ -1512,12 +1515,26 @@ export function GlobalGoatPopup({
   };
   const undoContactImport = (msg: ChatMessage, imp: NonNullable<ChatMessage["contactImport"]>) => {
     const n = removeContactsByIds(imp.addedIds ?? []);
-    setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Undone: removed the ${n} contact${n === 1 ? "" : "s"} this import added.` } });
+    setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Okay, took out the ${n === 1 ? "one" : n} I added.` } });
   };
 
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
-    const question = raw.trim();
+    // Typos and texting shorthand ("tmrw", "pls", "remind me 2", "lawer") → plain words first.
+    const casual = !opts && !raw.includes("\n") && !isFlowToken(raw.trim()) && !raw.trim().startsWith("/") && !raw.trim().startsWith("@");
+    const question = casual ? normalizeCasual(raw) : raw.trim();
     if (!question || job || practiceBusy) return;
+    // Two requests in one message: "book John Wed 2pm and remind me to call his lawyer".
+    // Each step runs on its own (each still gets its own confirm card); "his/him" carries the patient.
+    if (casual) {
+      const steps = splitSteps(question);
+      if (steps.length > 1) {
+        const hit = findPatientsInQuestion(steps[0], allPatients().map(toChatPatient)).confident?.patient;
+        const rest = steps.slice(1).map((st) => (hit ? carryPatient(st, hit.fullName) : st));
+        send(steps[0]);
+        rest.forEach((st, i) => window.setTimeout(() => sendRef.current(st), 450 * (i + 1)));
+        return;
+      }
+    }
     // A chip, "/" or "@" command, help or a pasted list always ends a waiting "/" step.
     if (!opts && !isFlowToken(question) && breaksFlow(question, flowRef.current)) flowRef.current = null;
     setInput("");
@@ -1867,6 +1884,21 @@ export function GlobalGoatPopup({
     }
     startAnswer(p, question, Boolean(current));
   };
+  // Opening brief + nudges, from real data (read-only). Only while the chat is empty.
+  const chatEmpty = chat.messages.length === 0;
+  const opening = useMemo(() => {
+    if (!chatEmpty || practiceOverride) return null;
+    try {
+      const data = briefData();
+      const people = allPatients()
+        .filter((p) => !(p as { deleted?: boolean }).deleted)
+        .map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, attorney: p.attorney, cash: p.isCashPatient, firstVisit: data.patients.find((x) => x.id === p.id)?.firstVisit }));
+      return { brief: dailyBrief(data, new Date().getHours(), isGoatAdmin), nudges: nudges(data, people) };
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatEmpty, isGoatAdmin, practiceOverride]);
   // Patient-page box handed us an action ("remind me to do his report"): send it here.
   const sendRef = useRef(send);
   useEffect(() => {
@@ -2023,8 +2055,20 @@ export function GlobalGoatPopup({
                 <GoatAvatar size={28} />
                 <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
-                  <p><span className="font-semibold">{greeting}</span> What can I help with?</p>
-                  <p className="text-xs text-[var(--text-muted)]">Everything stays in NoteGoat.</p>
+                  <p data-goat-brief>{opening ? opening.brief : <><span className="font-semibold">{greeting}</span> What can I help with?</>}</p>
+                  {opening && opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).length > 0 && (
+                    <ul className="mt-1.5 space-y-1" data-goat-nudges>
+                      {opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).map((x) => (
+                        <li className="flex items-start gap-1.5 rounded-lg bg-[#fff8e6] px-2 py-1 text-xs" key={x.id}>
+                          <span className="flex-1">
+                            {x.href ? <Link className="hover:underline" href={x.href}>{x.text}</Link> : x.text}
+                          </span>
+                          <button aria-label="Dismiss" className="text-[var(--text-muted)] hover:text-[var(--text-main)]" onClick={() => setDismissedNudges((d) => [...d, x.id])} title="Not now" type="button">×</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">What can I do for you? Everything stays in NoteGoat.</p>
                   <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
                       <button
@@ -2631,7 +2675,6 @@ const CHIP_ICONS: Record<string, string> = { "Morning Rundown": "☀️", "Appoi
 
 function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
-  const due = draft.dueDate ? `${draft.dueDate.slice(5, 7)}/${draft.dueDate.slice(8, 10)}/${draft.dueDate.slice(0, 4)}` : "no due date";
   if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Added to To-Do · <Link className="text-[var(--brand-primary)] hover:underline" href="/patients?view=toDo">Open To-Do ↗</Link></p>;
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
   return (
@@ -2640,7 +2683,7 @@ function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessa
         <span className="block font-semibold">{todoTitleParts(draft.title).text}</span>
         {todoTitleParts(draft.title).phone && <span className="font-semibold text-[var(--brand-primary)]">{todoTitleParts(draft.title).phone}</span>}
       </div>
-      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${due}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
+      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${cardDate(draft.dueDate)}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
       <div className="flex flex-wrap gap-1.5">
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3.5 text-white`} onClick={onConfirm} style={{ fontSize: 13 }} type="button">Confirm</button>
         <button className={`${btn} border-[var(--line-soft)] bg-white px-3.5 text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 13 }} type="button">Cancel</button>
