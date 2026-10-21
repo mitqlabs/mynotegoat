@@ -62,6 +62,10 @@ export interface DxSuggestInput {
   library: Array<{ code: string; description: string }>;
   /** Codes already on the patient (skipped). */
   existing: Array<{ code: string }>;
+  /** Rules to use instead of DX_RULES (the X-ray list uses a subset plus its own). */
+  rules?: DxRule[];
+  /** Which uploaded reports to read (default MRI/CT; X-ray uses X-Ray). */
+  fileKinds?: Array<"MRI" | "CT" | "X-Ray">;
 }
 
 export interface DxEvidence {
@@ -217,9 +221,11 @@ interface Unit {
   region: SpineSegment | null;
 }
 
-const RULE_RES = DX_RULES.map((rule) => ({ rule, re: rx(rule.terms) }));
+type RuleRe = { rule: DxRule; re: RegExp };
+const RULE_RES: RuleRe[] = DX_RULES.map((rule) => ({ rule, re: rx(rule.terms) }));
+const ruleResFor = (rules?: DxRule[]): RuleRe[] => (rules ? rules.map((rule) => ({ rule, re: rx(rule.terms) })) : RULE_RES);
 
-function findingsIn(unit: Unit): Finding[] {
+function findingsIn(unit: Unit, ruleRes: RuleRe[] = RULE_RES): Finding[] {
   const out: Finding[] = [];
   const itemNamed = regionsNamedIn(unit.text.slice(0, 60)).map(segmentOfRegion).filter((s): s is SpineSegment => Boolean(s));
   // A level counts only when it's stated in this clause or an earlier one of the same item.
@@ -228,7 +234,7 @@ function findingsIn(unit: Unit): Finding[] {
     const own = levelsOf(clause);
     if (own.length) carry = own;
     const named = regionsNamedIn(clause).map(segmentOfRegion).filter((s): s is SpineSegment => Boolean(s));
-    for (const { rule, re } of RULE_RES) {
+    for (const { rule, re } of ruleRes) {
       re.lastIndex = 0;
       if (!positiveMatch(clause, re)) continue;
       const evidence = { text: displayLine(unit.text), source: unit.source };
@@ -264,9 +270,11 @@ function panelUnits(src: DxSourceText): Unit[] {
 }
 
 /** Uploaded MRI/CT report → its Findings / Impression units (history and technique lines are skipped). */
-function fileUnits(file: GoatFile): Unit[] {
+function fileUnits(file: GoatFile, kinds: Array<"MRI" | "CT" | "X-Ray"> = ["MRI", "CT"]): Unit[] {
   if (file.status !== "read" || !file.pages?.length) return [];
-  if (!isImagingReport(file, ["MRI", "CT"])) return [];
+  if (!isImagingReport(file, kinds)) return [];
+  // An X-ray pass never re-reads an MRI/CT report (and the MRI pass never reads a plain X-ray one).
+  if (!kinds.includes("MRI") && isImagingReport(file, ["MRI", "CT"])) return [];
   const out: Unit[] = [];
   for (const u of docUnits(file)) {
     if (u.heading) continue;
@@ -374,9 +382,11 @@ export function suggestDiagnoses(input: DxSuggestInput): DxSuggestion[] {
 export function suggestDiagnosesDetailed(input: DxSuggestInput): { list: DxSuggestion[]; heldBack: DxHeldBack[] } {
   const units: Unit[] = [
     ...input.imaging.flatMap(panelUnits),
-    ...(input.files ?? []).flatMap(fileUnits),
+    ...(input.files ?? []).flatMap((f) => fileUnits(f, input.fileKinds)),
   ];
-  const findings = units.flatMap(findingsIn);
+  const ruleRes = ruleResFor(input.rules);
+  const rulesInUse = input.rules ?? DX_RULES;
+  const findings = units.flatMap((u) => findingsIn(u, ruleRes));
   if (!findings.length) return { list: [], heldBack: [] };
 
   // Myelopathy documented in the MRI text itself counts too.
@@ -449,7 +459,7 @@ export function suggestDiagnosesDetailed(input: DxSuggestInput): { list: DxSugge
   const radicCombined = new Set<SpineSegment>();
   for (const f of findings) {
     const keys = keysFor(f);
-    const ruleOrder = DX_RULES.indexOf(f.rule);
+    const ruleOrder = rulesInUse.indexOf(f.rule);
     const lvl = f.level ? levelOrder(f.level) : 99;
     const plain = lookup(f.rule.codes, keys);
     if (!plain) continue;
@@ -515,7 +525,7 @@ export function suggestDiagnosesDetailed(input: DxSuggestInput): { list: DxSugge
       why: [WHY.radiculopathyAlone],
       level: f0?.level ?? null,
       levelKeyed: false,
-      ruleOrder: DX_RULES.length,
+      ruleOrder: rulesInUse.length,
       levelOrder: 99,
       related: codes,
     });

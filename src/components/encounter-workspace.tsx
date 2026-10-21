@@ -968,6 +968,16 @@ function AppointmentsOverview({
   );
 }
 
+/** One-paragraph macro HTML → its inline content; null if it has several blocks or line breaks. */
+function toInlineMacroHtml(html: string): string | null {
+  let inner = html.trim();
+  const wrapped = /^<(p|div)>([\s\S]*)<\/\1>$/i.exec(inner);
+  if (wrapped) inner = wrapped[2].trim();
+  inner = inner.replace(/(?:<br\s*\/?>\s*)+$/i, "").trim();
+  if (!inner || /<\/?(p|div|ul|ol|li|table|h[1-6]|blockquote)\b|<br\b|\n/i.test(inner)) return null;
+  return inner;
+}
+
 export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId, initialQuestionnaireId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
   const { getPlansForPatient, updatePlan } = useTreatmentPlans();
@@ -1966,7 +1976,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     // isn't mounted (e.g. a programmatic path). insertHtml emits its own
     // onChange, so the model stays in sync.
     const editor = soapEditorRef.current;
-    if (editor) {
+    // Plan macros chain: "Begin Decompression" then a second-region macro
+    // should read as one paragraph. A one-paragraph Plan macro is inserted
+    // inline (its <p>/<div> wrapper dropped) so it continues the sentence
+    // the caret is on, one space after it.
+    const inlinePlanSnippet = activeSection === "plan" ? toInlineMacroHtml(cleanedSnippet) : null;
+    if (editor && inlinePlanSnippet !== null) {
+      editor.insertInlineHtml(inlinePlanSnippet);
+    } else if (editor) {
       editor.insertHtml(cleanedSnippet);
     } else {
       appendSoapSection(selectedEncounter.id, activeSection, cleanedSnippet);

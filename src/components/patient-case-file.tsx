@@ -42,6 +42,7 @@ import { DxSuggestions } from "@/components/dx-suggestions";
 import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
 import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
+import { suggestXrayDiagnoses, xrayInputFromGoat } from "@/lib/dx-suggest-xray";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
 import { onLocalChange } from "@/lib/local-sync";
@@ -50,9 +51,6 @@ import { loadPatientBillingMap } from "@/lib/patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
-import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { createAppointmentId } from "@/lib/schedule-appointments";
-import { planCaseFirstVisit } from "@/lib/new-patient-intake";
 import { useKeyDates } from "@/hooks/use-key-dates";
 import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
@@ -85,10 +83,8 @@ import {
   type PeriodRange,
 } from "@/lib/treatment-periods";
 import { UsDateInput } from "@/components/us-date-input";
-import { TimeInput12h } from "@/components/time-input-12h";
 
 /** "MM/DD/YYYY" → "YYYY-MM-DD" (for office-hours AM/PM snapping). */
-const mdyIso = (s: string) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim()); return m ? `${m[3]}-${m[1]}-${m[2]}` : undefined; };
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -1395,13 +1391,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const { documentTemplates } = useDocumentTemplates();
   const { reportTemplates } = useReportTemplates();
   const { getRecord: getPatientBillingRecord, setCoreFields: setPatientBillingCoreFields } = usePatientBilling();
-  const { scheduleAppointments, updateAppointment, removeAppointment, addAppointments: addScheduleAppointments } = useScheduleAppointments();
-  const { scheduleSettings: caseVisitSettings } = useScheduleSettings();
-  const { appointmentTypes: caseVisitTypes } = useScheduleAppointmentTypes();
-  // "+ Case" Appt Date + Time: books the New Patient visit (lib/new-patient-intake planCaseFirstVisit).
-  const [caseApptDate, setCaseApptDate] = useState("");
-  const [caseApptTime, setCaseApptTime] = useState("");
-  const [caseApptMsg, setCaseApptMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { scheduleAppointments, updateAppointment, removeAppointment } = useScheduleAppointments();
   const {
     getPackagesForPatient,
     applyAppointmentToPackage,
@@ -2716,6 +2706,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const hasMriText = input.imaging.length > 0 || (goatContext.files ?? []).some((f) => f.status === "read");
     return { ...suggestDiagnosesDetailed(input), hasMriText };
   }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses]);
+  // Same, from the X-ray (Imaging panel X-ray text + uploaded X-ray reports). Codes the MRI list already shows aren't repeated.
+  const xrayDxState = useMemo(() => {
+    if (!sectionPanelsOpen.diagnosis) return { list: [], heldBack: [], hasText: false };
+    const input = xrayInputFromGoat(
+      goatContext,
+      billingMacros.diagnoses.filter((d) => d.active).map((d) => ({ code: d.code, description: d.description })),
+      patientDiagnoses.map((d) => ({ code: d.code })),
+      dxSuggestState.list.map((s) => s.code),
+    );
+    return { ...suggestXrayDiagnoses(input), hasText: input.xray.length > 0 || (input.files ?? []).some((f) => f.status === "read") };
+  }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses, dxSuggestState.list]);
   // "+ Dx Code" on ICD-10 search rows: save the code to the office's list
   // (folder + optional bundles, same as Settings → Add a code). Doesn't add it
   // to the patient; the row then shows under "Your codes" with its folder.
@@ -5525,58 +5526,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
-            <div className="grid content-start gap-1" data-row="case-first-visit">
-              <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
-                <label className="grid min-w-0 gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date <span className="font-normal">(optional)</span></span>
-                  <UsDateInput
-                    className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(formatted) => { setCaseApptDate(formatted); setCaseApptMsg(null); }}
-                    placeholder="MM/DD/YYYY"
-                    value={caseApptDate}
-                  />
-                </label>
-                <label className="grid min-w-0 gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                  <TimeInput12h
-                    allowEmpty
-                    ariaLabel="Appointment time"
-                    dateIso={mdyIso(caseApptDate)}
-                    inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    onChange={(v) => { setCaseApptTime(v); setCaseApptMsg(null); }}
-                    placeholder=""
-                    smart
-                    value={caseApptTime}
-                  />
-                </label>
-              </div>
-              {caseApptDate.trim() && (
-                <button
-                  className="w-fit rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
-                  data-testid="case-appt-book"
-                  onClick={() => {
-                    const plan = planCaseFirstVisit({ dateMdy: caseApptDate, timeText: caseApptTime, patientId: patient.id }, scheduleAppointments, caseVisitSettings, caseVisitTypes);
-                    if (plan.kind === "none") return;
-                    if (plan.kind === "error") { setCaseApptMsg({ ok: false, text: plan.message }); return; }
-                    if (plan.kind === "exists") { setCaseApptMsg({ ok: true, text: "Already on the Schedule." }); return; }
-                    const last = scheduleAppointments.filter((a) => a.patientId === patient.id).sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)).pop();
-                    try {
-                      addScheduleAppointments([{ id: createAppointmentId(), patientId: patient.id, patientName: patient.fullName, provider: last?.provider || officeSettings.doctorName.trim(), location: last?.location || officeSettings.officeName.trim(), appointmentType: plan.type, caseLabel: caseNumber || "", room: "", date: plan.date, startTime: plan.time, durationMin: plan.durationMin, status: "Scheduled", note: "", overrideOfficeHours: false }]);
-                      setCaseApptMsg({ ok: true, text: `Booked: ${plan.type}, ${caseApptDate}.${plan.note ? ` ${plan.note}` : ""}` });
-                    } catch (error) {
-                      setCaseApptMsg({ ok: false, text: `Not booked: ${error instanceof Error ? error.message : "the schedule couldn't be saved"}.` });
-                    }
-                  }}
-                  type="button"
-                >
-                  Book New Patient visit
-                </button>
-              )}
-              {caseApptMsg && <span className={`text-xs font-semibold ${caseApptMsg.ok ? "text-emerald-700" : "text-[#b43b34]"}`} role={caseApptMsg.ok ? undefined : "alert"}>{caseApptMsg.text}</span>}
-            </div>
-          )}
-
           {!isCashPatient && (
             <div className="grid content-start gap-1">
               <label className="grid gap-1">
@@ -7422,6 +7371,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
                   suggestions={dxSuggestState.list}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
+                />
+              </div>
+              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3" data-dx-xray>
+                <DxSuggestions
+                  hasMriText={xrayDxState.hasText}
+                  heldBack={xrayDxState.heldBack}
+                  kind="X-ray"
+                  onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (X-ray)")}
+                  suggestions={xrayDxState.list}
                 />
               </div>
             </div>
