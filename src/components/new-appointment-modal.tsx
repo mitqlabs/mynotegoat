@@ -1429,8 +1429,8 @@ export function NewAppointmentModal({
           </button>
         </div>
 
-        <div className="mt-4 grid items-start gap-3 md:grid-cols-2">
-          <label className="relative grid gap-1">
+        <div className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="relative grid content-start gap-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Patient *</span>
               {/* Existing patients only — new patients come from Patient List → New Patient (or G.O.A.T. /new). */}
@@ -1473,7 +1473,7 @@ export function NewAppointmentModal({
           </label>
 
           {showQuickNewPatient && !lockedPatientId && (
-            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 md:col-span-2">
+            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 sm:col-span-2 lg:order-1 lg:col-span-3">
               <div className="flex items-center justify-between gap-2">
                 <h5 className="text-sm font-semibold">Quick New Patient</h5>
                 <span className="text-xs text-[var(--text-muted)]">
@@ -1582,7 +1582,7 @@ export function NewAppointmentModal({
             </div>
           )}
 
-          <label className="grid gap-1">
+          <label className="grid content-start gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Provider *</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1602,7 +1602,7 @@ export function NewAppointmentModal({
             </span>
           </label>
 
-          <label className="grid gap-1">
+          <label className="grid content-start gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Location *</span>
             <input
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1622,7 +1622,7 @@ export function NewAppointmentModal({
             </span>
           </label>
 
-          <label className="grid gap-1">
+          <label className="grid content-start gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Type *</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
@@ -1691,11 +1691,11 @@ export function NewAppointmentModal({
             </select>
             {roomOptions.length > 0 ? (
               <span className="text-xs text-[var(--text-muted)]">
-                Add/edit rooms in Settings → Schedule Settings → Room Settings.
+                Change in Settings → Schedule (rooms).
               </span>
             ) : (
               <span className="text-xs text-[var(--text-muted)]">
-                No rooms configured yet. You can add them in Settings.
+                No rooms yet. Add them in Settings → Schedule.
               </span>
             )}
           </label>

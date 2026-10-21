@@ -7,6 +7,9 @@ export interface RichTextTemplateEditorHandle {
   focus: () => void;
   insertText: (text: string) => void;
   insertHtml: (html: string) => void;
+  /** Insert inline HTML at the caret, on the same line, with one space
+   *  before it when the caret sits right after text. */
+  insertInlineHtml: (html: string) => void;
 }
 
 type RichTextTemplateEditorProps = {
@@ -110,6 +113,8 @@ export const RichTextTemplateEditor = forwardRef<
   // the selection) still drops content at the right caret position
   // instead of jumping to the end of the field.
   const lastSelectionRangeRef = useRef<Range | null>(null);
+  // Text offset where the last inline macro insert ended (see insertInlineHtml).
+  const lastInlineEndRef = useRef<number | null>(null);
 
   const captureSelection = () => {
     const editor = editorRef.current;
@@ -285,12 +290,87 @@ export const RichTextTemplateEditor = forwardRef<
     emitChange();
   };
 
+  const insertInlineHtml = (html: string) => {
+    const editor = editorRef.current;
+    if (!editor || typeof window === "undefined") {
+      return;
+    }
+    isFocusedRef.current = true;
+    editor.focus();
+    const selection = window.getSelection();
+    const caretAtEndOf = (node: Node) => {
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(r);
+    };
+    const isBlock = (n: Node | null): n is HTMLElement =>
+      n instanceof HTMLElement && /^(P|DIV|LI|H[1-6]|BLOCKQUOTE)$/.test(n.tagName);
+    // The saved caret can be lost when the note re-renders after the last
+    // macro; then continue at the end of the note, not its start.
+    if (!restoreSelection() || !selection || selection.rangeCount === 0) caretAtEndOf(editor);
+    // A re-render after the last macro swaps the note's nodes and drops the
+    // saved caret back to the very start; put it where that macro ended.
+    const saved = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (saved && saved.startContainer === editor && saved.startOffset === 0 && lastInlineEndRef.current !== null) {
+      let left = lastInlineEndRef.current;
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let placed = false;
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        const len = t.textContent?.length ?? 0;
+        if (left <= len) {
+          const r = document.createRange();
+          r.setStart(t, left);
+          r.collapse(true);
+          selection?.removeAllRanges();
+          selection?.addRange(r);
+          placed = true;
+          break;
+        }
+        left -= len;
+      }
+      if (!placed) caretAtEndOf(editor);
+    }
+    if (!selection || selection.rangeCount === 0) return;
+    let block: Node = selection.getRangeAt(0).startContainer;
+    while (block !== editor && !isBlock(block)) block = block.parentNode ?? editor;
+    // Caret parked on the empty line the browser adds after a pasted
+    // paragraph: go back to the end of the paragraph above it.
+    if (block !== editor && !(block.textContent ?? "").trim()) {
+      const prev = (block as HTMLElement).previousElementSibling;
+      let next = (block as HTMLElement).nextElementSibling;
+      while (next && !(next.textContent ?? "").trim()) next = next.nextElementSibling;
+      if (isBlock(prev) && (prev.textContent ?? "").trim() && !next) {
+        (block as HTMLElement).remove();
+        block = prev;
+        caretAtEndOf(prev);
+      }
+    }
+    const caret = selection.getRangeAt(0);
+    const probe = document.createRange();
+    probe.selectNodeContents(block);
+    probe.setEnd(caret.startContainer, caret.startOffset);
+    const before = probe.toString();
+    const needsSpace = before.length > 0 && !/\s$/.test(before);
+    document.execCommand("insertHTML", false, `${needsSpace ? "&nbsp;" : ""}${html}`);
+    if (selection && selection.rangeCount > 0) {
+      const end = document.createRange();
+      end.selectNodeContents(editor);
+      end.setEnd(selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset);
+      lastInlineEndRef.current = end.toString().length;
+    }
+    captureSelection();
+    emitChange();
+  };
+
   useImperativeHandle(ref, () => ({
     focus: () => {
       editorRef.current?.focus();
     },
     insertText,
     insertHtml,
+    insertInlineHtml,
   }));
 
   return (
