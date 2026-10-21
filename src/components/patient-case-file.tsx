@@ -42,6 +42,7 @@ import { DxSuggestions } from "@/components/dx-suggestions";
 import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
 import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
+import { suggestXrayDiagnoses, xrayInputFromGoat } from "@/lib/dx-suggest-xray";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
 import { onLocalChange } from "@/lib/local-sync";
@@ -2716,6 +2717,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const hasMriText = input.imaging.length > 0 || (goatContext.files ?? []).some((f) => f.status === "read");
     return { ...suggestDiagnosesDetailed(input), hasMriText };
   }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses]);
+  // Same, from the X-ray (Imaging panel X-ray text + uploaded X-ray reports). Codes the MRI list already shows aren't repeated.
+  const xrayDxState = useMemo(() => {
+    if (!sectionPanelsOpen.diagnosis) return { list: [], heldBack: [], hasText: false };
+    const input = xrayInputFromGoat(
+      goatContext,
+      billingMacros.diagnoses.filter((d) => d.active).map((d) => ({ code: d.code, description: d.description })),
+      patientDiagnoses.map((d) => ({ code: d.code })),
+      dxSuggestState.list.map((s) => s.code),
+    );
+    return { ...suggestXrayDiagnoses(input), hasText: input.xray.length > 0 || (input.files ?? []).some((f) => f.status === "read") };
+  }, [sectionPanelsOpen.diagnosis, goatContext, billingMacros.diagnoses, patientDiagnoses, dxSuggestState.list]);
   // "+ Dx Code" on ICD-10 search rows: save the code to the office's list
   // (folder + optional bundles, same as Settings → Add a code). Doesn't add it
   // to the patient; the row then shows under "Your codes" with its folder.
@@ -7422,6 +7434,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
                   suggestions={dxSuggestState.list}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
+                />
+              </div>
+              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3" data-dx-xray>
+                <DxSuggestions
+                  hasMriText={xrayDxState.hasText}
+                  heldBack={xrayDxState.heldBack}
+                  kind="X-ray"
+                  onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (X-ray)")}
+                  suggestions={xrayDxState.list}
                 />
               </div>
             </div>
