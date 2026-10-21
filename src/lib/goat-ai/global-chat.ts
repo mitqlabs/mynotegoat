@@ -72,6 +72,12 @@ export interface ChatMessage {
   practice?: boolean;
   /** Memory of an office answer, for follow-ups ("and tomorrow?", "list them"). */
   office?: OfficeMemory;
+  /** A quick schedule / case change (reschedule, cancel, check in/out, no-show, DOI) waiting for Confirm. */
+  quick?: import("@/lib/goat-quick").QuickPlan & { state: "open" | "done" | "canceled"; result?: string };
+  /** "That's not what I meant": open = showing the action chips; picked = the action chosen. */
+  missed?: { state: "open" | "picked" | "noted"; picked?: string };
+  /** The user message this reply answered (for "not what I meant"). */
+  replyTo?: string;
   /** A booking waiting for Confirm (nothing is saved before that). */
   booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
   /** In-chat new patient + first visit: waiting for one missing detail (phone / day / time). */

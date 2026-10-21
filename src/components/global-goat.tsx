@@ -48,6 +48,10 @@ import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, pri
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
 import { dismissNudge, readDismissed, readRecall, recallLine, saveRecall } from "@/lib/goat-recall";
+import { GOAT_ACTIONS, nameParts, phraseTemplate, understand, type ActionId, type Understood } from "@/lib/goat-understand";
+import { planQuick, type QuickPlan } from "@/lib/goat-quick";
+import { learnedMap, loadLearned, safeTemplate, saveLearned, withMiss, withPhrase } from "@/lib/goat-learned";
+import { updatePatientRecordById } from "@/lib/mock-data";
 import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
@@ -421,7 +425,7 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
-  const { addAppointments, removeAppointment } = useScheduleAppointments();
+  const { addAppointments, removeAppointment, updateAppointment } = useScheduleAppointments();
   const { addTask, tasks: openTaskRows } = useTasks();
   const { roleTier, roleKnown } = useWorkspaceAccess();
   /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
@@ -431,6 +435,10 @@ export function GlobalGoatPopup({
   const { addContactsBulk, removeContactsByIds, updateContact } = useContactDirectory();
   /** The step a "/" command flow is waiting on (case pick, note text…). */
   const flowRef = useRef<Pending | null>(null);
+  /** Set right before G.O.A.T. re-sends a message in its canonical wording (so it isn't re-read). */
+  const understoodRef = useRef(false);
+  /** One short question is waiting for a missing detail of this message. */
+  const askRef = useRef<{ raw: string } | null>(null);
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
@@ -441,6 +449,18 @@ export function GlobalGoatPopup({
   // Dismissed nudges: this chat session only (nothing saved, so nothing is browser-only).
   // Hidden heads-ups are a cloud-backed user pref (casemate.goat-nudges-dismissed.v1).
   const [dismissedNudges, setDismissedNudges] = useState<string[]>(() => Object.keys(readDismissed()));
+  const [showNudges, setShowNudges] = useState(false);
+  // "Hide brief": a per-person setting backed up to the user's cloud prefs.
+  const [briefHidden, setBriefHidden] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("casemate.goat-brief-hidden.v1") === "1");
+  const toggleBrief = () => {
+    const next = !briefHidden;
+    setBriefHidden(next);
+    try {
+      window.localStorage.setItem("casemate.goat-brief-hidden.v1", next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
   const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
@@ -1549,6 +1569,118 @@ export function GlobalGoatPopup({
     setMsg(msg.id, { contactImport: { ...imp, state: "undone", result: `Okay, took out the ${n === 1 ? "one" : n} I added.` } });
   };
 
+  /** The last G.O.A.T. message is waiting on a reply of its own (a pick, a missing detail, a "/" step). */
+  const replyPending = (): boolean => {
+    const g = [...chat.messages].reverse().find((m) => m.role === "goat");
+    if (!g) return false;
+    return Boolean(g.bookingAsk || g.npAsk?.state === "open" || g.pendingQuestion || g.msgAsk || (g.choices?.length && !g.picked && !g.missed));
+  };
+  const runUnderstand = (text: string): Understood | null => {
+    const people = allPatients().filter((p) => !(p as { deleted?: boolean }).deleted);
+    return understand(text, {
+      today: practiceData().today,
+      patients: people.map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
+      lastPatientId: contextPatient()?.id ?? null,
+      attorneys: loadContactDirectory().filter((c) => c.category === "Attorney").map((c) => c.name),
+      learned: learnedMap(loadLearned()),
+    });
+  };
+  /** Hand a canonical phrase to the existing path; the chat still shows what was typed. */
+  const resendAs = (canonical: string, typed: string) => {
+    shownAsRef.current = typed;
+    understoodRef.current = true;
+    send(canonical);
+  };
+  /** True when handled here (card, navigation or one short question). */
+  const actOn = (u: Understood, typed: string): boolean => {
+    if (u.ask) {
+      // Right after one of G.O.A.T.'s own actions, a vague follow-up ("make it 3") belongs to that action.
+      if (!u.patient && lastAct()) return false;
+      push({ role: "user", text: typed, practice: true });
+      push({ role: "goat", text: u.ask, practice: true, replyTo: typed });
+      askRef.current = { raw: typed };
+      return true;
+    }
+    const who = u.patient ? patientById(u.patient.id) : null;
+    switch (u.action) {
+      case "open": {
+        if (!who) return false;
+        push({ role: "user", text: typed, practice: true });
+        push({ role: "goat", text: `Opening ${displayName(who.fullName)}'s case.`, practice: true, patientName: displayName(who.fullName), links: [{ label: `Open ${displayName(who.fullName)}`, href: `/patients/${who.id}` }], replyTo: typed }, who.id);
+        saveRecall({ patientId: who.id, patientName: who.fullName, action: "file" });
+        formRouter.push(`/patients/${who.id}`);
+        return true;
+      }
+      case "reschedule":
+      case "cancel":
+      case "checkIn":
+      case "checkOut":
+      case "noShow":
+      case "doi": {
+        if (!who) return false;
+        const data = practiceData();
+        const plan = planQuick(u, { today: data.today, appointments: data.appointments, settings: scheduleSettings() ?? loadScheduleSettings(), currentDoi: who.dateOfLoss });
+        push({ role: "user", text: typed, practice: true });
+        if ("say" in plan) push({ role: "goat", text: plan.say, practice: true, replyTo: typed, links: [{ label: "Open Schedule", href: "/appointments" }] });
+        else push({ role: "goat", text: plan.summary, practice: true, patientName: displayName(who.fullName), quick: { ...plan, state: "open" }, replyTo: typed }, who.id);
+        return true;
+      }
+      case "book":
+      case "note":
+      case "attorney":
+      case "status":
+        if (!u.canonical) return false;
+        // Typed wording already works as is → leave it (keeps every existing follow-up).
+        if (u.canonical.toLowerCase() === typed.toLowerCase()) return false;
+        resendAs(u.canonical, typed);
+        return true;
+      case "todo":
+        if (!u.canonical || detectPlainTodo(typed)) return false;
+        resendAs(u.canonical, typed);
+        return true;
+      default:
+        return false;
+    }
+  };
+  /** Confirm on a quick card: apply through the Schedule's / patient record's own save path. */
+  const confirmQuick = (msg: ChatMessage, time?: string) => {
+    const q = msg.quick;
+    if (!q || q.state !== "open") return;
+    const plan: QuickPlan = time ? { ...q, time } : q;
+    let result = "";
+    if (plan.kind === "doi" && plan.doi) {
+      updatePatientRecordById(plan.patientId, { dateOfLoss: plan.doi });
+      result = `✓ Date of injury set to ${cardDate(plan.doi)}.`;
+    } else if (plan.appointmentId) {
+      const status = { cancel: "Canceled", checkIn: "Check In", checkOut: "Check Out", noShow: "No Show" } as const;
+      updateAppointment(plan.appointmentId, (a) =>
+        plan.kind === "reschedule" ? { ...a, date: plan.date ?? a.date, startTime: plan.time ?? a.startTime, status: "Scheduled" } : { ...a, status: status[plan.kind as keyof typeof status] },
+      );
+      const first = nameParts(plan.patientName).first;
+      result = plan.kind === "reschedule" ? `✓ Moved to ${cardDate(plan.date!)} at ${to12hLabel(plan.time!)}.` : plan.kind === "cancel" ? "✓ Canceled." : plan.kind === "checkIn" ? `✓ ${first} is checked in.` : plan.kind === "checkOut" ? `✓ ${first} is checked out.` : "✓ Marked no-show.";
+    }
+    setMsg(msg.id, { quick: { ...plan, state: "done", result } });
+  };
+  /** "That's not what I meant" → log the miss (workspace cloud list), then offer the actions. */
+  const markMissed = (msg: ChatMessage) => {
+    const typed = msg.replyTo ?? [...chat.messages].slice(0, chat.messages.findIndex((x) => x.id === msg.id)).reverse().find((x) => x.role === "user")?.text ?? "";
+    const tpl = phraseTemplate(typed, allPatients().map((p) => ({ id: p.id, fullName: p.fullName })), practiceData().today);
+    const did = msg.booking ? "book" : msg.todoDraft ? "todo" : msg.noteDraft ? "note" : msg.om ? `om:${msg.om.plan.kind}` : msg.quick ? msg.quick.kind : "reply";
+    if (safeTemplate(tpl)) saveLearned((l) => withMiss(l, tpl, did));
+    setMsg(msg.id, { missed: { state: "open" }, replyTo: typed });
+  };
+  /** The user picked the right action: remember the phrase → action (names stay slots) and redo it. */
+  const pickMeant = (msg: ChatMessage, action: ActionId | "none") => {
+    const typed = msg.replyTo ?? "";
+    if (action === "none") {
+      setMsg(msg.id, { missed: { state: "noted" } });
+      return;
+    }
+    const tpl = phraseTemplate(typed, allPatients().map((p) => ({ id: p.id, fullName: p.fullName })), practiceData().today);
+    if (safeTemplate(tpl)) saveLearned((l) => withPhrase(l, tpl, action));
+    setMsg(msg.id, { missed: { state: "picked", picked: action } });
+    if (typed) window.setTimeout(() => sendRef.current(typed), 50);
+  };
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     // Typos and texting shorthand ("tmrw", "pls", "remind me 2", "lawer") → plain words first.
     const casual = !opts && !raw.includes("\n") && !isFlowToken(raw.trim()) && !raw.trim().startsWith("/") && !raw.trim().startsWith("@");
@@ -1589,6 +1721,19 @@ export function GlobalGoatPopup({
         const prefix = mc.recipients.map((r) => `@${r.label}`).join(" ");
         return send(`tell ${mc.recipients[0].firstName} ${mc.text}`, { to: mc.recipients, display: question, prefix });
       }
+    }
+    // Understand first, then act: straight to one confirm card (or one short question).
+    const skipUnderstand = understoodRef.current;
+    understoodRef.current = false;
+    if (casual && !skipUnderstand && !flowRef.current && !replyPending()) {
+      if (askRef.current) {
+        const merged = `${askRef.current.raw} ${question}`;
+        const u2 = runUnderstand(merged);
+        askRef.current = null;
+        if (u2 && !u2.ask && actOn(u2, question)) return;
+      }
+      const u = runUnderstand(question);
+      if (u && actOn(u, question)) return;
     }
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
@@ -1933,6 +2078,7 @@ export function GlobalGoatPopup({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatEmpty, isGoatAdmin, practiceOverride]);
+  const liveNudges = opening ? opening.nudges.filter((x) => !dismissedNudges.includes(x.id)) : [];
   // Patient-page box handed us an action ("remind me to do his report"): send it here.
   const sendRef = useRef(send);
   useEffect(() => {
@@ -2089,8 +2235,20 @@ export function GlobalGoatPopup({
                 <GoatAvatar size={28} />
                 <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
-                  <p data-goat-brief>{opening ? opening.brief : <><span className="font-semibold">{greeting}</span> What can I help with?</>}</p>
-                  {opening && opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).length > 0 && (
+                  <p data-goat-brief>
+                    {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span> What can I do for you?</>}
+                    {opening && !briefHidden && liveNudges.length > 0 && (
+                      <button className="ml-1 text-xs font-semibold text-[var(--brand-primary)]" data-goat-headsups onClick={() => setShowNudges((v) => !v)} type="button">
+                        {showNudges ? "Hide heads-ups" : `${liveNudges.length} heads-up${liveNudges.length === 1 ? "" : "s"} ›`}
+                      </button>
+                    )}
+                    {opening && (
+                      <button className="ml-2 text-[11px] text-[var(--text-muted)] hover:underline" data-goat-brief-toggle onClick={toggleBrief} type="button">
+                        {briefHidden ? "Show brief" : "Hide brief"}
+                      </button>
+                    )}
+                  </p>
+                  {opening && !briefHidden && showNudges && liveNudges.length > 0 && (
                     <ul className="mt-1.5 space-y-1" data-goat-nudges>
                       {opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).map((x) => (
                         <li className="flex items-start gap-1.5 rounded-lg bg-[#fff8e6] px-2 py-1 text-xs" key={x.id}>
@@ -2102,8 +2260,7 @@ export function GlobalGoatPopup({
                       ))}
                     </ul>
                   )}
-                  {opening?.recall && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
-                  <p className="mt-1 text-xs text-[var(--text-muted)]">What can I do for you? Everything stays in NoteGoat.</p>
+                  {opening?.recall && !briefHidden && showNudges && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
                   <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
                       <button
@@ -2159,6 +2316,7 @@ export function GlobalGoatPopup({
                     {m.contactEdit && <ContactEditCard d={m.contactEdit} onCancel={() => setMsg(m.id, { contactEdit: { ...m.contactEdit!, state: "canceled" } })} onChange={(d) => setMsg(m.id, { contactEdit: d })} onConfirm={(d) => confirmContactEdit(m, d)} />}
                     {m.contactRecat && <ContactRecatCard r={m.contactRecat} onCancel={() => setMsg(m.id, { contactRecat: { ...m.contactRecat!, state: "canceled" } })} onConfirm={() => confirmContactRecat(m)} onUndo={() => revertContactRecat(m)} />}
                     {m.contactImport && <ContactImportCard imp={m.contactImport} onCancel={() => setMsg(m.id, { contactImport: { ...m.contactImport!, state: "canceled" } })} onChange={(imp) => setMsg(m.id, { contactImport: imp })} onConfirm={(imp) => void confirmContactImport(m, imp)} onUndo={() => undoContactImport(m, m.contactImport!)} />}
+                    {m.quick && <QuickCard q={m.quick} onCancel={() => setMsg(m.id, { quick: { ...m.quick!, state: "canceled" } })} onConfirm={(t) => confirmQuick(m, t)} />}
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
@@ -2186,6 +2344,22 @@ export function GlobalGoatPopup({
                           </button>
                         ))}
                       </div>
+                    )}
+                    {m.missed?.state === "open" && (
+                      <div className="mt-2 rounded-lg bg-[#fff8e6] px-2 py-1.5 text-xs" data-goat-missed>
+                        <p className="font-semibold">Sorry — what did you mean?</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {GOAT_ACTIONS.filter((a) => a.id !== "message").map((a) => (
+                            <button className="rounded-full border border-[#72bdcf] bg-white px-2 py-0.5 text-[11px] font-semibold hover:bg-[#eef8fb]" key={a.id} onClick={() => pickMeant(m, a.id)} type="button">{a.label}</button>
+                          ))}
+                          <button className="rounded-full border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] text-[var(--text-muted)]" onClick={() => pickMeant(m, "none")} type="button">Something else</button>
+                        </div>
+                      </div>
+                    )}
+                    {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — I&apos;ll read it that way from now on.</p>}
+                    {m.missed?.state === "noted" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Thanks — noted so it can be fixed.</p>}
+                    {!m.missed && m.text && (
+                      <button aria-label="That's not what I meant" className="mt-1 text-[11px] text-[var(--text-muted)] opacity-60 hover:opacity-100" data-goat-thumbsdown onClick={() => markMissed(m)} title="That's not what I meant" type="button">👎</button>
                     )}
                     {m.originals && m.originals.length > 0 && (
                       <details className="mt-1.5 text-xs">
@@ -2707,6 +2881,28 @@ function todoTitleParts(title: string): { text: string; phone: string } {
   return { text: title.slice(0, m.index).replace(/[\s,:-]+$/, ""), phone: m[0] };
 }
 const CHIP_ICONS: Record<string, string> = { "Morning Rundown": "☀️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
+
+function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["quick"]>; onConfirm: (time?: string) => void; onCancel: () => void }) {
+  const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
+  if (q.state === "done") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">{q.result}</p>;
+  if (q.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Left as is.</p>;
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-quick>
+      {q.note && <p className="text-[11.5px] text-[var(--text-muted)]">{q.note}</p>}
+      {q.options && q.options.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {q.options.map((t) => (
+            <button className={`${btn} border-[#72bdcf] bg-[#eef8fb]`} key={t} onClick={() => onConfirm(t)} type="button">{to12hLabel(t)}</button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3.5 text-white`} onClick={() => onConfirm()} style={{ fontSize: 13 }} type="button">Confirm</button>
+        <button className={`${btn} border-[var(--line-soft)] bg-white px-3.5 text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 13 }} type="button">Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";

@@ -13,6 +13,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.attorney-not-same.v1",
   // Settings → Forms templates: merged by id (newest wins), deletes are tombstones.
   "casemate.patient-forms.v1",
+  // G.O.A.T. learned phrases / misses: merged by id, newest wins, deletes are tombstones.
+  "casemate.goat-learned.v1",
 ]);
 
 /**
@@ -972,6 +974,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.goat-settings.v1",
           // G.O.A.T. answer settings: Show costs / fees, Region order (Settings → G.O.A.T.).
           "casemate.goat-answer-prefs.v1",
+          // G.O.A.T. learned phrases / misses (Settings → G.O.A.T.). Union-merged by id.
+          "casemate.goat-learned.v1",
           // Written to the cloud but never pulled back before, so a
           // workspace switch / sign-out lost them locally.
           "casemate.key-date-dismissals.v1",

@@ -58,17 +58,20 @@ test("free slot: a draft, nothing saved", () => {
   assert.equal(s.draft.taken, false);
   assert.equal(appts.length, 2);
 });
-test("taken slot: 2 open times before and 2 after", () => {
+test("taken slot: moves to the nearest open time, other open times kept as chips", () => {
   const s = planBooking({ question: "book kara friday 3pm", patient: { id: "p1", fullName: "Kara Testpatient" }, todayIso: MON, appointments: appts, settings });
   assert.equal(s.kind, "draft");
   if (s.kind !== "draft") return;
-  assert.equal(s.draft.taken, true);
-  assert.deepEqual(s.draft.suggestions, ["14:30", "14:45", "15:15", "15:30"]);
+  // Action first: 3:00 was taken, so the card shows the nearest open time (2:45) and says so.
+  assert.equal(s.draft.taken, false);
+  assert.equal(s.draft.time, "14:45");
+  assert.ok(s.draft.notes.some((n) => /3:00 PM was taken/.test(n)), s.draft.notes.join("|"));
+  assert.deepEqual(s.draft.suggestions, ["14:30", "15:00", "15:15", "15:30"]);
   assert.deepEqual(nearbyOpenTimes(appts, settings, "2026-10-16", "08:00", 15), ["08:15", "08:30"]);
 });
-test("missing day / time are asked for", () => {
+test("missing day is asked for; missing time → first open time", () => {
   assert.equal(planBooking({ question: "book kara", patient: { id: "p1", fullName: "K" }, todayIso: MON, appointments: [], settings }).kind, "needDay");
-  assert.equal(planBooking({ question: "book kara friday", patient: { id: "p1", fullName: "K" }, todayIso: MON, appointments: [], settings }).kind, "needTime");
+  assert.equal(planBooking({ question: "book kara friday", patient: { id: "p1", fullName: "K" }, todayIso: MON, appointments: [], settings }).kind, "draft");
 });
 test("different time + override record", () => {
   const s = planBooking({ question: "book kara friday 3pm", patient: { id: "p1", fullName: "Kara Testpatient" }, todayIso: MON, appointments: appts, settings });
@@ -78,7 +81,7 @@ test("different time + override record", () => {
   assert.equal(r.taken, false);
   const rec = bookingRecord({ ...s.draft, override: true }, "new1", appts);
   assert.equal(rec.patientId, "p1");
-  assert.equal(rec.startTime, "15:00");
+  assert.equal(rec.startTime, "14:45");
   assert.equal(rec.status, "Scheduled");
   assert.equal(rec.provider, "Dr. Mock");
   const late = retime(s.draft, "7pm", appts, settings)!;

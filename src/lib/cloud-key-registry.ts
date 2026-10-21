@@ -53,6 +53,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.holiday-keydate-prompts.v1": "workspace",
   "casemate.goat-settings.v1": "workspace",
   "casemate.goat-answer-prefs.v1": "workspace",
+  // G.O.A.T. learned phrases + "not what I meant" misses (shared by the office).
+  "casemate.goat-learned.v1": "workspace",
+  // G.O.A.T. opening brief hidden (per person).
+  "casemate.goat-brief-hidden.v1": "user",
   "casemate.cash-payments.v1": "workspace",
   "casemate.patient-packages.v1": "workspace",
   "casemate.key-date-dismissals.v1": "workspace",

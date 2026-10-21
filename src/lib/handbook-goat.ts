@@ -6,6 +6,7 @@
  */
 import { CHIPS, SLASH_COMMANDS } from "@/lib/goat-briefs";
 import type { HandbookChapter } from "@/lib/handbook-content";
+import { handbookPhrases } from "@/lib/goat-understand";
 
 export const GOAT_HANDBOOK_ANCHOR = "/handbook#chapter-goat";
 
@@ -24,6 +25,27 @@ export const goatHandbookChapter: HandbookChapter = {
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",
+    },
+    {
+      heading: "Just say what to do",
+      steps: [
+        "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons.",
+        "It only asks when something it needs is missing, and then just one short question (\"Move it to when?\").",
+        "It understands names spelled a bit wrong (\"jon smth\"), \"him/her\" for the patient you were just on, and days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\".",
+        ...handbookPhrases(),
+        "Open a case just navigates there. Nothing changes, so there's no card.",
+      ],
+      why: "The list above comes straight from G.O.A.T.'s own list of actions, so it's always current.",
+    },
+    {
+      heading: "Teach G.O.A.T. (👎 That's not what I meant)",
+      steps: [
+        "Under any reply, tap 👎 if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
+        "Names, days, times and numbers are saved as blanks, never the actual name.",
+        "Settings → G.O.A.T. → What G.O.A.T. has learned lists the learned wording and the misses. Delete any you don't want.",
+        "Too much on open? Tap Hide brief. The heads-ups sit behind a small \"N heads-ups ›\" link.",
+      ],
+      why: "Saved to the office's cloud settings, so it works on every computer.",
     },
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
