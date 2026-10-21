@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { DxHeldBack, DxSuggestion } from "@/lib/dx-suggest";
 
 export const DX_DISCLAIMER = "Suggestions only. Confirm against the MRI and documentation before billing.";
+const disclaimer = (kind: "MRI" | "X-ray") => (kind === "MRI" ? DX_DISCLAIMER : "Suggestions only. Confirm against the X-ray and documentation before billing.");
 
 /** The MRI line, cut to a short quote (the full line is in the tooltip and under "Why?"). */
 function shortQuote(text: string, max = 70): string {
@@ -21,8 +22,11 @@ export function DxSuggestions({
   hasMriText,
   unreadFiles = 0,
   onAdd,
+  kind = "MRI",
 }: {
-  suggestions: DxSuggestion[];
+  /** Which report the list reads: the MRI/CT list or the X-ray list. */
+  kind?: "MRI" | "X-ray";
+  suggestions: Array<Omit<DxSuggestion, "segment"> & { segment: string }>;
   /** Codes found but held back (ICD-10-CM Excludes1 with a code on the patient / another suggestion). */
   heldBack?: DxHeldBack[];
   /** Whether there's any MRI/CT text to read at all (for the empty message). */
@@ -42,18 +46,22 @@ export function DxSuggestions({
           <span className="mr-1.5 rounded-md bg-[#72bdcf]/20 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#2f7f93]">
             G.O.A.T.
           </span>
-          Suggested from MRI
+          Suggested from {kind}
         </p>
         <span className="text-[11px] text-[var(--text-muted)]">Nothing is added for you</span>
       </div>
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900" role="note">
-        {DX_DISCLAIMER}
+        {disclaimer(kind)}
       </p>
       {suggestions.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)]">
-          {hasMriText
-            ? "No new codes to suggest. The MRI findings are covered by codes already on this patient, or they don't name a mapped finding."
-            : "No MRI/CT findings yet. Add them in the Imaging panel or upload the MRI report to Patient Files."}
+          {kind === "X-ray"
+            ? hasMriText
+              ? "No new codes to suggest. The X-ray findings are covered by codes already on this patient, or they don't name a mapped finding."
+              : "No X-ray findings yet. Add them in the Imaging panel or upload the X-ray report to Patient Files."
+            : hasMriText
+              ? "No new codes to suggest. The MRI findings are covered by codes already on this patient, or they don't name a mapped finding."
+              : "No MRI/CT findings yet. Add them in the Imaging panel or upload the MRI report to Patient Files."}
         </p>
       ) : (
         <ul className="grid min-w-0 grid-cols-1 gap-1.5">
@@ -123,7 +131,7 @@ export function DxSuggestions({
                     )}
                     {s.evidence.map((e) => (
                       <p key={`${e.source}-${e.text}`}>
-                        MRI: &ldquo;{e.text}&rdquo; — {e.source}
+                        {kind}: &ldquo;{e.text}&rdquo; — {e.source}
                       </p>
                     ))}
                     {s.note && <p>{s.note}</p>}
@@ -146,7 +154,7 @@ export function DxSuggestions({
       {heldBack.length > 0 && (
         <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">
           <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">
-            Not suggested ({heldBack.length}) · ICD-10-CM Excludes1
+            Not suggested ({heldBack.length}){kind === "MRI" ? " · ICD-10-CM Excludes1" : ""}
           </summary>
           <ul className="mt-1 grid gap-1">
             {heldBack.map((h) => (
