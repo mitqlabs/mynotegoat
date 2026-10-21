@@ -77,7 +77,7 @@ function correctionFor(q: string, last: LastAct): FollowUpAction | null {
   return null;
 }
 
-export const NOT_CAUGHT = "Sorry, I didn't quite catch that. I can add notes, book visits, message the team, or look things up — what do you need?";
+export const NOT_CAUGHT = "Sorry, I didn't quite catch that — what do you need?";
 
 function addDays(iso: string, n: number): string {
   const d = new Date(`${iso}T12:00:00`);

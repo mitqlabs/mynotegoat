@@ -113,19 +113,21 @@ export function answerScheduleQuery(raw: string, data: PracticeData): OfficeAnsw
  * Last resort before giving up: a short clarifying question that guesses the area
  * (schedule / to-do / case / contact) instead of listing everything G.O.A.T. can do.
  */
-export function clarifyIntent(raw: string): { text: string; choices: Array<{ label: string; question: string }> } {
+export function clarifyIntent(raw: string, ctx?: { name?: string | null }): { text: string; choices: Array<{ label: string; question: string }> } {
   const q = norm(raw);
+  const who = ctx?.name?.trim() || "";
+  // One short, natural question. No menu of buttons.
   if (/\b(appt|appointment|schedul|coming|visit|book|calendar|new p|re-?exam|today|tomorrow|week|monday|tuesday|wednesday|thursday|friday|saturday)/.test(q)) {
-    return { text: "Do you want the schedule for a day, or a type of visit?", choices: [{ label: "Who's coming today", question: "who's coming in today" }, { label: "Upcoming new patients", question: "any upcoming new patients" }, { label: "This week", question: "appointments this week" }] };
+    return { text: who ? `Do you mean ${who}'s visits, or the whole schedule?` : "Which day are you thinking — today, or later this week?", choices: [] };
   }
   if (/\b(to-?dos?|tasks?|remind|follow ?up|call back)\b/.test(q)) {
-    return { text: "Do you want to see your to-dos, or add one?", choices: [{ label: "My to-dos", question: "what's on my to-do list" }] };
+    return { text: "Want to see your to-dos, or add one? If adding, just tell me what and when.", choices: [] };
   }
   if (/\b(cases?|files?|mri|x-?ray|bill|balance|paid|submitted|attorney|atty|lawyer|settle)\b/.test(q)) {
-    return { text: "Which patient is this about, or do you mean all cases?", choices: [{ label: "Case counts", question: "how many cases do i have" }] };
+    return { text: who ? `Is this about ${who}, or all your cases?` : "Which patient is this about — or do you mean all your cases?", choices: [] };
   }
   if (/\b(contact|fax|phone|number|email|address|imaging|law firm)\b/.test(q)) {
     return { text: "Which contact are you looking for?", choices: [] };
   }
-  return { text: "I'm not sure what you mean. Is it about the schedule, a to-do, a patient's case, or a contact?", choices: [{ label: "Schedule", question: "who's coming in today" }, { label: "To-dos", question: "what's on my to-do list" }, { label: "Help", question: "what can you do" }] };
+  return { text: who ? `Sorry, I didn't catch that — is this about ${who}?` : "Sorry, I didn't catch that — what do you need?", choices: [] };
 }

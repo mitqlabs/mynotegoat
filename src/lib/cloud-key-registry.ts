@@ -78,6 +78,9 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.sidebar-collapsed": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
   "casemate.goat-install-tip.v1": "user",
+  // G.O.A.T. memory: last patient/action, and hidden heads-ups (follow you to every device).
+  "casemate.goat-recall.v1": "user",
+  "casemate.goat-nudges-dismissed.v1": "user",
   "casemate.soap-split-height.v1": "user",
   "casemate.quick-glance.open.v1": "user",
   "casemate.files-view-mode": "user",
