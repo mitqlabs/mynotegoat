@@ -4,7 +4,7 @@
  * Patient file → "Send form" (questionnaire link) and the
  * "Questionnaire received" review card.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -19,7 +19,7 @@ import {
   looksLikeDecompressionCase,
   resolveForm,
 } from "@/lib/patient-forms";
-import { manageFormRequest, sendFormLink, type FormRequestRow } from "@/lib/patient-forms-client";
+import { manageFormRequest, purgeQuestionnaireWhenNoteSaved, sendFormLink, type FormRequestRow } from "@/lib/patient-forms-client";
 import { buildSmsUrl } from "@/lib/sms-templates";
 
 const usDate = (iso: string | null | undefined) => {
@@ -268,6 +268,22 @@ export function QuestionnaireReviewCards({
   const { rows, available } = useFormRequests({ patientId });
   const [error, setError] = useState("");
   const [showPast, setShowPast] = useState(false);
+  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+  // Catch-up: inserted responses whose note save landed later get deleted
+  // here (server checks the saved note; nothing is deleted otherwise).
+  const insertedKey = rows.filter((r) => r.status === "submitted" && r.review_status === "inserted" && r.inserted_encounter_id).map((r) => r.id).join(",");
+  useEffect(() => {
+    if (!insertedKey) return;
+    let cancelled = false;
+    const list = rows.filter((r) => insertedKey.split(",").includes(r.id));
+    void Promise.all(list.map((r) => purgeQuestionnaireWhenNoteSaved(r.id, String(r.inserted_encounter_id), 1))).then((done) => {
+      if (!cancelled && done.some(Boolean)) refreshFormRequests();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertedKey]);
   const open = useMemo(() => encounters.filter((e) => !e.signed), [encounters]);
   const [encounterPick, setEncounterPick] = useState<Record<string, string>>({});
   if (!available) return null;
@@ -298,41 +314,59 @@ export function QuestionnaireReviewCards({
   const snapOf = (r: FormRequestRow) => r.raw_submission?.snapshot ?? r.snapshot;
 
   return (
-    <section className="panel-card space-y-3 p-4" data-testid="questionnaire-review">
-      {fresh.map((r) => (
-        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-3" key={r.id}>
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-base font-semibold">📋 Questionnaire received — {r.form_name}</h3>
-            <span className="text-xs text-[var(--text-muted)]">Sent {usDate(r.created_at)}{r.created_by_label ? ` by ${r.created_by_label}` : ""} · received {usDateTime(r.submitted_at)}</span>
-          </div>
-          <AnswerList row={r} answers={answersOf(r)} snapshot={snapOf(r)} />
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {open.length > 0 ? (
-              <>
-                <select
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                  onChange={(e) => setEncounterPick((m) => ({ ...m, [r.id]: e.target.value }))}
-                  value={encounterPick[r.id] || open[0].id}
-                >
-                  {open.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.encounterDate} · {e.appointmentType || "Visit"}
-                    </option>
-                  ))}
-                </select>
-                <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white" onClick={() => insert(r)} type="button">
-                  Insert into Objective
-                </button>
-              </>
-            ) : (
-              <span className="text-sm text-[var(--text-muted)]">No open visit note yet — it&apos;s offered automatically when this patient&apos;s next note is opened.</span>
+    <section className="panel-card space-y-2 p-3" data-testid="questionnaire-review">
+      {fresh.map((r) => {
+        const expanded = !!openRows[r.id];
+        return (
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50/60 px-3 py-2" data-testid="questionnaire-completed" key={r.id}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="min-w-0 flex-1 text-sm">
+                <span className="font-semibold text-emerald-800">✓ {r.form_name} form completed</span>
+                <span className="text-[var(--text-muted)]"> · {usDateTime(r.submitted_at)}</span>
+              </span>
+              {open.length > 0 && (
+                <>
+                  <select
+                    aria-label="Visit note"
+                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
+                    onChange={(e) => setEncounterPick((m) => ({ ...m, [r.id]: e.target.value }))}
+                    value={encounterPick[r.id] || open[0].id}
+                  >
+                    {open.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.encounterDate} · {e.appointmentType || "Visit"}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white" onClick={() => insert(r)} type="button">
+                    Insert into Objective
+                  </button>
+                </>
+              )}
+              <button
+                aria-expanded={expanded}
+                className="text-xs font-semibold text-[var(--brand-primary)] underline"
+                onClick={() => setOpenRows((m) => ({ ...m, [r.id]: !m[r.id] }))}
+                type="button"
+              >
+                {expanded ? "Hide answers" : "View answers"}
+              </button>
+              <button className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => void dismiss(r)} type="button">
+                Dismiss
+              </button>
+            </div>
+            {expanded && (
+              <div className="mt-2 border-t border-emerald-200 pt-2">
+                <p className="mb-2 text-xs text-[var(--text-muted)]">
+                  Sent {usDate(r.created_at)}{r.created_by_label ? ` by ${r.created_by_label}` : ""} · received {usDateTime(r.submitted_at)}
+                  {open.length === 0 ? " · No open visit note yet — it\u2019s offered automatically when this patient\u2019s next note is opened." : ""}
+                </p>
+                <AnswerList row={r} answers={answersOf(r)} snapshot={snapOf(r)} />
+              </div>
             )}
-            <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={() => void dismiss(r)} type="button">
-              Dismiss
-            </button>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {error && <p className="text-sm font-semibold text-red-700">{error}</p>}
       {past.length > 0 && (
         <div>

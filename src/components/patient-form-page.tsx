@@ -32,6 +32,19 @@ function formatDateInput(v: string): string {
   return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
 }
 
+const LOAD_TIMEOUT_MS = 10_000;
+
+/** fetch that gives up after `ms` instead of hanging on a stalled connection. */
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = LOAD_TIMEOUT_MS): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export function PatientFormPage({ token }: { token: string }) {
   const [loaded, setLoaded] = useState<Loaded>({ kind: "loading" });
   const [answers, setAnswers] = useState<PatientAnswers>({});
@@ -51,7 +64,13 @@ export function PatientFormPage({ token }: { token: string }) {
   const load = useCallback(async () => {
     setLoaded({ kind: "loading" });
     try {
-      const res = await fetch(endpoint, { cache: "no-store" });
+      let res: Response;
+      try {
+        res = await fetchWithTimeout(endpoint, { cache: "no-store" });
+      } catch {
+        // One automatic retry for a stalled/failed first attempt.
+        res = await fetchWithTimeout(endpoint, { cache: "no-store" });
+      }
       const json = await res.json().catch(() => ({}));
       if (json.status === "submitted") return setLoaded({ kind: "submitted", officeName: json.officeName ?? "" });
       if (!res.ok || !json.snapshot) {
@@ -79,7 +98,7 @@ export function PatientFormPage({ token }: { token: string }) {
     dirty.current = false;
     setSave("saving");
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(latest.current),
@@ -141,7 +160,7 @@ export function PatientFormPage({ token }: { token: string }) {
     setSubmitting(true);
     if (timer.current) clearTimeout(timer.current);
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...latest.current, submit: true }),

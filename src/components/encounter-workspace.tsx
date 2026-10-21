@@ -24,7 +24,7 @@ import { QuestionnaireInsertBanner } from "@/components/questionnaire-insert-ban
 import { logActivity } from "@/lib/activity-log";
 import { refreshFormRequests } from "@/hooks/use-form-requests";
 import { answersToMacroFills, answersToPatientInfo, customAnswersHtml, findMacroByName, findSectionMacro, patientInfoPatch, PATIENT_INFO_FIELDS } from "@/lib/patient-forms";
-import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
+import { manageFormRequest, purgeQuestionnaireWhenNoteSaved, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
 import { formatUsDateInput } from "@/components/us-date-input";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
@@ -2176,6 +2176,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setActiveSection("objective");
     const res = await manageFormRequest(row.id, "inserted", selectedEncounter.id);
     refreshFormRequests();
+    // Once this note's save (with the answers) is confirmed in the cloud, the
+    // server permanently deletes the response. If the save never lands, the
+    // response stays (and shows under Past questionnaires).
+    if (res.ok) void purgeQuestionnaireWhenNoteSaved(row.id, selectedEncounter.id).then((gone) => gone && refreshFormRequests());
     logActivity({
       category: "notes",
       action: "form.inserted",
