@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canPurgeQuestionnaire } from "@/lib/patient-forms-purge";
 import { adminClient, FORM_TABLE, NO_STORE, rateOk, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
 
 export const runtime = "nodejs";
@@ -9,6 +10,9 @@ export const runtime = "nodejs";
  *   { id, action: "inserted", encounterId }        – answers put into a note
  *   { id, action: "dismissed" }                    – reviewed, not inserted
  *   { id, action: "reopen" }                       – back to "new" for review
+ *   { id, action: "purge", encounterId }           – permanently delete the
+ *     response, ONLY once it was inserted into that note and the note's cloud
+ *     copy was saved after the insert (see canPurgeQuestionnaire).
  * The raw submission is never changed.
  */
 export async function POST(request: NextRequest) {
@@ -25,8 +29,43 @@ export async function POST(request: NextRequest) {
   const action = body.action;
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "Unknown form." }, { status: 400, headers: NO_STORE });
 
-  const { data: row } = await admin.from(FORM_TABLE).select("id, owner_id, status").eq("id", id).maybeSingle();
+  const { data: row } = await admin.from(FORM_TABLE).select("id, owner_id, status, review_status, inserted_encounter_id, reviewed_at, workspace_id, patient_id").eq("id", id).maybeSingle();
   if (!row || String(row.owner_id) !== caller.ownerId) return NextResponse.json({ error: "Unknown form." }, { status: 404, headers: NO_STORE });
+
+  if (action === "purge") {
+    const encounterId = typeof body.encounterId === "string" ? body.encounterId.trim().slice(0, 200) : "";
+    const { data: note } = await admin
+      .from("encounter_notes")
+      .select("id, workspace_id, patient_id, updated_at, soap")
+      .eq("workspace_id", String(row.workspace_id))
+      .eq("id", encounterId)
+      .maybeSingle();
+    const verdict = canPurgeQuestionnaire(
+      {
+        status: String(row.status),
+        review_status: row.review_status ?? null,
+        inserted_encounter_id: row.inserted_encounter_id ?? null,
+        reviewed_at: row.reviewed_at ?? null,
+        workspace_id: String(row.workspace_id),
+        patient_id: String(row.patient_id),
+      },
+      encounterId,
+      note ? { ...note, id: String(note.id), workspace_id: String(note.workspace_id), patient_id: String(note.patient_id), updated_at: String(note.updated_at) } : null,
+    );
+    if (!verdict.ok) return NextResponse.json({ error: "Not ready to delete.", reason: verdict.reason }, { status: 409, headers: NO_STORE });
+    // Whole row goes: answers, snapshot, raw_submission, token hash. Guarded so
+    // a concurrent "reopen" can't race into a delete.
+    const { data: gone, error: delError } = await admin
+      .from(FORM_TABLE)
+      .delete()
+      .eq("id", id)
+      .eq("owner_id", caller.ownerId)
+      .eq("review_status", "inserted")
+      .eq("inserted_encounter_id", encounterId)
+      .select("id");
+    if (delError) return NextResponse.json({ error: "Could not delete." }, { status: 500, headers: NO_STORE });
+    return NextResponse.json({ ok: true, deleted: (gone?.length ?? 0) > 0, by: caller.label, at: new Date().toISOString() }, { headers: NO_STORE });
+  }
 
   const now = new Date().toISOString();
   let patch: Record<string, unknown>;

@@ -82,6 +82,28 @@ export async function manageFormRequest(
   }
 }
 
+/**
+ * After answers were inserted into a note: ask the server to permanently
+ * delete the response. The server deletes only once the note's cloud copy is
+ * saved after the insert; until then it answers 409 and we try again a few
+ * times (the note save is debounced). Never deletes on its own judgement.
+ */
+export async function purgeQuestionnaireWhenNoteSaved(id: string, encounterId: string, tries = 8, delayMs = 4000): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delayMs));
+    const headers = await authHeaders();
+    if (!headers) return false;
+    try {
+      const res = await fetch("/api/forms/manage", { method: "POST", headers, body: JSON.stringify({ id, action: "purge", encounterId }) });
+      if (res.ok) return true;
+      if (res.status !== 409) return false;
+    } catch {
+      /* retry */
+    }
+  }
+  return false;
+}
+
 /** This office's links: one patient's, or every submitted one still waiting for review. */
 export async function listFormRequests(filter: { patientId?: string; awaitingReview?: boolean }): Promise<FormRequestRow[] | null> {
   const supabase = getSupabaseBrowserClient();

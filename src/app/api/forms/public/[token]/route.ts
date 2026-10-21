@@ -38,10 +38,12 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   const env = load();
   if (env.error) return env.error;
   const { admin } = env;
-  if (!(await rateOk(admin, `ip:${ipBucket(request)}`, 300, 600))) {
+  // Rate check and lookup run in parallel; the rate verdict is still enforced
+  // before anything about the row is returned.
+  const [ok, row] = await Promise.all([rateOk(admin, `ip:${ipBucket(request)}`, 300, 600), findRow(admin, token)]);
+  if (!ok) {
     return NextResponse.json({ error: "Too many requests. Please wait a few minutes." }, { status: 429, headers: NO_STORE });
   }
-  const row = await findRow(admin, token);
   if (!row) return NextResponse.json(INACTIVE, { status: 404, headers: NO_STORE });
   if (row.status === "submitted") {
     return NextResponse.json({ status: "submitted", officeName: row.office_name }, { headers: NO_STORE });
