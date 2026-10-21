@@ -9788,6 +9788,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         }}
         onClose={() => setScannerOpen(false)}
         open={scannerOpen}
+        // No name on the phone page: it just says where the scan is going.
+        phone={patientFolderId ? { patientId: patient.id, folderId: patientFolderId, label: "Saving to the patient open on your computer" } : undefined}
       />
 
 
