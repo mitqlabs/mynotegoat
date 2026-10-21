@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollLock } from "@/components/scroll-lock";
+import { PhoneScanPanel } from "@/components/phone-scan-panel";
+import { loadImage, makeEnhanced, makeThumb, toJpeg } from "@/lib/scan-canvas";
 import {
   buildScanPdf,
   defaultScanName,
-  enhanceDocument,
   isIphoneCamera,
   moveItem,
   pickCamera,
@@ -18,6 +19,8 @@ export interface DocumentScannerModalProps {
   onClose: () => void;
   /** Gets the finished multi-page PDF. */
   onCapture: (file: File) => void;
+  /** Turns on "Scan with my phone" (QR hand-off) for this patient's files. */
+  phone?: { patientId: string; folderId: string; label: string };
 }
 
 /** The camera picked last time. A "user" key: mirrored to the signed-in
@@ -39,58 +42,7 @@ type CamState = "starting" | "live" | "denied" | "none" | "error";
 type ImageCaptureLike = { takePhoto: () => Promise<Blob> };
 type ImageCaptureCtor = new (track: MediaStreamTrack) => ImageCaptureLike;
 
-function loadImage(blob: Blob): Promise<HTMLCanvasElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
-      c.getContext("2d")!.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      resolve(c);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Couldn't read that picture"));
-    };
-    img.src = url;
-  });
-}
-
-function makeEnhanced(src: HTMLCanvasElement): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = src.width;
-  c.height = src.height;
-  const ctx = c.getContext("2d")!;
-  ctx.drawImage(src, 0, 0);
-  const data = ctx.getImageData(0, 0, c.width, c.height);
-  enhanceDocument(data.data);
-  ctx.putImageData(data, 0, 0);
-  return c;
-}
-
-function makeThumb(src: HTMLCanvasElement): string {
-  const c = document.createElement("canvas");
-  const s = 160 / Math.max(src.width, src.height);
-  c.width = Math.round(src.width * s);
-  c.height = Math.round(src.height * s);
-  c.getContext("2d")!.drawImage(src, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.7);
-}
-
-function toJpeg(c: HTMLCanvasElement): Promise<Uint8Array> {
-  return new Promise((resolve, reject) =>
-    c.toBlob(
-      (b) => (b ? b.arrayBuffer().then((a) => resolve(new Uint8Array(a)), reject) : reject(new Error("Couldn't save page"))),
-      "image/jpeg",
-      0.9,
-    ),
-  );
-}
-
-export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScannerModalProps) {
+export function DocumentScannerModal({ open, onClose, onCapture, phone }: DocumentScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -99,10 +51,11 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
   const [camState, setCamState] = useState<CamState>("starting");
   const [pages, setPages] = useState<Page[]>([]);
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
-  const [enhance, setEnhance] = useState(true);
+  const [enhance, setEnhance] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<"" | "capture" | "save">("");
   const [message, setMessage] = useState("");
+  const [usePhone, setUsePhone] = useState(false);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -118,6 +71,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
       setMessage("");
       setRetakeIndex(null);
       setCameraId(null);
+      setUsePhone(false);
       return;
     }
     let cancelled = false;
@@ -161,7 +115,10 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
 
   // Start the chosen camera at the highest resolution it offers.
   useEffect(() => {
-    if (!open || !cameraId) return;
+    if (!open || !cameraId || usePhone) {
+      if (usePhone) stopStream();
+      return;
+    }
     let cancelled = false;
     stopStream();
     setCamState("starting");
@@ -190,7 +147,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
     return () => {
       cancelled = true;
     };
-  }, [open, cameraId, stopStream]);
+  }, [open, cameraId, usePhone, stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
 
@@ -305,6 +262,41 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
           </button>
         </div>
 
+        {phone && (
+          <div className="mt-3 flex gap-2" role="tablist">
+            <button
+              aria-selected={usePhone}
+              className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all active:scale-[0.98] ${usePhone ? "bg-[var(--brand-primary)] text-white" : "border-2 border-[var(--brand-primary)] bg-white text-[var(--brand-primary)]"}`}
+              onClick={() => setUsePhone(true)}
+              role="tab"
+              type="button"
+            >
+              📱 Scan with my phone
+            </button>
+            <button
+              aria-selected={!usePhone}
+              className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all active:scale-[0.98] ${!usePhone ? "bg-[var(--brand-primary)] text-white" : "border border-[var(--line-soft)] bg-white"}`}
+              onClick={() => setUsePhone(false)}
+              role="tab"
+              type="button"
+            >
+              Use this computer&apos;s camera
+            </button>
+          </div>
+        )}
+
+        {phone && usePhone ? (
+          <PhoneScanPanel
+            label={phone.label}
+            name={name}
+            onReceived={(file) => {
+              onCapture(file);
+            }}
+            folderId={phone.folderId}
+            patientId={phone.patientId}
+          />
+        ) : (
+        <>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="text-sm font-semibold" htmlFor="scan-camera">Camera</label>
           <select
@@ -420,6 +412,9 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
 
         {message && <p className="mt-2 text-sm font-semibold text-red-600">{message}</p>}
 
+        </>
+        )}
+
         <div className="mt-4 flex flex-wrap items-end justify-end gap-2 border-t border-[var(--line-soft)] pt-3">
           <label className="mr-auto flex min-w-[240px] flex-1 flex-col text-sm font-semibold">
             File name
@@ -431,6 +426,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
             />
             <span className="mt-1 text-xs font-normal text-[var(--text-muted)]">The case # and patient name are added in front automatically.</span>
           </label>
+          {!(phone && usePhone) && (
           <button
             className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-50"
             disabled={pages.length === 0 || busy !== ""}
@@ -439,6 +435,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
           >
             {busy === "save" ? "Saving…" : pages.length > 1 ? `Save ${pages.length} pages as PDF` : "Save as PDF"}
           </button>
+          )}
         </div>
       </section>
     </div>
