@@ -871,8 +871,9 @@ export default function PatientsPage() {
       attorney: attorneyName,
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
-      // The New Patient visit date IS the Initial Exam date (new record, so the box is blank).
-      initialExam: firstVisit ? `${firstVisit.iso.slice(5, 7)}/${firstVisit.iso.slice(8, 10)}/${firstVisit.iso.slice(0, 4)}` : "",
+      // Never saved from a booking: while the box is blank, every reader shows the
+      // New Patient visit's date and follows it if it moves or is canceled.
+      initialExam: "",
       phone: formatUsPhoneInput(newPatientDraft.phone),
       email: "",
       address: composePatientAddress(
