@@ -40,20 +40,33 @@ export function looksLikeContactPaste(text: string): boolean {
   return lines >= 3 && (phones >= 2 || STATE_ZIP_RE.test(text));
 }
 
-/** Category the user named in the request ("add these attorneys as contacts"). */
+/**
+ * Category the user named in the request ("add these attorneys as contacts",
+ * or a header line like "Attorneys:"). Only the request/header lines count —
+ * never the contact names themselves (a name like "Miller & Baker" used to hit
+ * a loose "er" and file a whole attorney list under Acute Care).
+ */
 export function categoryFromRequest(text: string): ContactCategory | "" {
-  const head = text.split(/\r?\n/).filter((l) => !PHONE_RE.test(l)).slice(0, 2).join(" ").toLowerCase();
-  if (/\b(attorneys?|lawyers?|law firms?)\b/.test(head)) return "Attorney";
-  if (/\bimaging|mri|radiology\b/.test(head)) return "Imaging Center";
-  if (/\bspecialists?|doctors?|ortho\w*\b/.test(head)) return "Specialist";
-  if (/\burgent care|acute|er\b|hospitals?\b/.test(head)) return "Acute Care";
-  if (/\binsurance\b|\bagents?\b/.test(head)) return "Insurance Agent";
+  const head = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !PHONE_RE.test(l) && (kindOf(l) === "intent" || /:\s*$/.test(l) || /^\/contacts?\b/i.test(l)))
+    .join(" ")
+    .toLowerCase();
+  if (!head) return "";
+  if (/\b(attorneys?|lawyers?|law ?firms?|legal)\b/.test(head)) return "Attorney";
+  if (/\b(imaging|mri|radiology)\b/.test(head)) return "Imaging Center";
+  if (/\b(specialists?|doctors?|ortho\w*|pain management)\b/.test(head)) return "Specialist";
+  if (/\b(urgent care|acute care|er|hospitals?)\b/.test(head)) return "Acute Care";
+  if (/\b(insurance|agents?)\b/.test(head)) return "Insurance Agent";
   return "";
 }
 
+// Law-firm signals win over medical words ("Injury", "Accident", "Care", "Center").
+const LAW_RE = /\b(law|lawyers?|attorneys?|legal|firm|pllc|apc|a\.p\.c\.?|p\.?\s?c\.?|llp|esq\.?|litigation|counsel|abogados?|trial)\b/;
 export function guessCategory(name: string): ContactCategory | "" {
   const n = name.toLowerCase();
-  if (/\b(law|lawyers?|attorneys?|legal|pllc|p\.?\s?c\.?|llp|esq\.?|injury|litigation|counsel|abogados?)\b/.test(n) || /&\s*associates\b/.test(n) || /\bp\.c\.?$/.test(n)) return "Attorney";
+  if (LAW_RE.test(n) || /&\s*associates\b/.test(n) || /\bp\.c\.?$/.test(n) || /\binjury\s+(lawyers?|attorneys?|law)\b/.test(n)) return "Attorney";
   if (/\b(imaging|mri|radiology|diagnostic|x-?ray|open mri)\b/.test(n)) return "Imaging Center";
   if (/\b(urgent care|emergency|er|hospital|medical center|acute)\b/.test(n)) return "Acute Care";
   if (/\b(insurance|state farm|allstate|farmers|geico|progressive)\b/.test(n)) return "Insurance Agent";
