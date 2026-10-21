@@ -37,7 +37,10 @@ async function mergeAndUpload(rows: FormTemplate[]) {
     const cloud = await fetchKvValue<unknown>(PATIENT_FORMS_STORAGE_KEY);
     const merged = cloud ? normalizePatientForms(unionMerge(rows, cloud)) : rows;
     await dualWriteKv(PATIENT_FORMS_STORAGE_KEY, "tasks", merged);
-    if (!sameJson(merged, rows)) {
+    // Only write the merge back if nothing was typed meanwhile; otherwise
+    // this stale copy would undo the newest keystrokes.
+    const stillOurs = window.localStorage.getItem(PATIENT_FORMS_STORAGE_KEY) === JSON.stringify(rows);
+    if (stillOurs && !sameJson(merged, rows)) {
       window.localStorage.setItem(PATIENT_FORMS_STORAGE_KEY, JSON.stringify(merged));
       notifyChange(PATIENT_FORMS_STORAGE_KEY);
     }
