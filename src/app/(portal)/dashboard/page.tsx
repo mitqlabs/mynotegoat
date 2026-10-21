@@ -188,7 +188,17 @@ type ReferralPatient = {
   xray: number;
   mri: number;
   sentDate: string;
+  attorney: string;
+  /** Date of Loss (date of injury) as MM/DD/YYYY. */
+  dateOfLoss: string;
 };
+
+/** Case fields shown on every drill-down row. */
+function caseCols(patient: { attorney?: string; dateOfLoss?: string }): { attorney: string; dateOfLoss: string } {
+  const raw = (patient.dateOfLoss ?? "").trim();
+  const isoM = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return { attorney: (patient.attorney ?? "").trim(), dateOfLoss: isoM ? `${isoM[2]}/${isoM[3]}/${isoM[1]}` : raw };
+}
 
 /** "MM/DD/YYYY" or "YYYY-MM-DD" → a string that sorts chronologically. */
 function sortableDate(value: string): string {
@@ -565,6 +575,7 @@ export default function DashboardPage() {
 
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
+      if (patient.deleted) return false; // Trash never counts.
       const matchesYear =
         year === "ALL" ||
         (parseFlexibleDate(patient.dateOfLoss)?.year.toString() === year);
@@ -704,7 +715,7 @@ export default function DashboardPage() {
     // Cases = distinct patients sent to the facility (any modality). Xrays/MRIs
     // = total studies (one per imaged region; a bilateral extremity = two).
     const addReferral = (
-      patient: { id: string; fullName: string; caseStatus: string },
+      patient: { id: string; fullName: string; caseStatus: string; attorney?: string; dateOfLoss?: string },
       facility: string,
       type: "xray" | "mri",
       count: number,
@@ -725,6 +736,7 @@ export default function DashboardPage() {
         id: patient.id,
         name: patient.fullName,
         caseStatus: patient.caseStatus,
+        ...caseCols(patient),
         xray: 0,
         mri: 0,
         sentDate: "",
@@ -794,7 +806,7 @@ export default function DashboardPage() {
       .sort((a, b) => b.total - a.total);
   }, [filteredPatients]);
 
-  const specialistReferralStats = useMemo(() => {
+  const buildSpecialistStats = useCallback((list: PatientRecord[]) => {
     const grouped: Record<
       string,
       { specialist: string; casePatientIds: Set<string>; patients: Map<string, ReferralPatient> }
@@ -811,7 +823,7 @@ export default function DashboardPage() {
       return grouped[key];
     };
 
-    filteredPatients.forEach((patient) => {
+    list.forEach((patient) => {
       // Read from specialistReferrals array (the actual saved data)
       if (Array.isArray(patient.specialistReferrals)) {
         for (const raw of patient.specialistReferrals) {
@@ -825,6 +837,7 @@ export default function DashboardPage() {
             id: patient.id,
             name: patient.fullName,
             caseStatus: patient.caseStatus,
+            ...caseCols(patient),
             xray: 0,
             mri: 0,
             sentDate: refSentDate(ref),
@@ -843,6 +856,7 @@ export default function DashboardPage() {
           id: patient.id,
           name: patient.fullName,
           caseStatus: patient.caseStatus,
+          ...caseCols(patient),
           xray: 0,
           mri: 0,
           sentDate: patient.matrix?.specialistSent ?? "",
@@ -857,7 +871,15 @@ export default function DashboardPage() {
         patients: sortReferralPatients([...row.patients.values()]),
       }))
       .sort((a, b) => b.cases - a.cases);
-  }, [filteredPatients]);
+  }, []);
+  const specialistReferralStats = useMemo(() => buildSpecialistStats(filteredPatients), [buildSpecialistStats, filteredPatients]);
+  // Same rows with only Attorney/Status applied — tells the drill-down how many
+  // of a specialist's patients the Year filter (by Date of Loss) is hiding.
+  const specialistAllYears = useMemo(() => {
+    if (year === "ALL") return null;
+    const list = patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status));
+    return new Map(buildSpecialistStats(list).map((r) => [r.specialist.toLowerCase(), r.cases]));
+  }, [attorney, buildSpecialistStats, status, year]);
 
   const attorneyStats = useMemo(() => {
     const grouped: Record<
@@ -1443,7 +1465,7 @@ export default function DashboardPage() {
           <ScrollLock />
           {/* Stop the backdrop's close handler from firing on clicks inside. */}
           <div
-            className="panel-card mx-auto w-full max-w-2xl p-4"
+            className="panel-card mx-auto w-full max-w-3xl p-4"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1464,15 +1486,15 @@ export default function DashboardPage() {
               <table className="min-w-full border-collapse text-sm">
                 <thead className="sticky top-0 bg-[var(--bg-soft)] text-left">
                   <tr>
-                    {(["name", "sent"] as const).map((k) => (
-                      <th className="px-3 py-2" key={k}>
+                    {(["name", "attorney", "dol", "sent"] as const).map((k) => (
+                      <th className={`whitespace-nowrap px-3 py-2 ${k === "attorney" ? "min-w-[9rem]" : ""}`} key={k}>
                         <button
                           className={`inline-flex items-center gap-1 hover:text-[var(--brand-primary)] ${drillSort.key === k ? "text-[var(--brand-primary)]" : ""}`}
                           onClick={() => changeDrillSort(k)}
-                          title={k === "name" ? "Sort by patient name" : "Sort by sent date"}
+                          title={`Sort by ${{ name: "patient name", attorney: "attorney", dol: "date of loss", sent: "sent date" }[k]}`}
                           type="button"
                         >
-                          {k === "name" ? "Patient" : "Sent"}
+                          {{ name: "Patient", attorney: "Attorney", dol: "Date of Loss", sent: "Sent" }[k]}
                           <span aria-hidden className={`text-[10px] ${drillSort.key === k ? "" : "opacity-30"}`}>
                             {drillSort.key === k && drillSort.dir === "desc" ? "▼" : "▲"}
                           </span>
@@ -1485,7 +1507,7 @@ export default function DashboardPage() {
                         <th className="px-3 py-2">MR</th>
                       </>
                     )}
-                    <th className="px-3 py-2">Case Status</th>
+                    <th className="whitespace-nowrap px-3 py-2">Case Status</th>
                     <th className="w-10 px-3 py-2 text-center" title="Tick off patients as you work the list">
                       ✓
                     </th>
@@ -1508,10 +1530,16 @@ export default function DashboardPage() {
                             : undefined
                         }
                       >
-                        <td className="px-3 py-2 font-semibold">
+                        <td className="whitespace-nowrap px-3 py-2 font-semibold">
                           <Link className="hover:underline" href={`/patients/${row.id}`}>
                             {row.name}
                           </Link>
+                        </td>
+                        <td className="max-w-[14rem] truncate px-3 py-2 text-[var(--text-muted)]" title={row.attorney || undefined}>
+                          {row.attorney || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
+                          {row.dateOfLoss || "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 tabular-nums text-[var(--text-muted)]">
                           {row.sentDate || "—"}
@@ -1526,7 +1554,7 @@ export default function DashboardPage() {
                             </td>
                           </>
                         )}
-                        <td className="px-3 py-2 text-[var(--text-muted)]">{row.caseStatus}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-[var(--text-muted)]">{row.caseStatus}</td>
                         <td className="px-3 py-2 text-center">
                           <input
                             aria-label={`Mark ${row.name} as done`}
@@ -1541,7 +1569,7 @@ export default function DashboardPage() {
                   })}
                   {referralDrill.patients.length === 0 && (
                     <tr>
-                      <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={6}>
+                      <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={8}>
                         No patients on this row for the current filters.
                       </td>
                     </tr>
@@ -1551,8 +1579,30 @@ export default function DashboardPage() {
             </div>
             <p className="mt-2 text-[11px] text-[var(--text-muted)]">
               {referralDrill.patients.length} patient
-              {referralDrill.patients.length === 1 ? "" : "s"} · follows the filters set above.
-              Ticks are yours alone — saved to your account (any computer you sign in on) and nobody else sees them.
+              {referralDrill.patients.length === 1 ? "" : "s"} · follows the filters set above
+              {year !== "ALL" ? ` (Year ${year}, by Date of Loss)` : ""}.
+              {(() => {
+                const all = referralDrill.kind === "specialist" ? specialistAllYears?.get(referralDrill.title.toLowerCase()) ?? 0 : 0;
+                const hidden = all - referralDrill.patients.length;
+                if (hidden <= 0) return null;
+                return (
+                  <>
+                    {" "}
+                    <button
+                      className="font-semibold text-[var(--brand-primary)] hover:underline"
+                      onClick={() => {
+                        setYear("ALL");
+                        const row = buildSpecialistStats(patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status))).find((r) => r.specialist.toLowerCase() === referralDrill.title.toLowerCase());
+                        if (row) setReferralDrill({ ...referralDrill, subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`, patients: row.patients });
+                      }}
+                      type="button"
+                    >
+                      +{hidden} from other years — show all
+                    </button>
+                  </>
+                );
+              })()}
+              {" "}Ticks are yours alone — saved to your account (any computer you sign in on) and nobody else sees them.
             </p>
           </div>
         </div>

@@ -204,7 +204,7 @@ function FormEditor({
       <div className="flex flex-wrap items-end gap-2">
         <label className="grid min-w-[200px] flex-1 gap-1">
           <span className={label}>Form name</span>
-          <input className={field} onChange={(e) => patch((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. New patient questionnaire" value={form.name} />
+          <input className={field} onBlur={() => form.name !== form.name.trim() && patch((f) => ({ ...f, name: f.name.trim() || "Untitled form" }))} onChange={(e) => patch((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. New patient questionnaire" value={form.name} />
         </label>
         <div className="flex h-9 items-center gap-2 px-1 text-sm">
           <Switch on={!form.disabled} onChange={(on) => patch((f) => ({ ...f, disabled: on ? undefined : true }))} title="Offer this form in Send form" />
@@ -291,11 +291,11 @@ function MacroPicker({ macros, already, onAdd, onCancel }: { macros: MacroTempla
   return (
     <div className="space-y-3 rounded-lg border border-[var(--line-soft)] p-3" data-testid="macro-picker">
       <p className="text-sm font-semibold">Pick the Objective macros to ask about</p>
-      <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="gap-x-1 sm:columns-2 lg:columns-3">
         {macros.map((m) => {
           const inForm = already.includes(macroNameKey(m.buttonName));
           return (
-            <label className="flex h-9 items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--bg-soft,#f7f7f7)]" key={m.id}>
+            <label className="mb-1 flex h-9 break-inside-avoid items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--bg-soft,#f7f7f7)]" key={m.id}>
               <input checked={picked.includes(m.buttonName)} onChange={() => toggle(m.buttonName)} type="checkbox" />
               <span className="truncate">{m.buttonName}</span>
               {inForm && <span className="ml-auto shrink-0 text-[11px] text-[var(--text-muted)]">in form</span>}
