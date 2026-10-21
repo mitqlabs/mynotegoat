@@ -229,7 +229,7 @@ let totalOk = pass;
   const c: UContext = { today: "2026-10-20", patients: [{ id: "P1", fullName: "Smith, John" }, { id: "P2", fullName: "Rivera, Ana" }, { id: "P3", fullName: "Kim, Cara" }, { id: "P4", fullName: "Nazarian, Vahe" }], lastPatientId: "P1", attorneys: ["Mock Injury Lawyers", "Test Legal LLP"] };
   const H: Array<[string, string | null, string | null]> = [
 ["hey goat can you book rivera next mon at 10:15", "book", "P2"], ["nazarain tmrw 2pm book pls", "book", "P4"], ["i want to schedule cara for a follow up thursday", "book", "P3"],
-["put john in for friday 9", "book", "P1"], ["book him again next week same time", "book", "P1"], ["bk jon smth tmrw aftrnoon", "book", "P1"], ["mov ana lopez thurs appt to fri 11", "reschedule", "P2"], ["kara kim re exam 10/30 at 3", "book", null],
+["put john in for friday 9", "book", "P1"], ["book him again next week same time", "book", "P1"], ["bk jon smth tmrw aftrnoon", "book", "P1"], ["mov ana lopez thurs appt to fri 11", "reschedule", "P2"], ["kara kim re exam 10/30 at 3", "book", "P3"],
 ["rescheduel ana to wed", "reschedule", "P2"], ["can you move smiths visit to 4", "reschedule", "P1"], ["push his appt back to friday", "reschedule", "P1"],
 ["cancell vahe tomorrow", "cancel", "P4"], ["ana rivera won't make it today", "cancel", "P2"], ["cancel everything for kim tomorrow", "cancel", "P3"],
 ["ana is here for her appt", "checkIn", "P2"], ["check-in smith", "checkIn", "P1"], ["check vahe out", "checkOut", "P4"], ["mark kim as no show", "noShow", "P3"],

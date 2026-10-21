@@ -257,6 +257,9 @@ const tokenize = (t: string) => [...t.matchAll(/[A-Za-z][A-Za-z'-]*/g)].map((m) 
 function close(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b || a === `${b}s`) return true;
+  // Sound-alike first letters: kara/cara, katie/catie, phil/fil.
+  const snd = (w: string) => w.replace(/^c(?=[aou])/, "k").replace(/^ph/, "f");
+  if (a[0] !== b[0] && snd(a)[0] === snd(b)[0]) return close(snd(a), snd(b));
   if (a[0] !== b[0]) return false;
   if (a.length < 4 || b.length < 4) return Math.min(a.length, b.length) >= 3 && a.slice(0, 2) === b.slice(0, 2) && editDistance(a, b) <= 1;
   const d = editDistance(a, b);
@@ -421,7 +424,7 @@ export function findTime(text: string): TimeHit | null {
 // Templates (for learning: names / dates / times become slots)
 // ---------------------------------------------------------------------------
 
-export function phraseTemplate(text: string, patients: UPatient[], today: string): string {
+export function phraseTemplate(text: string, patients: UPatient[], today: string, otherNames: string[] = []): string {
   let t = normalizeForIntent(text);
   const spans: Array<[number, number, string]> = [];
   const p = findPatient(t, patients);
@@ -443,9 +446,13 @@ export function phraseTemplate(text: string, patients: UPatient[], today: string
     const n = nameParts(pt.fullName);
     for (const w of [n.first, n.last]) if (w && w.length >= 3) names.add(w.toLowerCase());
   }
+  // Contacts and attorneys too ("call mike at test legal" → "call {name} at {name} {name}").
+  const exact = new Set<string>();
+  for (const full of otherNames) for (const w of full.toLowerCase().split(/[^a-z']+/)) if (w.length >= 3 && !NOT_NAMES.has(w) && !GENERIC_ORG.has(w)) exact.add(w);
   t = t.replace(/[A-Za-z][A-Za-z'-]*/g, (w) => {
     const l = w.toLowerCase().replace(/'s$/, "");
     if (l.length < 3 || NOT_NAMES.has(l)) return w;
+    if (exact.has(l)) return "{name}";
     for (const n of names) if (close(l, n)) return "{name}";
     return w;
   });
@@ -473,6 +480,10 @@ export interface UContext {
   team?: string[];
   /** Learned template → action (cloud-saved), tried first. */
   learned?: Record<string, ActionId>;
+  /** Other names in the workspace (contacts, attorneys) scrubbed from saved wording. */
+  names?: string[];
+  /** A typed correction already said which action ("no, book it"). */
+  force?: ActionId;
 }
 
 export interface Understood {
@@ -549,13 +560,13 @@ function pickAction(t: string, hasPatient: boolean, attorneys: string[] = []): A
 export function understand(raw: string, ctx: UContext): Understood | null {
   if (!raw.trim() || raw.trim().startsWith("/") || raw.trim().startsWith("@")) return null;
   const t = normalizeForIntent(raw);
-  const template = phraseTemplate(raw, ctx.patients, ctx.today);
+  const template = phraseTemplate(raw, ctx.patients, ctx.today, [...(ctx.names ?? []), ...(ctx.attorneys ?? [])]);
   const hit = findPatient(t, ctx.patients, ctx.lastPatientId);
   const learnedAction = ctx.learned?.[template];
-  let action: ActionId | null = learnedAction ?? pickAction(t, Boolean(hit.patient || hit.ambiguous.length), ctx.attorneys);
+  let action: ActionId | null = ctx.force ?? learnedAction ?? pickAction(t, Boolean(hit.patient || hit.ambiguous.length), ctx.attorneys);
   // "kara kim re exam 10/30 at 3": a patient plus a day/time and nothing else → book.
   if (!action && hit.patient && (findTime(t) || findDate(t, ctx.today)) && !QUESTION.test(t)) {
-    const left = cut(t, [hit.span, findDate(t, ctx.today)?.span, findTime(t)?.span]).replace(/\b(?:re-?exam|new patient|follow[- ]?up|massage|for|a|an|at|on|the|visit|please|pls)\b/gi, "").trim();
+    const left = cut(t, [hit.span, findDate(t, ctx.today)?.span, findTime(t)?.span]).replace(/\b(?:re[- ]?exam|new patient|follow[- ]?up|massage|for|a|an|at|on|the|visit|please|pls)\b/gi, "").trim();
     if (!left) action = "book";
   }
   if (!action) {
@@ -652,4 +663,57 @@ export function understand(raw: string, ctx: UContext): Understood | null {
 /** Plain list for the Handbook: "Book a visit — "book john smith tmrw at 3"". */
 export function handbookPhrases(): string[] {
   return GOAT_ACTIONS.map((a) => `${a.label}: "${a.examples[0]}"${a.examples[1] ? ` or "${a.examples[1]}"` : ""}.`);
+}
+
+const GENERIC_ORG = new Set(["law", "legal", "group", "firm", "office", "offices", "and", "the", "llp", "pllc", "inc", "associates", "injury", "attorneys", "attorney", "clinic", "center", "imaging", "medical", "health", "insurance"]);
+
+// ---------------------------------------------------------------------------
+// Typed corrections: "no I wanted you to book it", "not a note, a to-do", "I meant reschedule"
+// ---------------------------------------------------------------------------
+
+const CORRECTION_WORDS: Array<[RegExp, ActionId]> = [
+  [/\b(?:re-?schedul\w*|resched|move|push|bump)\b/, "reschedule"],
+  [/\b(?:cancel\w*|cxl)\b/, "cancel"],
+  [/\bno[- ]?show\b/, "noShow"],
+  [/\bcheck(?:ed)?[- ]?(?:\S+ )?in\b/, "checkIn"],
+  [/\bcheck(?:ed)?[- ]?(?:\S+ )?out\b/, "checkOut"],
+  [/\b(?:to-?do|task|reminder|remind)\b/, "todo"],
+  [/\bnote\b/, "note"],
+  [/\b(?:attorney|lawyer|atty)\b/, "attorney"],
+  [/\b(?:date of (?:injury|loss)|doi|injury date)\b/, "doi"],
+  [/\bstatus\b/, "status"],
+  [/\b(?:open|pull up|go to)\b/, "open"],
+  [/\b(?:book\w*|bk|appointment|visit|schedule (?:it|him|her|them))\b/, "book"],
+  [/\b(?:message|tell|text)\b/, "message"],
+];
+
+const CORRECTION_START = /^(?:nope\b|nah\b|no+\b|wrong\b|not (?:that|a|an|the)\b|that'?s not|thats not|i meant|i mean|meant|i wanted|i said|actually|not what i)/;
+
+/**
+ * A reply that corrects G.O.A.T.'s last result. Returns the action meant and any extra
+ * detail ("to friday"), or null when the message isn't a correction.
+ */
+export function detectCorrection(raw: string): { action: ActionId; detail: string } | null {
+  let t = normalizeForIntent(raw).toLowerCase().replace(/[.!]+$/, "").trim();
+  if (!CORRECTION_START.test(t)) return null;
+  // Drop the part that names the wrong action: "not a note, a to-do" → "a to-do".
+  t = t.replace(/\bnot (?:a|an|the)?\s*[a-z-]+(?:\s+[a-z-]+)?\s*[,;]\s*/, " ");
+  t = t.trim().replace(/^(?:nope|nah|no+|wrong|actually)\b[,!.\s]*/, "").replace(/^(?:that'?s|thats) not what i (?:meant|wanted)[,.\s]*/, "");
+  let best: { action: ActionId; at: number } | null = null;
+  for (const [re, action] of CORRECTION_WORDS) {
+    const m = re.exec(t);
+    if (m && (!best || m.index < best.at)) best = { action, at: m.index };
+  }
+  if (!best) return null;
+  const used = CORRECTION_WORDS.find(([, a]) => a === best!.action)![0];
+  const detail = t
+    .replace(new RegExp(used.source), " ")
+    .trim()
+    .replace(/^(?:i (?:meant|mean|wanted|said)|meant)\s+(?:you\s+)?(?:to\s+)?/, "")
+    .replace(/^(?:a|an|the)\s+/, "")
+    .replace(/\bi (?:meant|mean|said|wanted)\b|\bmeant\b/g, " ")
+    .replace(/\b(?:it|that|this|instead|please|pls|one|wanted|you|a|an|to)\b(?!\s+(?:mon|tue|wed|thu|fri|sat|sun|tomorrow|today|next|\d))/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { action: best.action, detail };
 }

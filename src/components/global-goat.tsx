@@ -48,7 +48,7 @@ import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, pri
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
 import { patientsMentionedInMessage } from "@/lib/goat-message";
 import { dismissNudge, readDismissed, readRecall, recallLine, saveRecall } from "@/lib/goat-recall";
-import { GOAT_ACTIONS, nameParts, phraseTemplate, understand, type ActionId, type Understood } from "@/lib/goat-understand";
+import { detectCorrection, findDate, findTime, normalizeForIntent, GOAT_ACTIONS, nameParts, phraseTemplate, understand, type ActionId, type Understood } from "@/lib/goat-understand";
 import { planQuick, type QuickPlan } from "@/lib/goat-quick";
 import { learnedMap, loadLearned, safeTemplate, saveLearned, withMiss, withPhrase } from "@/lib/goat-learned";
 import { updatePatientRecordById } from "@/lib/mock-data";
@@ -1583,7 +1583,72 @@ export function GlobalGoatPopup({
       lastPatientId: contextPatient()?.id ?? null,
       attorneys: loadContactDirectory().filter((c) => c.category === "Attorney").map((c) => c.name),
       learned: learnedMap(loadLearned()),
+      names: workspaceNames(),
     });
+  };
+  /** Contact and attorney names, scrubbed from any wording G.O.A.T. saves. */
+  const workspaceNames = (): string[] => loadContactDirectory().map((c) => c.name).filter(Boolean);
+  /** Saved wording: patient, contact and attorney names, days, times and numbers become blanks. */
+  const tplOf = (typed: string): string =>
+    phraseTemplate(typed, allPatients().map((p) => ({ id: p.id, fullName: p.fullName })), practiceData().today, workspaceNames());
+  /**
+   * A typed correction right after a G.O.A.T. result ("no I wanted you to book it", "not a note,
+   * a to-do", "no, move it to friday"): close the wrong card, remember the original wording →
+   * the right action (cloud list), and redo it as one confirm card.
+   */
+  const handleCorrection = (question: string): boolean => {
+    const fix = detectCorrection(question);
+    if (!fix) return false;
+    const idx = chat.messages.map((m) => m.role).lastIndexOf("goat");
+    const g = idx >= 0 ? chat.messages[idx] : null;
+    if (!g) return false;
+    const original = g.replyTo ?? [...chat.messages.slice(0, idx)].reverse().find((m) => m.role === "user")?.text ?? "";
+    if (!original || detectCorrection(original)) return false;
+    // "no, cancel" on an open card just means "don't do it", not "cancel the visit".
+    const openCard = [g.quick, g.booking, g.todoDraft, g.noteDraft, g.om].some((c) => c?.state === "open");
+    if (fix.action === "cancel" && !fix.detail && openCard) return false;
+    // "no, move it to friday" on a booking card that isn't saved yet = same booking, new day/time.
+    if (fix.action === "reschedule" && g.booking?.state === "open" && fix.detail) {
+      const today = practiceData().today;
+      const tail = fix.detail.replace(/^to\s+/, "");
+      const d2 = findDate(tail, today);
+      const t2 = findTime(tail);
+      let text = normalizeForIntent(original);
+      const d0 = findDate(text, today);
+      const t0 = findTime(text);
+      const cuts = [d2 && d0 ? [d0.span, d2.words] : null, t2 && t0 ? [t0.span, t2.words] : null].filter(Boolean) as Array<[[number, number], string]>;
+      for (const [[a0, b0], w] of cuts.sort((x, y) => y[0][0] - x[0][0])) text = `${text.slice(0, a0)}${w}${text.slice(b0)}`;
+      if (d2 && !d0) text += ` ${d2.words}`;
+      if (t2 && !t0) text += ` ${t2.words}`;
+      setMsg(g.id, { booking: { ...g.booking, state: "canceled" } });
+      const ub = runUnderstand(text);
+      if (ub?.action === "book" && ub.canonical) resendAs(ub.canonical, question);
+      else resendAs(text, question);
+      return true;
+    }
+    const did = g.booking ? "book" : g.todoDraft ? "todo" : g.noteDraft ? "note" : g.om ? `om:${g.om.plan.kind}` : g.quick ? g.quick.kind : "reply";
+    const tpl = tplOf(original);
+    if (safeTemplate(tpl)) saveLearned((l) => withPhrase(withMiss(l, tpl, did), tpl, fix.action));
+    const patch: Partial<ChatMessage> = { missed: { state: "picked", picked: fix.action } };
+    if (g.quick?.state === "open") patch.quick = { ...g.quick, state: "canceled" };
+    if (g.booking?.state === "open") patch.booking = { ...g.booking, state: "canceled" };
+    if (g.todoDraft?.state === "open") patch.todoDraft = { ...g.todoDraft, state: "canceled" };
+    if (g.noteDraft?.state === "open") patch.noteDraft = { ...g.noteDraft, state: "canceled" };
+    if (g.om?.state === "open") patch.om = { ...g.om, state: "canceled" };
+    setMsg(g.id, patch);
+    const people = allPatients().filter((p) => !(p as { deleted?: boolean }).deleted);
+    const combined = fix.detail ? `${original} ${fix.detail}` : original;
+    const u = understand(combined, {
+      today: practiceData().today,
+      patients: people.map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
+      lastPatientId: contextPatient()?.id ?? null,
+      attorneys: loadContactDirectory().filter((c) => c.category === "Attorney").map((c) => c.name),
+      names: workspaceNames(),
+      force: fix.action,
+    });
+    if (u && actOn(u, question)) return true;
+    resendAs(u?.canonical ?? combined, question);
+    return true;
   };
   /** Hand a canonical phrase to the existing path; the chat still shows what was typed. */
   const resendAs = (canonical: string, typed: string) => {
@@ -1664,7 +1729,7 @@ export function GlobalGoatPopup({
   /** "That's not what I meant" → log the miss (workspace cloud list), then offer the actions. */
   const markMissed = (msg: ChatMessage) => {
     const typed = msg.replyTo ?? [...chat.messages].slice(0, chat.messages.findIndex((x) => x.id === msg.id)).reverse().find((x) => x.role === "user")?.text ?? "";
-    const tpl = phraseTemplate(typed, allPatients().map((p) => ({ id: p.id, fullName: p.fullName })), practiceData().today);
+    const tpl = tplOf(typed);
     const did = msg.booking ? "book" : msg.todoDraft ? "todo" : msg.noteDraft ? "note" : msg.om ? `om:${msg.om.plan.kind}` : msg.quick ? msg.quick.kind : "reply";
     if (safeTemplate(tpl)) saveLearned((l) => withMiss(l, tpl, did));
     setMsg(msg.id, { missed: { state: "open" }, replyTo: typed });
@@ -1676,7 +1741,7 @@ export function GlobalGoatPopup({
       setMsg(msg.id, { missed: { state: "noted" } });
       return;
     }
-    const tpl = phraseTemplate(typed, allPatients().map((p) => ({ id: p.id, fullName: p.fullName })), practiceData().today);
+    const tpl = tplOf(typed);
     if (safeTemplate(tpl)) saveLearned((l) => withPhrase(l, tpl, action));
     setMsg(msg.id, { missed: { state: "picked", picked: action } });
     if (typed) window.setTimeout(() => sendRef.current(typed), 50);
@@ -1725,6 +1790,7 @@ export function GlobalGoatPopup({
     // Understand first, then act: straight to one confirm card (or one short question).
     const skipUnderstand = understoodRef.current;
     understoodRef.current = false;
+    if (casual && !skipUnderstand && !flowRef.current && handleCorrection(question)) return;
     if (casual && !skipUnderstand && !flowRef.current && !replyPending()) {
       if (askRef.current) {
         const merged = `${askRef.current.raw} ${question}`;

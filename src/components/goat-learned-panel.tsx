@@ -24,7 +24,7 @@ export function GoatLearnedPanel() {
     <div className="grid gap-4 md:grid-cols-2" data-goat-learned>
       <div>
         <p className="text-sm font-semibold">Learned phrases ({phrases.length})</p>
-        <p className="text-xs text-[var(--text-muted)]">When you pick the right action after &ldquo;that&apos;s not what I meant&rdquo;, G.O.A.T. reads that wording that way next time. Names, days and times are stored as blanks.</p>
+        <p className="text-xs text-[var(--text-muted)]">When you correct G.O.A.T. (👎 then pick, or type When you pick the right action after &ldquo;that&apos;s not what I meant&rdquo;, G.O.A.T. reads that wording that way next time. Names, days and times are stored as blanks.ldquo;no, I meant a to-doWhen you pick the right action after &ldquo;that&apos;s not what I meant&rdquo;, G.O.A.T. reads that wording that way next time. Names, days and times are stored as blanks.rdquo;), it reads that wording that way next time. Names, days and times are stored as blanks.</p>
         <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-white">
           {phrases.length === 0 ? (
             <p className="px-2 py-2 text-xs text-[var(--text-muted)]">Nothing learned yet.</p>

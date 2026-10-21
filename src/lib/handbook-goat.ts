@@ -38,10 +38,11 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "The list above comes straight from G.O.A.T.'s own list of actions, so it's always current.",
     },
     {
-      heading: "Teach G.O.A.T. (👎 That's not what I meant)",
+      heading: "Teach G.O.A.T. (👎 or just type the fix)",
       steps: [
         "Under any reply, tap 👎 if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
-        "Names, days, times and numbers are saved as blanks, never the actual name.",
+        "Or just type the fix: \"no I wanted you to book it\", \"not a note, a to-do\", \"I meant reschedule\", \"no, move it to Friday\". G.O.A.T. closes the wrong card, shows the right one, and learns it the same way. (\"No\" or \"no, cancel\" on its own just dismisses the card.)",
+        "Names, days, times and numbers are saved as blanks, never the actual name. Any word matching a patient, contact or attorney in your office is removed, whether it's capitalized or not.",
         "Settings → G.O.A.T. → What G.O.A.T. has learned lists the learned wording and the misses. Delete any you don't want.",
         "Too much on open? Tap Hide brief. The heads-ups sit behind a small \"N heads-ups ›\" link.",
       ],
