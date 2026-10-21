@@ -261,8 +261,11 @@ export function normalizeFormTemplate(v: unknown): FormTemplate | null {
   if (!v || typeof v !== "object") return null;
   const r = v as Record<string, unknown>;
   const id = str(r.id, 120).trim();
-  const name = str(r.name, 200).trim();
-  if (!id || !name) return null;
+  // Never trim here: this runs on every keystroke's save (and the cloud
+  // merge round-trip), so trimming ate the space you just typed. The
+  // editor trims on blur; an empty name is kept so the form isn't dropped.
+  const name = str(r.name, 200);
+  if (!id) return null;
   const sections = Array.isArray(r.sections) ? r.sections.map(normalizeSection).filter((x): x is FormSection => Boolean(x)) : [];
   const createdAt = str(r.createdAt, 40) || EPOCH;
   const t: FormTemplate = { id, name, intro: str(r.intro), sections, createdAt, updatedAt: str(r.updatedAt, 40) || createdAt };

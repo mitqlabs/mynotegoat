@@ -111,7 +111,7 @@ export const handbookChapters: HandbookChapter[] = [
         steps: [
           "Got a text with just a name and number? Patient List → New Patient. Only Last Name, First Name and Phone are required; DOB, Sex, Marital Status and the address are optional.",
           "Know the case details already? Tap + Case in the same popup: Attorney, Attorney Phone, Date of Injury (the Case # builds itself from it). Otherwise skip it.",
-          "Already set their first visit? Fill Appt Date and Time in + Case. Saving books a New Patient visit on the Schedule (office hours and open times are checked first, and you'll see a message if the time doesn't work). Leave Appt Date blank and nothing is booked. On the patient's page, + Case has the same two boxes plus a Book New Patient visit button; tapping it twice never makes a second visit.",
+          "Already set their first visit? Fill Appt Date and Time in + Case. Saving books a New Patient visit on the Schedule (office hours and open times are checked first, and you'll see a message if the time doesn't work). Leave Appt Date blank and nothing is booked. While the patient's Initial Exam box is blank, it shows that visit's date everywhere (patient page, notes, reports, heads-ups, G.O.A.T.) and follows the visit if it's moved or canceled, so you don't type it twice. A date you type in the box always wins. On the patient's page, + Case has no Appt boxes; book later visits from the Schedule.",
           "Create Patient. Their page shows a gentle \"Case info missing\" note with a + Case button until there's an attorney or Date of Injury. It never blocks anything.",
           "Book the first visit from the Schedule: New Appointment → Existing (pick them) or New patient (Last, First and Phone required, DOB optional). With one provider and one location, those are filled in for you. While their Initial Exam box is blank it shows the first New Patient visit's date (in blue) and follows that visit if it's moved or canceled. Type a date in the box (e.g. 06/26/2026) and yours sticks: moving, rescheduling or canceling visits never changes it, and changing the box never moves or deletes a visit.",
           "Non-PI (cash) patients: tick Non-PI in the popup. They have no case info and never appear in Case Flow.",
@@ -635,6 +635,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "The Subjective / Objective / Assessment / Plan tabs sit BELOW the macro buttons, above the note box.",
           "Type straight into the box, use macros, or mix both.",
+          "In Plan, one-paragraph macros run together: tap Begin Decompression, then a second-region macro, and the second text follows on the same paragraph after one space.",
           "Copy From pulls a previous visit's section across when today is much the same.",
         ],
       },
@@ -826,6 +827,8 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Patient page → Diagnosis Codes.",
           "+ Dx Code for one, Add Diagnosis Macro to search the library, or Add Diagnosis Bundle for a preset group.",
+          "G.O.A.T. suggests codes from the MRI and, in a second box, from the X-ray (the Imaging panel X-ray text and uploaded X-ray reports). Each shows the X-ray line it came from and a Why? link. Click Add to add one; it then drops off the list.",
+          "X-ray suggestions cover loss of lordosis, disc degeneration / disc-space narrowing, spondylosis, scoliosis, spondylolisthesis, and shoulder/knee arthritis or effusion. Shoulder and knee codes need the side in the report. A fracture is never coded for you; it's listed under Not suggested so you can code it by hand.",
         ],
         why: "The bar is red and says None added until a patient has codes, because claims and narrative reports both fall apart without them. Codes are per patient, not per visit.",
       },
@@ -920,10 +923,21 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Add a document to a patient",
         steps: [
           "Open the patient page → Patient Files.",
-          "Upload, or drag files onto the panel. Scan captures straight from a phone or scanner.",
+          "Upload, or drag files onto the panel. Scan uses your Mac's camera or your iPhone (see below).",
           "It files itself into that patient's folder — there is nothing to choose.",
         ],
         why: "The folder tree (year → case status → patient) is maintained by the app. Patients move between status folders on their own as the case changes, so use search rather than hunting for a folder.",
+      },
+      {
+        heading: "Scan paperwork with a camera (or your iPhone)",
+        steps: [
+          "Open the patient page → Patient Files → Scan.",
+          "Pick the camera. An iPhone near your Mac (same Apple ID) shows up as \"iPhone Camera\" and is picked for you; it gives the sharpest scans.",
+          "Hold the page up and click Capture. Repeat for each page. Use ← → to reorder, Retake to redo a page, Delete to drop one.",
+          "Type a name like \"MRI Report\" (or leave \"Scan MM-DD-YYYY\") and click Save as PDF.",
+        ],
+        why: "All pages become one PDF in the patient's folder in the cloud, named like every upload: case #, Last, First, then your name. The camera you pick is remembered for next time. Enhance turns the page into a clean black-and-white document; untick it to keep the original color photo.",
+        watchOut: "If it says the browser isn't allowed to use the camera, click the camera icon in the address bar, choose Allow, and reopen Scan. No camera listed? Bring your iPhone near the Mac, or use Add a photo.",
       },
       {
         heading: "Email a document",
