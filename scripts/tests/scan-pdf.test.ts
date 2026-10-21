@@ -1,6 +1,6 @@
 /** Mock data only.  Run:  npx tsx scripts/tests/scan-pdf.test.ts */
 import assert from "node:assert/strict";
-import { buildScanPdf, defaultScanName, enhanceDocument, isIphoneCamera, moveItem, pickCamera, scanFileName } from "../../src/lib/scan-pdf";
+import { buildScanPdf, defaultScanName, enhanceDocument, isIphoneCamera, moveItem, pickCamera, reconcileCamera, sameCameras, scanFileName } from "../../src/lib/scan-pdf";
 
 const d = new Date(2026, 9, 5);
 assert.equal(defaultScanName(d), "Scan 10-05-2026");
@@ -35,4 +35,24 @@ assert.match(pdf, /MediaBox \[0 0 612 792\]/, "portrait page");
 const xref = Number(pdf.match(/startxref\n(\d+)/)![1]);
 assert.equal(pdf.slice(xref, xref + 4), "xref");
 assert.throws(() => buildScanPdf([]));
+{
+  const mac = { deviceId: "mac", label: "FaceTime HD Camera" };
+  const usb = { deviceId: "usb", label: "USB Cam" };
+  const phone = { deviceId: "ph", label: "Dr. Mock's iPhone Camera" };
+  // iPhone newly appears -> auto-switch
+  assert.equal(reconcileCamera([mac], [mac, phone], "mac", false), "ph");
+  // ...unless user picked by hand
+  assert.equal(reconcileCamera([mac], [mac, phone], "mac", true), "mac");
+  // iPhone already listed -> keep current
+  assert.equal(reconcileCamera([mac, phone], [mac, phone, usb], "mac", false), "mac");
+  // current unplugged -> pickCamera fallback (last used, then iPhone, then first)
+  assert.equal(reconcileCamera([mac, usb], [mac], "usb", true), "mac");
+  assert.equal(reconcileCamera([usb, mac, phone], [mac, phone], "usb", true, "mac"), "mac");
+  assert.equal(reconcileCamera([usb], [mac, phone], "usb", true), "ph");
+  assert.equal(reconcileCamera([mac], [], "mac", false), null);
+  assert.equal(reconcileCamera([], [mac], null, false), "mac");
+  assert.ok(sameCameras([mac, phone], [{ ...mac }, { ...phone }]));
+  assert.ok(!sameCameras([mac], [mac, phone]));
+  assert.ok(!sameCameras([mac, phone], [phone, mac]));
+}
 console.log("scan-pdf: ok");
