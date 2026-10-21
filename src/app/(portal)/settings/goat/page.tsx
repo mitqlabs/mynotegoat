@@ -22,8 +22,8 @@ export default function GoatSettingsPage() {
         </div>
       </section>
       <section className="panel-card p-4">
-        <h3 className="text-xl font-semibold">What G.O.A.T. has learned</h3>
-        <p className="text-sm text-[var(--text-muted)]">Wording G.O.A.T. learned from your corrections, and replies marked &ldquo;not what I meant&rdquo;. Shared by everyone in the office.</p>
+        <h3 className="text-xl font-semibold" id="goat-library">G.O.A.T. Library</h3>
+        <p className="text-sm text-[var(--text-muted)]">How G.O.A.T. matches what you type to an action: what it learned in your office, and what comes built in.</p>
         <div className="mt-3">
           <GoatLearnedPanel />
         </div>

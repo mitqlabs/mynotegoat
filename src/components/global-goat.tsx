@@ -2422,7 +2422,7 @@ export function GlobalGoatPopup({
                         </div>
                       </div>
                     )}
-                    {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — I&apos;ll read it that way from now on.</p>}
+                    {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — saved to the G.O.A.T. Library. I&apos;ll read it that way from now on.</p>}
                     {m.missed?.state === "noted" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Thanks — noted so it can be fixed.</p>}
                     {!m.missed && m.text && (
                       <button aria-label="That's not what I meant" className="mt-1 text-[11px] text-[var(--text-muted)] opacity-60 hover:opacity-100" data-goat-thumbsdown onClick={() => markMissed(m)} title="That's not what I meant" type="button">👎</button>

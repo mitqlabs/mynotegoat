@@ -1,5 +1,5 @@
 /**
- * What G.O.A.T. has learned from use, shared by the office (workspace cloud
+ * G.O.A.T. Library → Learned in your office: what G.O.A.T. learned from use, shared by the office (workspace cloud
  * settings: workspace_kv row "casemate.goat-learned.v1", dual-written on every
  * change, pulled and union-merged by id on boot — see cloud-state.ts).
  *
@@ -11,6 +11,7 @@
  * one computer isn't undone by another computer's older copy.
  */
 import type { ActionId } from "@/lib/goat-understand";
+import { builtinMap } from "@/lib/goat-library-builtin";
 
 export const GOAT_LEARNED_KEY = "casemate.goat-learned.v1";
 
@@ -57,11 +58,23 @@ export function mergeLearned(a: Partial<Learned> | null | undefined, b: Partial<
 /** Template → action map for understand() (live entries only). */
 export function learnedMap(l: Learned): Record<string, ActionId> {
   const out: Record<string, ActionId> = {};
-  for (const p of l.phrases) if (!p.deleted) out[p.id] = p.action;
+  for (const p of l.phrases) if (!p.deleted && !isBuiltinDuplicate(p.id, p.action)) out[p.id] = p.action;
   return out;
 }
 
+/** True when the Built-in list already maps this wording to the same action. */
+export function isBuiltinDuplicate(template: string, action: string): boolean {
+  return builtinMap()[template] === action;
+}
+
+/** Office phrases to show in the Library: live, newest first, built-in duplicates merged away. */
+export function officePhrases(l: Learned): LearnedPhrase[] {
+  return l.phrases.filter((p) => !p.deleted && !isBuiltinDuplicate(p.id, p.action)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 export function withPhrase(l: Learned, template: string, action: ActionId, now = new Date().toISOString()): Learned {
+  // Already built in → nothing new to learn (keeps the office list free of duplicates).
+  if (isBuiltinDuplicate(template, action)) return l;
   const cur = l.phrases.find((p) => p.id === template && !p.deleted);
   const next: LearnedPhrase = { id: template, action, count: cur && cur.action === action ? cur.count + 1 : 1, updatedAt: now };
   return mergeLearned(l, { phrases: [next], misses: [] });

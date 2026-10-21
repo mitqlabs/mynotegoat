@@ -4908,7 +4908,7 @@ export default function SettingsPage() {
 
       {/* G.O.A.T. words & abbreviations: its own page (/settings/goat). */}
       <CollapsibleSection
-        description="Words, abbreviations and synonym groups G.O.A.T. uses when you ask about a patient."
+        description="G.O.A.T. Library (learned and built-in wording), plus words, abbreviations and synonym groups."
         hidden={!showSection("goat")}
         isOpen={sectionIsOpen("goat")}
         onToggle={() => toggleSection("goat")}
@@ -4917,7 +4917,7 @@ export default function SettingsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
           <p className="min-w-0 flex-1">
             Teach G.O.A.T. your office&apos;s words: ROM = range of motion = flexion = extension, PM = pain
-            management, C/S = cervical = neck, and so on. Shared by everyone in the office.
+            management, C/S = cervical = neck, and so on. The G.O.A.T. Library there shows the wording G.O.A.T. learned in your office. Shared by everyone in the office.
           </p>
           <Link
             className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold hover:opacity-90"

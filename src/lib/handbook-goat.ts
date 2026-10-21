@@ -43,7 +43,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Under any reply, tap 👎 if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
         "Or just type the fix: \"no I wanted you to book it\", \"not a note, a to-do\", \"I meant reschedule\", \"no, move it to Friday\". G.O.A.T. closes the wrong card, shows the right one, and learns it the same way. (\"No\" or \"no, cancel\" on its own just dismisses the card.)",
         "Names, days, times and numbers are saved as blanks, never the actual name. Any word matching a patient, contact or attorney in your office is removed, whether it's capitalized or not.",
-        "Settings → G.O.A.T. → What G.O.A.T. has learned lists the learned wording and the misses. Delete any you don't want.",
+        "Settings → G.O.A.T. → G.O.A.T. Library has two parts. Learned in your office lists the wording your office taught it and the misses; Delete any you don't want. Built in is the read-only list that comes with NoteGoat. Office wording that matches a built-in one is merged away.",
         "Too much on open? Tap Hide brief. The heads-ups sit behind a small \"N heads-ups ›\" link.",
       ],
       why: "Saved to the office's cloud settings, so it works on every computer.",
