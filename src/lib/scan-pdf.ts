@@ -45,6 +45,33 @@ export function pickCamera(cameras: CameraOption[], lastId?: string | null): str
   return (phone ?? cameras[0]).deviceId;
 }
 
+/**
+ * Camera list changed (plugged in, iPhone woke up, Refresh). Keep the current
+ * camera if it's still there; switch to a newly appeared iPhone unless the
+ * user picked a camera by hand this session; otherwise fall back to pickCamera.
+ */
+export function reconcileCamera(
+  prev: CameraOption[],
+  next: CameraOption[],
+  currentId: string | null,
+  userPicked: boolean,
+  lastId?: string | null,
+): string | null {
+  if (next.length === 0) return null;
+  const stillThere = !!currentId && next.some((c) => c.deviceId === currentId);
+  if (!userPicked) {
+    const newPhone = next.find((c) => isIphoneCamera(c.label) && !prev.some((p) => p.deviceId === c.deviceId));
+    if (newPhone && newPhone.deviceId !== currentId) return newPhone.deviceId;
+  }
+  if (stillThere) return currentId;
+  return pickCamera(next, lastId);
+}
+
+/** Same cameras in the same order (avoids needless re-renders). */
+export function sameCameras(a: CameraOption[], b: CameraOption[]): boolean {
+  return a.length === b.length && a.every((c, i) => c.deviceId === b[i].deviceId && c.label === b[i].label);
+}
+
 /** Copy of list with item `from` moved to `to`. Out-of-range moves are no-ops. */
 export function moveItem<T>(list: T[], from: number, to: number): T[] {
   if (from < 0 || from >= list.length || to < 0 || to >= list.length || from === to) return list.slice();
