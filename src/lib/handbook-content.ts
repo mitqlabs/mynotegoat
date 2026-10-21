@@ -923,10 +923,21 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Add a document to a patient",
         steps: [
           "Open the patient page → Patient Files.",
-          "Upload, or drag files onto the panel. Scan captures straight from a phone or scanner.",
+          "Upload, or drag files onto the panel. Scan uses your Mac's camera or your iPhone (see below).",
           "It files itself into that patient's folder — there is nothing to choose.",
         ],
         why: "The folder tree (year → case status → patient) is maintained by the app. Patients move between status folders on their own as the case changes, so use search rather than hunting for a folder.",
+      },
+      {
+        heading: "Scan paperwork with a camera (or your iPhone)",
+        steps: [
+          "Open the patient page → Patient Files → Scan.",
+          "Pick the camera. An iPhone near your Mac (same Apple ID) shows up as \"iPhone Camera\" and is picked for you; it gives the sharpest scans.",
+          "Hold the page up and click Capture. Repeat for each page. Use ← → to reorder, Retake to redo a page, Delete to drop one.",
+          "Type a name like \"MRI Report\" (or leave \"Scan MM-DD-YYYY\") and click Save as PDF.",
+        ],
+        why: "All pages become one PDF in the patient's folder in the cloud, named like every upload: case #, Last, First, then your name. The camera you pick is remembered for next time. Enhance turns the page into a clean black-and-white document; untick it to keep the original color photo.",
+        watchOut: "If it says the browser isn't allowed to use the camera, click the camera icon in the address bar, choose Allow, and reopen Scan. No camera listed? Bring your iPhone near the Mac, or use Add a photo.",
       },
       {
         heading: "Email a document",

@@ -73,6 +73,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.referral-checked.v2": "user",
   // per-user mirrored prefs (user-prefs-cloud.ts)
   "casemate.contacts-sort.v1": "user",
+  "casemate.scanner-camera.v1": "user",
   "casemate.referral-drill-sort.v1": "user",
   "casemate.sidebar-collapsed": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
