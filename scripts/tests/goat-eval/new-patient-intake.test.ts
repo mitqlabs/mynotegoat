@@ -131,7 +131,7 @@ check("booking plan: friday at 3 → draft", () => {
   assert.equal(step.kind, "draft");
   if (step.kind === "draft") { assert.equal(step.draft.date, "2026-10-23"); assert.equal(step.draft.time, "15:00"); }
 });
-check("booking plan: no time → asks", () => assert.equal(planBooking({ question: "book maria next tuesday", patient: { id: "p2", fullName: "Mock, Maria" }, todayIso: TODAY, appointments: [], settings }).kind, "needTime"));
+check("booking plan: no time → first open time on the card (action first)", () => { const s = planBooking({ question: "book maria next tuesday", patient: { id: "p2", fullName: "Mock, Maria" }, todayIso: TODAY, appointments: [], settings }); assert.equal(s.kind, "draft"); assert.ok(s.kind === "draft" && s.draft.notes.some((n) => /First open time/.test(n))); });
 
 // ── 5. Helpers ────────────────────────────────────────────────────────
 check("visit type: New Patient (not cash)", () => assert.equal(newPatientVisitType([{ name: "Follow-Up Visit", durationMin: 15, isDefault: true }, { name: "Cash New Patient", durationMin: 30 }, { name: "New Patient", durationMin: 45 }])?.name, "New Patient"));

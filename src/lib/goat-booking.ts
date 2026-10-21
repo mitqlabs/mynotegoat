@@ -141,6 +141,19 @@ export function nearbyOpenTimes(appts: ScheduleAppointmentRecord[], settings: Sc
   return [...before, ...after];
 }
 
+/** The first open slot that day (from opening time), or null. For "book smith friday" with no time. */
+export function firstOpenTime(appts: ScheduleAppointmentRecord[], settings: ScheduleSettingsConfig, date: string, durationMin: number, patientId?: string, from?: string): string | null {
+  const interval = Math.max(5, settings.appointmentIntervalMin || 15);
+  const hours = getOfficeHoursForDate(settings, date);
+  const open = hours ? toMin(hours.start) : 9 * 60;
+  const start = from ? Math.max(open, Math.ceil(toMin(from) / interval) * interval) : open;
+  for (let n = start; n < 24 * 60; n += interval) {
+    const t = toHHMM(n);
+    if (isAppointmentWithinOfficeHours(settings, date, t, durationMin) && !slotTaken(appts, settings, date, t, durationMin, patientId)) return t;
+  }
+  return null;
+}
+
 export interface BookingInput {
   question: string;
   patient: BookingPatient;
@@ -168,10 +181,25 @@ export function planBooking(input: BookingInput): BookingStep {
   if (!day) return { kind: "needDay", patient, partial: { type, durationMin } };
   if (day.note.includes(".")) notes.push(day.note);
   const t = parseBookingTime(question);
-  if (!t) return { kind: "needTime", patient, date: day.iso, partial: { type, durationMin, notes } };
+  // Action first: no time given → the first open slot that day ("morning"/"afternoon" → from 9 / 2), tweakable on the card.
+  if (!t) {
+    const part = /\bafternoon\b/i.test(question) ? "14:00" : /\bevening\b/i.test(question) ? "17:00" : undefined;
+    const open = firstOpenTime(appointments, settings, day.iso, durationMin, patient.id, part);
+    if (!open) return { kind: "needTime", patient, date: day.iso, partial: { type, durationMin, notes } };
+    notes.push("First open time that day. Tap Different time to change it.");
+    return { kind: "draft", draft: finishDraft({ patientId: patient.id, patientName: patient.fullName, date: day.iso, time: open, type, durationMin, notes }, appointments, settings) };
+  }
   const snapped = snapToOfficeHours(t, settings, day.iso);
   if (snapped.note) notes.push(snapped.note);
-  return { kind: "draft", draft: finishDraft({ patientId: patient.id, patientName: patient.fullName, date: day.iso, time: snapped.time, type, durationMin, notes }, appointments, settings) };
+  const draft = finishDraft({ patientId: patient.id, patientName: patient.fullName, date: day.iso, time: snapped.time, type, durationMin, notes }, appointments, settings);
+  // Taken / outside hours → the nearest open time, said once; the asked time stays a chip.
+  if ((draft.taken || draft.outsideHours) && draft.suggestions.length) {
+    const near = [...draft.suggestions].sort((a, b) => Math.abs(toMin(a) - toMin(snapped.time)) - Math.abs(toMin(b) - toMin(snapped.time)))[0];
+    const moved = finishDraft({ ...draft, time: near, notes: [...notes, `${to12hLabel(snapped.time)} ${draft.taken ? "was taken" : "is outside office hours"}, so the nearest open time.`] }, appointments, settings);
+    // The asked time stays a chip (picking it shows the "book anyway" override).
+    return { kind: "draft", draft: { ...moved, suggestions: [...draft.suggestions.filter((x) => x !== near), snapped.time].sort() } };
+  }
+  return { kind: "draft", draft };
 }
 
 /** Recheck a draft (after a time change): taken / outside hours / suggestions. */
