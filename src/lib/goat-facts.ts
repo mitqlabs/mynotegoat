@@ -111,6 +111,10 @@ const HEADERS: Array<[keyof Pick<FileFacts, "findings" | "impressions" | "diagno
 const ANY_HEADER = /^[A-Z][A-Za-z /&-]{2,40}:\s*|^[A-Z][A-Z /&-]{3,40}$/;
 
 const clean = (l: string) => l.replace(/^[\s•*·\-–\d.)]+(?=\S)/, "").replace(/\s+/g, " ").trim();
+/** "LUMBAR SPINE:", "MRI of the Lumbar Spine", "Cervical:" — a region sub-heading inside a section, not a new section. */
+const REGION_SUBHEADER = /^(?:(?:mri|ct|x-?ray)\s+(?:of\s+)?(?:the\s+)?)?(?:cervical|thoracic|lumbar|lumbosacral|c-spine|t-spine|l-spine)(?:\s+spine)?(?:\s+(?:mri|ct|x-?ray))?\s*(?::|$)/i;
+/** Imaging sections are kept whole (combined Cervical + Lumbar reports run long). */
+const LONG_SECTIONS = new Set<string>(["impressions", "findings"]);
 const push = (arr: string[], v: string, max = 15) => {
   const c = clean(v);
   if (c.length >= 3 && !/^none\.?$/i.test(c) && !arr.includes(c) && arr.length < max) arr.push(c);
@@ -170,12 +174,18 @@ export function extractFileFacts(file: GoatFile): FileFacts {
       taken = 0;
       const rest = line.replace(/^[^:]*:\s*/, "");
       if (cur === "rom") continue; // ROM is read as whole sentences below
-      if (rest !== line && rest) push(facts[cur], rest);
+      if (rest !== line && rest) push(facts[cur], rest, LONG_SECTIONS.has(cur) ? 80 : 15);
       else if (rest === line && /\s\S+\s\S+/.test(line)) push(facts[cur], line); // "Follow up in 4 weeks."
       continue;
     }
+    if (REGION_SUBHEADER.test(line)) {
+      // Region sub-heading: stay in the current section and keep any text after the colon.
+      const rest = line.replace(/^[^:]*:?\s*/, "");
+      if (cur && cur !== "rom" && rest && rest !== line) push(facts[cur], rest, LONG_SECTIONS.has(cur) ? 80 : 15);
+      continue;
+    }
     if (ANY_HEADER.test(line) && !/^\d/.test(line)) cur = null;
-    if (cur && cur !== "rom" && taken < 12) { push(facts[cur], line); taken++; }
+    if (cur && cur !== "rom" && (taken < 12 || LONG_SECTIONS.has(cur))) { push(facts[cur], line, LONG_SECTIONS.has(cur) ? 80 : 15); taken++; }
     // Anywhere in the text:
     if (/\b(injection|ESI|epidural|facet|medial branch|RFA|radiofrequency|nerve block|trigger point|PRP|surgery|discectomy|fusion|arthroscop\w*)\b/i.test(line) && /recommend|candidate|perform|schedul|underwent|consider|plan/i.test(line)) push(facts.procedures, line);
     if (/\bfollow[\s-]?up\b[^.\n]{0,30}\b(\d+|one|two|three|four|six)\s*(days?|weeks?|wks?|months?)\b|\breturn in\b/i.test(line)) push(facts.followUp, line);
