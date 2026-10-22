@@ -77,6 +77,7 @@ export function TextRemindersSettingsPanel() {
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [log, setLog] = useState<LogRow[]>([]);
   const [newToken, setNewToken] = useState("");
+  const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
 
   const update = (patch: Partial<SmsReminderSettings>) => {
@@ -171,6 +172,7 @@ export function TextRemindersSettingsPanel() {
     }
     if (error) return setMessage(`Couldn't add the device: ${error.message}`);
     setNewToken(token);
+    setCopied(false);
     setMessage("");
     void refresh();
   };
@@ -181,6 +183,22 @@ export function TextRemindersSettingsPanel() {
     if (!client) return;
     const { error } = await client.from("reminder_devices").update({ revoked_at: new Date().toISOString() }).eq("id", id);
     if (error) setMessage(`Couldn't revoke: ${error.message}`);
+    void refresh();
+  };
+
+  const newCode = async (id: string) => {
+    if (!window.confirm("Make a new code for this device? The old code stops working; update it in the Shortcut.")) return;
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    const token = generateDeviceToken();
+    const { error } = await client
+      .from("reminder_devices")
+      .update({ token_hash: await hashDeviceToken(token) })
+      .eq("id", id);
+    if (error) return setMessage(`Couldn't make a new code: ${error.message}`);
+    setNewToken(token);
+    setCopied(false);
+    setMessage("");
     void refresh();
   };
 
@@ -342,7 +360,18 @@ export function TextRemindersSettingsPanel() {
         </div>
         {newToken && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
-            <p className="font-semibold">Device token (shown once; paste it into the Mac setup):</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold">Device token (shown once; paste it into the Shortcut or Mac setup):</p>
+              <button
+                className="text-sm font-semibold text-[var(--brand-primary)]"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(newToken).then(() => setCopied(true));
+                }}
+                type="button"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
             <code className="break-all">{newToken}</code>
           </div>
         )}
@@ -365,6 +394,9 @@ export function TextRemindersSettingsPanel() {
                     Make primary
                   </button>
                 )}
+                <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void newCode(d.id)} type="button">
+                  New code
+                </button>
                 <button className="text-sm font-semibold text-red-700" onClick={() => void revokeDevice(d.id)} type="button">
                   Revoke
                 </button>
@@ -379,8 +411,8 @@ export function TextRemindersSettingsPanel() {
         <p className="font-semibold">How it works</p>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
           <li>
-            On each run day at {hourLabel(settings.sendHour)}, your office Mac asks NoteGoat for tomorrow&apos;s list and
-            sends each text from its Messages app, a little apart.
+            On each run day at {hourLabel(settings.sendHour)}, the primary device (iPhone or Mac) asks NoteGoat for
+            tomorrow&apos;s list and sends each text from Messages, a little apart.
           </li>
           <li>Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}. A closed day in Key Dates is skipped.</li>
           <li>Skipped: canceled and no-show visits, patients marked &quot;no text reminders&quot;, and patients with no phone.</li>
@@ -389,7 +421,7 @@ export function TextRemindersSettingsPanel() {
             Two devices? The primary sends first. The backup only sends what is still unsent 30 minutes later, and a
             device only sends reminders it has claimed, so nobody gets two texts.
           </li>
-          <li>In dry run, the Mac only logs what it would send. Turn dry run off when the log looks right.</li>
+          <li>In dry run, devices only log what it would send. Turn dry run off when the log looks right.</li>
         </ul>
       </div>
 
