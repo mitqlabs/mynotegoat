@@ -6,7 +6,7 @@
  * (localStorage + workspace_kv); devices and the send log live in Supabase.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
 import { DraftTextarea } from "@/components/draft-textarea";
 import { markLocalWrite } from "@/lib/local-sync";
@@ -77,6 +77,7 @@ export function TextRemindersSettingsPanel() {
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [log, setLog] = useState<LogRow[]>([]);
   const [newToken, setNewToken] = useState("");
+  const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
 
   const update = (patch: Partial<SmsReminderSettings>) => {
@@ -171,6 +172,7 @@ export function TextRemindersSettingsPanel() {
     }
     if (error) return setMessage(`Couldn't add the device: ${error.message}`);
     setNewToken(token);
+    setCopied(false);
     setMessage("");
     void refresh();
   };
@@ -181,6 +183,22 @@ export function TextRemindersSettingsPanel() {
     if (!client) return;
     const { error } = await client.from("reminder_devices").update({ revoked_at: new Date().toISOString() }).eq("id", id);
     if (error) setMessage(`Couldn't revoke: ${error.message}`);
+    void refresh();
+  };
+
+  const newCode = async (id: string) => {
+    if (!window.confirm("Make a new code for this device? The old code stops working; update it in the Shortcut.")) return;
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    const token = generateDeviceToken();
+    const { error } = await client
+      .from("reminder_devices")
+      .update({ token_hash: await hashDeviceToken(token) })
+      .eq("id", id);
+    if (error) return setMessage(`Couldn't make a new code: ${error.message}`);
+    setNewToken(token);
+    setCopied(false);
+    setMessage("");
     void refresh();
   };
 
@@ -342,7 +360,18 @@ export function TextRemindersSettingsPanel() {
         </div>
         {newToken && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
-            <p className="font-semibold">Device token (shown once; paste it into the Mac setup):</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold">Device token (shown once; paste it into the Shortcut or Mac setup):</p>
+              <button
+                className="text-sm font-semibold text-[var(--brand-primary)]"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(newToken).then(() => setCopied(true));
+                }}
+                type="button"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
             <code className="break-all">{newToken}</code>
           </div>
         )}
@@ -365,6 +394,9 @@ export function TextRemindersSettingsPanel() {
                     Make primary
                   </button>
                 )}
+                <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void newCode(d.id)} type="button">
+                  New code
+                </button>
                 <button className="text-sm font-semibold text-red-700" onClick={() => void revokeDevice(d.id)} type="button">
                   Revoke
                 </button>
@@ -379,8 +411,8 @@ export function TextRemindersSettingsPanel() {
         <p className="font-semibold">How it works</p>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
           <li>
-            On each run day at {hourLabel(settings.sendHour)}, your office Mac asks NoteGoat for tomorrow&apos;s list and
-            sends each text from its Messages app, a little apart.
+            On each run day at {hourLabel(settings.sendHour)}, the primary device (iPhone or Mac) asks NoteGoat for
+            tomorrow&apos;s list and sends each text from Messages, a little apart.
           </li>
           <li>Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}. A closed day in Key Dates is skipped.</li>
           <li>Skipped: canceled and no-show visits, patients marked &quot;no text reminders&quot;, and patients with no phone.</li>
@@ -389,40 +421,89 @@ export function TextRemindersSettingsPanel() {
             Two devices? The primary sends first. The backup only sends what is still unsent 30 minutes later, and a
             device only sends reminders it has claimed, so nobody gets two texts.
           </li>
-          <li>In dry run, the Mac only logs what it would send. Turn dry run off when the log looks right.</li>
+          <li>In dry run, devices only log what they would send. Turn dry run off when the log looks right.</li>
         </ul>
       </div>
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-[var(--text-muted)]">
-          <li>Click <b>+ Add iPhone</b> and copy the token (shown once).</li>
-          <li>On the office iPhone: <b>Shortcuts</b> → <b>+</b> → name it <b>Send Reminders</b>.</li>
+        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
+          <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once).</li>
+          <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
+          <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
+          <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
+          <li>Tap the blue <b>URL</b> and paste: <Mono>{`${origin}/api/reminders/queue?format=shortcut`}</Mono></li>
+          <li>Tap the <b>⌄</b> arrow (Show More) on that block. Leave <b>Method</b> on <Mono>GET</Mono>.</li>
           <li>
-            <b>Get Contents of URL</b>: <code>{origin}/api/reminders/queue?format=shortcut</code> → Show More → Method GET →
-            Headers: <code>Authorization</code> = <code>Bearer YOUR-TOKEN</code>.
+            Tap <b>Headers</b> → <b>Add new header</b>:
+            <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
+              <li><b>Key</b>: <Mono>Authorization</Mono></li>
+              <li><b>Text</b>: type <Mono>Bearer </Mono> (with one space after it), then paste your code, e.g. <Mono>Bearer ngr_abc123…</Mono></li>
+            </ol>
+          </li>
+          <li>Add <b>Get Dictionary Value</b>. Set it to get the value for key <Mono>visitDate</Mono> in <b>Contents of URL</b>.</li>
+          <li>Add <b>Set Variable</b> and name the variable <Mono>VisitDate</Mono>.</li>
+          <li>Add another <b>Get Dictionary Value</b>: key <Mono>items</Mono> in <b>Contents of URL</b>.</li>
+          <li>
+            Add <b>Repeat with Each</b> (it repeats with each item from the step above). Drag these <b>inside</b> the loop, in order:
+            <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
+              <li><b>Get Dictionary Value</b>: key <Mono>text</Mono> in <b>Repeat Item</b>.</li>
+              <li><b>Send Message</b>: message = that <b>Dictionary Value</b>; recipient = another <b>Get Dictionary Value</b> with key <Mono>phone</Mono> in <b>Repeat Item</b>.</li>
+              <li>On Send Message, tap <b>⌄</b> and turn <b>Show When Run</b> OFF.</li>
+              <li><b>Get Contents of URL</b>: <Mono>{`${origin}/api/reminders/ack`}</Mono>. Tap <b>⌄</b>, set <b>Method</b> to <Mono>POST</Mono>, and add the same <Mono>Authorization</Mono> header.</li>
+              <li>
+                Set <b>Request Body</b> to <b>JSON</b> and add 3 fields (type Text):
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  <li><Mono>visitDate</Mono> = the <b>VisitDate</b> variable</li>
+                  <li><Mono>id</Mono> = <b>Repeat Item</b> → key <Mono>id</Mono></li>
+                  <li><Mono>status</Mono> = <Mono>sent</Mono></li>
+                </ul>
+              </li>
+              <li><b>Wait</b>: <Mono>5</Mono> seconds.</li>
+            </ol>
+          </li>
+          <li>Optional, after the loop: <b>Get Dictionary Value</b> key <Mono>message</Mono> in Contents of URL → <b>Show Notification</b>.</li>
+          <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
+          <li>
+            Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
+            <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
           </li>
           <li>
-            <b>Get Dictionary Value</b> <code>visitDate</code> → <b>Set Variable</b> VisitDate. Then{" "}
-            <b>Get Dictionary Value</b> <code>items</code> from Contents of URL.
+            Tap <b>Automation</b> (bottom) → <b>+</b> → <b>Time of Day</b>. Pick <b>8:00 AM</b>, <b>Daily</b>, choose <b>Run Immediately</b>, and turn <b>Notify When Run</b> off.
+          </li>
+          <li>Tap <b>Next</b> → <b>Run Shortcut</b> → pick <b>Send Reminders</b> → <b>Done</b>. It only sends on run days.</li>
+        </ol>
+      </details>
+
+      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="mac-steps">
+        <summary className="cursor-pointer font-semibold">iMac setup (Terminal)</summary>
+        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
+          <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
+          <li>Here in NoteGoat, click <b>+ Add Mac</b>, then <b>Copy</b> the code (starts with <Mono>ngr_</Mono>, shown once).</li>
+          <li>Open <b>Terminal</b> (press <b>⌘ Space</b>, type <b>Terminal</b>, press <b>Return</b>).</li>
+          <li>
+            Paste this and press <b>Return</b> (it downloads the sender):
+            <div className="mt-1">
+              <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
+            </div>
+          </li>
+          <li>Paste <Mono>bash install.sh</Mono> and press <b>Return</b>.</li>
+          <li>When it asks, paste the code and press <b>Return</b> (nothing shows while pasting; that&apos;s normal). It saves the code in the Keychain and tests the connection.</li>
+          <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
+          <li>
+            Done. The Mac checks every 10 minutes between 8 AM and 6 PM. As backup it waits 30 minutes for the primary and only sends what is still unsent.
           </li>
           <li>
-            <b>Repeat with Each</b> item. Inside: <b>Get Dictionary Value</b> <code>text</code> (Repeat Item) →{" "}
-            <b>Send Message</b> with that text to <b>Get Dictionary Value</b> <code>phone</code>; tap ⌄ and turn{" "}
-            <b>Show When Run</b> OFF. Then <b>Get Contents of URL</b> <code>{origin}/api/reminders/ack</code>, Method POST,
-            same header, Request Body JSON: <code>visitDate</code> = VisitDate, <code>id</code> = Repeat Item&apos;s{" "}
-            <code>id</code>, <code>status</code> = <code>sent</code>. Then <b>Wait</b> 5 seconds.
-          </li>
-          <li>Optional: after the repeat, <b>Get Dictionary Value</b> <code>message</code> → <b>Show Notification</b>.</li>
-          <li>Run it once by hand and choose <b>Always Allow</b> for mynotegoat.com and Messages.</li>
-          <li>
-            Duplicate it as <b>Send Reminders Now</b>, change the URL to end in{" "}
-            <code>?format=shortcut&amp;force=1</code>, and Add to Home Screen. Duplicates are still blocked.
+            Optional: wake a sleeping iMac each morning. In Terminal paste{" "}
+            <Mono>sudo pmset repeat wakeorpoweron MTWRFSU 08:45:00</Mono> and type your Mac password. To undo:{" "}
+            <Mono>sudo pmset repeat cancel</Mono>
           </li>
           <li>
-            <b>Automation</b> → <b>+</b> → <b>Time of Day</b> 8:00 AM, Daily → <b>Run Immediately</b>, Notify When Run off
-            → <b>Run Shortcut</b> “Send Reminders”. It only sends on run days.
+            Check the list without sending:{" "}
+            <Mono>bash ~/Library/Application\ Support/NoteGoat/notegoat-reminders.sh --preview</Mono>. Log:{" "}
+            <Mono>~/Library/Logs/NoteGoat/reminders.log</Mono>
           </li>
+          <li>Made a <b>New code</b>? Run step 5 again and paste the new code. To remove: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then <b>Revoke</b> the device here.</li>
         </ol>
       </details>
 
@@ -462,5 +543,13 @@ export function TextRemindersSettingsPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+function Mono({ children }: { children: ReactNode }) {
+  return (
+    <code className="select-all break-all rounded-md bg-[var(--bg-soft)] px-1.5 py-0.5 font-mono text-xs text-[var(--text-main)]">
+      {children}
+    </code>
   );
 }
