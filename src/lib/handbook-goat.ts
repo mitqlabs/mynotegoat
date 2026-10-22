@@ -83,6 +83,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Ask \"mri findings\" or \"lumbar mri\". G.O.A.T. reads the impression and lists it by region (Cervical, Thoracic, Lumbar), one line per level in spine order: size, side, what it is, and what it presses on — e.g. \"C5-6: 3 mm left paracentral disc herniation — cord compression, neuroforaminal narrowing (L>R)\".",
         "Things with no level (degeneration, desiccation, Modic changes) go on a General line. Boilerplate like \"correlation is recommended\" is left out.",
         "Shared levels are split (\"C5-6 & C6-7 herniations\" shows on both). A size cut off in the PDF says so instead of guessing.",
+        "Combined reports (e.g. Cervical + Lumbar MRI) show every region under its own heading, even when the report splits the impression with \"LUMBAR SPINE:\" sub-headings. Nothing is cut off.",
         "More than one study: the latest is first. Ask for one region to see just that one.",
         "Show original opens the report text exactly as written.",
       ],
