@@ -284,7 +284,10 @@ export function GoatPanel({
   currentEncounterId,
   scope = "page",
   files,
+  patientId,
 }: {
+  /** This page's patient: actions handed to the global chat default to them. */
+  patientId?: string;
   context: GoatContext;
   /** Patient Files reader (status, Read files, Open file). Omitted → files aren't offered. */
   files?: GoatFilesController;
@@ -330,7 +333,7 @@ export function GoatPanel({
     // patient as "him/her"); nothing changes until Confirm there.
     if (scope === "page" && isGoatActionPhrase(trimmed)) {
       setQuestion("");
-      askGlobalGoat(trimmed);
+      askGlobalGoat(trimmed, patientId);
       return;
     }
     setQuestion(trimmed);
