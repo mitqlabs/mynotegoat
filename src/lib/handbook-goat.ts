@@ -62,6 +62,7 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "The G.O.A.T. box on a patient's page answers questions about that patient (\"what's his balance\", \"when was the last MRI\").",
         "Type an action there instead — \"remind me to do his report and bill\", \"add a to-do …\", \"add note …\", \"schedule/book him Friday 3pm\", \"tell Leilani …\" — and the main G.O.A.T. chat opens with it. \"him / her / his / this patient\" means the patient whose page you're on.",
+        "No name needed: \"add note signed and send RR\" typed on Adam's page opens the chat with a note for Adam, ready to confirm — it never asks \"Which patient?\". Later messages in that chat (\"remind me to call his lawyer\") stay on Adam unless you name someone else.",
         "You get the usual single confirm card (e.g. To-Do \"Do report and bill\" for that patient, with a due date if you said one). Nothing changes until you tap Confirm.",
       ],
     },
