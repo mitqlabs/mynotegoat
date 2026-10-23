@@ -428,51 +428,65 @@ export function TextRemindersSettingsPanel() {
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
         <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-          <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once).</li>
-          <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
-          <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
-          <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
-          <li>Tap the blue <b>URL</b> and paste: <Mono>{`${origin}/api/reminders/queue?format=shortcut`}</Mono></li>
-          <li>Tap the <b>⌄</b> arrow (Show More) on that block. Leave <b>Method</b> on <Mono>GET</Mono>.</li>
+          <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once). Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
           <li>
-            Tap <b>Headers</b> → <b>Add new header</b>:
-            <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-              <li><b>Key</b>: <Mono>Authorization</Mono></li>
-              <li><b>Text</b>: type <Mono>Bearer </Mono> (with one space after it), then paste your code, e.g. <Mono>Bearer ngr_abc123…</Mono></li>
-            </ol>
+            On the office iPhone, open this page and tap{" "}
+            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.signed.shortcut">Get the shortcut</a>
+            {" "}→ <b>Add Shortcut</b>, and paste your code when it asks. Optional:{" "}
+            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.signed.shortcut">Send Reminders Now</a>
+            {" "}(same steps) for a one-tap send.
           </li>
-          <li>Add <b>Get Dictionary Value</b>. Set it to get the value for key <Mono>visitDate</Mono> in <b>Contents of URL</b>.</li>
-          <li>Add <b>Set Variable</b> and name the variable <Mono>VisitDate</Mono>.</li>
-          <li>Add another <b>Get Dictionary Value</b>: key <Mono>items</Mono> in <b>Contents of URL</b>.</li>
-          <li>
-            Add <b>Repeat with Each</b> (it repeats with each item from the step above). Drag these <b>inside</b> the loop, in order:
-            <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-              <li><b>Get Dictionary Value</b>: key <Mono>text</Mono> in <b>Repeat Item</b>.</li>
-              <li><b>Send Message</b>: message = that <b>Dictionary Value</b>; recipient = another <b>Get Dictionary Value</b> with key <Mono>phone</Mono> in <b>Repeat Item</b>.</li>
-              <li>On Send Message, tap <b>⌄</b> and turn <b>Show When Run</b> OFF.</li>
-              <li><b>Get Contents of URL</b>: <Mono>{`${origin}/api/reminders/ack`}</Mono>. Tap <b>⌄</b>, set <b>Method</b> to <Mono>POST</Mono>, and add the same <Mono>Authorization</Mono> header.</li>
-              <li>
-                Set <b>Request Body</b> to <b>JSON</b> and add 3 fields (type Text):
-                <ul className="mt-1 list-disc space-y-1 pl-5">
-                  <li><Mono>visitDate</Mono> = the <b>VisitDate</b> variable</li>
-                  <li><Mono>id</Mono> = <b>Repeat Item</b> → key <Mono>id</Mono></li>
-                  <li><Mono>status</Mono> = <Mono>sent</Mono></li>
-                </ul>
-              </li>
-              <li><b>Wait</b>: <Mono>5</Mono> seconds.</li>
-            </ol>
-          </li>
-          <li>Optional, after the loop: <b>Get Dictionary Value</b> key <Mono>message</Mono> in Contents of URL → <b>Show Notification</b>.</li>
-          <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
-          <li>
-            Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
-            <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
-          </li>
-          <li>
-            Tap <b>Automation</b> (bottom) → <b>+</b> → <b>Time of Day</b>. Pick <b>8:00 AM</b>, <b>Daily</b>, choose <b>Run Immediately</b>, and turn <b>Notify When Run</b> off.
-          </li>
-          <li>Tap <b>Next</b> → <b>Run Shortcut</b> → pick <b>Send Reminders</b> → <b>Done</b>. It only sends on run days.</li>
+          <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>8:00 AM</b>, <b>Daily</b> → <b>Run Immediately</b> → <b>Send Reminders</b> → <b>Done</b>. The first run asks for permission; tap <b>Always Allow</b>.</li>
         </ol>
+        <details className="mt-3 text-[var(--text-muted)]" data-testid="iphone-steps-manual">
+          <summary className="cursor-pointer text-xs font-semibold">Build it by hand instead</summary>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
+            <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once).</li>
+            <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
+            <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
+            <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
+            <li>Tap the blue <b>URL</b> and paste: <Mono>{`${origin}/api/reminders/queue?format=shortcut`}</Mono></li>
+            <li>Tap the <b>⌄</b> arrow (Show More) on that block. Leave <b>Method</b> on <Mono>GET</Mono>.</li>
+            <li>
+              Tap <b>Headers</b> → <b>Add new header</b>:
+              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
+                <li><b>Key</b>: <Mono>Authorization</Mono></li>
+                <li><b>Text</b>: type <Mono>Bearer </Mono> (with one space after it), then paste your code, e.g. <Mono>Bearer ngr_abc123…</Mono></li>
+              </ol>
+            </li>
+            <li>Add <b>Get Dictionary Value</b>. Set it to get the value for key <Mono>visitDate</Mono> in <b>Contents of URL</b>.</li>
+            <li>Add <b>Set Variable</b> and name the variable <Mono>VisitDate</Mono>.</li>
+            <li>Add another <b>Get Dictionary Value</b>: key <Mono>items</Mono> in <b>Contents of URL</b>.</li>
+            <li>
+              Add <b>Repeat with Each</b> (it repeats with each item from the step above). Drag these <b>inside</b> the loop, in order:
+              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
+                <li><b>Get Dictionary Value</b>: key <Mono>text</Mono> in <b>Repeat Item</b>.</li>
+                <li><b>Send Message</b>: message = that <b>Dictionary Value</b>; recipient = another <b>Get Dictionary Value</b> with key <Mono>phone</Mono> in <b>Repeat Item</b>.</li>
+                <li>On Send Message, tap <b>⌄</b> and turn <b>Show When Run</b> OFF.</li>
+                <li><b>Get Contents of URL</b>: <Mono>{`${origin}/api/reminders/ack`}</Mono>. Tap <b>⌄</b>, set <b>Method</b> to <Mono>POST</Mono>, and add the same <Mono>Authorization</Mono> header.</li>
+                <li>
+                  Set <b>Request Body</b> to <b>JSON</b> and add 3 fields (type Text):
+                  <ul className="mt-1 list-disc space-y-1 pl-5">
+                    <li><Mono>visitDate</Mono> = the <b>VisitDate</b> variable</li>
+                    <li><Mono>id</Mono> = <b>Repeat Item</b> → key <Mono>id</Mono></li>
+                    <li><Mono>status</Mono> = <Mono>sent</Mono></li>
+                  </ul>
+                </li>
+                <li><b>Wait</b>: <Mono>5</Mono> seconds.</li>
+              </ol>
+            </li>
+            <li>Optional, after the loop: <b>Get Dictionary Value</b> key <Mono>message</Mono> in Contents of URL → <b>Show Notification</b>.</li>
+            <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
+            <li>
+              Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
+              <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
+            </li>
+            <li>
+              Tap <b>Automation</b> (bottom) → <b>+</b> → <b>Time of Day</b>. Pick <b>8:00 AM</b>, <b>Daily</b>, choose <b>Run Immediately</b>, and turn <b>Notify When Run</b> off.
+            </li>
+            <li>Tap <b>Next</b> → <b>Run Shortcut</b> → pick <b>Send Reminders</b> → <b>Done</b>. It only sends on run days.</li>
+          </ol>
+        </details>
       </details>
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="mac-steps">
