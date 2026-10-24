@@ -125,6 +125,28 @@ function replacePromptSpan(
   return html.replace(pattern, renderMacroPromptSpan(runId, promptId, newValue));
 }
 
+/** Keep, per id, whichever copy has the newer updatedAt. Records only in
+ *  `incoming` are added. Records only in `local` are dropped (deleted
+ *  elsewhere) unless edited in the last 15s (likely not flushed yet). */
+export function mergeNewerById(
+  local: EncounterNoteRecord[],
+  incoming: EncounterNoteRecord[],
+  now = Date.now(),
+): EncounterNoteRecord[] {
+  const localById = new Map(local.map((n) => [n.id, n]));
+  const incomingIds = new Set(incoming.map((n) => n.id));
+  const out = incoming.map((inc) => {
+    const cur = localById.get(inc.id);
+    if (!cur) return inc;
+    return (Date.parse(inc.updatedAt) || 0) > (Date.parse(cur.updatedAt) || 0) ? inc : cur;
+  });
+  for (const cur of local) {
+    if (!incomingIds.has(cur.id) && now - (Date.parse(cur.updatedAt) || 0) < 15000) out.push(cur);
+  }
+  if (out.length === local.length && out.every((n, i) => n === local[i])) return local;
+  return out;
+}
+
 export function useEncounterNotes() {
   const [encounters, setEncounters] = useState<EncounterNoteRecord[]>(() =>
     loadEncounterNoteRecords(),
@@ -184,7 +206,12 @@ export function useEncounterNotes() {
         selfWriteCountRef.current--;
         return;
       }
-      setEncounters(loadEncounterNoteRecords());
+      // Merge instead of replace: another hook instance may have written
+      // an older snapshot that doesn't include edits this instance hasn't
+      // flushed yet. Replacing wholesale wiped in-progress typing until
+      // our own debounced commit put it back ("text vanishes, reappears").
+      const stored = loadEncounterNoteRecords();
+      setEncounters((local) => mergeNewerById(local, stored));
     });
   }, []);
 
