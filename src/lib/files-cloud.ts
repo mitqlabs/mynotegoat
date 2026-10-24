@@ -13,7 +13,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
-import { reportCloudWriteError } from "@/lib/storage-sync-interceptor";
+import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import {
   resolveValidatedWorkspaceId as resolveValidatedWorkspaceIdShared,
   withLockStealRetry,
@@ -158,6 +158,7 @@ export async function bulkUpsertFilesToTable(
 export async function deleteFilesFromTable(ids: string[]): Promise<void> {
   const clean = ids.filter(Boolean);
   if (clean.length === 0) return;
+  reportCloudWriteStart("patient-files delete");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`delete(${clean.length})`);
@@ -170,6 +171,7 @@ export async function deleteFilesFromTable(ids: string[]): Promise<void> {
         .in("id", clean);
       if (error) throw new Error(`[files-cloud] delete failed: ${error.message}`);
     });
+    reportCloudWriteSuccess("patient-files delete");
   } catch (err) {
     const wrapped = err instanceof Error ? err : new Error(`[files-cloud] delete failed: ${String(err)}`);
     reportCloudWriteError("patient-files delete", wrapped);
@@ -179,6 +181,7 @@ export async function deleteFilesFromTable(ids: string[]): Promise<void> {
 
 /** Upsert one file row. Throws on failure so callers can react. */
 export async function upsertFileToTable(file: FileRecord): Promise<void> {
+  reportCloudWriteStart("patient-files upsert");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`upsert(${file.id})`);
@@ -189,6 +192,7 @@ export async function upsertFileToTable(file: FileRecord): Promise<void> {
         .upsert(fileToRow(file, workspaceId), { onConflict: "workspace_id,id" });
       if (error) throw new Error(`[files-cloud] upsert(${file.id}) failed: ${error.message}`);
     });
+    reportCloudWriteSuccess("patient-files upsert");
   } catch (err) {
     const wrapped = err instanceof Error ? err : new Error(`[files-cloud] upsert(${file.id}) failed: ${String(err)}`);
     reportCloudWriteError("patient-files upsert", wrapped);

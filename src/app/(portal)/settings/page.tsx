@@ -5,7 +5,7 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
-import { forceSyncNow } from "@/lib/storage-sync-interceptor";
+import { forceSyncNow, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-panel";
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
@@ -3260,34 +3260,29 @@ export default function SettingsPage() {
         <button
           className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition ${
             saveStatus === "saving"
-              ? "bg-gray-400 cursor-wait"
-              : saveStatus === "saved"
-                ? "bg-emerald-600"
-                : saveStatus === "error"
+              ? "bg-[var(--brand-primary)] opacity-70 cursor-wait"
+              : saveStatus === "error"
                   ? "bg-red-600"
                   : "bg-[var(--brand-primary)] hover:opacity-90"
           }`}
           disabled={saveStatus === "saving"}
           onClick={async () => {
             setSaveStatus("saving");
+            reportCloudWriteStart("settings save");
             try {
               await forceSyncNow();
+              reportCloudWriteSuccess("settings save");
               setSaveStatus("saved");
               setTimeout(() => setSaveStatus("idle"), 3000);
-            } catch {
+            } catch (err) {
+              reportCloudWriteError("settings save", err);
               setSaveStatus("error");
               setTimeout(() => setSaveStatus("idle"), 4000);
             }
           }}
           type="button"
         >
-          {saveStatus === "saving"
-            ? "Saving..."
-            : saveStatus === "saved"
-              ? "Saved to Cloud!"
-              : saveStatus === "error"
-                ? "Save Failed - Try Again"
-                : "Save to Cloud"}
+          {saveStatus === "error" ? "Save Failed - Try Again" : "Save to Cloud"}
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <button

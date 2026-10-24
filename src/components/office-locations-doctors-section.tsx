@@ -217,21 +217,9 @@ export function OfficeLocationsDoctorsSection() {
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <div className="flex items-start justify-between gap-2">
           <h5 className="text-sm font-semibold text-[var(--text-main)]">Office Locations</h5>
-          {saveState !== "idle" && (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                saveState === "saving"
-                  ? "bg-[var(--bg-soft)] text-[var(--text-muted)]"
-                  : saveState === "saved"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-red-100 text-red-700"
-              }`}
-            >
-              {saveState === "saving" ? (
-                "Saving…"
-              ) : saveState === "saved" ? (
-                "Saved ✓"
-              ) : (
+          {/* Saving… / Saved ✓ show in the ONE global badge; only failures show here. */}
+          {saveState === "error" && (
+            <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                 <button
                   className="underline"
                   onClick={() => setRetryNonce((n) => n + 1)}
@@ -240,7 +228,6 @@ export function OfficeLocationsDoctorsSection() {
                 >
                   Not saved — click to retry
                 </button>
-              )}
             </span>
           )}
         </div>
