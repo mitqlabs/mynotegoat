@@ -15,6 +15,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.patient-forms.v1",
   // G.O.A.T. learned phrases / misses: merged by id, newest wins, deletes are tombstones.
   "casemate.goat-learned.v1",
+  // G.O.A.T. Dx suggestion "Ignore" records: merged by id, newest wins (restore = tombstone).
+  "casemate.dx-suggestion-ignores.v1",
 ]);
 
 /**
@@ -917,6 +919,8 @@ async function bootstrapTableBackedEntities() {
           // Written to the cloud but never pulled back before. Union-merged.
           "casemate.cash-payments.v1",
           "casemate.patient-packages.v1",
+          // G.O.A.T. Dx suggestion "Ignore" (Diagnosis Codes box). Union-merged.
+          "casemate.dx-suggestion-ignores.v1",
         ],
         macros: [
           "casemate.soap-macros.v1",
