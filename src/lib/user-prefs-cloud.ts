@@ -93,9 +93,20 @@ export async function syncUserPrefs(): Promise<void> {
   }
 }
 
+// Offline edits stay in the local mirror; push them as soon as we're back online.
+let onlineHooked = false;
+function hookOnline() {
+  if (onlineHooked || typeof window === "undefined") return;
+  onlineHooked = true;
+  window.addEventListener("online", () => {
+    void syncUserPrefs().catch((e: unknown) => console.warn("[user-prefs] sync failed:", e));
+  });
+}
+
 /** Called by the storage interceptor after every localStorage.setItem. */
 export function recordUserPrefWrite(key: string, value: string, original: (k: string, v: string) => void) {
   rawSet = original;
+  hookOnline();
   if (!isMirroredUserKey(key) || value.length > MAX_VALUE_CHARS) return;
   const map = readMirror();
   map[key] = { v: value, at: Math.max(Date.now(), (map[key]?.at ?? 0) + 1) };

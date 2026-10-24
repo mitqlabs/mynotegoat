@@ -99,7 +99,12 @@ function notifyStatus(status: SyncStatus, detail: Partial<SyncStatusDetail> = {}
  * indicator to "error" and logs for diagnosis. Callers should still throw
  * upstream so the caller's own error-handling can run.
  */
+// How many cloud writes are in flight, so a burst of parallel saves shows
+// one steady "Saving…" and a single "Saved ✓" when the LAST one lands.
+let inflightWrites = 0;
+
 export function reportCloudWriteError(source: string, error: unknown) {
+  inflightWrites = Math.max(0, inflightWrites - 1);
   syncErrorCount += 1;
   const msg = error instanceof Error ? error.message : String(error);
   console.error(`[Cloud Write] ${source} failed:`, msg);
@@ -115,7 +120,11 @@ export function reportCloudWriteError(source: string, error: unknown) {
  * just hit "Save Encounters" and the button just returns a plain message
  * without the familiar confirmation pill.
  */
-export function reportCloudWriteSuccess(source: string) {
+export function reportCloudWriteSuccess(source: string, opts: { force?: boolean } = {}) {
+  if (!opts.force) {
+    inflightWrites = Math.max(0, inflightWrites - 1);
+    if (inflightWrites > 0) return;
+  }
   // Reset the error counter so a stale error from a prior failed write
   // doesn't keep the indicator red after a clean success.
   syncErrorCount = 0;
@@ -129,6 +138,7 @@ export function reportCloudWriteSuccess(source: string) {
  * while the write is in flight.
  */
 export function reportCloudWriteStart(source: string) {
+  inflightWrites += 1;
   notifyStatus("syncing", { source });
 }
 

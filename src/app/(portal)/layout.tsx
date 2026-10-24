@@ -1,5 +1,7 @@
 "use client";
 
+import { SaveBadge } from "@/components/save-badge";
+import { flushSaveQueue } from "@/lib/save-queue";
 import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
 import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
@@ -525,84 +527,23 @@ export default function PortalLayout({
             interceptor flips us back to "synced" on the next successful
             push, which both drops the red pill and triggers the green
             flash so the user has unambiguous confirmation. */}
-        <div className="pointer-events-none fixed bottom-3 right-3 z-50 flex flex-col items-end gap-2">
-          {unsyncedNotes > 0 && (
-            <div
-              className="pointer-events-auto max-w-sm rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-lg"
-              data-testid="unsynced-notes"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  {unsyncedNotes === 1 ? "1 note isn't" : `${unsyncedNotes} notes aren't`} synced to the cloud yet — retrying
-                </span>
-                <button
-                  className="rounded bg-white/20 px-2 py-0.5 text-[10px] font-semibold hover:bg-white/30"
-                  onClick={() => void confirmNotesInCloud()}
-                  type="button"
-                >
-                  Check now
-                </button>
-              </div>
-              <div className="mt-1 text-[10px] font-normal text-amber-50">
-                Saved on this computer. Keep this tab open until this goes away.
-              </div>
-            </div>
-          )}
-          {syncStatus === "error" && !errorPillDismissed && (
-            <div className="pointer-events-auto max-w-sm rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-lg">
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  Cloud sync failed
-                  {retryingSync ? " — trying again…" : ""}
-                </span>
-                <button
-                  className="ml-2 rounded text-white/70 hover:text-white"
-                  onClick={() => setErrorPillDismissed(true)}
-                  title="Dismiss (your changes are still saved locally and will sync next time you edit)"
-                  type="button"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="mt-1 text-[10px] font-normal text-red-100">
-                Your work is safe in this browser — it just hasn&apos;t made it to
-                the cloud yet. Click Retry to try again.
-              </div>
-              {syncErrorMessage && (
-                <div className="mt-1 max-h-24 overflow-hidden break-all font-mono text-[10px] font-normal text-red-100/90">
-                  {syncErrorMessage}
-                </div>
-              )}
-              <div className="mt-2 flex justify-end gap-1.5">
-                <button
-                  className="rounded bg-white/15 px-2 py-1 text-[10px] font-semibold hover:bg-white/25 disabled:opacity-50"
-                  disabled={retryingSync}
-                  onClick={async () => {
-                    setRetryingSync(true);
-                    try {
-                      await forceSyncNow();
-                    } finally {
-                      setRetryingSync(false);
-                    }
-                  }}
-                  type="button"
-                >
-                  {retryingSync ? "Retrying…" : "Retry now"}
-                </button>
-              </div>
-            </div>
-          )}
-          {syncStatus === "syncing" && (
-            <div className="pointer-events-auto rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-              Saving to cloud...
-            </div>
-          )}
-          {syncStatus === "synced" && showSavedFlash && (
-            <div className="pointer-events-auto rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-              Cloud Saved ✓
-            </div>
-          )}
-        </div>
+        <SaveBadge
+          errorDismissed={errorPillDismissed}
+          errorMessage={syncErrorMessage}
+          onDismissError={() => setErrorPillDismissed(true)}
+          onRetry={async () => {
+            setRetryingSync(true);
+            try {
+              await Promise.allSettled([forceSyncNow(), flushSaveQueue(), confirmNotesInCloud()]);
+            } finally {
+              setRetryingSync(false);
+            }
+          }}
+          retrying={retryingSync}
+          savedFlash={showSavedFlash}
+          status={syncStatus}
+          unsyncedNotes={unsyncedNotes}
+        />
         {syncBlocked && (
           <div className="fixed inset-x-0 top-0 z-[60] bg-red-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-lg">
             ⚠ Cloud sync blocked — this browser has less data than the cloud (

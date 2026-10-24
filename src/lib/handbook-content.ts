@@ -465,7 +465,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         heading: "Save to Cloud",
         steps: [
           "Most settings save as you change them.",
-          "Save to Cloud at the top confirms it: Saving… → Saved to Cloud!",
+          "Save to Cloud at the top confirms it in the save badge (bottom-right): Saving… → Saved ✓",
         ],
         watchOut: "If it says Save Failed - Try Again, your change is only on that computer. Press it again before walking away.",
       },
