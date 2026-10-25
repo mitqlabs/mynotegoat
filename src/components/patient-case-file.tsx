@@ -113,7 +113,7 @@ import { TreatmentPlanSection } from "@/components/treatment-plan-section";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
-import { forceSyncNow } from "@/lib/storage-sync-interceptor";
+import { forceSyncNow, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { type TaskPriority } from "@/lib/tasks";
 import {
@@ -5016,8 +5016,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       flag === "patientRefused" ? setPatientRefusedAsync
         : flag === "completedPriorCare" ? setCompletedPriorCareAsync
           : setNotNeededAsync;
+    reportCloudWriteStart("override-toggle");
     try {
       await setter(patient.id, category, enabled);
+      reportCloudWriteSuccess("override-toggle");
       setSaveStatus("saved");
       setSaveMessage(`Saved ${label}${enabled ? " ON" : " OFF"}`);
       window.setTimeout(() => {
@@ -5025,6 +5027,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }, 2500);
     } catch (error) {
       console.error("[Override Toggle] cloud write failed:", error);
+      reportCloudWriteError("override-toggle", error);
       setSaveStatus("error");
       setSaveMessage(
         `⚠ "${label}" did NOT save to cloud. Don't refresh or close — try toggling again, or check your connection.`,
@@ -8206,20 +8209,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Save status — bright, can't-miss-it pill. Replaces the
               tiny blue "Updated…" line that was way too easy to miss
               and led to "did the save actually work?" anxiety. */}
-          {saveStatus !== "idle" && saveMessage && (
+          {/* Saving… / Saved ✓ now live in the ONE global badge (bottom-right);
+              this spot only speaks up when something actually failed. */}
+          {saveStatus === "error" && saveMessage && (
             <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold shadow-sm ${
-                saveStatus === "saving"
-                  ? "border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)] text-[var(--brand-primary)]"
-                  : saveStatus === "saved"
-                    ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-2 border-red-400 bg-red-50 text-red-800"
-              }`}
-              role={saveStatus === "error" ? "alert" : undefined}
+              className="inline-flex items-center gap-2 rounded-full border-2 border-red-400 bg-red-50 px-3 py-1 text-sm font-semibold text-red-800 shadow-sm"
+              role="alert"
             >
-              {saveStatus === "saving" && "⟳"}
-              {saveStatus === "saved" && "✓"}
-              {saveStatus === "error" && "⚠"}
+              ⚠
               <span>{saveMessage}</span>
             </span>
           )}

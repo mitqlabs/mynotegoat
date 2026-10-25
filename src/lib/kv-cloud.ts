@@ -10,6 +10,8 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import { enqueueFailedWrite, markWriteSucceeded, setSaveQueueWriter } from "@/lib/save-queue";
+import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 
 function getActiveWorkspaceOrNull(): string | null {
   const id = getActiveWorkspaceIdSync();
@@ -96,6 +98,28 @@ export async function fetchAllKvRows(): Promise<Map<string, { value: unknown; up
  * that shouldn't crash an autosave.
  */
 export async function upsertKvValue(key: string, value: unknown): Promise<void> {
+  reportCloudWriteStart(`kv:${key}`);
+  try {
+    await rawUpsertKvValue(key, value);
+    markWriteSucceeded(key);
+    reportCloudWriteSuccess(`kv:${key}`);
+  } catch (error) {
+    // Hold it and retry when the connection comes back (save-queue.ts).
+    // The badge shows "Waiting to sync" while it's held.
+    enqueueFailedWrite(key, value);
+    reportCloudWriteError(`kv:${key}`, error);
+    throw error;
+  }
+}
+
+async function retryKvWrite(key: string, value: unknown): Promise<void> {
+  await rawUpsertKvValue(key, value);
+  // Clears a sticky "Couldn't save" once the held write lands.
+  reportCloudWriteSuccess(`kv-retry:${key}`, { force: true });
+}
+if (typeof window !== "undefined") setSaveQueueWriter(retryKvWrite);
+
+async function rawUpsertKvValue(key: string, value: unknown): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return;
   const workspaceId = getActiveWorkspaceOrNull();
