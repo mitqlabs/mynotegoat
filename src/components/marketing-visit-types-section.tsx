@@ -127,7 +127,7 @@ export function MarketingVisitTypesSection() {
               value={draft}
             />
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+              className="btn btn-primary disabled:opacity-40"
               disabled={!draft.trim()}
               onClick={addType}
               type="button"

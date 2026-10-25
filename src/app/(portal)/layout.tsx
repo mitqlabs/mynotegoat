@@ -6,7 +6,8 @@ import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-not
 import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { SkeletonCaseFile, SkeletonNote, SkeletonRows, SkeletonSchedule } from "@/components/ui/skeleton";
 import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -75,6 +76,7 @@ export default function PortalLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   // Pull the router through a ref so the bootstrap effect can have
   // `[]` deps. Next.js's router object is already stable across
@@ -472,7 +474,7 @@ export default function PortalLayout({
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded-lg bg-red-500 px-4 py-2 font-semibold text-white hover:bg-red-400"
+              className="btn btn-danger"
             >
               Retry
             </button>
@@ -510,8 +512,8 @@ export default function PortalLayout({
 
   if (!mounted) {
     return (
-      <div className="min-h-screen px-4 py-6 text-sm text-[var(--text-muted)] lg:px-8">
-        Checking account access...
+      <div className="min-h-screen px-4 py-6 lg:px-8">
+        <PortalLoadingSkeleton pathname={pathname} />
       </div>
     );
   }
@@ -605,4 +607,15 @@ export default function PortalLayout({
       </WorkspaceAccessProvider>
     </PlanTierProvider>
   );
+}
+
+/** Outline of the page that's about to appear while cloud data loads. */
+function PortalLoadingSkeleton({ pathname }: { pathname: string }) {
+  if (pathname.startsWith("/appointments") || pathname.startsWith("/schedule")) {
+    return <SkeletonSchedule />;
+  }
+  if (/^\/patients\/[^/]+/.test(pathname)) return <SkeletonCaseFile />;
+  if (pathname.startsWith("/patients")) return <SkeletonRows label="Loading patients…" rows={8} />;
+  if (pathname.startsWith("/encounters") || pathname.startsWith("/notes")) return <SkeletonNote />;
+  return <SkeletonRows label="Loading your office…" rows={5} />;
 }

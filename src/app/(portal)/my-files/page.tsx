@@ -576,7 +576,7 @@ export default function MyFilesPage() {
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {currentFolderId && (
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => {
               const parent = currentFolder?.parentId ?? null;
               navigateToFolder(parent);
@@ -589,7 +589,7 @@ export default function MyFilesPage() {
 
         {!isSystemFolder && (
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => {
               setShowNewFolderInput(true);
               setNewFolderName("");
@@ -694,7 +694,7 @@ export default function MyFilesPage() {
             Create
           </button>
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => setShowNewFolderInput(false)}
             type="button"
           >
@@ -960,7 +960,7 @@ export default function MyFilesPage() {
                     {selectedFileIds.size} selected
                   </span>
                   <button
-                    className="rounded-md bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       const ids = Array.from(selectedFileIds);
                       // Capture currentFolderId now so even if the
@@ -977,7 +977,7 @@ export default function MyFilesPage() {
                     Move {selectedFileIds.size}
                   </button>
                   <button
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={() => setSelectedFileIds(new Set())}
                     type="button"
                   >
@@ -1286,7 +1286,7 @@ export default function MyFilesPage() {
                               Restore
                             </button>
                             <button
-                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                              className="btn btn-danger btn-sm"
                               onClick={async () => {
                                 if (
                                   (await appConfirm(`Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`))
@@ -1357,7 +1357,7 @@ export default function MyFilesPage() {
                               Restore
                             </button>
                             <button
-                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                              className="btn btn-danger btn-sm"
                               onClick={async () => {
                                 if (
                                   (await appConfirm(`Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`))
@@ -1648,7 +1648,7 @@ export default function MyFilesPage() {
               </div>
               <div className="mt-3 flex justify-end">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setMoveTarget(null)}
                   type="button"
                 >

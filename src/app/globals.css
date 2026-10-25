@@ -433,6 +433,8 @@ a {
   margin-bottom: auto;
 }
 
+/* In the components layer so per-button Tailwind utilities still win. */
+@layer components {
 /* ── Shared button style (src/components/ui/button.tsx) ─────────────── */
 .btn {
   display: inline-flex;
@@ -496,6 +498,7 @@ a {
 }
 .btn-ghost:not(:disabled):hover {
   background: var(--bg-soft);
+}
 }
 
 /* ── Loading outlines (skeletons) ──────────────────────────────────── */

@@ -158,7 +158,7 @@ export function MergePatientsModal({
           </p>
           <div className="mt-4 flex justify-end">
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white"
+              className="btn btn-primary"
               onClick={onClose}
               type="button"
             >
@@ -329,7 +329,7 @@ export function MergePatientsModal({
             </p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -590,7 +590,7 @@ export function MergePatientsModal({
 
         <div className="mt-4 flex justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
@@ -598,7 +598,7 @@ export function MergePatientsModal({
           </button>
           {!resultMessage ? (
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
+              className="btn btn-primary disabled:opacity-50"
               disabled={applying}
               onClick={startMerge}
               type="button"
@@ -633,7 +633,7 @@ export function MergePatientsModal({
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+                  className="btn btn-secondary"
                   disabled={applying}
                   onClick={() => setConfirmOpen(false)}
                   type="button"
@@ -641,7 +641,7 @@ export function MergePatientsModal({
                   Cancel
                 </button>
                 <button
-                  className="rounded-xl bg-red-500 px-4 py-2 font-semibold text-white disabled:opacity-50"
+                  className="btn btn-danger disabled:opacity-50"
                   disabled={applying}
                   onClick={() => void performMerge()}
                   type="button"

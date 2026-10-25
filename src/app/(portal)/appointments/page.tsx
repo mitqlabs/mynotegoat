@@ -1304,7 +1304,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               onClick={() => setSelectedDate(getTodayIsoDate())}
               title="Jump back to today's schedule"
               type="button"
@@ -1312,7 +1312,7 @@ export default function AppointmentsPage() {
               Today
             </button>
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary"
               onClick={openNewAppointmentModal}
               type="button"
             >
@@ -1363,7 +1363,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!schedulePatientSearchQuery}
               onClick={() => setSchedulePatientSearch("")}
               type="button"
@@ -1495,7 +1495,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Scheduled" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, false);
@@ -1505,7 +1505,7 @@ export default function AppointmentsPage() {
                                     Check In
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, true);
@@ -1519,7 +1519,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Check In" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       handleQuickStatusUpdate(appointment.id, "Check Out");
@@ -1529,7 +1529,7 @@ export default function AppointmentsPage() {
                                     Check Out
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openOrCreateEncounterForAppointment(appointment);
@@ -1737,7 +1737,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
@@ -2255,14 +2255,14 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={handleSubmitNewAppointment}
                 type="button"
               >
@@ -2299,7 +2299,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2342,7 +2342,7 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2352,14 +2352,14 @@ export default function AppointmentsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => completeCheckInWithRoom("")}
                 type="button"
               >
                 Check In Without Room
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={() => completeCheckInWithRoom(checkInRoomDraft)}
                 type="button"
               >
@@ -2382,7 +2382,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setSelectedAppointmentId(null)}
                 type="button"
               >
@@ -2618,14 +2618,14 @@ export default function AppointmentsPage() {
               </button>
               <div className="flex flex-wrap justify-end gap-2">
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary"
                   onClick={() => setSelectedAppointmentId(null)}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary"
                   onClick={() => void handleSaveAppointmentUpdates()}
                   type="button"
                 >
@@ -2641,8 +2641,8 @@ export default function AppointmentsPage() {
       {doneTaskOffer && (
         <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-4 py-3 text-sm shadow-[0_12px_24px_rgba(14,41,62,0.18)]" role="dialog" aria-label="Mark to-do done" data-testid="done-task-offer">
           <span>Booked. Mark the to-do &ldquo;{doneTaskOffer.title}&rdquo; done?</span>
-          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
-          <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
         </div>
       )}
     </div>

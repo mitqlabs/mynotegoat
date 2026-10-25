@@ -2321,7 +2321,7 @@ export function GlobalGoatPopup({
                     ))}
                     {m.formLaunch && (
                       <button
-                        className="mt-2 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                        className="btn btn-primary btn-sm mt-2"
                         data-goat-form={m.formLaunch.kind}
                         onClick={() => openForm(m.formLaunch!)}
                         type="button"

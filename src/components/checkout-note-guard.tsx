@@ -149,14 +149,14 @@ function OpenNoteCheckoutDialog({
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={() => onChoose("cancel")}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={() => onChoose("checkout")}
             type="button"
           >

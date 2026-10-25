@@ -300,7 +300,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
               Hold the page up to the camera and click Capture. Add as many pages as you need, then Save.
             </p>
           </div>
-          <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold" onClick={onClose} type="button">
+          <button className="btn btn-secondary btn-sm" onClick={onClose} type="button">
             Close
           </button>
         </div>
@@ -367,14 +367,14 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-50"
+            className="btn btn-primary disabled:opacity-50"
             disabled={camState !== "live" || busy !== ""}
             onClick={capture}
             type="button"
           >
             {busy === "capture" ? "Capturing…" : retakeIndex !== null ? "Capture (replace)" : "Capture"}
           </button>
-          <button className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={() => fileInputRef.current?.click()} type="button">
+          <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} type="button">
             Add a photo
           </button>
           {retakeIndex !== null && (
@@ -432,7 +432,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
             <span className="mt-1 text-xs font-normal text-[var(--text-muted)]">The case # and patient name are added in front automatically.</span>
           </label>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-50"
+            className="btn btn-primary disabled:opacity-50"
             disabled={pages.length === 0 || busy !== ""}
             onClick={save}
             type="button"

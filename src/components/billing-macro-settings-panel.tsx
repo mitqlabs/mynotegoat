@@ -76,7 +76,7 @@ export function BillingMacroSettingsPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+          className="btn btn-secondary"
           onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
@@ -186,7 +186,7 @@ export function BillingMacroSettingsPanel() {
           </label>
           <div className="flex items-end">
             <button
-              className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary w-full"
               onClick={handleAddTreatment}
               type="button"
             >
@@ -296,7 +296,7 @@ export function BillingMacroSettingsPanel() {
                   Action
                 </span>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+                  className="btn btn-secondary btn-sm"
                   onClick={async () => { if ((await appConfirm(`Remove treatment "${entry.name}"?`))) removeTreatment(entry.id); }}
                   type="button"
                 >

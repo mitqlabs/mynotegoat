@@ -1416,7 +1416,7 @@ export function NewAppointmentModal({
             </p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -1560,14 +1560,14 @@ export function NewAppointmentModal({
               )}
               <div className="mt-3 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold"
+                  className="btn btn-secondary btn-sm"
                   onClick={resetQuickNewPatientPanel}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                  className="btn btn-primary btn-sm"
                   onClick={handleCreateQuickPatient}
                   type="button"
                 >
@@ -2255,14 +2255,14 @@ export function NewAppointmentModal({
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={handleSubmit}
             type="button"
           >
@@ -2447,7 +2447,7 @@ function SeriesEditor({
           {lastDate ? ` · to ${formatUsDateFromIso(lastDate)}` : ""}
         </span>
         <button
-          className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+          className="btn btn-secondary btn-sm"
           onClick={() => setOpen((value) => !value)}
           type="button"
         >

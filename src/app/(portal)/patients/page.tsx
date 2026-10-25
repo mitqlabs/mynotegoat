@@ -1782,7 +1782,7 @@ export default function PatientsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm"
                 onClick={() => {
                   const target = printPickerFor;
                   savePrintExtras(printExtras);
@@ -1814,7 +1814,7 @@ export default function PatientsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-semibold">All Patients Workspace</h3>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={openNewPatientModal}
             type="button"
           >
@@ -2350,7 +2350,7 @@ export default function PatientsPage() {
                   </select>
                   <button
                     type="button"
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                    className="btn btn-secondary btn-sm"
                     onClick={() => updateCfSortLevel(index, { asc: !level.asc })}
                     title="Toggle direction"
                   >
@@ -2591,7 +2591,7 @@ export default function PatientsPage() {
                 />
               </label>
               <div className="flex items-end md:col-span-2">
-                <button className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90" onClick={handleAddTask} type="button">Add</button>
+                <button className="btn btn-primary w-full" onClick={handleAddTask} type="button">Add</button>
               </div>
             </div>
             {taskMessage && <p className="mt-3 text-sm font-semibold text-[var(--text-muted)]">{taskMessage}</p>}
@@ -2623,7 +2623,7 @@ export default function PatientsPage() {
                 </select>
               </label>
               <div className="flex items-end md:col-span-1">
-                <button className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={async () => { if ((await appConfirm("Clear all completed tasks?"))) clearCompleted(); }} type="button">Clear Done</button>
+                <button className="btn btn-secondary w-full" onClick={async () => { if ((await appConfirm("Clear all completed tasks?"))) clearCompleted(); }} type="button">Clear Done</button>
                 <ClearedToggle list={clearedList.filter((r) => r.id.startsWith("task:"))} onRestore={restoreTaskId} open={showClearedTodo} setOpen={setShowClearedTodo} />
               </div>
             </div>
@@ -2653,8 +2653,8 @@ export default function PatientsPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       {editingTaskId === task.id ? (
                         <>
-                          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white" onClick={() => saveEditingTask(task.id)} type="button">Save</button>
-                          <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={cancelEditingTask} type="button">Cancel</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveEditingTask(task.id)} type="button">Save</button>
+                          <button className="btn btn-secondary btn-sm" onClick={cancelEditingTask} type="button">Cancel</button>
                         </>
                       ) : (
                         <>
@@ -2676,11 +2676,11 @@ export default function PatientsPage() {
                           <select className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(e) => updateTask(task.id, { priority: e.target.value as TaskPriority })} value={task.priority}>
                             <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option>
                           </select>
-                          <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => startEditingTask(task)} type="button">Edit</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => startEditingTask(task)} type="button">Edit</button>
                         </>
                       )}
                       {!task.done && <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-muted)]" onClick={() => confirmClear(taskClearId(task.id), task.title)} title="Clear (ignore) — not Done. Restore under Show cleared." type="button">Clear task</button>}
-                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!(await appConfirm("Remove this task?"))) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { void (async () => { if (!(await appConfirm("Remove this task?"))) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
                     </div>
                   </div>
                 </article>
@@ -2782,7 +2782,7 @@ export default function PatientsPage() {
                 <h3 className="text-xl font-semibold">New Patient</h3>
                 <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. Add case info on their page later.</p>
               </div>
-              <button aria-label="Close" className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={closeNewPatientModal} type="button">
+              <button aria-label="Close" className="btn btn-secondary btn-sm" onClick={closeNewPatientModal} type="button">
                 Close
               </button>
             </div>
@@ -3086,10 +3086,10 @@ export default function PatientsPage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-[var(--line-soft)] bg-[var(--bg-soft)] px-5 py-3">
-              <button className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold" onClick={closeNewPatientModal} type="button">
+              <button className="btn btn-secondary" onClick={closeNewPatientModal} type="button">
                 Cancel
               </button>
-              <button className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white" type="submit">
+              <button className="btn btn-primary" type="submit">
                 Create Patient
               </button>
             </div>

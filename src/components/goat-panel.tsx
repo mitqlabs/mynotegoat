@@ -431,7 +431,7 @@ export function GoatPanel({
               value={question}
             />
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="btn btn-primary disabled:opacity-40"
               disabled={!question.trim()}
               type="submit"
             >

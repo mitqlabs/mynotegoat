@@ -104,14 +104,14 @@ export function DxSaveToListPanel({
       {error && <p className="text-xs font-semibold text-[#b43b34]">{error}</p>}
       <div className="flex justify-end gap-2">
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+          className="btn btn-secondary btn-sm"
           onClick={() => onClose(false)}
           type="button"
         >
           Cancel
         </button>
         <button
-          className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+          className="btn btn-primary btn-sm"
           onClick={save}
           type="button"
         >

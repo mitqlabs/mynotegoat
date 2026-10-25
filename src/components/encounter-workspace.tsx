@@ -908,7 +908,7 @@ function AppointmentsOverview({
                     <td className="px-3 py-2">
                       {linked ? (
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => onOpenEncounter(linked.id, apt.patientName)}
                           type="button"
                         >
@@ -4087,7 +4087,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         </button>
                       </div>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner disabled:opacity-50"
+                        className="btn btn-secondary btn-sm disabled:opacity-50"
                         disabled={!selectedSoapPrintEncounterIds.length}
                         onClick={handlePrintSelectedSoapNotes}
                         type="button"
@@ -4755,7 +4755,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     <h4 className="text-lg font-semibold">Encounter Charges</h4>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter}
                         onClick={() => setShowPriorChargesPreview((prev) => !prev)}
                         title={
@@ -4768,7 +4768,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {showPriorChargesPreview ? "Hide Prior Charges" : "View Prior Charges"}
                       </button>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter || selectedEncounter.signed}
                         onClick={handleCopyChargesFromSelected}
                         title={
@@ -4829,7 +4829,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => setOpenChargesPanel((previous) => !previous)}
                         type="button"
                       >
@@ -4976,7 +4976,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] pb-2">
               <h3 className="text-base font-semibold">Import from ChiroTouch → Objective</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setImportOpen(false);
                   setImportPlan(null);
@@ -5005,7 +5005,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             />
             <div className="mt-2 flex items-center gap-2">
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className="btn btn-primary btn-sm disabled:opacity-40"
                 disabled={!importText.trim()}
                 onClick={handleImportPreview}
                 type="button"
@@ -5114,7 +5114,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     : `Run Macro: ${runMacro.buttonName}`}
               </h4>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5409,7 +5409,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5420,7 +5420,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 onClick={handleConfirmMacroRun}
                 type="button"
               >

@@ -600,7 +600,7 @@ export function TeamSettingsSection() {
                         />
                       </span>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                        className="btn btn-secondary btn-sm"
                         onClick={() =>
                           setExpandedMembers((prev) => {
                             const next = new Set(prev);
@@ -814,7 +814,7 @@ export function TeamSettingsSection() {
               </label>
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+                  className="btn btn-primary disabled:opacity-40"
                   disabled={busy || !firstName.trim() || !email.trim() || password.length < 6}
                   onClick={addMember}
                   type="button"
@@ -822,7 +822,7 @@ export function TeamSettingsSection() {
                   {busy ? "Creating…" : "Create Member"}
                 </button>
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setShowAdd(false)}
                   type="button"
                 >
@@ -832,7 +832,7 @@ export function TeamSettingsSection() {
             </div>
           ) : (
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+              className="btn btn-primary disabled:opacity-40"
               disabled={notReady}
               onClick={() => setShowAdd(true)}
               type="button"

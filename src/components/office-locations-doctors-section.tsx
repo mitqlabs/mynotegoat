@@ -523,7 +523,7 @@ export function OfficeLocationsDoctorsSection() {
                 value={newLocation}
               />
               <button
-                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
                 disabled={!newLocation.trim()}
                 onClick={addLocation}
                 type="button"
@@ -602,7 +602,7 @@ export function OfficeLocationsDoctorsSection() {
             value={newDoctor}
           />
           <button
-            className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
             disabled={!newDoctor.trim()}
             onClick={addDoctor}
             type="button"

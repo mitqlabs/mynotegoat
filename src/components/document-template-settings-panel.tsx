@@ -349,7 +349,7 @@ export function DocumentTemplateSettingsPanel({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+          className="btn btn-secondary"
           onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
@@ -408,7 +408,7 @@ export function DocumentTemplateSettingsPanel({
                   value={templateNameDraft}
                 />
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 font-semibold text-white"
+                  className="btn btn-primary"
                   onClick={handleAddLetterTemplate}
                   type="button"
                 >
@@ -586,7 +586,7 @@ export function DocumentTemplateSettingsPanel({
                       value={promptLabelDraft}
                     />
                     <button
-                      className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white"
+                      className="btn btn-primary btn-sm"
                       onClick={() => insertPromptToken()}
                       type="button"
                     >
@@ -698,7 +698,7 @@ export function DocumentTemplateSettingsPanel({
                   Specialist and Imaging templates are fixed; only Letter templates can be removed.
                 </p>
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                  className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={!canRemoveSelectedTemplate}
                   onClick={async () => {
                     if (!selectedTemplate || !canRemoveSelectedTemplate) {

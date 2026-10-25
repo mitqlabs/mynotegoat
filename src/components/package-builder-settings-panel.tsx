@@ -667,7 +667,7 @@ export function PackageBuilderSettingsPanel() {
                                       )}
                                     </p>
                                     <button
-                                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+                                      className="btn btn-secondary btn-sm"
                                       onClick={async () => {
                                         if (
                                           (await appConfirm("Remove this treatment from the package?"))

@@ -57,7 +57,7 @@ export function SendFormButton({ patientId, patientName, firstName, phone, email
   return (
     <>
       <button
-        className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+        className="btn btn-secondary btn-sm inline-flex items-center"
         onClick={() => setOpen(true)}
         title="Send this patient a questionnaire link (no login needed)"
         type="button"
@@ -194,7 +194,7 @@ function SendFormDialog({ patientId, patientName, firstName, phone, email, visit
             <input className="w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft,#f7f7f7)] px-3 py-2 text-sm" readOnly value={link.url} onFocus={(e) => e.target.select()} />
             <div className="flex flex-wrap gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] px-3 py-2 text-sm font-semibold"
+                className="btn btn-secondary"
                 onClick={() => {
                   void navigator.clipboard?.writeText(link.url).then(
                     () => setCopied(true),
@@ -321,14 +321,14 @@ export function QuestionnaireReviewCards({
                     </option>
                   ))}
                 </select>
-                <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white" onClick={() => insert(r)} type="button">
+                <button className="btn btn-primary btn-sm" onClick={() => insert(r)} type="button">
                   Insert into Objective
                 </button>
               </>
             ) : (
               <span className="text-sm text-[var(--text-muted)]">No open visit note yet — it&apos;s offered automatically when this patient&apos;s next note is opened.</span>
             )}
-            <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={() => void dismiss(r)} type="button">
+            <button className="btn btn-secondary btn-sm" onClick={() => void dismiss(r)} type="button">
               Dismiss
             </button>
           </div>

@@ -477,7 +477,7 @@ export default function ContactsPage() {
             </button>
 
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary"
               onClick={openAddModal}
               type="button"
             >
@@ -660,7 +660,7 @@ export default function ContactsPage() {
                     )}
                     <span className="flex-1" />
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={cancelEditing}
                       type="button"
                     >
@@ -668,7 +668,7 @@ export default function ContactsPage() {
                     </button>
                     {canEditContacts && (
                       <button
-                        className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                        className="btn btn-primary btn-sm"
                         type="submit"
                       >
                         Save
@@ -769,7 +769,7 @@ export default function ContactsPage() {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">Add Contact</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={closeAddModal}
                 type="button"
               >
@@ -907,14 +907,14 @@ export default function ContactsPage() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={closeAddModal}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 type="submit"
               >
                 Save Contact

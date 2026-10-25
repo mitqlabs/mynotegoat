@@ -358,7 +358,7 @@ export default function TimersPage() {
             No rooms found on this device. If you configured rooms on another device, tap Sync to pull them.
           </p>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-all active:scale-95"
+            className="btn btn-primary"
             onClick={async () => {
               try {
                 const { fetchAllKvValues } = await import("@/lib/kv-cloud");
@@ -430,7 +430,7 @@ export default function TimersPage() {
                   {myPresets.map((preset) => (
                     <span key={preset.id} className="group relative inline-flex">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--bg-soft)] active:scale-95"
+                        className="btn btn-secondary btn-sm"
                         onClick={() =>
                           void startTimer(
                             room.id,
@@ -474,7 +474,7 @@ export default function TimersPage() {
                         value={newPresetMinutes}
                       />
                       <button
-                        className="rounded-lg bg-[var(--brand-primary)] px-2 py-1.5 text-xs font-semibold text-white active:scale-95"
+                        className="btn btn-primary btn-sm"
                         onClick={() => addPresetToRoom(room.id)}
                         type="button"
                       >
@@ -520,7 +520,7 @@ export default function TimersPage() {
                     value={customMinutes[room.id] ?? ""}
                   />
                   <button
-                    className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+                    className="btn btn-primary btn-sm"
                     onClick={() => handleCustomStart(room.id, room.name, room.color)}
                     type="button"
                   >
@@ -596,7 +596,7 @@ export default function TimersPage() {
                               </button>
                             )}
                             <button
-                              className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold active:scale-95"
+                              className="btn btn-secondary btn-sm"
                               onClick={() => void resetTimerAction(timer)}
                               type="button"
                             >

@@ -412,7 +412,7 @@ export default function KeyDatesPage() {
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {editingId && (
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               onClick={resetForm}
               type="button"
             >
@@ -420,7 +420,7 @@ export default function KeyDatesPage() {
             </button>
           )}
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             type="submit"
           >
             {editingId ? "Save Key Date" : "Add Key Date"}
@@ -491,7 +491,7 @@ export default function KeyDatesPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => startEditing(row)}
                         type="button"
                       >
@@ -518,7 +518,7 @@ export default function KeyDatesPage() {
                             Confirm Delete
                           </button>
                           <button
-                            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 font-semibold"
+                            className="btn btn-secondary btn-sm"
                             onClick={() => setPendingDeleteId(null)}
                             type="button"
                           >
@@ -634,7 +634,7 @@ export default function KeyDatesPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => dismissAppointment(row.appointment.id)}
                           title="Hide this appointment from the warnings list. The appointment itself stays on the schedule."
                           type="button"
@@ -676,7 +676,7 @@ export default function KeyDatesPage() {
                               Confirm Cancel
                             </button>
                             <button
-                              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                              className="btn btn-secondary btn-sm"
                               onClick={() => setPendingCancelId(null)}
                               type="button"
                             >
@@ -722,7 +722,7 @@ export default function KeyDatesPage() {
         {dismissedRows.length > 0 && (
           <div className="mt-4">
             <button
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
+              className="btn btn-secondary btn-sm"
               onClick={() => setShowDismissed((v) => !v)}
               type="button"
             >
@@ -749,7 +749,7 @@ export default function KeyDatesPage() {
                         <td className="px-3 py-2">{row.appointment.appointmentType}</td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                            className="btn btn-secondary btn-sm"
                             onClick={() => restoreAppointment(row.appointment.id)}
                             type="button"
                           >

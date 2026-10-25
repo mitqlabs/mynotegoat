@@ -449,7 +449,7 @@ export const RichTextTemplateEditor = forwardRef<
           <option value="24px">24</option>
         </select>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("undo")}
           type="button"
@@ -457,7 +457,7 @@ export const RichTextTemplateEditor = forwardRef<
           Undo
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("redo")}
           type="button"
@@ -465,7 +465,7 @@ export const RichTextTemplateEditor = forwardRef<
           Redo
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("bold")}
           type="button"
@@ -473,7 +473,7 @@ export const RichTextTemplateEditor = forwardRef<
           B
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold italic"
+          className="btn btn-secondary btn-sm italic"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("italic")}
           type="button"
@@ -481,7 +481,7 @@ export const RichTextTemplateEditor = forwardRef<
           I
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold underline"
+          className="btn btn-secondary btn-sm underline"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("underline")}
           type="button"
@@ -489,7 +489,7 @@ export const RichTextTemplateEditor = forwardRef<
           U
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("insertUnorderedList")}
           type="button"
@@ -497,7 +497,7 @@ export const RichTextTemplateEditor = forwardRef<
           Bullets
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("insertOrderedList")}
           type="button"
@@ -505,7 +505,7 @@ export const RichTextTemplateEditor = forwardRef<
           Numbered
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyLeft")}
           type="button"
@@ -513,7 +513,7 @@ export const RichTextTemplateEditor = forwardRef<
           Left
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyCenter")}
           type="button"
@@ -521,7 +521,7 @@ export const RichTextTemplateEditor = forwardRef<
           Center
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyRight")}
           type="button"
@@ -529,7 +529,7 @@ export const RichTextTemplateEditor = forwardRef<
           Right
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertText("    ")}
           type="button"
@@ -537,7 +537,7 @@ export const RichTextTemplateEditor = forwardRef<
           Tab
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertHtml("<br />")}
           type="button"
@@ -545,7 +545,7 @@ export const RichTextTemplateEditor = forwardRef<
           Line Break
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertHtml("<p><br /></p>")}
           type="button"
@@ -553,7 +553,7 @@ export const RichTextTemplateEditor = forwardRef<
           Paragraph
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("removeFormat")}
           type="button"

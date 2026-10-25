@@ -406,7 +406,7 @@ export default function MigrateCasematePage() {
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+            className="btn btn-secondary disabled:opacity-40"
             disabled={!!pasteBusy || !(loadedPayload || pasteJson).trim()}
             onClick={() => handlePasteImport("preview")}
             type="button"
@@ -596,7 +596,7 @@ export default function MigrateCasematePage() {
                             isMigrating ||
                             (pd.newCount === 0 && pd.newContactCount === 0)
                           }
-                          className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                          className="btn btn-primary disabled:opacity-50"
                         >
                           {isMigrating
                             ? "Migrating..."
@@ -613,7 +613,7 @@ export default function MigrateCasematePage() {
                               return next;
                             })
                           }
-                          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                          className="btn btn-secondary"
                         >
                           Cancel
                         </button>

@@ -5202,7 +5202,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </Link>
               )}
               <button
-                className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                className="btn btn-secondary btn-sm inline-flex items-center"
                 onClick={(event) => openQuickTaskModal(event)}
                 ref={quickTaskButtonRef}
                 type="button"
@@ -5294,7 +5294,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           <span className="font-semibold text-[#8a5a00]">Case info missing</span>
           <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
           <button
-            className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+            className="btn btn-primary btn-sm ml-auto"
             onClick={() => {
               setCaseFieldsOpen(true);
               window.setTimeout(() => {
@@ -5834,14 +5834,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
-                    className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                    className="btn btn-primary w-full"
                     type="submit"
                   >
                     {editingXrayReferralId ? "Update X-Ray Sent" : "Add X-Ray Sent"}
                   </button>
                   {editingXrayReferralId && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2.5 text-sm font-semibold"
+                      className="btn btn-secondary"
                       onClick={() => cancelImagingReferralEdit("xray")}
                       type="button"
                     >
@@ -5937,7 +5937,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="mt-2 flex gap-2">
                     {!entry.isPrior && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateImagingRequestPdf("xray", entry)}
                       type="button"
                     >
@@ -5945,14 +5945,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openImagingEditor("xray", entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={async () => { if ((await appConfirm("Remove this X-ray referral?"))) removeImagingReferral("xray", entry.id); }}
                       type="button"
                     >
@@ -6051,14 +6051,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
-                    className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                    className="btn btn-primary w-full"
                     type="submit"
                   >
                     {editingMriReferralId ? "Update MRI / CT Sent" : "Add MRI / CT Sent"}
                   </button>
                   {editingMriReferralId && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2.5 text-sm font-semibold"
+                      className="btn btn-secondary"
                       onClick={() => cancelImagingReferralEdit("mri")}
                       type="button"
                     >
@@ -6161,7 +6161,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="mt-2 flex gap-2">
                     {!entry.isPrior && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateImagingRequestPdf("mri", entry)}
                       type="button"
                     >
@@ -6169,14 +6169,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openImagingEditor("mri", entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={async () => { if ((await appConfirm("Remove this MRI referral?"))) removeImagingReferral("mri", entry.id); }}
                       type="button"
                     >
@@ -6265,7 +6265,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   />
                 </label>
                 <button
-                  className="w-full self-end rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-semibold"
+                  className="btn btn-secondary w-full self-end"
                   onClick={addSpecialist}
                   type="button"
                 >
@@ -6399,21 +6399,21 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </div>
                   <div className="mt-2 flex gap-2">
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateSpecialistReferralPdf(entry)}
                       type="button"
                     >
                       Generate PDF
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openSpecialistEditor(entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={async () => { if ((await appConfirm("Remove this specialist referral?"))) removeSpecialist(entry.id); }}
                       type="button"
                     >
@@ -6528,7 +6528,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   📅 Appt.
                 </button>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+                  className="btn btn-secondary btn-sm"
                   onClick={handlePrintAppointments}
                   title="Print this patient's scheduled appointments"
                   type="button"
@@ -6884,7 +6884,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               {linkedEncounter ? (
                                 <div className="flex flex-col items-start gap-1">
                                   <button
-                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={() => openEncounterEditor(linkedEncounter.id)}
                                     type="button"
                                   >
@@ -6933,7 +6933,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               ) : appointment ? (
                                 (appointment.status === "Check In") ? (
                                     <button
-                                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                      className="btn btn-secondary btn-sm"
                                       onClick={() => createEncounterFromAppointment(appointment)}
                                       title="Start encounter"
                                       type="button"
@@ -7159,7 +7159,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   )}
                 </div>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={addRelatedCase}
                   type="button"
                 >
@@ -7240,7 +7240,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </label>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => generateLetterPdf()}
                 type="button"
               >
@@ -7248,7 +7248,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </button>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => openTemplateSettings("generalLetter")}
                 type="button"
               >
@@ -7292,7 +7292,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Add one code or a preset bundle for this patient file.
               </p>
               <button
-                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm shrink-0"
                 onClick={openAddDxModal}
                 type="button"
               >
@@ -7331,7 +7331,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     ))}
                   </select>
                   <button
-                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                    className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
                     disabled={!diagnosisBundleIdDraft}
                     onClick={addDiagnosisBundle}
                     type="button"
@@ -7443,7 +7443,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         <td className="px-3 py-2 text-[var(--text-muted)]">{entry.source}</td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                            className="btn btn-secondary btn-sm"
                             onClick={async () => { if ((await appConfirm(`Remove diagnosis "${entry.code}"?`))) removeDiagnosis(entry.id); }}
                             type="button"
                           >
@@ -7699,7 +7699,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   disabled={fileUploading}
                   onClick={() => {
                     const input = document.createElement("input");
@@ -7714,7 +7714,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   {fileUploading ? "Uploading..." : "Upload"}
                 </button>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   disabled={fileUploading}
                   onClick={() => setScannerOpen(true)}
                   type="button"
@@ -8221,7 +8221,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">{docPromptState.title}</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setDocPromptState(null)}
                 type="button"
               >
@@ -8258,14 +8258,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setDocPromptState(null)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Generate
@@ -8285,7 +8285,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <p className="text-sm text-[var(--text-muted)]">{narrativePromptTemplate.name}</p>
                 </div>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeNarrativePromptModal}
                   type="button"
                 >
@@ -8367,14 +8367,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeNarrativePromptModal}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   onClick={continueNarrativeGeneration}
                   type="button"
                 >
@@ -8402,14 +8402,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                    className="btn btn-primary btn-sm"
                     onClick={printNarrativePreview}
                     type="button"
                   >
                     Print / Save PDF
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                    className="btn btn-secondary btn-sm"
                     onClick={closeNarrativePreviewModal}
                     type="button"
                   >
@@ -8613,7 +8613,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {activeRegionModal === "xray" ? "X-Ray Regions" : `${mriStudyLabel} Regions`}
               </h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setActiveRegionModal(null);
                   setRegionModalAnchor(null);
@@ -8770,7 +8770,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="text-xl font-semibold">Quick Add To Do</h3>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeQuickTaskModal}
                   type="button"
                 >
@@ -8826,14 +8826,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeQuickTaskModal}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   type="submit"
                 >
                   Add To Do
@@ -8855,14 +8855,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={dismissAttorneyPrompt}
                 type="button"
               >
                 No
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 onClick={(event) => openAttorneyForm(event)}
                 type="button"
               >
@@ -8882,7 +8882,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">Add New Attorney</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setShowAddAttorneyForm(false);
                   setAttorneyModalError("");
@@ -8964,7 +8964,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setShowAddAttorneyForm(false);
                   setAttorneyModalError("");
@@ -8975,7 +8975,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save Attorney
@@ -8994,7 +8994,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Edit Specialist Referral</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingSpecialist(null);
                   setSpecialistEditorAnchor(null);
@@ -9173,7 +9173,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 hides them. */}
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingSpecialist(null);
                   setSpecialistEditorAnchor(null);
@@ -9183,7 +9183,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save Specialist
@@ -9206,7 +9206,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   : `Edit ${editingImagingReferral.modalityLabel} Referral`}
               </h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingImagingReferral(null);
                   setImagingEditorAnchor(null);
@@ -9562,7 +9562,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 that scrolls underneath. */}
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingImagingReferral(null);
                   setImagingEditorAnchor(null);
@@ -9572,7 +9572,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save {editingImagingReferral.modalityLabel}
@@ -9594,14 +9594,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeRelatedCaseNavigatePrompt}
                   type="button"
                 >
                   No
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   onClick={confirmRelatedCaseNavigation}
                   type="button"
                 >
@@ -9637,7 +9637,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Add Diagnosis Code</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setShowAddDxModal(false)}
                 type="button"
               >
@@ -9702,14 +9702,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             {dxError && <p className="mt-3 text-sm font-semibold text-red-600">{dxError}</p>}
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+                className="btn btn-secondary"
                 onClick={() => setShowAddDxModal(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white"
+                className="btn btn-primary"
                 type="submit"
               >
                 Add Code
@@ -9786,14 +9786,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             )}
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => { setShowDeleteModal(false); setDeletePasswordInput(""); setDeleteError(""); }}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-danger btn-sm"
                 onClick={handleDeletePatient}
                 type="button"
               >

@@ -85,14 +85,14 @@ export function SmsTemplateSettingsPanel() {
 
       <div className="flex flex-wrap gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+          className="btn btn-secondary"
           onClick={addTemplate}
           type="button"
         >
           + Add Template
         </button>
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+          className="btn btn-secondary"
           onClick={loadStarters}
           type="button"
         >
@@ -124,7 +124,7 @@ export function SmsTemplateSettingsPanel() {
                     value={tpl.name}
                   />
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={() =>
                       setPreviewId(isPreviewing ? null : tpl.id)
                     }

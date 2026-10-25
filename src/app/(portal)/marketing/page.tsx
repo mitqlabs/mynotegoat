@@ -381,7 +381,7 @@ export default function MarketingPage() {
                     </button>
                   )}
                   <button
-                    className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       setEditing(null);
                       setLoggingId(isLogging ? null : row.contact.id);
@@ -662,7 +662,7 @@ function LogActivityForm({
       </label>
       <div className="flex items-center gap-2 sm:col-span-2">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+          className="btn btn-primary disabled:opacity-40"
           disabled={!date.trim() || types.length === 0}
           onClick={() => onSave({ date, types, repName, notes })}
           type="button"

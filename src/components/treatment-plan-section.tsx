@@ -304,7 +304,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
                       type="button"
                     >
@@ -1035,7 +1035,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+                  className="btn btn-primary disabled:opacity-40"
                   disabled={!startDraft.trim() || !endDraft.trim()}
                   onClick={handleAdd}
                   type="button"
@@ -1043,7 +1043,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                   Create Plan
                 </button>
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setShowAdd(false)}
                   type="button"
                 >
@@ -1053,7 +1053,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
             </div>
           ) : (
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97]"
+              className="btn btn-primary"
               onClick={openAddForm}
               type="button"
             >
