@@ -99,7 +99,12 @@ import {
 import { NewAppointmentModal } from "@/components/new-appointment-modal";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
 import { EditAppointmentModal } from "@/components/edit-appointment-modal";
-import { DocumentScannerModal } from "@/components/document-scanner-modal";
+import dynamic from "next/dynamic";
+// Scanner is only needed when the user taps Scan — load it on first use.
+const DocumentScannerModal = dynamic(
+  () => import("@/components/document-scanner-modal").then((m) => ({ default: m.DocumentScannerModal })),
+  { ssr: false },
+);
 import { SmsSendMenu } from "@/components/sms-send-menu";
 import { QuestionnaireReviewCards, SendFormButton } from "@/components/patient-forms-panel";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
@@ -9780,7 +9785,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         open={Boolean(editTargetAppointment)}
       />
 
-      <DocumentScannerModal
+      {scannerOpen && <DocumentScannerModal
         onCapture={(file) => {
           const dt = new DataTransfer();
           dt.items.add(file);
@@ -9788,7 +9793,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         }}
         onClose={() => setScannerOpen(false)}
         open={scannerOpen}
-      />
+      />}
 
 
       {showDeleteModal && (
