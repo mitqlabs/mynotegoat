@@ -28,6 +28,7 @@ import type { TreatmentPackage } from "@/lib/billing-macros";
 import type { PatientPackage } from "@/lib/patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
 import { formatUsDateInput } from "@/components/us-date-input";
+import { appConfirm } from "@/components/app-dialog";
 
 function formatMoney(amount: number): string {
   return `$${amount.toLocaleString(undefined, {
@@ -223,10 +224,8 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                     )}
                     <button
                       className="rounded-md p-1.5 text-[#b43b34] hover:bg-red-50"
-                      onClick={() => {
-                        const ok = window.confirm(
-                          `Remove "${pkg.snapshot.name}" from this patient?\n\nThis does not refund anything automatically — it just deletes the package assignment from the patient's record.`,
-                        );
+                      onClick={async () => {
+                        const ok = (await appConfirm(`Remove "${pkg.snapshot.name}" from this patient?\n\nThis does not refund anything automatically — it just deletes the package assignment from the patient's record.`));
                         if (!ok) return;
                         removePackage(patientId, pkg.id);
                       }}

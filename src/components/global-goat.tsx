@@ -99,6 +99,8 @@ import { loadPatientBillingMap } from "@/lib/patient-billing";
 // Open/closed store + nav button live in a tiny module so the shell can
 // render the button without downloading all of G.O.A.T. up front.
 import { setGlobalGoatOpen, takePendingAsk, useGlobalGoatOpen } from "@/components/global-goat-button";
+import { appConfirm } from "@/components/app-dialog";
+
 export { askGlobalGoat, GlobalGoatButton, setGlobalGoatOpen } from "@/components/global-goat-button";
 
 // ---------------------------------------------------------------------------
@@ -2206,8 +2208,8 @@ export function GlobalGoatPopup({
             <button style={{ fontSize: 12 }}
               className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
               disabled={!chat.messages.length || Boolean(job)}
-              onClick={() => {
-                if (window.confirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back.")) {
+              onClick={async () => {
+                if ((await appConfirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back."))) {
                   clearChat();
                   setChat({ messages: [], patientId: null });
                   // Waiting steps belong to the old chat.

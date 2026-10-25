@@ -5,6 +5,7 @@ import { useMarketingSettings } from "@/hooks/use-marketing-settings";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { DEFAULT_MARKETING_VISIT_TYPES } from "@/lib/marketing";
 import { resolveCaseBucket, type MarketingCaseBucket } from "@/lib/marketing-settings";
+import { appConfirm } from "@/components/app-dialog";
 
 /**
  * Settings → Admin → Marketing. For now, just the customizable "Type of
@@ -234,8 +235,8 @@ function VisitTypeRow({
       />
       <button
         className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
-        onClick={() => {
-          if (window.confirm(`Delete the “${value}” contact type?`)) onRemove();
+        onClick={async () => {
+          if ((await appConfirm(`Delete the “${value}” contact type?`))) onRemove();
         }}
         type="button"
       >

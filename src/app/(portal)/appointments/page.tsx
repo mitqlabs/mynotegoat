@@ -435,6 +435,7 @@ function getCardBackground(status: AppointmentStatus) {
 }
 
 import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { appConfirm } from "@/components/app-dialog";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -829,13 +830,13 @@ export default function AppointmentsPage() {
     setNewAppointmentError("");
   };
 
-  const handleQuickStatusUpdate = (appointmentId: string, nextStatus: AppointmentStatus) => {
+  const handleQuickStatusUpdate = async (appointmentId: string, nextStatus: AppointmentStatus) => {
     if (nextStatus === "Reschedule") {
       openRescheduleModal(appointmentId);
       return;
     }
     const target = scheduleAppointments.find((entry) => entry.id === appointmentId);
-    if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
+    if (target && !(await confirmStatusChangeIfNeeded(target.status, nextStatus))) return;
     const apply = () =>
       updateAppointment(appointmentId, (current) => ({
         ...current,
@@ -1725,7 +1726,7 @@ export default function AppointmentsPage() {
       )}
 
       {showNewAppointmentModal && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-5xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2285,7 +2286,7 @@ export default function AppointmentsPage() {
       />
 
       {checkInRoomPrompt && checkInPromptAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2370,7 +2371,7 @@ export default function AppointmentsPage() {
       )}
 
       {selectedAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2394,13 +2395,13 @@ export default function AppointmentsPage() {
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Status</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const nextStatus = event.target.value as AppointmentStatus;
                     if (nextStatus === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus)) {
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus))) {
                       return;
                     }
                     setStatusDraft(nextStatus);
@@ -2493,12 +2494,12 @@ export default function AppointmentsPage() {
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   disabled={!selectable}
-                  onClick={() => {
+                  onClick={async () => {
                     if (status === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, status)) return;
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, status))) return;
                     setStatusDraft(status);
                   }}
                   title={!selectable ? "Patient must be Checked In first" : undefined}
@@ -2578,13 +2579,11 @@ export default function AppointmentsPage() {
                   );
                   if (linkedEncounter) {
                     const chargeCount = linkedEncounter.charges.length;
-                    const proceed = window.confirm(
-                      `This appointment has an attached encounter${
-                        linkedEncounter.signed ? " (CLOSED)" : ""
-                      } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
-                        `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
-                        `Click Cancel to keep everything.`,
-                    );
+                    const proceed = (await appConfirm(`This appointment has an attached encounter${
+                                            linkedEncounter.signed ? " (CLOSED)" : ""
+                                          } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
+                                            `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
+                                            `Click Cancel to keep everything.`));
                     if (!proceed) {
                       return;
                     }
@@ -2601,9 +2600,7 @@ export default function AppointmentsPage() {
                     return;
                   }
 
-                  const confirmed = window.confirm(
-                    `Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`,
-                  );
+                  const confirmed = (await appConfirm(`Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`));
                   if (!confirmed) {
                     return;
                   }

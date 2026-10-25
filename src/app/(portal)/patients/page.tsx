@@ -59,6 +59,7 @@ import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patien
 import { useClearedTasks } from "@/hooks/use-cleared-tasks";
 import { caseFlowOptions } from "@/lib/case-flow-options";
 import { followUpClearId, taskClearId, type ClearedRecord } from "@/lib/cleared-tasks";
+import { appConfirm } from "@/components/app-dialog";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -559,8 +560,8 @@ export default function PatientsPage() {
   const { clearedIds, clearedList, clear: clearTaskId, restore: restoreTaskId } = useClearedTasks();
   const [showClearedCf, setShowClearedCf] = useState(false);
   const [showClearedTodo, setShowClearedTodo] = useState(false);
-  const confirmClear = (id: string, label: string) => {
-    if (window.confirm(`Clear "${label}"? It stops showing in Case Flow, To-Do and G.O.A.T. and won't come back for this case. Restore it any time under "Show cleared".`)) clearTaskId(id, label);
+  const confirmClear = async (id: string, label: string) => {
+    if ((await appConfirm(`Clear "${label}"? It stops showing in Case Flow, To-Do and G.O.A.T. and won't come back for this case. Restore it any time under "Show cleared".`))) clearTaskId(id, label);
   };
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
   // Print "Include" picker: which view it's for, and the remembered extras.
@@ -2622,7 +2623,7 @@ export default function PatientsPage() {
                 </select>
               </label>
               <div className="flex items-end md:col-span-1">
-                <button className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={() => { if (window.confirm("Clear all completed tasks?")) clearCompleted(); }} type="button">Clear Done</button>
+                <button className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={async () => { if ((await appConfirm("Clear all completed tasks?"))) clearCompleted(); }} type="button">Clear Done</button>
                 <ClearedToggle list={clearedList.filter((r) => r.id.startsWith("task:"))} onRestore={restoreTaskId} open={showClearedTodo} setOpen={setShowClearedTodo} />
               </div>
             </div>
@@ -2679,7 +2680,7 @@ export default function PatientsPage() {
                         </>
                       )}
                       {!task.done && <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-muted)]" onClick={() => confirmClear(taskClearId(task.id), task.title)} title="Clear (ignore) — not Done. Restore under Show cleared." type="button">Clear task</button>}
-                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!window.confirm("Remove this task?")) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
+                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!(await appConfirm("Remove this task?"))) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
                     </div>
                   </div>
                 </article>
@@ -2770,7 +2771,7 @@ export default function PatientsPage() {
       )}
 
       {showNewPatientModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           {/* Quick add: patient info only (from a text: name + phone is enough).
               Case info (attorney, DOI, case #, initial exam) is added later on

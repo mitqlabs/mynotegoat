@@ -10,6 +10,7 @@ import { documentFontOptions, renderDocumentTemplate } from "@/lib/document-temp
 import { appointmentTypeToTokenPrefix } from "@/lib/report-generator";
 import { narrativeReportAutoFields } from "@/lib/report-templates";
 import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
+import { appConfirm } from "@/components/app-dialog";
 
 function insertionTokenForField(fieldToken: string) {
   return `{{${fieldToken}}}`;
@@ -422,7 +423,7 @@ export function ReportTemplateSettingsPanel() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Report Template Defaults
@@ -487,8 +488,8 @@ export function ReportTemplateSettingsPanel() {
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
               disabled={reportTemplates.templates.length <= 1}
-              onClick={() => {
-                if (!window.confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) return;
+              onClick={async () => {
+                if (!(await appConfirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`))) return;
                 removeTemplate(selectedTemplate.id);
                 if (selectedTemplateId === selectedTemplate.id) {
                   const fallback = reportTemplates.templates.find((entry) => entry.id !== selectedTemplate.id);
@@ -992,7 +993,7 @@ export function ReportTemplateSettingsPanel() {
                     </button>
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
-                      onClick={() => { if (window.confirm(`Remove prompt "${prompt.label}"?`)) removePrompt(selectedTemplate.id, prompt.id); }}
+                      onClick={async () => { if ((await appConfirm(`Remove prompt "${prompt.label}"?`))) removePrompt(selectedTemplate.id, prompt.id); }}
                       type="button"
                     >
                       Remove

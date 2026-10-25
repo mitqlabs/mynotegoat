@@ -18,6 +18,7 @@ import {
 import { UsDateInput, usDateToIso } from "@/components/us-date-input";
 import { patients } from "@/lib/mock-data";
 import type { ContactRecord } from "@/lib/mock-data";
+import { appConfirm } from "@/components/app-dialog";
 
 function getTodayUsDate(): string {
   const now = new Date();
@@ -454,9 +455,7 @@ export default function MarketingPage() {
                           onClick={() => {
                             void (async () => {
                               if (
-                                !window.confirm(
-                                  `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
-                                )
+                                !(await appConfirm(`Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`))
                               ) {
                                 return;
                               }

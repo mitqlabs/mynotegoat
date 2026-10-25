@@ -15,6 +15,7 @@ import {
   type ChiroMigrationPreview,
   type ChiroMigrationPayload,
 } from "@/lib/casemate-sql-parser";
+import { appConfirm } from "@/components/app-dialog";
 
 interface AccountRow {
   user_id: string;
@@ -415,8 +416,8 @@ export default function MigrateCasematePage() {
           <button
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             disabled={!!pasteBusy || !(loadedPayload || pasteJson).trim() || !pasteAccount}
-            onClick={() => {
-              if (window.confirm("Import these patients + contacts into the selected account?")) {
+            onClick={async () => {
+              if ((await appConfirm("Import these patients + contacts into the selected account?"))) {
                 void handlePasteImport("execute");
               }
             }}

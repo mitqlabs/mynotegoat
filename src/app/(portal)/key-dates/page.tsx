@@ -19,6 +19,7 @@ import {
 } from "@/lib/key-dates";
 import { formatTimeLabel, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { UsDateInput } from "@/components/us-date-input";
+import { appConfirm } from "@/components/app-dialog";
 
 type KeyDateDraft = {
   startDate: string;
@@ -210,7 +211,7 @@ export default function KeyDatesPage() {
   // left with no visit note. The appointment stays on record as "Canceled"
   // (not deleted). Encounter removal reuses the same delete + cash-payment
   // cascade the patient file uses, and is always gated behind a confirm.
-  const handleCancelAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const handleCancelAppointment = async (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = formatUsDateFromIso(appointment.date);
     // A visit the patient actually attended is history, not something to call
     // off. Cancel is for appointments that never happened.
@@ -231,14 +232,12 @@ export default function KeyDatesPage() {
     );
     if (linkedEncounter) {
       const chargeCount = linkedEncounter.charges.length;
-      const removeEncounter = window.confirm(
-        `${appointment.patientName}'s appointment on ${dateLabel} is now Canceled.\n\n` +
-          `An encounter${linkedEncounter.signed ? " (CLOSED)" : ""} also exists for that day${
-            chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""
-          }.\n\n` +
-          `Click OK to DELETE that encounter (and any charges) too.\n` +
-          `Click Cancel to keep the encounter.`,
-      );
+      const removeEncounter = (await appConfirm(`${appointment.patientName}'s appointment on ${dateLabel} is now Canceled.\n\n` +
+                `An encounter${linkedEncounter.signed ? " (CLOSED)" : ""} also exists for that day${
+                  chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""
+                }.\n\n` +
+                `Click OK to DELETE that encounter (and any charges) too.\n` +
+                `Click Cancel to keep the encounter.`));
       if (removeEncounter) {
         deleteEncounter(linkedEncounter.id);
         updatePatientPayments(linkedEncounter.patientId ?? patientId ?? "", (current) =>
@@ -249,10 +248,8 @@ export default function KeyDatesPage() {
   };
 
   const handleDeleteAppointment = async (appointment: ScheduleAppointmentRecord) => {
-    const confirmed = window.confirm(
-      `Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
-        "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard.",
-    );
+    const confirmed = (await appConfirm(`Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
+            "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard."));
     if (!confirmed) return;
     if (!(await ensureDeleteAllowed("appointments"))) return;
     removeAppointment(appointment.id);

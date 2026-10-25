@@ -52,6 +52,7 @@ import {
   isStartTimeAlignedToInterval,
   weekdayLabels,
 } from "@/lib/schedule-settings";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 type RecurrenceUnit = "days" | "weeks";
 type RecurrenceEndMode = "date" | "visits";
@@ -1061,7 +1062,7 @@ export function NewAppointmentModal({
     resetQuickNewPatientPanel();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const selectedPatient = findPatientById(draft.patientId);
     if (!selectedPatient) {
       setError("Select a patient.");
@@ -1259,9 +1260,7 @@ export function NewAppointmentModal({
       }
 
       const openActiveCount = openDates.filter((planned) => !planned.holidayName).length;
-      const skipConfirmed = window.confirm(
-        `Cannot schedule on CLOSED key date(s):\n  • ${closedList}\n\nWould you like to skip ${closedDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${openActiveCount} appointment${openActiveCount === 1 ? "" : "s"}?`,
-      );
+      const skipConfirmed = (await appConfirm(`Cannot schedule on CLOSED key date(s):\n  • ${closedList}\n\nWould you like to skip ${closedDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${openActiveCount} appointment${openActiveCount === 1 ? "" : "s"}?`));
       if (!skipConfirmed) return;
 
       // Keep only the dates the office is actually open.
@@ -1298,9 +1297,7 @@ export function NewAppointmentModal({
       }
 
       const nonDupActiveCount = nonDupDates.filter((planned) => !planned.holidayName).length;
-      const skipConfirmed = window.confirm(
-        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupActiveCount} appointment${nonDupActiveCount === 1 ? "" : "s"}?`,
-      );
+      const skipConfirmed = (await appConfirm(`${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupActiveCount} appointment${nonDupActiveCount === 1 ? "" : "s"}?`));
       if (!skipConfirmed) return;
 
       scheduleEntries = nonDupDates;
@@ -1389,9 +1386,7 @@ export function NewAppointmentModal({
           .then(() => queryClient.invalidateQueries({ queryKey: cloudKeyDatesQueryKey }))
           .catch((keyDateError: unknown) => {
             console.error("[new-appointment] adding holiday key dates failed", keyDateError);
-            window.alert(
-              "The appointments were saved, but the holidays could not be added to Key Dates. Please add them on the Key Dates page.",
-            );
+            void appAlert("The appointments were saved, but the holidays could not be added to Key Dates. Please add them on the Key Dates page.");
           });
       }
     }
@@ -1410,7 +1405,7 @@ export function NewAppointmentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-5xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">

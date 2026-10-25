@@ -5,6 +5,7 @@ import { Icd10Search } from "@/components/icd10-search";
 import type { useBillingMacros } from "@/hooks/use-billing-macros";
 import { GENERAL_DIAGNOSIS_FOLDER_ID } from "@/lib/billing-macros";
 import { dottedCode, sameCode, type Icd10Code } from "@/lib/icd10";
+import { appConfirm } from "@/components/app-dialog";
 
 type Macros = ReturnType<typeof useBillingMacros>;
 type Diagnosis = Macros["billingMacros"]["diagnoses"][number];
@@ -391,8 +392,8 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
                     <button
                       className={smallBtn}
                       disabled={locked || folders.length <= 1}
-                      onClick={() => {
-                        if (window.confirm(`Remove folder "${folder.name}" and all its diagnoses?`)) removeDiagnosisFolder(folder.id);
+                      onClick={async () => {
+                        if ((await appConfirm(`Remove folder "${folder.name}" and all its diagnoses?`))) removeDiagnosisFolder(folder.id);
                       }}
                       title={locked ? "The General folder can't be removed" : "Remove folder"}
                       type="button"
@@ -484,8 +485,8 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
                         <button
                           aria-label={`Remove ${entry.code}`}
                           className="rounded-md px-2 py-0.5 text-sm text-[var(--text-muted)] hover:bg-red-50 hover:text-[#b43b34]"
-                          onClick={() => {
-                            if (window.confirm(`Remove diagnosis "${entry.code}"?`)) removeDiagnosis(entry.id);
+                          onClick={async () => {
+                            if ((await appConfirm(`Remove diagnosis "${entry.code}"?`))) removeDiagnosis(entry.id);
                           }}
                           title="Remove"
                           type="button"
@@ -562,8 +563,8 @@ export function DiagnosisSettingsSection({ macros }: { macros: Macros }) {
                   <button
                     aria-label={`Remove bundle ${bundle.name}`}
                     className="rounded-md px-2 py-0.5 text-sm text-[var(--text-muted)] hover:bg-red-50 hover:text-[#b43b34]"
-                    onClick={() => {
-                      if (window.confirm(`Remove bundle "${bundle.name}"?`)) removeBundle(bundle.id);
+                    onClick={async () => {
+                      if ((await appConfirm(`Remove bundle "${bundle.name}"?`))) removeBundle(bundle.id);
                     }}
                     title="Remove bundle"
                     type="button"

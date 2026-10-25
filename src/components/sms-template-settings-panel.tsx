@@ -11,6 +11,7 @@ import {
   SMS_TOKENS,
   type SmsTemplate,
 } from "@/lib/sms-templates";
+import { appConfirm } from "@/components/app-dialog";
 
 export function SmsTemplateSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
@@ -24,11 +25,9 @@ export function SmsTemplateSettingsPanel() {
     ]);
   };
 
-  const loadStarters = () => {
+  const loadStarters = async () => {
     if (smsTemplates.length > 0) {
-      const ok = window.confirm(
-        "This will add the 5 starter templates to your existing list. Continue?",
-      );
+      const ok = (await appConfirm("This will add the 5 starter templates to your existing list. Continue?"));
       if (!ok) return;
     }
     updateSmsTemplates((current) => [...current, ...getDefaultSmsTemplates()]);
@@ -47,8 +46,8 @@ export function SmsTemplateSettingsPanel() {
     );
   };
 
-  const removeTemplate = (id: string) => {
-    const ok = window.confirm("Delete this template? This cannot be undone.");
+  const removeTemplate = async (id: string) => {
+    const ok = (await appConfirm("Delete this template? This cannot be undone."));
     if (!ok) return;
     updateSmsTemplates((current) => current.filter((tpl) => tpl.id !== id));
     if (previewId === id) setPreviewId(null);

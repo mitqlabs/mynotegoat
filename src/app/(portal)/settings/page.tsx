@@ -59,6 +59,7 @@ import { MergePatientsModal } from "@/components/merge-patients-modal";
 import type { DocumentTemplateScope } from "@/lib/document-templates";
 
 import { settingsSearchCatalog, type SettingsSectionKey } from "@/lib/settings-catalog";
+import { appConfirm, appPrompt } from "@/components/app-dialog";
 
 /** Build the visible-section set for the current search query.
  *  Returns null when search is inactive (caller should show everything). */
@@ -1708,7 +1709,7 @@ function DiagnosticsSection() {
         </button>
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             // Nuclear-option local-cache wipe. Cloud is already the
             // source of truth for patients / appointments / encounter
             // notes; wiping local just forces a fresh pull on next
@@ -1718,15 +1719,13 @@ function DiagnosticsSection() {
             // context), sync-at timestamp (so bootstrap knows it's
             // re-pulling a fresh state), and nothing else.
             if (
-              !window.confirm(
-                "Wipe local cache?\n\n" +
-                  "This removes every casemate.* key from this browser. Your cloud " +
-                  "data is untouched — the app will pull a fresh copy from the cloud " +
-                  "on next load.\n\n" +
-                  "Use this if localStorage is near the 5 MB quota or the app is " +
-                  "crashing. Drafts saved on this device will be lost.\n\n" +
-                  "Continue?",
-              )
+              !(await appConfirm("Wipe local cache?\n\n" +
+                                  "This removes every casemate.* key from this browser. Your cloud " +
+                                  "data is untouched — the app will pull a fresh copy from the cloud " +
+                                  "on next load.\n\n" +
+                                  "Use this if localStorage is near the 5 MB quota or the app is " +
+                                  "crashing. Drafts saved on this device will be lost.\n\n" +
+                                  "Continue?"))
             ) {
               return;
             }
@@ -2349,14 +2348,12 @@ function TrashSubsection() {
     setTimeout(() => setMessage(""), 4000);
   };
 
-  const permanentDeletePatient = (id: string, name: string) => {
-    const confirmation = window.prompt(
-      `Permanently delete "${name}"?\n\n` +
-        "This removes the patient record forever — including the row in the cloud database. " +
-        "Encounters, appointments, billing, and files that referenced this patient will become " +
-        "orphaned but will NOT be deleted (they'll just point to a missing patient).\n\n" +
-        "To confirm, type DELETE below:",
-    );
+  const permanentDeletePatient = async (id: string, name: string) => {
+    const confirmation = (await appPrompt(`Permanently delete "${name}"?\n\n` +
+            "This removes the patient record forever — including the row in the cloud database. " +
+            "Encounters, appointments, billing, and files that referenced this patient will become " +
+            "orphaned but will NOT be deleted (they'll just point to a missing patient).\n\n" +
+            "To confirm, type DELETE below:"));
     if (confirmation !== "DELETE") {
       if (confirmation !== null) {
         setMessage("Cancelled — confirmation text didn't match.");
@@ -2378,11 +2375,9 @@ function TrashSubsection() {
 
   const handlePermanentDeleteFolder = async (id: string, name: string) => {
     if (
-      !window.confirm(
-        `Permanently delete folder "${name}" and EVERY file inside it (across nested subfolders)?\n\n` +
-          "This removes the file metadata AND deletes the actual files from cloud storage. " +
-          "There's no undo.",
-      )
+      !(await appConfirm(`Permanently delete folder "${name}" and EVERY file inside it (across nested subfolders)?\n\n` +
+                  "This removes the file metadata AND deletes the actual files from cloud storage. " +
+                  "There's no undo."))
     ) {
       return;
     }
@@ -2399,10 +2394,8 @@ function TrashSubsection() {
 
   const handlePermanentDeleteFile = async (id: string, name: string) => {
     if (
-      !window.confirm(
-        `Permanently delete "${name}"?\n\n` +
-          "This removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.",
-      )
+      !(await appConfirm(`Permanently delete "${name}"?\n\n` +
+                  "This removes the file metadata AND deletes the underlying file from cloud storage. There's no undo."))
     ) {
       return;
     }
@@ -3175,9 +3168,7 @@ export default function SettingsPage() {
       setBackupError("Select at least one module to import.");
       return;
     }
-    const confirmed = window.confirm(
-      "Import will overwrite selected modules in this office. Continue?",
-    );
+    const confirmed = (await appConfirm("Import will overwrite selected modules in this office. Continue?"));
     if (!confirmed) {
       return;
     }
@@ -3363,7 +3354,7 @@ export default function SettingsPage() {
         actions={
           <button
             className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetOfficeSettingsToDefaults(); }}
+            onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetOfficeSettingsToDefaults(); }}
             type="button"
           >
             Reset Office Defaults
@@ -3594,7 +3585,7 @@ export default function SettingsPage() {
         actions={
           <button
             className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetScheduleSettingsToDefaults(); }}
+            onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetScheduleSettingsToDefaults(); }}
             type="button"
           >
             Reset Schedule Defaults
@@ -3760,7 +3751,7 @@ export default function SettingsPage() {
             </div>
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetAppointmentTypesToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetAppointmentTypesToDefaults(); }}
               type="button"
             >
               Reset Type Defaults
@@ -3863,7 +3854,7 @@ export default function SettingsPage() {
                   <button
                     className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 disabled:opacity-40"
                     disabled={appointmentTypes.length <= 1}
-                    onClick={() => { if (window.confirm(`Remove appointment type "${entry.name}"?`)) removeAppointmentType(entry.id); }}
+                    onClick={async () => { if ((await appConfirm(`Remove appointment type "${entry.name}"?`))) removeAppointmentType(entry.id); }}
                     type="button"
                   >
                     Remove
@@ -3940,7 +3931,7 @@ export default function SettingsPage() {
             </div>
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetRoomSettingsToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetRoomSettingsToDefaults(); }}
               type="button"
             >
               Reset Rooms
@@ -4056,7 +4047,7 @@ export default function SettingsPage() {
                   </label>
                   <button
                     className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
-                    onClick={() => { if (window.confirm(`Remove room "${room.name}"?`)) removeRoom(room.id); }}
+                    onClick={async () => { if ((await appConfirm(`Remove room "${room.name}"?`))) removeRoom(room.id); }}
                     type="button"
                   >
                     Remove
@@ -4077,14 +4068,14 @@ export default function SettingsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetPriorityRulesToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetPriorityRulesToDefaults(); }}
               type="button"
             >
               Reset Priority Rules
             </button>
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetDashboardWorkspaceSettingsToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetDashboardWorkspaceSettingsToDefaults(); }}
               type="button"
             >
               Reset Task / Follow Up Defaults
@@ -4542,14 +4533,14 @@ export default function SettingsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetCaseStatusesToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetCaseStatusesToDefaults(); }}
               type="button"
             >
               Reset Status Defaults
             </button>
             <button
               className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-              onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetLienOptionsToDefaults(); }}
+              onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetLienOptionsToDefaults(); }}
               type="button"
             >
               Reset Lien / LOP Defaults
@@ -4658,7 +4649,7 @@ export default function SettingsPage() {
                 <button
                   aria-label={`Remove ${status.name}`}
                   className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-sm"
-                  onClick={() => { if (window.confirm(`Remove status "${status.name}"?`)) removeStatus(status.name); }}
+                  onClick={async () => { if ((await appConfirm(`Remove status "${status.name}"?`))) removeStatus(status.name); }}
                   type="button"
                 >
                   Remove
@@ -4744,8 +4735,8 @@ export default function SettingsPage() {
                     moveDownDisabled={index === lienOptions.length - 1}
                     moveUp={() => moveLienOption(index, "up")}
                     moveUpDisabled={index === 0}
-                    onRemove={() => {
-                      if (window.confirm(`Remove lien option "${option}"?`)) {
+                    onRemove={async () => {
+                      if ((await appConfirm(`Remove lien option "${option}"?`))) {
                         removeLienOption(index);
                       }
                     }}
@@ -4796,8 +4787,8 @@ export default function SettingsPage() {
         actions={
           <button
             className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => {
-              if (window.confirm("Reset patient-page defaults? Notes stays default-open; everything else closes.")) {
+            onClick={async () => {
+              if ((await appConfirm("Reset patient-page defaults? Notes stays default-open; everything else closes."))) {
                 resetPatientPagePrefs();
               }
             }}
@@ -4945,7 +4936,7 @@ export default function SettingsPage() {
         actions={
           <button
             className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetContactCategoriesToDefaults(); }}
+            onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetContactCategoriesToDefaults(); }}
             type="button"
           >
             Reset Category Defaults
@@ -5124,8 +5115,8 @@ export default function SettingsPage() {
         actions={
           <button
             className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-            onClick={() => {
-              if (window.confirm("Reset email settings to defaults?")) resetEmailSettings();
+            onClick={async () => {
+              if ((await appConfirm("Reset email settings to defaults?"))) resetEmailSettings();
             }}
             type="button"
           >

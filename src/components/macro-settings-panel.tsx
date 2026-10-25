@@ -22,6 +22,7 @@ import {
   type MacroSection,
 } from "@/lib/macro-templates";
 import { ScrollLock } from "@/components/scroll-lock";
+import { appConfirm } from "@/components/app-dialog";
 
 type MacroTestContext = {
   id: string;
@@ -289,11 +290,11 @@ export function MacroSettingsPanel() {
     setSelectedMacroId(newId);
   };
 
-  const handleDeleteMacro = () => {
+  const handleDeleteMacro = async () => {
     if (!selectedMacro) {
       return;
     }
-    if (!window.confirm(`Delete macro "${selectedMacro.buttonName}"? This cannot be undone.`)) {
+    if (!(await appConfirm(`Delete macro "${selectedMacro.buttonName}"? This cannot be undone.`))) {
       return;
     }
     deleteMacro(selectedMacro.id);
@@ -394,7 +395,7 @@ export function MacroSettingsPanel() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Macro Defaults
@@ -896,7 +897,7 @@ export function MacroSettingsPanel() {
                         </button>
                         <button
                           className="rounded-lg border border-[var(--line-soft)] px-2 py-0.5 text-xs text-[#b43b34]"
-                          onClick={() => { if (window.confirm(`Remove question "${question.label}"?`)) removeQuestion(selectedMacro.id, question.id); }}
+                          onClick={async () => { if ((await appConfirm(`Remove question "${question.label}"?`))) removeQuestion(selectedMacro.id, question.id); }}
                           type="button"
                         >
                           Remove
@@ -1217,7 +1218,7 @@ export function MacroSettingsPanel() {
       </div>
 
       {runOpen && selectedMacro && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <ScrollLock />
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">

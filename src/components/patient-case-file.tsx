@@ -154,6 +154,7 @@ import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate }
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { GoatDuplicateEncounters } from "@/components/goat-duplicate-encounters";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -479,9 +480,6 @@ function toUsDate(value: string) {
   return formatUsDateInput(trimmed);
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function getPopupAnchorFromEvent(event: MouseEvent<HTMLElement>): PopupAnchor {
   return {
@@ -518,41 +516,29 @@ function getAnchoredModalStyle(
     (viewportHeight * maxHeightVh) / 100,
     Math.max(320, viewportHeight - margin * 2),
   );
-  const centerX = anchor?.x ?? viewportWidth / 2;
-  const centerY = anchor?.y ?? viewportHeight / 2;
-  const left = clamp(centerX - width / 2, margin, viewportWidth - width - margin);
-  const top = clamp(centerY - 48, margin, viewportHeight - maxHeight - margin);
-
-  // For resizable modals (Imaging Findings / Specialist Recommendations
-  // editors) we use minWidth instead of width so the user-applied inline
-  // width from the bottom-right resize handle isn't clobbered on every
-  // React re-render. Same for height: minHeight instead of maxHeight.
-  //
-  // These can be dragged taller than the viewport, and the page behind is
-  // scroll-locked, so a modal anchored part-way down the screen put its
-  // own bottom — Save included — out of reach. They're pinned to the top
-  // instead: the full screen height is available and the content scrolls
-  // inside the modal.
+  // Every pop-up opens centered on screen (not where the button was
+  // clicked) and always fits inside the viewport, so its buttons are
+  // never pushed off-screen. `anchor` is kept for call-site compatibility.
+  void anchor;
+  const centered: CSSProperties = {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    maxWidth: viewportWidth - margin * 2,
+  };
+  // Resizable editors (Imaging Findings / Specialist Recommendations) use
+  // minWidth/minHeight so the user's resize isn't clobbered on re-render,
+  // and are capped to the viewport so Save stays reachable.
   if (options.resizable) {
-    const hardMaxHeight = Math.max(320, viewportHeight - margin * 2);
     return {
-      position: "absolute",
-      left,
-      top: margin,
+      ...centered,
       minWidth: width,
       minHeight: Math.min(maxHeight, 480),
-      maxHeight: hardMaxHeight,
-      maxWidth: viewportWidth - margin * 2,
+      maxHeight: Math.max(320, viewportHeight - margin * 2),
     };
   }
-
-  return {
-    position: "absolute",
-    left,
-    top,
-    width,
-    maxHeight,
-  };
+  return { ...centered, width, maxHeight };
 }
 
 function getTodayUsDate() {
@@ -1960,9 +1946,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const handlePatientFileDelete = useCallback(
     async (file: FileRecord) => {
       if (
-        !window.confirm(
-          `Permanently delete "${file.name}"?\n\nThis file will be removed from the cloud forever and cannot be recovered.`,
-        )
+        !(await appConfirm(`Permanently delete "${file.name}"?\n\nThis file will be removed from the cloud forever and cannot be recovered.`))
       ) {
         return;
       }
@@ -3464,13 +3448,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     autoSavePatientFile({ specialistReferrals: nextSpecialists });
   };
 
-  const generateSpecialistReferralPdf = (
+  const generateSpecialistReferralPdf = async (
     entry: SpecialistReferral,
     promptAnswers?: Record<string, string>,
   ) => {
     if (!specialistReferralTemplate) {
       setSpecialistMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("specialistReferral");
       }
@@ -3576,7 +3560,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setSpecialistMessage(`Generated ${specialistReferralTemplate.name} for ${entry.specialist}. Use Save as PDF in the print dialog.`);
   };
 
-  const generateImagingRequestPdf = (
+  const generateImagingRequestPdf = async (
     mode: ImagingMode,
     entry: ImagingReferral,
     promptAnswers?: Record<string, string>,
@@ -3584,7 +3568,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const setMessage = mode === "xray" ? setXrayMessage : setMriMessage;
     if (!imagingRequestTemplate) {
       setMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("imagingRequest");
       }
@@ -3654,10 +3638,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setMessage(`Generated ${imagingRequestTemplate.name} for ${entry.modalityLabel}. Use Save as PDF in the print dialog.`);
   };
 
-  const generateLetterPdf = (promptAnswers?: Record<string, string>) => {
+  const generateLetterPdf = async (promptAnswers?: Record<string, string>) => {
     if (!selectedLetterTemplate) {
       setLetterMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("generalLetter");
       }
@@ -3904,14 +3888,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   // Diagnoses for this report: re-render the text when the template uses the
   // diagnosis tokens (the billing statement reads the ticks at print time).
-  const applyNarrativeDxExclusion = (next: Set<string>) => {
+  const applyNarrativeDxExclusion = async (next: Set<string>) => {
     if (!narrativePreview) return;
     const template = reportTemplates.templates.find((entry) => entry.id === narrativePreview.templateId);
     const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
     if (template && /DIAGNOSIS_/.test(`${template.body}\n${headerBody}`)) {
       if (
         narrativePreviewEditedRef.current &&
-        !window.confirm("Update the report text with these diagnoses? Edits made in the preview will be lost.")
+        !(await appConfirm("Update the report text with these diagnoses? Edits made in the preview will be lost."))
       ) {
         return;
       }
@@ -3923,10 +3907,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setNarrativeExcludedDxIds(next);
   };
 
-  const startNarrativeGeneration = () => {
+  const startNarrativeGeneration = async () => {
     if (!selectedNarrativeTemplate) {
       setNarrativeMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openReportTemplateSettings();
       }
@@ -4181,7 +4165,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const openEncounterEditor = (encounterId: string) => {
     if (!isFeatureEnabled("encounters")) {
-      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      void appAlert("Encounters is turned off. Enable it in Settings → Features to use it.");
       return;
     }
     router.push(`/encounters?patientId=${patient.id}&encounterId=${encounterId}`);
@@ -4203,7 +4187,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
   };
 
-  const handleAppointmentStatusChange = (appointmentId: string, nextStatus: AppointmentStatus) => {
+  const handleAppointmentStatusChange = async (appointmentId: string, nextStatus: AppointmentStatus) => {
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
       return;
@@ -4226,14 +4210,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       const closedKeyDate = findClosedKeyDateForDate(keyDates, target.date);
       if (
         closedKeyDate &&
-        !window.confirm(
-          `${toUsDate(target.date)} is marked CLOSED (${closedKeyDate.reason}). Check in anyway?`,
-        )
+        !(await appConfirm(`${toUsDate(target.date)} is marked CLOSED (${closedKeyDate.reason}). Check in anyway?`))
       ) {
         return;
       }
     }
-    if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
+    if (target && !(await confirmStatusChangeIfNeeded(target.status, nextStatus))) return;
     const apply = () => {
       updateAppointment(appointmentId, (current) => ({
         ...current,
@@ -4346,7 +4328,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
    * Canceled / Reschedule are also left alone — they reflect
    * what actually happened and shouldn't disappear from the record.
    */
-  const handleCaseStatusChange = (nextStatus: string) => {
+  const handleCaseStatusChange = async (nextStatus: string) => {
     // Always commit the status change first — that's the user's
     // primary intent. The appointment cleanup is a secondary
     // convenience prompt.
@@ -4370,12 +4352,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const proceed = window.confirm(
-      `Patient marked as Dropped. Delete ${futureScheduled.length} future Scheduled appointment${
-        futureScheduled.length === 1 ? "" : "s"
-      } as well?\n\n` +
-        `(Past, Checked In/Out, Canceled, and Rescheduled appointments are kept as case history.)`,
-    );
+    const proceed = (await appConfirm(`Patient marked as Dropped. Delete ${futureScheduled.length} future Scheduled appointment${
+            futureScheduled.length === 1 ? "" : "s"
+          } as well?\n\n` +
+            `(Past, Checked In/Out, Canceled, and Rescheduled appointments are kept as case history.)`));
     if (!proceed) return;
 
     futureScheduled.forEach((appt) => {
@@ -4475,11 +4455,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           normalizeLookupValue(entry.appointmentType) === normalizedEncType,
       );
       if (siblingAppointments.length > 0 && normalizedApptType === normalizedEncType) {
-        const proceed = window.confirm(
-          `There are ${siblingAppointments.length + 1} appointments on ${dateLabel} for "${appointment.appointmentType}" that all link to the same encounter.\n\n` +
-            `Click OK to delete ONLY this one appointment — the encounter and its charges stay intact and the other ${siblingAppointments.length} appointment${siblingAppointments.length === 1 ? "" : "s"} keep linking to it.\n\n` +
-            `Click Cancel to keep everything.`,
-        );
+        const proceed = (await appConfirm(`There are ${siblingAppointments.length + 1} appointments on ${dateLabel} for "${appointment.appointmentType}" that all link to the same encounter.\n\n` +
+                    `Click OK to delete ONLY this one appointment — the encounter and its charges stay intact and the other ${siblingAppointments.length} appointment${siblingAppointments.length === 1 ? "" : "s"} keep linking to it.\n\n` +
+                    `Click Cancel to keep everything.`));
         if (!proceed) return;
         removeAppointment(appointment.id);
         setEncounterMessage(
@@ -4489,13 +4467,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }
 
       const chargeCount = linkedEncounter.charges.length;
-      const proceed = window.confirm(
-        `This appointment has an attached encounter${
-          linkedEncounter.signed ? " (CLOSED)" : ""
-        } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
-          `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
-          `Click Cancel to keep everything.`,
-      );
+      const proceed = (await appConfirm(`This appointment has an attached encounter${
+                linkedEncounter.signed ? " (CLOSED)" : ""
+              } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
+                `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
+                `Click Cancel to keep everything.`));
       if (!proceed) {
         return;
       }
@@ -4517,9 +4493,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete the ${appointment.appointmentType} appointment on ${dateLabel} at ${timeLabel}? This cannot be undone.`,
-    );
+    const confirmed = (await appConfirm(`Delete the ${appointment.appointmentType} appointment on ${dateLabel} at ${timeLabel}? This cannot be undone.`));
     if (!confirmed) {
       return;
     }
@@ -4611,7 +4585,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // can't create the duplicate appointments that made the old path dangerous.
   // It stamps the durable appointmentId and aligns the encounter's date/type
   // to the appointment so the two rows merge into one.
-  const mergeEncounterIntoAppointment = (
+  const mergeEncounterIntoAppointment = async (
     note: (typeof patientEncounterRecords)[number],
     appointment: ScheduleAppointmentRecord,
     occupant?: (typeof patientEncounterRecords)[number] | null,
@@ -4633,9 +4607,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           merging.charges.length > 0 ? " and charges" : ""
         } will be merged into this one and it's removed. Nothing is lost.`
       : "";
-    const proceed = window.confirm(
-      `Merge this encounter (your note${chargeNote}) into the ${dateUs} ${appointment.appointmentType} appointment so they become one?${dateNote}${mergeNote}`,
-    );
+    const proceed = (await appConfirm(`Merge this encounter (your note${chargeNote}) into the ${dateUs} ${appointment.appointmentType} appointment so they become one?${dateNote}${mergeNote}`));
     if (!proceed) return;
 
     // 1) Point the note encounter at the appointment (durable link + aligned
@@ -4702,13 +4674,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setEncounterMessage(`Merged into the ${dateUs} ${appointment.appointmentType} appointment.`);
   };
 
-  const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const createEncounterFromAppointment = async (appointment: ScheduleAppointmentRecord) => {
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
       return;
     }
     if (!isFeatureEnabled("encounters")) {
-      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      void appAlert("Encounters is turned off. Enable it in Settings → Features to use it.");
       return;
     }
     const appointmentDate = toUsDate(appointment.date);
@@ -4746,10 +4718,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     })();
     if (appointment.date !== todayIso) {
       const direction = appointment.date > todayIso ? "in the future" : "in the past";
-      const proceed = window.confirm(
-        `This appointment is on ${appointmentDate}, which is ${direction}. ` +
-          `Are you sure you want to create an encounter now? Click Cancel if you opened the wrong appointment.`,
-      );
+      const proceed = (await appConfirm(`This appointment is on ${appointmentDate}, which is ${direction}. ` +
+                `Are you sure you want to create an encounter now? Click Cancel if you opened the wrong appointment.`));
       if (!proceed) {
         setEncounterMessage(`Encounter creation canceled — appointment is ${direction}.`);
         return;
@@ -5983,7 +5953,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this X-ray referral?")) removeImagingReferral("xray", entry.id); }}
+                      onClick={async () => { if ((await appConfirm("Remove this X-ray referral?"))) removeImagingReferral("xray", entry.id); }}
                       type="button"
                     >
                       Remove
@@ -6207,7 +6177,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this MRI referral?")) removeImagingReferral("mri", entry.id); }}
+                      onClick={async () => { if ((await appConfirm("Remove this MRI referral?"))) removeImagingReferral("mri", entry.id); }}
                       type="button"
                     >
                       Remove
@@ -6444,7 +6414,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     <button
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this specialist referral?")) removeSpecialist(entry.id); }}
+                      onClick={async () => { if ((await appConfirm("Remove this specialist referral?"))) removeSpecialist(entry.id); }}
                       type="button"
                     >
                       Remove
@@ -7008,16 +6978,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 // check-in row.
                                 <button
                                   className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const chargeCount = linkedEncounter.charges.length;
                                     const status = linkedEncounter.signed ? " (CLOSED)" : "";
-                                    const proceed = window.confirm(
-                                      `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
-                                        chargeCount > 0
-                                          ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
-                                          : ""
-                                      }?\n\nThis cannot be undone.`,
-                                    );
+                                    const proceed = (await appConfirm(`Delete this encounter${status} on ${linkedEncounter.encounterDate}${
+                                                                            chargeCount > 0
+                                                                              ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
+                                                                              : ""
+                                                                          }?\n\nThis cannot be undone.`));
                                     if (!proceed) return;
                                     deleteEncounter(linkedEncounter.id);
                                     cascadeCashPaymentsOnEncounterDelete(
@@ -7217,7 +7185,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     <button
                       className="rounded-full border border-[var(--line-soft)] px-2 text-xs font-semibold"
-                      onClick={() => { if (window.confirm("Remove this related case?")) removeRelatedCase(entry.patientId); }}
+                      onClick={async () => { if ((await appConfirm("Remove this related case?"))) removeRelatedCase(entry.patientId); }}
                       type="button"
                     >
                       x
@@ -7476,7 +7444,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         <td className="px-3 py-2 text-right">
                           <button
                             className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                            onClick={() => { if (window.confirm(`Remove diagnosis "${entry.code}"?`)) removeDiagnosis(entry.id); }}
+                            onClick={async () => { if ((await appConfirm(`Remove diagnosis "${entry.code}"?`))) removeDiagnosis(entry.id); }}
                             type="button"
                           >
                             Remove
@@ -8239,7 +8207,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           can be generated. Same look + feel as the narrative-report
           prompt modal below. */}
       {docPromptState && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <form
             className="panel-card max-h-[85vh] w-full max-w-md overflow-auto p-4"
             onSubmit={(e) => {
@@ -8308,7 +8276,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       {showNarrativePromptModal && narrativePromptTemplate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
             <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-3xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -8418,7 +8386,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       {showNarrativePreviewModal && narrativePreview && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
             <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-5xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -9533,7 +9501,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <button
                     className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--brand-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
                     disabled={editingImagingReferral.regions.length === 0}
-                    onClick={() => {
+                    onClick={async () => {
                       const template = buildFindingsTemplate(
                         editingImagingReferral.regions,
                         editingImagingReferral.lateralityByRegion,
@@ -9541,10 +9509,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       if (!template) return;
                       const existing = editingImagingReferral.findings ?? "";
                       if (existing.trim().length > 0) {
-                        const proceed = window.confirm(
-                          "Replace the existing findings text with the region template? " +
-                            "Anything you've typed will be lost.",
-                        );
+                        const proceed = (await appConfirm("Replace the existing findings text with the region template? " +
+                                                    "Anything you've typed will be lost."));
                         if (!proceed) return;
                       }
                       setEditingImagingReferral((current) =>
@@ -9659,7 +9625,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </datalist>
 
       {showAddDxModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <form
             className="panel-card mx-auto w-full max-w-md p-5"
@@ -9794,7 +9760,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
 
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <div className="panel-card mx-auto w-full max-w-md p-5">
             <h3 className="text-xl font-semibold text-red-600">Delete Patient</h3>

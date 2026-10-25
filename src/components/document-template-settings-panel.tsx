@@ -21,6 +21,7 @@ import {
   stripHtmlIndentation,
 } from "@/lib/document-html-layout";
 import type { OfficeSettings } from "@/lib/office-settings";
+import { appConfirm } from "@/components/app-dialog";
 
 const demoPatientContext: Record<string, string> = {
   TODAY_DATE: "03/16/2026",
@@ -349,7 +350,7 @@ export function DocumentTemplateSettingsPanel({
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Document Template Defaults
@@ -699,11 +700,11 @@ export function DocumentTemplateSettingsPanel({
                 <button
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={!canRemoveSelectedTemplate}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!selectedTemplate || !canRemoveSelectedTemplate) {
                       return;
                     }
-                    if (!window.confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) return;
+                    if (!(await appConfirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`))) return;
                     removeTemplate(selectedTemplate.id);
                     setSelectedTemplateId(null);
                   }}

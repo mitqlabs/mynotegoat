@@ -24,6 +24,7 @@ import {
   type ContactSort,
   type ContactSortKey,
 } from "@/lib/contact-sort";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 const COLS =
   "md:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_10.5rem_minmax(0,1.9fr)]";
@@ -349,14 +350,12 @@ export default function ContactsPage() {
   };
 
   const handleDeleteContact = async (contact: ContactRecord) => {
-    const confirmed = window.confirm(
-      `Delete contact "${contact.name}"? This cannot be undone.`,
-    );
+    const confirmed = (await appConfirm(`Delete contact "${contact.name}"? This cannot be undone.`));
     if (!confirmed) return;
     if (!(await ensureDeleteAllowed("contacts"))) return;
     const result = removeContact(contact.id);
     if (!result.removed) {
-      window.alert(result.reason);
+      (await appAlert(result.reason));
       return;
     }
     if (editingContactId === contact.id) {
@@ -764,7 +763,7 @@ export default function ContactsPage() {
       </section>
 
       {showAddContactModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <form className="panel-card max-h-[85vh] w-full max-w-2xl overflow-auto p-4" onSubmit={(e) => { e.preventDefault(); saveNewContact(); }}>
             <div className="mb-3 flex items-center justify-between gap-2">

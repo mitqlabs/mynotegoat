@@ -17,6 +17,7 @@ import {
   type DecompressionProgression,
   isDecompressionSinglePickLabel,
 } from "@/lib/treatment-plans";
+import { appConfirm } from "@/components/app-dialog";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -311,8 +312,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                     </button>
                     <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
-                      onClick={() => {
-                        if (window.confirm("Delete this treatment plan?")) removePlan(patientId, plan.id);
+                      onClick={async () => {
+                        if ((await appConfirm("Delete this treatment plan?"))) removePlan(patientId, plan.id);
                       }}
                       type="button"
                     >
@@ -385,7 +386,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         {openDays.length > 1 && (
                         <select
                           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)]"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const day = Number(e.target.value);
                             e.target.value = "";
                             if (!Number.isInteger(day)) return;
@@ -393,7 +394,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                             const prompt = targetHasRegions
                               ? `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`
                               : `Copy ${WEEKDAYS[activeDay]}'s setup to ${WEEKDAYS[day]}?`;
-                            if (!window.confirm(prompt)) return;
+                            if (!(await appConfirm(prompt))) return;
                             copyDayRegions(patientId, plan.id, activeDay, day);
                             setActiveDay(day);
                           }}
@@ -419,11 +420,9 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         )}
                         <button
                           className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
-                          onClick={() => {
+                          onClick={async () => {
                             if (
-                              window.confirm(
-                                `Clear all ${WEEKDAYS[activeDay]} treatments from this plan?`,
-                              )
+                              (await appConfirm(`Clear all ${WEEKDAYS[activeDay]} treatments from this plan?`))
                             ) {
                               setDay([]);
                             }

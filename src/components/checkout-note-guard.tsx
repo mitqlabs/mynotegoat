@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findOpenLinkedNote } from "@/lib/note-link";
+import { appConfirm } from "@/components/app-dialog";
 
 export type OpenNoteCheckoutChoice = "close" | "checkout" | "cancel";
 
@@ -199,7 +200,7 @@ export function NoteOpenTag({
         disabled={busy}
         onClick={async (event) => {
           event.stopPropagation();
-          if (!window.confirm(`Close the note for ${dateLabel}? The appointment stays Checked Out.`)) return;
+          if (!(await appConfirm(`Close the note for ${dateLabel}? The appointment stays Checked Out.`))) return;
           setBusy(true);
           try {
             await onClose();

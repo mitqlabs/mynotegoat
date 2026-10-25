@@ -16,6 +16,7 @@ import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { ToggleSwitch } from "@/components/toggle-switch";
+import { appConfirm } from "@/components/app-dialog";
 
 type Member = {
   member_user_id: string;
@@ -216,7 +217,7 @@ export function TeamSettingsSection() {
   };
 
   const removeMember = async (member: Member) => {
-    if (!window.confirm(`Remove ${member.email || member.label}? Their login will be deleted.`)) {
+    if (!(await appConfirm(`Remove ${member.email || member.label}? Their login will be deleted.`))) {
       return;
     }
     const headers = await authHeader();
@@ -346,10 +347,10 @@ export function TeamSettingsSection() {
     void saveMemberPerms(member, next);
   };
 
-  const setMemberActive = (member: Member, active: boolean) => {
+  const setMemberActive = async (member: Member, active: boolean) => {
     if (!active) {
       const who = member.label || member.email || "this member";
-      if (!window.confirm(`Turn OFF ${who}? Their login will be blocked until you turn them back on. Their record and settings are kept.`)) {
+      if (!(await appConfirm(`Turn OFF ${who}? Their login will be blocked until you turn them back on. Their record and settings are kept.`))) {
         return;
       }
     }

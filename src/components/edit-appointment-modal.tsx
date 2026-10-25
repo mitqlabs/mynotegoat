@@ -227,7 +227,7 @@ export function EditAppointmentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-3xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
@@ -326,9 +326,9 @@ export function EditAppointmentModal({
             <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => {
+              onChange={async (event) => {
                 const next = event.target.value as AppointmentStatus;
-                if (!confirmStatusChangeIfNeeded(appointment.status, next)) return;
+                if (!(await confirmStatusChangeIfNeeded(appointment.status, next))) return;
                 setStatus(next);
               }}
               value={status}

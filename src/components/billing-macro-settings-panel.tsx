@@ -4,6 +4,7 @@ import { NumberInput } from "@/components/number-input";
 import { useCallback, useMemo, useState } from "react";
 import { DiagnosisSettingsSection } from "@/components/diagnosis-settings-section";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
+import { appConfirm } from "@/components/app-dialog";
 
 type TreatmentSortKey = "name" | "procedureCode" | "unitPrice";
 type SortDir = "asc" | "desc";
@@ -76,7 +77,7 @@ export function BillingMacroSettingsPanel() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Billing Macro Defaults
@@ -296,7 +297,7 @@ export function BillingMacroSettingsPanel() {
                 </span>
                 <button
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
-                  onClick={() => { if (window.confirm(`Remove treatment "${entry.name}"?`)) removeTreatment(entry.id); }}
+                  onClick={async () => { if ((await appConfirm(`Remove treatment "${entry.name}"?`))) removeTreatment(entry.id); }}
                   type="button"
                 >
                   Remove

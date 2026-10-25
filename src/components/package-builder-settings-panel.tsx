@@ -4,6 +4,7 @@ import { NumberInput } from "@/components/number-input";
 import { useMemo, useState } from "react";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import type { TreatmentPackage } from "@/lib/billing-macros";
+import { appConfirm } from "@/components/app-dialog";
 
 const UNCATEGORIZED_KEY = "__uncategorized__";
 const UNCATEGORIZED_LABEL = "Uncategorized";
@@ -535,11 +536,9 @@ export function PackageBuilderSettingsPanel() {
                             <div className="col-span-6 flex items-end lg:col-span-2">
                               <button
                                 className="h-[34px] w-full rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold"
-                                onClick={() => {
+                                onClick={async () => {
                                   if (
-                                    window.confirm(
-                                      `Remove tier "${entry.name}" from family "${group.label}"?`,
-                                    )
+                                    (await appConfirm(`Remove tier "${entry.name}" from family "${group.label}"?`))
                                   )
                                     removePackage(entry.id);
                                 }}
@@ -669,11 +668,9 @@ export function PackageBuilderSettingsPanel() {
                                     </p>
                                     <button
                                       className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
-                                      onClick={() => {
+                                      onClick={async () => {
                                         if (
-                                          window.confirm(
-                                            "Remove this treatment from the package?",
-                                          )
+                                          (await appConfirm("Remove this treatment from the package?"))
                                         )
                                           removePackageTreatment(entry.id, item.treatmentId);
                                       }}

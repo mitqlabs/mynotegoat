@@ -21,6 +21,7 @@ import {
 } from "@/lib/patient-forms";
 import { manageFormRequest, sendFormLink, type FormRequestRow } from "@/lib/patient-forms-client";
 import { buildSmsUrl } from "@/lib/sms-templates";
+import { appConfirm } from "@/components/app-dialog";
 
 const usDate = (iso: string | null | undefined) => {
   if (!iso) return "";
@@ -112,7 +113,7 @@ function SendFormDialog({ patientId, patientName, firstName, phone, email, visit
   const message = link ? formMessage(firstName, form?.name ?? "questionnaire", link.url, officeSettings.officeName ?? "") : "";
 
   const revoke = async (row: FormRequestRow) => {
-    if (!window.confirm("Turn this link off? The patient won't be able to open it anymore.")) return;
+    if (!(await appConfirm("Turn this link off? The patient won't be able to open it anymore."))) return;
     const res = await manageFormRequest(row.id, "revoke");
     if (!res.ok) return setError(res.error);
     refreshFormRequests();
@@ -282,7 +283,7 @@ export function QuestionnaireReviewCards({
     router.push(`/encounters?patientId=${encodeURIComponent(patientId)}&encounterId=${encodeURIComponent(encounterId)}&questionnaire=${encodeURIComponent(row.id)}`);
   };
   const dismiss = async (row: FormRequestRow) => {
-    if (!window.confirm("Dismiss this questionnaire? Nothing goes into a note. The answers stay saved and you can reopen it under Past questionnaires.")) return;
+    if (!(await appConfirm("Dismiss this questionnaire? Nothing goes into a note. The answers stay saved and you can reopen it under Past questionnaires."))) return;
     const res = await manageFormRequest(row.id, "dismissed");
     if (!res.ok) return setError(res.error);
     refreshFormRequests();

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useGoatTerms } from "@/hooks/use-goat-terms";
 import { groupsInQuestion, parseTermList, type GoatTermGroup } from "@/lib/goat-terms";
+import { appConfirm } from "@/components/app-dialog";
 
 const inputClass = "w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm";
 const buttonClass =
@@ -85,8 +86,8 @@ function GroupRow({
         </button>
         <button
           className={`${buttonClass} text-red-700`}
-          onClick={() => {
-            if (window.confirm(`Delete the "${group.terms[0]}" group?`)) onDelete();
+          onClick={async () => {
+            if ((await appConfirm(`Delete the "${group.terms[0]}" group?`))) onDelete();
           }}
           type="button"
         >
@@ -200,8 +201,8 @@ export function GoatSettingsPanel() {
           </span>
           <button
             className={buttonClass}
-            onClick={() => {
-              if (window.confirm("Reset to the starting list? Your own groups will be removed and edited starting groups restored.")) {
+            onClick={async () => {
+              if ((await appConfirm("Reset to the starting list? Your own groups will be removed and edited starting groups restored."))) {
                 resetToDefaults();
               }
             }}

@@ -24,6 +24,7 @@ import { loadCaseStatuses } from "@/lib/case-statuses";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { patients as patientRecords } from "@/lib/mock-data";
 import { ScrollLock } from "@/components/scroll-lock";
+import { appConfirm } from "@/components/app-dialog";
 
 // ---------------------------------------------------------------------------
 // View mode
@@ -1286,11 +1287,9 @@ export default function MyFilesPage() {
                             </button>
                             <button
                               className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
-                                  window.confirm(
-                                    `Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`,
-                                  )
+                                  (await appConfirm(`Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`))
                                 ) {
                                   void permanentlyDeleteFolder(folder.id).then(() => {
                                     setMessage(`Folder "${folder.name}" permanently deleted.`);
@@ -1359,11 +1358,9 @@ export default function MyFilesPage() {
                             </button>
                             <button
                               className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
-                                  window.confirm(
-                                    `Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`,
-                                  )
+                                  (await appConfirm(`Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`))
                                 ) {
                                   void permanentlyDeleteFile(file.id).then(() => {
                                     setMessage(`File "${file.name}" permanently deleted.`);

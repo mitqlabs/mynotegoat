@@ -23,6 +23,7 @@ import {
   weekdayLabels,
   type DailyOfficeHours,
 } from "@/lib/schedule-settings";
+import { appConfirm } from "@/components/app-dialog";
 
 function genId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -491,9 +492,9 @@ export function OfficeLocationsDoctorsSection() {
                       <div className="mt-2 flex justify-end">
                         <button
                           className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
-                          onClick={() => {
+                          onClick={async () => {
                             const label = loc.nickname?.trim() || loc.name?.trim() || "this office";
-                            if (window.confirm(`Remove ${label}? This can't be undone.`)) {
+                            if ((await appConfirm(`Remove ${label}? This can't be undone.`))) {
                               removeLocation(loc.id);
                             }
                           }}
