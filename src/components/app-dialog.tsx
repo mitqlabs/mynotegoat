@@ -83,16 +83,8 @@ function DialogView({ req }: { req: Req }) {
   const okValue = () => (req.kind === "confirm" ? true : req.kind === "prompt" ? value : undefined);
 
   useEffect(() => {
-    (req.kind === "prompt" ? inputRef.current : okRef.current)?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        close(cancelValue);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [req.kind, cancelValue]);
+    (inputRef.current ?? okRef.current)?.focus();
+  }, []);
 
   const title = req.title ?? (req.kind === "alert" ? "Heads up" : req.kind === "prompt" ? "One quick thing" : req.danger ? "Are you sure?" : "Please confirm");
 
@@ -104,6 +96,12 @@ function DialogView({ req }: { req: Req }) {
       }}
     >
       <form
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            close(cancelValue);
+          }
+        }}
         aria-labelledby="app-dialog-title"
         aria-modal="true"
         className="panel-card w-full max-w-md p-5"
