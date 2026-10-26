@@ -39,6 +39,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.quick-stats-settings.v1": "workspace",
   "casemate.patient-page-prefs.v1": "workspace",
   "casemate.patient-diagnoses.v1": "workspace",
+  "casemate.dx-suggestion-ignores.v1": "workspace",
   "casemate.patient-billing.v1": "workspace",
   "casemate.email-settings.v1": "workspace",
   "casemate.dashboard-workspace-settings.v1": "workspace",

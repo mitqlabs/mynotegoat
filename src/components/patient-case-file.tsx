@@ -41,6 +41,7 @@ import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { Icd10Search } from "@/components/icd10-search";
 import { sameCode } from "@/lib/icd10";
 import { DxSuggestions } from "@/components/dx-suggestions";
+import { useDxSuggestionIgnores } from "@/hooks/use-dx-suggestion-ignores";
 import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
 import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
@@ -1406,6 +1407,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // deleted encounter) and silently inflates Cash Payments totals.
   const { paymentsByPatient: cashPaymentsByPatient, updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
   const { entries: patientDiagnoses, addDiagnosis, addBulkDiagnoses, removeDiagnosis, reorderDiagnoses } = usePatientDiagnoses(patient.id);
+  const dxIgnores = useDxSuggestionIgnores(patient.id);
   const {
     recordsByPatientId: followUpOverridesByPatientId,
     getRecord: getPatientFollowUpOverride,
@@ -7361,8 +7363,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <DxSuggestions
                   hasMriText={dxSuggestState.hasMriText}
                   heldBack={dxSuggestState.heldBack}
+                  ignored={dxSuggestState.list.filter((s) => dxIgnores.isIgnored("mri", s.code))}
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
-                  suggestions={dxSuggestState.list}
+                  onIgnore={(code, description) => dxIgnores.ignore("mri", code, `${code} — ${description}`)}
+                  onRestore={(code) => dxIgnores.restore("mri", code)}
+                  suggestions={dxSuggestState.list.filter((s) => !dxIgnores.isIgnored("mri", s.code))}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
                 />
               </div>
@@ -7371,8 +7376,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   hasMriText={xrayDxState.hasText}
                   heldBack={xrayDxState.heldBack}
                   kind="X-ray"
+                  ignored={xrayDxState.list.filter((s) => dxIgnores.isIgnored("xray", s.code))}
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (X-ray)")}
-                  suggestions={xrayDxState.list}
+                  onIgnore={(code, description) => dxIgnores.ignore("xray", code, `${code} — ${description}`)}
+                  onRestore={(code) => dxIgnores.restore("xray", code)}
+                  suggestions={xrayDxState.list.filter((s) => !dxIgnores.isIgnored("xray", s.code))}
                 />
               </div>
             </div>
