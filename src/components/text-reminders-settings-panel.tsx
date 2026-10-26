@@ -431,9 +431,9 @@ export function TextRemindersSettingsPanel() {
           <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once). Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
           <li>
             On the office iPhone, open this page and tap{" "}
-            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.signed.shortcut">Get the shortcut</a>
+            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
             {" "}→ <b>Add Shortcut</b>, and paste your code when it asks. Optional:{" "}
-            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.signed.shortcut">Send Reminders Now</a>
+            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
             {" "}(same steps) for a one-tap send.
           </li>
           <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>8:00 AM</b>, <b>Daily</b> → <b>Run Immediately</b> → <b>Send Reminders</b> → <b>Done</b>. The first run asks for permission; tap <b>Always Allow</b>.</li>
@@ -490,7 +490,18 @@ export function TextRemindersSettingsPanel() {
       </details>
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="mac-steps">
-        <summary className="cursor-pointer font-semibold">iMac setup (Terminal)</summary>
+        <summary className="cursor-pointer font-semibold">iMac setup (one click)</summary>
+        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
+          <li>On the iMac, make sure <b>Messages</b> is signed in to the office Apple ID. Then here in NoteGoat click <b>+ Add Mac</b> and <b>Copy</b> the code (starts with <Mono>ngr_</Mono>, shown once).</li>
+          <li>
+            <a className="font-semibold text-[var(--brand-primary)] underline" data-testid="mac-setup-download" download href="/mac/NoteGoat-Reminders-Setup.command">Download iMac setup</a>
+            . In <b>Downloads</b>, <b>right-click</b> the file → <b>Open</b> → <b>Open</b> (only the first time; a plain double-click may be blocked by macOS).
+          </li>
+          <li>Terminal opens and explains each step. Paste the code when asked, then type your <b>Mac password</b> when asked (it sets the iMac to wake at 8:45 AM). Nothing shows while typing; that&apos;s normal. When it says <b>All set</b>, press <b>Return</b>.</li>
+        </ol>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">The first time it sends, macOS asks to let it control <b>Messages</b>; click <b>OK</b>. As backup the Mac waits 30 minutes for the primary and only sends what is still unsent.</p>
+        <details className="mt-3 text-[var(--text-muted)]" data-testid="mac-steps-manual">
+          <summary className="cursor-pointer text-xs font-semibold">Advanced: set up in Terminal by hand</summary>
         <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
           <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
           <li>Here in NoteGoat, click <b>+ Add Mac</b>, then <b>Copy</b> the code (starts with <Mono>ngr_</Mono>, shown once).</li>
@@ -498,7 +509,7 @@ export function TextRemindersSettingsPanel() {
           <li>
             Paste this and press <b>Return</b> (it downloads the sender):
             <div className="mt-1">
-              <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
+              <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && RAW=https://raw.githubusercontent.com/mitqlabs/mynotegoat/main/tools/mac-reminders; curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
             </div>
           </li>
           <li>Paste <Mono>bash install.sh</Mono> and press <b>Return</b>.</li>
@@ -519,6 +530,7 @@ export function TextRemindersSettingsPanel() {
           </li>
           <li>Made a <b>New code</b>? Run step 5 again and paste the new code. To remove: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then <b>Revoke</b> the device here.</li>
         </ol>
+        </details>
       </details>
 
       <div className="grid gap-1">
