@@ -345,6 +345,64 @@ function buildPatientNameLookupSet(fullName: string, firstName: string, lastName
 /** Sentinel for "not in Contacts — I'll type the name". */
 const SPECIALIST_OTHER = "__type-a-name__";
 
+/** Imaging Center picker — same look and behavior as the Specialist
+ *  dropdown: pick a saved Imaging Center contact, or choose
+ *  "Someone else" to type a name. Saves the same plain center name. */
+function ImagingCenterSelect({
+  centers,
+  className,
+  onChange,
+  placeholder = "Select imaging center",
+  typePlaceholder = "Type the imaging center's name",
+  value,
+}: {
+  centers: string[];
+  className: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  typePlaceholder?: string;
+  value: string;
+}) {
+  const [typing, setTyping] = useState(false);
+  const known = centers.includes(value);
+  const showTyped = typing || (Boolean(value) && !known);
+  return (
+    <>
+      <select
+        className={className}
+        onChange={(event) => {
+          const picked = event.target.value;
+          if (picked === SPECIALIST_OTHER) {
+            setTyping(true);
+            onChange("");
+            return;
+          }
+          setTyping(false);
+          onChange(picked);
+        }}
+        value={showTyped ? SPECIALIST_OTHER : value}
+      >
+        <option value="">{placeholder}</option>
+        {centers.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+        <option value={SPECIALIST_OTHER}>Someone else — type a name</option>
+      </select>
+      {showTyped && (
+        <input
+          autoFocus={typing}
+          className={className}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={typePlaceholder}
+          value={value}
+        />
+      )}
+    </>
+  );
+}
+
 function isSpecialistReferralContactCategory(category: string) {
   // Only the fixed "Specialist" top-level category is a specialist.
   // Attorneys and Imaging Centers are categorically different; the
@@ -5802,11 +5860,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </label>
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Imaging Center</span>
-                    <input
+                    <ImagingCenterSelect
+                      centers={imagingCenters}
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      list="imaging-centers"
-                      onChange={(event) => setXray((current) => ({ ...current, center: event.target.value }))}
-                      placeholder="Select or type center"
+                      onChange={(center) => setXray((current) => ({ ...current, center }))}
                       value={xray.center}
                     />
                   </label>
@@ -6024,11 +6081,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </label>
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Imaging Center</span>
-                    <input
+                    <ImagingCenterSelect
+                      centers={imagingCenters}
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      list="imaging-centers"
-                      onChange={(event) => setMri((current) => ({ ...current, center: event.target.value }))}
-                      placeholder="Select or type center"
+                      onChange={(center) => setMri((current) => ({ ...current, center }))}
                       value={mri.center}
                     />
                   </label>
@@ -9290,15 +9346,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="grid grid-cols-2 gap-2">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Facility (optional)</span>
-                  <input
+                  <ImagingCenterSelect
+                    centers={imagingCenters}
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="imaging-centers"
-                    onChange={(event) =>
-                      setEditingImagingReferral((current) =>
-                        current ? { ...current, center: event.target.value } : current,
-                      )
+                    onChange={(center) =>
+                      setEditingImagingReferral((current) => (current ? { ...current, center } : current))
                     }
                     placeholder="Where it was done"
+                    typePlaceholder="Where it was done"
                     value={editingImagingReferral.center}
                   />
                 </label>
@@ -9338,13 +9393,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </label>
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Imaging Center</span>
-                  <input
+                  <ImagingCenterSelect
+                    centers={imagingCenters}
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="imaging-centers"
-                    onChange={(event) =>
-                      setEditingImagingReferral((current) =>
-                        current ? { ...current, center: event.target.value } : current,
-                      )
+                    onChange={(center) =>
+                      setEditingImagingReferral((current) => (current ? { ...current, center } : current))
                     }
                     value={editingImagingReferral.center}
                   />
@@ -9681,11 +9734,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       )}
 
-      <datalist id="imaging-centers">
-        {imagingCenters.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
       <datalist id="attorney-contacts">
         {attorneyContacts.map((contact) => (
           <option key={contact.id} value={contact.name} />
