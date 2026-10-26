@@ -27,10 +27,11 @@ def fields(items):
 
 def build(name, query):
     auth = [("Authorization", tstr("Bearer ", var("Token")))]
-    q, d1, d2, rep, txt, ph, msg = (U() for _ in range(7))
+    q, d1, d2, rep, txt, ph, msg, tk = (U() for _ in range(8))
     acts = [
-        act("is.workflow.actions.gettext", UUID=U(), WFTextActionText=""),  # index 0 = import question
-        act("is.workflow.actions.setvariable", WFVariableName="Token"),
+        act("is.workflow.actions.gettext", UUID=tk, WFTextActionText=""),  # index 0 = import question
+        act("is.workflow.actions.setvariable", WFVariableName="Token",
+            WFInput=att(out(tk, "Text"))),
         act("is.workflow.actions.downloadurl", UUID=q, WFURL=f"{ORIGIN}/api/reminders/queue?{query}",
             WFHTTPMethod="GET", ShowHeaders=True, WFHTTPHeaders=fields(auth)),
         act("is.workflow.actions.setvariable", WFVariableName="Queue",
