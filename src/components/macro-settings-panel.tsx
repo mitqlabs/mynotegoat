@@ -22,6 +22,7 @@ import {
   type MacroSection,
 } from "@/lib/macro-templates";
 import { ScrollLock } from "@/components/scroll-lock";
+import { appConfirm } from "@/components/app-dialog";
 
 type MacroTestContext = {
   id: string;
@@ -289,11 +290,11 @@ export function MacroSettingsPanel() {
     setSelectedMacroId(newId);
   };
 
-  const handleDeleteMacro = () => {
+  const handleDeleteMacro = async () => {
     if (!selectedMacro) {
       return;
     }
-    if (!window.confirm(`Delete macro "${selectedMacro.buttonName}"? This cannot be undone.`)) {
+    if (!(await appConfirm(`Delete macro "${selectedMacro.buttonName}"? This cannot be undone.`))) {
       return;
     }
     deleteMacro(selectedMacro.id);
@@ -393,8 +394,8 @@ export function MacroSettingsPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          className="btn btn-secondary"
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Macro Defaults
@@ -480,14 +481,14 @@ export function MacroSettingsPanel() {
             <h4 className="text-lg font-semibold">{macroSectionLabels[activeSection]} Macros</h4>
             <div className="flex gap-1">
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => { setShowNewFolderInput(true); setNewFolderDraft(""); }}
                 type="button"
               >
                 + Folder
               </button>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={handleAddMacro}
                 type="button"
               >
@@ -510,7 +511,7 @@ export function MacroSettingsPanel() {
                 value={newFolderDraft}
               />
               <button className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white" type="submit">Create</button>
-              <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1.5 text-sm" onClick={() => setShowNewFolderInput(false)} type="button">Cancel</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowNewFolderInput(false)} type="button">Cancel</button>
             </form>
           )}
 
@@ -605,14 +606,14 @@ export function MacroSettingsPanel() {
                     Copy Macro
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={openRunModal}
                     type="button"
                   >
                     Run Macro
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={handleDeleteMacro}
                     type="button"
                   >
@@ -694,7 +695,7 @@ export function MacroSettingsPanel() {
                   {macroAutoFields.map((field) => (
                     <button
                       key={field}
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => appendToBody(insertAutoFieldToken(field))}
                       title={macroAutoFieldLabels[field]}
                       type="button"
@@ -765,7 +766,7 @@ export function MacroSettingsPanel() {
                     Multi-select
                   </label>
                   <button
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                    className="btn btn-secondary"
                     onClick={handleAddQuestion}
                     type="button"
                   >
@@ -896,7 +897,7 @@ export function MacroSettingsPanel() {
                         </button>
                         <button
                           className="rounded-lg border border-[var(--line-soft)] px-2 py-0.5 text-xs text-[#b43b34]"
-                          onClick={() => { if (window.confirm(`Remove question "${question.label}"?`)) removeQuestion(selectedMacro.id, question.id); }}
+                          onClick={async () => { if ((await appConfirm(`Remove question "${question.label}"?`))) removeQuestion(selectedMacro.id, question.id); }}
                           type="button"
                         >
                           Remove
@@ -1163,7 +1164,7 @@ export function MacroSettingsPanel() {
                           value={choiceDraft}
                         />
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={addChoice}
                           type="button"
                         >
@@ -1217,13 +1218,13 @@ export function MacroSettingsPanel() {
       </div>
 
       {runOpen && selectedMacro && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <ScrollLock />
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xl font-semibold">Run Macro: {selectedMacro.buttonName}</h4>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setRunOpen(false)}
                 type="button"
               >
@@ -1331,14 +1332,14 @@ export function MacroSettingsPanel() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => setRunOpen(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={runMacro}
                 type="button"
               >

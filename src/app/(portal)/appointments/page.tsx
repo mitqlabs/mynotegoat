@@ -438,6 +438,7 @@ function getCardBackground(status: AppointmentStatus) {
 }
 
 import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { appConfirm } from "@/components/app-dialog";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -838,13 +839,13 @@ export default function AppointmentsPage() {
     setNewAppointmentError("");
   };
 
-  const handleQuickStatusUpdate = (appointmentId: string, nextStatus: AppointmentStatus) => {
+  const handleQuickStatusUpdate = async (appointmentId: string, nextStatus: AppointmentStatus) => {
     if (nextStatus === "Reschedule") {
       openRescheduleModal(appointmentId);
       return;
     }
     const target = scheduleAppointments.find((entry) => entry.id === appointmentId);
-    if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
+    if (target && !(await confirmStatusChangeIfNeeded(target.status, nextStatus))) return;
     const apply = () =>
       updateAppointment(appointmentId, (current) => ({
         ...current,
@@ -1312,7 +1313,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               onClick={() => setSelectedDate(getTodayIsoDate())}
               title="Jump back to today's schedule"
               type="button"
@@ -1320,7 +1321,7 @@ export default function AppointmentsPage() {
               Today
             </button>
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary"
               onClick={openNewAppointmentModal}
               type="button"
             >
@@ -1371,7 +1372,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!schedulePatientSearchQuery}
               onClick={() => setSchedulePatientSearch("")}
               type="button"
@@ -1508,7 +1509,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Scheduled" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, false);
@@ -1518,7 +1519,7 @@ export default function AppointmentsPage() {
                                     Check In
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, true);
@@ -1532,7 +1533,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Check In" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       handleQuickStatusUpdate(appointment.id, "Check Out");
@@ -1542,7 +1543,7 @@ export default function AppointmentsPage() {
                                     Check Out
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openOrCreateEncounterForAppointment(appointment);
@@ -1744,7 +1745,7 @@ export default function AppointmentsPage() {
       )}
 
       {showNewAppointmentModal && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-5xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -1755,7 +1756,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
@@ -2273,14 +2274,14 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={handleSubmitNewAppointment}
                 type="button"
               >
@@ -2304,7 +2305,7 @@ export default function AppointmentsPage() {
       />
 
       {checkInRoomPrompt && checkInPromptAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2317,7 +2318,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2360,7 +2361,7 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2370,14 +2371,14 @@ export default function AppointmentsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => completeCheckInWithRoom("")}
                 type="button"
               >
                 Check In Without Room
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={() => completeCheckInWithRoom(checkInRoomDraft)}
                 type="button"
               >
@@ -2389,7 +2390,7 @@ export default function AppointmentsPage() {
       )}
 
       {selectedAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2400,7 +2401,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setSelectedAppointmentId(null)}
                 type="button"
               >
@@ -2413,13 +2414,13 @@ export default function AppointmentsPage() {
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Status</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const nextStatus = event.target.value as AppointmentStatus;
                     if (nextStatus === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus)) {
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus))) {
                       return;
                     }
                     setStatusDraft(nextStatus);
@@ -2512,12 +2513,12 @@ export default function AppointmentsPage() {
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   disabled={!selectable}
-                  onClick={() => {
+                  onClick={async () => {
                     if (status === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, status)) return;
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, status))) return;
                     setStatusDraft(status);
                   }}
                   title={!selectable ? "Patient must be Checked In first" : undefined}
@@ -2597,13 +2598,11 @@ export default function AppointmentsPage() {
                   );
                   if (linkedEncounter) {
                     const chargeCount = linkedEncounter.charges.length;
-                    const proceed = window.confirm(
-                      `This appointment has an attached encounter${
-                        linkedEncounter.signed ? " (CLOSED)" : ""
-                      } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
-                        `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
-                        `Click Cancel to keep everything.`,
-                    );
+                    const proceed = (await appConfirm(`This appointment has an attached encounter${
+                                            linkedEncounter.signed ? " (CLOSED)" : ""
+                                          } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
+                                            `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
+                                            `Click Cancel to keep everything.`));
                     if (!proceed) {
                       return;
                     }
@@ -2620,9 +2619,7 @@ export default function AppointmentsPage() {
                     return;
                   }
 
-                  const confirmed = window.confirm(
-                    `Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`,
-                  );
+                  const confirmed = (await appConfirm(`Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`));
                   if (!confirmed) {
                     return;
                   }
@@ -2640,14 +2637,14 @@ export default function AppointmentsPage() {
               </button>
               <div className="flex flex-wrap justify-end gap-2">
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary"
                   onClick={() => setSelectedAppointmentId(null)}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary"
                   onClick={() => void handleSaveAppointmentUpdates()}
                   type="button"
                 >
@@ -2663,8 +2660,8 @@ export default function AppointmentsPage() {
       {doneTaskOffer && (
         <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-4 py-3 text-sm shadow-[0_12px_24px_rgba(14,41,62,0.18)]" role="dialog" aria-label="Mark to-do done" data-testid="done-task-offer">
           <span>Booked. Mark the to-do &ldquo;{doneTaskOffer.title}&rdquo; done?</span>
-          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
-          <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
         </div>
       )}
     </div>

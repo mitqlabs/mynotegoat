@@ -33,6 +33,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
+import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
 
 function loadSettings(): SmsReminderSettings {
@@ -222,7 +223,7 @@ export function TextRemindersSettingsPanel() {
   const addDevice = async (kind: "mac" | "iphone") => {
     const client = getSupabaseBrowserClient();
     if (!client || !workspaceId) return setMessage("Sign in to add a device.");
-    const name = window.prompt("Name this device", kind === "iphone" ? "Office iPhone" : "Office iMac")?.trim();
+    const name = (await appPrompt("Name this device", { defaultValue: kind === "iphone" ? "Office iPhone" : "Office iMac" }))?.trim();
     if (!name) return;
     const token = generateDeviceToken();
     const firstActive = !devices.some((d) => !d.revoked_at);
@@ -246,7 +247,7 @@ export function TextRemindersSettingsPanel() {
   };
 
   const revokeDevice = async (id: string) => {
-    if (!window.confirm("Revoke this device? It will stop sending immediately.")) return;
+    if (!(await appConfirm("Revoke this device? It will stop sending immediately."))) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     const { error } = await client.from("reminder_devices").update({ revoked_at: new Date().toISOString() }).eq("id", id);
@@ -255,7 +256,7 @@ export function TextRemindersSettingsPanel() {
   };
 
   const newCode = async (id: string) => {
-    if (!window.confirm("Make a new code for this device? The old code stops working; update it in the Shortcut.")) return;
+    if (!(await appConfirm("Make a new code for this device? The old code stops working; update it in the Shortcut."))) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     const token = generateDeviceToken();

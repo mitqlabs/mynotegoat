@@ -44,6 +44,11 @@ export function getCurrentMembershipSync(): WorkspaceMembership | null {
   return cached;
 }
 
+/** Seed the cache from the access hint so the boot can skip the lookup (re-verified in the background). */
+export function primeMembershipCache(membership: WorkspaceMembership) {
+  cached = membership;
+}
+
 export function clearMembershipCache() {
   cached = null;
 }
@@ -77,7 +82,12 @@ export async function resolveWorkspaceMembership(
       .eq("member_user_id", userId)
       .limit(1)
       .maybeSingle();
-    if (error || !data) {
+    if (error) {
+      // A failed lookup proves nothing: keep a primed answer for this user.
+      if (!cached || cached.userId !== userId) cached = ownerFallback;
+      return ownerFallback;
+    }
+    if (!data) {
       cached = ownerFallback;
       return ownerFallback;
     }
@@ -95,7 +105,7 @@ export async function resolveWorkspaceMembership(
     cached = membership;
     return membership;
   } catch {
-    cached = ownerFallback;
+    if (!cached || cached.userId !== userId) cached = ownerFallback;
     return ownerFallback;
   }
 }

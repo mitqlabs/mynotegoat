@@ -1,5 +1,6 @@
 "use client";
 
+import { clearAccessHint } from "@/lib/access-hint";
 import { sameJson, unionMerge } from "@/lib/kv-merge";
 
 /** Keys merged by union instead of "cloud replaces local" on boot. */
@@ -160,6 +161,7 @@ export function wipeLocalWorkspaceForSignOut() {
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
   clearGoatTextCache();
   clearGoatChats();
+  clearAccessHint();
 }
 
 /**

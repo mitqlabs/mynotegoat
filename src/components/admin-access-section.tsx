@@ -223,7 +223,7 @@ export function AdminAccessSection() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white"
+            className="btn btn-primary"
             onClick={() => void savePassword()}
             type="button"
           >
@@ -231,7 +231,7 @@ export function AdminAccessSection() {
           </button>
           {adminAccess.deletePasswordHash && (
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold"
+              className="btn btn-secondary"
               onClick={() => void clearPassword()}
               type="button"
             >
