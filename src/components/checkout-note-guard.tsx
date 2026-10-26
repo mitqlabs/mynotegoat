@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findOpenLinkedNote } from "@/lib/note-link";
+import { appConfirm } from "@/components/app-dialog";
 
 export type OpenNoteCheckoutChoice = "close" | "checkout" | "cancel";
 
@@ -148,14 +149,14 @@ function OpenNoteCheckoutDialog({
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={() => onChoose("cancel")}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={() => onChoose("checkout")}
             type="button"
           >
@@ -199,7 +200,7 @@ export function NoteOpenTag({
         disabled={busy}
         onClick={async (event) => {
           event.stopPropagation();
-          if (!window.confirm(`Close the note for ${dateLabel}? The appointment stays Checked Out.`)) return;
+          if (!(await appConfirm(`Close the note for ${dateLabel}? The appointment stays Checked Out.`))) return;
           setBusy(true);
           try {
             await onClose();

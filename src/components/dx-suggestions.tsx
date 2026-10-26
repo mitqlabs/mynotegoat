@@ -22,6 +22,9 @@ export function DxSuggestions({
   hasMriText,
   unreadFiles = 0,
   onAdd,
+  onIgnore,
+  ignored = [],
+  onRestore,
   kind = "MRI",
 }: {
   /** Which report the list reads: the MRI/CT list or the X-ray list. */
@@ -34,6 +37,11 @@ export function DxSuggestions({
   /** Uploaded files G.O.A.T. hasn't read yet (their findings aren't included). */
   unreadFiles?: number;
   onAdd: (code: string, description: string) => void;
+  /** Hide this suggestion for the patient (saved to the cloud). */
+  onIgnore?: (code: string, description: string) => void;
+  /** Suggestions the user ignored (still found in the report), for "Show ignored". */
+  ignored?: Array<{ code: string; description: string }>;
+  onRestore?: (code: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showAll, setShowAll] = useState(false);
@@ -79,7 +87,7 @@ export function DxSuggestions({
                     </span>
                   </div>
                   <button
-                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm shrink-0"
                     onClick={() => onAdd(s.code, s.description)}
                     type="button"
                   >
@@ -108,14 +116,26 @@ export function DxSuggestions({
                     ))}
                   </p>
                 )}
-                <button
-                  aria-expanded={open}
-                  className="mt-1 text-[11px] font-semibold text-[var(--brand-primary)]"
-                  onClick={() => setExpanded((cur) => ({ ...cur, [s.code]: !open }))}
-                  type="button"
-                >
-                  {open ? "Hide why" : "Why?"}
-                </button>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    aria-expanded={open}
+                    className="text-[11px] font-semibold text-[var(--brand-primary)]"
+                    onClick={() => setExpanded((cur) => ({ ...cur, [s.code]: !open }))}
+                    type="button"
+                  >
+                    {open ? "Hide why" : "Why?"}
+                  </button>
+                  {onIgnore && (
+                    <button
+                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-main,#1f2937)]"
+                      onClick={() => onIgnore(s.code, s.description)}
+                      title={`Hide ${s.code} for this patient`}
+                      type="button"
+                    >
+                      Ignore
+                    </button>
+                  )}
+                </div>
                 {open && (
                   <div className="mt-1 grid gap-1 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-[11px] leading-snug text-[var(--text-muted)]">
                     <p>
@@ -150,6 +170,27 @@ export function DxSuggestions({
         >
           {showAll ? "Show fewer" : `Show all ${suggestions.length} suggestions`}
         </button>
+      )}
+      {ignored.length > 0 && onRestore && (
+        <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">
+          <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show ignored ({ignored.length})</summary>
+          <ul className="mt-1 grid gap-1">
+            {ignored.map((g) => (
+              <li className="flex items-baseline justify-between gap-2" key={g.code}>
+                <span className="min-w-0">
+                  <span className="font-mono font-semibold">{g.code}</span> {g.description}
+                </span>
+                <button
+                  className="shrink-0 text-[11px] font-semibold text-[var(--brand-primary)]"
+                  onClick={() => onRestore(g.code)}
+                  type="button"
+                >
+                  Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {heldBack.length > 0 && (
         <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">

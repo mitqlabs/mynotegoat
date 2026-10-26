@@ -52,7 +52,7 @@ export function NoteSignersPanel() {
         <label className="flex items-center gap-1">
           <input checked={doctor} onChange={(e) => setDoctor(e.target.checked)} type="checkbox" /> Doctor
         </label>
-        <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white" type="submit">
+        <button className="btn btn-primary btn-sm" type="submit">
           Add
         </button>
       </form>

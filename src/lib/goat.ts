@@ -17,7 +17,7 @@ import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-fin
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
-import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
@@ -663,10 +663,23 @@ function specialistAnswer(ctx: GoatContext, question = ""): GoatAnswer {
   const groups: GoatAnswerGroup[] = [];
   const flags: string[] = [];
   for (const s of ctx.specialists) {
-    const status = imagingStatus(s, s.completedDate);
+    let status = imagingStatus(s, s.completedDate);
+    // Box still says "referral sent" / "scheduled", but their report is in the files.
+    const pendingOnly = !s.refused && !dayStamp(s.completedDate) && !dayStamp(s.reportReceivedDate) && !dayStamp(s.reportReviewedDate);
+    if (pendingOnly && s.name && ctx.files?.length) {
+      const sentDay = dayStamp(s.sentDate);
+      const sent = sentDay === null ? "" : new Date(sentDay * 86_400_000).toISOString().replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$2/$3/$1");
+      const rep = reportFromDoctor(ctx.files, s.name, sent);
+      if (rep) {
+        status = {
+          text: `seen — report ${rep.dateLabel} ${rep.date} (${rep.name})`,
+          flag: `${s.name}'s report is in Patient Files, but the referral isn't marked completed. You can mark it completed in the Specialist box.`,
+        };
+      }
+    }
     if (status.flag) flags.push(status.flag);
     groups.push({
-      lead: `${s.name || "Specialist"}: ${status.text.replace("done", "seen")}.`,
+      lead: `${s.name || "Specialist"}: ${status.text.replace(/^done/, "seen")}.`,
       blocks: s.recommendations.trim() ? recommendationBlocks(s.recommendations) : [],
     });
   }

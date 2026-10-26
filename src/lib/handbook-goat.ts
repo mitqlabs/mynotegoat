@@ -22,6 +22,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Click the goat button. You'll see a greeting and chips — tap one or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
         "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
+        "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",
@@ -88,6 +89,15 @@ export const goatHandbookChapter: HandbookChapter = {
         "Show original opens the report text exactly as written.",
       ],
       why: "Rules only — no outside AI. If a report isn't written level by level (e.g. a knee MRI), you get the report text as before.",
+    },
+    {
+      heading: "Specialist findings (pain management, ortho, neuro)",
+      steps: [
+        "Ask \"pm findings\" or \"ortho findings\". G.O.A.T. leads with the patient's own referred doctor, e.g. \"Pain management: Dr. Name, seen, report uploaded 10/26/2026.\" If none is linked: \"No pain management doctor on this case.\"",
+        "Then short bullets from the report: Recommendations / Plan first, then Range of motion (ROM measurements like \"Lumbar flexion 40/60 degrees\", even when they sit under Physical Exam), then Assessment / Diagnoses and Findings, with the page and Open file. Letterhead, addresses, signatures and page footers are left out.",
+        "If a report from the specialist is dated after the referral but the referral isn't marked completed, G.O.A.T. says so. It never changes the referral itself — mark it completed in the Specialist box.",
+      ],
+      why: "Rules only, in your browser — no outside AI. Contacts not linked to this patient are never listed.",
     },
     {
       heading: "Look things up",

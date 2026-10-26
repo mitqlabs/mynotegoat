@@ -77,7 +77,7 @@ export default function AdminLayout({
                 type="button"
                 onClick={handleSignOut}
                 disabled={signingOut}
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-sm font-semibold transition hover:bg-[var(--bg-soft)] disabled:opacity-50"
+                className="btn btn-secondary disabled:opacity-50"
               >
                 {signingOut ? "Signing out..." : "Sign Out"}
               </button>

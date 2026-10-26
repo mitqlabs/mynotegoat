@@ -1,5 +1,6 @@
 "use client";
 
+import { clearAccessHint } from "@/lib/access-hint";
 import { sameJson, unionMerge } from "@/lib/kv-merge";
 
 /** Keys merged by union instead of "cloud replaces local" on boot. */
@@ -15,6 +16,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.patient-forms.v1",
   // G.O.A.T. learned phrases / misses: merged by id, newest wins, deletes are tombstones.
   "casemate.goat-learned.v1",
+  // G.O.A.T. Dx suggestion "Ignore" records: merged by id, newest wins (restore = tombstone).
+  "casemate.dx-suggestion-ignores.v1",
 ]);
 
 /**
@@ -49,6 +52,12 @@ export const PRESERVE_ON_WIPE_KEYS = new Set([
 import { bigCacheEntries } from "@/lib/big-cache";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
+import {
+  CACHE_OWNER_KEY,
+  canPushLocalToWorkspace,
+  canSeedEmptyCloud,
+  decideBootCache,
+} from "@/lib/workspace-cache-guard";
 import { notifyChange } from "@/lib/local-sync";
 import { mergeFileManagerStates } from "@/lib/file-manager";
 import { mergeTaskLists } from "@/lib/tasks-merge";
@@ -158,8 +167,10 @@ export function wipeLocalWorkspaceForSignOut() {
   // data from the prior account.
   clearAllWorkspaceCaches();
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  window.localStorage.removeItem(CACHE_OWNER_KEY);
   clearGoatTextCache();
   clearGoatChats();
+  clearAccessHint();
 }
 
 /**
@@ -208,6 +219,26 @@ export function ensureWorkspaceForUser(expectedWorkspaceId: string) {
     clearGoatTextCache();
     clearGoatChats();
     window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, expectedWorkspaceId);
+    // The cache was just wiped, so whatever lands next belongs to this workspace.
+    setCacheOwnerTag(expectedWorkspaceId);
+  }
+}
+
+function getCacheOwnerTag() {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(CACHE_OWNER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function setCacheOwnerTag(workspaceId: string) {
+  if (typeof window === "undefined" || !workspaceId) return;
+  try {
+    window.localStorage.setItem(CACHE_OWNER_KEY, workspaceId);
+  } catch {
+    // best-effort
   }
 }
 
@@ -297,6 +328,7 @@ function clearLocalWorkspaceData() {
       }
       if (
         key === ACTIVE_WORKSPACE_KEY ||
+        key === CACHE_OWNER_KEY ||
         key.startsWith(`${LOCAL_SYNC_AT_PREFIX}.`) ||
         key === BACKUP_KEY ||
         PRESERVE_ON_WIPE_KEYS.has(key)
@@ -328,6 +360,7 @@ function readLocalSnapshot(): LocalSnapshot {
       !key ||
       !key.startsWith(LOCAL_KEY_PREFIX) ||
       key === ACTIVE_WORKSPACE_KEY ||
+      key === CACHE_OWNER_KEY ||
       key === BACKUP_KEY ||
       // Office settings are owned by the KV table. Keeping them OUT of the
       // legacy full-localStorage snapshot means a stale snapshot restore can
@@ -581,7 +614,46 @@ export async function prepareCloudStateBeforeMount() {
     } catch (readError) {
       console.error("[Cloud Sync] Could not read local data (treating as empty):", readError);
     }
-    const localHasData = hasMeaningfulLocalData(localSnapshot);
+    let localHasData = hasMeaningfulLocalData(localSnapshot);
+
+    // WORKSPACE GUARD: local data may only ever be used for (or pushed to)
+    // the workspace it was tagged with. A cache from another office — or an
+    // untagged one that can't prove it synced with this workspace — is
+    // backed up and discarded here, never uploaded.
+    const explicitCacheTag = getCacheOwnerTag();
+    let hasSyncAtForTarget = false;
+    try {
+      hasSyncAtForTarget = Boolean(window.localStorage.getItem(getSyncAtKey(authed.workspaceId)));
+    } catch {
+      hasSyncAtForTarget = false;
+    }
+    const cacheDecision = decideBootCache({
+      tag: explicitCacheTag,
+      target: authed.workspaceId,
+      previousPointer: previousWorkspaceId,
+      hasSyncAtForTarget,
+      localHasData,
+    });
+    if (cacheDecision === "discard-local") {
+      console.warn(
+        "[Cloud Sync] Local cache does not belong to this workspace — discarding it (never uploaded).",
+      );
+      try {
+        clearLocalWorkspaceData();
+        clearForeignWorkspaceCaches(authed.workspaceId);
+        window.localStorage.removeItem(getSyncAtKey(authed.workspaceId));
+      } catch (discardError) {
+        console.error("[Cloud Sync] Could not clear foreign local cache:", discardError);
+        throw new CloudBootstrapError(
+          "This browser holds another office's data and it could not be cleared. Please sign out and back in.",
+          discardError,
+        );
+      }
+      localSnapshot = {};
+      localHasData = false;
+    }
+    // From here on, whatever is local belongs to this workspace.
+    setCacheOwnerTag(authed.workspaceId);
 
     // Speed: the snapshot can be ~1 MB. If this browser already holds the
     // latest copy (its last push is as new as the cloud row), skip the
@@ -678,7 +750,17 @@ export async function prepareCloudStateBeforeMount() {
     // so opening is safe — and a team member whose account can't write the
     // workspace row would otherwise be locked out of the app entirely. The
     // failure still surfaces through the normal sync-error pill.
-    if (localHasData) {
+    // Only with an EXACT, pre-existing tag match — never from an untagged or
+    // foreign cache (that is how one office's data got into another).
+    if (localHasData && !canSeedEmptyCloud(explicitCacheTag, authed.workspaceId)) {
+      console.warn("[Cloud Sync] Cloud is empty but local cache isn't verifiably this workspace's — not seeding; discarding local.");
+      try {
+        clearLocalWorkspaceData();
+        clearForeignWorkspaceCaches(authed.workspaceId);
+      } catch (discardError) {
+        console.error("[Cloud Sync] Could not clear unverified local cache:", discardError);
+      }
+    } else if (localHasData) {
       try {
         await upsertRemoteSnapshot(authed.workspaceId, localSnapshot);
       } catch (pushError) {
@@ -710,6 +792,45 @@ export async function prepareCloudStateBeforeMount() {
       console.error("[Cloud Sync] Phase-1 entity bootstrap failed:", entityErr);
     }
   }
+}
+
+/**
+ * Fast boot for encounter notes. With a cursor from the last successful load,
+ * asks the cloud for the tiny (id, updated_at) list and downloads in full only
+ * notes that changed in the cloud, changed on this device, or aren't confirmed
+ * yet; notes proven identical are passed through as their own cloud copy. The
+ * result goes through replaceEncounterNotesFromCloud exactly like a full load.
+ * Without a cursor (or on any doubt) it does the full download.
+ */
+async function loadEncounterNotesForBoot(
+  workspaceId: string,
+  cursor: string | null,
+  planNotesDelta: typeof import("@/lib/boot-delta").planNotesDelta,
+  maxIso: typeof import("@/lib/boot-delta").maxIso,
+): Promise<{ records: import("@/lib/encounter-notes").EncounterNoteRecord[]; delta: boolean; downloaded: number; total: number; cursor: string | null } | null> {
+  const cloud = await import("@/lib/encounter-notes-cloud");
+  const notes = await import("@/lib/encounter-notes");
+  if (!(await cloud.isEncounterNotesTableReady())) return null;
+  const meta = await cloud.fetchEncounterNoteMeta();
+  const nextCursor = meta ? maxIso(meta.map((m) => m.updatedAt)) : null;
+  const local = notes.loadEncounterNoteRecords();
+  const plan =
+    meta && workspaceId && local.length > 0
+      ? planNotesDelta({ meta, local, cursor, unconfirmedIds: notes.getUnconfirmedNoteIds() })
+      : null;
+  if (meta && plan) {
+    const fetched = await cloud.fetchEncounterNotesByIdsParallel(plan.fetchIds);
+    if (fetched !== null) {
+      const fetchedIds = new Set(fetched.map((n) => n.id));
+      // A note listed as changed but gone by the time we fetched it was just
+      // deleted: leave it out (same as a full load would).
+      const records = [...fetched, ...plan.standIns.filter((n) => !fetchedIds.has(n.id))];
+      return { records, delta: true, downloaded: fetched.length, total: meta.length, cursor: nextCursor };
+    }
+  }
+  const all = await cloud.fetchAllEncounterNotesFromTable();
+  if (all === null) return null;
+  return { records: all, delta: false, downloaded: all.length, total: all.length, cursor: meta ? nextCursor : maxIso([]) };
 }
 
 /**
@@ -755,7 +876,22 @@ async function bootstrapTableBackedEntities() {
   const apptsRowsP = apptsModP ? swallow(apptsModP.then((m) => m.fetchAllAppointmentsFromTable()), null) : null;
   const kvModP = kvOn ? import("@/lib/kv-cloud") : null;
   const kvReadyP = kvModP ? swallow(kvModP.then((m) => m.isKvTableReady()), false) : null;
-  const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchAllKvRows()), null) : null;
+  // Fast boot: only changed workspace_kv values are downloaded (see boot-delta.ts).
+  const { readBootDeltaState, writeBootDeltaState, hashString, planNotesDelta, maxIso } =
+    await import("@/lib/boot-delta");
+  const bootWs = getActiveWorkspaceId() ?? "";
+  const bootDelta = readBootDeltaState(bootWs);
+  // Local → cloud uploads here (first-run migrations, merge uploads) only
+  // when this cache is verifiably this workspace's.
+  const localTrusted = canPushLocalToWorkspace(getCacheOwnerTag(), bootWs);
+  const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchKvRowsDelta(bootDelta.kv)), null) : null;
+  // Encounter notes are by far the biggest download (~135 MB for a big
+  // office). Start them now, in parallel with everything else, and only
+  // download notes that changed since this browser's last load.
+  const notesOn = isCloudEntityEnabled("encounterNotes");
+  const notesP = notesOn
+    ? swallow(loadEncounterNotesForBoot(bootWs, bootDelta.notesCursor ?? null, planNotesDelta, maxIso), null)
+    : null;
 
   const ready = await patientsReadyP;
   if (!ready) {
@@ -772,7 +908,7 @@ async function bootstrapTableBackedEntities() {
     return;
   }
 
-  if (tableRows.length === 0 && patients.length > 0) {
+  if (tableRows.length === 0 && patients.length > 0 && localTrusted) {
     // First-run migration: table empty but legacy blob has patients.
     // Push every existing patient to the table. Runs ONLY when the table
     // is truly empty for this workspace so a flag re-flip never re-uploads.
@@ -826,7 +962,7 @@ async function bootstrapTableBackedEntities() {
       const apptsRows = apptsRowsP ? await apptsRowsP : await fetchAllAppointmentsFromTable();
       if (apptsRows !== null) {
         const localAppts = loadScheduleAppointments();
-        if (apptsRows.length === 0 && localAppts.length > 0) {
+        if (apptsRows.length === 0 && localAppts.length > 0 && localTrusted) {
           console.info(
             `[Cloud Sync] Migrating ${localAppts.length} appointment(s) to table...`,
           );
@@ -897,7 +1033,7 @@ async function bootstrapTableBackedEntities() {
     isCloudEntityEnabled("tasks");
 
   if (anyKvFlagOn) {
-    const { isKvTableReady, fetchAllKvRows, bulkUpsertKvValues, upsertKvValue } =
+    const { isKvTableReady, fetchKvRowsDelta, bulkUpsertKvValues, upsertKvValue } =
       await import("@/lib/kv-cloud");
 
     const kvReady = kvReadyP ? await kvReadyP : await isKvTableReady();
@@ -917,6 +1053,8 @@ async function bootstrapTableBackedEntities() {
           // Written to the cloud but never pulled back before. Union-merged.
           "casemate.cash-payments.v1",
           "casemate.patient-packages.v1",
+          // G.O.A.T. Dx suggestion "Ignore" (Diagnosis Codes box). Union-merged.
+          "casemate.dx-suggestion-ignores.v1",
         ],
         macros: [
           "casemate.soap-macros.v1",
@@ -999,12 +1137,18 @@ async function bootstrapTableBackedEntities() {
       }
 
       // Fetch all kv values in one query.
-      const remoteKvRows = kvRowsP ? await kvRowsP : await fetchAllKvRows();
+      const kvRes = kvRowsP ? await kvRowsP : await fetchKvRowsDelta(bootDelta.kv);
+      const remoteKvRows = kvRes ? kvRes.rows : null;
       const remoteKv: Map<string, unknown> | null = remoteKvRows
         ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
         : null;
-      if (remoteKv !== null) {
-        if (remoteKv.size === 0) {
+      if (remoteKv !== null && kvRes) {
+        if (kvRes.skipped > 0) {
+          console.info(`[Cloud Sync] workspace_kv: ${kvRes.skipped} unchanged key(s) skipped, ${remoteKv.size} downloaded.`);
+        }
+        // SAFETY: "cloud is empty" must use the cloud's real row count, not
+        // the delta map (which is empty when nothing changed).
+        if (kvRes.totalKeys === 0) {
           // First-run migration: push all enabled localStorage keys to the table.
           const entries: Array<{ key: string; value: unknown }> = [];
           for (const key of enabledKeys) {
@@ -1017,7 +1161,7 @@ async function bootstrapTableBackedEntities() {
               }
             }
           }
-          if (entries.length > 0) {
+          if (entries.length > 0 && localTrusted) {
             console.info(
               `[Cloud Sync] Migrating ${entries.length} kv key(s) to workspace_kv table...`,
             );
@@ -1090,7 +1234,7 @@ async function bootstrapTableBackedEntities() {
                   console.warn(`[Cloud Sync] Could not write "${key}" to localStorage (quota?):`, storageErr);
                   continue;
                 }
-                if (!sameJson(merged, value)) {
+                if (localTrusted && !sameJson(merged, value)) {
                   void upsertKvValue(key, merged).catch((uploadErr: unknown) =>
                     console.error(`[Cloud Sync] Uploading merged "${key}" failed:`, uploadErr),
                   );
@@ -1132,7 +1276,7 @@ async function bootstrapTableBackedEntities() {
                 }
                 // Upload only when this device really has something the
                 // cloud lacks; a stale device never pushes its old list.
-                if (result.needsUpload) {
+                if (localTrusted && result.needsUpload) {
                   void upsertKvValue(key, result.merged).catch((uploadErr: unknown) =>
                     console.error("[Cloud Sync] Uploading merged to-dos failed:", uploadErr),
                   );
@@ -1152,7 +1296,7 @@ async function bootstrapTableBackedEntities() {
                 if (pickOfficeSettingsSource(localParsed, value) === "local") {
                   console.warn("[Cloud Sync] Office settings: this device has the newer copy; re-saving it to the cloud.");
                   skippedLocalIsBigger += 1;
-                  void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
+                  if (localTrusted) void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
                     console.error("[Cloud Sync] Re-saving office settings failed:", uploadErr),
                   );
                   continue;
@@ -1223,6 +1367,20 @@ async function bootstrapTableBackedEntities() {
           }
           if (replacedCount > 0) {
             console.info(`[Cloud Sync] Loaded ${replacedCount} kv key(s) from workspace_kv table.`);
+          }
+          // Remember what we just applied so the next boot can skip keys
+          // that are unchanged on BOTH sides.
+          try {
+            const stamps: Record<string, { u: string; h: string }> = {};
+            for (const m of kvRes.meta) {
+              if (!m.updatedAt) continue;
+              const raw = window.localStorage.getItem(m.key);
+              if (raw === null) continue;
+              stamps[m.key] = { u: m.updatedAt, h: hashString(raw) };
+            }
+            writeBootDeltaState(bootWs, { kv: stamps });
+          } catch {
+            // next boot does a full read
           }
           if (skippedLocalIsBigger > 0) {
             console.warn(
@@ -1296,14 +1454,15 @@ async function bootstrapTableBackedEntities() {
       replaceEncounterNotesFromCloud,
     } = await import("@/lib/encounter-notes");
 
-    const notesReady = await isEncounterNotesTableReady();
+    const bootNotes = notesP ? await notesP : null;
+    const notesReady = bootNotes ? true : await isEncounterNotesTableReady();
     if (!notesReady) {
       console.warn(
         "[Cloud Sync] encounterNotes flag is on but table isn't ready. " +
         "Run supabase/encounter_notes_table.sql in the SQL editor.",
       );
     } else {
-      const notesRows = await fetchAllEncounterNotesFromTable();
+      const notesRows = bootNotes ? bootNotes.records : await fetchAllEncounterNotesFromTable();
       if (notesRows !== null) {
         const localNotes = loadEncounterNoteRecords();
         if (notesRows.length === 0 && localNotes.length > 0) {
@@ -1323,7 +1482,12 @@ async function bootstrapTableBackedEntities() {
           } finally {
             resumeSync();
           }
-          console.info(`[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`);
+          console.info(
+            bootNotes?.delta
+              ? `[Cloud Sync] Encounter notes: downloaded ${bootNotes.downloaded} changed, ${notesRows.length - bootNotes.downloaded} unchanged kept (of ${bootNotes.total} in cloud).`
+              : `[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`,
+          );
+          if (bootNotes?.cursor) writeBootDeltaState(bootWs, { notesCursor: bootNotes.cursor });
         }
       }
     }
@@ -1432,6 +1596,11 @@ export async function pushLocalStateToCloud() {
       console.warn(
         "[Cloud Sync] Refusing push: active workspace pointer does not match signed-in user.",
       );
+      return;
+    }
+
+    if (!canPushLocalToWorkspace(getCacheOwnerTag(), authed.workspaceId)) {
+      console.warn("[Cloud Sync] Refusing push: local cache is not tagged with this workspace.");
       return;
     }
 

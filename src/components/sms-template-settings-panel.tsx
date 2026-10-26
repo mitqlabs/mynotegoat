@@ -11,6 +11,7 @@ import {
   SMS_TOKENS,
   type SmsTemplate,
 } from "@/lib/sms-templates";
+import { appConfirm } from "@/components/app-dialog";
 
 export function SmsTemplateSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
@@ -24,11 +25,9 @@ export function SmsTemplateSettingsPanel() {
     ]);
   };
 
-  const loadStarters = () => {
+  const loadStarters = async () => {
     if (smsTemplates.length > 0) {
-      const ok = window.confirm(
-        "This will add the 5 starter templates to your existing list. Continue?",
-      );
+      const ok = (await appConfirm("This will add the 5 starter templates to your existing list. Continue?"));
       if (!ok) return;
     }
     updateSmsTemplates((current) => [...current, ...getDefaultSmsTemplates()]);
@@ -47,8 +46,8 @@ export function SmsTemplateSettingsPanel() {
     );
   };
 
-  const removeTemplate = (id: string) => {
-    const ok = window.confirm("Delete this template? This cannot be undone.");
+  const removeTemplate = async (id: string) => {
+    const ok = (await appConfirm("Delete this template? This cannot be undone."));
     if (!ok) return;
     updateSmsTemplates((current) => current.filter((tpl) => tpl.id !== id));
     if (previewId === id) setPreviewId(null);
@@ -86,14 +85,14 @@ export function SmsTemplateSettingsPanel() {
 
       <div className="flex flex-wrap gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+          className="btn btn-secondary"
           onClick={addTemplate}
           type="button"
         >
           + Add Template
         </button>
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+          className="btn btn-secondary"
           onClick={loadStarters}
           type="button"
         >
@@ -125,7 +124,7 @@ export function SmsTemplateSettingsPanel() {
                     value={tpl.name}
                   />
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={() =>
                       setPreviewId(isPreviewing ? null : tpl.id)
                     }

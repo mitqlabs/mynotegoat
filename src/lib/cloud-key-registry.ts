@@ -39,6 +39,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.quick-stats-settings.v1": "workspace",
   "casemate.patient-page-prefs.v1": "workspace",
   "casemate.patient-diagnoses.v1": "workspace",
+  "casemate.dx-suggestion-ignores.v1": "workspace",
   "casemate.patient-billing.v1": "workspace",
   "casemate.email-settings.v1": "workspace",
   "casemate.dashboard-workspace-settings.v1": "workspace",
@@ -117,7 +118,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "notegoat.goat-plus-intro.v1": "user",
   "notegoat.goat-plus-removed.v1": "user",
   // system: sync bookkeeping, crash-recovery drafts, caches of cloud data
+  "notegoat.access-hint.v1": "system", // boot speed hint (access + team), re-verified every open
+  "notegoat.boot-delta.v1.": "system", // boot delta cursors/stamps (cache of cloud data)
   "casemate.active-workspace-id.v1": "system",
+  "casemate.local-cache-workspace.v1": "system", // which workspace the local cache belongs to
   "casemate.__safety-backup__.v1": "system",
   "casemate.cloud-sync-at": "system",
   "casemate.cloud-sync-at.": "system",

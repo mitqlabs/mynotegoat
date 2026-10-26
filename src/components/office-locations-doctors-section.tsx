@@ -23,6 +23,7 @@ import {
   weekdayLabels,
   type DailyOfficeHours,
 } from "@/lib/schedule-settings";
+import { appConfirm } from "@/components/app-dialog";
 
 function genId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -217,21 +218,9 @@ export function OfficeLocationsDoctorsSection() {
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <div className="flex items-start justify-between gap-2">
           <h5 className="text-sm font-semibold text-[var(--text-main)]">Office Locations</h5>
-          {saveState !== "idle" && (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                saveState === "saving"
-                  ? "bg-[var(--bg-soft)] text-[var(--text-muted)]"
-                  : saveState === "saved"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-red-100 text-red-700"
-              }`}
-            >
-              {saveState === "saving" ? (
-                "Saving…"
-              ) : saveState === "saved" ? (
-                "Saved ✓"
-              ) : (
+          {/* Saving… / Saved ✓ show in the ONE global badge; only failures show here. */}
+          {saveState === "error" && (
+            <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                 <button
                   className="underline"
                   onClick={() => setRetryNonce((n) => n + 1)}
@@ -240,7 +229,6 @@ export function OfficeLocationsDoctorsSection() {
                 >
                   Not saved — click to retry
                 </button>
-              )}
             </span>
           )}
         </div>
@@ -504,9 +492,9 @@ export function OfficeLocationsDoctorsSection() {
                       <div className="mt-2 flex justify-end">
                         <button
                           className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
-                          onClick={() => {
+                          onClick={async () => {
                             const label = loc.nickname?.trim() || loc.name?.trim() || "this office";
-                            if (window.confirm(`Remove ${label}? This can't be undone.`)) {
+                            if ((await appConfirm(`Remove ${label}? This can't be undone.`))) {
                               removeLocation(loc.id);
                             }
                           }}
@@ -535,7 +523,7 @@ export function OfficeLocationsDoctorsSection() {
                 value={newLocation}
               />
               <button
-                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
                 disabled={!newLocation.trim()}
                 onClick={addLocation}
                 type="button"
@@ -614,7 +602,7 @@ export function OfficeLocationsDoctorsSection() {
             value={newDoctor}
           />
           <button
-            className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
             disabled={!newDoctor.trim()}
             onClick={addDoctor}
             type="button"

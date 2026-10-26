@@ -24,6 +24,10 @@ export function useCaseNotes(patientId: string, seed = "") {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<string | null>(null);
+  // When the user last typed. A store/cloud echo arriving within a few
+  // seconds of typing is almost always an older copy of our own text;
+  // applying it made typed text vanish and then reappear.
+  const lastEditAtRef = useRef(0);
 
   const [notes, setNotesState] = useState<string>(() => {
     const stored = getCaseNote(key);
@@ -59,6 +63,7 @@ export function useCaseNotes(patientId: string, seed = "") {
       }
       // Don't clobber an in-progress local edit that hasn't been flushed yet.
       if (pendingRef.current !== null) return;
+      if (Date.now() - lastEditAtRef.current < 3000) return;
       const stored = getCaseNote(key);
       setNotesState(stored !== null ? stored : seedRef.current);
     });
@@ -67,6 +72,7 @@ export function useCaseNotes(patientId: string, seed = "") {
   const setNotes = useCallback(
     (value: string) => {
       setNotesState(value); // instant on-screen update
+      lastEditAtRef.current = Date.now();
       pendingRef.current = value;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {

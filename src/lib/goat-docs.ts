@@ -268,48 +268,38 @@ export interface GoatWho {
   /** Groups from the question that name a specialty (e.g. the PM group). */
   specialtyGroups: GoatTermGroup[];
   people: GoatPerson[];
+  /** Per asked specialty: its plain label ("Pain management") and this patient's referred doctors. */
+  specialties: Array<{ label: string; referred: GoatPerson[]; contacts: GoatPerson[] }>;
   notes: string[];
 }
 
 export function resolveWho(question: string, asked: GoatTermGroup[], people: GoatPerson[]): GoatWho {
-  const notes: string[] = [];
   const specialtyGroups = asked.filter(
     (g) =>
       g.terms.some((t) => SPECIALTY_HINT.test(t)) ||
       people.some((p) => p.specialty && makeMatcher(g.terms).test(p.specialty)),
   );
   const found = new Map<string, GoatPerson>();
+  const specialties: GoatWho["specialties"] = [];
   for (const g of specialtyGroups) {
     const m = makeMatcher(g.terms);
     const bySpecialty = people.filter((p) => p.specialty && m.test(p.specialty));
-    // Referred doctors first; office contacts with that specialty after.
-    bySpecialty.sort((a, b) => Number(b.referred) - Number(a.referred));
-    for (const p of bySpecialty) found.set(p.name.toLowerCase(), p);
-    // "Pain management (PM)"
-    const abbr = g.terms.find((t) => t.length <= 5 && /[A-Z]/.test(t) && t === t.toUpperCase() && t !== g.terms[0]);
-    const label = `${g.terms[0].charAt(0).toUpperCase()}${g.terms[0].slice(1)}${abbr ? ` (${abbr})` : ""}`;
-    if (bySpecialty.length) {
-      const named = bySpecialty
-        .slice(0, 4)
-        .map((p) => `${p.name}${p.referred ? ` (referred${p.referralSent ? ` ${p.referralSent}` : ""})` : " (in Contacts)"}`);
-      notes.push(`${label}: ${named.join("; ")}.`);
-    } else {
-      // No contact has this specialty on file; a referred specialist with no
-      // specialty set is the best lead (Quick Glance lists them under "PM").
-      const unknown = people.filter((p) => p.referred && !p.specialty);
-      for (const p of unknown) found.set(p.name.toLowerCase(), p);
-      notes.push(
-        unknown.length
-          ? `${label}: no contact has that specialty set, so I also looked for this patient's referred specialist${unknown.length === 1 ? "" : "s"}: ${unknown.map((p) => p.name).join("; ")}.`
-          : `${label}: no contact with that specialty and no referral on file, so I searched the files for the words themselves.`,
-      );
-    }
+    // This patient's referred doctors lead. A referred doctor with no specialty
+    // set is the lead when nobody referred has it (Quick Glance lists them under "PM").
+    let referred = bySpecialty.filter((p) => p.referred);
+    if (!referred.length && !bySpecialty.length) referred = people.filter((p) => p.referred && !p.specialty);
+    // Office contacts with that specialty are only used to recognise their report in
+    // this patient's files; they're never listed as this patient's doctor.
+    const contacts = referred.length ? [] : bySpecialty.filter((p) => !p.referred);
+    for (const p of [...referred, ...contacts]) found.set(p.name.toLowerCase(), p);
+    const word = g.terms.find((t) => t.length > 3) ?? g.terms[0];
+    specialties.push({ label: `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`, referred, contacts });
   }
   // A doctor named in the question ("Haroutunian findings", "from dr armen").
   for (const p of people) {
     if (personNamedIn(question, p)) found.set(p.name.toLowerCase(), p);
   }
-  return { specialtyGroups, people: [...found.values()], notes };
+  return { specialtyGroups, people: [...found.values()], specialties, notes: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +336,42 @@ export interface DocUnit {
   heading: boolean;
   section: DocSection;
   region: BodyRegion | null;
+  /** Letterhead / address / phone / signature / page footer: never an answer. */
+  letterhead?: boolean;
+}
+
+/** Office name, address, phone, signature and page-footer lines. */
+const LETTERHEAD_LINE = new RegExp(
+  [
+    String.raw`\b(m\.?d\.?|d\.?o\.?|d\.?c\.?)\s*,?\s*(inc|p\.?c|a\.?p\.?c|apmc|llc)\b\.?`,
+    String.raw`\b(inc|llc|apc|a medical (corporation|group))\.?\s*"?$`,
+    String.raw`\b(suite|ste\.?|blvd|boulevard|avenue|ave\.?|street|st\.|road|rd\.|drive|dr\.)\b.*\b\d{5}(-\d{4})?\b`,
+    String.raw`^\d{2,6}\s+[a-z0-9 .]+\b(suite|ste|blvd|boulevard|ave|avenue|street|st|road|rd|drive|way|lane|ln)\b`,
+    String.raw`\b[A-Z][a-z]+,?\s+(CA|NV|AZ|TX|NY|FL|WA|OR)\.?\s+\d{5}\b`,
+    String.raw`^(tel|telephone|phone|ph|fax|f|t|p)\.?\s*[:#]?\s*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}`,
+    String.raw`\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}.*\b(fax|tel|phone)\b|\b(fax|tel|phone)\b.*\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}`,
+    String.raw`www\.|https?:\/\/|@[a-z0-9-]+\.(com|net|org)`,
+    String.raw`^page\s+\d+(\s*(of|\/)\s*\d+)?$`,
+    String.raw`^(dr\.?\s+)?[a-z][a-z'-]+(\s+[a-z]\.?)?\s+[a-z][a-z'-]+,?\s+(m\.?d|d\.?o|d\.?c|n\.?p|pa-c)\.?$`,
+    String.raw`^(electronically )?signed( by)?\b|^sincerely\b|^respectfully\b|^cc\s*:|^dictated but not read`,
+  ].join("|"),
+  "i",
+);
+
+/** Lines that repeat near the top or bottom of several pages (a letterhead / footer). */
+function repeatedEdgeLines(pages: string[][]): Set<string> {
+  if (pages.length < 2) return new Set();
+  const norm = (l: string) => l.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const count = new Map<string, number>();
+  for (const lines of pages) {
+    const edge = new Set([...lines.slice(0, 5), ...lines.slice(-4)].map(norm).filter((l) => l.length >= 4 && !/^\d+$/.test(l)));
+    for (const l of edge) count.set(l, (count.get(l) ?? 0) + 1);
+  }
+  return new Set([...count].filter(([, n]) => n >= 2).map(([l]) => l));
+}
+
+export function isLetterheadLine(line: string): boolean {
+  return LETTERHEAD_LINE.test(line.replace(/^["'“”]+|["'“”]+$/g, "").trim());
 }
 
 const SECTION_IMPRESSION = /^(impressions?|conclusions?|opinions?|summary|final (impression|diagnosis)|diagnos[ie]s|assessment)\b/i;
@@ -377,6 +403,30 @@ function splitInlineLabel(line: string): string[] {
   return [line];
 }
 
+/**
+ * The newest REPORT (not a referral form) in these files from this doctor,
+ * dated or uploaded on/after `afterUs` (MM/DD/YYYY). Matches the doctor's full
+ * name or surname in the file name or text.
+ */
+export function reportFromDoctor(files: GoatFile[], doctor: string, afterUs = ""): { fileId: string; name: string; date: string; dateLabel: "dated" | "uploaded" } | null {
+  const cleaned = doctor.replace(/\(.*?\)/g, " ").trim();
+  const sur = surnameOf(cleaned);
+  if (!cleaned || !sur || sur.length < 3) return null;
+  const m = makeMatcher(cleanTerms([cleaned, sur]));
+  const after = afterUs ? stamp(afterUs) : 0;
+  let best: { fileId: string; name: string; date: string; dateLabel: "dated" | "uploaded"; ts: number } | null = null;
+  for (const f of files) {
+    if (f.status !== "read" || !f.pages) continue;
+    if (!m.test(f.name) && !m.test(head(f, 8000))) continue;
+    if (classifyDoc(f) === "referral") continue;
+    const { date, label } = docDate(f);
+    const ts = stamp(date);
+    if (after && (!ts || ts < after)) continue;
+    if (!best || ts > best.ts) best = { fileId: f.id, name: f.name, date, dateLabel: label, ts };
+  }
+  return best ? { fileId: best.fileId, name: best.name, date: best.date, dateLabel: best.dateLabel } : null;
+}
+
 const docUnitCache = new WeakMap<GoatFile, DocUnit[]>();
 
 export function docUnits(file: GoatFile): DocUnit[] {
@@ -385,10 +435,18 @@ export function docUnits(file: GoatFile): DocUnit[] {
   const out: DocUnit[] = [];
   let section: DocSection = "header";
   let region: BodyRegion | null = null;
-  (file.pages ?? []).forEach((pageText, i) => {
-    const raw = pageText.split(/\n+/).flatMap((l) => splitInlineLabel(l.replace(/\s+/g, " ").trim())).filter(Boolean);
+  const pageLines = (file.pages ?? []).map((pageText) => pageText.split(/\n+/).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean));
+  const repeated = repeatedEdgeLines(pageLines);
+  const normLine = (l: string) => l.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  pageLines.forEach((lines, i) => {
+    const raw = lines.flatMap((l) => splitInlineLabel(l)).filter(Boolean);
     let n = 0;
-    for (const text of joinWrapped(raw, isHeading).flatMap(splitNumbered)) {
+    for (const text of joinWrapped(raw, (l) => isHeading(l) || isLetterheadLine(l) || repeated.has(normLine(l)) || ROM_LINE.test(l)).flatMap(splitNumbered)) {
+      // Letterhead / footer: kept for "who wrote it", but it neither ends a section nor answers anything.
+      if (repeated.has(normLine(text)) || isLetterheadLine(text)) {
+        out.push({ text, page: i + 1, heading: false, section: "boiler", region, letterhead: true });
+        continue;
+      }
       n += 1;
       const heading = isHeading(text);
       const named = regionsNamedIn(text);
@@ -425,6 +483,113 @@ export function docUnits(file: GoatFile): DocUnit[] {
   });
   docUnitCache.set(file, out);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Clinical sections of a specialist report (Assessment / Plan / …)
+// ---------------------------------------------------------------------------
+
+export type ClinicalKind = "diagnosis" | "recommendations" | "rom" | "findings";
+
+export interface ClinicalSection {
+  kind: ClinicalKind;
+  /** The heading as written ("ASSESSMENT", "Plan"). */
+  heading: string;
+  page: number;
+  items: Array<{ text: string; page: number }>;
+}
+
+const CLINICAL_DIAGNOSIS = /^(assessments?|impressions?|diagnos[ie]s|diagnostic impressions?|final (impression|diagnosis)|conclusions?|opinions?|working diagnos[ie]s|assessment\s*(and|&|\/)\s*plan)\b/i;
+const CLINICAL_RECS = /^(plan|treatment plan|plan of care|recommendations?|recommended treatment|disposition|follow[- ]?up)\b/i;
+const CLINICAL_ROM = /^((cervical|thoracic|lumbar|lumbosacral|shoulder|spine|spinal|active|passive)\s+)*(range of motion|rom)\b/i;
+/** A range-of-motion measurement or statement inside an exam ("Lumbar flexion 40/60 degrees", "ROM decreased"). */
+export const ROM_LINE = /\b(range of motion|rom)\b|\b(flexion|extension|lateral (flexion|bending)|rotation|abduction|adduction)\b[^.]{0,40}(\d{1,3}\s*(°|deg|degrees?)|\d{1,3}\s*\/\s*\d{1,3}|\b(limited|decreased|reduced|restricted|full|normal|painful|wnl)\b)/i;
+const CLINICAL_FINDINGS = /^(findings|exam(ination)? findings|objective findings|results?)\b/i;
+
+export function clinicalKindOf(heading: string): ClinicalKind | null {
+  const t = heading.replace(/[:\s]+$/, "").trim();
+  if (CLINICAL_DIAGNOSIS.test(t)) return "diagnosis";
+  if (CLINICAL_RECS.test(t)) return "recommendations";
+  if (CLINICAL_ROM.test(t)) return "rom";
+  if (CLINICAL_FINDINGS.test(t)) return "findings";
+  return null;
+}
+
+/** "1.  Lumbar radiculopathy (M54.16)." → "Lumbar radiculopathy (M54.16)" */
+export function cleanClinicalItem(text: string): string {
+  return text
+    .replace(/^\s*(?:\(?\d{1,2}[.)]|[-•*·]|[a-z][.)])\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\s.;,]+$/, "")
+    .trim();
+}
+
+/**
+ * The text under each clinical heading, until the next real heading. Letterhead
+ * and footer lines (and page breaks) don't end a section, so an ASSESSMENT at
+ * the bottom of page 3 keeps its items from page 4. Empty sections are dropped.
+ */
+export function clinicalSections(file: GoatFile): ClinicalSection[] {
+  const units = docUnits(file);
+  const out: ClinicalSection[] = [];
+  let cur: ClinicalSection | null = null;
+  for (const u of units) {
+    // "Sincerely," / "Signed by …" closes the report body.
+    if (u.letterhead && /^(sincerely|respectfully|(electronically )?signed|cc\s*:)/i.test(u.text)) cur = null;
+    if (u.letterhead) continue;
+    if (u.heading) {
+      const kind = clinicalKindOf(u.text);
+      cur = kind ? { kind, heading: u.text.replace(/[:\s]+$/, "").trim(), page: u.page, items: [] } : null;
+      if (cur) out.push(cur);
+      continue;
+    }
+    if (!cur || cur.kind !== "rom") {
+      // ROM measurements usually sit under Physical Exam, not their own heading.
+      if (ROM_LINE.test(u.text) && u.section !== "boiler" && !META_LABEL.test(u.text)) {
+        const text = cleanClinicalItem(u.text);
+        if (text.length >= 3 && text.length <= 260) {
+          let rom = out.find((s) => s.kind === "rom" && s.heading === "Range of motion");
+          if (!rom) out.push((rom = { kind: "rom", heading: "Range of motion", page: u.page, items: [] }));
+          rom.items.push({ text, page: u.page });
+          if (!cur || cur.kind === "findings") continue;
+        }
+      }
+    }
+    if (!cur) continue;
+    // "Patient: …", "DOB: …" between pages is header boilerplate, not content.
+    if (META_LABEL.test(u.text)) continue;
+    const text = cleanClinicalItem(u.text);
+    if (text.length < 3 || !/[a-z]/i.test(text)) continue;
+    cur.items.push({ text: text.length > 260 ? `${text.slice(0, 257).trimEnd()}…` : text, page: u.page });
+  }
+  return out.filter((s) => s.items.length > 0);
+}
+
+const CLINICAL_TITLE: Record<ClinicalKind, string> = {
+  diagnosis: "Diagnoses / impression",
+  recommendations: "Recommendations",
+  rom: "Range of motion",
+  findings: "Findings",
+};
+
+/** Clinical sections as answer lines: recommendations first, then ROM, diagnoses, findings. */
+export function clinicalLines(file: GoatFile, perSection = 8): GoatFileLine[] {
+  const secs = clinicalSections(file);
+  const lines: GoatFileLine[] = [];
+  for (const kind of ["recommendations", "rom", "diagnosis", "findings"] as ClinicalKind[]) {
+    const items = secs.filter((s) => s.kind === kind).flatMap((s) => s.items);
+    const seen = new Set<string>();
+    const uniq = items.filter((x) => {
+      const k = x.text.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (!uniq.length) continue;
+    lines.push({ text: CLINICAL_TITLE[kind], page: uniq[0].page, heading: true });
+    for (const x of uniq.slice(0, perSection)) lines.push({ text: x.text, page: x.page, inSection: true });
+  }
+  return lines;
 }
 
 /** An imaging report of one of these types (file name, or its title / study lines). */
@@ -498,6 +663,9 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     topicMatchers.push({ label: rq.regions.join(", ").toLowerCase(), m: makeMatcher(regionTerms.length ? regionTerms : rq.regions) });
   }
   if (!topicMatchers.length && !hasWho && !imagingMode) return null;
+  // "PM findings" / "PM report": the doctor's clinical sections, not word hits.
+  const clinicalMode =
+    !imagingMode && hasWho && (!topicMatchers.length || (topics.length === 1 && topics[0] === findingsGroup && !leftovers.length && topicMatchers.length === 1));
   if (!topicMatchers.length && !imagingMode) {
     // "PM report?" — show the conclusions of their report.
     const g = findingsGroup ?? { id: "f", terms: ["impression", "assessment", "findings"], updatedAt: "" };
@@ -554,19 +722,23 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
         hits.push({ text: u.text, page: u.page });
       }
       topicScore = 1000 + ordered.length;
+    } else if (clinicalMode && docType !== "referral" && clinicalLines(f).length) {
+      hits.push(...clinicalLines(f));
+      topicScore = 1000 + hits.length;
     } else {
       let groupsHit = 0;
       const hitIdx = new Set<number>();
       for (const { m } of topicMatchers) {
         let any = false;
         units.forEach((u, i) => {
-          if (!m.test(u.text)) return;
+          if (u.letterhead || !m.test(u.text)) return;
           if (regionFilterInText && !u.heading && !regionMatches(u, rq)) return;
           any = true;
           hitIdx.add(i);
           // A matching heading brings the units under it (until the next heading).
           if (u.heading) {
             for (let j = i + 1; j < units.length && j <= i + 10 && !units[j].heading; j++) {
+              if (units[j].letterhead) continue;
               if (!regionFilterInText || regionMatches(units[j], rq)) hitIdx.add(-(j + 1));
             }
           }
@@ -605,6 +777,30 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     scored.push({ fileId: f.id, name: f.name, date, dateLabel: label, docType, who: whoNames, lines: hits, whoScore, topicScore, ts: stamp(date) });
   }
 
+  // "Pain management: Dr. X, seen, report uploaded 10/26/2026." — this patient's doctor only.
+  const whoLines: string[] = [];
+  for (const sp of who.specialties) {
+    const reportsOf = (name: string) =>
+      scored.filter((s) => s.docType !== "referral" && s.who.includes(name)).sort((a, b) => b.ts - a.ts);
+    if (sp.referred.length) {
+      for (const p of sp.referred.slice(0, 2)) {
+        const r = reportsOf(p.name)[0];
+        const sentTs = p.referralSent ? stamp(p.referralSent) : 0;
+        whoLines.push(
+          r && (!sentTs || !r.ts || r.ts >= sentTs)
+            ? `${sp.label}: ${p.name}, seen, report ${r.dateLabel} ${r.date}.`
+            : `${sp.label}: ${p.name}, referred${p.referralSent ? ` ${p.referralSent}` : ""}, no report on file yet.`,
+        );
+      }
+    } else {
+      // No referral, but a report from that specialty is in this patient's files.
+      const fromFiles = sp.contacts.map((p) => ({ p, r: reportsOf(p.name)[0] })).filter((x) => x.r);
+      if (fromFiles.length) for (const { p, r } of fromFiles.slice(0, 2)) whoLines.push(`${sp.label}: ${p.name}, report ${r.dateLabel} ${r.date}.`);
+      else whoLines.push(`No ${sp.label.toLowerCase()} doctor on this case.`);
+    }
+  }
+  notes.unshift(...whoLines);
+
   const highlight = cleanTerms([
     ...topicMatchers.flatMap((t) => t.m.terms),
     ...who.people.flatMap((p) => [p.name, surnameOf(p.name)]),
@@ -618,7 +814,8 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     if (fromWho.length) pool = fromWho;
     else {
       const names = who.people.map((p) => p.name).join(" or ") || who.specialtyGroups.map((g) => g.terms[0]).join(" or ");
-      notes.push(`I couldn't find a file from ${names}${unread ? " in the files I've read so far" : ""}.`);
+      // A specialty question already has its plain "Pain management: …" line.
+      if (!who.specialties.length) notes.push(`I couldn't find a file from ${names}${unread ? " in the files I've read so far" : ""}.`);
       pool = [];
     }
   }
