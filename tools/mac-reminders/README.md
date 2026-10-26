@@ -58,3 +58,19 @@ Check `~/Library/Logs/NoteGoat/reminders.log`. "no device token" → run
 install.sh again with a new token. "HTTP 401" → the device was revoked;
 add a new one. Replies from patients arrive in Messages like any text —
 if someone asks to stop, tick "No text reminders" on their patient file.
+
+## Opt-out replies (STOP)
+
+Each check (every 10 minutes, any hour) the script reads new incoming
+messages from `~/Library/Messages/chat.db` (read-only), newer than the last
+ROWID it saw (`~/Library/Logs/NoteGoat/.inbound-rowid`). The first run only
+records the newest ROWID, so old history is never uploaded. Only replies
+that are exactly a keyword (STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT,
+START, UNSTOP; case-insensitive) are POSTed to `/api/reminders/inbound`,
+which turns that patient's text reminders off (or back on). Nothing is ever
+texted back. If the upload fails, the ROWID is not advanced and it retries.
+
+Requires **Full Disk Access** for `/bin/bash` (System Settings › Privacy &
+Security › Full Disk Access › +, press ⌘⇧G, type `/bin/bash`). Without it
+the log says "Opt-out check skipped". On recent macOS some message bodies
+are only stored in `attributedBody` (not `text`); those are skipped.

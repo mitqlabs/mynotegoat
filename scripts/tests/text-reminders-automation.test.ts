@@ -37,7 +37,7 @@ const monWedThu = hours([1, 3, 4]);
 assert.deepEqual(autoRunDays(monWedThu), [0, 2, 3], "Mon/Wed/Thu office → Sun/Tue/Wed runs");
 assert.deepEqual(autoRunDays(hours([1, 2, 3, 4, 5])), [0, 1, 2, 3, 4]);
 
-const s = { ...defaultSmsReminderSettings(), enabled: true };
+const s = { ...defaultSmsReminderSettings(), enabled: true, optOutLine: false };
 assert.equal(s.sendHour, 8);
 assert.equal(s.dryRun, true, "new setups start in dry run");
 // 2026-10-18 is a Sunday. 08:05 PT = 15:05Z.
@@ -110,6 +110,10 @@ const body = "Hi {{FIRST_NAME}}, see you {{DATE}} at {{TIME}} at {{OFFICE_NAME}}
 const items = buildDeviceQueue({ appointments, patientsById, settings: s, visitDate: "2026-10-19", templateBody: body, office, alreadySentIds: new Set() });
 assert.deepEqual(items.map((i) => i.id), ["a7", "a1"], "skips opted-out, no phone, canceled, no-show, second same-day visit; time order");
 assert.equal(items.find((i) => i.id === "a1")?.text, "Hi Patp1, see you 10/19/2026 at 10:30 AM at Mock Chiro. 555-0222", "location phone wins");
+{
+  const withLine = buildDeviceQueue({ appointments, patientsById, settings: { ...s, optOutLine: true }, visitDate: "2026-10-19", templateBody: body, office, alreadySentIds: new Set() });
+  assert.equal(withLine.find((i) => i.id === "a1")?.text, "Hi Patp1, see you 10/19/2026 at 10:30 AM at Mock Chiro. 555-0222 Reply STOP to opt out.", "opt-out line appended");
+}
 assert.ok(items.every((i) => Object.keys(i).sort().join() === "id,phone,text"), "only id, phone, text leave the server");
 const again = buildDeviceQueue({ appointments, patientsById, settings: s, visitDate: "2026-10-19", templateBody: body, office, alreadySentIds: new Set(["a7"]) });
 assert.deepEqual(again.map((i) => i.id), ["a1"], "already-sent reminders are not sent twice");
@@ -127,7 +131,7 @@ void (async () => {
 
 // ---- "Send Reminders Now" catch-up planning ----
 {
-  const on = { ...defaultSmsReminderSettings(), enabled: true };
+  const on = { ...defaultSmsReminderSettings(), enabled: true, optOutLine: false };
   const allOpen = hours([0, 1, 2, 3, 4, 5, 6]);
   // Mon 2026-10-19 07:30 PT (14:30Z): quiet until 8 → nothing.
   let c = planCatchUp({ now: new Date("2026-10-19T14:30:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });

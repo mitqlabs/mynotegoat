@@ -14,6 +14,7 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { createSmsTemplate, DEFAULT_REMINDER_BODY, SMS_TOKENS } from "@/lib/sms-templates";
 import {
+  DEFAULT_OPT_OUT_TEXT,
   defaultSmsReminderSettings,
   normalizeSmsReminderSettings,
   SMS_REMINDER_SETTINGS_KEY,
@@ -26,8 +27,10 @@ import {
   hashDeviceToken,
   renderReminderText,
   WEEKDAY_SHORT,
+  withOptOutLine,
 } from "@/lib/reminder-automation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
@@ -59,6 +62,7 @@ type DeviceRow = {
   last_run_summary: string | null;
   revoked_at: string | null;
 };
+type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
 const fmt = (iso: string | null) =>
@@ -80,6 +84,8 @@ export function TextRemindersSettingsPanel() {
   const [newToken, setNewToken] = useState("");
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
+  const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
+  const { ask, confirmDialog } = useSimpleConfirm();
 
   const update = (patch: Partial<SmsReminderSettings>) => {
     setSettings((current) => {
@@ -104,6 +110,7 @@ export function TextRemindersSettingsPanel() {
         { officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone },
       )
     : "";
+  const previewWithOptOut = withOptOutLine(preview, settings);
 
   const workspaceId = typeof window === "undefined" ? "" : getActiveWorkspaceIdSync();
   // Deep link from Key Dates ("Text affected patients"): a closure text for
@@ -136,7 +143,57 @@ export function TextRemindersSettingsPanel() {
     ]);
     setDevices((d as DeviceRow[] | null) ?? []);
     setLog((l as LogRow[] | null) ?? []);
+    // Patients who replied STOP (latest action per patient, still opted out).
+    const { data: o } = await client
+      .from("reminder_opt_outs")
+      .select("patient_id, action, phone_last4, source, created_at")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(300);
+    const latest = new Map<string, { action: string; at: string; phoneLast4: string; source: string }>();
+    for (const r of (o as { patient_id: string; action: string; phone_last4: string; source: string; created_at: string }[] | null) ?? []) {
+      if (!latest.has(r.patient_id)) latest.set(r.patient_id, { action: r.action, at: r.created_at, phoneLast4: r.phone_last4, source: r.source });
+    }
+    const stopped = Array.from(latest.entries()).filter(([, v]) => v.action === "stop");
+    if (!stopped.length) return setOptOuts([]);
+    const { data: pts } = await client
+      .from("patients")
+      .select("id, full_name, text_reminders_off")
+      .eq("workspace_id", workspaceId)
+      .in("id", stopped.map(([id]) => id));
+    const byId = new Map(((pts as { id: string; full_name: string | null; text_reminders_off: boolean | null }[] | null) ?? []).map((p) => [p.id, p]));
+    setOptOuts(
+      stopped
+        .filter(([id]) => byId.get(id)?.text_reminders_off === true)
+        .map(([id, v]) => ({ patientId: id, name: byId.get(id)?.full_name || "Unknown patient", at: v.at, phoneLast4: v.phoneLast4, source: v.source })),
+    );
   }, [workspaceId]);
+
+  const reEnable = async (row: OptOutRow) => {
+    const client = getSupabaseBrowserClient();
+    if (!client || !workspaceId) return;
+    const ok = await ask({
+      title: `Turn text reminders back on for ${row.name}?`,
+      lines: ["They replied STOP. Only do this if they asked to get texts again."],
+      confirmLabel: "Turn back on",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
+    const { error } = await client
+      .from("patients")
+      .update({ text_reminders_off: false })
+      .eq("workspace_id", workspaceId)
+      .eq("id", row.patientId);
+    if (error) return setMessage(`Could not turn texts back on: ${error.message}`);
+    await client.from("reminder_opt_outs").insert({
+      workspace_id: workspaceId,
+      patient_id: row.patientId,
+      action: "start",
+      source: "staff",
+      phone_last4: row.phoneLast4,
+    });
+    await refresh();
+  };
 
   useEffect(() => {
     // Async fetch on mount; state is set after the network round trip.
@@ -330,9 +387,54 @@ export function TextRemindersSettingsPanel() {
         {template && (
           <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
             <span className="font-semibold">Preview: </span>
-            {preview}
+            {previewWithOptOut}
           </p>
         )}
+      </div>
+
+      <div className="grid gap-2" data-testid="opt-out-settings">
+        <span className={label}>Opt-out (reply STOP)</span>
+        <label className="inline-flex items-center gap-2 text-sm font-semibold">
+          <input checked={settings.optOutLine} onChange={(e) => update({ optOutLine: e.target.checked })} type="checkbox" />
+          Add an opt-out line to every text (reminders and Message patients)
+        </label>
+        {settings.optOutLine && (
+          <input
+            aria-label="Opt-out wording"
+            className={input}
+            maxLength={120}
+            onBlur={(e) => update({ optOutText: e.target.value.trim() || DEFAULT_OPT_OUT_TEXT })}
+            onChange={(e) => setSettings((current) => ({ ...current, optOutText: e.target.value }))}
+            value={settings.optOutText}
+          />
+        )}
+        <p className="text-xs text-[var(--text-muted)]">
+          When a patient replies STOP (or UNSUBSCRIBE, CANCEL, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
+          their text reminders turn off. START turns them back on. NoteGoat never texts back. A message that already says
+          STOP doesn&apos;t get the line twice.
+        </p>
+        <div className="rounded-xl border border-[var(--line-soft)] bg-white" data-testid="opt-out-list">
+          <p className="border-b border-[var(--line-soft)] px-3 py-2 text-sm font-semibold">
+            Opted out by reply ({optOuts.length})
+          </p>
+          {optOuts.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Nobody has replied STOP.</p>
+          ) : (
+            <ul className="max-h-60 overflow-y-auto text-sm">
+              {optOuts.map((row) => (
+                <li className="flex items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
+                  <span>
+                    <span className="font-semibold">{row.name}</span>{" "}
+                    <span className="text-[var(--text-muted)]">· {fmt(row.at)}</span>
+                  </span>
+                  <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold" onClick={() => void reEnable(row)} type="button">
+                    Turn texts back on
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-2">
@@ -421,11 +523,16 @@ export function TextRemindersSettingsPanel() {
             Anyone already texted is skipped.
           </li>
           <li>The iMac checks every 10 minutes on its own, so it needs no button.</li>
+          <li>
+            Replies of <b>STOP</b> are picked up automatically by the iMac (each check). On an iPhone-only office, add the{" "}
+            <b>NoteGoat Opt-Out</b> shortcut and its automation (see &quot;Opt-out replies on the iPhone&quot; below).
+          </li>
         </ul>
         <SendFromIphoneButton className="mt-2" />
       </div>
 
       <MessagePatientsComposer prefill={messagePrefill} settings={settings} workspaceId={workspaceId} />
+      {confirmDialog}
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
@@ -489,6 +596,31 @@ export function TextRemindersSettingsPanel() {
             <li>Tap <b>Next</b> → <b>Run Shortcut</b> → pick <b>Send Reminders</b> → <b>Done</b>. It only sends on run days.</li>
           </ol>
         </details>
+      </details>
+
+      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="optout-iphone-steps">
+        <summary className="cursor-pointer font-semibold">Opt-out replies on the iPhone (STOP)</summary>
+        <p className="mt-2 text-[var(--text-muted)]">
+          Only needed if the iPhone sends the texts. The iMac reads STOP replies on its own.
+        </p>
+        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
+          <li>
+            On the office iPhone, tap{" "}
+            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
+            {" "}→ <b>Add Shortcut</b>, and paste the same <Mono>ngr_</Mono> device code when it asks.
+          </li>
+          <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
+          <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
+          <li>Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off. Tap <b>Next</b>.</li>
+          <li>Pick <b>Run Shortcut</b> → <b>NoteGoat Opt-Out</b>. Tap the shortcut&apos;s <b>Input</b> and choose <b>Shortcut Input</b> (the message). Tap <b>Done</b>.</li>
+          <li>Repeat steps 2–5 with <Mono>START</Mono> if you want patients to be able to opt back in.</li>
+        </ol>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          Limits: iOS only runs this for messages whose text <i>contains</i> STOP; NoteGoat only acts when the whole reply is
+          the keyword. If the patient is saved in the iPhone&apos;s Contacts, iOS may pass their contact name instead of the
+          number, and NoteGoat can&apos;t match it; check &quot;Opted out by reply&quot; above, and mark them &quot;no text
+          reminders&quot; by hand if needed. Words like UNSUBSCRIBE need their own automation.
+        </p>
       </details>
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="mac-steps">
