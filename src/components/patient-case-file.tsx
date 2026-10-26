@@ -1830,6 +1830,28 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     [dateOfLoss, firstName, lastName],
   );
   const mriStudyLabel = mri.isCt ? "CT" : "MRI";
+  // One handler for the Add to Contacts button and the new-patient prompt.
+  const addPatientToContacts = () =>
+    downloadVCard({
+      firstName,
+      lastName,
+      phone: patientPhone,
+      email: patientEmail,
+      dob: patientDob,
+      address: patientAddress,
+      note: caseNumber ? `Case #: ${caseNumber}` : undefined,
+    });
+  // Right after New Patient + Case, the list page links here with
+  // ?addContact=1. Offer once, then drop the flag so a refresh won't re-ask.
+  const [showAddContactPrompt, setShowAddContactPrompt] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("addContact") !== "1") return;
+    setShowAddContactPrompt(true);
+    url.searchParams.delete("addContact");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
   const toggleImagingPanel = (panel: ImagingPanelKey) => {
     setImagingPanelsOpen((current) => ({
       ...current,
@@ -5401,17 +5423,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 )}
                 <button
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
-                  onClick={() =>
-                    downloadVCard({
-                      firstName,
-                      lastName,
-                      phone: patientPhone,
-                      email: patientEmail,
-                      dob: patientDob,
-                      address: patientAddress,
-                      note: caseNumber ? `Case #: ${caseNumber}` : undefined,
-                    })
-                  }
+                  onClick={addPatientToContacts}
                   title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
                   type="button"
                 >
@@ -8870,6 +8882,39 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showAddContactPrompt && (
+        <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
+          <div className="relative h-full w-full">
+            <div className="panel-card p-4" style={getAnchoredModalStyle(null, 560, 50)}>
+            <h3 className="text-xl font-semibold">Add to Contacts?</h3>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              Save {[firstName, lastName].filter(Boolean).join(" ") || "this patient"} to your phone or Mac contacts.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                onClick={() => setShowAddContactPrompt(false)}
+                type="button"
+              >
+                Not now
+              </button>
+              <button
+                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                onClick={() => {
+                  setShowAddContactPrompt(false);
+                  addPatientToContacts();
+                }}
+                type="button"
+              >
+                Yes
+              </button>
+            </div>
+            </div>
           </div>
         </div>
       )}
