@@ -24,6 +24,7 @@ import {
   type ContactSort,
   type ContactSortKey,
 } from "@/lib/contact-sort";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 const COLS =
   "md:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_10.5rem_minmax(0,1.9fr)]";
@@ -349,14 +350,12 @@ export default function ContactsPage() {
   };
 
   const handleDeleteContact = async (contact: ContactRecord) => {
-    const confirmed = window.confirm(
-      `Delete contact "${contact.name}"? This cannot be undone.`,
-    );
+    const confirmed = (await appConfirm(`Delete contact "${contact.name}"? This cannot be undone.`));
     if (!confirmed) return;
     if (!(await ensureDeleteAllowed("contacts"))) return;
     const result = removeContact(contact.id);
     if (!result.removed) {
-      window.alert(result.reason);
+      (await appAlert(result.reason));
       return;
     }
     if (editingContactId === contact.id) {
@@ -478,7 +477,7 @@ export default function ContactsPage() {
             </button>
 
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary"
               onClick={openAddModal}
               type="button"
             >
@@ -661,7 +660,7 @@ export default function ContactsPage() {
                     )}
                     <span className="flex-1" />
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={cancelEditing}
                       type="button"
                     >
@@ -669,7 +668,7 @@ export default function ContactsPage() {
                     </button>
                     {canEditContacts && (
                       <button
-                        className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                        className="btn btn-primary btn-sm"
                         type="submit"
                       >
                         Save
@@ -764,13 +763,13 @@ export default function ContactsPage() {
       </section>
 
       {showAddContactModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <form className="panel-card max-h-[85vh] w-full max-w-2xl overflow-auto p-4" onSubmit={(e) => { e.preventDefault(); saveNewContact(); }}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">Add Contact</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={closeAddModal}
                 type="button"
               >
@@ -908,14 +907,14 @@ export default function ContactsPage() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={closeAddModal}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 type="submit"
               >
                 Save Contact

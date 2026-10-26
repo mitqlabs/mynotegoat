@@ -34,3 +34,34 @@ export function patientIdForFolder(
   }
   return null;
 }
+
+/**
+ * Split a file name into the locked auto prefix ("<CASE#> <Last>, <First> ")
+ * and the editable label, using the same pieces withCaseNumberPrefix builds
+ * from. Returns null when the name doesn't start with that prefix (the whole
+ * name stays editable then).
+ */
+export function splitCaseNumberPrefix(
+  name: string,
+  caseNumber: string | null | undefined,
+  fullName = "",
+): { prefix: string; label: string } | null {
+  const cn = (caseNumber ?? "").trim();
+  if (!cn || !name) return null;
+  const [last = "", first = ""] = fullName.split(",").map((x) => x.trim());
+  const who = last && first ? `${last}, ${first}` : last || first;
+  const candidates = who ? [`${cn} ${who} `, `${cn} `] : [`${cn} `];
+  const lower = name.toLowerCase();
+  for (const c of candidates) {
+    if (lower.startsWith(c.toLowerCase()) && name.length > c.length) {
+      return { prefix: name.slice(0, c.length - 1), label: name.slice(c.length) };
+    }
+  }
+  return null;
+}
+
+/** Locked prefix + edited label; an empty label keeps the old name. */
+export function joinCaseNumberPrefix(prefix: string, label: string): string {
+  const l = label.trim();
+  return l ? `${prefix} ${l}` : "";
+}

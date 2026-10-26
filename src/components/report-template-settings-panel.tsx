@@ -10,6 +10,7 @@ import { documentFontOptions, renderDocumentTemplate } from "@/lib/document-temp
 import { appointmentTypeToTokenPrefix } from "@/lib/report-generator";
 import { narrativeReportAutoFields } from "@/lib/report-templates";
 import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
+import { appConfirm } from "@/components/app-dialog";
 
 function insertionTokenForField(fieldToken: string) {
   return `{{${fieldToken}}}`;
@@ -421,8 +422,8 @@ export function ReportTemplateSettingsPanel() {
       <style>{`@keyframes fadeInOut { 0% { opacity: 0; transform: translateX(-50%) translateY(-8px); } 15% { opacity: 1; transform: translateX(-50%) translateY(0); } 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          className="btn btn-secondary"
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Report Template Defaults
@@ -449,7 +450,7 @@ export function ReportTemplateSettingsPanel() {
               />
             </label>
             <button
-              className="mt-2 w-full rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary mt-2 w-full"
               onClick={handleAddTemplate}
               type="button"
             >
@@ -485,10 +486,10 @@ export function ReportTemplateSettingsPanel() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xl font-semibold">Edit Narrative Template</h4>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               disabled={reportTemplates.templates.length <= 1}
-              onClick={() => {
-                if (!window.confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) return;
+              onClick={async () => {
+                if (!(await appConfirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`))) return;
                 removeTemplate(selectedTemplate.id);
                 if (selectedTemplateId === selectedTemplate.id) {
                   const fallback = reportTemplates.templates.find((entry) => entry.id !== selectedTemplate.id);
@@ -819,7 +820,7 @@ export function ReportTemplateSettingsPanel() {
               </div>
 
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white"
+                className="btn btn-primary"
                 onClick={() => {
                   const prefix = appointmentTypeToTokenPrefix(encounterPickerType);
                   if (!prefix) return;
@@ -924,7 +925,7 @@ export function ReportTemplateSettingsPanel() {
                     value={promptNewChoiceDraft}
                   />
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2 text-xs font-semibold"
+                    className="btn btn-secondary"
                     onClick={() => {
                       const v = promptNewChoiceDraft.trim();
                       if (v) {
@@ -947,7 +948,7 @@ export function ReportTemplateSettingsPanel() {
                 Required
               </label>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-2 font-semibold text-white"
+                className="btn btn-primary"
                 onClick={handleAddPrompt}
                 type="button"
               >
@@ -980,7 +981,7 @@ export function ReportTemplateSettingsPanel() {
                       Required
                     </label>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() =>
                                 conditionalWrapMode
                                   ? wrapSelectionConditional(prompt.token)
@@ -991,8 +992,8 @@ export function ReportTemplateSettingsPanel() {
                       Insert Token
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
-                      onClick={() => { if (window.confirm(`Remove prompt "${prompt.label}"?`)) removePrompt(selectedTemplate.id, prompt.id); }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => { if ((await appConfirm(`Remove prompt "${prompt.label}"?`))) removePrompt(selectedTemplate.id, prompt.id); }}
                       type="button"
                     >
                       Remove
@@ -1047,7 +1048,7 @@ export function ReportTemplateSettingsPanel() {
                       value={promptChoiceDrafts[getPromptDraftKey(selectedTemplate.id, prompt.id)] ?? ""}
                     />
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => {
                         const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
                         const v = (promptChoiceDrafts[key] ?? "").trim();

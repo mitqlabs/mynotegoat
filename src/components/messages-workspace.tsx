@@ -592,7 +592,7 @@ export function MessagesWorkspace() {
                   {todoNotice && <span className="ml-2 font-semibold text-emerald-700">{todoNotice}</span>}
                 </span>
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-5 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
+                  className="btn btn-primary disabled:opacity-50"
                   disabled={!body.trim() || sending || (eyesOnly && !replyingTo?.isPrivate && notify.size === 0)}
                   onClick={() => void handleSend()}
                   type="button"

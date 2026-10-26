@@ -25,6 +25,7 @@ import {
 } from "@/lib/key-dates";
 import { formatTimeLabel, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { UsDateInput } from "@/components/us-date-input";
+import { appConfirm } from "@/components/app-dialog";
 
 type KeyDateDraft = {
   startDate: string;
@@ -245,7 +246,7 @@ export default function KeyDatesPage() {
   // left with no visit note. The appointment stays on record as "Canceled"
   // (not deleted). Encounter removal reuses the same delete + cash-payment
   // cascade the patient file uses, and is always gated behind a confirm.
-  const handleCancelAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const handleCancelAppointment = async (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = formatUsDateFromIso(appointment.date);
     // A visit the patient actually attended is history, not something to call
     // off. Cancel is for appointments that never happened.
@@ -266,14 +267,12 @@ export default function KeyDatesPage() {
     );
     if (linkedEncounter) {
       const chargeCount = linkedEncounter.charges.length;
-      const removeEncounter = window.confirm(
-        `${appointment.patientName}'s appointment on ${dateLabel} is now Canceled.\n\n` +
-          `An encounter${linkedEncounter.signed ? " (CLOSED)" : ""} also exists for that day${
-            chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""
-          }.\n\n` +
-          `Click OK to DELETE that encounter (and any charges) too.\n` +
-          `Click Cancel to keep the encounter.`,
-      );
+      const removeEncounter = (await appConfirm(`${appointment.patientName}'s appointment on ${dateLabel} is now Canceled.\n\n` +
+                `An encounter${linkedEncounter.signed ? " (CLOSED)" : ""} also exists for that day${
+                  chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""
+                }.\n\n` +
+                `Click OK to DELETE that encounter (and any charges) too.\n` +
+                `Click Cancel to keep the encounter.`));
       if (removeEncounter) {
         deleteEncounter(linkedEncounter.id);
         updatePatientPayments(linkedEncounter.patientId ?? patientId ?? "", (current) =>
@@ -284,10 +283,8 @@ export default function KeyDatesPage() {
   };
 
   const handleDeleteAppointment = async (appointment: ScheduleAppointmentRecord) => {
-    const confirmed = window.confirm(
-      `Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
-        "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard.",
-    );
+    const confirmed = (await appConfirm(`Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
+            "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard."));
     if (!confirmed) return;
     if (!(await ensureDeleteAllowed("appointments"))) return;
     removeAppointment(appointment.id);
@@ -487,7 +484,7 @@ export default function KeyDatesPage() {
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {editingId && (
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               onClick={resetForm}
               type="button"
             >
@@ -495,7 +492,7 @@ export default function KeyDatesPage() {
             </button>
           )}
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             type="submit"
           >
             {editingId ? "Save Key Date" : "Add Key Date"}
@@ -578,7 +575,7 @@ export default function KeyDatesPage() {
                         </Link>
                       )}
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => startEditing(row)}
                         type="button"
                       >
@@ -605,7 +602,7 @@ export default function KeyDatesPage() {
                             Confirm Delete
                           </button>
                           <button
-                            className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 font-semibold"
+                            className="btn btn-secondary btn-sm"
                             onClick={() => setPendingDeleteId(null)}
                             type="button"
                           >
@@ -723,7 +720,7 @@ export default function KeyDatesPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => dismissAppointment(row.appointment.id)}
                           title="Hide this appointment from the warnings list. The appointment itself stays on the schedule."
                           type="button"
@@ -765,7 +762,7 @@ export default function KeyDatesPage() {
                               Confirm Cancel
                             </button>
                             <button
-                              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                              className="btn btn-secondary btn-sm"
                               onClick={() => setPendingCancelId(null)}
                               type="button"
                             >
@@ -811,7 +808,7 @@ export default function KeyDatesPage() {
         {dismissedRows.length > 0 && (
           <div className="mt-4">
             <button
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold"
+              className="btn btn-secondary btn-sm"
               onClick={() => setShowDismissed((v) => !v)}
               type="button"
             >
@@ -838,7 +835,7 @@ export default function KeyDatesPage() {
                         <td className="px-3 py-2">{row.appointment.appointmentType}</td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                            className="btn btn-secondary btn-sm"
                             onClick={() => restoreAppointment(row.appointment.id)}
                             type="button"
                           >

@@ -18,6 +18,7 @@ import {
 import { UsDateInput, usDateToIso } from "@/components/us-date-input";
 import { patients } from "@/lib/mock-data";
 import type { ContactRecord } from "@/lib/mock-data";
+import { appConfirm } from "@/components/app-dialog";
 
 function getTodayUsDate(): string {
   const now = new Date();
@@ -380,7 +381,7 @@ export default function MarketingPage() {
                     </button>
                   )}
                   <button
-                    className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       setEditing(null);
                       setLoggingId(isLogging ? null : row.contact.id);
@@ -454,9 +455,7 @@ export default function MarketingPage() {
                           onClick={() => {
                             void (async () => {
                               if (
-                                !window.confirm(
-                                  `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
-                                )
+                                !(await appConfirm(`Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`))
                               ) {
                                 return;
                               }
@@ -663,7 +662,7 @@ function LogActivityForm({
       </label>
       <div className="flex items-center gap-2 sm:col-span-2">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+          className="btn btn-primary disabled:opacity-40"
           disabled={!date.trim() || types.length === 0}
           onClick={() => onSave({ date, types, repName, notes })}
           type="button"
