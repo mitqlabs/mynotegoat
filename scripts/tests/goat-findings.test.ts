@@ -22,7 +22,7 @@ const pmReport: GoatFile = {
   id: "f-pm", name: "071826TEPA Testpatient, Pat - PM report.pdf", folder: "Specialists", uploaded: "2026-10-26T17:00:00Z", status: "read",
   pages: [
     `${LH}\nPAIN MANAGEMENT CONSULTATION\nPatient: Pat Testpatient\nHistory of Present Illness\nNeck and low back pain after MVA.`,
-    `${LH}\nPhysical Exam\nTenderness over the lumbar paraspinals. Positive straight leg raise on the left.`,
+    `${LH}\nPhysical Exam\nTenderness over the lumbar paraspinals. Positive straight leg raise on the left.\nLumbar flexion 40/60 degrees with pain.\nLumbar extension 10/25 degrees.\nCervical rotation limited bilaterally.`,
     `${LH}\nReview of Systems\nNegative.\nASSESSMENT:`,
     `${LH}\nPatient: Pat Testpatient\n1. Lumbar radiculopathy (M54.16).\n2. Cervical disc herniation (M50.20).\n3. Myofascial pain.\nPLAN:\n1. Recommend lumbar epidural steroid injection at L4-L5.\n2. MRI of the cervical spine.\n3. Follow up in 4 weeks.\nSincerely,\nZed Mockstone, MD\nPage 4 of 4`,
   ],
@@ -70,7 +70,11 @@ test("pm findings: diagnoses + recommendations, no bare heading, no letterhead",
   assert.equal(m.fileId, "f-pm");
   const texts = m.lines.map((l) => `${l.heading ? "#" : "-"} ${l.text}`);
   console.log(texts.join("\n"));
-  assert.equal(texts[0], "# Diagnoses / impression");
+  assert.equal(texts[0], "# Recommendations");
+  assert.ok(texts.indexOf("# Range of motion") < texts.indexOf("# Diagnoses / impression"));
+  assert.ok(texts.includes("- Lumbar flexion 40/60 degrees with pain"));
+  assert.ok(texts.includes("- Cervical rotation limited bilaterally"));
+  assert.ok(!texts.includes("- Tenderness over the lumbar paraspinals"));
   assert.ok(texts.includes("- Lumbar radiculopathy (M54.16)"));
   assert.ok(texts.includes("# Recommendations"));
   assert.ok(texts.includes("- Recommend lumbar epidural steroid injection at L4-L5"));
@@ -112,6 +116,15 @@ test("Specialist answer says seen when their report is uploaded after the referr
   const all = JSON.stringify(r.answers);
   assert.match(all, /seen — report uploaded 10\/26\/2026/);
   assert.doesNotMatch(all, /not scheduled yet/);
+});
+
+test("ROM heading section is read as ROM", () => {
+  const f: GoatFile = { id: "f-rom", name: "PM followup.pdf", folder: "Specialists", uploaded: "2026-10-20", status: "read",
+    pages: ["FOLLOW UP\nCERVICAL RANGE OF MOTION:\nFlexion 30 degrees\nExtension 20 degrees\nPLAN:\nTrigger point injections."] };
+  const secs = clinicalSections(f);
+  const rom = secs.filter((s) => s.kind === "rom").flatMap((s) => s.items.map((i) => i.text));
+  assert.deepEqual(rom, ["Flexion 30 degrees", "Extension 20 degrees"]);
+  assert.deepEqual(secs.find((s) => s.kind === "recommendations")!.items.map((i) => i.text), ["Trigger point injections"]);
 });
 
 console.log(`\n${pass} passed`);

@@ -441,7 +441,7 @@ export function docUnits(file: GoatFile): DocUnit[] {
   pageLines.forEach((lines, i) => {
     const raw = lines.flatMap((l) => splitInlineLabel(l)).filter(Boolean);
     let n = 0;
-    for (const text of joinWrapped(raw, (l) => isHeading(l) || isLetterheadLine(l) || repeated.has(normLine(l))).flatMap(splitNumbered)) {
+    for (const text of joinWrapped(raw, (l) => isHeading(l) || isLetterheadLine(l) || repeated.has(normLine(l)) || ROM_LINE.test(l)).flatMap(splitNumbered)) {
       // Letterhead / footer: kept for "who wrote it", but it neither ends a section nor answers anything.
       if (repeated.has(normLine(text)) || isLetterheadLine(text)) {
         out.push({ text, page: i + 1, heading: false, section: "boiler", region, letterhead: true });
@@ -489,7 +489,7 @@ export function docUnits(file: GoatFile): DocUnit[] {
 // Clinical sections of a specialist report (Assessment / Plan / …)
 // ---------------------------------------------------------------------------
 
-export type ClinicalKind = "diagnosis" | "recommendations" | "findings";
+export type ClinicalKind = "diagnosis" | "recommendations" | "rom" | "findings";
 
 export interface ClinicalSection {
   kind: ClinicalKind;
@@ -501,12 +501,16 @@ export interface ClinicalSection {
 
 const CLINICAL_DIAGNOSIS = /^(assessments?|impressions?|diagnos[ie]s|diagnostic impressions?|final (impression|diagnosis)|conclusions?|opinions?|working diagnos[ie]s|assessment\s*(and|&|\/)\s*plan)\b/i;
 const CLINICAL_RECS = /^(plan|treatment plan|plan of care|recommendations?|recommended treatment|disposition|follow[- ]?up)\b/i;
+const CLINICAL_ROM = /^((cervical|thoracic|lumbar|lumbosacral|shoulder|spine|spinal|active|passive)\s+)*(range of motion|rom)\b/i;
+/** A range-of-motion measurement or statement inside an exam ("Lumbar flexion 40/60 degrees", "ROM decreased"). */
+export const ROM_LINE = /\b(range of motion|rom)\b|\b(flexion|extension|lateral (flexion|bending)|rotation|abduction|adduction)\b[^.]{0,40}(\d{1,3}\s*(°|deg|degrees?)|\d{1,3}\s*\/\s*\d{1,3}|\b(limited|decreased|reduced|restricted|full|normal|painful|wnl)\b)/i;
 const CLINICAL_FINDINGS = /^(findings|exam(ination)? findings|objective findings|results?)\b/i;
 
 export function clinicalKindOf(heading: string): ClinicalKind | null {
   const t = heading.replace(/[:\s]+$/, "").trim();
   if (CLINICAL_DIAGNOSIS.test(t)) return "diagnosis";
   if (CLINICAL_RECS.test(t)) return "recommendations";
+  if (CLINICAL_ROM.test(t)) return "rom";
   if (CLINICAL_FINDINGS.test(t)) return "findings";
   return null;
 }
@@ -539,6 +543,18 @@ export function clinicalSections(file: GoatFile): ClinicalSection[] {
       if (cur) out.push(cur);
       continue;
     }
+    if (!cur || cur.kind !== "rom") {
+      // ROM measurements usually sit under Physical Exam, not their own heading.
+      if (ROM_LINE.test(u.text) && u.section !== "boiler" && !META_LABEL.test(u.text)) {
+        const text = cleanClinicalItem(u.text);
+        if (text.length >= 3 && text.length <= 260) {
+          let rom = out.find((s) => s.kind === "rom" && s.heading === "Range of motion");
+          if (!rom) out.push((rom = { kind: "rom", heading: "Range of motion", page: u.page, items: [] }));
+          rom.items.push({ text, page: u.page });
+          if (!cur || cur.kind === "findings") continue;
+        }
+      }
+    }
     if (!cur) continue;
     // "Patient: …", "DOB: …" between pages is header boilerplate, not content.
     if (META_LABEL.test(u.text)) continue;
@@ -552,14 +568,15 @@ export function clinicalSections(file: GoatFile): ClinicalSection[] {
 const CLINICAL_TITLE: Record<ClinicalKind, string> = {
   diagnosis: "Diagnoses / impression",
   recommendations: "Recommendations",
+  rom: "Range of motion",
   findings: "Findings",
 };
 
-/** Clinical sections as answer lines: diagnoses first, then recommendations, then findings. */
+/** Clinical sections as answer lines: recommendations first, then ROM, diagnoses, findings. */
 export function clinicalLines(file: GoatFile, perSection = 8): GoatFileLine[] {
   const secs = clinicalSections(file);
   const lines: GoatFileLine[] = [];
-  for (const kind of ["diagnosis", "recommendations", "findings"] as ClinicalKind[]) {
+  for (const kind of ["recommendations", "rom", "diagnosis", "findings"] as ClinicalKind[]) {
     const items = secs.filter((s) => s.kind === kind).flatMap((s) => s.items);
     const seen = new Set<string>();
     const uniq = items.filter((x) => {
