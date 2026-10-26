@@ -191,15 +191,24 @@ export function buildDeviceQueue(input: {
   templateBody: string;
   office: ReminderOffice;
   alreadySentIds: Set<string>;
+  /** Same-day catch-up: only visits starting after this "HH:MM". */
+  onlyAfter?: string;
+  /** Same-day catch-up: say "today" instead of "tomorrow". */
+  sameDay?: boolean;
 }): DeviceQueueItem[] {
   const queue = buildReminderQueue(input.appointments, input.patientsById, input.settings, input.visitDate);
+  const after = input.onlyAfter ? normalizeHHMM(input.onlyAfter) : "";
   return sendableReminders(queue)
     .filter((entry) => !input.alreadySentIds.has(entry.appointmentId))
-    .map((entry) => ({
-      id: entry.appointmentId,
-      phone: toE164(entry.phone),
-      text: renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office),
-    }))
+    .filter((entry) => !after || normalizeHHMM(entry.time) > after)
+    .map((entry) => {
+      const text = renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office);
+      return {
+        id: entry.appointmentId,
+        phone: toE164(entry.phone),
+        text: input.sameDay ? todayWording(text) : text,
+      };
+    })
     .filter((item) => item.phone && item.text);
 }
 
@@ -249,4 +258,141 @@ export function backupWaitReason(input: {
   const h = Math.floor(readyMin / 60);
   const m = readyMin % 60;
   return `Backup device: waits until ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}.`;
+}
+
+/** "9:5" / "09:05:00" → "09:05" (empty when unparseable). */
+export function normalizeHHMM(value: string): string {
+  const [h, m] = (value || "").split(":").map(Number);
+  if (!Number.isFinite(h)) return "";
+  return `${String(h).padStart(2, "0")}:${String(Number.isFinite(m) ? m : 0).padStart(2, "0")}`;
+}
+
+/** Same-day wording: "tomorrow" → "today" (keeps capitalisation). */
+export function todayWording(text: string): string {
+  return text.replace(/\btomorrow\b/gi, (w) =>
+    w === w.toUpperCase() ? "TODAY" : w[0] === "T" ? "Today" : "today",
+  );
+}
+
+/** Office-local "HH:MM" right now. */
+export function localHHMM(now: Date, timeZone: string): string {
+  const fmt = (tz: string) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = fmt(timeZone);
+  } catch {
+    parts = fmt("America/Los_Angeles");
+  }
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${get("hour").padStart(2, "0").replace(/^24$/, "00")}:${get("minute").padStart(2, "0")}`;
+}
+
+export function isQuietNow(now: Date, settings: SmsReminderSettings): boolean {
+  const { quietStartHour: qs, quietEndHour: qe } = settings;
+  const hour = localNow(now, settings.timeZone).hour;
+  return qs !== qe && (qs < qe ? hour >= qs && hour < qe : hour >= qs || hour < qe);
+}
+
+export interface CatchUpDate {
+  visitDate: string;
+  /** "today": same-day catch-up (future visits only, "today" wording). */
+  mode: "today" | "tomorrow";
+  /** For "today": only visits starting after this office-local HH:MM. */
+  onlyAfter?: string;
+}
+
+export interface CatchUpPlan {
+  todayIso: string;
+  /** Tomorrow's date; the reply's top-level visitDate. */
+  visitDate: string;
+  dates: CatchUpDate[];
+  /** Why nothing (or only part) can be sent. */
+  reason: string;
+}
+
+/**
+ * "Send Reminders Now" = catch-up backup (e.g. the phone was dead at 8 AM).
+ * Sends TODAY's reminders that never went out (only visits still ahead),
+ * plus TOMORROW's when they are due (a run day, at/after the send hour).
+ * Quiet hours and Key Dates closures still apply; duplicates are removed
+ * later by the sent log and claims.
+ */
+export function planCatchUp(input: {
+  now: Date;
+  settings: SmsReminderSettings;
+  officeHours: OfficeHoursDay[];
+  closedIsoDates: Set<string>;
+}): CatchUpPlan {
+  const { now, settings, officeHours, closedIsoDates } = input;
+  const today = localNow(now, settings.timeZone);
+  const visitDate = addDaysIso(today.iso, 1);
+  const base = { todayIso: today.iso, visitDate };
+  if (!settings.enabled) return { ...base, dates: [], reason: "Text reminders are turned off." };
+  if (isQuietNow(now, settings)) return { ...base, dates: [], reason: "Quiet hours — nothing sends now." };
+  const dates: CatchUpDate[] = [];
+  const notes: string[] = [];
+  if (closedIsoDates.has(today.iso)) notes.push("The office is closed today (Key Dates).");
+  else dates.push({ visitDate: today.iso, mode: "today", onlyAfter: localHHMM(now, settings.timeZone) });
+  if (closedIsoDates.has(visitDate)) notes.push("The office is closed tomorrow (Key Dates).");
+  else if (!effectiveRunDays(settings, officeHours).includes(today.dow)) notes.push("Tomorrow's reminders aren't due (not a run day).");
+  else if (today.hour < settings.sendHour) notes.push(`Tomorrow's reminders go out at ${settings.sendHour}:00.`);
+  else dates.push({ visitDate, mode: "tomorrow" });
+  return { ...base, dates, reason: notes.join(" ") };
+}
+
+/**
+ * Queue item ids. Plain appointment id = the reply's visitDate (backward
+ * compatible); "r:<date>:<appt>" = a reminder for another date (catch-up);
+ * "b:<recipient id>" = a "Message patients" broadcast text.
+ */
+export type QueueItemRef =
+  | { kind: "reminder"; visitDate: string; appointmentId: string }
+  | { kind: "broadcast"; recipientId: string };
+
+export function encodeReminderItemId(visitDate: string, appointmentId: string, primaryVisitDate: string): string {
+  return visitDate === primaryVisitDate ? appointmentId : `r:${visitDate}:${appointmentId}`;
+}
+
+export function decodeQueueItemId(id: string, fallbackVisitDate: string): QueueItemRef | null {
+  if (!id) return null;
+  if (id.startsWith("b:")) return id.length > 2 ? { kind: "broadcast", recipientId: id.slice(2) } : null;
+  const m = /^r:(\d{4}-\d{2}-\d{2}):(.+)$/.exec(id);
+  if (m) return { kind: "reminder", visitDate: m[1], appointmentId: m[2] };
+  return fallbackVisitDate ? { kind: "reminder", visitDate: fallbackVisitDate, appointmentId: id } : null;
+}
+
+/** Should a backup device hold a broadcast? Gives the primary BACKUP_DELAY_MIN. */
+export function broadcastBackupHold(createdAt: Date, now: Date, selfForced: boolean): boolean {
+  return !selfForced && now.getTime() - createdAt.getTime() < BACKUP_DELAY_MIN * 60_000;
+}
+
+/** Recipients for "Message patients": one per patient with a valid phone. */
+export interface BroadcastCandidate {
+  appointmentId: string;
+  patientId: string;
+  patientName: string;
+  time: string;
+  status: string;
+  phone: string;
+  optedOut?: boolean;
+}
+
+export function pickBroadcastRecipients(
+  rows: BroadcastCandidate[],
+  options: { excludeCanceled: boolean },
+): BroadcastCandidate[] {
+  const seen = new Set<string>();
+  return rows
+    .slice()
+    .sort((a, b) => normalizeHHMM(a.time).localeCompare(normalizeHHMM(b.time)))
+    .filter((row) => {
+      if (!row.patientId || seen.has(row.patientId)) return false;
+      if (options.excludeCanceled && /^cancel/i.test(row.status)) return false;
+      if (row.optedOut) return false;
+      const d = row.phone.replace(/\D/g, "");
+      if (!(d.length === 10 || (d.length === 11 && d.startsWith("1")))) return false;
+      seen.add(row.patientId);
+      return true;
+    });
 }

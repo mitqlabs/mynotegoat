@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import {
   autoRunDays,
   backupWaitReason,
+  broadcastBackupHold,
   buildDeviceQueue,
+  decodeQueueItemId,
+  encodeReminderItemId,
+  pickBroadcastRecipients,
+  planCatchUp,
+  todayWording,
   generateDeviceToken,
   hashDeviceToken,
   planReminderRun,
@@ -108,3 +114,86 @@ void (async () => {
   assert.equal(await hashDeviceToken(token), h);
   console.log("PASS text-reminders-automation (run days, plan, render, queue, dedupe, tokens; mock data)");
 })();
+
+// ---- "Send Reminders Now" catch-up planning ----
+{
+  const on = { ...defaultSmsReminderSettings(), enabled: true };
+  const allOpen = hours([0, 1, 2, 3, 4, 5, 6]);
+  // Mon 2026-10-19 07:30 PT (14:30Z): quiet until 8 → nothing.
+  let c = planCatchUp({ now: new Date("2026-10-19T14:30:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });
+  assert.deepEqual(c.dates, []);
+  assert.match(c.reason, /Quiet/);
+  // Mon 08:10 PT: today (after 08:10) + tomorrow (run day, past send hour).
+  c = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });
+  assert.deepEqual(c.dates, [
+    { visitDate: "2026-10-19", mode: "today", onlyAfter: "08:10" },
+    { visitDate: "2026-10-20", mode: "tomorrow" },
+  ]);
+  assert.equal(c.visitDate, "2026-10-20");
+  // Later send hour: at 08:10 tomorrow isn't due yet, today still is.
+  c = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: { ...on, sendHour: 10 }, officeHours: allOpen, closedIsoDates: new Set() });
+  assert.deepEqual(c.dates.map((d) => d.mode), ["today"]);
+  assert.match(c.reason, /10:00/);
+  // Not a run day for tomorrow (Mon/Wed/Thu office; Monday → Tuesday closed).
+  c = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: on, officeHours: monWedThu, closedIsoDates: new Set() });
+  assert.deepEqual(c.dates.map((d) => d.mode), ["today"]);
+  // Closures (Key Dates) skip that day.
+  c = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set(["2026-10-19"]) });
+  assert.deepEqual(c.dates.map((d) => d.visitDate), ["2026-10-20"]);
+  assert.match(c.reason, /closed today/);
+  // Turned off → nothing.
+  c = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: { ...on, enabled: false }, officeHours: allOpen, closedIsoDates: new Set() });
+  assert.deepEqual(c.dates, []);
+
+  // Same-day queue: past visits skipped, "today" wording, already-sent skipped.
+  const appts = [
+    { id: "a1", patientId: "p1", patientName: "Doe, Jane", appointmentType: "Office Visit", date: "2026-10-19", startTime: "08:00", status: "Scheduled" },
+    { id: "a2", patientId: "p2", patientName: "Roe, Rick", appointmentType: "Office Visit", date: "2026-10-19", startTime: "10:30", status: "Scheduled" },
+    { id: "a3", patientId: "p3", patientName: "Poe, Pat", appointmentType: "Office Visit", date: "2026-10-19", startTime: "11:00", status: "Scheduled" },
+  ] as unknown as ScheduleAppointmentRecord[];
+  const pts = new Map(
+    ["p1", "p2", "p3"].map((id, i) => [id, { id, fullName: "", phone: `555000000${i}` } as unknown as PatientRecord]),
+  );
+  const q = buildDeviceQueue({
+    appointments: appts,
+    patientsById: pts,
+    settings: on,
+    visitDate: "2026-10-19",
+    templateBody: "Hi {{FIRST_NAME}}, see you tomorrow at {{TIME}}. Tomorrow!",
+    office: { officeName: "X", doctorName: "Y", phone: "1" },
+    alreadySentIds: new Set(["a3"]),
+    onlyAfter: "08:10",
+    sameDay: true,
+  });
+  assert.deepEqual(q.map((i) => i.id), ["a2"], "past (08:00) and already-sent (a3) are skipped");
+  assert.equal(q[0].text, "Hi Rick, see you today at 10:30 AM. Today!");
+  assert.equal(todayWording("TOMORROW tomorrow Tomorrow"), "TODAY today Today");
+
+  // Item ids round-trip through ack.
+  assert.equal(encodeReminderItemId("2026-10-20", "a9", "2026-10-20"), "a9");
+  assert.equal(encodeReminderItemId("2026-10-19", "a2", "2026-10-20"), "r:2026-10-19:a2");
+  assert.deepEqual(decodeQueueItemId("r:2026-10-19:a2", "2026-10-20"), { kind: "reminder", visitDate: "2026-10-19", appointmentId: "a2" });
+  assert.deepEqual(decodeQueueItemId("a9", "2026-10-20"), { kind: "reminder", visitDate: "2026-10-20", appointmentId: "a9" });
+  assert.deepEqual(decodeQueueItemId("b:xyz", ""), { kind: "broadcast", recipientId: "xyz" });
+  assert.equal(decodeQueueItemId("a9", ""), null);
+
+  // Message patients: valid phone, once per patient, skip canceled/opted-out.
+  const picked = pickBroadcastRecipients(
+    [
+      { appointmentId: "1", patientId: "p1", patientName: "A", time: "09:00", status: "Scheduled", phone: "(555) 000-0001" },
+      { appointmentId: "2", patientId: "p1", patientName: "A", time: "11:00", status: "Scheduled", phone: "(555) 000-0001" },
+      { appointmentId: "3", patientId: "p2", patientName: "B", time: "08:00", status: "Canceled", phone: "5550000002" },
+      { appointmentId: "4", patientId: "p3", patientName: "C", time: "10:00", status: "Scheduled", phone: "123" },
+      { appointmentId: "5", patientId: "p4", patientName: "D", time: "10:00", status: "Scheduled", phone: "5550000004", optedOut: true },
+    ],
+    { excludeCanceled: true },
+  );
+  assert.deepEqual(picked.map((r) => r.appointmentId), ["1"]);
+  assert.equal(pickBroadcastRecipients([{ appointmentId: "3", patientId: "p2", patientName: "B", time: "08:00", status: "Canceled", phone: "5550000002" }], { excludeCanceled: false }).length, 1);
+  // Backup waits 30 min after a broadcast is queued unless tapped by hand.
+  const t0 = new Date("2026-10-19T16:00:00Z");
+  assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:10:00Z"), false), true);
+  assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:10:00Z"), true), false);
+  assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:31:00Z"), false), false);
+}
+console.log("catch-up planning tests passed");

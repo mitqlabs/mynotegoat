@@ -30,6 +30,7 @@ import {
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
+import { MessagePatientsComposer } from "@/components/message-patients-composer";
 
 function loadSettings(): SmsReminderSettings {
   if (typeof window === "undefined") return defaultSmsReminderSettings();
@@ -212,25 +213,6 @@ export function TextRemindersSettingsPanel() {
     void refresh();
   };
 
-  const sendNow = async () => {
-    const client = getSupabaseBrowserClient();
-    if (!client) return;
-    const active = devices.filter((d) => !d.revoked_at);
-    if (!active.length) return setMessage("Add a device first.");
-    if (!window.confirm("Send tomorrow's reminders now? Anyone already texted is skipped.")) return;
-    const until = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    const { error } = await client
-      .from("reminder_devices")
-      .update({ run_requested_until: until })
-      .in("id", active.map((d) => d.id));
-    setMessage(
-      error
-        ? `Couldn't request a run: ${error.message}`
-        : "Requested for the next 2 hours. On the iPhone, tap the \"Send Reminders Now\" shortcut; the Mac checks every 10 minutes (as backup it waits 30 minutes for the primary).",
-    );
-    void refresh();
-  };
-
   const toggleDay = (dow: number) => {
     const current = new Set(runDays);
     if (current.has(dow)) current.delete(dow);
@@ -347,9 +329,6 @@ export function TextRemindersSettingsPanel() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className={label}>Sending devices</span>
           <div className="flex flex-wrap items-center gap-2">
-            <button className={btn} data-testid="send-now" onClick={() => void sendNow()} type="button">
-              Send Reminders Now
-            </button>
             <button className={btn} onClick={() => void addDevice("iphone")} type="button">
               + Add iPhone
             </button>
@@ -385,7 +364,7 @@ export function TextRemindersSettingsPanel() {
                 <span className="rounded-md bg-[var(--bg-soft)] px-1.5 py-0.5 text-xs font-semibold">
                   {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
                 </span>
-                {d.run_requested_until && new Date(d.run_requested_until) > new Date() ? " · Send Now requested" : ""} · last checked in {fmt(d.last_seen_at)} · last run {fmt(d.last_run_at)}
+                last checked in {fmt(d.last_seen_at)} · last run {fmt(d.last_run_at)}
                 {d.last_run_summary ? ` (${d.last_run_summary})` : ""}
               </span>
               <span className="inline-flex items-center gap-3">
@@ -423,7 +402,19 @@ export function TextRemindersSettingsPanel() {
           </li>
           <li>In dry run, devices only log what they would send. Turn dry run off when the log looks right.</li>
         </ul>
+        <p className="mt-2 font-semibold">Two shortcuts on the iPhone</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
+          <li><b>Send Reminders</b> runs by itself at {hourLabel(settings.sendHour)} and texts tomorrow&apos;s patients.</li>
+          <li>
+            <b>Send Reminders Now</b> is the backup. If the phone was off or dead, tap it: it sends <b>today&apos;s</b>{" "}
+            reminders that never went out (only visits still ahead, worded &quot;today&quot;), plus tomorrow&apos;s if they&apos;re due.
+            Anyone already texted is skipped.
+          </li>
+          <li>The iMac checks every 10 minutes on its own, so it needs no button.</li>
+        </ul>
       </div>
+
+      <MessagePatientsComposer settings={settings} workspaceId={workspaceId} />
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
@@ -432,9 +423,9 @@ export function TextRemindersSettingsPanel() {
           <li>
             On the office iPhone, open this page and tap{" "}
             <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-            {" "}→ <b>Add Shortcut</b>, and paste your code when it asks. Optional:{" "}
+            {" "}→ <b>Add Shortcut</b>, and paste your code when it asks. Then get{" "}
             <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
-            {" "}(same steps) for a one-tap send.
+            {" "}(same steps), the backup for days the phone missed 8 AM. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
           </li>
           <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>8:00 AM</b>, <b>Daily</b> → <b>Run Immediately</b> → <b>Send Reminders</b> → <b>Done</b>. The first run asks for permission; tap <b>Always Allow</b>.</li>
         </ol>

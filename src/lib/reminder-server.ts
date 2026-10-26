@@ -216,3 +216,103 @@ export async function claimReminders(
   const rows = (data ?? []) as unknown[];
   return new Set(rows.map((row) => (typeof row === "string" ? row : String((row as Record<string, unknown>).claim_reminders ?? ""))));
 }
+
+export interface BroadcastQueueRow {
+  recipientId: string;
+  phone: string;
+  text: string;
+  createdAt: Date;
+}
+
+/**
+ * Queued "Message patients" texts for this workspace whose target date is
+ * today or later, not canceled, not opted out, and not leased to another
+ * device. The phone is read from the patient record at send time.
+ */
+export async function loadBroadcastQueue(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  todayIso: string,
+  now: Date,
+): Promise<BroadcastQueueRow[]> {
+  const { data, error } = await admin
+    .from("reminder_broadcast_recipients")
+    .select("id, patient_id, claimed_by, claimed_until, reminder_broadcasts!inner(message, target_date, created_at, canceled_at)")
+    .eq("workspace_id", device.workspace_id)
+    .eq("status", "queued")
+    .gte("reminder_broadcasts.target_date", todayIso)
+    .is("reminder_broadcasts.canceled_at", null)
+    .order("created_at", { ascending: true })
+    .limit(300);
+  // Table not migrated yet → behave as if there is nothing queued.
+  if (error || !data?.length) return [];
+  type Row = {
+    id: string;
+    patient_id: string;
+    claimed_by: string | null;
+    claimed_until: string | null;
+    reminder_broadcasts: { message: string; created_at: string } | { message: string; created_at: string }[];
+  };
+  const rows = (data as unknown as Row[]).filter(
+    (r) => !r.claimed_until || r.claimed_by === device.id || new Date(r.claimed_until) < now,
+  );
+  const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
+  if (!ids.length) return [];
+  const { data: pts } = await admin
+    .from("patients")
+    .select("id, phone, text_reminders_off")
+    .eq("workspace_id", device.workspace_id)
+    .in("id", ids);
+  const phoneById = new Map(
+    (pts ?? []).filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
+  );
+  const out: BroadcastQueueRow[] = [];
+  for (const r of rows) {
+    const b = Array.isArray(r.reminder_broadcasts) ? r.reminder_broadcasts[0] : r.reminder_broadcasts;
+    const digits = (phoneById.get(r.patient_id) ?? "").replace(/\D/g, "");
+    const phone = digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : "";
+    if (!b?.message?.trim() || !phone) continue;
+    out.push({ recipientId: r.id, phone, text: b.message.trim(), createdAt: new Date(b.created_at) });
+  }
+  return out;
+}
+
+/** Lease broadcast recipients to this device; returns the ids it holds. */
+export async function claimBroadcasts(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  ids: string[],
+  minutes: number,
+  now: Date,
+): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const nowIso = now.toISOString();
+  const { data, error } = await admin
+    .from("reminder_broadcast_recipients")
+    .update({ claimed_by: device.id, claimed_until: new Date(now.getTime() + minutes * 60_000).toISOString() })
+    .eq("workspace_id", device.workspace_id)
+    .eq("status", "queued")
+    .in("id", ids)
+    .or(`claimed_until.is.null,claimed_until.lt.${nowIso},claimed_by.eq.${device.id}`)
+    .select("id");
+  if (error) throw new Error(`broadcast claim failed: ${error.message}`);
+  return new Set((data ?? []).map((r) => r.id as string));
+}
+
+/** Record a device's result for one broadcast text. Only queued rows change. */
+export async function ackBroadcast(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  recipientId: string,
+  status: "sent" | "failed" | "dry-run",
+  error: string | null,
+): Promise<boolean> {
+  const { data } = await admin
+    .from("reminder_broadcast_recipients")
+    .update({ status, error, sent_at: new Date().toISOString(), device_id: device.id, claimed_until: null })
+    .eq("workspace_id", device.workspace_id)
+    .eq("id", recipientId)
+    .eq("status", "queued")
+    .select("id");
+  return (data ?? []).length > 0;
+}
