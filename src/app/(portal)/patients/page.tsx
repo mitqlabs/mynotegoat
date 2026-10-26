@@ -931,7 +931,8 @@ export default function PatientsPage() {
 
     setShowNewPatientModal(false);
     setNewPatientMessage("");
-    router.push(`/patients/${createdPatient.id}`);
+    // ?addContact=1 asks the case file to offer "Add to Contacts?" once.
+    router.push(`/patients/${createdPatient.id}?addContact=1`);
   };
 
   const newPatientCaseNumberPreview = useMemo(

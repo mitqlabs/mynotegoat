@@ -29,6 +29,7 @@ import {
   findKeyDatesForDate,
   findOpenKeyDateForDate,
   isHolidaySourcedKeyDate,
+  keyDateHasHours,
   formatUsDateFromIso,
 } from "@/lib/key-dates";
 import {
@@ -588,7 +589,7 @@ export function NewAppointmentModal({
     (dateIso) => {
       const name = getUsFederalHolidayName(dateIso);
       if (!name) return null;
-      const closedRows = findKeyDatesForDate(keyDates, dateIso).filter((row) => row.officeStatus === "Closed");
+      const closedRows = findKeyDatesForDate(keyDates, dateIso).filter((row) => row.officeStatus === "Closed" && !keyDateHasHours(row));
       if (closedRows.length) {
         // A closure created for this holiday (e.g. auto-added on an earlier
         // save) behaves like a Closed holiday: Canceled + make-up visit.
@@ -629,7 +630,8 @@ export function NewAppointmentModal({
   const closedDateSet = useMemo(() => {
     const set = new Set<string>();
     keyDates.forEach((row) => {
-      if (row.officeStatus !== "Closed") return;
+      // A Closed key date with special hours is a partial day: still bookable.
+      if (row.officeStatus !== "Closed" || keyDateHasHours(row)) return;
       // Expand date ranges into individual iso dates.
       const start = row.startDate;
       const end = row.endDate || row.startDate;
