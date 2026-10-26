@@ -199,10 +199,46 @@ export default function PortalLayout({
         });
       } else {
         access = await accessFresh;
-        resolvedMembership = { userId: "", isMember: false, ownerId: "", permissions: {}, label: "", officeAdmin: false, disabled: false };
+        if (!active) return;
+        // HOTFIX: without a hint we MUST run the full access gate and a real
+        // team lookup. The previous stub (ownerId "") sent team members into
+        // their own empty workspace and skipped the signed-out/admin checks.
+        if (access.state === "signed-out") {
+          const next = safeNextPath(`${window.location.pathname}${window.location.search}`);
+          routerRef.current.replace(next ? `/auth/login?next=${encodeURIComponent(next)}` : "/auth/login");
+          return;
+        }
+        if (access.state === "email-unverified") {
+          routerRef.current.replace("/auth/login?verify=1");
+          return;
+        }
+        if (access.state === "pending-approval") {
+          routerRef.current.replace("/auth/pending");
+          return;
+        }
+        if (access.state !== "access-granted" || !access.userId) {
+          routerRef.current.replace("/auth/login");
+          return;
+        }
+        if (access.isAdmin) {
+          routerRef.current.replace("/admin");
+          return;
+        }
+        const early = await membershipFresh;
+        const fresh = early && early.userId === access.userId ? early : await resolveWorkspaceMembership(access.userId);
+        if (!active) return;
+        if (!fresh || fresh.userId !== access.userId || !fresh.ownerId) {
+          setBootstrapError("Couldn't confirm which office you belong to. Check your connection and tap Retry.");
+          return;
+        }
+        resolvedMembership = fresh;
+        writeAccessHint(access.userId, access, fresh);
       }
       if (!active) {
         return;
+      }
+      if (access.planTier) {
+        setPlanTier(access.planTier);
       }
       // A member the owner has deactivated may no longer use the app. Sign
       // them out and bounce to a notice — never mount their owner's data.

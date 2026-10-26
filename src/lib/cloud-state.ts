@@ -52,6 +52,12 @@ export const PRESERVE_ON_WIPE_KEYS = new Set([
 import { bigCacheEntries } from "@/lib/big-cache";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { clearAllWorkspaceCaches, clearForeignWorkspaceCaches } from "@/lib/workspace-storage";
+import {
+  CACHE_OWNER_KEY,
+  canPushLocalToWorkspace,
+  canSeedEmptyCloud,
+  decideBootCache,
+} from "@/lib/workspace-cache-guard";
 import { notifyChange } from "@/lib/local-sync";
 import { mergeFileManagerStates } from "@/lib/file-manager";
 import { mergeTaskLists } from "@/lib/tasks-merge";
@@ -161,6 +167,7 @@ export function wipeLocalWorkspaceForSignOut() {
   // data from the prior account.
   clearAllWorkspaceCaches();
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  window.localStorage.removeItem(CACHE_OWNER_KEY);
   clearGoatTextCache();
   clearGoatChats();
   clearAccessHint();
@@ -212,6 +219,26 @@ export function ensureWorkspaceForUser(expectedWorkspaceId: string) {
     clearGoatTextCache();
     clearGoatChats();
     window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, expectedWorkspaceId);
+    // The cache was just wiped, so whatever lands next belongs to this workspace.
+    setCacheOwnerTag(expectedWorkspaceId);
+  }
+}
+
+function getCacheOwnerTag() {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(CACHE_OWNER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function setCacheOwnerTag(workspaceId: string) {
+  if (typeof window === "undefined" || !workspaceId) return;
+  try {
+    window.localStorage.setItem(CACHE_OWNER_KEY, workspaceId);
+  } catch {
+    // best-effort
   }
 }
 
@@ -301,6 +328,7 @@ function clearLocalWorkspaceData() {
       }
       if (
         key === ACTIVE_WORKSPACE_KEY ||
+        key === CACHE_OWNER_KEY ||
         key.startsWith(`${LOCAL_SYNC_AT_PREFIX}.`) ||
         key === BACKUP_KEY ||
         PRESERVE_ON_WIPE_KEYS.has(key)
@@ -332,6 +360,7 @@ function readLocalSnapshot(): LocalSnapshot {
       !key ||
       !key.startsWith(LOCAL_KEY_PREFIX) ||
       key === ACTIVE_WORKSPACE_KEY ||
+      key === CACHE_OWNER_KEY ||
       key === BACKUP_KEY ||
       // Office settings are owned by the KV table. Keeping them OUT of the
       // legacy full-localStorage snapshot means a stale snapshot restore can
@@ -585,7 +614,46 @@ export async function prepareCloudStateBeforeMount() {
     } catch (readError) {
       console.error("[Cloud Sync] Could not read local data (treating as empty):", readError);
     }
-    const localHasData = hasMeaningfulLocalData(localSnapshot);
+    let localHasData = hasMeaningfulLocalData(localSnapshot);
+
+    // WORKSPACE GUARD: local data may only ever be used for (or pushed to)
+    // the workspace it was tagged with. A cache from another office — or an
+    // untagged one that can't prove it synced with this workspace — is
+    // backed up and discarded here, never uploaded.
+    const explicitCacheTag = getCacheOwnerTag();
+    let hasSyncAtForTarget = false;
+    try {
+      hasSyncAtForTarget = Boolean(window.localStorage.getItem(getSyncAtKey(authed.workspaceId)));
+    } catch {
+      hasSyncAtForTarget = false;
+    }
+    const cacheDecision = decideBootCache({
+      tag: explicitCacheTag,
+      target: authed.workspaceId,
+      previousPointer: previousWorkspaceId,
+      hasSyncAtForTarget,
+      localHasData,
+    });
+    if (cacheDecision === "discard-local") {
+      console.warn(
+        "[Cloud Sync] Local cache does not belong to this workspace — discarding it (never uploaded).",
+      );
+      try {
+        clearLocalWorkspaceData();
+        clearForeignWorkspaceCaches(authed.workspaceId);
+        window.localStorage.removeItem(getSyncAtKey(authed.workspaceId));
+      } catch (discardError) {
+        console.error("[Cloud Sync] Could not clear foreign local cache:", discardError);
+        throw new CloudBootstrapError(
+          "This browser holds another office's data and it could not be cleared. Please sign out and back in.",
+          discardError,
+        );
+      }
+      localSnapshot = {};
+      localHasData = false;
+    }
+    // From here on, whatever is local belongs to this workspace.
+    setCacheOwnerTag(authed.workspaceId);
 
     // Speed: the snapshot can be ~1 MB. If this browser already holds the
     // latest copy (its last push is as new as the cloud row), skip the
@@ -682,7 +750,17 @@ export async function prepareCloudStateBeforeMount() {
     // so opening is safe — and a team member whose account can't write the
     // workspace row would otherwise be locked out of the app entirely. The
     // failure still surfaces through the normal sync-error pill.
-    if (localHasData) {
+    // Only with an EXACT, pre-existing tag match — never from an untagged or
+    // foreign cache (that is how one office's data got into another).
+    if (localHasData && !canSeedEmptyCloud(explicitCacheTag, authed.workspaceId)) {
+      console.warn("[Cloud Sync] Cloud is empty but local cache isn't verifiably this workspace's — not seeding; discarding local.");
+      try {
+        clearLocalWorkspaceData();
+        clearForeignWorkspaceCaches(authed.workspaceId);
+      } catch (discardError) {
+        console.error("[Cloud Sync] Could not clear unverified local cache:", discardError);
+      }
+    } else if (localHasData) {
       try {
         await upsertRemoteSnapshot(authed.workspaceId, localSnapshot);
       } catch (pushError) {
@@ -803,6 +881,9 @@ async function bootstrapTableBackedEntities() {
     await import("@/lib/boot-delta");
   const bootWs = getActiveWorkspaceId() ?? "";
   const bootDelta = readBootDeltaState(bootWs);
+  // Local → cloud uploads here (first-run migrations, merge uploads) only
+  // when this cache is verifiably this workspace's.
+  const localTrusted = canPushLocalToWorkspace(getCacheOwnerTag(), bootWs);
   const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchKvRowsDelta(bootDelta.kv)), null) : null;
   // Encounter notes are by far the biggest download (~135 MB for a big
   // office). Start them now, in parallel with everything else, and only
@@ -827,7 +908,7 @@ async function bootstrapTableBackedEntities() {
     return;
   }
 
-  if (tableRows.length === 0 && patients.length > 0) {
+  if (tableRows.length === 0 && patients.length > 0 && localTrusted) {
     // First-run migration: table empty but legacy blob has patients.
     // Push every existing patient to the table. Runs ONLY when the table
     // is truly empty for this workspace so a flag re-flip never re-uploads.
@@ -881,7 +962,7 @@ async function bootstrapTableBackedEntities() {
       const apptsRows = apptsRowsP ? await apptsRowsP : await fetchAllAppointmentsFromTable();
       if (apptsRows !== null) {
         const localAppts = loadScheduleAppointments();
-        if (apptsRows.length === 0 && localAppts.length > 0) {
+        if (apptsRows.length === 0 && localAppts.length > 0 && localTrusted) {
           console.info(
             `[Cloud Sync] Migrating ${localAppts.length} appointment(s) to table...`,
           );
@@ -1080,7 +1161,7 @@ async function bootstrapTableBackedEntities() {
               }
             }
           }
-          if (entries.length > 0) {
+          if (entries.length > 0 && localTrusted) {
             console.info(
               `[Cloud Sync] Migrating ${entries.length} kv key(s) to workspace_kv table...`,
             );
@@ -1153,7 +1234,7 @@ async function bootstrapTableBackedEntities() {
                   console.warn(`[Cloud Sync] Could not write "${key}" to localStorage (quota?):`, storageErr);
                   continue;
                 }
-                if (!sameJson(merged, value)) {
+                if (localTrusted && !sameJson(merged, value)) {
                   void upsertKvValue(key, merged).catch((uploadErr: unknown) =>
                     console.error(`[Cloud Sync] Uploading merged "${key}" failed:`, uploadErr),
                   );
@@ -1195,7 +1276,7 @@ async function bootstrapTableBackedEntities() {
                 }
                 // Upload only when this device really has something the
                 // cloud lacks; a stale device never pushes its old list.
-                if (result.needsUpload) {
+                if (localTrusted && result.needsUpload) {
                   void upsertKvValue(key, result.merged).catch((uploadErr: unknown) =>
                     console.error("[Cloud Sync] Uploading merged to-dos failed:", uploadErr),
                   );
@@ -1215,7 +1296,7 @@ async function bootstrapTableBackedEntities() {
                 if (pickOfficeSettingsSource(localParsed, value) === "local") {
                   console.warn("[Cloud Sync] Office settings: this device has the newer copy; re-saving it to the cloud.");
                   skippedLocalIsBigger += 1;
-                  void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
+                  if (localTrusted) void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
                     console.error("[Cloud Sync] Re-saving office settings failed:", uploadErr),
                   );
                   continue;
@@ -1515,6 +1596,11 @@ export async function pushLocalStateToCloud() {
       console.warn(
         "[Cloud Sync] Refusing push: active workspace pointer does not match signed-in user.",
       );
+      return;
+    }
+
+    if (!canPushLocalToWorkspace(getCacheOwnerTag(), authed.workspaceId)) {
+      console.warn("[Cloud Sync] Refusing push: local cache is not tagged with this workspace.");
       return;
     }
 
