@@ -210,7 +210,7 @@ export function buildDeviceQueue(input: {
       return {
         id: entry.appointmentId,
         phone: toE164(entry.phone),
-        text: input.sameDay ? todayWording(text) : text,
+        text: withOptOutLine(input.sameDay ? todayWording(text) : text, input.settings),
       };
     })
     .filter((item) => item.phone && item.text);
@@ -460,4 +460,37 @@ export function pickBroadcastRecipients(
       seen.add(row.patientId);
       return true;
     });
+}
+
+// ---- Opt-out by reply ("STOP") ----
+
+/** Replies that opt a patient out (carrier-standard keywords). */
+export const OPT_OUT_KEYWORDS = ["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT"] as const;
+/** Replies that opt a patient back in. */
+export const OPT_IN_KEYWORDS = ["START", "UNSTOP"] as const;
+
+/**
+ * Is this incoming text an opt-out / opt-in keyword? The whole message must
+ * be the keyword (case-insensitive, trimmed, trailing punctuation ignored),
+ * so "Can I cancel my 3pm?" is NOT an opt-out.
+ */
+export function parseOptOutReply(text: unknown): "stop" | "start" | null {
+  if (typeof text !== "string") return null;
+  const word = text.trim().replace(/[\s.!]+$/, "").replace(/^["'“]+|["'”]+$/g, "").toUpperCase();
+  if ((OPT_OUT_KEYWORDS as readonly string[]).includes(word)) return "stop";
+  if ((OPT_IN_KEYWORDS as readonly string[]).includes(word)) return "start";
+  return null;
+}
+
+/** Comparable phone key: the last 10 digits ("" if fewer than 10). */
+export function phoneMatchKey(phone: unknown): string {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/** Append the opt-out line (when on) unless the text already mentions STOP. */
+export function withOptOutLine(text: string, settings: { optOutLine?: boolean; optOutText?: string }): string {
+  const line = (settings.optOutText ?? "").trim();
+  if (!text || settings.optOutLine === false || !line || /\bSTOP\b/i.test(text)) return text;
+  return `${text.trimEnd()} ${line}`;
 }

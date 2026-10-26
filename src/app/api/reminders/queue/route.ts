@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
 
   // "Message patients" texts — any call outside quiet hours.
   const quiet = isQuietNow(now, settings);
-  let broadcasts = quiet ? [] : await loadBroadcastQueue(admin, device, todayIso, now, localHHMM(now, settings.timeZone));
+  let broadcasts = quiet ? [] : await loadBroadcastQueue(admin, device, todayIso, now, localHHMM(now, settings.timeZone), settings);
 
   const dryRun = settings.dryRun;
   const willSend = !dryRun && !preview;

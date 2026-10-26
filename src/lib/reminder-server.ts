@@ -5,7 +5,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { broadcastTimeOk, hashDeviceToken, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, parseOptOutReply, phoneMatchKey, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 
@@ -258,6 +258,8 @@ export async function loadBroadcastQueue(
   todayIso: string,
   now: Date,
   nowHHMM: string,
+  /** Opt-out line settings (appended to each text). */
+  optOut: { optOutLine?: boolean; optOutText?: string } = { optOutLine: false },
 ): Promise<BroadcastQueueRow[]> {
   const query = (cols: string) =>
     admin
@@ -324,7 +326,7 @@ export async function loadBroadcastQueue(
     const digits = (phoneById.get(r.patient_id) ?? "").replace(/\D/g, "");
     const phone = digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : "";
     if (!b?.message?.trim() || !phone) continue;
-    out.push({ recipientId: r.id, phone, text: b.message.trim(), createdAt: new Date(b.created_at) });
+    out.push({ recipientId: r.id, phone, text: withOptOutLine(b.message.trim(), optOut), createdAt: new Date(b.created_at) });
   }
   return out;
 }
@@ -367,4 +369,89 @@ export async function ackBroadcast(
     .eq("status", "queued")
     .select("id");
   return (data ?? []).length > 0;
+}
+
+export interface InboundReply {
+  from: string;
+  text: string;
+}
+
+export interface InboundResult {
+  /** Keyword messages seen (stop/start). */
+  keywords: number;
+  /** Patients whose text-reminder flag actually changed. */
+  changed: number;
+  /** Keyword messages whose phone matched no patient. */
+  unmatched: number;
+  /** Non-keyword messages (ignored, never stored). */
+  ignored: number;
+}
+
+/**
+ * Patients replied STOP (or START): flip the same per-patient flag the
+ * queue already respects (patients.text_reminders_off) and log the change.
+ * Idempotent: a patient already in that state is left alone and not logged
+ * again. Message bodies are never stored; no reply is ever sent.
+ */
+export async function applyInboundReplies(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  replies: InboundReply[],
+  source: string,
+): Promise<InboundResult> {
+  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, ignored: 0 };
+  const wanted: { key: string; action: "stop" | "start" }[] = [];
+  for (const reply of replies) {
+    const action = parseOptOutReply(reply.text);
+    const key = phoneMatchKey(reply.from);
+    if (!action) {
+      result.ignored += 1;
+      continue;
+    }
+    result.keywords += 1;
+    if (!key) result.unmatched += 1;
+    else wanted.push({ key, action });
+  }
+  if (!wanted.length) return result;
+  const { data: pts, error } = await admin
+    .from("patients")
+    .select("id, phone, text_reminders_off")
+    .eq("workspace_id", device.workspace_id);
+  if (error) throw new Error(`patients lookup failed: ${error.message}`);
+  const byKey = new Map<string, { id: string; off: boolean }[]>();
+  for (const p of pts ?? []) {
+    const key = phoneMatchKey(p.phone);
+    if (!key) continue;
+    const list = byKey.get(key) ?? [];
+    list.push({ id: p.id as string, off: p.text_reminders_off === true });
+    byKey.set(key, list);
+  }
+  for (const { key, action } of wanted) {
+    const matches = byKey.get(key) ?? [];
+    if (!matches.length) {
+      result.unmatched += 1;
+      continue;
+    }
+    const off = action === "stop";
+    for (const m of matches) {
+      if (m.off === off) continue; // already in that state
+      const { error: upErr } = await admin
+        .from("patients")
+        .update({ text_reminders_off: off })
+        .eq("workspace_id", device.workspace_id)
+        .eq("id", m.id);
+      if (upErr) continue;
+      m.off = off;
+      result.changed += 1;
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: m.id,
+        action,
+        phone_last4: key.slice(-4),
+        source,
+        device_id: device.id,
+      });
+    }
+  }
+  return result;
 }
