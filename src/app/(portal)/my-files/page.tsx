@@ -1,5 +1,7 @@
 "use client";
 
+import { joinCaseNumberPrefix } from "@/lib/file-naming";
+import { caseNamePrefixFor } from "@/lib/file-storage";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
@@ -324,14 +326,17 @@ export default function MyFilesPage() {
 
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [renamePrefix, setRenamePrefix] = useState<string | null>(null);
 
   const startRenameFile = (file: FileRecord) => {
     setRenamingFileId(file.id);
-    setRenameDraft(file.name);
+    const split = caseNamePrefixFor(file.folderId, file.name);
+    setRenamePrefix(split ? split.prefix : null);
+    setRenameDraft(split ? split.label : file.name);
   };
 
   const commitRenameFile = () => {
-    const trimmed = renameDraft.trim();
+    const trimmed = renamePrefix ? joinCaseNumberPrefix(renamePrefix, renameDraft) : renameDraft.trim();
     if (!renamingFileId || !trimmed) {
       setRenamingFileId(null);
       return;
@@ -1063,9 +1068,18 @@ export default function MyFilesPage() {
                           <span>{getFileIcon(file.mimeType)}</span>
                           <div className="min-w-0">
                             {renamingFileId === file.id ? (
-                              <input
+                              <span className="flex items-center gap-1.5">
+                                {renamePrefix ? (
+                                  <span
+                                    className="shrink-0 select-none whitespace-nowrap rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-sm text-[var(--text-muted)]"
+                                    title="Added automatically — not editable"
+                                  >
+                                    {renamePrefix}
+                                  </span>
+                                ) : null}
+                                <input
                                 autoFocus
-                                className="w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm font-medium focus:outline-none"
+                                className="min-w-0 flex-1 w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm font-medium focus:outline-none"
                                 value={renameDraft}
                                 onChange={(e) => setRenameDraft(e.target.value)}
                                 onBlur={commitRenameFile}
@@ -1074,6 +1088,7 @@ export default function MyFilesPage() {
                                   if (e.key === "Escape") setRenamingFileId(null);
                                 }}
                               />
+</span>
                             ) : (
                               <span className="block break-words line-clamp-2 font-medium text-[var(--text-heading)] max-w-[200px] sm:max-w-[300px]" title={file.name}>
                                 {file.name}

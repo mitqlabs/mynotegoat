@@ -1,5 +1,7 @@
 "use client";
 
+import { caseNamePrefixFor } from "@/lib/file-storage";
+import { joinCaseNumberPrefix, splitCaseNumberPrefix } from "@/lib/file-naming";
 import { demographicsLine } from "@/lib/age";
 
 import { mainEmailOf } from "@/lib/contact-email";
@@ -1991,14 +1993,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [renamePrefix, setRenamePrefix] = useState<string | null>(null);
 
   const startRenameFile = useCallback((file: FileRecord) => {
     setRenamingFileId(file.id);
-    setRenameDraft(file.name);
+    const split = caseNamePrefixFor(file.folderId, file.name) ?? splitCaseNumberPrefix(file.name, caseNumber, `${lastName}, ${firstName}`);
+    setRenamePrefix(split ? split.prefix : null);
+    setRenameDraft(split ? split.label : file.name);
   }, []);
 
   const commitRenameFile = useCallback(() => {
-    const trimmed = renameDraft.trim();
+    const trimmed = renamePrefix ? joinCaseNumberPrefix(renamePrefix, renameDraft) : renameDraft.trim();
     if (!renamingFileId || !trimmed) {
       setRenamingFileId(null);
       return;
@@ -2009,7 +2014,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return next;
     });
     setRenamingFileId(null);
-  }, [renamingFileId, renameDraft]);
+  }, [renamingFileId, renameDraft, renamePrefix]);
 
   const [emailingFileId, setEmailingFileId] = useState<string | null>(null);
   const [emailToast, setEmailToast] = useState("");
@@ -7797,9 +7802,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       >
                         <td className="max-w-[260px] py-2.5 pr-3 font-medium">
                           {renamingFileId === file.id ? (
-                            <input
+                            <span className="flex items-center gap-1.5">
+                                {renamePrefix ? (
+                                  <span
+                                    className="shrink-0 select-none whitespace-nowrap rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-sm text-[var(--text-muted)]"
+                                    title="Added automatically — not editable"
+                                  >
+                                    {renamePrefix}
+                                  </span>
+                                ) : null}
+                                <input
                               autoFocus
-                              className="w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm focus:outline-none"
+                              className="min-w-0 flex-1 w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm focus:outline-none"
                               value={renameDraft}
                               onChange={(e) => setRenameDraft(e.target.value)}
                               onBlur={commitRenameFile}
@@ -7808,6 +7822,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 if (e.key === "Escape") setRenamingFileId(null);
                               }}
                             />
+</span>
                           ) : (
                             <span className="block break-words line-clamp-2" title={file.name}>{file.name}</span>
                           )}
