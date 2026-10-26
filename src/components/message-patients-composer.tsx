@@ -1,7 +1,5 @@
 "use client";
 
-import { TimeInput12h } from "@/components/time-input-12h";
-
 /**
  * Settings → Text Reminders → Message patients. Queue one text (e.g. an
  * emergency closure) for everyone booked on a day. Stored in Supabase
@@ -71,13 +69,6 @@ export function SendFromIphoneButton({ className = "" }: { className?: string })
   );
 }
 
-/** Round an "HH:MM" up to the next quarter hour ("13:07" → "13:15"). */
-function nextQuarter(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const total = Math.min(23 * 60 + 45, Math.ceil((h * 60 + m) / 15) * 15);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
 export interface MessagePatientsPrefill {
   /** Bumps on every request so the same prefill can be applied twice. */
   key: number;
@@ -102,9 +93,9 @@ export function MessagePatientsComposer({
   const [text, setText] = useState("");
   const [target, setTarget] = useState<Target>("today");
   const [pickedDate, setPickedDate] = useState(todayIso);
-  // "Starting at": blank = whole day. For today, visits already past are
-  // always skipped (here and again on the server).
-  const [startTime, setStartTime] = useState(() => nextQuarter(localHHMM(new Date(), settings.timeZone)));
+  // Hidden time window: only set by a Key Dates prefill (e.g. "after 2 PM").
+  // For today, visits already past are always skipped (here and on the server).
+  const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [appliedPrefill, setAppliedPrefill] = useState(0);
   if (prefill && prefill.key !== appliedPrefill) {
@@ -135,8 +126,8 @@ export function MessagePatientsComposer({
 
   const changeTarget = (next: Target) => {
     setTarget(next);
-    // Today defaults to "from now"; other days to the whole day.
-    setStartTime(next === "today" ? nextQuarter(localHHMM(new Date(), settings.timeZone)) : "");
+    setStartTime("");
+    setEndTime("");
   };
 
   const loadRecipients = useCallback(async () => {
@@ -205,12 +196,13 @@ export function MessagePatientsComposer({
     startTime && endTime
       ? `${to12h(startTime)} – ${to12h(endTime)}`
       : startTime
-        ? `from ${to12h(startTime)}`
+        ? `after ${to12h(startTime)}`
         : endTime
           ? `before ${to12h(endTime)}`
           : isToday
             ? "visits still ahead"
             : "";
+  const windowLine = startTime || endTime ? `Texting patients ${windowLabel}` : "";
 
   const queue = async () => {
     setJustQueued(false);
@@ -312,28 +304,6 @@ export function MessagePatientsComposer({
         {target === "date" && (
           <input className={input} min={todayIso} onChange={(e) => setPickedDate(e.target.value)} type="date" value={pickedDate} />
         )}
-        <label className="grid gap-1">
-          <span className={label}>Starting at</span>
-          <span data-testid="message-patients-start">
-            <TimeInput12h
-              ariaLabel="Starting at"
-              inputClassName={input}
-              onChange={(v) => setStartTime(v)}
-              value={startTime}
-            />
-          </span>
-        </label>
-        <label className="grid gap-1">
-          <span className={label}>Until (optional)</span>
-          <span data-testid="message-patients-end">
-            <TimeInput12h
-              allowEmpty ariaLabel="Until"
-              inputClassName={input}
-              onChange={(v) => setEndTime(v)}
-              value={endTime}
-            />
-          </span>
-        </label>
         <label className="inline-flex h-[42px] items-center gap-2 font-semibold">
           <input checked={excludeCanceled} onChange={(e) => setExcludeCanceled(e.target.checked)} type="checkbox" />
           Skip canceled visits
@@ -362,9 +332,17 @@ export function MessagePatientsComposer({
           ))}
         </ul>
       )}
+      {windowLine && (
+        <p className="text-sm" data-testid="message-patients-window">
+          {windowLine}.{" "}
+          <button className="font-semibold text-[var(--brand-primary)] underline" onClick={() => { setStartTime(""); setEndTime(""); }} type="button">
+            Whole day
+          </button>
+        </p>
+      )}
       {windowError && <p className="font-semibold text-red-700">{windowError}</p>}
       <p className="text-xs text-[var(--text-muted)]">
-        Visits that already passed are never texted. Leave &quot;Starting at&quot; blank for the whole day. Only patients with a phone number are included, once each. Patients marked &quot;no text reminders&quot; are skipped. Quiet hours apply.
+        Visits that already passed are never texted. Only patients with a phone number are included, once each. Patients marked &quot;no text reminders&quot; are skipped. Quiet hours apply.
       </p>
       {status && <p className="font-semibold">{status}</p>}
       {justQueued && <SendFromIphoneButton className="justify-self-start" />}
