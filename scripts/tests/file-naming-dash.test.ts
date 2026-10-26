@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import { withCaseNumberPrefix as w, splitCaseNumberPrefix as sp, joinCaseNumberPrefix as j } from "../../src/lib/file-naming";
+const cn = "071826SMJO", who = "Smith, John";
+assert.equal(w("MRI result.pdf", cn, who), "071826SMJO Smith, John - MRI result.pdf");
+assert.equal(w("Smith, John MRI.pdf", cn, who), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(w("Smith, John - MRI.pdf", cn, who), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(w("- MRI.pdf", cn, who), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(w("071826SMJO old.pdf", cn, who), "071826SMJO old.pdf");
+assert.equal(w("x.pdf", "", who), "x.pdf");
+assert.deepEqual(sp("071826SMJO Smith, John MRI.pdf", cn, who), { prefix: "071826SMJO Smith, John -", label: "MRI.pdf" });
+assert.deepEqual(sp("071826SMJO Smith, John - MRI.pdf", cn, who), { prefix: "071826SMJO Smith, John -", label: "MRI.pdf" });
+assert.deepEqual(sp("071826SMJO MRI.pdf", cn, who), { prefix: "071826SMJO -", label: "MRI.pdf" });
+assert.equal(sp("071826SMJOX.pdf", cn, who), null);
+assert.equal(j("071826SMJO Smith, John -", "MRI.pdf"), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(j("071826SMJO Smith, John -", " - MRI.pdf"), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(j("071826SMJO Smith, John", "MRI.pdf"), "071826SMJO Smith, John - MRI.pdf");
+assert.equal(j("071826SMJO Smith, John -", "  "), "");
+console.log("file-naming-dash ok");
