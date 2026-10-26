@@ -2,7 +2,8 @@
 
 import { NumberInput } from "@/components/number-input";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { mayShowSetupWizard, probeCloudOffice, type CloudOfficeProbe } from "@/lib/onboarding-gate";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -33,6 +34,10 @@ export function OnboardingModal() {
 
   const [step, setStep] = useState<StepId>(1);
   const [dismissed, setDismissed] = useState(false);
+  // Cloud check: never show the wizard to an office that already has data.
+  // null = not checked yet (wizard stays hidden until the cloud answers).
+  const [probe, setProbe] = useState<CloudOfficeProbe | null>(null);
+  const localCompleted = Boolean(onboardingState.completedAt);
 
   const shouldShow = useMemo(() => {
     if (onboardingState.completedAt) return false;
@@ -52,7 +57,24 @@ export function OnboardingModal() {
     billingMacros.treatments.length,
   ]);
 
-  if (!shouldShow || dismissed) return null;
+  useEffect(() => {
+    if (!shouldShow || localCompleted || probe) return;
+    let cancelled = false;
+    // Wait for cloud boot to settle, then ask the cloud (read-only).
+    const t = window.setTimeout(() => {
+      void probeCloudOffice().then((p) => {
+        if (!cancelled) setProbe(p ?? { ok: false, patients: 0, appointments: 0, kvKeys: [] });
+      });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [shouldShow, localCompleted, probe]);
+
+  const cloudAllows = mayShowSetupWizard({ isTeamMember: false, localCompleted, probe });
+
+  if (!shouldShow || dismissed || !cloudAllows) return null;
 
   const finish = () => {
     markComplete();
