@@ -42,6 +42,7 @@ import {
   type FormTemplate,
 } from "@/lib/patient-forms";
 import type { MacroTemplate } from "@/lib/macro-templates";
+import { appConfirm } from "@/components/app-dialog";
 
 const nowIso = () => new Date().toISOString();
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -105,8 +106,8 @@ export function PatientFormsSettingsPanel() {
     updateForms((cur) => [...cur, f]);
     setSelectedId(f.id);
   };
-  const deleteForm = (f: FormTemplate) => {
-    if (!window.confirm(`Delete "${f.name}"?\n\nLinks already sent keep working until they expire. (It stays in version history.)`)) return;
+  const deleteForm = async (f: FormTemplate) => {
+    if (!(await appConfirm(`Delete "${f.name}"?\n\nLinks already sent keep working until they expire. (It stays in version history.)`))) return;
     patchForm(f.id, (x) => ({ ...x, deleted: true }));
     setSelectedId(live.find((x) => x.id !== f.id)?.id ?? "");
   };
@@ -194,8 +195,8 @@ function FormEditor({
     patch((f) => ({ ...f, sections: [...f.sections, s] }));
     setOpenSection(s.id);
   };
-  const removeSection = (s: FormSection) => {
-    if (!window.confirm(`Remove the section "${s.title || s.macroName || "Untitled"}" from this form?`)) return;
+  const removeSection = async (s: FormSection) => {
+    if (!(await appConfirm(`Remove the section "${s.title || s.macroName || "Untitled"}" from this form?`))) return;
     patch((f) => ({ ...f, sections: f.sections.filter((x) => x.id !== s.id) }));
   };
 
@@ -445,8 +446,8 @@ function CustomQuestionsEditor({ section: s, macros, patch }: { section: FormSec
                 <button
                   aria-label="Delete question"
                   className={`${iconBtn} text-red-700`}
-                  onClick={() => {
-                    if (q.label.trim() && !window.confirm(`Delete the question "${q.label.trim()}"?`)) return;
+                  onClick={async () => {
+                    if (q.label.trim() && !(await appConfirm(`Delete the question "${q.label.trim()}"?`))) return;
                     setQs((list) => list.filter((x) => x.id !== q.id));
                   }}
                   type="button"

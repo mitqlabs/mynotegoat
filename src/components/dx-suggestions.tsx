@@ -87,7 +87,7 @@ export function DxSuggestions({
                     </span>
                   </div>
                   <button
-                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm shrink-0"
                     onClick={() => onAdd(s.code, s.description)}
                     type="button"
                   >

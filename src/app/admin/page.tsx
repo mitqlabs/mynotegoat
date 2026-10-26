@@ -230,7 +230,7 @@ export default function AdminAccountsPage() {
             type="button"
             onClick={() => void loadAccounts()}
             disabled={loading}
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-sm font-semibold transition hover:bg-[var(--bg-soft)] disabled:opacity-50"
+            className="btn btn-secondary disabled:opacity-50"
           >
             {loading ? "Loading..." : "Refresh"}
           </button>
@@ -348,7 +348,7 @@ export default function AdminAccountsPage() {
                             )
                           }
                           disabled={actionLoading === account.user_id}
-                          className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                          className="btn btn-danger btn-sm disabled:opacity-50"
                         >
                           Reject
                         </button>
@@ -364,7 +364,7 @@ export default function AdminAccountsPage() {
                             )
                           }
                           disabled={actionLoading === account.user_id}
-                          className="rounded-lg border border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold transition hover:bg-[var(--bg-soft)] disabled:opacity-50"
+                          className="btn btn-secondary btn-sm disabled:opacity-50"
                         >
                           Suspend
                         </button>

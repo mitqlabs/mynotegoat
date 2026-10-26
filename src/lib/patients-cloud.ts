@@ -23,7 +23,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
-import { reportCloudWriteError } from "@/lib/storage-sync-interceptor";
+import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import {
   resolveValidatedWorkspaceId as resolveValidatedWorkspaceIdShared,
   withLockStealRetry,
@@ -192,6 +192,7 @@ export async function fetchAllPatientsFromTable(): Promise<PatientRecord[] | nul
  * silent RLS-rejected encounter writes. Don't repeat that here.
  */
 export async function upsertPatientToTable(patient: PatientRecord): Promise<void> {
+  reportCloudWriteStart("patients upsert");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`upsert(${patient.id})`);
@@ -209,6 +210,7 @@ export async function upsertPatientToTable(patient: PatientRecord): Promise<void
         );
       }
     });
+    reportCloudWriteSuccess("patients upsert");
   } catch (err) {
     const wrapped =
       err instanceof Error
@@ -255,6 +257,7 @@ export async function bulkUpsertPatientsToTable(patientsList: PatientRecord[]): 
 }
 
 export async function deletePatientFromTable(patientId: string): Promise<void> {
+  reportCloudWriteStart("patients delete");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`delete(${patientId})`);
@@ -273,6 +276,7 @@ export async function deletePatientFromTable(patientId: string): Promise<void> {
         );
       }
     });
+    reportCloudWriteSuccess("patients delete");
   } catch (err) {
     const wrapped =
       err instanceof Error

@@ -11,7 +11,7 @@ import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
 import { isGoatActionPhrase } from "@/lib/goat-intents";
-import { askGlobalGoat } from "@/components/global-goat";
+import { askGlobalGoat } from "@/components/global-goat-button";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -431,7 +431,7 @@ export function GoatPanel({
               value={question}
             />
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="btn btn-primary disabled:opacity-40"
               disabled={!question.trim()}
               type="submit"
             >

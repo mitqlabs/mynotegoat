@@ -25,6 +25,7 @@ import {
   type AdminAccessSettings,
   type DeletableKind,
 } from "@/lib/admin-access";
+import { appAlert, appPrompt } from "@/components/app-dialog";
 
 function officeDeletePassword(): string {
   try {
@@ -61,22 +62,20 @@ export async function ensureDeleteAllowed(kind: DeletableKind): Promise<boolean>
   const rule = deleteRuleFor(tier, kind, settings);
   if (rule === "allowed") return true;
   if (rule === "never") {
-    window.alert(`Your role can't delete ${kindLabel(kind)}. Ask an admin.`);
+    (await appAlert(`Your role can't delete ${kindLabel(kind)}. Ask an admin.`));
     return false;
   }
   // Falls back to the office delete password (Settings → Office), the one
   // that already guards patient deletes, so there aren't two secrets.
   const officePassword = officeDeletePassword();
   if (!settings.deletePasswordHash && !officePassword) {
-    window.alert(
-      `Deleting ${kindLabel(kind)} needs the delete password, and none has been set yet. An admin can set one in Settings → Admin Access.`,
-    );
+    (await appAlert(`Deleting ${kindLabel(kind)} needs the delete password, and none has been set yet. An admin can set one in Settings → Admin Access.`));
     return false;
   }
-  const attempt = window.prompt(`Enter the delete password to delete ${kindLabel(kind)}:`) ?? "";
+  const attempt = (await appPrompt(`Enter the delete password to delete ${kindLabel(kind)}.`, { title: "Delete password", inputType: "password", confirmLabel: "Delete" })) ?? "";
   if (!attempt) return false;
   if (officePassword && attempt === officePassword) return true;
   if (settings.deletePasswordHash && (await verifyDeletePassword(settings, attempt))) return true;
-  window.alert("That password isn't right.");
+  (await appAlert("That password isn't right."));
   return false;
 }

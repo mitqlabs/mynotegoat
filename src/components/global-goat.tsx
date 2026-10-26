@@ -96,60 +96,12 @@ import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 
-// ---------------------------------------------------------------------------
-// Open/closed, shared by the nav button and the popup.
-// ---------------------------------------------------------------------------
+// Open/closed store + nav button live in a tiny module so the shell can
+// render the button without downloading all of G.O.A.T. up front.
+import { setGlobalGoatOpen, takePendingAsk, useGlobalGoatOpen } from "@/components/global-goat-button";
+import { appConfirm } from "@/components/app-dialog";
 
-let popupOpen = false;
-const openListeners = new Set<() => void>();
-export function setGlobalGoatOpen(open: boolean) {
-  popupOpen = open;
-  openListeners.forEach((l) => l());
-}
-/** Text waiting to be sent once the popup is open (from the patient-page box). */
-let pendingAsk: string | null = null;
-/** Open the global G.O.A.T. chat and send `text` there, as if typed. On a
- *  patient page its "him / her / this patient" is that page's patient. */
-export function askGlobalGoat(text: string) {
-  pendingAsk = text;
-  setGlobalGoatOpen(true);
-}
-function takePendingAsk(): string | null {
-  const t = pendingAsk;
-  pendingAsk = null;
-  return t;
-}
-function useGlobalGoatOpen(): boolean {
-  return useSyncExternalStore(
-    (l) => {
-      openListeners.add(l);
-      return () => {
-        openListeners.delete(l);
-      };
-    },
-    () => popupOpen,
-    () => false,
-  );
-}
-
-/** Sidebar / mobile-nav button. `compact` = icon only (collapsed sidebar). */
-export function GlobalGoatButton({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
-  const open = useGlobalGoatOpen();
-  const { canView } = useWorkspaceAccess();
-  if (!canView("patients")) return null;
-  return (
-    <button
-      aria-expanded={open}
-      className={className}
-      onClick={() => setGlobalGoatOpen(!open)}
-      title="Ask G.O.A.T."
-      type="button"
-    >
-      <GoatAvatar size={compact ? 30 : 28} />
-      {!compact && <span>G.O.A.T.</span>}
-    </button>
-  );
-}
+export { askGlobalGoat, GlobalGoatButton, setGlobalGoatOpen } from "@/components/global-goat-button";
 
 // ---------------------------------------------------------------------------
 // Answers as chat text
@@ -2256,8 +2208,8 @@ export function GlobalGoatPopup({
             <button style={{ fontSize: 12 }}
               className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
               disabled={!chat.messages.length || Boolean(job)}
-              onClick={() => {
-                if (window.confirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back.")) {
+              onClick={async () => {
+                if ((await appConfirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back."))) {
                   clearChat();
                   setChat({ messages: [], patientId: null });
                   // Waiting steps belong to the old chat.
@@ -2369,7 +2321,7 @@ export function GlobalGoatPopup({
                     ))}
                     {m.formLaunch && (
                       <button
-                        className="mt-2 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                        className="btn btn-primary btn-sm mt-2"
                         data-goat-form={m.formLaunch.kind}
                         onClick={() => openForm(m.formLaunch!)}
                         type="button"

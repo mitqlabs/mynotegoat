@@ -41,6 +41,7 @@ import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
 import { notifyChange } from "@/lib/local-sync";
 import {
   createKeyDateId,
+  normalizeKeyDateTime,
   normalizeKeyDates,
   type KeyDateOfficeStatus,
   type KeyDateRecord,
@@ -54,7 +55,16 @@ type KeyDateDraft = {
   endDate?: string;
   officeStatus: KeyDateOfficeStatus;
   reason: string;
+  openStart?: string;
+  openEnd?: string;
 };
+
+/** Special hours from a draft ("" / invalid → omitted = whole day). */
+function draftHours(draft: KeyDateDraft): Pick<KeyDateRecord, "openStart" | "openEnd"> {
+  const openStart = normalizeKeyDateTime(draft.openStart);
+  const openEnd = normalizeKeyDateTime(draft.openEnd);
+  return { ...(openStart ? { openStart } : {}), ...(openEnd ? { openEnd } : {}) };
+}
 
 type AddKeyDateResult =
   | { added: true; keyDate: KeyDateRecord }
@@ -235,7 +245,11 @@ export function useCloudKeyDates() {
         endDate,
         officeStatus: draft.officeStatus,
         reason,
+        ...draftHours(draft),
       };
+      if (newRecord.openStart && newRecord.openEnd && newRecord.openEnd <= newRecord.openStart) {
+        return { added: false, reason: "The closing time must be after the opening time." };
+      }
       const next = [...current, newRecord];
       await writeKeyDatesToCloud(next);
       logActivity({ category: "keyDates", action: "keydate.added", summary: `Added key date ${keyDateLabel(newRecord)}` });
@@ -267,10 +281,17 @@ export function useCloudKeyDates() {
       let updated: KeyDateRecord | null = null;
       const next = current.map((entry) => {
         if (entry.id !== id) return entry;
-        updated = { ...entry, startDate, endDate, officeStatus: draft.officeStatus, reason };
+        const { openStart: _s, openEnd: _e, ...rest } = entry;
+        void _s;
+        void _e;
+        updated = { ...rest, startDate, endDate, officeStatus: draft.officeStatus, reason, ...draftHours(draft) };
         return updated;
       });
       if (!updated) return { updated: false, reason: "Key date not found." };
+      const u = updated as KeyDateRecord;
+      if (u.openStart && u.openEnd && u.openEnd <= u.openStart) {
+        return { updated: false, reason: "The closing time must be after the opening time." };
+      }
       await writeKeyDatesToCloud(next);
       if (before) {
         logActivity({

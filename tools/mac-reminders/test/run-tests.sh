@@ -10,6 +10,7 @@ cat > "$T/bin/curl" <<'M'
 out=/dev/stdout; data=""; url=""
 while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; --data-binary) data=$2; shift;; -w|-H|-X|--max-time) shift;; -*) ;; *) url=$1;; esac; shift; done
 echo "$url" >> "$MOCK_DIR/urls"
+if [[ "$url" == */inbound ]]; then echo "$data" >> "$MOCK_DIR/inbound"; echo '{"changed":1}' > "$out"; printf "${MOCK_INBOUND_HTTP:-200}"; exit 0; fi
 if [[ "$url" == */ack ]]; then echo "$data" >> "$MOCK_DIR/acks"; : > "$out"; printf 200; exit 0; fi
 cp "$MOCK_QUEUE" "$out"; printf "${MOCK_HTTP:-200}"
 M
@@ -27,6 +28,11 @@ echo "$*" >> "$MOCK_DIR/security"
 exit 0
 M
 printf '#!/bin/bash\necho "$*" >> "$MOCK_DIR/launchctl"\n' > "$T/bin/launchctl"
+cat > "$T/bin/sqlite3" <<'M'
+#!/bin/bash
+echo "$*" >> "$MOCK_DIR/sql"
+case "$*" in *"MAX(ROWID)"*) echo "${MOCK_MAX:-0}" ;; *) [ -f "$MOCK_DIR/rows" ] && cat "$MOCK_DIR/rows" ;; esac
+M
 chmod +x "$T/bin/"*
 
 pass=0; fail=0
@@ -36,7 +42,8 @@ setup() {
   export MOCK_QUEUE="$MOCK_DIR/q.json" NG_LOG_DIR="$MOCK_DIR/log" NG_LOCK_DIR="$MOCK_DIR/lock"
   export NG_CURL="$T/bin/curl" NG_OSASCRIPT="$T/bin/osascript" NG_SECURITY="$T/bin/security" NG_LAUNCHCTL="$T/bin/launchctl"
   export NG_FORCE_PY=1 NG_SLEEP_MIN=0 NG_SLEEP_MAX=0 NG_HOUR_NOW=09 MOCK_TOKEN="ngr_$(printf 'a%.0s' $(seq 64))"
-  unset NG_CAP MOCK_OSA_FAIL MOCK_HTTP NG_TOKEN
+  export NG_SQLITE="$T/bin/sqlite3" NG_CHAT_DB="$MOCK_DIR/none.db"
+  unset NG_CAP MOCK_OSA_FAIL MOCK_HTTP NG_TOKEN MOCK_MAX MOCK_INBOUND_HTTP
 }
 q() { echo "$1" > "$MOCK_QUEUE"; }
 ITEMS='[{"id":"a1","phone":"+15550100001","text":"Hi Jane, see you at 10:30 AM. Call \"us\" at 555-0000"},{"id":"a2","phone":"+15550100002","text":"Hi Bob,\nline two"},{"id":"a3","phone":"+15550100003","text":"Hi Ann"}]'
@@ -108,6 +115,37 @@ NG_TOKEN="bad" bash "$DIR/install.sh" >/dev/null 2>&1; rc=$?
 check "install rejects bad token" '[ $rc = 1 ]'
 bash "$DIR/uninstall.sh" > /dev/null
 check "uninstall removes plist + token" '[ ! -e "$NG_AGENTS_DIR/com.notegoat.reminders.plist" ] && grep -q delete-generic-password $MOCK_DIR/security'
+
+# --- opt-out replies (chat.db) ---
+US=$'\x1f'
+optq() { q '{"send":false,"run":false,"dryRun":false,"reason":"Nothing to send.","visitDate":"2026-10-20","items":[]}'; : > "$MOCK_DIR/chat.db"; export NG_CHAT_DB="$MOCK_DIR/chat.db"; }
+setup; optq; MOCK_MAX=500 bash "$R"
+check "inbound first run: records max rowid, posts nothing" '[ "$(cat $NG_LOG_DIR/.inbound-rowid)" = 500 ] && ! grep -q inbound $MOCK_DIR/urls'
+
+setup; optq; mkdir -p "$NG_LOG_DIR"; printf 500 > "$NG_LOG_DIR/.inbound-rowid"
+printf '501%s+15550100001%s Stop \n502%s+15550100002%sCan I cancel my 3pm?\n503%s+15550100003%sunsubscribe!\n504%s%sSTOP\n' "$US" "$US" "$US" "$US" "$US" "$US" "$US" "$US" > "$MOCK_DIR/rows"
+bash "$R"
+check "inbound: only keyword replies posted" '[ "$(n $MOCK_DIR/inbound)" = 1 ] && grep -q 5550100001 $MOCK_DIR/inbound && grep -q 5550100003 $MOCK_DIR/inbound && ! grep -q 5550100002 $MOCK_DIR/inbound'
+check "inbound: body is valid JSON with 2 messages" 'python3 -c "import json,sys; d=json.load(open(\"$MOCK_DIR/inbound\")); assert len(d[\"messages\"])==2"'
+check "inbound: uses rowid > last" 'grep -q "ROWID > 500" $MOCK_DIR/sql'
+check "inbound: advances rowid" '[ "$(cat $NG_LOG_DIR/.inbound-rowid)" = 504 ]'
+check "inbound: never sends a text" '[ "$(n $MOCK_DIR/sent)" = 0 ]'
+check "inbound: log has no phone or message text" '! grep -q 5550100001 $NG_LOG_DIR/reminders.log'
+
+setup; optq; mkdir -p "$NG_LOG_DIR"; printf 500 > "$NG_LOG_DIR/.inbound-rowid"
+printf '501%s+15550100001%sSTOP\n' "$US" "$US" > "$MOCK_DIR/rows"
+MOCK_INBOUND_HTTP=500 bash "$R"
+check "inbound: upload failure keeps rowid for retry" '[ "$(cat $NG_LOG_DIR/.inbound-rowid)" = 500 ]'
+
+setup; optq; mkdir -p "$NG_LOG_DIR"; printf 500 > "$NG_LOG_DIR/.inbound-rowid"
+printf '501%s+15550100001%sSTOP\n' "$US" "$US" > "$MOCK_DIR/rows"
+NG_HOUR_NOW=22 bash "$R"
+check "inbound: runs outside office hours, queue not fetched" '[ "$(n $MOCK_DIR/inbound)" = 1 ] && ! grep -q "/queue" $MOCK_DIR/urls'
+
+setup; optq; mkdir -p "$NG_LOG_DIR"; printf 500 > "$NG_LOG_DIR/.inbound-rowid"
+printf '501%s+15550100001%shello\n' "$US" "$US" > "$MOCK_DIR/rows"
+bash "$R"
+check "inbound: no keywords → no post, rowid advances" '[ ! -s $MOCK_DIR/inbound ] && [ "$(cat $NG_LOG_DIR/.inbound-rowid)" = 501 ]'
 
 echo "mac-reminders tests: $pass passed, $fail failed"
 [ "$fail" = 0 ]

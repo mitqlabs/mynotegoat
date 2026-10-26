@@ -107,6 +107,12 @@ export const RichTextTemplateEditor = forwardRef<
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastAppliedRef = useRef("");
   const isFocusedRef = useRef(false);
+  // Values this editor emitted recently (newest last) and when the user
+  // last typed. Used to tell a stale/normalized echo of our own typing
+  // (which must NEVER overwrite a focused editor — that's the "text
+  // vanishes then reappears" bug) from a genuine programmatic change.
+  const recentEmitsRef = useRef<string[]>([]);
+  const lastInputAtRef = useRef(0);
   // Cursor position the user was at the last time the editor held the
   // selection. Restored before insertText / insertHtml so a macro
   // button click (which moves focus away from the editor and clears
@@ -160,9 +166,17 @@ export const RichTextTemplateEditor = forwardRef<
     // (e.g., SOAP was salted/copied programmatically), we MUST update
     // even though the user is focused — otherwise the old content
     // sticks around and overwrites the programmatic change on blur.
-    const isExternalChange = nextHtml !== lastAppliedRef.current;
-    if (isFocusedRef.current && !isExternalChange) {
-      return;
+    const isExternalChange =
+      nextHtml !== lastAppliedRef.current && normalizeOutgoingValue(nextHtml) !== lastAppliedRef.current;
+    if (isFocusedRef.current) {
+      if (!isExternalChange) return;
+      // An older value we emitted ourselves arriving late (debounced save
+      // round-trip, another hook instance re-reading storage) — ignore.
+      const out = normalizeOutgoingValue(nextHtml);
+      if (recentEmitsRef.current.includes(out) || recentEmitsRef.current.includes(nextHtml)) return;
+      // While the user is actively typing, never yank the content out
+      // from under them; the next keystroke re-emits the live DOM.
+      if (Date.now() - lastInputAtRef.current < 1500) return;
     }
     editor.innerHTML = nextHtml;
     lastAppliedRef.current = nextHtml;
@@ -239,6 +253,10 @@ export const RichTextTemplateEditor = forwardRef<
       return;
     }
     lastAppliedRef.current = next;
+    lastInputAtRef.current = Date.now();
+    const emits = recentEmitsRef.current;
+    emits.push(next);
+    if (emits.length > 30) emits.splice(0, emits.length - 30);
     onChange(next);
   };
 
@@ -431,7 +449,7 @@ export const RichTextTemplateEditor = forwardRef<
           <option value="24px">24</option>
         </select>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("undo")}
           type="button"
@@ -439,7 +457,7 @@ export const RichTextTemplateEditor = forwardRef<
           Undo
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("redo")}
           type="button"
@@ -447,7 +465,7 @@ export const RichTextTemplateEditor = forwardRef<
           Redo
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("bold")}
           type="button"
@@ -455,7 +473,7 @@ export const RichTextTemplateEditor = forwardRef<
           B
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold italic"
+          className="btn btn-secondary btn-sm italic"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("italic")}
           type="button"
@@ -463,7 +481,7 @@ export const RichTextTemplateEditor = forwardRef<
           I
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold underline"
+          className="btn btn-secondary btn-sm underline"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("underline")}
           type="button"
@@ -471,7 +489,7 @@ export const RichTextTemplateEditor = forwardRef<
           U
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("insertUnorderedList")}
           type="button"
@@ -479,7 +497,7 @@ export const RichTextTemplateEditor = forwardRef<
           Bullets
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("insertOrderedList")}
           type="button"
@@ -487,7 +505,7 @@ export const RichTextTemplateEditor = forwardRef<
           Numbered
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyLeft")}
           type="button"
@@ -495,7 +513,7 @@ export const RichTextTemplateEditor = forwardRef<
           Left
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyCenter")}
           type="button"
@@ -503,7 +521,7 @@ export const RichTextTemplateEditor = forwardRef<
           Center
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("justifyRight")}
           type="button"
@@ -511,7 +529,7 @@ export const RichTextTemplateEditor = forwardRef<
           Right
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertText("    ")}
           type="button"
@@ -519,7 +537,7 @@ export const RichTextTemplateEditor = forwardRef<
           Tab
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertHtml("<br />")}
           type="button"
@@ -527,7 +545,7 @@ export const RichTextTemplateEditor = forwardRef<
           Line Break
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insertHtml("<p><br /></p>")}
           type="button"
@@ -535,7 +553,7 @@ export const RichTextTemplateEditor = forwardRef<
           Paragraph
         </button>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => runCommand("removeFormat")}
           type="button"

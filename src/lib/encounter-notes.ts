@@ -1037,6 +1037,12 @@ function loadWatch() {
   }
 }
 
+/** Ids of notes whose cloud save isn't confirmed yet (fast boot re-checks them in full). */
+export function getUnconfirmedNoteIds(): Set<string> {
+  loadWatch();
+  return new Set(watched.keys());
+}
+
 function saveWatch() {
   try {
     if (watched.size === 0) window.localStorage.removeItem(UNSYNCED_KEY);

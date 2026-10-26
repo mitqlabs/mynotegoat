@@ -14,6 +14,7 @@ import type { PatientPackage } from "@/lib/patient-packages";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { CashPaymentEntry } from "@/lib/mock-data";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 /** ISO YYYY-MM-DD → US MM/DD/YYYY (to match encounterDate format). */
 function isoToUs(iso: string): string {
@@ -349,8 +350,8 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
     );
   };
 
-  const handleDelete = (id: string) => {
-    const ok = window.confirm("Delete this payment? This cannot be undone.");
+  const handleDelete = async (id: string) => {
+    const ok = (await appConfirm("Delete this payment? This cannot be undone."));
     if (!ok) return;
     updatePatientPayments(patientId, (current) => current.filter((e) => e.id !== id));
   };
@@ -511,7 +512,7 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
 
     const popup = window.open("", "_blank");
     if (!popup) {
-      window.alert("Please allow pop-ups to print the statement.");
+      void appAlert("Please allow pop-ups to print the statement.");
       return;
     }
     popup.document.open();

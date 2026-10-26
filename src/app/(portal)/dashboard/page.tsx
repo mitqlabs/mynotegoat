@@ -1459,7 +1459,7 @@ export default function DashboardPage() {
 
       {referralDrill && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8"
+          className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8"
           onClick={() => setReferralDrill(null)}
         >
           <ScrollLock />
@@ -1474,7 +1474,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-[var(--text-muted)]">{referralDrill.subtitle}</p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setReferralDrill(null)}
                 type="button"
               >

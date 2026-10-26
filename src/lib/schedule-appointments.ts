@@ -90,14 +90,13 @@ export function shouldWarnStatusChange(
  * Shows a confirm dialog if the status transition is risky.
  * Returns true if the change should proceed.
  */
-export function confirmStatusChangeIfNeeded(
+export async function confirmStatusChangeIfNeeded(
   current: AppointmentStatus,
   next: AppointmentStatus,
-): boolean {
+): Promise<boolean> {
   if (!shouldWarnStatusChange(current, next)) return true;
-  return window.confirm(
-    `This appointment is currently "${formatAppointmentStatusLabel(current)}". Are you sure you want to change it to "${formatAppointmentStatusLabel(next)}"?`,
-  );
+  const { appConfirm } = await import("@/components/app-dialog");
+  return appConfirm(`This appointment is currently "${formatAppointmentStatusLabel(current)}". Are you sure you want to change it to "${formatAppointmentStatusLabel(next)}"?`);
 }
 
 export const appointmentTypeOptions = [
