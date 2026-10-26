@@ -1,5 +1,7 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
+
 /**
  * Settings → Text Reminders → Message patients. Queue one text (e.g. an
  * emergency closure) for everyone booked on a day. Stored in Supabase
@@ -7,10 +9,12 @@
  * sending device delivers it through /api/reminders/queue.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
   addDaysIso,
+  localHHMM,
   localNow,
   pickBroadcastRecipients,
   to12h,
@@ -38,11 +42,80 @@ const usDate = (iso: string) => {
   return y && m && d ? `${Number(m)}/${Number(d)}/${y}` : iso;
 };
 
-export function MessagePatientsComposer({ settings, workspaceId }: { settings: SmsReminderSettings; workspaceId: string }) {
+/** Must match the shortcut name in tools/build-shortcuts.py. */
+export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=Send%20Reminders%20Now";
+
+function isAppleMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // iPadOS reports "Macintosh" but has touch.
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+}
+
+/** Runs the "Send Reminders Now" shortcut. Rendered on iPhone / iPad only. */
+export function SendFromIphoneButton({ className = "" }: { className?: string }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    // navigator is client-only; decide after mount to avoid a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShow(isAppleMobile());
+  }, []);
+  if (!show) return null;
+  return (
+    <a
+      className={`inline-flex h-[42px] items-center justify-center rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-white ${className}`}
+      data-testid="send-from-iphone"
+      href={SEND_NOW_SHORTCUT_URL}
+    >
+      Send now from this device
+    </a>
+  );
+}
+
+/** Round an "HH:MM" up to the next quarter hour ("13:07" → "13:15"). */
+function nextQuarter(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = Math.min(23 * 60 + 45, Math.ceil((h * 60 + m) / 15) * 15);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+export interface MessagePatientsPrefill {
+  /** Bumps on every request so the same prefill can be applied twice. */
+  key: number;
+  date: string;
+  message: string;
+  startTime?: string;
+  endTime?: string;
+}
+
+export function MessagePatientsComposer({
+  settings,
+  workspaceId,
+  prefill,
+}: {
+  settings: SmsReminderSettings;
+  workspaceId: string;
+  /** e.g. from a Key Date: closure text for the visits outside its hours. */
+  prefill?: MessagePatientsPrefill | null;
+}) {
   const todayIso = useMemo(() => localNow(new Date(), settings.timeZone).iso, [settings.timeZone]);
+  const { ask, confirmDialog } = useSimpleConfirm();
   const [text, setText] = useState("");
   const [target, setTarget] = useState<Target>("today");
   const [pickedDate, setPickedDate] = useState(todayIso);
+  // "Starting at": blank = whole day. For today, visits already past are
+  // always skipped (here and again on the server).
+  const [startTime, setStartTime] = useState(() => nextQuarter(localHHMM(new Date(), settings.timeZone)));
+  const [endTime, setEndTime] = useState("");
+  const [appliedPrefill, setAppliedPrefill] = useState(0);
+  if (prefill && prefill.key !== appliedPrefill) {
+    setAppliedPrefill(prefill.key);
+    setText(prefill.message);
+    const t: Target = prefill.date === todayIso ? "today" : prefill.date === addDaysIso(todayIso, 1) ? "tomorrow" : "date";
+    setTarget(t);
+    setPickedDate(prefill.date);
+    setStartTime(prefill.startTime ?? "");
+    setEndTime(prefill.endTime ?? "");
+  }
   const [excludeCanceled, setExcludeCanceled] = useState(true);
   const [recipients, setRecipients] = useState<BroadcastCandidate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,8 +123,21 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
   const [status, setStatus] = useState("");
   const [history, setHistory] = useState<BroadcastRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [justQueued, setJustQueued] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (prefill) rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [prefill]);
 
   const date = target === "today" ? todayIso : target === "tomorrow" ? addDaysIso(todayIso, 1) : pickedDate;
+  const isToday = date === todayIso;
+  const windowError = startTime && endTime && endTime <= startTime ? "The end time must be after the start time." : "";
+
+  const changeTarget = (next: Target) => {
+    setTarget(next);
+    // Today defaults to "from now"; other days to the whole day.
+    setStartTime(next === "today" ? nextQuarter(localHHMM(new Date(), settings.timeZone)) : "");
+  };
 
   const loadRecipients = useCallback(async () => {
     const client = getSupabaseBrowserClient();
@@ -82,11 +168,16 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
             optedOut: p?.text_reminders_off === true,
           };
         }),
-        { excludeCanceled },
+        {
+          excludeCanceled,
+          startTime: startTime || undefined,
+          endTime: endTime || undefined,
+          notBefore: date === localNow(new Date(), settings.timeZone).iso ? localHHMM(new Date(), settings.timeZone) : undefined,
+        },
       ),
     );
     setLoading(false);
-  }, [workspaceId, date, excludeCanceled]);
+  }, [workspaceId, date, excludeCanceled, startTime, endTime, settings.timeZone]);
 
   const loadHistory = useCallback(async () => {
     const client = getSupabaseBrowserClient();
@@ -110,20 +201,41 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
     void loadHistory();
   }, [loadHistory]);
 
+  const windowLabel =
+    startTime && endTime
+      ? `${to12h(startTime)} – ${to12h(endTime)}`
+      : startTime
+        ? `from ${to12h(startTime)}`
+        : endTime
+          ? `before ${to12h(endTime)}`
+          : isToday
+            ? "visits still ahead"
+            : "";
+
   const queue = async () => {
+    setJustQueued(false);
     const client = getSupabaseBrowserClient();
     const message = text.trim();
     if (!client || !workspaceId) return setStatus("Sign in to message patients.");
     if (!message) return setStatus("Type a message first.");
-    if (!recipients.length) return setStatus("No patients with a phone number on that day.");
-    const dry = settings.dryRun ? "\n\nDry run is ON: nothing will actually be texted; it will only be logged." : "";
-    if (!window.confirm(`Text this to ${recipients.length} patient(s) booked ${usDate(date)}?\n\n"${message}"${dry}`)) return;
+    if (windowError) return setStatus(windowError);
+    if (!recipients.length) return setStatus("No patients with a phone number in that time.");
+    const ok = await ask({
+      title: `Text ${recipients.length} patient(s)?`,
+      lines: [
+        `Booked ${usDate(date)}${windowLabel ? `, ${windowLabel}` : ""}.`,
+        `"${message}"`,
+        ...(settings.dryRun ? ["Dry run is on: nothing will actually be texted; it will only be logged."] : []),
+      ],
+      confirmLabel: "Queue message",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
     setBusy(true);
-    const { data: b, error } = await client
-      .from("reminder_broadcasts")
-      .insert({ workspace_id: workspaceId, message, target_date: date, exclude_canceled: excludeCanceled })
-      .select("id")
-      .single();
+    const row: Record<string, unknown> = { workspace_id: workspaceId, message, target_date: date, exclude_canceled: excludeCanceled };
+    if (startTime) row.start_time = startTime;
+    if (endTime) row.end_time = endTime;
+    const { data: b, error } = await client.from("reminder_broadcasts").insert(row).select("id").single();
     if (error || !b) {
       setBusy(false);
       return setStatus(`Couldn't queue the message: ${error?.message ?? "unknown error"}`);
@@ -140,16 +252,23 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
     setBusy(false);
     if (rErr) return setStatus(`Couldn't queue the message: ${rErr.message}`);
     setText("");
+    setJustQueued(true);
     setStatus(
       settings.dryRun
         ? `Queued for ${recipients.length} patient(s). Dry run is on, so devices will only log it.`
-        : `Queued for ${recipients.length} patient(s). Tap "Send Reminders Now" on the iPhone to send it now; the iMac picks it up within 10 minutes.`,
+        : `Queued for ${recipients.length} patient(s). Run "Send Reminders Now" on your iPhone to send it now. The iMac sends it automatically within about 10 minutes.`,
     );
     void loadHistory();
   };
 
   const cancel = async (id: string) => {
-    if (!window.confirm("Cancel the texts that haven't gone out yet?")) return;
+    const ok = await ask({
+      title: "Cancel this message?",
+      lines: ["Texts that haven't gone out yet won't be sent."],
+      confirmLabel: "Cancel message",
+      cancelLabel: "Keep",
+    });
+    if (!ok) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     await client.from("reminder_broadcasts").update({ canceled_at: new Date().toISOString() }).eq("id", id);
@@ -158,7 +277,7 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
   };
 
   return (
-    <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-3 text-sm" data-testid="message-patients">
+    <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-3 text-sm" data-testid="message-patients" ref={rootRef}>
       <div>
         <p className="font-semibold">Message patients</p>
         <p className="text-[var(--text-muted)]">
@@ -184,7 +303,7 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1">
           <span className={label}>Send to patients booked</span>
-          <select className={input} onChange={(e) => setTarget(e.target.value as Target)} value={target}>
+          <select className={input} onChange={(e) => changeTarget(e.target.value as Target)} value={target}>
             <option value="today">Today</option>
             <option value="tomorrow">Tomorrow</option>
             <option value="date">Pick a date</option>
@@ -193,6 +312,28 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
         {target === "date" && (
           <input className={input} min={todayIso} onChange={(e) => setPickedDate(e.target.value)} type="date" value={pickedDate} />
         )}
+        <label className="grid gap-1">
+          <span className={label}>Starting at</span>
+          <span data-testid="message-patients-start">
+            <TimeInput12h
+              ariaLabel="Starting at"
+              inputClassName={input}
+              onChange={(v) => setStartTime(v)}
+              value={startTime}
+            />
+          </span>
+        </label>
+        <label className="grid gap-1">
+          <span className={label}>Until (optional)</span>
+          <span data-testid="message-patients-end">
+            <TimeInput12h
+              allowEmpty ariaLabel="Until"
+              inputClassName={input}
+              onChange={(v) => setEndTime(v)}
+              value={endTime}
+            />
+          </span>
+        </label>
         <label className="inline-flex h-[42px] items-center gap-2 font-semibold">
           <input checked={excludeCanceled} onChange={(e) => setExcludeCanceled(e.target.checked)} type="checkbox" />
           Skip canceled visits
@@ -200,12 +341,12 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button className="text-left font-semibold text-[var(--brand-primary)]" onClick={() => setShowList((v) => !v)} type="button">
-          {loading ? "Counting…" : `${recipients.length} patient(s) on ${usDate(date)}`} {recipients.length > 0 && (showList ? "▴" : "▾")}
+          {loading ? "Counting…" : `${recipients.length} patient(s) on ${usDate(date)}${windowLabel ? ` · ${windowLabel}` : ""}`} {recipients.length > 0 && (showList ? "▴" : "▾")}
         </button>
         <button
           className={`${btn} bg-[var(--brand-primary)] text-white disabled:opacity-50`}
           data-testid="message-patients-send"
-          disabled={busy || loading || !text.trim() || !recipients.length}
+          disabled={busy || loading || !text.trim() || !recipients.length || Boolean(windowError)}
           onClick={() => void queue()}
           type="button"
         >
@@ -221,10 +362,12 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
           ))}
         </ul>
       )}
+      {windowError && <p className="font-semibold text-red-700">{windowError}</p>}
       <p className="text-xs text-[var(--text-muted)]">
-        Only patients with a phone number are included, once each. Patients marked &quot;no text reminders&quot; are skipped. Quiet hours apply.
+        Visits that already passed are never texted. Leave &quot;Starting at&quot; blank for the whole day. Only patients with a phone number are included, once each. Patients marked &quot;no text reminders&quot; are skipped. Quiet hours apply.
       </p>
       {status && <p className="font-semibold">{status}</p>}
+      {justQueued && <SendFromIphoneButton className="justify-self-start" />}
       {history.length > 0 && (
         <div className="grid gap-1">
           <span className={label}>Recent messages</span>
@@ -258,6 +401,7 @@ export function MessagePatientsComposer({ settings, workspaceId }: { settings: S
           </button>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

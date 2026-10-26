@@ -14,6 +14,7 @@ import {
   type ReminderQueueEntry,
   type SmsReminderSettings,
 } from "@/lib/sms-reminders";
+import { isTimeWithinHours, type KeyDateHours } from "@/lib/key-dates";
 
 export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -195,12 +196,15 @@ export function buildDeviceQueue(input: {
   onlyAfter?: string;
   /** Same-day catch-up: say "today" instead of "tomorrow". */
   sameDay?: boolean;
+  /** Key Date special hours: visits outside them get no reminder. */
+  hours?: KeyDateHours | null;
 }): DeviceQueueItem[] {
   const queue = buildReminderQueue(input.appointments, input.patientsById, input.settings, input.visitDate);
   const after = input.onlyAfter ? normalizeHHMM(input.onlyAfter) : "";
   return sendableReminders(queue)
     .filter((entry) => !input.alreadySentIds.has(entry.appointmentId))
     .filter((entry) => !after || normalizeHHMM(entry.time) > after)
+    .filter((entry) => isTimeWithinHours(entry.time, input.hours ?? null))
     .map((entry) => {
       const text = renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office);
       return {
@@ -300,6 +304,8 @@ export interface CatchUpDate {
   mode: "today" | "tomorrow";
   /** For "today": only visits starting after this office-local HH:MM. */
   onlyAfter?: string;
+  /** Key Date special hours for that date (partial closure / custom hours). */
+  hours?: KeyDateHours;
 }
 
 export interface CatchUpPlan {
@@ -323,8 +329,14 @@ export function planCatchUp(input: {
   settings: SmsReminderSettings;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
+  /** Key Date special hours per date; visits outside them are skipped. */
+  hoursByDate?: Map<string, KeyDateHours>;
 }): CatchUpPlan {
   const { now, settings, officeHours, closedIsoDates } = input;
+  const hoursFor = (iso: string) => {
+    const h = input.hoursByDate?.get(iso);
+    return h ? { hours: h } : {};
+  };
   const today = localNow(now, settings.timeZone);
   const visitDate = addDaysIso(today.iso, 1);
   const base = { todayIso: today.iso, visitDate };
@@ -333,12 +345,40 @@ export function planCatchUp(input: {
   const dates: CatchUpDate[] = [];
   const notes: string[] = [];
   if (closedIsoDates.has(today.iso)) notes.push("The office is closed today (Key Dates).");
-  else dates.push({ visitDate: today.iso, mode: "today", onlyAfter: localHHMM(now, settings.timeZone) });
+  else dates.push({ visitDate: today.iso, mode: "today", onlyAfter: localHHMM(now, settings.timeZone), ...hoursFor(today.iso) });
   if (closedIsoDates.has(visitDate)) notes.push("The office is closed tomorrow (Key Dates).");
   else if (!effectiveRunDays(settings, officeHours).includes(today.dow)) notes.push("Tomorrow's reminders aren't due (not a run day).");
   else if (today.hour < settings.sendHour) notes.push(`Tomorrow's reminders go out at ${settings.sendHour}:00.`);
-  else dates.push({ visitDate, mode: "tomorrow" });
+  else dates.push({ visitDate, mode: "tomorrow", ...hoursFor(visitDate) });
   return { ...base, dates, reason: notes.join(" ") };
+}
+
+/**
+ * The automatic (scheduled, non-forced) run. Same as the catch-up — TODAY's
+ * unsent reminders for visits still ahead ("today" wording) plus TOMORROW's
+ * when due — but only from the send hour, and a dry run only once a day.
+ * Real sends are deduped by the sent log and claims, so a second call (or a
+ * later "Send Reminders Now") never texts anyone twice.
+ */
+export function planScheduledRun(input: {
+  now: Date;
+  settings: SmsReminderSettings;
+  officeHours: OfficeHoursDay[];
+  closedIsoDates: Set<string>;
+  hoursByDate?: Map<string, KeyDateHours>;
+  /** Only passed for dry runs (once-a-day). */
+  lastRunAt?: Date | null;
+}): CatchUpPlan {
+  const { now, settings } = input;
+  const today = localNow(now, settings.timeZone);
+  const base = { todayIso: today.iso, visitDate: addDaysIso(today.iso, 1) };
+  if (!settings.enabled) return { ...base, dates: [], reason: "Text reminders are turned off." };
+  if (isQuietNow(now, settings)) return { ...base, dates: [], reason: "Quiet hours — nothing sends now." };
+  if (today.hour < settings.sendHour) return { ...base, dates: [], reason: `Too early — sends at ${settings.sendHour}:00.` };
+  if (input.lastRunAt && localNow(input.lastRunAt, settings.timeZone).iso === today.iso) {
+    return { ...base, dates: [], reason: "Already ran today." };
+  }
+  return planCatchUp(input);
 }
 
 /**
@@ -378,9 +418,33 @@ export interface BroadcastCandidate {
   optedOut?: boolean;
 }
 
+/**
+ * "Message patients" time window. `startTime` / `endTime` are "HH:MM" (end
+ * exclusive, either optional). `notBefore` drops visits already past (the
+ * current office time when the target date is today). Unknown visit times
+ * stay in, except when a window was chosen.
+ */
+export interface BroadcastTimeWindow {
+  startTime?: string;
+  endTime?: string;
+  notBefore?: string;
+}
+
+export function broadcastTimeOk(time: string, window: BroadcastTimeWindow): boolean {
+  const t = normalizeHHMM(time);
+  const start = window.startTime ? normalizeHHMM(window.startTime) : "";
+  const end = window.endTime ? normalizeHHMM(window.endTime) : "";
+  const notBefore = window.notBefore ? normalizeHHMM(window.notBefore) : "";
+  if (!t) return !start && !end;
+  if (start && t < start) return false;
+  if (end && t >= end) return false;
+  if (notBefore && t < notBefore) return false;
+  return true;
+}
+
 export function pickBroadcastRecipients(
   rows: BroadcastCandidate[],
-  options: { excludeCanceled: boolean },
+  options: { excludeCanceled: boolean } & BroadcastTimeWindow,
 ): BroadcastCandidate[] {
   const seen = new Set<string>();
   return rows
@@ -389,6 +453,7 @@ export function pickBroadcastRecipients(
     .filter((row) => {
       if (!row.patientId || seen.has(row.patientId)) return false;
       if (options.excludeCanceled && /^cancel/i.test(row.status)) return false;
+      if (!broadcastTimeOk(row.time, options)) return false;
       if (row.optedOut) return false;
       const d = row.phone.replace(/\D/g, "");
       if (!(d.length === 10 || (d.length === 11 && d.startsWith("1")))) return false;

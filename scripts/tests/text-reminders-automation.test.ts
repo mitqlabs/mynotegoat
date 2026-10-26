@@ -8,6 +8,8 @@ import {
   encodeReminderItemId,
   pickBroadcastRecipients,
   planCatchUp,
+  planScheduledRun,
+  broadcastTimeOk,
   todayWording,
   generateDeviceToken,
   hashDeviceToken,
@@ -18,6 +20,14 @@ import {
 } from "../../src/lib/reminder-automation";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 import { expandTokens } from "../../src/lib/sms-render";
+import {
+  findClosedKeyDateForDate,
+  formatKeyDateHours,
+  isTimeWithinHours,
+  keyDateHoursForDate,
+  type KeyDateRecord,
+} from "../../src/lib/key-dates";
+import { closedDates, hoursByDateFromKeyDates } from "../../src/lib/reminder-server";
 import type { PatientRecord } from "../../src/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "../../src/lib/schedule-appointments";
 
@@ -195,5 +205,66 @@ void (async () => {
   assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:10:00Z"), false), true);
   assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:10:00Z"), true), false);
   assert.equal(broadcastBackupHold(t0, new Date("2026-10-19T16:31:00Z"), false), false);
+  // ---- Partial closures / special hours + scheduled run + broadcast window ----
+  {
+    const early = { id: "k1", startDate: "2026-10-19", endDate: "2026-10-19", officeStatus: "Closed", reason: "Early close", openEnd: "14:00" } as unknown as KeyDateRecord;
+    const full = { id: "k2", startDate: "2026-10-21", endDate: "2026-10-21", officeStatus: "Closed", reason: "Holiday" } as unknown as KeyDateRecord;
+    const rows = [early, full];
+    assert.equal(findClosedKeyDateForDate(rows, "2026-10-19"), null, "partial closure is not a full closure");
+    assert.ok(findClosedKeyDateForDate(rows, "2026-10-21"), "full-day closure stays backward-compatible");
+    const h = keyDateHoursForDate(rows, "2026-10-19");
+    assert.ok(h);
+    assert.equal(isTimeWithinHours("13:30", h), true);
+    assert.equal(isTimeWithinHours("14:00", h), false);
+    assert.equal(isTimeWithinHours("", h), true, "unknown time counts as inside");
+    assert.equal(keyDateHoursForDate(rows, "2026-10-20"), null);
+    assert.match(formatKeyDateHours(early), /2:00 PM/);
+    assert.deepEqual([...closedDates(rows as never)].sort(), ["2026-10-21"]);
+    assert.equal(hoursByDateFromKeyDates(rows as never).get("2026-10-19")?.end, "14:00");
+
+    // Planner attaches hours; device queue drops visits outside them.
+    const hoursByDate = new Map([["2026-10-19", h!]]);
+    const cu = planCatchUp({ now: new Date("2026-10-19T15:10:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set(), hoursByDate });
+    assert.equal(cu.dates[0].hours?.end, "14:00");
+    const dq = buildDeviceQueue({
+      appointments: [
+        { id: "x1", patientId: "p1", patientName: "Doe, Jane", appointmentType: "Office Visit", date: "2026-10-19", startTime: "13:00", status: "Scheduled" },
+        { id: "x2", patientId: "p2", patientName: "Roe, Rick", appointmentType: "Office Visit", date: "2026-10-19", startTime: "15:00", status: "Scheduled" },
+      ] as unknown as ScheduleAppointmentRecord[],
+      patientsById: pts,
+      settings: on,
+      visitDate: "2026-10-19",
+      templateBody: "Hi {{FIRST_NAME}}",
+      office: { officeName: "X", doctorName: "Y", phone: "1" },
+      alreadySentIds: new Set(),
+      hours: h,
+    });
+    assert.deepEqual(dq.map((i) => i.id), ["x1"], "15:00 visit is after the 2 PM close");
+
+    // Regular (non-force) 8 AM run: today's remaining + tomorrow; quiet hours/too early block.
+    let sr = planScheduledRun({ now: new Date("2026-10-19T15:10:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });
+    assert.deepEqual(sr.dates.map((d) => d.mode), ["today", "tomorrow"]);
+    sr = planScheduledRun({ now: new Date("2026-10-19T14:30:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });
+    assert.deepEqual(sr.dates, []);
+    sr = planScheduledRun({ now: new Date("2026-10-20T05:00:00Z"), settings: on, officeHours: allOpen, closedIsoDates: new Set() });
+    assert.deepEqual(sr.dates, [], "10 PM = quiet hours");
+    sr = planScheduledRun({ now: new Date("2026-10-19T15:10:00Z"), settings: { ...on, sendHour: 10 }, officeHours: allOpen, closedIsoDates: new Set() });
+    assert.deepEqual(sr.dates, [], "before send hour");
+
+    // Message patients time window ("closing at 2 PM, text 2 PM and later").
+    assert.equal(broadcastTimeOk("14:00", { startTime: "14:00" }), true);
+    assert.equal(broadcastTimeOk("13:45", { startTime: "14:00" }), false);
+    assert.equal(broadcastTimeOk("16:00", { startTime: "14:00", endTime: "16:00" }), false);
+    assert.equal(broadcastTimeOk("", {}), true);
+    assert.equal(broadcastTimeOk("", { startTime: "14:00" }), false);
+    const win = pickBroadcastRecipients(
+      [
+        { appointmentId: "1", patientId: "p1", patientName: "A", time: "09:00", status: "Scheduled", phone: "5550000001" },
+        { appointmentId: "2", patientId: "p2", patientName: "B", time: "14:30", status: "Scheduled", phone: "5550000002" },
+      ],
+      { excludeCanceled: true, startTime: "14:00" } as never,
+    );
+    assert.deepEqual(win.map((r) => r.appointmentId), ["2"]);
+  }
 }
 console.log("catch-up planning tests passed");

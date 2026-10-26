@@ -5,7 +5,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { hashDeviceToken, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 
 export interface ReminderDevice {
@@ -55,16 +56,37 @@ export interface WorkspaceReminderConfig {
   office: ReminderOffice;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
+  /** Key Date special hours (partial closures / custom hours) by date. */
+  hoursByDate: Map<string, KeyDateHours>;
 }
 
 type Kv = Record<string, unknown>;
 
-function closedDates(value: unknown): Set<string> {
+/** Special hours for every date a Key Date with hours covers. */
+export function hoursByDateFromKeyDates(value: unknown): Map<string, KeyDateHours> {
+  const rows = normalizeKeyDates(value).filter(keyDateHasHours);
+  const out = new Map<string, KeyDateHours>();
+  for (const row of rows) {
+    let iso = row.startDate;
+    for (let i = 0; i < 400 && iso <= row.endDate; i += 1) {
+      const h = keyDateHoursForDate(rows, iso);
+      if (h) out.set(iso, h);
+      const d = new Date(`${iso}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      iso = d.toISOString().slice(0, 10);
+    }
+  }
+  return out;
+}
+
+export function closedDates(value: unknown): Set<string> {
   const out = new Set<string>();
   if (!Array.isArray(value)) return out;
   for (const raw of value) {
-    const row = raw as { startDate?: string; endDate?: string; officeStatus?: string };
+    const row = raw as { startDate?: string; endDate?: string; officeStatus?: string; openStart?: string; openEnd?: string };
     if (row?.officeStatus && row.officeStatus !== "Closed") continue;
+    // A Closed key date WITH hours is a partial day (see hoursByDate).
+    if (row && keyDateHasHours(row)) continue;
     if (!row?.startDate) continue;
     let iso = row.startDate;
     const end = row.endDate || row.startDate;
@@ -122,6 +144,7 @@ export async function loadWorkspaceConfig(
     },
     officeHours,
     closedIsoDates: closedDates(kv["casemate.key-dates.v1"]),
+    hoursByDate: hoursByDateFromKeyDates(kv["casemate.key-dates.v1"]),
   };
 }
 
@@ -234,24 +257,31 @@ export async function loadBroadcastQueue(
   device: ReminderDevice,
   todayIso: string,
   now: Date,
+  nowHHMM: string,
 ): Promise<BroadcastQueueRow[]> {
-  const { data, error } = await admin
-    .from("reminder_broadcast_recipients")
-    .select("id, patient_id, claimed_by, claimed_until, reminder_broadcasts!inner(message, target_date, created_at, canceled_at)")
-    .eq("workspace_id", device.workspace_id)
-    .eq("status", "queued")
-    .gte("reminder_broadcasts.target_date", todayIso)
-    .is("reminder_broadcasts.canceled_at", null)
-    .order("created_at", { ascending: true })
-    .limit(300);
+  const query = (cols: string) =>
+    admin
+      .from("reminder_broadcast_recipients")
+      .select(`id, patient_id, appointment_id, claimed_by, claimed_until, reminder_broadcasts!inner(${cols})`)
+      .eq("workspace_id", device.workspace_id)
+      .eq("status", "queued")
+      .gte("reminder_broadcasts.target_date", todayIso)
+      .is("reminder_broadcasts.canceled_at", null)
+      .order("created_at", { ascending: true })
+      .limit(300);
+  let { data, error } = await query("message, target_date, created_at, canceled_at, start_time, end_time");
+  // Time-window columns not migrated yet → read without them.
+  if (error) ({ data, error } = await query("message, target_date, created_at, canceled_at"));
   // Table not migrated yet → behave as if there is nothing queued.
   if (error || !data?.length) return [];
+  type B = { message: string; created_at: string; target_date: string; start_time?: string | null; end_time?: string | null };
   type Row = {
     id: string;
     patient_id: string;
+    appointment_id: string | null;
     claimed_by: string | null;
     claimed_until: string | null;
-    reminder_broadcasts: { message: string; created_at: string } | { message: string; created_at: string }[];
+    reminder_broadcasts: B | B[];
   };
   const rows = (data as unknown as Row[]).filter(
     (r) => !r.claimed_until || r.claimed_by === device.id || new Date(r.claimed_until) < now,
@@ -266,9 +296,31 @@ export async function loadBroadcastQueue(
   const phoneById = new Map(
     (pts ?? []).filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
   );
+  // Visit times, so a text never goes to a visit that already passed (or
+  // one outside the chosen window).
+  const apptIds = Array.from(new Set(rows.map((r) => r.appointment_id).filter((v): v is string => Boolean(v))));
+  const timeByAppt = new Map<string, string>();
+  if (apptIds.length) {
+    const { data: appts } = await admin
+      .from("schedule_appointments")
+      .select("id, start_time")
+      .eq("workspace_id", device.workspace_id)
+      .in("id", apptIds);
+    for (const a of appts ?? []) timeByAppt.set(a.id as string, String(a.start_time ?? ""));
+  }
   const out: BroadcastQueueRow[] = [];
   for (const r of rows) {
     const b = Array.isArray(r.reminder_broadcasts) ? r.reminder_broadcasts[0] : r.reminder_broadcasts;
+    const time = r.appointment_id ? timeByAppt.get(r.appointment_id) : undefined;
+    if (r.appointment_id && time === undefined) continue; // visit deleted
+    if (
+      b &&
+      !broadcastTimeOk(time ?? "", {
+        startTime: b.start_time ?? undefined,
+        endTime: b.end_time ?? undefined,
+        notBefore: b.target_date === todayIso ? nowHHMM : undefined,
+      })
+    ) continue;
     const digits = (phoneById.get(r.patient_id) ?? "").replace(/\D/g, "");
     const phone = digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : "";
     if (!b?.message?.trim() || !phone) continue;

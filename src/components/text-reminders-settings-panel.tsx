@@ -30,7 +30,7 @@ import {
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
-import { MessagePatientsComposer } from "@/components/message-patients-composer";
+import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
 
 function loadSettings(): SmsReminderSettings {
   if (typeof window === "undefined") return defaultSmsReminderSettings();
@@ -106,6 +106,16 @@ export function TextRemindersSettingsPanel() {
     : "";
 
   const workspaceId = typeof window === "undefined" ? "" : getActiveWorkspaceIdSync();
+  // Deep link from Key Dates ("Text affected patients"): a closure text for
+  // that date / time window. No patient data travels in the URL.
+  const [messagePrefill] = useState<MessagePatientsPrefill | null>(() => {
+    if (typeof window === "undefined") return null;
+    const q = new URLSearchParams(window.location.search);
+    const date = q.get("msgDate") ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const time = (v: string | null) => (v && /^\d{2}:\d{2}$/.test(v) ? v : undefined);
+    return { key: 1, date, message: (q.get("msgText") ?? "").slice(0, 640), startTime: time(q.get("msgStart")), endTime: time(q.get("msgEnd")) };
+  });
   const origin = typeof window === "undefined" ? "https://www.mynotegoat.com" : window.location.origin;
 
   const refresh = useCallback(async () => {
@@ -412,9 +422,10 @@ export function TextRemindersSettingsPanel() {
           </li>
           <li>The iMac checks every 10 minutes on its own, so it needs no button.</li>
         </ul>
+        <SendFromIphoneButton className="mt-2" />
       </div>
 
-      <MessagePatientsComposer settings={settings} workspaceId={workspaceId} />
+      <MessagePatientsComposer prefill={messagePrefill} settings={settings} workspaceId={workspaceId} />
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>

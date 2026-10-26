@@ -6,9 +6,11 @@ import {
   CLAIM_MINUTES,
   encodeReminderItemId,
   isQuietNow,
+  localHHMM,
   localNow,
   planCatchUp,
   planReminderRun,
+  planScheduledRun,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
 import {
@@ -30,8 +32,9 @@ export const dynamic = "force-dynamic";
  * script or iPhone Shortcut).
  * Auth: `Authorization: Bearer <device token>` (Settings → Text Reminders).
  *
- *   (no flags)   the automatic run: tomorrow's reminders on run days, from
- *                the send hour.
+ *   (no flags)   the automatic run (from the send hour): today's unsent
+ *                reminders for visits still ahead ("today" wording) plus
+ *                tomorrow's on run days. Deduped like the catch-up.
  *   ?force=1     "Send Reminders Now" = catch-up backup: TODAY's reminders
  *                that never went out (visits still ahead, "today" wording)
  *                plus TOMORROW's if due. Quiet hours, closures, the sent
@@ -66,15 +69,32 @@ export async function GET(request: NextRequest) {
   const todayIso = localNow(now, settings.timeZone).iso;
 
   // Which visit dates to work on, and how.
-  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string };
+  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string; hours?: { start: string; end: string } };
   let groups: Group[] = [];
   let visitDate: string;
   let reason = "";
   let reminderRun = false;
-  if (force && !preview) {
-    const plan = planCatchUp({ now, settings, officeHours: config.officeHours, closedIsoDates: config.closedIsoDates });
+  if (!preview) {
+    // Both the automatic run and "Send Reminders Now" catch up: today's
+    // unsent visits still ahead + tomorrow's when due. Forced skips only
+    // the send-hour / once-a-day checks.
+    const common = {
+      now,
+      settings,
+      officeHours: config.officeHours,
+      closedIsoDates: config.closedIsoDates,
+      hoursByDate: config.hoursByDate,
+    };
+    const plan = force
+      ? planCatchUp(common)
+      : planScheduledRun({
+          ...common,
+          // Once-a-day only matters for dry runs (real sends are deduped and
+          // claimed), so a backup can still pick up what the primary missed.
+          lastRunAt: device.last_run_at && settings.dryRun ? new Date(device.last_run_at) : null,
+        });
     visitDate = plan.visitDate;
-    groups = plan.dates.map((d) => ({ visitDate: d.visitDate, sameDay: d.mode === "today", onlyAfter: d.onlyAfter }));
+    groups = plan.dates.map((d) => ({ visitDate: d.visitDate, sameDay: d.mode === "today", onlyAfter: d.onlyAfter, hours: d.hours }));
     reminderRun = groups.length > 0;
     reason = plan.reason;
   } else {
@@ -91,7 +111,7 @@ export async function GET(request: NextRequest) {
     visitDate = plan.visitDate;
     reminderRun = plan.run;
     reason = plan.run ? "" : plan.reason;
-    if (plan.run || preview) groups = [{ visitDate, sameDay: false }];
+    groups = [{ visitDate, sameDay: false, hours: config.hoursByDate.get(visitDate) }];
   }
 
   await admin.from("reminder_devices").update({ last_seen_at: now.toISOString() }).eq("id", device.id);
@@ -118,6 +138,7 @@ export async function GET(request: NextRequest) {
           alreadySentIds: await alreadySentIds(admin, device.workspace_id, g.visitDate),
           onlyAfter: g.onlyAfter,
           sameDay: g.sameDay,
+          hours: g.hours,
         }),
       );
     }
@@ -125,7 +146,7 @@ export async function GET(request: NextRequest) {
 
   // "Message patients" texts — any call outside quiet hours.
   const quiet = isQuietNow(now, settings);
-  let broadcasts = quiet ? [] : await loadBroadcastQueue(admin, device, todayIso, now);
+  let broadcasts = quiet ? [] : await loadBroadcastQueue(admin, device, todayIso, now, localHHMM(now, settings.timeZone));
 
   const dryRun = settings.dryRun;
   const willSend = !dryRun && !preview;

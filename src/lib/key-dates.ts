@@ -14,6 +14,81 @@ export interface KeyDateRecord {
   endDate: string;
   officeStatus: KeyDateOfficeStatus;
   reason: string;
+  /**
+   * Special hours ("HH:MM", 24h). When either is set the office is open
+   * ONLY inside [openStart, openEnd) that day: a "Closed" key date becomes a
+   * partial-day closure (e.g. open until 14:00), "Open"/"Covered" get custom
+   * hours. Visits outside are flagged and get no reminders. Empty/absent =
+   * the whole day (old records keep working unchanged).
+   */
+  openStart?: string;
+  openEnd?: string;
+}
+
+/** "9:5" → "09:05"; anything else → "". */
+export function normalizeKeyDateTime(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const m = /^(\d{1,2}):(\d{2})/.exec(value.trim());
+  if (!m) return "";
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return "";
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+export function keyDateHasHours(row: Pick<KeyDateRecord, "openStart" | "openEnd">): boolean {
+  return Boolean(normalizeKeyDateTime(row.openStart) || normalizeKeyDateTime(row.openEnd));
+}
+
+export interface KeyDateHours {
+  /** "" = from the start of the day. */
+  start: string;
+  /** "" = until the end of the day. */
+  end: string;
+}
+
+/**
+ * The special hours in force on this date, or null for a normal / fully
+ * closed day. With several, the narrowest window wins (latest start,
+ * earliest end).
+ */
+export function keyDateHoursForDate(rows: KeyDateRecord[], dateIso: string): KeyDateHours | null {
+  const withHours = findKeyDatesForDate(rows, dateIso).filter(keyDateHasHours);
+  if (!withHours.length) return null;
+  let start = "";
+  let end = "";
+  for (const row of withHours) {
+    const s = normalizeKeyDateTime(row.openStart);
+    const e = normalizeKeyDateTime(row.openEnd);
+    if (s && s > start) start = s;
+    if (e && (!end || e < end)) end = e;
+  }
+  return { start, end };
+}
+
+/** Is a visit at "HH:MM" inside these hours? Unknown times count as inside. */
+export function isTimeWithinHours(time: string, hours: KeyDateHours | null): boolean {
+  if (!hours) return true;
+  const t = normalizeKeyDateTime(time);
+  if (!t) return true;
+  if (hours.start && t < hours.start) return false;
+  if (hours.end && t >= hours.end) return false;
+  return true;
+}
+
+function hhmmTo12(value: string): string {
+  const [h, m] = value.split(":").map(Number);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
+
+/** "Open until 2:00 PM", "Open 10:00 AM – 2:00 PM", "" when no hours. */
+export function formatKeyDateHours(row: Pick<KeyDateRecord, "openStart" | "openEnd">): string {
+  const s = normalizeKeyDateTime(row.openStart);
+  const e = normalizeKeyDateTime(row.openEnd);
+  if (s && e) return `Open ${hhmmTo12(s)} – ${hhmmTo12(e)}`;
+  if (e) return `Open until ${hhmmTo12(e)}`;
+  if (s) return `Open from ${hhmmTo12(s)}`;
+  return "";
 }
 
 const STORAGE_KEY = "casemate.key-dates.v1";
@@ -59,12 +134,16 @@ function normalizeRecord(value: unknown): KeyDateRecord | null {
     return null;
   }
 
+  const openStart = normalizeKeyDateTime(row.openStart);
+  const openEnd = normalizeKeyDateTime(row.openEnd);
   return {
     id,
     startDate,
     endDate,
     officeStatus,
     reason,
+    ...(openStart ? { openStart } : {}),
+    ...(openEnd ? { openEnd } : {}),
   };
 }
 
@@ -136,8 +215,9 @@ export function findOpenKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
   return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Open") ?? null;
 }
 
+/** A FULL-day closure on this date (a Closed key date with hours is partial). */
 export function findClosedKeyDateForDate(rows: KeyDateRecord[], dateIso: string) {
-  return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Closed") ?? null;
+  return findKeyDatesForDate(rows, dateIso).find((row) => row.officeStatus === "Closed" && !keyDateHasHours(row)) ?? null;
 }
 
 export function formatUsDateFromIso(dateIso: string) {
