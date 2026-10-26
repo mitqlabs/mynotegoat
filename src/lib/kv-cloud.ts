@@ -87,6 +87,67 @@ export async function fetchAllKvRows(): Promise<Map<string, { value: unknown; up
 }
 
 /**
+ * Fast boot: like fetchAllKvRows, but downloads values only for keys that
+ * changed (in the cloud or on this device) since the last boot — see
+ * planKvDelta in boot-delta.ts. `totalKeys` is the number of rows the cloud
+ * has (NOT the size of the returned map): callers must use it for any
+ * "cloud is empty" decision. `meta` is every key's current updated_at.
+ */
+export async function fetchKvRowsDelta(
+  stamps: Record<string, import("@/lib/boot-delta").KvStamp> | null | undefined,
+): Promise<{
+  rows: Map<string, { value: unknown; updatedAt: string | null }>;
+  totalKeys: number;
+  meta: Array<{ key: string; updatedAt: string | null }>;
+  skipped: number;
+} | null> {
+  const toMeta = (m: Map<string, { value: unknown; updatedAt: string | null }>) =>
+    Array.from(m, ([key, row]) => ({ key, updatedAt: row.updatedAt }));
+  if (!stamps || Object.keys(stamps).length === 0) {
+    const all = await fetchAllKvRows();
+    return all ? { rows: all, totalKeys: all.size, meta: toMeta(all), skipped: 0 } : null;
+  }
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const workspaceId = getActiveWorkspaceOrNull();
+  if (!workspaceId) return null;
+  const { data, error } = await supabase
+    .from("workspace_kv")
+    .select("key, updated_at")
+    .eq("workspace_id", workspaceId);
+  if (error) {
+    console.warn("[kv-cloud] fetch meta failed; doing a full read:", error.message);
+    const all = await fetchAllKvRows();
+    return all ? { rows: all, totalKeys: all.size, meta: toMeta(all), skipped: 0 } : null;
+  }
+  const meta = (data ?? []).map((r: { key: string; updated_at: string | null }) => ({
+    key: r.key,
+    updatedAt: typeof r.updated_at === "string" ? r.updated_at : null,
+  }));
+  const { planKvDelta } = await import("@/lib/boot-delta");
+  const want = planKvDelta({ meta, stamps, localRaw: (k) => window.localStorage.getItem(k) });
+  const rows = new Map<string, { value: unknown; updatedAt: string | null }>();
+  if (want.length > 0) {
+    const res = await supabase
+      .from("workspace_kv")
+      .select("key, value, updated_at")
+      .eq("workspace_id", workspaceId)
+      .in("key", want);
+    if (res.error) {
+      console.error("[kv-cloud] fetch changed keys failed:", res.error.message);
+      return null;
+    }
+    for (const row of res.data ?? []) {
+      rows.set(row.key, {
+        value: row.value,
+        updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+      });
+    }
+  }
+  return { rows, totalKeys: meta.length, meta, skipped: meta.length - rows.size };
+}
+
+/**
  * Upsert a single key-value pair. Throws on hard failure so callers that
  * await the returned promise can react (show error UI, retry, block
  * navigation). Fire-and-forget callers should `void` the call AND attach
