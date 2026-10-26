@@ -1,5 +1,7 @@
 "use client";
 
+import { TimeInput12h } from "@/components/time-input-12h";
+
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { logActivity } from "@/lib/activity-log";
 import { useMemo, useState } from "react";
@@ -12,6 +14,10 @@ import { useCashPayments } from "@/hooks/use-cash-payments";
 import { patients } from "@/lib/mock-data";
 import {
   findKeyDatesForDate,
+  formatKeyDateHours,
+  isTimeWithinHours,
+  keyDateHasHours,
+  normalizeKeyDateTime,
   formatKeyDateRange,
   formatUsDateFromIso,
   type KeyDateOfficeStatus,
@@ -26,7 +32,32 @@ type KeyDateDraft = {
   officeStatus: KeyDateOfficeStatus;
   reason: string;
   isRange: boolean;
+  /** Special hours ("HH:MM"); blank = whole day. */
+  openStart: string;
+  openEnd: string;
 };
+
+/** Is this visit outside a key date's special hours? */
+function outsideHours(entry: KeyDateRecord, time: string) {
+  return keyDateHasHours(entry) && !isTimeWithinHours(time, { start: normalizeKeyDateTime(entry.openStart), end: normalizeKeyDateTime(entry.openEnd) });
+}
+
+/** Settings → Text Reminders, prefilled with a closure text for this key date. */
+function closureMessageHref(row: KeyDateRecord) {
+  const q = new URLSearchParams({ section: "textReminders", msgDate: row.startDate });
+  const end = normalizeKeyDateTime(row.openEnd);
+  const start = normalizeKeyDateTime(row.openStart);
+  // Visits after closing time (the common "closing early" case); otherwise
+  // the ones before opening.
+  if (end) q.set("msgStart", end);
+  else if (start) q.set("msgEnd", start);
+  const hours = formatKeyDateHours(row).replace(/^Open/, "open");
+  q.set(
+    "msgText",
+    `Our office is ${row.officeStatus === "Closed" ? "closing early" : "on special hours"} on ${formatUsDateFromIso(row.startDate)} (${hours}). We'll call you to reschedule your appointment.`,
+  );
+  return `/settings?${q.toString()}`;
+}
 
 type ConflictRow = {
   appointment: ScheduleAppointmentRecord;
@@ -74,6 +105,8 @@ function createDraft(): KeyDateDraft {
     officeStatus: "Closed",
     reason: "",
     isRange: false,
+    openStart: "",
+    openEnd: "",
   };
 }
 
@@ -119,8 +152,10 @@ export default function KeyDatesPage() {
         return;
       }
       // OPEN key dates are normal days — never a conflict to resolve.
-      const matches = findKeyDatesForDate(keyDates, appointment.date).filter(
-        (entry) => entry.officeStatus !== "Open",
+      // Key dates WITH special hours only flag visits outside those hours
+      // (inside them it's a normal visit, whatever the status).
+      const matches = findKeyDatesForDate(keyDates, appointment.date).filter((entry) =>
+        keyDateHasHours(entry) ? outsideHours(entry, appointment.startTime) : entry.officeStatus !== "Open",
       );
       if (!matches.length) {
         return;
@@ -128,7 +163,7 @@ export default function KeyDatesPage() {
       rows.push({
         appointment,
         matches,
-        hasClosedDate: matches.some((entry) => entry.officeStatus === "Closed"),
+        hasClosedDate: matches.some((entry) => entry.officeStatus === "Closed" || keyDateHasHours(entry)),
       });
     });
     return rows.sort(compareConflictRows);
@@ -271,6 +306,8 @@ export default function KeyDatesPage() {
       officeStatus: row.officeStatus,
       reason: row.reason,
       isRange,
+      openStart: row.openStart ?? "",
+      openEnd: row.openEnd ?? "",
     });
   };
 
@@ -299,7 +336,13 @@ export default function KeyDatesPage() {
       endDate,
       officeStatus: draft.officeStatus,
       reason: draft.reason,
+      openStart: draft.openStart,
+      openEnd: draft.openEnd,
     } as const;
+    if (draft.openStart && draft.openEnd && draft.openEnd <= draft.openStart) {
+      setFormError("The closing time must be after the opening time.");
+      return;
+    }
 
     try {
       if (!editingId) {
@@ -410,6 +453,35 @@ export default function KeyDatesPage() {
           Use date range
         </label>
 
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Open from (optional)</span>
+            <TimeInput12h
+              allowEmpty
+              smart
+              ariaLabel="Open from"
+              inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(v) => setDraft((current) => ({ ...current, openStart: v }))}
+              value={draft.openStart}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Open until (optional)</span>
+            <TimeInput12h
+              allowEmpty
+              smart
+              ariaLabel="Open until"
+              inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(v) => setDraft((current) => ({ ...current, openEnd: v }))}
+              value={draft.openEnd}
+            />
+          </label>
+          <p className="self-end text-sm text-[var(--text-muted)] md:col-span-2 xl:col-span-3">
+            Leave blank for the whole day. With hours, a Closed date becomes a partial day (e.g. open until 2:00 PM):
+            visits inside the hours stay, visits outside are flagged below and get no text reminders.
+          </p>
+        </div>
+
         {formError && <p className="mt-3 text-sm font-semibold text-[#b43b34]">{formError}</p>}
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -462,6 +534,9 @@ export default function KeyDatesPage() {
                     >
                       {row.officeStatus}
                     </span>
+                    {keyDateHasHours(row) && (
+                      <span className="ml-2 text-xs font-semibold text-[var(--text-muted)]">{formatKeyDateHours(row)}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">{row.reason || "-"}</td>
                   <td className="px-4 py-3">
@@ -493,6 +568,15 @@ export default function KeyDatesPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-2">
+                      {keyDateHasHours(row) && row.startDate === row.endDate && (warningCountByKeyDateId.get(row.id) ?? 0) > 0 && (
+                        <Link
+                          className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold text-[var(--brand-primary)]"
+                          href={closureMessageHref(row)}
+                          title="Open Message patients with a closure text for the visits outside these hours"
+                        >
+                          Text affected patients
+                        </Link>
+                      )}
                       <button
                         className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold"
                         onClick={() => startEditing(row)}
@@ -606,7 +690,9 @@ export default function KeyDatesPage() {
             </thead>
             <tbody>
               {visibleWarningRows.map((row) => {
-                const keyStatusLabel = row.matches.map((entry) => entry.officeStatus).join(", ");
+                const keyStatusLabel = row.matches
+                  .map((entry) => (keyDateHasHours(entry) ? `Outside hours (${formatKeyDateHours(entry)})` : entry.officeStatus))
+                  .join(", ");
                 const reasonLabel = row.matches
                   .map((entry) =>
                     `${entry.reason || "No reason"} (${formatKeyDateRange({

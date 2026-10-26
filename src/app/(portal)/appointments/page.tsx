@@ -6,7 +6,7 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollLock } from "@/components/scroll-lock";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
@@ -30,8 +30,11 @@ import { locationLabel } from "@/lib/office-settings";
 import {
   findClosedKeyDateForDate,
   findKeyDatesForDate,
+  formatKeyDateHours,
   formatKeyDateRange,
   formatUsDateFromIso,
+  isTimeWithinHours,
+  keyDateHoursForDate,
 } from "@/lib/key-dates";
 import {
   appointmentStatusOptions,
@@ -664,6 +667,12 @@ export default function AppointmentsPage() {
   const selectedDateKeyDates = useMemo(
     () => findKeyDatesForDate(keyDates, selectedDate),
     [keyDates, selectedDate],
+  );
+  // Key Date special hours (partial closures): visits outside are flagged.
+  const isOutsideKeyDateHours = useCallback(
+    (appointment: { date: string; startTime: string }) =>
+      !isTimeWithinHours(appointment.startTime, keyDateHoursForDate(keyDates, appointment.date)),
+    [keyDates],
   );
   const selectedDateClosedKeyDate = useMemo(
     () => findClosedKeyDateForDate(keyDates, selectedDate),
@@ -1440,7 +1449,7 @@ export default function AppointmentsPage() {
             >
               <span className="font-semibold">Key Date Notice:</span>{" "}
               {selectedDateKeyDates
-                .map((entry) => `${entry.officeStatus}${entry.reason ? ` - ${entry.reason}` : ""}`)
+                .map((entry) => `${entry.officeStatus}${formatKeyDateHours(entry) ? ` (${formatKeyDateHours(entry)})` : ""}${entry.reason ? ` - ${entry.reason}` : ""}`)
                 .join("; ")}
             </div>
           )}
@@ -1478,6 +1487,11 @@ export default function AppointmentsPage() {
                             </p>
                             <p className="text-xs text-[var(--text-muted)]">
                               {formatTimeLabel(appointment.startTime)} • {appointment.durationMin} min
+                              {isOutsideKeyDateHours(appointment) && (
+                                <span className="ml-1.5 rounded-full bg-[rgba(201,66,58,0.15)] px-1.5 py-0.5 font-semibold text-[#b43b34]" title="Outside this day's Key Date hours — no text reminder is sent">
+                                  Outside hours
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-[var(--text-muted)]">
                               {appointment.provider} • {appointment.location}
@@ -1660,6 +1674,11 @@ export default function AppointmentsPage() {
                         <p className="font-semibold">{appointment.patientName}{noOfficeTag(appointment.patientId)}</p>
                         <p className="text-sm">
                           {formatTimeLabel(appointment.startTime)} • {appointment.durationMin} min
+                          {isOutsideKeyDateHours(appointment) && (
+                                <span className="ml-1.5 rounded-full bg-[rgba(201,66,58,0.15)] px-1.5 py-0.5 font-semibold text-[#b43b34] text-xs" title="Outside this day's Key Date hours — no text reminder is sent">
+                                  Outside hours
+                                </span>
+                              )}
                         </p>
                         <p className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]">
                           <span
