@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { parseOptOutReply, phoneMatchKey, withOptOutLine } from "../../src/lib/reminder-automation";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 
-for (const w of ["STOP", "stop", " Stop ", "STOP.", "stop!", "StopAll", "UNSUBSCRIBE", "cancel", "End", "quit", '"STOP"']) {
+for (const w of ["STOP", "stop", " Stop ", "STOP.", "stop!", "StopAll", "UNSUBSCRIBE", "End", "quit", '"STOP"']) {
   assert.equal(parseOptOutReply(w), "stop", w);
 }
 for (const w of ["START", " start ", "unstop"]) assert.equal(parseOptOutReply(w), "start", w);
-for (const w of ["Can I cancel my 3pm?", "please stop texting me", "stopping by later", "", "STOP STOP", null, 5]) {
+for (const w of ["cancel", "CANCEL", "Can I cancel my 3pm?", "please stop texting me", "stopping by later", "", "STOP STOP", null, 5]) {
   assert.equal(parseOptOutReply(w), null, String(w));
 }
 

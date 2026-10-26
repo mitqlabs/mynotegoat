@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/reminders/inbound — a sending device forwards patients' replies.
  * Body: { from, text } or { messages: [{ from, text }] }  (max 200).
- * Only whole-message keywords count: STOP / STOPALL / UNSUBSCRIBE / CANCEL /
+ * Only whole-message keywords count: STOP / STOPALL / UNSUBSCRIBE /
  * END / QUIT turn the patient's text reminders off; START / UNSTOP turn them
  * back on. Anything else is ignored and never stored. Never sends a reply.
  */

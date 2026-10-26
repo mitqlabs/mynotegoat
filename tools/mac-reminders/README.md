@@ -65,7 +65,7 @@ Each check (every 10 minutes, any hour) the script reads new incoming
 messages from `~/Library/Messages/chat.db` (read-only), newer than the last
 ROWID it saw (`~/Library/Logs/NoteGoat/.inbound-rowid`). The first run only
 records the newest ROWID, so old history is never uploaded. Only replies
-that are exactly a keyword (STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT,
+that are exactly a keyword (STOP, STOPALL, UNSUBSCRIBE, END, QUIT,
 START, UNSTOP; case-insensitive) are POSTed to `/api/reminders/inbound`,
 which turns that patient's text reminders off (or back on). Nothing is ever
 texted back. If the upload fails, the ROWID is not advanced and it retries.

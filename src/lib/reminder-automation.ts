@@ -465,7 +465,7 @@ export function pickBroadcastRecipients(
 // ---- Opt-out by reply ("STOP") ----
 
 /** Replies that opt a patient out (carrier-standard keywords). */
-export const OPT_OUT_KEYWORDS = ["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"] as const;
+export const OPT_OUT_KEYWORDS = ["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT"] as const;
 /** Replies that opt a patient back in. */
 export const OPT_IN_KEYWORDS = ["START", "UNSTOP"] as const;
 

@@ -409,7 +409,7 @@ export function TextRemindersSettingsPanel() {
           />
         )}
         <p className="text-xs text-[var(--text-muted)]">
-          When a patient replies STOP (or UNSUBSCRIBE, CANCEL, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
+          When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
           their text reminders turn off. START turns them back on. NoteGoat never texts back. A message that already says
           STOP doesn&apos;t get the line twice.
         </p>

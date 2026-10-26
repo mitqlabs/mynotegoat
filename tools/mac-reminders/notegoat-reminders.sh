@@ -111,7 +111,7 @@ fi
 is_keyword() { # text -> 0 if STOP/START-type keyword
   local t
   t=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | sed -e 's/^[[:space:]"]*//' -e 's/[[:space:].!"]*$//')
-  case "$t" in STOP|STOPALL|UNSUBSCRIBE|CANCEL|END|QUIT|START|UNSTOP) return 0 ;; esac
+  case "$t" in STOP|STOPALL|UNSUBSCRIBE|END|QUIT|START|UNSTOP) return 0 ;; esac
   return 1
 }
 check_inbound() {
