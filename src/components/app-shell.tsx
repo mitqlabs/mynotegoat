@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { GlobalGoatButton, GlobalGoatPopup } from "@/components/global-goat";
+import { GlobalGoatButton } from "@/components/global-goat-button";
+import { LazyGlobalGoatPopup } from "@/components/lazy-global-goat-popup";
 import { isGoatAppPath } from "@/lib/goat-app";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -426,7 +427,7 @@ export function AppShell({
               <main className="p-4 lg:p-7">
                 <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
               </main>
-              <GlobalGoatPopup />
+              <LazyGlobalGoatPopup />
             </section>
           </div>
         </div>

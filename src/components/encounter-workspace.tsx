@@ -80,6 +80,7 @@ import {
   confirmStatusChangeIfNeeded,
   type AppointmentStatus,
 } from "@/lib/schedule-appointments";
+import { appConfirm } from "@/components/app-dialog";
 
 type EncounterWorkspaceProps = {
   initialPatientId?: string;
@@ -882,10 +883,10 @@ function AppointmentsOverview({
                     <td className="px-3 py-2">
                       <select
                         className={`rounded-full border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(apt.status as AppointmentStatus)}`}
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const nextStatus = event.target.value as AppointmentStatus;
                           if (nextStatus === apt.status) return;
-                          if (!confirmStatusChangeIfNeeded(apt.status as AppointmentStatus, nextStatus)) return;
+                          if (!(await confirmStatusChangeIfNeeded(apt.status as AppointmentStatus, nextStatus))) return;
                           onStatusChange(apt.id, nextStatus);
                         }}
                         value={apt.status}
@@ -907,7 +908,7 @@ function AppointmentsOverview({
                     <td className="px-3 py-2">
                       {linked ? (
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => onOpenEncounter(linked.id, apt.patientName)}
                           type="button"
                         >
@@ -2143,10 +2144,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       .filter((r) => r.macro && selectedEncounter.macroRuns.some((run) => run.section === (r.fill.section ?? "objective") && run.macroId === r.macro!.id))
       .map((r) => r.macro!.buttonName);
     if (existingText || repeats.length) {
-      const ok = window.confirm(
-        `Objective already has text${repeats.length ? ` (including ${repeats.join(", ")})` : ""}.\n\n` +
-          "Add the questionnaire answers BELOW it? Nothing already in the note is changed or removed.",
-      );
+      const ok = (await appConfirm(`Objective already has text${repeats.length ? ` (including ${repeats.join(", ")})` : ""}.\n\n` +
+                "Add the questionnaire answers BELOW it? Nothing already in the note is changed or removed."));
       if (!ok) return;
     }
     const context = buildMacroContext(selectedEncounter.patientId, selectedEncounter.encounterDate);
@@ -2762,13 +2761,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (refreshable.length > 0) {
         // Only OPEN notes, dated today or later, on Checked In visits after this
         // note — closed notes and checked-out days are never offered.
-        const proceed = window.confirm(
-          `${refreshable.length} upcoming visit${refreshable.length === 1 ? "" : "s"} (${fillDateSpan(refreshable.map((row) => row.dateUs))}) already ${
-            refreshable.length === 1 ? "has an open note" : "have open notes"
-          }.\n\n` +
-            "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
-            "Their Plan and charges are left exactly as they are. Closed notes and checked-out visits are not changed.",
-        );
+        const proceed = (await appConfirm(`${refreshable.length} upcoming visit${refreshable.length === 1 ? "" : "s"} (${fillDateSpan(refreshable.map((row) => row.dateUs))}) already ${
+                    refreshable.length === 1 ? "has an open note" : "have open notes"
+                  }.\n\n` +
+                    "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
+                    "Their Plan and charges are left exactly as they are. Closed notes and checked-out visits are not changed."));
         if (proceed) {
           for (const row of refreshable) {
             const target = encountersByNewest.find((entry) => entry.id === row.existingNoteId);
@@ -2980,7 +2977,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // of already-open later notes that still read exactly what the plan
   // prefilled (src/lib/plan-carry-forward.ts). Notes edited by hand, closed
   // notes, checked-out visits and anything on/before this note never change.
-  const maybeCarryForwardDecompression = (
+  const maybeCarryForwardDecompression = async (
     macro: MacroTemplate,
     newAnswers: MacroAnswerMap,
     editingRun: EncounterMacroRunRecord | null,
@@ -3066,7 +3063,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         if (
           formulaWeight != null &&
           newWeight !== formulaWeight &&
-          window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+          (await appConfirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?${CARRY_FORWARD_NOTE}`))
         ) {
           nextUpdates.maxWeight = newWeightStr;
         }
@@ -3078,7 +3075,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newCycles &&
         newCycles !== (dc.cycles ?? "").trim() &&
-        window.confirm(`Use ${newCycles} cycles for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Use ${newCycles} cycles for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextUpdates.cycles = newCycles;
       }
@@ -3097,7 +3094,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newSeg.length &&
         newSeg.join("|") !== curSeg.join("|") &&
-        window.confirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextRegion = { ...nextRegion, treatments: newSeg };
         regionChanged = true;
@@ -3109,7 +3106,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newProgram.length &&
         newProgram.join("|") !== curProgram.join("|") &&
-        window.confirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextRegion = {
           ...nextRegion,
@@ -3180,7 +3177,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setRunMacroAnswers({});
   };
 
-  const handleCopyActiveSectionFromSelected = () => {
+  const handleCopyActiveSectionFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3199,9 +3196,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     }
     const currentText = selectedEncounter.soap[activeSection].trim();
     if (currentText && currentText !== sourceText) {
-      const confirmed = window.confirm(
-        `Replace current ${sectionLabels[activeSection]} text with the selected prior encounter note?`,
-      );
+      const confirmed = (await appConfirm(`Replace current ${sectionLabels[activeSection]} text with the selected prior encounter note?`));
       if (!confirmed) {
         return;
       }
@@ -3257,7 +3252,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleCopyAllSoapFromSelected = () => {
+  const handleCopyAllSoapFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3286,11 +3281,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       (section) => selectedEncounter.soap[section].trim().length > 0,
     );
     if (hasExistingText) {
-      const confirmed = window.confirm(
-        protectPlan
-          ? `Replace the Subjective / Objective / Assessment sections with the notes from ${saltSourceEncounter.encounterDate}? The Plan section stays as this patient's treatment plan.`
-          : `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`,
-      );
+      const confirmed = (await appConfirm(protectPlan
+                ? `Replace the Subjective / Objective / Assessment sections with the notes from ${saltSourceEncounter.encounterDate}? The Plan section stays as this patient's treatment plan.`
+                : `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`));
       if (!confirmed) {
         return;
       }
@@ -3339,7 +3332,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleCopyChargesFromSelected = () => {
+  const handleCopyChargesFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3356,9 +3349,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       return;
     }
     if (selectedEncounter.charges.length > 0) {
-      const confirmed = window.confirm(
-        `Append ${saltSourceEncounter.charges.length} charge(s) from ${saltSourceEncounter.encounterDate} to this encounter? Existing charges will be kept.`,
-      );
+      const confirmed = (await appConfirm(`Append ${saltSourceEncounter.charges.length} charge(s) from ${saltSourceEncounter.encounterDate} to this encounter? Existing charges will be kept.`));
       if (!confirmed) {
         return;
       }
@@ -3382,7 +3373,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleDeleteEncounter = () => {
+  const handleDeleteEncounter = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3391,9 +3382,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       chargeCount > 0
         ? `\n\nThis will also remove ${chargeCount} charge${chargeCount === 1 ? "" : ""} attached to this encounter so billing stays in sync.`
         : "";
-    const confirmed = window.confirm(
-      `Delete encounter for ${selectedEncounter.patientName} on ${selectedEncounter.encounterDate}?${chargeWarning}`,
-    );
+    const confirmed = (await appConfirm(`Delete encounter for ${selectedEncounter.patientName} on ${selectedEncounter.encounterDate}?${chargeWarning}`));
     if (!confirmed) {
       return;
     }
@@ -3484,7 +3473,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     }
   };
 
-  const addChargeFromTreatment = (treatmentMacroId: string) => {
+  const addChargeFromTreatment = async (treatmentMacroId: string) => {
     if (!selectedEncounter) {
       return;
     }
@@ -3507,7 +3496,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     // First attempt without bumping — detect duplicate
     const result = addCharge(selectedEncounter.id, chargeInput);
     if (result === "duplicate") {
-      if (window.confirm(`"${treatment.name}" is already added. Add another unit?`)) {
+      if ((await appConfirm(`"${treatment.name}" is already added. Add another unit?`))) {
         addCharge(selectedEncounter.id, chargeInput, { bumpIfDuplicate: true });
         setMessage(`Added unit to "${treatment.name}".`);
       }
@@ -4051,7 +4040,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         void (async () => {
-                                          if (!window.confirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`)) return;
+                                          if (!(await appConfirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`))) return;
                                           if (!(await ensureDeleteAllowed("notes"))) return;
                                           deleteEncounter(linked.id);
                                           if (resolvedEncounterId === linked.id) {
@@ -4098,7 +4087,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         </button>
                       </div>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner disabled:opacity-50"
+                        className="btn btn-secondary btn-sm disabled:opacity-50"
                         disabled={!selectedSoapPrintEncounterIds.length}
                         onClick={handlePrintSelectedSoapNotes}
                         type="button"
@@ -4306,7 +4295,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         disabled={closeBusy}
                         onClick={async () => {
                           if (selectedEncounter.charges.length === 0) {
-                            if (!window.confirm("This encounter has no charges. Close and check out anyway?")) return;
+                            if (!(await appConfirm("This encounter has no charges. Close and check out anyway?"))) return;
                           }
                           // Write the close straight to the cloud and wait for it.
                           // Only check out once the cloud confirms the note is
@@ -4604,8 +4593,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               {!selectedEncounter.signed && (
                                 <button
                                   className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-red-50 hover:text-[#b43b34] transition-colors"
-                                  onClick={() => {
-                                    if (window.confirm(`Remove "${run.macroName}" input?`)) {
+                                  onClick={async () => {
+                                    if ((await appConfirm(`Remove "${run.macroName}" input?`))) {
                                       removeMacroRun(selectedEncounter.id, run.id);
                                       // Reconcile so any charges that were
                                       // auto-added by this run's picked
@@ -4766,7 +4755,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     <h4 className="text-lg font-semibold">Encounter Charges</h4>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter}
                         onClick={() => setShowPriorChargesPreview((prev) => !prev)}
                         title={
@@ -4779,7 +4768,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {showPriorChargesPreview ? "Hide Prior Charges" : "View Prior Charges"}
                       </button>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter || selectedEncounter.signed}
                         onClick={handleCopyChargesFromSelected}
                         title={
@@ -4840,7 +4829,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => setOpenChargesPanel((previous) => !previous)}
                         type="button"
                       >
@@ -4941,11 +4930,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <button
                           className="rounded-lg p-1 text-[#b43b34] hover:bg-red-50 transition-colors disabled:opacity-30"
                           disabled={selectedEncounter.signed}
-                          onClick={() => {
+                          onClick={async () => {
                             // Pass macroLibraryById so linked charges also
                             // unpick their option in the SOAP — otherwise
                             // the next reconcile would re-add the charge.
-                            if (window.confirm(`Remove charge "${entry.name}"?`)) {
+                            if ((await appConfirm(`Remove charge "${entry.name}"?`))) {
                               removeCharge(selectedEncounter.id, entry.id, macroLibraryById);
                             }
                           }}
@@ -4982,12 +4971,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       </section>
 
       {importOpen && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] pb-2">
               <h3 className="text-base font-semibold">Import from ChiroTouch → Objective</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setImportOpen(false);
                   setImportPlan(null);
@@ -5016,7 +5005,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             />
             <div className="mt-2 flex items-center gap-2">
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className="btn btn-primary btn-sm disabled:opacity-40"
                 disabled={!importText.trim()}
                 onClick={handleImportPreview}
                 type="button"
@@ -5114,7 +5103,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         // out macro prompts. Letting the body scroll behind the
         // fixed-position modal makes that possible without closing
         // and re-opening the macro run.
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xl font-semibold">
@@ -5125,7 +5114,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     : `Run Macro: ${runMacro.buttonName}`}
               </h4>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5420,7 +5409,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5431,7 +5420,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 onClick={handleConfirmMacroRun}
                 type="button"
               >

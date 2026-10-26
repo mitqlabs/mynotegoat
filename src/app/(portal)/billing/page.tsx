@@ -764,7 +764,7 @@ export default function BillingPage() {
               </p>
             </div>
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
+              className="btn btn-primary disabled:opacity-50"
               disabled={!selectedPatient || encounterChargeLines.length === 0}
               onClick={handlePrintBill}
               type="button"

@@ -22,6 +22,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Click the goat button. You'll see a greeting and chips — tap one or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
         "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
+        "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",

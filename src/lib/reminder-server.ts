@@ -5,7 +5,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { hashDeviceToken, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, parseOptOutReply, phoneMatchKey, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 
 export interface ReminderDevice {
@@ -55,16 +56,37 @@ export interface WorkspaceReminderConfig {
   office: ReminderOffice;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
+  /** Key Date special hours (partial closures / custom hours) by date. */
+  hoursByDate: Map<string, KeyDateHours>;
 }
 
 type Kv = Record<string, unknown>;
 
-function closedDates(value: unknown): Set<string> {
+/** Special hours for every date a Key Date with hours covers. */
+export function hoursByDateFromKeyDates(value: unknown): Map<string, KeyDateHours> {
+  const rows = normalizeKeyDates(value).filter(keyDateHasHours);
+  const out = new Map<string, KeyDateHours>();
+  for (const row of rows) {
+    let iso = row.startDate;
+    for (let i = 0; i < 400 && iso <= row.endDate; i += 1) {
+      const h = keyDateHoursForDate(rows, iso);
+      if (h) out.set(iso, h);
+      const d = new Date(`${iso}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      iso = d.toISOString().slice(0, 10);
+    }
+  }
+  return out;
+}
+
+export function closedDates(value: unknown): Set<string> {
   const out = new Set<string>();
   if (!Array.isArray(value)) return out;
   for (const raw of value) {
-    const row = raw as { startDate?: string; endDate?: string; officeStatus?: string };
+    const row = raw as { startDate?: string; endDate?: string; officeStatus?: string; openStart?: string; openEnd?: string };
     if (row?.officeStatus && row.officeStatus !== "Closed") continue;
+    // A Closed key date WITH hours is a partial day (see hoursByDate).
+    if (row && keyDateHasHours(row)) continue;
     if (!row?.startDate) continue;
     let iso = row.startDate;
     const end = row.endDate || row.startDate;
@@ -122,6 +144,7 @@ export async function loadWorkspaceConfig(
     },
     officeHours,
     closedIsoDates: closedDates(kv["casemate.key-dates.v1"]),
+    hoursByDate: hoursByDateFromKeyDates(kv["casemate.key-dates.v1"]),
   };
 }
 
@@ -215,4 +238,220 @@ export async function claimReminders(
   if (error) throw new Error(`claim failed: ${error.message}`);
   const rows = (data ?? []) as unknown[];
   return new Set(rows.map((row) => (typeof row === "string" ? row : String((row as Record<string, unknown>).claim_reminders ?? ""))));
+}
+
+export interface BroadcastQueueRow {
+  recipientId: string;
+  phone: string;
+  text: string;
+  createdAt: Date;
+}
+
+/**
+ * Queued "Message patients" texts for this workspace whose target date is
+ * today or later, not canceled, not opted out, and not leased to another
+ * device. The phone is read from the patient record at send time.
+ */
+export async function loadBroadcastQueue(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  todayIso: string,
+  now: Date,
+  nowHHMM: string,
+  /** Opt-out line settings (appended to each text). */
+  optOut: { optOutLine?: boolean; optOutText?: string } = { optOutLine: false },
+): Promise<BroadcastQueueRow[]> {
+  const query = (cols: string) =>
+    admin
+      .from("reminder_broadcast_recipients")
+      .select(`id, patient_id, appointment_id, claimed_by, claimed_until, reminder_broadcasts!inner(${cols})`)
+      .eq("workspace_id", device.workspace_id)
+      .eq("status", "queued")
+      .gte("reminder_broadcasts.target_date", todayIso)
+      .is("reminder_broadcasts.canceled_at", null)
+      .order("created_at", { ascending: true })
+      .limit(300);
+  let { data, error } = await query("message, target_date, created_at, canceled_at, start_time, end_time");
+  // Time-window columns not migrated yet → read without them.
+  if (error) ({ data, error } = await query("message, target_date, created_at, canceled_at"));
+  // Table not migrated yet → behave as if there is nothing queued.
+  if (error || !data?.length) return [];
+  type B = { message: string; created_at: string; target_date: string; start_time?: string | null; end_time?: string | null };
+  type Row = {
+    id: string;
+    patient_id: string;
+    appointment_id: string | null;
+    claimed_by: string | null;
+    claimed_until: string | null;
+    reminder_broadcasts: B | B[];
+  };
+  const rows = (data as unknown as Row[]).filter(
+    (r) => !r.claimed_until || r.claimed_by === device.id || new Date(r.claimed_until) < now,
+  );
+  const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
+  if (!ids.length) return [];
+  const { data: pts } = await admin
+    .from("patients")
+    .select("id, phone, text_reminders_off")
+    .eq("workspace_id", device.workspace_id)
+    .in("id", ids);
+  const phoneById = new Map(
+    (pts ?? []).filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
+  );
+  // Visit times, so a text never goes to a visit that already passed (or
+  // one outside the chosen window).
+  const apptIds = Array.from(new Set(rows.map((r) => r.appointment_id).filter((v): v is string => Boolean(v))));
+  const timeByAppt = new Map<string, string>();
+  if (apptIds.length) {
+    const { data: appts } = await admin
+      .from("schedule_appointments")
+      .select("id, start_time")
+      .eq("workspace_id", device.workspace_id)
+      .in("id", apptIds);
+    for (const a of appts ?? []) timeByAppt.set(a.id as string, String(a.start_time ?? ""));
+  }
+  const out: BroadcastQueueRow[] = [];
+  for (const r of rows) {
+    const b = Array.isArray(r.reminder_broadcasts) ? r.reminder_broadcasts[0] : r.reminder_broadcasts;
+    const time = r.appointment_id ? timeByAppt.get(r.appointment_id) : undefined;
+    if (r.appointment_id && time === undefined) continue; // visit deleted
+    if (
+      b &&
+      !broadcastTimeOk(time ?? "", {
+        startTime: b.start_time ?? undefined,
+        endTime: b.end_time ?? undefined,
+        notBefore: b.target_date === todayIso ? nowHHMM : undefined,
+      })
+    ) continue;
+    const digits = (phoneById.get(r.patient_id) ?? "").replace(/\D/g, "");
+    const phone = digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : "";
+    if (!b?.message?.trim() || !phone) continue;
+    out.push({ recipientId: r.id, phone, text: withOptOutLine(b.message.trim(), optOut), createdAt: new Date(b.created_at) });
+  }
+  return out;
+}
+
+/** Lease broadcast recipients to this device; returns the ids it holds. */
+export async function claimBroadcasts(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  ids: string[],
+  minutes: number,
+  now: Date,
+): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const nowIso = now.toISOString();
+  const { data, error } = await admin
+    .from("reminder_broadcast_recipients")
+    .update({ claimed_by: device.id, claimed_until: new Date(now.getTime() + minutes * 60_000).toISOString() })
+    .eq("workspace_id", device.workspace_id)
+    .eq("status", "queued")
+    .in("id", ids)
+    .or(`claimed_until.is.null,claimed_until.lt.${nowIso},claimed_by.eq.${device.id}`)
+    .select("id");
+  if (error) throw new Error(`broadcast claim failed: ${error.message}`);
+  return new Set((data ?? []).map((r) => r.id as string));
+}
+
+/** Record a device's result for one broadcast text. Only queued rows change. */
+export async function ackBroadcast(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  recipientId: string,
+  status: "sent" | "failed" | "dry-run",
+  error: string | null,
+): Promise<boolean> {
+  const { data } = await admin
+    .from("reminder_broadcast_recipients")
+    .update({ status, error, sent_at: new Date().toISOString(), device_id: device.id, claimed_until: null })
+    .eq("workspace_id", device.workspace_id)
+    .eq("id", recipientId)
+    .eq("status", "queued")
+    .select("id");
+  return (data ?? []).length > 0;
+}
+
+export interface InboundReply {
+  from: string;
+  text: string;
+}
+
+export interface InboundResult {
+  /** Keyword messages seen (stop/start). */
+  keywords: number;
+  /** Patients whose text-reminder flag actually changed. */
+  changed: number;
+  /** Keyword messages whose phone matched no patient. */
+  unmatched: number;
+  /** Non-keyword messages (ignored, never stored). */
+  ignored: number;
+}
+
+/**
+ * Patients replied STOP (or START): flip the same per-patient flag the
+ * queue already respects (patients.text_reminders_off) and log the change.
+ * Idempotent: a patient already in that state is left alone and not logged
+ * again. Message bodies are never stored; no reply is ever sent.
+ */
+export async function applyInboundReplies(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  replies: InboundReply[],
+  source: string,
+): Promise<InboundResult> {
+  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, ignored: 0 };
+  const wanted: { key: string; action: "stop" | "start" }[] = [];
+  for (const reply of replies) {
+    const action = parseOptOutReply(reply.text);
+    const key = phoneMatchKey(reply.from);
+    if (!action) {
+      result.ignored += 1;
+      continue;
+    }
+    result.keywords += 1;
+    if (!key) result.unmatched += 1;
+    else wanted.push({ key, action });
+  }
+  if (!wanted.length) return result;
+  const { data: pts, error } = await admin
+    .from("patients")
+    .select("id, phone, text_reminders_off")
+    .eq("workspace_id", device.workspace_id);
+  if (error) throw new Error(`patients lookup failed: ${error.message}`);
+  const byKey = new Map<string, { id: string; off: boolean }[]>();
+  for (const p of pts ?? []) {
+    const key = phoneMatchKey(p.phone);
+    if (!key) continue;
+    const list = byKey.get(key) ?? [];
+    list.push({ id: p.id as string, off: p.text_reminders_off === true });
+    byKey.set(key, list);
+  }
+  for (const { key, action } of wanted) {
+    const matches = byKey.get(key) ?? [];
+    if (!matches.length) {
+      result.unmatched += 1;
+      continue;
+    }
+    const off = action === "stop";
+    for (const m of matches) {
+      if (m.off === off) continue; // already in that state
+      const { error: upErr } = await admin
+        .from("patients")
+        .update({ text_reminders_off: off })
+        .eq("workspace_id", device.workspace_id)
+        .eq("id", m.id);
+      if (upErr) continue;
+      m.off = off;
+      result.changed += 1;
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: m.id,
+        action,
+        phone_last4: key.slice(-4),
+        source,
+        device_id: device.id,
+      });
+    }
+  }
+  return result;
 }

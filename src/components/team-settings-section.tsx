@@ -16,6 +16,7 @@ import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { ToggleSwitch } from "@/components/toggle-switch";
+import { appConfirm } from "@/components/app-dialog";
 
 type Member = {
   member_user_id: string;
@@ -216,7 +217,7 @@ export function TeamSettingsSection() {
   };
 
   const removeMember = async (member: Member) => {
-    if (!window.confirm(`Remove ${member.email || member.label}? Their login will be deleted.`)) {
+    if (!(await appConfirm(`Remove ${member.email || member.label}? Their login will be deleted.`))) {
       return;
     }
     const headers = await authHeader();
@@ -346,10 +347,10 @@ export function TeamSettingsSection() {
     void saveMemberPerms(member, next);
   };
 
-  const setMemberActive = (member: Member, active: boolean) => {
+  const setMemberActive = async (member: Member, active: boolean) => {
     if (!active) {
       const who = member.label || member.email || "this member";
-      if (!window.confirm(`Turn OFF ${who}? Their login will be blocked until you turn them back on. Their record and settings are kept.`)) {
+      if (!(await appConfirm(`Turn OFF ${who}? Their login will be blocked until you turn them back on. Their record and settings are kept.`))) {
         return;
       }
     }
@@ -599,7 +600,7 @@ export function TeamSettingsSection() {
                         />
                       </span>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                        className="btn btn-secondary btn-sm"
                         onClick={() =>
                           setExpandedMembers((prev) => {
                             const next = new Set(prev);
@@ -813,7 +814,7 @@ export function TeamSettingsSection() {
               </label>
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+                  className="btn btn-primary disabled:opacity-40"
                   disabled={busy || !firstName.trim() || !email.trim() || password.length < 6}
                   onClick={addMember}
                   type="button"
@@ -821,7 +822,7 @@ export function TeamSettingsSection() {
                   {busy ? "Creating…" : "Create Member"}
                 </button>
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setShowAdd(false)}
                   type="button"
                 >
@@ -831,7 +832,7 @@ export function TeamSettingsSection() {
             </div>
           ) : (
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+              className="btn btn-primary disabled:opacity-40"
               disabled={notReady}
               onClick={() => setShowAdd(true)}
               type="button"

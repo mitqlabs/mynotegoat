@@ -1,5 +1,6 @@
 "use client";
 
+import { clearAccessHint } from "@/lib/access-hint";
 import { sameJson, unionMerge } from "@/lib/kv-merge";
 
 /** Keys merged by union instead of "cloud replaces local" on boot. */
@@ -15,6 +16,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.patient-forms.v1",
   // G.O.A.T. learned phrases / misses: merged by id, newest wins, deletes are tombstones.
   "casemate.goat-learned.v1",
+  // G.O.A.T. Dx suggestion "Ignore" records: merged by id, newest wins (restore = tombstone).
+  "casemate.dx-suggestion-ignores.v1",
 ]);
 
 /**
@@ -160,6 +163,7 @@ export function wipeLocalWorkspaceForSignOut() {
   window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
   clearGoatTextCache();
   clearGoatChats();
+  clearAccessHint();
 }
 
 /**
@@ -713,6 +717,45 @@ export async function prepareCloudStateBeforeMount() {
 }
 
 /**
+ * Fast boot for encounter notes. With a cursor from the last successful load,
+ * asks the cloud for the tiny (id, updated_at) list and downloads in full only
+ * notes that changed in the cloud, changed on this device, or aren't confirmed
+ * yet; notes proven identical are passed through as their own cloud copy. The
+ * result goes through replaceEncounterNotesFromCloud exactly like a full load.
+ * Without a cursor (or on any doubt) it does the full download.
+ */
+async function loadEncounterNotesForBoot(
+  workspaceId: string,
+  cursor: string | null,
+  planNotesDelta: typeof import("@/lib/boot-delta").planNotesDelta,
+  maxIso: typeof import("@/lib/boot-delta").maxIso,
+): Promise<{ records: import("@/lib/encounter-notes").EncounterNoteRecord[]; delta: boolean; downloaded: number; total: number; cursor: string | null } | null> {
+  const cloud = await import("@/lib/encounter-notes-cloud");
+  const notes = await import("@/lib/encounter-notes");
+  if (!(await cloud.isEncounterNotesTableReady())) return null;
+  const meta = await cloud.fetchEncounterNoteMeta();
+  const nextCursor = meta ? maxIso(meta.map((m) => m.updatedAt)) : null;
+  const local = notes.loadEncounterNoteRecords();
+  const plan =
+    meta && workspaceId && local.length > 0
+      ? planNotesDelta({ meta, local, cursor, unconfirmedIds: notes.getUnconfirmedNoteIds() })
+      : null;
+  if (meta && plan) {
+    const fetched = await cloud.fetchEncounterNotesByIdsParallel(plan.fetchIds);
+    if (fetched !== null) {
+      const fetchedIds = new Set(fetched.map((n) => n.id));
+      // A note listed as changed but gone by the time we fetched it was just
+      // deleted: leave it out (same as a full load would).
+      const records = [...fetched, ...plan.standIns.filter((n) => !fetchedIds.has(n.id))];
+      return { records, delta: true, downloaded: fetched.length, total: meta.length, cursor: nextCursor };
+    }
+  }
+  const all = await cloud.fetchAllEncounterNotesFromTable();
+  if (all === null) return null;
+  return { records: all, delta: false, downloaded: all.length, total: all.length, cursor: meta ? nextCursor : maxIso([]) };
+}
+
+/**
  * Phase-1 bootstrap for table-backed entities.
  *
  * When the `patients` feature flag is on (via localStorage override or
@@ -755,7 +798,19 @@ async function bootstrapTableBackedEntities() {
   const apptsRowsP = apptsModP ? swallow(apptsModP.then((m) => m.fetchAllAppointmentsFromTable()), null) : null;
   const kvModP = kvOn ? import("@/lib/kv-cloud") : null;
   const kvReadyP = kvModP ? swallow(kvModP.then((m) => m.isKvTableReady()), false) : null;
-  const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchAllKvRows()), null) : null;
+  // Fast boot: only changed workspace_kv values are downloaded (see boot-delta.ts).
+  const { readBootDeltaState, writeBootDeltaState, hashString, planNotesDelta, maxIso } =
+    await import("@/lib/boot-delta");
+  const bootWs = getActiveWorkspaceId() ?? "";
+  const bootDelta = readBootDeltaState(bootWs);
+  const kvRowsP = kvModP ? swallow(kvModP.then((m) => m.fetchKvRowsDelta(bootDelta.kv)), null) : null;
+  // Encounter notes are by far the biggest download (~135 MB for a big
+  // office). Start them now, in parallel with everything else, and only
+  // download notes that changed since this browser's last load.
+  const notesOn = isCloudEntityEnabled("encounterNotes");
+  const notesP = notesOn
+    ? swallow(loadEncounterNotesForBoot(bootWs, bootDelta.notesCursor ?? null, planNotesDelta, maxIso), null)
+    : null;
 
   const ready = await patientsReadyP;
   if (!ready) {
@@ -897,7 +952,7 @@ async function bootstrapTableBackedEntities() {
     isCloudEntityEnabled("tasks");
 
   if (anyKvFlagOn) {
-    const { isKvTableReady, fetchAllKvRows, bulkUpsertKvValues, upsertKvValue } =
+    const { isKvTableReady, fetchKvRowsDelta, bulkUpsertKvValues, upsertKvValue } =
       await import("@/lib/kv-cloud");
 
     const kvReady = kvReadyP ? await kvReadyP : await isKvTableReady();
@@ -917,6 +972,8 @@ async function bootstrapTableBackedEntities() {
           // Written to the cloud but never pulled back before. Union-merged.
           "casemate.cash-payments.v1",
           "casemate.patient-packages.v1",
+          // G.O.A.T. Dx suggestion "Ignore" (Diagnosis Codes box). Union-merged.
+          "casemate.dx-suggestion-ignores.v1",
         ],
         macros: [
           "casemate.soap-macros.v1",
@@ -999,12 +1056,18 @@ async function bootstrapTableBackedEntities() {
       }
 
       // Fetch all kv values in one query.
-      const remoteKvRows = kvRowsP ? await kvRowsP : await fetchAllKvRows();
+      const kvRes = kvRowsP ? await kvRowsP : await fetchKvRowsDelta(bootDelta.kv);
+      const remoteKvRows = kvRes ? kvRes.rows : null;
       const remoteKv: Map<string, unknown> | null = remoteKvRows
         ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
         : null;
-      if (remoteKv !== null) {
-        if (remoteKv.size === 0) {
+      if (remoteKv !== null && kvRes) {
+        if (kvRes.skipped > 0) {
+          console.info(`[Cloud Sync] workspace_kv: ${kvRes.skipped} unchanged key(s) skipped, ${remoteKv.size} downloaded.`);
+        }
+        // SAFETY: "cloud is empty" must use the cloud's real row count, not
+        // the delta map (which is empty when nothing changed).
+        if (kvRes.totalKeys === 0) {
           // First-run migration: push all enabled localStorage keys to the table.
           const entries: Array<{ key: string; value: unknown }> = [];
           for (const key of enabledKeys) {
@@ -1224,6 +1287,20 @@ async function bootstrapTableBackedEntities() {
           if (replacedCount > 0) {
             console.info(`[Cloud Sync] Loaded ${replacedCount} kv key(s) from workspace_kv table.`);
           }
+          // Remember what we just applied so the next boot can skip keys
+          // that are unchanged on BOTH sides.
+          try {
+            const stamps: Record<string, { u: string; h: string }> = {};
+            for (const m of kvRes.meta) {
+              if (!m.updatedAt) continue;
+              const raw = window.localStorage.getItem(m.key);
+              if (raw === null) continue;
+              stamps[m.key] = { u: m.updatedAt, h: hashString(raw) };
+            }
+            writeBootDeltaState(bootWs, { kv: stamps });
+          } catch {
+            // next boot does a full read
+          }
           if (skippedLocalIsBigger > 0) {
             console.warn(
               `[Cloud Sync] Preserved ${skippedLocalIsBigger} local key(s) that had more entries than cloud.`,
@@ -1296,14 +1373,15 @@ async function bootstrapTableBackedEntities() {
       replaceEncounterNotesFromCloud,
     } = await import("@/lib/encounter-notes");
 
-    const notesReady = await isEncounterNotesTableReady();
+    const bootNotes = notesP ? await notesP : null;
+    const notesReady = bootNotes ? true : await isEncounterNotesTableReady();
     if (!notesReady) {
       console.warn(
         "[Cloud Sync] encounterNotes flag is on but table isn't ready. " +
         "Run supabase/encounter_notes_table.sql in the SQL editor.",
       );
     } else {
-      const notesRows = await fetchAllEncounterNotesFromTable();
+      const notesRows = bootNotes ? bootNotes.records : await fetchAllEncounterNotesFromTable();
       if (notesRows !== null) {
         const localNotes = loadEncounterNoteRecords();
         if (notesRows.length === 0 && localNotes.length > 0) {
@@ -1323,7 +1401,12 @@ async function bootstrapTableBackedEntities() {
           } finally {
             resumeSync();
           }
-          console.info(`[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`);
+          console.info(
+            bootNotes?.delta
+              ? `[Cloud Sync] Encounter notes: downloaded ${bootNotes.downloaded} changed, ${notesRows.length - bootNotes.downloaded} unchanged kept (of ${bootNotes.total} in cloud).`
+              : `[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`,
+          );
+          if (bootNotes?.cursor) writeBootDeltaState(bootWs, { notesCursor: bootNotes.cursor });
         }
       }
     }

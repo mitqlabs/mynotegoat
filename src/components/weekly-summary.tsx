@@ -155,7 +155,7 @@ export function WeeklySummary() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold"
+          className="btn btn-secondary btn-sm"
           onClick={() => setWeekOffset((w) => w - 1)}
           type="button"
         >
@@ -165,7 +165,7 @@ export function WeeklySummary() {
           {weekLabel} · {shortDate(weekStart)} – {shortDate(new Date(weekEnd.getTime() - DAY_MS))}
         </span>
         <button
-          className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold disabled:opacity-40"
+          className="btn btn-secondary btn-sm disabled:opacity-40"
           disabled={weekOffset >= 0}
           onClick={() => setWeekOffset((w) => Math.min(0, w + 1))}
           type="button"

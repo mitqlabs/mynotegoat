@@ -41,7 +41,13 @@ export interface SmsReminderSettings {
   dryRun: boolean;
   /** IANA time zone the office runs in (decides "today" and "tomorrow"). */
   timeZone: string;
+  /** Append an opt-out line ("Reply STOP to opt out.") to every text. */
+  optOutLine: boolean;
+  /** Wording of that line. */
+  optOutText: string;
 }
+
+export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
 
 export function defaultSmsReminderSettings(): SmsReminderSettings {
   return {
@@ -59,6 +65,8 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     // office turns this off on purpose.
     dryRun: true,
     timeZone: "America/Los_Angeles",
+    optOutLine: true,
+    optOutText: DEFAULT_OPT_OUT_TEXT,
   };
 }
 
@@ -91,6 +99,8 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   }
   if (raw.dryRun === false) base.dryRun = false;
   if (typeof raw.timeZone === "string" && raw.timeZone.trim()) base.timeZone = raw.timeZone.trim();
+  if (raw.optOutLine === false) base.optOutLine = false;
+  if (typeof raw.optOutText === "string" && raw.optOutText.trim()) base.optOutText = raw.optOutText.trim().slice(0, 120);
   return base;
 }
 

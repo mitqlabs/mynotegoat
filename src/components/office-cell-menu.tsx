@@ -87,14 +87,12 @@ export function OfficeCellMenu({
       >
         {label} ▾
       </button>
-      {state !== "idle" && (
+      {state === "error" && (
         <span
-          className={`ml-1 text-[11px] font-semibold ${
-            state === "saving" ? "text-[var(--text-muted)]" : state === "saved" ? "text-emerald-700" : "text-red-700"
-          }`}
+          className="ml-1 text-[11px] font-semibold text-red-700"
           role="status"
         >
-          {state === "saving" ? "Saving…" : state === "saved" ? "Saved ✓" : "Not saved"}
+          Not saved
         </span>
       )}
       {open && (

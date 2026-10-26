@@ -465,7 +465,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         heading: "Save to Cloud",
         steps: [
           "Most settings save as you change them.",
-          "Save to Cloud at the top confirms it: Saving… → Saved to Cloud!",
+          "Save to Cloud at the top confirms it in the save badge (bottom-right): Saving… → Saved ✓",
         ],
         watchOut: "If it says Save Failed - Try Again, your change is only on that computer. Press it again before walking away.",
       },
@@ -827,7 +827,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Patient page → Diagnosis Codes.",
           "+ Dx Code for one, Add Diagnosis Macro to search the library, or Add Diagnosis Bundle for a preset group.",
-          "G.O.A.T. suggests codes from the MRI and, in a second box, from the X-ray (the Imaging panel X-ray text and uploaded X-ray reports). Each shows the X-ray line it came from and a Why? link. Click Add to add one; it then drops off the list.",
+          "G.O.A.T. suggests codes from the MRI and, in a second box, from the X-ray (the Imaging panel X-ray text and uploaded X-ray reports). Each shows the X-ray line it came from and a Why? link. Click Add to add one; it then drops off the list. Click Ignore to hide a suggestion for this patient (saved to the cloud, so it stays hidden on every computer); Show ignored brings it back.",
           "X-ray suggestions cover loss of lordosis, disc degeneration / disc-space narrowing, spondylosis, scoliosis, spondylolisthesis, and shoulder/knee arthritis or effusion. Shoulder and knee codes need the side in the report. A fracture is never coded for you; it's listed under Not suggested so you can code it by hand.",
         ],
         why: "The bar is red and says None added until a patient has codes, because claims and narrative reports both fall apart without them. Codes are per patient, not per visit.",
