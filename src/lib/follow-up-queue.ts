@@ -7,6 +7,7 @@ import type {
 } from "@/lib/dashboard-workspace-settings";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { PatientFollowUpOverrideMap } from "@/lib/patient-follow-up-overrides";
+import { renderCaseNumber } from "@/lib/case-number";
 import { clearedIdSet, followUpClearId } from "@/lib/cleared-tasks";
 
 export type FollowUpCategory =
@@ -181,9 +182,25 @@ export function getDaysFromToday(usDate: string) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-export function buildCaseNumber(dateOfLoss: string, fullName: string) {
+export function buildCaseNumber(
+  dateOfLoss: string,
+  fullName: string,
+  /** A patient's stamped format/counter (matrix). None = the original format. */
+  stamp?: { caseNumberFormat?: string; caseSeq?: string },
+) {
   const formattedDate = toUsDateCanonical(dateOfLoss);
   const dateMatch = formattedDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (stamp?.caseNumberFormat) {
+    const [last = "", first = ""] = fullName.split(",").map((entry) => entry.trim());
+    return renderCaseNumber(stamp.caseNumberFormat, {
+      mm: dateMatch?.[1],
+      dd: dateMatch?.[2],
+      yyyy: dateMatch?.[3],
+      lastName: last,
+      firstName: first,
+      seq: parseInt(stamp.caseSeq ?? "", 10) || undefined,
+    });
+  }
   if (!dateMatch) {
     return "";
   }
@@ -194,6 +211,11 @@ export function buildCaseNumber(dateOfLoss: string, fullName: string) {
   const cleanLast = lastName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
   const cleanFirst = firstName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
   return `${month}${day}${year}${cleanLast}${cleanFirst}`;
+}
+
+/** The case number for a patient: their stamped format if they have one, else the original. */
+export function caseNumberOf(patient: Pick<PatientRecord, "dateOfLoss" | "fullName" | "matrix">) {
+  return buildCaseNumber(patient.dateOfLoss, patient.fullName, patient.matrix);
 }
 
 function cleanAttorneyLabel(value: string) {
@@ -342,7 +364,7 @@ export function buildFollowUpItems(
     //  status simply don't mark that status as Case Closed.)
 
     const matrix = patient.matrix ?? {};
-    const caseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
+    const caseNumber = caseNumberOf(patient);
 
     // Stale-matrix heal: if the user has no X-Ray (or MRI) entries
     // in the patient file, the matrix still carries the last-sent

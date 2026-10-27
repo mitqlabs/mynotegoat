@@ -30,6 +30,13 @@ import { normalizeReviewStatus, reviewSelectOptionsFor, reviewStatusTone } from 
 import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import {
+  COMPLIANCE_COLORS,
+  COMPLIANCE_OPTIONS,
+  complianceAccess,
+  compliancePatchValue,
+  normalizeCompliance,
+} from "@/lib/compliance";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotes } from "@/hooks/use-case-notes";
@@ -118,6 +125,7 @@ import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { forceSyncNow, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
+import { renderCaseNumber } from "@/lib/case-number";
 import { type TaskPriority } from "@/lib/tasks";
 import {
   patients as allPatients,
@@ -1495,7 +1503,7 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const router = useRouter();
   const { officeSettings } = useOfficeSettings();
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
@@ -1657,6 +1665,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     patient.matrix?.notes ?? "",
   );
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
+  // Optional Compliance (only shown while the office has switched it on). "" = not set.
+  const [compliance, setCompliance] = useState<string>(patient.compliance ?? "");
   const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
   const [patientLocationId, setPatientLocationId] = useState<string>(patient.locationId ?? "");
 
@@ -1941,10 +1951,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [dxDragOverIndex, setDxDragOverIndex] = useState<number | null>(null);
   const dxTouchStartY = useRef<number | null>(null);
   const dxTouchRowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
-  const caseNumber = useMemo(
-    () => buildCaseNumber(dateOfLoss, lastName, firstName),
-    [dateOfLoss, firstName, lastName],
-  );
+  const stampedCaseFormat = patient.matrix?.caseNumberFormat;
+  const stampedCaseSeq = patient.matrix?.caseSeq;
+  const caseNumber = useMemo(() => {
+    // A patient created under a custom case number format keeps that format.
+    if (stampedCaseFormat) {
+      const m = toUsDate(dateOfLoss).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return renderCaseNumber(stampedCaseFormat, {
+        mm: m?.[1],
+        dd: m?.[2],
+        yyyy: m?.[3],
+        lastName,
+        firstName,
+        seq: parseInt(stampedCaseSeq ?? "", 10) || undefined,
+      });
+    }
+    return buildCaseNumber(dateOfLoss, lastName, firstName);
+  }, [dateOfLoss, firstName, lastName, stampedCaseFormat, stampedCaseSeq]);
   const mriStudyLabel = mri.isCt ? "CT" : "MRI";
   // One handler for the Add to Contacts button and the new-patient prompt.
   const addPatientToContacts = () =>
@@ -4932,6 +4955,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       email: patientEmail.trim(),
       address: patientAddress.trim(),
       caseStatus: caseStatus as PatientRecord["caseStatus"],
+      // undefined for a patient who never had a value, so saves never touch the column.
+      compliance: compliancePatchValue(compliance, patient.compliance),
       isCashPatient: isCashPatient || undefined,
       locationId: (overrides.locationId ?? patientLocationId) || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
@@ -5003,6 +5028,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       if (!rec || !base || !live) return;
       const incoming = flatten({
         caseStatus: rec.caseStatus,
+        compliance: compliancePatchValue(rec.compliance ?? "", patient.compliance),
         attorney: rec.attorney,
         matrix: { discharge: rec.matrix?.discharge ?? "", rbSent: rec.matrix?.rbSent ?? "", review: normalizeReviewStatus(rec.matrix?.review) },
       });
@@ -5010,6 +5036,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       for (const k of take) {
         const v = decodeFlat(incoming[k]) as string;
         if (k === "caseStatus") setCaseStatus(v);
+        else if (k === "compliance") setCompliance(v ?? "");
         else if (k === "attorney") setAttorney(v);
         else if (k === "matrix.discharge") setDischargeDate(toUsDate(v ?? ""));
         else if (k === "matrix.rbSent") setRbSentDate(toUsDate(v ?? ""));
@@ -5385,6 +5412,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               }}
             >
               {caseStatus}
+            </span>
+          )}
+          {complianceEnabled && normalizeCompliance(compliance) && (
+            <span
+              className="status-pill"
+              style={{
+                backgroundColor: withAlpha(COMPLIANCE_COLORS[normalizeCompliance(compliance)!], 0.2),
+                color: getContrastTextColor(COMPLIANCE_COLORS[normalizeCompliance(compliance)!]),
+              }}
+              title="Compliance"
+            >
+              Compliance: {normalizeCompliance(compliance)}
             </span>
           )}
         </div>
@@ -5767,6 +5806,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {caseStatuses.map((statusConfigEntry) => (
                   <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
                     {statusConfigEntry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Compliance: optional, shown only while switched on in Settings. */}
+          {complianceAccess(complianceEnabled, !patientReadOnly).showField && (
+            <label className="grid gap-1 w-full sm:w-44">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Compliance</span>
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                disabled={!complianceAccess(complianceEnabled, !patientReadOnly).canEdit}
+                onChange={(event) => setCompliance(event.target.value)}
+                value={normalizeCompliance(compliance) ?? ""}
+              >
+                <option value="">Not set</option>
+                {COMPLIANCE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </select>

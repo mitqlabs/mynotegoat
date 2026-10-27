@@ -104,9 +104,21 @@ function dist(a: string, b: string): number {
   return d[b.length];
 }
 const nameParts = (n: string) => n.toLowerCase().replace(/[^a-z\s'-]/g, " ").split(/\s+/).filter(Boolean);
+/**
+ * Everyday task words that are never a typo of a name. Without this, "/todo call tyler smith"
+ * read "call" as a misspelling of "Hall" and filed the to-do under Hall, dropping the verb.
+ * An exact match still wins (a patient really named "Call").
+ */
+const TASK_WORDS = new Set(
+  ("call text email fax send ask tell remind follow check confirm contact reach meet see visit review " +
+    "schedule book order request get pick drop print sign file update bill mail scan copy pull find lookup look " +
+    "pay refund cancel reschedule renew return verify follow-up followup draft write prepare submit upload download " +
+    "chase notify message msg dial phone page ping wait need needs want with about regarding").split(/\s+/),
+);
 /** One typed word vs one name part: exact, or a close spelling (4+ letters, 1 edit; 6+ letters, 2). */
 function wordHits(w: string, part: string): boolean {
   if (w === part) return true;
+  if (TASK_WORDS.has(w)) return false;
   if (w.length < 4 || part.length < 4) return false;
   return dist(w, part) <= (Math.min(w.length, part.length) >= 6 ? 2 : 1);
 }

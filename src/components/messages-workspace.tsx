@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { patients } from "@/lib/mock-data";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { useWorkspaceMessages, type WorkspaceMessage } from "@/hooks/use-workspace-messages";
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -89,7 +89,7 @@ export function MessagesWorkspace() {
     return patients
       .filter((p) => !p.deleted)
       .map((p) => {
-        const caseNumber = buildCaseNumber(p.dateOfLoss, p.fullName);
+        const caseNumber = caseNumberOf(p);
         const label = caseNumber ? `${caseNumber} ${p.fullName}` : p.fullName;
         return { id: p.id, name: p.fullName, caseNumber, label };
       })

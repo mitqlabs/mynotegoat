@@ -58,10 +58,11 @@ import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
+import { resolveSlashTodo } from "@/lib/goat-todo-resolve";
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceMessages } from "@/hooks/use-workspace-messages";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { notifyChange } from "@/lib/local-sync";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
@@ -1035,7 +1036,7 @@ export function GlobalGoatPopup({
     }
     tellRef.current = null;
     const pt = st.patientId ? allPatients().map(toChatPatient).find((p) => p.id === st.patientId) ?? null : null;
-    const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+    const caseNo = pt ? caseNumberOf(pt) : "";
     push({
       role: "goat",
       text: "Send this message?",
@@ -1364,41 +1365,29 @@ export function GlobalGoatPopup({
       return true;
     }
     push({ role: "user", text: question, practice: true });
-    const t = parseTodo(sl.rest, practiceData().today);
-    if (!t.title) {
+    const plan = resolveSlashTodo(sl.rest, practiceData().today, allPatients().map(toChatPatient));
+    if (plan.kind === "needText") {
       push({ role: "goat", text: 'What\'s the to-do? e.g. "/todo call Nazaryan for John Smith tomorrow" or "/todo John Smith: request records"', practice: true });
       return true;
     }
-    const people = allPatients();
-    let patient: PatientRecord | null = null;
-    let title = t.title;
-    if (t.name && !isNoPatientName(t.name)) {
-      const all = matchPatientsByName(t.name, people);
-      const split = activeFirst(all, (p) => isActiveCase(p.caseStatus));
-      if (!all.length) {
-        push({ role: "goat", text: `I couldn't find a patient named "${t.name}". Check the name, or leave it off for a to-do with no patient.`, practice: true });
-        return true;
-      }
-      if (all.length > 1) {
-        const ch = (p: PatientRecord) => ({ label: choiceLabel(toChatPatient(p)), question: `/todo ${p.fullName.replace(/,/g, "")}: ${sl.rest.replace(/^[^:]*:\s*/, "")}` });
-        push({ role: "goat", text: `Which ${t.name}?`, practice: true, ...withInactive(split.shown.map(ch), split.hidden.map(ch)) });
-        return true;
-      }
-      patient = all[0];
-    } else {
-      const found = findPatientsInQuestion(title, people.map(toChatPatient));
-      if (found.confident) {
-        patient = patientById(found.confident.patient.id);
-        if (patient) title = (stripPatientName(title, patient.fullName) || title).replace(/\s+(for|re|about|on)\s*$/i, "").trim();
-      } else if (found.candidates.length) {
-        // A first-name hit ("call Vahe …") never forces a question: the card goes up as a general to-do, linking is optional.
-        const ch = (c: ChatPatient) => ({ label: `Attach to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${sl.rest}` });
-        push({ role: "goat", text: "Add this to-do? (Not attached to a case — tap one below to attach it.)", practice: true, todoDraft: { title, dueDate: t.due, state: "open" }, choices: found.candidates.slice(0, 4).map((m) => ch(m.patient)) });
-        return true;
-      }
+    if (plan.kind === "notFound") {
+      push({ role: "goat", text: `I couldn't find a patient named "${plan.name}". Check the name, or leave it off for a to-do with no patient.`, practice: true });
+      return true;
     }
-    if (isNoPatientName(t.name)) patient = null;
-    push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
+    if (plan.kind === "ask") {
+      const ch = (p: ChatPatient) => ({ label: choiceLabel(p), question: `/todo ${p.fullName.replace(/,/g, "")}: ${plan.chipText}` });
+      const none = { label: "No patient", question: `/todo none: ${plan.chipText}` };
+      const w = withInactive(plan.shown.map(ch), plan.hidden.map(ch));
+      push({ role: "goat", text: `Which ${plan.name}?`, practice: true, ...w, choices: [...(w.choices ?? []), none] });
+      return true;
+    }
+    const patient = plan.patient ? patientById(plan.patient.id) : null;
+    if (plan.attach?.length) {
+      const ch = (c: ChatPatient) => ({ label: `Attach to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${plan.attachText ?? sl.rest}` });
+      push({ role: "goat", text: "Add this to-do? (Not attached to a case — tap one below to attach it.)", practice: true, todoDraft: { title: plan.title, dueDate: plan.due, state: "open" }, choices: plan.attach.map(ch) });
+      return true;
+    }
+    push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title: plan.title, dueDate: plan.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
     return true;
   };
   const confirmTodo = (msg: ChatMessage) => {
@@ -1953,7 +1942,7 @@ export function GlobalGoatPopup({
           return;
         }
         const pt = lookup.confident?.patient ?? null;
-        const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+        const caseNo = pt ? caseNumberOf(pt) : "";
         push({
           role: "goat",
           text: "Send this message?",
@@ -2932,7 +2921,7 @@ function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessa
         <span className="block font-semibold">{todoTitleParts(draft.title).text}</span>
         {todoTitleParts(draft.title).phone && <span className="font-semibold text-[var(--brand-primary)]">{todoTitleParts(draft.title).phone}</span>}
       </div>
-      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${cardDate(draft.dueDate)}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
+      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${cardDate(draft.dueDate)}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : " · No patient"}</p>
       <div className="flex flex-wrap gap-1.5">
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3.5 text-white`} onClick={onConfirm} style={{ fontSize: 13 }} type="button">Confirm</button>
         <button className={`${btn} border-[var(--line-soft)] bg-white px-3.5 text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 13 }} type="button">Cancel</button>

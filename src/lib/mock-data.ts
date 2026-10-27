@@ -1,4 +1,7 @@
 import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
+import { caseNumberStampFor } from "@/lib/case-number";
+import { loadOfficeSettings } from "@/lib/office-settings";
+import { normalizeCompliance, type ComplianceField } from "@/lib/compliance";
 export { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 
 export type CaseStatus =
@@ -44,7 +47,10 @@ export type PatientMatrixField =
   | "paidAmount"
   | "billPercent"
   | "notes"
-  | "review";
+  | "review"
+  // Stamped on a NEW patient only when the office uses a custom case number format.
+  | "caseNumberFormat"
+  | "caseSeq";
 
 export interface PatientRecord {
   id: string;
@@ -81,6 +87,12 @@ export interface PatientRecord {
    * means they still get them.
    */
   textRemindersOff?: boolean;
+  /**
+   * Optional Compliance (New Patient / Yes / No / DNS ATM / Non-Compliant),
+   * shown only when the office turns the Compliance column on. Absent = never
+   * set; "" = cleared. Stored in patients.compliance.
+   */
+  compliance?: ComplianceField;
 }
 
 export interface CashPaymentEntry {
@@ -245,6 +257,8 @@ const matrixFieldList: PatientMatrixField[] = [
   "billPercent",
   "notes",
   "review",
+  "caseNumberFormat",
+  "caseSeq",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -383,6 +397,7 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
     specialistReferrals: Array.isArray(value.specialistReferrals) ? value.specialistReferrals : undefined,
     locationId: cleanString(value.locationId) || undefined,
     textRemindersOff: value.textRemindersOff === true ? true : undefined,
+    compliance: normalizeCompliance(value.compliance) ?? (value.compliance === "" ? "" : undefined),
   };
 }
 
@@ -714,6 +729,15 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
     matrix.notes = notes;
   }
 
+  // A custom case number format applies to this new patient only; stamp it (and the
+  // counter) so a later format change never renames an existing case.
+  const stamp = caseNumberStampFor(
+    loadOfficeSettings().caseNumberFormat,
+    patients.map((existing) => existing.matrix?.caseSeq),
+  );
+  if (stamp.caseNumberFormat) matrix.caseNumberFormat = stamp.caseNumberFormat;
+  if (stamp.caseSeq) matrix.caseSeq = stamp.caseSeq;
+
   const nextPatient: PatientRecord = {
     id: createPatientId(),
     fullName,
@@ -741,7 +765,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff" | "compliance"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }
@@ -779,6 +803,14 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
       summary: `Case status: ${existingPatient.caseStatus} → ${patch.caseStatus}`,
       patient: nextPatient,
       details: { from: existingPatient.caseStatus, to: patch.caseStatus },
+    });
+  }
+  if (patch.compliance !== undefined && (patch.compliance || "") !== (existingPatient.compliance || "")) {
+    logPatientActivity({
+      action: "patient.compliance",
+      summary: `Compliance: ${existingPatient.compliance || "not set"} → ${patch.compliance || "not set"}`,
+      patient: nextPatient,
+      details: { from: existingPatient.compliance || "", to: patch.compliance || "" },
     });
   }
   if (patch.matrix && "review" in patch.matrix) {

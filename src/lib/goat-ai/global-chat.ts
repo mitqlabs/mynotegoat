@@ -14,7 +14,7 @@ import type { OmSnapshot } from "@/lib/goat-om-apply";
  * it is cleared on sign-out and when the workspace changes (cloud-state.ts).
  */
 
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
 
 export interface ChatPatient {
@@ -387,7 +387,7 @@ function usDate(value: string): string {
 
 /** "Smith, John · DOB 03/12/1980 · DOI 06/14/2026 · Case # 061426SMJO" for the clarifying question. */
 export function choiceLabel(p: ChatPatient): string {
-  const caseNo = buildCaseNumber(p.dateOfLoss, p.fullName);
+  const caseNo = caseNumberOf(p);
   return [
     displayName(p.fullName),
     p.dob ? `DOB ${usDate(p.dob)}` : "",

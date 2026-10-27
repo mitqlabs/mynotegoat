@@ -1,11 +1,11 @@
 "use client";
 
+import { CaseNumberFormatField } from "@/components/case-number-format-field";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
-import { forceSyncNow, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-panel";
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
@@ -22,6 +22,7 @@ import { PatientFormsSettingsPanel } from "@/components/patient-forms-settings-p
 import { TextRemindersSettingsPanel } from "@/components/text-reminders-settings-panel";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { usePatientPagePrefs } from "@/hooks/use-patient-page-prefs";
 import {
   patientPagePanelKeys,
@@ -58,34 +59,11 @@ import {
 import { MergePatientsModal } from "@/components/merge-patients-modal";
 import type { DocumentTemplateScope } from "@/lib/document-templates";
 
-import { settingsSearchCatalog, type SettingsSectionKey } from "@/lib/settings-catalog";
+import { type SettingsSectionKey } from "@/lib/settings-catalog";
+import { computeSettingsSearch, showExtraSection, SETTINGS_TABS, SETTINGS_TAB_WRAPPERS, type SettingsTabId } from "@/lib/settings-search";
+import { pushSettingsToCloud } from "@/lib/settings-push-cloud";
+import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
-
-/** Build the visible-section set for the current search query.
- *  Returns null when search is inactive (caller should show everything). */
-function computeSearchMatchKeys(query: string): Set<SettingsSectionKey> | null {
-  const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return null;
-  const terms = trimmed.split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return null;
-  const matches = new Set<SettingsSectionKey>();
-  for (const entry of settingsSearchCatalog) {
-    const haystack = [
-      entry.title,
-      entry.description ?? "",
-      ...(entry.aliases ?? []),
-    ]
-      .join(" ")
-      .toLowerCase();
-    const everyTermHits = terms.every((term) => haystack.includes(term));
-    if (!everyTermHits) continue;
-    matches.add(entry.key);
-    // Bring the parent wrapper into the visible set so the child is
-    // actually reachable (and not hidden behind a collapsed wrapper).
-    if (entry.parent) matches.add(entry.parent);
-  }
-  return matches;
-}
 
 const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   officeSettings: false,
@@ -119,19 +97,6 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
 
 /** Settings tabs. Each tab shows a subset of sections; wrappers listed
  *  so their children are reachable. "all" shows everything. */
-type SettingsTabId = "office" | "schedule" | "notes" | "goat" | "reminders" | "forms" | "billing" | "account" | "all";
-const SETTINGS_TABS: { id: SettingsTabId; label: string; keys: SettingsSectionKey[]; extras?: boolean }[] = [
-  { id: "office", label: "Office", keys: ["officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories"] },
-  { id: "schedule", label: "Schedule", keys: ["officeSettings", "schedule"] },
-  { id: "notes", label: "Notes & Macros", keys: ["macros", "soapMacros", "templates", "documents"] },
-  { id: "goat", label: "G.O.A.T.", keys: ["goat"] },
-  { id: "reminders", label: "Reminders", keys: ["officeSettings", "dashboard", "templates", "smsTemplates", "textReminders", "emailSettings"] },
-  { id: "forms", label: "Forms", keys: ["templates", "forms"] },
-  { id: "billing", label: "Billing", keys: ["macros", "billingMacros", "packageBuilder", "admin", "subscription"] },
-  { id: "account", label: "Account", keys: ["adminAccess", "admin", "diagnostics", "backup", "recovery", "security"], extras: true },
-  { id: "all", label: "Everything", keys: [], extras: true },
-];
-const SETTINGS_TAB_WRAPPERS = new Set<SettingsSectionKey>(["officeSettings", "macros", "templates", "admin"]);
 function isSettingsTabId(value: string | null): value is SettingsTabId {
   return !!value && SETTINGS_TABS.some((tab) => tab.id === value);
 }
@@ -984,7 +949,7 @@ function CollapsibleSection({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button
           aria-expanded={isOpen}
-          className="group flex flex-1 items-start justify-between gap-3 text-left"
+          className="group flex flex-1 items-start justify-between gap-3 text-left rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
           onClick={onToggle}
           type="button"
         >
@@ -2645,10 +2610,15 @@ export default function SettingsPage() {
     removeSubCategory: removeContactSubCategory,
     resetToDefaults: resetContactCategoriesToDefaults,
   } = useContactCategories();
+  // Settings is owner/admin territory: a member without edit access sees the switch but can't flip it.
+  const { canEdit: canEditAccess } = useWorkspaceAccess();
+  const canEditSettings = canEditAccess("settings");
   const {
     caseStatuses,
     lienLabel,
     lienOptions,
+    complianceEnabled,
+    setComplianceEnabled,
     addStatus,
     removeStatus,
     toggleDashboardVisibility,
@@ -2776,6 +2746,7 @@ export default function SettingsPage() {
 
   // Force save state
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveDetail, setSaveDetail] = useState("");
 
   // Data recovery state
   const [recoveryMessage, setRecoveryMessage] = useState("");
@@ -2868,10 +2839,16 @@ export default function SettingsPage() {
   // reachable. When the box is empty, filtering is off and the page
   // looks the same as it always has.
   const [searchQuery, setSearchQuery] = useState("");
-  const searchMatchKeys = useMemo(
-    () => computeSearchMatchKeys(searchQuery),
-    [searchQuery],
+  const workspacePeople = useWorkspacePeople();
+  const memberText = useMemo(
+    () => workspacePeople.flatMap((p) => [p.label, p.email]).filter(Boolean),
+    [workspacePeople],
   );
+  const searchResult = useMemo(
+    () => computeSettingsSearch(searchQuery, memberText),
+    [searchQuery, memberText],
+  );
+  const searchMatchKeys = searchResult ? searchResult.keys : null;
   // Active tab lives in the URL (?tab=…) so it survives reloads and
   // can be linked; deep links with ?section=… pick the matching tab.
   const [activeTab, setActiveTab] = useState<SettingsTabId>(() => {
@@ -2896,10 +2873,10 @@ export default function SettingsPage() {
     if (activeTabDef.id === "all") return true;
     return activeTabDef.keys.includes(key);
   };
-  // Sections without a catalog key (Team, Module visibility) live on Account.
-  const showExtras = searchMatchKeys
-    ? /team|staff|member|user|invite|role|module|feature|hide|show/i.test(searchQuery)
-    : Boolean(activeTabDef.extras);
+  // Sections without a catalog key (Team, Features, Marketing, Treatment Plan) are indexed in
+  // settings-search and each lives on one tab (plus Everything).
+  const showExtra = (id: Parameters<typeof showExtraSection>[0]): boolean =>
+    showExtraSection(id, activeTabDef.id, searchResult);
   // When filtering, auto-expand every visible section so the user
   // doesn't have to click through wrappers to see what they searched
   // for. When search is empty, defer to the user's manual state.
@@ -3301,33 +3278,63 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition ${
-            saveStatus === "saving"
-              ? "bg-[var(--brand-primary)] opacity-70 cursor-wait"
-              : saveStatus === "error"
-                  ? "bg-red-600"
-                  : "bg-[var(--brand-primary)] hover:opacity-90"
-          }`}
-          disabled={saveStatus === "saving"}
-          onClick={async () => {
-            setSaveStatus("saving");
-            reportCloudWriteStart("settings save");
-            try {
-              await forceSyncNow();
-              reportCloudWriteSuccess("settings save");
-              setSaveStatus("saved");
-              setTimeout(() => setSaveStatus("idle"), 3000);
-            } catch (err) {
-              reportCloudWriteError("settings save", err);
-              setSaveStatus("error");
-              setTimeout(() => setSaveStatus("idle"), 4000);
-            }
-          }}
-          type="button"
-        >
-          {saveStatus === "error" ? "Save Failed - Try Again" : "Save to Cloud"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            aria-live="polite"
+            className={`inline-flex min-w-[170px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition ${
+              saveStatus === "saving"
+                ? "cursor-wait bg-[var(--brand-primary)] opacity-80"
+                : saveStatus === "saved"
+                  ? "bg-green-600"
+                  : saveStatus === "error"
+                    ? "bg-red-600 hover:opacity-90"
+                    : "bg-[var(--brand-primary)] hover:opacity-90"
+            }`}
+            disabled={saveStatus === "saving"}
+            onClick={async () => {
+              setSaveStatus("saving");
+              setSaveDetail("");
+              try {
+                // Pushes this device's unconfirmed settings changes to the cloud (never over newer cloud data).
+                const result = await pushSettingsToCloud();
+                setSaveDetail(
+                  result.keptNewerCloud.length > 0
+                    ? `${result.keptNewerCloud.length} setting${result.keptNewerCloud.length === 1 ? " was" : "s were"} changed more recently on another device — kept that version. Reload to see it.`
+                    : result.pushed.length > 0
+                      ? `${result.pushed.length} setting${result.pushed.length === 1 ? "" : "s"} saved to the cloud.`
+                      : "Everything was already saved.",
+                );
+                setSaveStatus("saved");
+                setTimeout(() => setSaveStatus((cur) => (cur === "saved" ? "idle" : cur)), 6000);
+              } catch (err) {
+                setSaveDetail(err instanceof Error ? err.message : "Couldn't reach the cloud.");
+                setSaveStatus("error"); // stays red until retried
+              }
+            }}
+            type="button"
+          >
+            {saveStatus === "saving" ? (
+              <>
+                <span aria-hidden className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Saving…
+              </>
+            ) : saveStatus === "saved" ? (
+              "Saved ✓"
+            ) : saveStatus === "error" ? (
+              "Retry"
+            ) : (
+              "Save to Cloud"
+            )}
+          </button>
+          {saveStatus === "error" && (
+            <span className="text-sm font-semibold text-red-700" role="alert">
+              Not saved — {saveDetail}
+            </span>
+          )}
+          {saveStatus === "saved" && saveDetail && (
+            <span className="text-sm text-[var(--text-muted)]">{saveDetail}</span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             className="btn btn-secondary"
@@ -3373,7 +3380,7 @@ export default function SettingsPage() {
       {/* Empty-results helper. Only shows when the user has typed a
           query that matches nothing in the catalog — keeps the page
           from looking broken when filtering nukes every section. */}
-      {searchMatchKeys && searchMatchKeys.size === 0 && (
+      {searchResult && !searchResult.hasVisible && (
         <p className="rounded-2xl border border-dashed border-[var(--line-soft)] bg-white px-4 py-6 text-center text-sm text-[var(--text-muted)]">
           No settings match &quot;{searchQuery}&quot;. Try a different keyword or clear the search.
         </p>
@@ -3520,6 +3527,8 @@ export default function SettingsPage() {
               />
             </div>
           )}
+
+          <CaseNumberFormatField />
 
           {/* 3-up row: Logo Preview / Delete Password / Change Account
               Password. They stack to 1-col on small screens and to
@@ -4631,6 +4640,23 @@ export default function SettingsPage() {
         onToggle={() => toggleSection("caseStatuses")}
         title="Case Status Categories"
       >
+        <label className="mb-4 flex items-start gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+          <input
+            checked={complianceEnabled}
+            className="mt-1 h-4 w-4"
+            disabled={!canEditSettings}
+            onChange={(event) => setComplianceEnabled(event.target.checked)}
+            type="checkbox"
+          />
+          <span className="space-y-0.5">
+            <span className="block text-sm font-semibold">Compliance column</span>
+            <span className="block text-sm text-[var(--text-muted)]">
+              Adds an optional Compliance column right after Status on the Patients list (and a Compliance
+              field on each patient file): New Patient, Yes, No, DNS ATM, Non-Compliant. Off by default; turning
+              it off only hides it — nothing already entered is lost.
+            </span>
+          </span>
+        </label>
         <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
           <label className="min-w-[220px] grow space-y-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">New Case Status</span>
@@ -4966,7 +4992,7 @@ export default function SettingsPage() {
         <PackageBuilderSettingsPanel />
       </CollapsibleSection>
 
-      <TreatmentPlanSettingsSection />
+      {showExtra("treatmentPlan") && <TreatmentPlanSettingsSection />}
         </div>
       </CollapsibleSection>
 
@@ -5266,9 +5292,9 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      {showExtras && <ModuleVisibilitySection />}
+      {showExtra("modules") && <ModuleVisibilitySection />}
 
-      {showExtras && <TeamSettingsSection />}
+      {showExtra("team") && <TeamSettingsSection />}
 
       <CollapsibleSection
         description="Roles, what Managers can see and delete, and the delete password."
@@ -5280,7 +5306,7 @@ export default function SettingsPage() {
         <AdminAccessSection />
       </CollapsibleSection>
 
-      <MarketingVisitTypesSection />
+      {showExtra("marketing") && <MarketingVisitTypesSection />}
 
       {/* ── Admin group ──────────────────────────────────────────────
           Diagnostics, Backup & Restore, Data Recovery, Security

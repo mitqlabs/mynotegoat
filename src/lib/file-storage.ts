@@ -5,7 +5,7 @@ import { forgetGoatText, goatSidecarPath, readUploadedFile } from "@/lib/goat-fi
 import { patientIdForFolder, splitCaseNumberPrefix, withCaseNumberPrefix } from "@/lib/file-naming";
 import { loadFileManagerState } from "@/lib/file-manager";
 import { getPatientById } from "@/lib/mock-data";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 
 /** "<CASE#> <Last>, <First> <name>" for a file going into a patient's folder (or its subfolders). */
 export function caseNamedUpload(folderId: string, name: string): string {
@@ -13,7 +13,7 @@ export function caseNamedUpload(folderId: string, name: string): string {
     const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
     const patient = pid ? getPatientById(pid) : null;
     if (!patient) return name;
-    return withCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName), patient.fullName);
+    return withCaseNumberPrefix(name, caseNumberOf(patient), patient.fullName);
   } catch {
     return name;
   }
@@ -25,7 +25,7 @@ export function caseNamePrefixFor(folderId: string, name: string): { prefix: str
     const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
     const patient = pid ? getPatientById(pid) : null;
     if (!patient) return null;
-    return splitCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName), patient.fullName);
+    return splitCaseNumberPrefix(name, caseNumberOf(patient), patient.fullName);
   } catch {
     return null;
   }

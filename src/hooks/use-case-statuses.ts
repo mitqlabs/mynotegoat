@@ -304,17 +304,27 @@ export function useCaseStatuses() {
     }));
   }, [updateSettings]);
 
+  const setComplianceEnabled = useCallback(
+    (enabled: boolean) => {
+      updateSettings((current) => ({ ...current, complianceEnabled: enabled }));
+    },
+    [updateSettings],
+  );
+
   const resetToDefaults = useCallback(() => {
-    const defaults = getDefaultCaseStatusSettings();
+    // Resetting statuses must not flip the office's Compliance switch.
+    const defaults = { ...getDefaultCaseStatusSettings(), complianceEnabled: settings.complianceEnabled };
     setSettings(defaults);
     saveCaseStatusSettings(defaults);
-  }, []);
+  }, [settings.complianceEnabled]);
 
   return {
     caseStatuses: settings.statuses,
     lienLabel: settings.lienLabel,
     lienOptions: settings.lienOptions,
     reviewOptions: settings.reviewOptions,
+    complianceEnabled: settings.complianceEnabled,
+    setComplianceEnabled,
     addStatus,
     removeStatus,
     toggleDashboardVisibility,

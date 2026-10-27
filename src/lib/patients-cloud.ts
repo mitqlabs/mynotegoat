@@ -35,6 +35,7 @@ import type {
   PatientRecord,
 } from "@/lib/mock-data";
 import { normalizeMaritalStatus } from "@/lib/marital-status";
+import { normalizeCompliance } from "@/lib/compliance";
 
 interface PatientRow {
   id: string;
@@ -60,11 +61,12 @@ interface PatientRow {
   is_cash_patient: boolean | null;
   location_id: string | null;
   text_reminders_off?: boolean | null;
+  compliance?: string | null;
   created_at?: string;
   updated_at?: string;
 }
 
-function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
+export function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
   return {
     id: patient.id,
     workspace_id: workspaceId,
@@ -89,10 +91,13 @@ function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
     is_cash_patient: patient.isCashPatient ?? false,
     location_id: patient.locationId ?? null,
     text_reminders_off: patient.textRemindersOff === true,
+    // Only sent once a patient has (or had) a Compliance value, so every
+    // other patient save is identical to before and never touches the column.
+    ...(patient.compliance !== undefined ? { compliance: patient.compliance === "" ? null : patient.compliance } : {}),
   };
 }
 
-function rowToPatient(row: PatientRow): PatientRecord {
+export function rowToPatient(row: PatientRow): PatientRecord {
   return {
     id: row.id,
     fullName: row.full_name ?? "",
@@ -118,6 +123,7 @@ function rowToPatient(row: PatientRow): PatientRecord {
     isCashPatient: row.is_cash_patient ?? false,
     locationId: row.location_id ?? undefined,
     textRemindersOff: row.text_reminders_off === true ? true : undefined,
+    compliance: normalizeCompliance(row.compliance),
   };
 }
 

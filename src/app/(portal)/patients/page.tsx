@@ -29,12 +29,23 @@ import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settin
 import { formatUsDateFromIso, type TaskPriority, type TaskRecord } from "@/lib/tasks";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import {
-  buildCaseNumber,
+  caseNumberOf,
   buildFollowUpItems,
   formatLeadingDateDisplay,
   formatUsDateDisplay,
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
+import {
+  COMPLIANCE_COLORS,
+  COMPLIANCE_NOT_SET,
+  COMPLIANCE_NOT_SET_LABEL,
+  COMPLIANCE_OPTIONS,
+  complianceAccess,
+  complianceRank,
+  matchesComplianceFilter,
+  normalizeCompliance,
+  type ComplianceValue,
+} from "@/lib/compliance";
 import { createPatientRecord, patients, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
@@ -44,6 +55,7 @@ import { OfficeCellMenu } from "@/components/office-cell-menu";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { caseNumberStampFor, renderCaseNumber } from "@/lib/case-number";
 import { UsDateInput } from "@/components/us-date-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 
@@ -82,8 +94,8 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
 }
 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
-type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "review";
-const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "review"];
+type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "compliance" | "review";
+const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "compliance", "review"];
 
 // Case Flow columns
 const CF_COLUMN_ORDER_KEY = "casemate.cf-column-order.v1";
@@ -261,6 +273,7 @@ const columnLabels: Record<ListColumnId, string> = {
   dateOfLoss: "Date Of Injury",
   attorney: "Attorney",
   status: "Status",
+  compliance: "Compliance",
   review: "Review",
 };
 
@@ -275,7 +288,15 @@ function loadColumnOrder(): ListColumnId[] {
     if (known.length === 0) return defaultColumnOrder;
     // Keep a saved custom order, and append any column added since it was
     // saved (e.g. Review) instead of throwing the whole order away.
-    return [...known, ...defaultColumnOrder.filter((id) => !known.includes(id))];
+    const withNew = [...known];
+    for (const id of defaultColumnOrder) {
+      if (withNew.includes(id)) continue;
+      // Compliance sits right after Status, even in a saved custom order.
+      const after = id === "compliance" ? withNew.indexOf("status") : -1;
+      if (after >= 0) withNew.splice(after + 1, 0, id);
+      else withNew.push(id);
+    }
+    return withNew;
   } catch { return defaultColumnOrder; }
 }
 
@@ -400,6 +421,21 @@ function buildCaseNumberPreview(dateOfLoss: string, lastName: string, firstName:
   const dateDigits = dateOfLoss.replace(/\D/g, "");
   if (dateDigits.length < 8) {
     return "";
+  }
+
+  const stamp = caseNumberStampFor(
+    loadOfficeSettings().caseNumberFormat,
+    patients.map((existing) => existing.matrix?.caseSeq),
+  );
+  if (stamp.caseNumberFormat) {
+    return renderCaseNumber(stamp.caseNumberFormat, {
+      mm: dateDigits.slice(0, 2),
+      dd: dateDigits.slice(2, 4),
+      yyyy: dateDigits.slice(4, 8),
+      lastName,
+      firstName,
+      seq: parseInt(stamp.caseSeq ?? "", 10) || undefined,
+    });
   }
 
   const lastInitials = lastName.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2);
@@ -540,7 +576,7 @@ export default function PatientsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [savedFromQuery]);
 
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
   const { scheduleAppointments, addAppointments } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
@@ -628,9 +664,12 @@ export default function PatientsPage() {
   const [status, setStatus] = useState("ALL");
   // Review follow-up filter (Not Requested / Requested / Received).
   const [reviewFilter, setReviewFilter] = useState("ALL");
+  // Compliance filter — only exists while the Compliance column is switched on.
+  const [complianceFilter, setComplianceFilter] = useState("ALL");
   // Review changes made from this list, applied on top of the patient record
   // so the row and the filter update instantly.
   const [reviewOverrides, setReviewOverrides] = useState<Record<string, string>>({});
+  const [complianceOverrides, setComplianceOverrides] = useState<Record<string, string>>({});
   // Multi-location: filter the list by the shared "current location" view.
   const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
   // Office changes made from this list's office cell; bumps the list memo so
@@ -1037,6 +1076,24 @@ export default function PatientsPage() {
     [reviewOverrides],
   );
 
+  // Compliance as shown now: a just-picked value wins until the saved patient catches up.
+  const complianceOf = useCallback(
+    (patient: PatientRecord): string => complianceOverrides[patient.id] ?? patient.compliance ?? "",
+    [complianceOverrides],
+  );
+
+  const complianceCanEdit = complianceAccess(complianceEnabled, canEdit("patients")).canEdit;
+  const handleListComplianceChange = (patient: PatientRecord, next: string) => {
+    if (!complianceCanEdit) return;
+    setComplianceOverrides((current) => ({ ...current, [patient.id]: next }));
+    try {
+      // "" clears it (written as null); only this one field is patched.
+      updatePatientRecordById(patient.id, { compliance: normalizeCompliance(next) ?? "" });
+    } catch (err) {
+      console.error("[patients] compliance update failed:", err);
+    }
+  };
+
   const handleListReviewChange = (patient: PatientRecord, next: string) => {
     setReviewOverrides((current) => ({ ...current, [patient.id]: next }));
     try {
@@ -1050,8 +1107,13 @@ export default function PatientsPage() {
   // The Review column only appears while filtering by a review status, so the
   // everyday list stays uncluttered and review follow-up still has its pills.
   const visibleColumns = useMemo(
-    () => columnOrder.filter((colId) => colId !== "review" || reviewFilter !== "ALL"),
-    [columnOrder, reviewFilter],
+    () =>
+      columnOrder.filter(
+        (colId) =>
+          (colId !== "review" || reviewFilter !== "ALL") &&
+          (colId !== "compliance" || complianceEnabled),
+      ),
+    [columnOrder, reviewFilter, complianceEnabled],
   );
 
   const filteredPatients = useMemo(() => {
@@ -1102,6 +1164,9 @@ export default function PatientsPage() {
         normalizeAttorneyKey(patient.attorney) === normalizeAttorneyKey(attorney);
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
+      // Switching the column off also switches its filter off.
+      const matchesCompliance =
+        !complianceEnabled || matchesComplianceFilter(complianceOf(patient), complianceFilter);
       const matchesReview =
         reviewFilter === "ALL" ||
         // "Request" means ready to ask: still at Request, and the case isn't
@@ -1120,7 +1185,7 @@ export default function PatientsPage() {
       // the list opens on, not a wall around what can be found.
       const withinDates = q ? true : matchesYear && matchesMonthRange;
       return (
-        matchesSearch && withinDates && matchesAttorney && matchesStatus && matchesReview && matchesLocation
+        matchesSearch && withinDates && matchesAttorney && matchesStatus && matchesCompliance && matchesReview && matchesLocation
       );
     });
 
@@ -1186,6 +1251,8 @@ export default function PatientsPage() {
         datesNeutral = true;
       } else if (sortColumn === "status") {
         cmp = a.caseStatus.localeCompare(b.caseStatus);
+      } else if (sortColumn === "compliance") {
+        cmp = complianceRank(complianceOf(a)) - complianceRank(complianceOf(b));
       } else if (sortColumn === "review") {
         cmp = reviewOf(a).localeCompare(reviewOf(b));
       }
@@ -1210,7 +1277,7 @@ export default function PatientsPage() {
 
     return sorted;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- officeOverrides re-runs the filter after an office-cell save (the patient list is module-level)
-  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
+  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -1412,6 +1479,7 @@ export default function PatientsPage() {
       loc ? `Location: ${locationLabel(loc)}` : multiLocation && selectedLocationId === NO_OFFICE_FILTER ? `Location: ${NO_OFFICE_LABEL}` : "",
       attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
       status !== "ALL" ? `Status: ${status}` : "",
+      complianceEnabled && complianceFilter !== "ALL" ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceFilter}` : "",
       reviewFilter !== "ALL" ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}` : "",
     ].filter(Boolean);
   };
@@ -1465,6 +1533,7 @@ export default function PatientsPage() {
       if (colId === "dateOfLoss") return formatUsDateDisplay(patient.dateOfLoss);
       if (colId === "attorney") return cleanAttorneyLabel(patient.attorney);
       if (colId === "status") return patient.caseStatus;
+      if (colId === "compliance") return complianceOf(patient) || "-";
       if (colId === "review") return reviewOf(patient);
       return "";
     };
@@ -1601,7 +1670,7 @@ export default function PatientsPage() {
     () => patients.map((p) => ({
       id: p.id,
       fullName: p.fullName,
-      caseNumber: buildCaseNumber(p.dateOfLoss, p.fullName),
+      caseNumber: caseNumberOf(p),
     })),
     [],
   );
@@ -1920,7 +1989,11 @@ export default function PatientsPage() {
             />
           </label>
 
-          <div className={`grid gap-3 md:grid-cols-2 ${multiLocation ? "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem]"}`}>
+          <div className={`grid gap-3 md:grid-cols-2 ${
+            multiLocation
+              ? complianceEnabled ? "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem]"
+              : complianceEnabled ? "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem]"
+          }`}>
             <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               <span className="flex flex-wrap items-center gap-2">
                 Initial Exam — year / months
@@ -2040,6 +2113,25 @@ export default function PatientsPage() {
               </select>
             </label>
 
+            {complianceEnabled && (
+              <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
+                Compliance
+                <select
+                  className="w-full min-w-0 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                  onChange={(event) => setComplianceFilter(event.target.value)}
+                  value={complianceFilter}
+                >
+                  <option value="ALL">ALL</option>
+                  {COMPLIANCE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                  <option value={COMPLIANCE_NOT_SET}>{COMPLIANCE_NOT_SET_LABEL}</option>
+                </select>
+              </label>
+            )}
+
             <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Review
               <select
@@ -2071,6 +2163,9 @@ export default function PatientsPage() {
               const active = [
                 attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
                 status !== "ALL" ? `Status: ${status}` : "",
+                complianceEnabled && complianceFilter !== "ALL"
+                  ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceFilter}`
+                  : "",
                 reviewFilter !== "ALL"
                   ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}`
                   : "",
@@ -2182,6 +2277,33 @@ export default function PatientsPage() {
                             >
                               {patient.caseStatus}
                             </span>
+                          </td>
+                        );
+                      }
+                      if (colId === "compliance") {
+                        const current = normalizeCompliance(complianceOf(patient)) as ComplianceValue | undefined;
+                        const color = current ? COMPLIANCE_COLORS[current] : "#94a3b8";
+                        return (
+                          <td key={colId} className="px-4 py-3">
+                            <select
+                              aria-label={`Compliance for ${patient.fullName}`}
+                              className="status-pill max-w-full cursor-pointer border-0 py-1 pr-6 text-sm font-semibold disabled:cursor-default"
+                              disabled={!complianceCanEdit}
+                              onChange={(event) => handleListComplianceChange(patient, event.target.value)}
+                              style={{
+                                backgroundColor: withAlpha(color, current ? 0.2 : 0.12),
+                                color: current ? getContrastTextColor(color) : "var(--text-muted)",
+                              }}
+                              title={complianceCanEdit ? "Change compliance — saves immediately" : "You have view-only access"}
+                              value={current ?? ""}
+                            >
+                              <option value="">Not set</option>
+                              {COMPLIANCE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                         );
                       }

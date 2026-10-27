@@ -15,6 +15,8 @@
 
 import { recordUserPrefWrite } from "@/lib/user-prefs-cloud";
 import { pushLocalStateToCloud } from "@/lib/cloud-state";
+import { cloudBackingFor } from "@/lib/cloud-key-registry";
+import { markKeyDirty } from "@/lib/dirty-keys";
 
 const CASEMATE_PREFIX = "casemate.";
 const IGNORE_KEYS = new Set([
@@ -226,6 +228,9 @@ export function installStorageSyncInterceptor() {
       }
     }
     if (shouldSyncKey(key)) {
+      // Remember this device changed a workspace setting, until the cloud confirms it
+      // (Settings → "Save to Cloud" pushes exactly these). Not during bootstrap writes.
+      if (!paused && cloudBackingFor(key) === "workspace") markKeyDirty(key);
       scheduleSyncNow();
     }
   };

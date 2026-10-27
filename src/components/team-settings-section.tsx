@@ -1,5 +1,6 @@
 "use client";
 
+import { persistMemberPermissions } from "@/lib/member-permissions-save";
 import { logActivity } from "@/lib/activity-log";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -316,12 +317,9 @@ export function TeamSettingsSection() {
     );
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
-    const { error: uErr } = await supabase
-      .from("workspace_members")
-      .update({ permissions: nextPerms, updated_at: new Date().toISOString() })
-      .eq("member_user_id", member.member_user_id);
-    if (uErr) {
-      setError(uErr.message);
+    const saved = await persistMemberPermissions(supabase, member.member_user_id, nextPerms);
+    if (!saved.ok) {
+      setError(saved.error);
       void loadMembers();
     }
   };
