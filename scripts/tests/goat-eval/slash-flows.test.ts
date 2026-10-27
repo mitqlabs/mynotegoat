@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/tests/goat-eval/slash-flows.test.ts
  */
 import assert from "node:assert/strict";
-import { breaksFlow, continueFlow, startFlow, TOKEN, type FlowCtx, type FlowTurn } from "../../../src/lib/goat-slash-flow";
+import { breaksFlow, continueFlow, searchPatients, startFlow, TOKEN, type FlowCtx, type FlowTurn } from "../../../src/lib/goat-slash-flow";
 import { parseSlash, slashQuery } from "../../../src/lib/goat-briefs";
 import { readFileSync } from "node:fs";
 
@@ -14,7 +14,7 @@ const ctx: FlowCtx = {
   patients: [
     { id: "js1", fullName: "John Mocksmith", caseStatus: "Active" },
     { id: "js2", fullName: "John Mocksmith", caseStatus: "Paid" },
-    { id: "ann", fullName: "Ann Sample", caseStatus: "Submitted" },
+    { id: "ann", fullName: "Ann Sample", caseStatus: "Submitted", caseNumber: "AS-101015-7", phone: "(817) 555-0142" },
   ],
   contacts: [
     { id: "c1", name: "Ward Mock Law Firm", category: "Attorney", phone: "817-555-0100" },
@@ -22,7 +22,7 @@ const ctx: FlowCtx = {
   ],
   openPatientId: null,
 };
-const ctx2: FlowCtx = { ...ctx, patients: [...ctx.patients, { id: "gis", fullName: "Gisselle Fakeperez", caseStatus: "Active" }, { id: "aram", fullName: "Aram Mockian", caseStatus: "Active" }] };
+const ctx2: FlowCtx = { ...ctx, patients: [...ctx.patients, { id: "gis", fullName: "Gisselle Fakeperez", caseStatus: "Active" }, { id: "aram", fullName: "Aram Mockian", caseStatus: "Active" }, { id: "ty", fullName: "Tyler Smith", caseStatus: "Active", caseNumber: "TS-020326-3", phone: "817-555-0199" }, { id: "hall", fullName: "Hallie Hall", caseStatus: "Active" }] };
 const start = (t: string) => { const s = parseSlash(t)!; return startFlow(s.cmd, s.rest, ctx); };
 const step = (t: string, prev: FlowTurn | null, c: FlowCtx = ctx) => continueFlow(t, prev?.pending ?? null, c);
 const tok = (turn: FlowTurn | null, i = 0) => turn!.choices![i].token;
@@ -31,49 +31,65 @@ const tok = (turn: FlowTurn | null, i = 0) => turn!.choices![i].token;
 check("slash first char", () => assert.equal(slashQuery("/"), ""));
 check("mid-sentence slash", () => { assert.equal(slashQuery("on 10/"), null); assert.equal(parseSlash("see you 10/20"), null); assert.equal(parseSlash("10/20 appt"), null); });
 
-// /note
+// /note: bare → patient type-ahead → "What's the note?" → confirm card
 const n0 = start("/note");
-check("/note asks which case", () => { assert.match(n0!.say, /Which case/); assert.deepEqual(n0!.pending, { k: "notePick" }); });
+check("/note shows the patient picker", () => { assert.match(n0!.say, /Which patient/); assert.deepEqual(n0!.pending, { k: "notePick" }); assert.deepEqual(n0!.picker, { next: "note", prefill: undefined, allowNone: false }); });
 check("/note with open patient offers it", () => assert.equal(startFlow("note", "", { ...ctx, openPatientId: "ann" })!.choices![0].token, `${TOKEN}note-case ann`));
 const n1 = step("john mocksmith", n0);
-check("/note picker lists both cases, active first", () => { assert.equal(n1!.choices!.length, 2); assert.match(n1!.choices![0].label, /Active/); assert.match(n1!.say, /Which case\? \(2 match\)/); });
+check("typed name → buttons, active first (never a silent pick)", () => { assert.equal(n1!.choices!.length, 2); assert.match(n1!.choices![0].label, /Active/); assert.match(n1!.say, /Which patient\? \(2 match\)/); assert.equal(n1!.action, undefined); });
+check("typed single name → still a confirm button", () => { const t = step("ann", n0)!; assert.equal(t.action, undefined); assert.equal(t.say, "Is this the patient?"); assert.equal(t.choices!.length, 1); });
 const n2 = step(tok(n1), n1);
-check("/note case picked → asks text", () => { assert.match(n2!.say, /What should the note for John Mocksmith say/); assert.deepEqual(n2!.pending, { k: "noteText", patientId: "js1" }); });
+check("/note patient picked → asks the note", () => { assert.match(n2!.say, /What's the note for John Mocksmith\?/); assert.deepEqual(n2!.pending, { k: "noteText", patientId: "js1" }); });
 const n3 = step("spoke to atty about reduction", n2);
 check("/note text → confirm action", () => { assert.deepEqual(n3!.action, { type: "noteConfirm", patientId: "js1", text: "spoke to atty about reduction" }); assert.equal(n3!.pending, null); });
-check("/note name only (one match) → asks text, no verify step", () => { const t = start("/note ann")!; assert.deepEqual(t.pending, { k: "noteText", patientId: "ann" }); assert.doesNotMatch(t.say, /Is this the case/); });
-check("/note name: text → confirm", () => assert.deepEqual(start("/note ann: called")!.action, { type: "noteConfirm", patientId: "ann", text: "called" }));
-// User 10/15: one line = name + text, straight to the confirm card.
-check("/note gisselle call atty → confirm", () => assert.deepEqual(startFlow("note", "gisselle call atty", ctx2)!.action, { type: "noteConfirm", patientId: "gis", text: "call atty" }));
-check("/note fuzzy first name", () => assert.deepEqual(startFlow("note", "gisele call atty", ctx2)!.action, { type: "noteConfirm", patientId: "gis", text: "call atty" }));
-check("/note last name", () => assert.equal(startFlow("note", "fakeperez left vm", ctx2)!.action!.type, "noteConfirm"));
-check("/note full name longest prefix", () => assert.deepEqual(startFlow("note", "john mocksmith paid active one", { ...ctx2, patients: ctx2.patients.filter((p) => p.id !== "js2") })!.action, { type: "noteConfirm", patientId: "js1", text: "paid active one" }));
-check("/note text word that is not a name stays text", () => assert.equal((startFlow("note", "ann sample called atty", ctx2)!.action as { text: string }).text, "called atty"));
-const amb = startFlow("note", "john mocksmith spoke to atty", ctx2)!;
-check("/note two matches → Which case?", () => { assert.match(amb.say, /Which case\? \(2 match\)/); assert.deepEqual(amb.pending, { k: "notePick", text: "spoke to atty" }); });
-check("/note pick after Which case → confirm with the text", () => assert.deepEqual(step(tok(amb), amb, ctx2)!.action, { type: "noteConfirm", patientId: "js1", text: "spoke to atty" }));
-check("/todo aram subpoena records friday → confirm", () => assert.deepEqual(startFlow("todo", "aram subpoena records friday", ctx2)!.action, { type: "todoConfirm", title: "subpoena records", due: "2026-10-16", patientId: "aram" }));
-check("/todo name only → asks text", () => assert.deepEqual(startFlow("todo", "aram", ctx2)!.pending, { k: "todoText", patientId: "aram" }));
-check("/todo two matches → Which case? then confirm", () => { const t = startFlow("todo", "john mocksmith call atty tomorrow", ctx2)!; assert.deepEqual(t.pending, { k: "todoPick", text: "call atty tomorrow" }); assert.deepEqual(step(tok(t, 1), t, ctx2)!.action, { type: "todoConfirm", title: "call atty", due: "2026-10-16", patientId: "js2" }); });
-check("/note unknown name", () => { const t = step("zelda", n0); assert.match(t!.say, /couldn't find/); assert.deepEqual(t!.pending, { k: "notePick" }); });
+// Picked from the picker (token), then text
+check("picker pick (token) → ask text → confirm", () => { const t = step(`${TOKEN}note-case ann`, n0)!; assert.deepEqual(t.pending, { k: "noteText", patientId: "ann" }); assert.deepEqual(step("called", t)!.action, { type: "noteConfirm", patientId: "ann", text: "called" }); });
+// "/note name text": the matched patient shows as a button first, the text rides along
+const noteLine = (rest: string, c: FlowCtx = ctx2) => startFlow("note", rest, c)!;
+check("/note ann: called → patient button, no card yet", () => { const t = noteLine("ann: called"); assert.equal(t.action, undefined); assert.equal(t.say, "Is this the patient?"); assert.deepEqual(t.pending, { k: "notePick", text: "called" }); });
+check("…tap the button → confirm card with the text", () => { const t = noteLine("ann: called"); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "noteConfirm", patientId: "ann", text: "called" }); });
+check("/note gisselle call atty → button", () => { const t = noteLine("gisselle call atty"); assert.equal(t.action, undefined); assert.match(t.choices![0].label, /Gisselle Fakeperez/); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "noteConfirm", patientId: "gis", text: "call atty" }); });
+check("/note fuzzy first name → button", () => assert.match(noteLine("gisele call atty").choices![0].label, /Gisselle/));
+check("/note last name → button", () => assert.match(noteLine("fakeperez left vm").choices![0].label, /Gisselle/));
+check("/note two matches → Which patient?", () => { const t = noteLine("john mocksmith spoke to atty"); assert.match(t.say, /Which patient\? \(2 match\)/); assert.deepEqual(t.pending, { k: "notePick", text: "spoke to atty" }); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "noteConfirm", patientId: "js1", text: "spoke to atty" }); });
+check("/note name only → button, then asks for the note", () => { const t = noteLine("ann"); assert.equal(t.action, undefined); assert.deepEqual(step(tok(t), t, ctx2)!.pending, { k: "noteText", patientId: "ann" }); });
+check("/note no match → picker prefilled with the query", () => { const t = noteLine("zelda"); assert.equal(t.action, undefined); assert.deepEqual(t.picker, { next: "note", prefill: "zelda", allowNone: false }); assert.match(t.say, /couldn't tell which patient "zelda"/); });
+check("/note no match with text → prefilled picker; text asked after", () => { const t = noteLine("zelda: called attorney"); assert.equal(t.picker!.prefill, "zelda"); assert.deepEqual(t.pending, { k: "notePick", text: "called attorney" }); });
+check("/note a long sentence with no name → picker, text carried", () => { const t = noteLine("called the attorney about the reduction"); assert.equal(t.picker!.prefill, ""); assert.deepEqual(t.pending, { k: "notePick", text: "called the attorney about the reduction" }); });
+check("/note unknown typed name → picker prefilled", () => { const t = step("zelda", n0)!; assert.match(t.say, /couldn't find/); assert.deepEqual(t.pending, { k: "notePick" }); assert.equal(t.picker!.prefill, "zelda"); });
 check("cancel", () => { const t = step("cancel", n2); assert.equal(t!.pending, null); assert.match(t!.say, /cancel/i); });
 check("new command replaces step", () => assert.equal(step("/todo", n2), null));
 
-// /todo
+// Picker search: name, case #, phone
+const names = (q: string) => searchPatients(q, ctx2.patients).map((p) => p.id);
+check("search by name prefix (type-ahead)", () => { assert.deepEqual(names("ann"), ["ann"]); assert.deepEqual(names("ty"), ["ty"]); assert.deepEqual(names("john m").sort(), ["js1", "js2"]); });
+check("search by case #", () => { assert.deepEqual(names("TS-020326"), ["ty"]); assert.deepEqual(names("as-101015-7"), ["ann"]); });
+check("search by phone digits", () => { assert.deepEqual(names("817-555-0142"), ["ann"]); assert.deepEqual(names("5550199"), ["ty"]); });
+check("search: active first", () => assert.deepEqual(names("mocksmith"), ["js1", "js2"]));
+check("search: empty query → nothing; unknown → nothing", () => { assert.deepEqual(names(""), []); assert.deepEqual(names("zzzz"), []); });
+
+// /todo: the exact same flow as /note (plus "No patient / general to-do")
 const t0 = start("/todo");
-check("/todo asks kind", () => { assert.match(t0!.say, /Just a to-do, or add it to a case/); assert.deepEqual(t0!.choices!.map((c) => c.label), ["Just a to-do", "Add to a case"]); });
-const tp = step(tok(t0, 0), t0);
-check("just a to-do → text", () => assert.deepEqual(tp!.pending, { k: "todoText" }));
+check("/todo shows the patient picker with the No-patient option", () => { assert.match(t0!.say, /Which patient/); assert.deepEqual(t0!.pending, { k: "todoPick" }); assert.equal(t0!.picker!.next, "todo"); assert.equal(t0!.picker!.allowNone, true); assert.ok(t0!.choices!.some((c) => c.label === "No patient / general to-do")); });
+const noneTok = t0!.choices!.find((c) => c.label === "No patient / general to-do")!.token;
+const tp = step(noneTok, t0);
+check("No patient → asks the task", () => { assert.match(tp!.say, /What's the task/); assert.deepEqual(tp!.pending, { k: "todoText" }); });
 check("plain todo confirm", () => assert.deepEqual(step("order supplies friday", tp)!.action, { type: "todoConfirm", title: "order supplies", due: "2026-10-16", patientId: undefined }));
-const tc = step(tok(t0, 1), t0);
-check("add to case → which case", () => assert.deepEqual(tc!.pending, { k: "todoPick" }));
-const tc2 = step("ann", tc);
-check("case picked → text", () => assert.deepEqual(tc2!.pending, { k: "todoText", patientId: "ann" }));
-check("case todo confirm", () => assert.deepEqual(step("request records tomorrow", tc2)!.action, { type: "todoConfirm", title: "request records", due: "2026-10-16", patientId: "ann" }));
-check("typed 'add to a case'", () => assert.deepEqual(step("add to a case", t0)!.pending, { k: "todoPick" }));
-check("typed 'just a todo'", () => assert.deepEqual(step("just a todo", t0)!.pending, { k: "todoText" }));
-check("/todo with text → one-shot", () => assert.equal(start("/todo call atty"), null));
+const tc2 = step(`${TOKEN}todo-case ann`, t0);
+check("patient picked → asks the task", () => { assert.match(tc2!.say, /What's the task for Ann Sample/); assert.deepEqual(tc2!.pending, { k: "todoText", patientId: "ann" }); });
+check("patient todo confirm", () => assert.deepEqual(step("request records tomorrow", tc2)!.action, { type: "todoConfirm", title: "request records", due: "2026-10-16", patientId: "ann" }));
+check("typed name at the picker → buttons, never a silent pick", () => { const t = step("ann", t0)!; assert.equal(t.action, undefined); assert.equal(t.say, "Is this the patient?"); assert.ok(t.choices!.some((c) => c.label === "No patient / general to-do")); });
 check("empty todo text re-asks", () => assert.deepEqual(step("tomorrow", tp)!.pending, { k: "todoText" }));
+check("/todo with no patient named → one-shot general to-do", () => assert.equal(start("/todo call atty"), null));
+check("/todo none: … stays one-shot", () => assert.equal(startFlow("todo", "none: order supplies", ctx2), null));
+const todoLine = (rest: string) => startFlow("todo", rest, ctx2)!;
+check("/todo call tyler smith → patient button, name stays in the task", () => { const t = todoLine("call tyler smith"); assert.equal(t.action, undefined); assert.equal(t.say, "Is this the patient?"); assert.match(t.choices![0].label, /Tyler Smith/); assert.deepEqual(t.pending, { k: "todoPick", text: "call tyler smith" }); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "todoConfirm", title: "call tyler smith", due: "", patientId: "ty" }); });
+check("/todo call tyler smith tomorrow → due parsed, name kept", () => { const t = todoLine("call tyler smith tomorrow"); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "todoConfirm", title: "call tyler smith", due: "2026-10-16", patientId: "ty" }); });
+check("/todo \"call\" is never matched to Hall", () => { assert.equal(todoLine("call atty about records"), null as unknown as FlowTurn); });
+check("/todo aram subpoena records friday → button, then confirm", () => { const t = todoLine("aram subpoena records friday"); assert.equal(t.action, undefined); assert.deepEqual(step(tok(t), t, ctx2)!.action, { type: "todoConfirm", title: "subpoena records", due: "2026-10-16", patientId: "aram" }); });
+check("/todo name only → button, then asks the task", () => { const t = todoLine("aram"); assert.equal(t.action, undefined); assert.deepEqual(step(tok(t), t, ctx2)!.pending, { k: "todoText", patientId: "aram" }); });
+check("/todo two matches → Which patient? then confirm", () => { const t = todoLine("john mocksmith call atty tomorrow"); assert.deepEqual(t.pending, { k: "todoPick", text: "call atty tomorrow" }); assert.deepEqual(step(tok(t, 1), t, ctx2)!.action, { type: "todoConfirm", title: "call atty", due: "2026-10-16", patientId: "js2" }); });
+check("/todo pick with No patient while a task is waiting → general confirm", () => { const t = todoLine("john mocksmith call atty tomorrow"); const none = t.choices!.find((c) => c.label === "No patient / general to-do")!; assert.deepEqual(step(none.token, t, ctx2)!.action, { type: "todoConfirm", title: "john mocksmith call atty tomorrow".replace("john mocksmith ", "").replace(" tomorrow", ""), due: "2026-10-16" }); });
 
 // /contact
 const c0 = start("/contact");
@@ -95,7 +111,7 @@ check("stale token ignored", () => assert.equal(step(`${TOKEN}contact-pick nope`
 check("no pending → not a flow", () => assert.equal(step("hello", null), null));
 
 // Live bug 10/15: chips typed/tapped during a waiting step were treated as a patient name.
-for (const [name, prev] of [["/note picker", n0], ["/note text", n2], ["/todo kind", t0], ["/todo case pick", tc], ["/todo text", tp], ["/contact kind", c0], ["/contact add", ca], ["/contact edit pick", ce]] as const) {
+for (const [name, prev] of [["/note picker", n0], ["/note text", n2], ["/todo kind", t0], ["/todo text", tp], ["/contact kind", c0], ["/contact add", ca], ["/contact edit pick", ce]] as const) {
   for (const chip of ["Morning Rundown", "Appointment Check", "Quick Biz", "appointment check", "how's business", "help", "what can you do?", "@hannah call kara", "/todo", "/contact"]) {
     check(`${name} + "${chip}" breaks out`, () => assert.equal(step(chip, prev), null));
   }
@@ -104,9 +120,9 @@ check("breaksFlow chips", () => { for (const c of ["Morning Rundown", "Appointme
 check("breaksFlow not names", () => { for (const c of ["john mocksmith", "ann", "spoke to atty", "order supplies friday"]) assert.equal(breaksFlow(c), false); });
 check("breaksFlow pasted list", () => assert.ok(breaksFlow("A Mock Law\n817-555-0001\n1 Main St, Fort Worth, TX 76102\n\nB Mock Law\n817-555-0002")));
 check("tokens never break", () => assert.equal(breaksFlow(`${TOKEN}note-case ann`), false));
-check("picker gives up on a question", () => { assert.equal(step("how many submitted cases do we have?", n0), null); assert.equal(step("what's on the schedule today", tc), null); });
-check("picker still takes a name (one match → asks text)", () => assert.deepEqual(step("ann sample", n0)!.pending, { k: "noteText", patientId: "ann" }));
-check("abandon then switch: /note → /todo", () => { assert.equal(step("/todo", n0), null); assert.match(start("/todo")!.say, /Just a to-do/); });
+check("picker gives up on a question", () => { assert.equal(step("how many submitted cases do we have?", n0), null); assert.equal(step("what's on the schedule today", t0), null); });
+check("picker still takes a name (one match → confirm button, then asks the note)", () => { const t = step("ann sample", n0)!; assert.equal(t.action, undefined); assert.deepEqual(step(tok(t), t)!.pending, { k: "noteText", patientId: "ann" }); });
+check("abandon then switch: /note → /todo", () => { assert.equal(step("/todo", n0), null); assert.match(start("/todo")!.say, /Which patient/); });
 check("chip token after reload (no pending) still works", () => assert.deepEqual(step(`${TOKEN}note-case ann`, null)!.pending, { k: "noteText", patientId: "ann" }));
 check("typed text after reload (no pending) is not swallowed", () => assert.equal(step("Appointment Check", null), null));
 

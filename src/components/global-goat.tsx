@@ -82,7 +82,7 @@ import { isNoPatientName, pickTodoPatient, todoTitleForPagePatient, detectNewPat
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
-import { breaksFlow, continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { breaksFlow, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
@@ -1401,13 +1401,13 @@ export function GlobalGoatPopup({
   // ---- "/" command flows (step by step) ----
   const flowCtx = (): FlowCtx => ({
     today: practiceData().today,
-    patients: allPatients().map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
+    patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, caseNumber: caseNumberOf(p), phone: p.phone })),
     contacts: practiceOverride ? [] : loadContactDirectory().map((c) => ({ id: c.id, name: c.name, category: c.category, phone: c.phone })),
     openPatientId: openPatientId ?? null,
   });
   const runFlowTurn = (turn: FlowTurn) => {
     flowRef.current = turn.pending;
-    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })) });
+    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })), flowPicker: turn.picker });
     const a = turn.action;
     if (!a) return;
     if (a.type === "noteConfirm") {
@@ -2333,6 +2333,14 @@ export function GlobalGoatPopup({
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
+                    {m.flowPicker && (
+                      <FlowPatientPicker
+                        picker={m.flowPicker}
+                        patients={flowCtx().patients}
+                        disabled={Boolean(job) || practiceBusy}
+                        onPick={(p) => { setMsg(m.id, { flowPicker: { ...m.flowPicker!, picked: p.fullName } }); tryFlow(`${FLOW_TOKEN}${m.flowPicker!.next}-case ${p.id}`); }}
+                      />
+                    )}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -2943,6 +2951,41 @@ function OmUndoCard({ undo, onConfirm, onCancel }: { undo: NonNullable<ChatMessa
     <div className="mt-2 flex flex-wrap gap-1.5">
       <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">Confirm undo</button>
       <button className={`${btn} border-[var(--line-soft)] bg-white text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 12 }} type="button">Cancel</button>
+    </div>
+  );
+}
+
+/** Patient type-ahead for /note and /todo: real patients, searched by name, case # or phone. */
+function FlowPatientPicker({ picker, patients, disabled, onPick }: { picker: NonNullable<ChatMessage["flowPicker"]>; patients: FlowCtx["patients"]; disabled: boolean; onPick: (p: FlowCtx["patients"][number]) => void }) {
+  const [q, setQ] = useState(picker.prefill ?? "");
+  if (picker.picked) return <div className="mt-2 text-xs font-semibold text-[var(--text-muted)]">✓ {picker.picked}</div>;
+  const hits = searchPatients(q, patients);
+  return (
+    <div className="mt-2 space-y-1.5" data-goat-patient-picker>
+      <input
+        autoFocus
+        aria-label="Search patients by name, case number or phone"
+        className="w-full rounded-xl border border-[#72bdcf] bg-white px-2.5 py-1.5 text-xs"
+        disabled={disabled}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Name, case #, or phone"
+        style={{ fontSize: 12 }}
+        value={q}
+      />
+      {q.trim() && !hits.length && <div className="text-xs text-[var(--text-muted)]">No patient matches “{q.trim()}”.</div>}
+      {hits.map((p) => (
+        <button
+          className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
+          disabled={disabled}
+          key={p.id}
+          onClick={() => onPick(p)}
+          style={{ fontSize: 12 }}
+          type="button"
+        >
+          {p.fullName}
+          <span className="font-normal text-[var(--text-muted)]">{[p.caseNumber, p.caseStatus].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
+        </button>
+      ))}
     </div>
   );
 }
