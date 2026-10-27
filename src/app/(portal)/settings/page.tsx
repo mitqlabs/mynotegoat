@@ -13,6 +13,7 @@ import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-s
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
 import { AdminAccessSection } from "@/components/admin-access-section";
+import { DeletePasswordField } from "@/components/delete-password-field";
 import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
@@ -2733,12 +2734,6 @@ export default function SettingsPage() {
   });
   const [contactCategoryError, setContactCategoryError] = useState("");
   const [officeSettingsMessage, setOfficeSettingsMessage] = useState("");
-  const [deletePasswordDraft, setDeletePasswordDraft] = useState("");
-  const [deletePasswordLoginEmail, setDeletePasswordLoginEmail] = useState("");
-  const [deletePasswordLoginPassword, setDeletePasswordLoginPassword] = useState("");
-  const [deletePasswordError, setDeletePasswordError] = useState("");
-  const [deletePasswordSuccess, setDeletePasswordSuccess] = useState("");
-  const [deletePasswordSaving, setDeletePasswordSaving] = useState(false);
   // Change-Account-Password card is collapsed by default per user
   // request — the form was always visible before, which was visual
   // clutter on the Office Information panel. Click the card header
@@ -3057,76 +3052,6 @@ export default function SettingsPage() {
       setOfficeSettingsMessage("Could not read logo file.");
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleSetDeletePassword = async () => {
-    setDeletePasswordError("");
-    setDeletePasswordSuccess("");
-    const newPassword = deletePasswordDraft.trim();
-    if (!newPassword) {
-      setDeletePasswordError("Enter a delete password.");
-      return;
-    }
-    if (!deletePasswordLoginEmail.trim() || !deletePasswordLoginPassword) {
-      setDeletePasswordError("Enter your login email and password to verify your identity.");
-      return;
-    }
-    setDeletePasswordSaving(true);
-    try {
-      const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
-      const supabase = getSupabaseBrowserClient();
-      if (!supabase) {
-        setDeletePasswordError("Supabase is not configured. Cannot verify identity.");
-        setDeletePasswordSaving(false);
-        return;
-      }
-      // Verify the user's current session first
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        setDeletePasswordError("You must be signed in to set the delete password.");
-        setDeletePasswordSaving(false);
-        return;
-      }
-      // Verify the email matches the signed-in user
-      if (session.user.email?.toLowerCase() !== deletePasswordLoginEmail.trim().toLowerCase()) {
-        setDeletePasswordError("Email must match the currently signed-in account.");
-        setDeletePasswordSaving(false);
-        return;
-      }
-      // Use a separate Supabase client to verify password WITHOUT affecting
-      // the current session. We create a throwaway client just for verification.
-      const { createClient } = await import("@supabase/supabase-js");
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!url || !anonKey) {
-        setDeletePasswordError("Supabase configuration missing.");
-        setDeletePasswordSaving(false);
-        return;
-      }
-      const verifyClient = createClient(url, anonKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { error: authError } = await verifyClient.auth.signInWithPassword({
-        email: deletePasswordLoginEmail.trim(),
-        password: deletePasswordLoginPassword,
-      });
-      if (authError) {
-        setDeletePasswordError("Login verification failed: " + authError.message);
-        setDeletePasswordSaving(false);
-        return;
-      }
-      // Sign out the throwaway client immediately
-      await verifyClient.auth.signOut();
-      // Verification succeeded — save the delete password
-      updateOfficeSettings({ deletePassword: newPassword });
-      setDeletePasswordSuccess("Delete password saved.");
-      setDeletePasswordDraft("");
-      setDeletePasswordLoginEmail("");
-      setDeletePasswordLoginPassword("");
-    } catch {
-      setDeletePasswordError("Something went wrong. Please try again.");
-    }
-    setDeletePasswordSaving(false);
   };
 
   const handleExportBackup = () => {
@@ -3562,70 +3487,10 @@ export default function SettingsPage() {
             </div>
 
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 space-y-2">
-              <div>
-                <h5 className="text-sm font-semibold text-[var(--text-main)]">
-                  Patient-Delete Password
-                </h5>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {officeSettings.deletePassword
-                    ? "Required to delete a patient record. To change it, verify identity below."
-                    : "Set the password required to delete a patient record."}
-                </p>
-              </div>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  {officeSettings.deletePassword ? "New" : "Create"} Delete Password
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordDraft(e.target.value)}
-                  placeholder={officeSettings.deletePassword ? "New password" : "Choose password"}
-                  type="password"
-                  value={deletePasswordDraft}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Login Email (verify)
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordLoginEmail(e.target.value)}
-                  placeholder="you@clinic.com"
-                  type="email"
-                  value={deletePasswordLoginEmail}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Login Password (verify)
-                </span>
-                <input
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                  onChange={(e) => setDeletePasswordLoginPassword(e.target.value)}
-                  placeholder="Your account password"
-                  type="password"
-                  value={deletePasswordLoginPassword}
-                />
-              </label>
-              {deletePasswordError && (
-                <p className="text-xs font-semibold text-red-600">{deletePasswordError}</p>
-              )}
-              {deletePasswordSuccess && (
-                <p className="text-xs font-semibold text-emerald-700">{deletePasswordSuccess}</p>
-              )}
-              <button
-                className="btn btn-primary btn-sm w-full disabled:opacity-50"
-                disabled={deletePasswordSaving}
-                onClick={handleSetDeletePassword}
-                type="button"
-              >
-                {deletePasswordSaving
-                  ? "Verifying..."
-                  : officeSettings.deletePassword
-                    ? "Update Delete Password"
-                    : "Set Delete Password"}
-              </button>
+              <h5 className="text-sm font-semibold text-[var(--text-main)]">
+                Patient-Delete Password
+              </h5>
+              <DeletePasswordField />
             </div>
 
             {/* Change Account Password — collapsed by default. Click
