@@ -33,6 +33,7 @@ import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import {
   complianceAccess,
   compliancePatchValue,
+  compliancePillStyle,
   resolveComplianceOption,
 } from "@/lib/compliance";
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
@@ -5418,10 +5419,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {complianceEnabled && complianceOption && (
             <span
               className="status-pill"
-              style={{
-                backgroundColor: withAlpha(complianceOption.color, 0.2),
-                color: getContrastTextColor(complianceOption.color),
-              }}
+              style={compliancePillStyle(complianceOption)}
               title="Compliance"
             >
               Compliance: {complianceOption.label}

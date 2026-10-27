@@ -17,6 +17,7 @@ import {
   liveComplianceOptions,
   shownComplianceOptions,
   complianceAccess,
+  compliancePillStyle,
   compliancePatchValue,
   complianceRank,
   matchesComplianceFilter,
@@ -168,5 +169,30 @@ assert.equal(resolveComplianceOption("c-a", mergeComplianceOptions(devA, removed
 // Patient save keeps working with custom ids
 assert.equal(compliancePatchValue("c-abc", undefined), "c-abc");
 assert.equal(patientToRow(mock({ compliance: "c-abc" }), "ws-mock").compliance, "c-abc");
+
+// Pill colors: the configured color applies, found by stable id or by legacy label
+{
+  const T = "2026-10-27T00:00:00.000Z";
+  let o = renameComplianceOption(getDefaultComplianceOptions(), "DNS ATM", "Do Not Schedule", T);
+  o = setComplianceOptionColor(o, "DNS ATM", "#112233", T);
+  o = setComplianceOptionColor(o, "No", "#d11f1f", T);
+  // stored id and the legacy text value both land on the renamed, recolored option
+  for (const stored of ["DNS ATM", "dns atm", "Do Not Schedule"]) {
+    const opt = resolveComplianceOption(stored, o);
+    assert.equal(opt?.id, "DNS ATM", `${stored} resolves to the renamed option`);
+    assert.equal(compliancePillStyle(opt).backgroundColor, "#112233", `${stored} uses the configured color`);
+  }
+  // dark colors get light text, light colors get dark text — text never matches the pill
+  assert.equal(compliancePillStyle(resolveComplianceOption("DNS ATM", o)).color, "#ffffff");
+  assert.equal(compliancePillStyle(resolveComplianceOption("No", o)).backgroundColor, "#d11f1f");
+  const light = setComplianceOptionColor(o, "Yes", "#f4e526", T);
+  assert.equal(compliancePillStyle(resolveComplianceOption("Yes", light)).color, "#10263a");
+  // unset / cleared / unknown / removed → neutral, readable, never blank
+  const gone = removeComplianceOption(o, "Non-Compliant", T);
+  for (const stored of [undefined, "", "   ", "no-such-option", "Non-Compliant"]) {
+    const style = compliancePillStyle(resolveComplianceOption(stored, stored === "Non-Compliant" ? gone : o));
+    assert.deepEqual(style, { backgroundColor: "#eef1f4", color: "#475569" }, `unset-like value ${JSON.stringify(stored)} is neutral`);
+  }
+}
 
 console.log("PASS compliance (mock data)");

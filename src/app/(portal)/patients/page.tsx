@@ -41,6 +41,7 @@ import {
   COMPLIANCE_NOT_SET_LABEL,
   complianceAccess,
   complianceLabel,
+  compliancePillStyle,
   complianceRank,
   resolveComplianceOption,
   matchesComplianceFilter,
@@ -2288,10 +2289,10 @@ export default function PatientsPage() {
                       }
                       if (colId === "compliance") {
                         const currentOption = resolveComplianceOption(complianceOf(patient), complianceOptions);
-                        const current = currentOption?.id;
-                        const color = currentOption?.color ?? "#94a3b8";
                         // Options switched off in Settings are no longer offered, but a patient that has one still shows it.
                         const rowOptions = currentOption && !currentOption.show ? [...complianceShownOptions, currentOption] : complianceShownOptions;
+                        // Always a value the <select> really has, so it can never render blank.
+                        const current = currentOption && rowOptions.some((option) => option.id === currentOption.id) ? currentOption.id : "";
                         return (
                           <td key={colId} className="px-4 py-3">
                             <select
@@ -2299,16 +2300,13 @@ export default function PatientsPage() {
                               className="status-pill max-w-full cursor-pointer border-0 py-1 pr-6 text-sm font-semibold disabled:cursor-default"
                               disabled={!complianceCanEdit}
                               onChange={(event) => handleListComplianceChange(patient, event.target.value)}
-                              style={{
-                                backgroundColor: withAlpha(color, current ? 0.2 : 0.12),
-                                color: current ? getContrastTextColor(color) : "var(--text-muted)",
-                              }}
+                              style={compliancePillStyle(current ? currentOption : undefined)}
                               title={complianceCanEdit ? "Change compliance — saves immediately" : "You have view-only access"}
-                              value={current ?? ""}
+                              value={current}
                             >
-                              <option value="">Not set</option>
+                              <option value="" style={{ backgroundColor: "#ffffff", color: "#1f2937" }}>{COMPLIANCE_NOT_SET_LABEL}</option>
                               {rowOptions.map((option) => (
-                                <option key={option.id} value={option.id}>
+                                <option key={option.id} value={option.id} style={{ backgroundColor: "#ffffff", color: "#1f2937" }}>
                                   {option.label}
                                 </option>
                               ))}
