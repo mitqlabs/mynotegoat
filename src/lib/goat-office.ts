@@ -6,11 +6,15 @@
 import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
 import { detectPlainTodo } from "@/lib/goat-intents";
 import { answerScheduleQuery } from "@/lib/goat-schedule-query";
-import { answerApptStats, parseApptStats } from "@/lib/goat-appt-stats";
+import { answerApptStats, parseApptStats, parseTimeframeReply, type ApptStatsQuery } from "@/lib/goat-appt-stats";
 import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
-  kind: "todo" | "schedule" | "caseCount" | "caseSummary" | "contact";
+  kind: "todo" | "schedule" | "caseCount" | "caseSummary" | "contact" | "apptStatsAsk";
+  /** apptStatsAsk: what was being counted while G.O.A.T. waits for a time frame. */
+  statuses?: ApptStatsQuery["statuses"];
+  statusLabel?: string;
+  list?: boolean;
   day?: string; // YYYY-MM-DD
   status?: string;
   contact?: string;
@@ -106,6 +110,13 @@ export function answerOffice(question: string, data: PracticeData, last: OfficeM
   // never a patient lookup (and never "cancel <patient>").
   const stats = parseApptStats(question, data.today, data.patients.map((p) => p.fullName));
   if (stats) return answerApptStats(stats, data, question);
+  // "For which time frame?" was asked: a short timeframe ("this week", "today") is the answer.
+  if (last?.kind === "apptStatsAsk" && last.statuses && last.statusLabel) {
+    const range = parseTimeframeReply(question, data.today);
+    if (range) {
+      return answerApptStats({ statuses: last.statuses, statusLabel: last.statusLabel, from: range.from, to: range.to, rangeLabel: range.label, needsRange: false, wantList: !!last.list }, data, question);
+    }
+  }
   const f = followUp(question, data, last);
   if (f) return f;
   // Plain-wording schedule lookups by type and time range ("any upcoming new patients?").

@@ -43,7 +43,8 @@ export interface ApptStatsQuery {
   /** "this month", "last week", … as the user will read it. */
   rangeLabel: string;
   /** True when the question had no timeframe and a default was used (stated in the answer). */
-  defaulted: boolean;
+  /** No timeframe in the question: G.O.A.T. asks "For which time frame?" instead of guessing one. */
+  needsRange: boolean;
   wantList: boolean;
 }
 
@@ -122,9 +123,8 @@ export function parseApptStats(question: string, today: string, patientNames: st
   if (namesAPatient(q, patientNames) || asksAboutSomeone(q)) return null;
   const range = parseStatsRange(q, today);
   const wantList = /\b(list|show|which|who|names?|details?)\b/i.test(q);
-  if (range) return { statuses: rule.statuses, statusLabel: rule.label, from: range.from, to: range.to, rangeLabel: range.label, defaulted: false, wantList };
-  const m = monthRange(today, 0);
-  return { statuses: rule.statuses, statusLabel: rule.label, from: m.from, to: today, rangeLabel: "this month so far", defaulted: true, wantList };
+  if (range) return { statuses: rule.statuses, statusLabel: rule.label, from: range.from, to: range.to, rangeLabel: range.label, needsRange: false, wantList };
+  return { statuses: rule.statuses, statusLabel: rule.label, from: today, to: today, rangeLabel: "", needsRange: true, wantList };
 }
 
 /** Exact whole-word first or last name of a patient in the text (everyday words don't count). */
@@ -163,7 +163,33 @@ const t12 = (hhmm: string) => {
   return `${h % 12 || 12}:${pad(m)} ${h >= 12 ? "PM" : "AM"}`;
 };
 
+const ASK_OPTS = [
+  ["Today", "today"],
+  ["This week", "this week"],
+  ["This month", "this month"],
+  ["Last month", "last month"],
+  ["All time", "all time"],
+] as const;
+
+/** A typed (or tapped) timeframe on its own ("this week", "today", "month") answering "For which time frame?". */
+export function parseTimeframeReply(question: string, today: string): ReturnType<typeof parseStatsRange> {
+  const q = question.trim().toLowerCase().replace(/[?.!]+$/, "").replace(/^(for|in|during|just|the|and|ok|okay)\s+/g, "").replace(/^(for|in|during|just|the)\s+/g, "");
+  if (q.split(/\s+/).length > 5) return null;
+  if (/^(week|month|year)$/.test(q)) return parseStatsRange(`this ${q}`, today);
+  if (/^(all|ever|all time|all-time|overall|total)$/.test(q)) return parseStatsRange("all time", today);
+  return parseStatsRange(q, today);
+}
+
 export function answerApptStats(query: ApptStatsQuery, data: PracticeData, question: string): OfficeAnswer {
+  if (query.needsRange) {
+    const verb = query.wantList ? "list" : "how many";
+    const choices = ASK_OPTS.map(([label, w]) => ({ label, question: `${verb} ${query.statusLabel} appointments ${w}` }));
+    return {
+      text: `For which time frame? (${query.statusLabel} appointments)\nTap one, or type your own, like "last 30 days".`,
+      choices,
+      memory: { kind: "apptStatsAsk", statuses: query.statuses, statusLabel: query.statusLabel, list: query.wantList },
+    };
+  }
   const rows = data.appointments
     .filter((a: ScheduleAppointmentRecord) => query.statuses.includes(a.status) && a.date >= query.from && a.date <= query.to)
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
@@ -171,7 +197,6 @@ export function answerApptStats(query: ApptStatsQuery, data: PracticeData, quest
   const span = query.from === "0000-01-01" ? "" : query.from === query.to ? ` (${usY(query.from)})` : query.to === "9999-12-31" ? ` (${us(query.from)} on)` : ` (${us(query.from)}–${us(query.to)})`;
   const noun = `${query.statusLabel} appointment${n === 1 ? "" : "s"}`;
   const head = n === 0 ? `No ${query.statusLabel} appointments ${query.rangeLabel}${span}.` : `${n} ${noun} ${query.rangeLabel}${span}.`;
-  const note = query.defaulted ? `\nYou didn't give a timeframe, so I used ${query.rangeLabel}. Tap one below for another.` : "";
   const lines: string[] = [];
   const links: ToolLink[] = [];
   const show = query.wantList || n <= 8 ? rows.slice(0, 25) : [];
@@ -180,16 +205,9 @@ export function answerApptStats(query: ApptStatsQuery, data: PracticeData, quest
     if (a.patientId && !links.some((l) => l.href === `/patients/${a.patientId}`)) links.push({ label: a.patientName, href: `/patients/${a.patientId}` });
   }
   const more = n > show.length && show.length ? `\n…and ${n - show.length} more. Ask "list ${query.statusLabel} appointments ${query.rangeLabel}" for all.` : "";
-  const text = `${head}${lines.length ? `\n${lines.join("\n")}` : ""}${more}${note}`;
+  const text = `${head}${lines.length ? `\n${lines.join("\n")}` : ""}${more}`;
   const base = `how many ${query.statusLabel} appointments`;
-  const opts = [
-    ["Today", "today"],
-    ["This week", "this week"],
-    ["Last 30 days", "in the last 30 days"],
-    ["Last month", "last month"],
-    ["All time", "all time"],
-  ] as const;
-  const choices = opts.filter(([, w]) => w.replace(/^in the /, "") !== query.rangeLabel && w !== query.rangeLabel).map(([label, w]) => ({ label, question: `${base} ${w}` }));
+  const choices = ASK_OPTS.filter(([, w]) => w !== query.rangeLabel).map(([label, w]) => ({ label, question: `${base} ${w}` }));
   void question;
   return { text, links: links.length ? links.slice(0, 12) : undefined, choices, memory: { kind: "schedule", day: query.from === "0000-01-01" ? data.today : query.from } };
 }

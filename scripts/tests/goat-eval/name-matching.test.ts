@@ -67,9 +67,6 @@ const ok = (name: string, f: () => void) => { f(); n++; console.log(`ok - ${name
 // A. Office-wide count/list questions: office answer, no patient, no cancel action.
 // ---------------------------------------------------------------------------
 const OFFICE: Array<[string, RegExp]> = [
-  ["how many canceled appt do we have", /^5 canceled appointments this month so far \(10\/01–10\/27\)\.[\s\S]*didn't give a timeframe, so I used this month so far/],
-  ["how many cancelled appts do we have", /^5 canceled appointments this month so far/],
-  ["how many canceled appointments do we have", /^5 canceled appointments/],
   ["how many appts were canceled this week", /^2 canceled appointments this week \(10\/25–10\/31\)\./],
   ["how many appts got canceled this week?", /^2 canceled appointments this week/],
   ["how many canceled appointments today", /^1 canceled appointment today/],
@@ -87,7 +84,6 @@ const OFFICE: Array<[string, RegExp]> = [
   ["any canceled appts today?", /^1 canceled appointment today/],
   ["how many appts did we have canceled yesterday", /^1 canceled appointment yesterday/],
   ["how many no shows this week", /^1 no-show appointment this week/],
-  ["how many no-shows do we have", /^2 no-show appointments this month so far/],
   ["how many patients no showed this month", /^2 no-show appointments this month/],
   ["how many appts were no shows last month", /^No no-show appointments last month/],
   ["list no shows this month", /^2 no-show appointments this month/],
@@ -119,13 +115,84 @@ for (const [q, want] of OFFICE) {
     if (t.reply.kind === "office") assert.match(t.reply.say, want);
   });
 }
-ok("the default timeframe is stated and other timeframes are offered", () => {
+// No timeframe in the question: G.O.A.T. asks "For which time frame?" (never guesses one),
+// then answers after a chip tap or a typed timeframe. A timeframe in the question answers directly.
+const ASK: Array<[string, RegExp]> = [
+  ["how many canceled appt do we have", /canceled/],
+  ["how many cancelled appts do we have", /canceled/],
+  ["how many canceled appointments do we have", /canceled/],
+  ["how many canceled appts", /canceled/],
+  ["how many appts were canceled", /canceled/],
+  ["any canceled appts?", /canceled/],
+  ["number of cancellations", /canceled/],
+  ["how many no-shows do we have", /no-show/],
+  ["how many no shows", /no-show/],
+  ["how many people didn't show up", /no-show/],
+  ["how many appts were rescheduled", /rescheduled/],
+  ["how many patients have we seen", /completed/],
+];
+for (const [q, tag] of ASK) {
+  ok(`asks for a time frame: "${q}"`, () => {
+    assert.equal(u(q), null);
+    assert.equal(findPatientsInQuestion(q, patients).confident, null);
+    const a = answerOffice(q, data)!;
+    assert.ok(a, "office answer");
+    assert.match(a.text, /^For which time frame\?/);
+    assert.match(a.text, tag);
+    assert.doesNotMatch(a.text, /this month so far|\d+ (canceled|no-show)/, "must not guess a timeframe or give a count");
+    const labels = (a.choices ?? []).map((c) => c.label);
+    for (const need of ["Today", "This week", "This month", "Last month", "All time"]) assert.ok(labels.includes(need), `chip ${need}`);
+    assert.equal(a.memory?.kind, "apptStatsAsk");
+    const t = goatTurn(q, emptyDialog(), ctx);
+    assert.equal(t.reply.kind, "office");
+    if (t.reply.kind === "office") assert.match(t.reply.say, /^For which time frame\?/);
+  });
+}
+ok("tapping a chip answers with a real count", () => {
   const a = answerOffice("how many canceled appt do we have", data)!;
-  assert.match(a.text, /this month so far/);
+  const want: Record<string, RegExp> = {
+    Today: /^1 canceled appointment today/,
+    "This week": /^2 canceled appointments this week/,
+    "This month": /^5 canceled appointments this month/,
+    "Last month": /^2 canceled appointments last month/,
+    "All time": /^7 canceled appointments all time/,
+  };
+  for (const c of a.choices ?? []) assert.match(answerOffice(c.question, data)!.text, want[c.label], c.label);
+});
+ok("typing a time frame after the question answers it", () => {
+  const typed: Array<[string, RegExp]> = [
+    ["this week", /^2 canceled appointments this week/],
+    ["today", /^1 canceled appointment today/],
+    ["this month", /^5 canceled appointments this month/],
+    ["month", /^5 canceled appointments this month/],
+    ["week", /^2 canceled appointments this week/],
+    ["last month", /^2 canceled appointments last month/],
+    ["all time", /^7 canceled appointments all time/],
+    ["for this week", /^2 canceled appointments this week/],
+    ["last 30 days", /canceled appointments/],
+  ];
+  for (const [reply, want] of typed) {
+    const t1 = goatTurn("how many canceled appts do we have", emptyDialog(), ctx);
+    const t2 = goatTurn(reply, t1.state, ctx);
+    assert.equal(t2.reply.kind, "office", `${reply}: ${t2.reply.kind}`);
+    if (t2.reply.kind === "office") assert.match(t2.reply.say, want, reply);
+  }
+});
+ok("a no-show ask keeps its status when the time frame is typed", () => {
+  const t1 = goatTurn("how many no shows", emptyDialog(), ctx);
+  const t2 = goatTurn("this week", t1.state, ctx);
+  if (t2.reply.kind === "office") assert.match(t2.reply.say, /^1 no-show appointment this week/);
+  else assert.fail(t2.reply.kind);
+});
+ok("a bare time frame with no pending question is not a stats answer", () => {
+  const a = answerOffice("this week", data, null);
+  assert.ok(!a || !/canceled|no-show/.test(a.text));
+});
+ok("answers carry no 'default timeframe' note and still offer other time frames", () => {
+  const a = answerOffice("how many canceled appts this week", data)!;
+  assert.doesNotMatch(a.text, /didn't give a timeframe/);
   const labels = (a.choices ?? []).map((c) => c.label);
-  assert.ok(labels.includes("This week") && labels.includes("All time") && labels.includes("Last month"));
-  // each chip re-asks something this parser understands
-  for (const c of a.choices ?? []) assert.match(answerOffice(c.question, data)!.text, /canceled appointments?|No canceled appointments/);
+  assert.ok(!labels.includes("This week") && labels.includes("Today") && labels.includes("All time"));
 });
 
 // ---------------------------------------------------------------------------
