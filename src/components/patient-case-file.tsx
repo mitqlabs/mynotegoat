@@ -39,7 +39,8 @@ import {
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
-import { useCaseNotes } from "@/hooks/use-case-notes";
+import { useCaseNotesText } from "@/hooks/use-case-note-entries";
+import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
@@ -1660,11 +1661,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     patient.matrix?.specialistRecommendations ?? "",
   );
   // Case Notes live in a shared store so this box mirrors the encounter
-  // workspace's Notes box (seeded from the legacy matrix.notes value).
-  const { notes: patientNotes, setNotes: setPatientNotes } = useCaseNotes(
-    patient.id,
-    patient.matrix?.notes ?? "",
-  );
+  // workspace's Notes box (quick-note log + old free-form text, seeded from the legacy matrix.notes value).
+  const patientNotes = useCaseNotesText(patient.id, patient.matrix?.notes ?? "");
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
   // Optional Compliance (only shown while the office has switched it on). "" = not set.
   const [compliance, setCompliance] = useState<string>(patient.compliance ?? "");
@@ -5920,15 +5918,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
           </button>
           {sectionPanelsOpen.notes && (
-            <label className="mt-3 grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-              <textarea
-                className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                onChange={(event) => setPatientNotes(event.target.value)}
-                placeholder="Enter any free-form case notes..."
-                value={patientNotes}
-              />
-            </label>
+            <div className="mt-3">
+              <CaseNotesLog patientId={patient.id} patientName={patient.fullName} seed={patient.matrix?.notes ?? ""} />
+            </div>
           )}
         </section>
 
