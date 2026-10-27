@@ -228,6 +228,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Ask by visit type and time: \"any upcoming new patients?\", \"new patients this week\", \"any re-exams friday\", \"when is the next new patient\", \"who's coming in tomorrow\", \"how many appointments today\".",
         "G.O.A.T. answers with a short list: date, time, patient, visit type and office. Each patient's name is a link (shown once), plus a link to that day on the Schedule.",
         "Typos and stray punctuation are fine (\"new patients>\" works). Canceled and no-show visits are left out.",
+        "Count canceled, no-show or completed visits: \"how many canceled appointments\", \"no-shows this week\", \"who canceled last month\". With no timeframe it counts this month so far, says so, and offers buttons for other timeframes.",
         "It only sees the offices you can see. Admin-only numbers (case counts, money) stay admin-only.",
         "If G.O.A.T. isn't sure what you mean, it asks a short question with buttons (schedule, to-dos, case, contact) instead of listing everything.",
       ],

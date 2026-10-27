@@ -6,6 +6,7 @@
 import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
 import { detectPlainTodo } from "@/lib/goat-intents";
 import { answerScheduleQuery } from "@/lib/goat-schedule-query";
+import { answerApptStats, parseApptStats } from "@/lib/goat-appt-stats";
 import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
@@ -101,6 +102,10 @@ function followUp(question: string, data: PracticeData, last: OfficeMemory | nul
 export function answerOffice(question: string, data: PracticeData, last: OfficeMemory | null = null): OfficeAnswer | null {
   // A new to-do ("remind me to call YMPK …") is never an office lookup, even if it names a contact.
   if (detectPlainTodo(question)) return null;
+  // Intent first: "how many canceled appts do we have" is an office count by status,
+  // never a patient lookup (and never "cancel <patient>").
+  const stats = parseApptStats(question, data.today, data.patients.map((p) => p.fullName));
+  if (stats) return answerApptStats(stats, data, question);
   const f = followUp(question, data, last);
   if (f) return f;
   // Plain-wording schedule lookups by type and time range ("any upcoming new patients?").

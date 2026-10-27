@@ -11,6 +11,7 @@
  *  /contact → Add or edit? → Add: one contact or a pasted list → review card
  *                          → Edit: pick contact → edit card → confirm
  */
+import { isEverydayWord } from "@/lib/goat-name-guard";
 import { matchPatientsByName } from "@/lib/goat-notes";
 import { CHIPS, detectBrief, parseTodo } from "@/lib/goat-briefs";
 import { isGoatHelpQuestion } from "@/lib/handbook-goat";
@@ -118,7 +119,7 @@ const TASK_WORDS = new Set(
 /** One typed word vs one name part: exact, or a close spelling (4+ letters, 1 edit; 6+ letters, 2). */
 function wordHits(w: string, part: string): boolean {
   if (w === part) return true;
-  if (TASK_WORDS.has(w)) return false;
+  if (TASK_WORDS.has(w) || isEverydayWord(w)) return false;
   if (w.length < 4 || part.length < 4) return false;
   return dist(w, part) <= (Math.min(w.length, part.length) >= 6 ? 2 : 1);
 }

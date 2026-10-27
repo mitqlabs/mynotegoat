@@ -1,3 +1,4 @@
+import { acceptHits, isNeverName, isShortTypo, matchNameToken, type TokenHit } from "@/lib/goat-name-guard";
 import type { OfficeMemory } from "@/lib/goat-office";
 import type { BookingDraft } from "@/lib/goat-booking";
 import type { OmPlan } from "@/lib/goat-om";
@@ -240,25 +241,22 @@ export function editDistance(a: string, b: string): number {
 
 /** How well one word of the question fits one part of a name: 1 exact, 0.85 start of the name, 0.8 / 0.6 typo, else 0. */
 export function namePartScore(word: string, part: string, whole = false): number {
+  // One shared rule (goat-name-guard): never an everyday word / EHR abbreviation, no short-token
+  // typos, a typo needs both words ≥ 4 letters and the same first letter.
+  const m = matchNameToken(word, part, { allowPrefix: !whole });
+  if (!m) return isShortTypo(word, part) ? 0.6 : 0; // 3-letter typo: only counts beside the other name part (acceptHits)
+  if (m === "exact") return 1;
+  if (m === "prefix") return 0.85;
   const w = word.toLowerCase();
   const p = part.toLowerCase();
-  if (w.length < 2 || p.length < 2) return 0;
-  if (w === p) return 1;
-  // A finished word ("armen " / "armen next visit") never matches the start of a longer name (Armenuhi).
-  if (!whole && w.length >= 3 && p.startsWith(w)) return 0.85;
-  if (w.length >= 4) {
-    const d = editDistance(w, p);
-    if (d === 1) return 0.8;
-    if (d === 2 && w.length >= 6 && p.length >= 6) return 0.6;
-  }
-  return 0;
+  return editDistance(w, p) <= 1 ? 0.8 : 0.6;
 }
 
 /** Words of a question that could be a name: doctors ("Dr. Armen") and everyday words left out; "sam's" → "sam". */
 export function nameWords(question: string): string[] {
   const q = question.replace(/\b(?:dr|doctor)\.?\s+[A-Za-z'-]+(?:\s+[A-Z][a-z'-]+)?/gi, " ");
   const words = (q.match(/[A-Za-z][A-Za-z'-]*/g) ?? []).map((w) => w.replace(/'s$/i, "").replace(/['-]+$/, ""));
-  return [...new Set(words.filter((w) => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase())))];
+  return [...new Set(words.filter((w) => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase()) && !isNeverName(w)))];
 }
 
 export interface PatientMatch {
@@ -301,7 +299,17 @@ export function scorePatients(question: string, patients: ChatPatient[]): Patien
         used.push(bestWord);
       }
     }
-    if (score >= 0.6) out.push({ patient, score, words: used });
+    if (score < 0.6) continue;
+    // Context rules: a lone typo hit or an ambiguous word (may, will) needs more than itself.
+    const hits: TokenHit[] = used.map((w) => {
+      const at = question.toLowerCase().indexOf(w.toLowerCase());
+      const raw = at >= 0 ? question.slice(at, at + w.length) : w;
+      const m = nameTokens(patient.fullName).map((part) => ({ part, m: matchNameToken(w, part, { allowPrefix: !whole(w) }) })).find((x) => x.m);
+      const short = !m && nameTokens(patient.fullName).some((part) => isShortTypo(w, part));
+      return { index: at, raw, kind: short ? "short" : (m?.m ?? "exact"), part: m?.part.toLowerCase() ?? w } as TokenHit;
+    });
+    if (acceptHits(hits).length === 0) continue;
+    out.push({ patient, score, words: used });
   }
   return out.sort((a, b) => b.score - a.score || a.patient.fullName.localeCompare(b.patient.fullName));
 }
@@ -324,7 +332,7 @@ export function typedFullName(question: string, patients: ChatPatient[]): { text
     const firstHits = patients.filter((p) => namePartScore(w1, nameParts(p.fullName).first, true) >= 0.8);
     if (!firstHits.length) { re.lastIndex = m.index + m[1].length; continue; }
     // w2 is someone's first-name too ("kara john")? then it isn't a surname claim.
-    const lastFits = (p: ChatPatient) => nameParts(p.fullName).last.split(/[\s-]+/).some((part) => namePartScore(w2, part, true) >= 0.8);
+    const lastFits = (p: ChatPatient) => nameParts(p.fullName).last.split(/[\s-]+/).some((part) => namePartScore(w2, part, true) >= 0.8 || isShortTypo(w2, part));
     const ids = new Set(firstHits.filter(lastFits).map((p) => p.id));
     const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
     return { text: `${cap(m[1])} ${cap(m[2].replace(/'s$/i, ""))}`, ids };

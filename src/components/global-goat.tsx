@@ -89,6 +89,7 @@ import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMem
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget, briefName, splitLinks } from "@/lib/goat-briefs";
+import { isOfficeStatsQuestion } from "@/lib/goat-appt-stats";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
@@ -1742,6 +1743,9 @@ export function GlobalGoatPopup({
       const u = runUnderstand(question);
       if (u && actOn(u, question)) return;
     }
+    // Office-wide count/list by status ("how many canceled appts do we have") is a schedule
+    // question: answer it from the schedule before any patient-name guessing.
+    if (casual && !flowRef.current && !replyPending() && isOfficeStatsQuestion(question, practiceData().today, allPatients().map((p) => p.fullName)) && tryPractice(question, false)) return;
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
