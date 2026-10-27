@@ -8,6 +8,7 @@
  * (patients.compliance), so it syncs the same way Case Status does.
  */
 
+import { getContrastTextColor } from "@/lib/color-utils";
 import { unionMerge } from "@/lib/kv-merge";
 
 /** Default option labels. A default's stable id IS its original label, so values already saved on patients keep working. */
@@ -224,6 +225,16 @@ export const complianceLabel = (value: string | undefined, options?: ComplianceO
 
 export function complianceColor(value: string | undefined, options?: ComplianceOption[]): string | null {
   return resolveComplianceOption(value, options)?.color ?? null;
+}
+
+/**
+ * Pill colors for a compliance value. A set value is a SOLID pill in the option's own color
+ * with readable text on it (the old tinted background + white text made dark colors vanish,
+ * leaving what looked like a blank pill). Not set / unknown = neutral grey, always readable.
+ */
+export function compliancePillStyle(option: ComplianceOption | undefined): { backgroundColor: string; color: string } {
+  if (!option) return { backgroundColor: "#eef1f4", color: "#475569" };
+  return { backgroundColor: option.color, color: getContrastTextColor(option.color) };
 }
 
 /** Filter value meaning "no compliance chosen yet". */
