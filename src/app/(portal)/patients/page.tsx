@@ -21,6 +21,7 @@ import {
   reviewStatusTone,
 } from "@/lib/review-status";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
@@ -36,15 +37,14 @@ import {
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
 import {
-  COMPLIANCE_COLORS,
   COMPLIANCE_NOT_SET,
   COMPLIANCE_NOT_SET_LABEL,
-  COMPLIANCE_OPTIONS,
   complianceAccess,
+  complianceLabel,
   complianceRank,
+  resolveComplianceOption,
   matchesComplianceFilter,
   normalizeCompliance,
-  type ComplianceValue,
 } from "@/lib/compliance";
 import { createPatientRecord, patients, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { useLocationView } from "@/hooks/use-location-view";
@@ -577,6 +577,7 @@ export default function PatientsPage() {
   }, [savedFromQuery]);
 
   const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
+  const { options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
   const { scheduleAppointments, addAppointments } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
@@ -1166,7 +1167,7 @@ export default function PatientsPage() {
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
       // Switching the column off also switches its filter off.
       const matchesCompliance =
-        !complianceEnabled || matchesComplianceFilter(complianceOf(patient), complianceFilter);
+        !complianceEnabled || matchesComplianceFilter(complianceOf(patient), complianceFilter, complianceOptions);
       const matchesReview =
         reviewFilter === "ALL" ||
         // "Request" means ready to ask: still at Request, and the case isn't
@@ -1252,7 +1253,7 @@ export default function PatientsPage() {
       } else if (sortColumn === "status") {
         cmp = a.caseStatus.localeCompare(b.caseStatus);
       } else if (sortColumn === "compliance") {
-        cmp = complianceRank(complianceOf(a)) - complianceRank(complianceOf(b));
+        cmp = complianceRank(complianceOf(a), complianceOptions) - complianceRank(complianceOf(b), complianceOptions);
       } else if (sortColumn === "review") {
         cmp = reviewOf(a).localeCompare(reviewOf(b));
       }
@@ -1277,7 +1278,7 @@ export default function PatientsPage() {
 
     return sorted;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- officeOverrides re-runs the filter after an office-cell save (the patient list is module-level)
-  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
+  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -1479,7 +1480,7 @@ export default function PatientsPage() {
       loc ? `Location: ${locationLabel(loc)}` : multiLocation && selectedLocationId === NO_OFFICE_FILTER ? `Location: ${NO_OFFICE_LABEL}` : "",
       attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
       status !== "ALL" ? `Status: ${status}` : "",
-      complianceEnabled && complianceFilter !== "ALL" ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceFilter}` : "",
+      complianceEnabled && complianceFilter !== "ALL" ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceLabel(complianceFilter, complianceOptions) || complianceFilter}` : "",
       reviewFilter !== "ALL" ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}` : "",
     ].filter(Boolean);
   };
@@ -1533,7 +1534,7 @@ export default function PatientsPage() {
       if (colId === "dateOfLoss") return formatUsDateDisplay(patient.dateOfLoss);
       if (colId === "attorney") return cleanAttorneyLabel(patient.attorney);
       if (colId === "status") return patient.caseStatus;
-      if (colId === "compliance") return complianceOf(patient) || "-";
+      if (colId === "compliance") return complianceLabel(complianceOf(patient), complianceOptions) || "-";
       if (colId === "review") return reviewOf(patient);
       return "";
     };
@@ -2122,9 +2123,9 @@ export default function PatientsPage() {
                   value={complianceFilter}
                 >
                   <option value="ALL">ALL</option>
-                  {COMPLIANCE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  {complianceOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
                     </option>
                   ))}
                   <option value={COMPLIANCE_NOT_SET}>{COMPLIANCE_NOT_SET_LABEL}</option>
@@ -2164,7 +2165,7 @@ export default function PatientsPage() {
                 attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
                 status !== "ALL" ? `Status: ${status}` : "",
                 complianceEnabled && complianceFilter !== "ALL"
-                  ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceFilter}`
+                  ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceLabel(complianceFilter, complianceOptions) || complianceFilter}`
                   : "",
                 reviewFilter !== "ALL"
                   ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}`
@@ -2220,21 +2221,26 @@ export default function PatientsPage() {
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <Link
-                              href={`/patients/${patient.id}`}
-                              className="font-semibold text-[var(--brand-primary)] underline"
-                            >
-                              {patient.fullName}
-                            </Link>
-                            {multiLocation && (
-                              <OfficeCellMenu
-                                locationId={patient.locationId}
-                                locations={locations}
-                                onSaved={(id) => setOfficeOverrides((cur) => ({ ...cur, [patient.id]: id }))}
-                                patientId={patient.id}
-                                readOnly={!canEdit("patients")}
-                              />
-                            )}
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={`/patients/${patient.id}`}
+                                className={`min-w-0 font-semibold text-[var(--brand-primary)] underline ${
+                                  multiLocation ? "block w-40 shrink-0 truncate sm:w-56" : ""
+                                }`}
+                                title={patient.fullName}
+                              >
+                                {patient.fullName}
+                              </Link>
+                              {multiLocation && (
+                                <OfficeCellMenu
+                                  locationId={patient.locationId}
+                                  locations={locations}
+                                  onSaved={(id) => setOfficeOverrides((cur) => ({ ...cur, [patient.id]: id }))}
+                                  patientId={patient.id}
+                                  readOnly={!canEdit("patients")}
+                                />
+                              )}
+                            </div>
                             {patient.phone && (
                               <p className="text-sm text-[var(--text-muted)]">
                                 <SmsSendMenu
@@ -2281,8 +2287,11 @@ export default function PatientsPage() {
                         );
                       }
                       if (colId === "compliance") {
-                        const current = normalizeCompliance(complianceOf(patient)) as ComplianceValue | undefined;
-                        const color = current ? COMPLIANCE_COLORS[current] : "#94a3b8";
+                        const currentOption = resolveComplianceOption(complianceOf(patient), complianceOptions);
+                        const current = currentOption?.id;
+                        const color = currentOption?.color ?? "#94a3b8";
+                        // Options switched off in Settings are no longer offered, but a patient that has one still shows it.
+                        const rowOptions = currentOption && !currentOption.show ? [...complianceShownOptions, currentOption] : complianceShownOptions;
                         return (
                           <td key={colId} className="px-4 py-3">
                             <select
@@ -2298,9 +2307,9 @@ export default function PatientsPage() {
                               value={current ?? ""}
                             >
                               <option value="">Not set</option>
-                              {COMPLIANCE_OPTIONS.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
+                              {rowOptions.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.label}
                                 </option>
                               ))}
                             </select>

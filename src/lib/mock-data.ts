@@ -1,7 +1,7 @@
 import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
 import { caseNumberStampFor } from "@/lib/case-number";
 import { loadOfficeSettings } from "@/lib/office-settings";
-import { normalizeCompliance, type ComplianceField } from "@/lib/compliance";
+import { complianceLabel, loadComplianceOptions, normalizeCompliance, type ComplianceField } from "@/lib/compliance";
 export { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 
 export type CaseStatus =
@@ -808,7 +808,7 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
   if (patch.compliance !== undefined && (patch.compliance || "") !== (existingPatient.compliance || "")) {
     logPatientActivity({
       action: "patient.compliance",
-      summary: `Compliance: ${existingPatient.compliance || "not set"} → ${patch.compliance || "not set"}`,
+      summary: `Compliance: ${complianceLabel(existingPatient.compliance, loadComplianceOptions()) || "not set"} → ${complianceLabel(patch.compliance, loadComplianceOptions()) || "not set"}`,
       patient: nextPatient,
       details: { from: existingPatient.compliance || "", to: patch.compliance || "" },
     });

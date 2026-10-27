@@ -101,6 +101,9 @@ export const settingsSearchCatalog: Array<{
     aliases: [
       "compliance",
       "compliance column",
+      "compliance categories",
+      "compliance options",
+      "compliance colors",
       "status",
       "case status",
       "lien",

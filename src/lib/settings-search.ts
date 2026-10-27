@@ -22,7 +22,7 @@ export const EXTRA_SECTIONS: ExtraSection[] = [
     title: "Team Members",
     description: "Invite staff, set each member's role, access, main location and which sections they see.",
     aliases: ["team", "staff", "member", "members", "user", "users", "invite", "login", "logins", "role", "roles", "access", "permissions", "main location", "default location", "deactivate", "disable", "doctor", "front desk", "manager", "admin"],
-    tab: "account",
+    tab: "office",
   },
   {
     id: "modules",

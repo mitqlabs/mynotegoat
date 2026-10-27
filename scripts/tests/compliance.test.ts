@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import {
   COMPLIANCE_OPTIONS,
+  addComplianceOption,
+  complianceColor,
+  complianceLabel,
+  complianceUsage,
+  getDefaultComplianceOptions,
+  mergeComplianceOptions,
+  normalizeComplianceOptions,
+  removeComplianceOption,
+  renameComplianceOption,
+  resetComplianceOptions,
+  resolveComplianceOption,
+  setComplianceOptionColor,
+  setComplianceOptionShown,
+  liveComplianceOptions,
+  shownComplianceOptions,
   complianceAccess,
   compliancePatchValue,
   complianceRank,
@@ -21,7 +36,8 @@ const mock = (over: Partial<PatientRecord> = {}): PatientRecord =>
 // The five options, in order.
 assert.deepEqual([...COMPLIANCE_OPTIONS], ["New Patient", "Yes", "No", "DNS ATM", "Non-Compliant"]);
 assert.equal(normalizeCompliance("dns atm"), "DNS ATM");
-assert.equal(normalizeCompliance("Maybe"), undefined);
+assert.equal(normalizeCompliance("Maybe"), "Maybe", "any text is kept: it may be a custom option id");
+assert.equal(normalizeCompliance("   "), undefined);
 assert.equal(normalizeCompliance(undefined), undefined);
 
 // Setting is OFF by default, survives a save/load round trip, and junk reads as off.
@@ -49,7 +65,7 @@ assert.equal(patientToRow(mock({ compliance: "" }), "ws-mock").compliance, null,
 const row = patientToRow(mock({ compliance: "Non-Compliant" }), "ws-mock");
 assert.equal(rowToPatient(row as never).compliance, "Non-Compliant");
 assert.equal(rowToPatient({ ...row, compliance: null } as never).compliance, undefined);
-assert.equal(rowToPatient({ ...row, compliance: "garbage" } as never).compliance, undefined);
+assert.equal(rowToPatient({ ...row, compliance: "c-custom1" } as never).compliance, "c-custom1", "a custom option id survives the cloud round trip");
 assert.equal(rowToPatient({ ...row, compliance: undefined } as never).compliance, undefined, "row from a DB without the column");
 
 // Patient-file save: nothing is sent unless compliance was edited; a clear is sent as "".
@@ -76,5 +92,81 @@ assert.ok(complianceRank("New Patient") < complianceRank("Non-Compliant") && com
 assert.equal(autoMergeRecord(mock({ compliance: "Yes" }), mock({ compliance: "No" })).compliance, "Yes");
 assert.equal(autoMergeRecord(mock(), mock({ compliance: "No" })).compliance, "No");
 assert.equal(autoMergeRecord(mock(), mock()).compliance, undefined);
+
+
+// ---- Editable Compliance Categories ----
+const T1 = "2026-10-27T20:00:00.000Z", T2 = "2026-10-27T21:00:00.000Z", T3 = "2026-10-27T22:00:00.000Z";
+const defs = getDefaultComplianceOptions();
+assert.deepEqual(defs.map((o) => o.label), [...COMPLIANCE_OPTIONS]);
+assert.ok(defs.every((o) => o.show && /^#[0-9a-f]{6}$/.test(o.color)), "defaults have colors and are shown");
+assert.equal(complianceColor("DNS ATM", defs), "#f0a43f", "existing colors unchanged");
+assert.equal(complianceColor(undefined, defs), null);
+// old saved values (the label) keep resolving: default id === original label
+assert.equal(resolveComplianceOption("Non-Compliant", defs)?.id, "Non-Compliant");
+assert.equal(resolveComplianceOption("yes", defs)?.id, "Yes");
+
+// add (name + color), no duplicates, blank ignored
+let opts = addComplianceOption(defs, "Partially Compliant", "#112233", T1, "c-abc");
+assert.equal(opts.length, 6);
+assert.equal(opts[5].id, "c-abc");
+assert.equal(complianceColor("c-abc", opts), "#112233");
+assert.equal(addComplianceOption(opts, "  partially   compliant ", "#000000", T2), opts, "duplicate name ignored");
+assert.equal(addComplianceOption(opts, "   ", "#000000", T2), opts);
+
+// rename keeps the id, so a patient storing the id is NOT orphaned
+opts = renameComplianceOption(opts, "c-abc", "Mostly Compliant", T2);
+assert.equal(complianceLabel("c-abc", opts), "Mostly Compliant");
+assert.equal(resolveComplianceOption("c-abc", opts)?.id, "c-abc");
+opts = renameComplianceOption(opts, "Yes", "Compliant", T2);
+assert.equal(complianceLabel("Yes", opts), "Compliant", "a patient saved as Yes shows the new name");
+assert.equal(matchesComplianceFilter("Yes", "Yes", opts), true);
+assert.equal(renameComplianceOption(opts, "No", "compliant", T3), opts, "can't rename onto an existing name");
+// color + show
+opts = setComplianceOptionColor(opts, "No", "#010203", T2);
+assert.equal(complianceColor("No", opts), "#010203");
+assert.equal(setComplianceOptionColor(opts, "No", "red", T3), opts, "bad color ignored");
+opts = setComplianceOptionShown(opts, "DNS ATM", false, T2);
+assert.ok(!shownComplianceOptions(opts).some((o) => o.id === "DNS ATM"), "hidden = not offered");
+assert.equal(complianceLabel("DNS ATM", opts), "DNS ATM", "…but a patient that has it still displays it");
+// in-use counts (warn before remove)
+const usage = complianceUsage(["Yes", "Yes", "c-abc", "", undefined, "garbage"], opts);
+assert.equal(usage.get("Yes"), 2);
+assert.equal(usage.get("c-abc"), 1);
+assert.equal(usage.get("No"), undefined);
+// remove = tombstone; value is not rewritten, shows as Not set; filter "not set" catches it
+opts = removeComplianceOption(opts, "c-abc", T3);
+assert.equal(liveComplianceOptions(opts).some((o) => o.id === "c-abc"), false);
+assert.equal(resolveComplianceOption("c-abc", opts), undefined);
+assert.equal(matchesComplianceFilter("c-abc", COMPLIANCE_NOT_SET, opts), true);
+assert.ok(complianceRank("c-abc", opts) === liveComplianceOptions(opts).length);
+// adding the same name back revives the removed option (same id → those patients are restored)
+opts = addComplianceOption(opts, "Mostly Compliant", "#445566", "2026-10-27T23:00:00.000Z");
+assert.equal(resolveComplianceOption("c-abc", opts)?.id, "c-abc");
+// reset: defaults back (names, colors, order), customs removed
+const reset = resetComplianceOptions(opts, "2026-10-28T00:00:00.000Z");
+assert.deepEqual(liveComplianceOptions(reset).map((o) => o.label), [...COMPLIANCE_OPTIONS]);
+assert.equal(complianceColor("No", reset), "#c9423a");
+assert.equal(resolveComplianceOption("c-abc", reset), undefined);
+
+// cloud: junk / partial data is safe; builtins can't vanish; round trip
+assert.deepEqual(normalizeComplianceOptions(null).map((o) => o.id), [...COMPLIANCE_OPTIONS]);
+assert.deepEqual(normalizeComplianceOptions([]).map((o) => o.id), [...COMPLIANCE_OPTIONS]);
+assert.equal(normalizeComplianceOptions([{ id: "c-x", label: "Custom", color: "#abcdef", show: true, sort: 0 }]).length, 6, "missing built-ins are added back");
+assert.deepEqual(normalizeComplianceOptions(JSON.parse(JSON.stringify(opts))), normalizeComplianceOptions(opts));
+// merge-safe: two devices edit different options → both survive; newer edit of the same option wins; remove wins if newer
+const devA = renameComplianceOption(addComplianceOption(defs, "From A", "#111111", T1, "c-a"), "Yes", "Compliant", T2);
+const devB = addComplianceOption(setComplianceOptionColor(defs, "No", "#222222", T2), "From B", "#333333", T2, "c-b");
+const merged = mergeComplianceOptions(devA, devB);
+const ids = liveComplianceOptions(merged).map((o) => o.id);
+assert.ok(ids.includes("c-a") && ids.includes("c-b"), "both devices' new options kept");
+assert.equal(complianceLabel("Yes", merged), "Compliant");
+assert.equal(complianceColor("No", merged), "#222222");
+const removedLater = removeComplianceOption(devA, "c-a", T3);
+assert.equal(resolveComplianceOption("c-a", mergeComplianceOptions(removedLater, devA)), undefined, "newer remove beats older copy");
+assert.equal(resolveComplianceOption("c-a", mergeComplianceOptions(devA, removedLater)), undefined);
+
+// Patient save keeps working with custom ids
+assert.equal(compliancePatchValue("c-abc", undefined), "c-abc");
+assert.equal(patientToRow(mock({ compliance: "c-abc" }), "ws-mock").compliance, "c-abc");
 
 console.log("PASS compliance (mock data)");
