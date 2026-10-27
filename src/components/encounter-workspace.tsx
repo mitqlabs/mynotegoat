@@ -68,6 +68,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients, updatePatientRecordById, type UpdatePatientRecordPatch } from "@/lib/mock-data";
+import { hasSoapContent, pickSaltSource } from "@/lib/salt-source";
 import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
@@ -1211,19 +1212,22 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
    * Returns a human-readable suffix describing what it copied, or "".
    */
   const applySaltToNewEncounter = useCallback(
-    (newEncounterId: string, patientId: string): string => {
+    (newEncounterId: string, patientId: string, encounterDateUs: string): string => {
       const selectedSections = encounterSections.filter(
         (section) => macroLibrary.saltDefaults.sections[section],
       );
       if (!macroLibrary.saltDefaults.enabled || selectedSections.length === 0) return "";
 
-      const priorForPatient = encountersByNewest.filter(
-        (entry) => entry.patientId === patientId && entry.id !== newEncounterId,
+      // Same source the Copy From dropdown defaults to: newest prior VISIT
+      // DATE with content — never "last edited" (that picked the Initial
+      // Exam whenever it had been reopened recently).
+      const sourceEncounter = pickSaltSource(
+        encountersByNewest,
+        patientId,
+        encounterDateUs,
+        newEncounterId,
+        selectedSections,
       );
-      const sourceEncounter =
-        priorForPatient.find((entry) =>
-          selectedSections.some((section) => entry.soap[section].trim().length > 0),
-        ) ?? null;
       if (!sourceEncounter) return "";
 
       let copiedCount = 0;
@@ -1368,7 +1372,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         appointmentId: appointment.id,
       });
       if (newId) {
-        const saltNote = applySaltToNewEncounter(newId, appointment.patientId);
+        const saltNote = applySaltToNewEncounter(newId, appointment.patientId, dateUs);
         setEncounterSearch(appointment.patientName);
         setSelectedEncounterId(newId);
         setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
@@ -1525,7 +1529,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     (entry) => entry.id === saltSourceEncounterIdDraft,
   )
     ? saltSourceEncounterIdDraft
-    : priorPatientEncounters[0]?.id ?? "";
+    : (priorPatientEncounters.find((entry) => hasSoapContent(entry, encounterSections)) ??
+        priorPatientEncounters[0])?.id ?? "";
   const saltSourceEncounter = useMemo(
     () =>
       priorPatientEncounters.find(
@@ -3636,7 +3641,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             encounterDate: date,
           });
           if (newId) {
-            const saltNote = applySaltToNewEncounter(newId, patientId);
+            const saltNote = applySaltToNewEncounter(newId, patientId, date);
             setEncounterSearch(patientName);
             setSelectedEncounterId(newId);
             setMessage(`Encounter created for ${date}.${saltNote}`);
