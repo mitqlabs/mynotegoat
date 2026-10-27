@@ -31,12 +31,11 @@ import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import {
-  COMPLIANCE_COLORS,
-  COMPLIANCE_OPTIONS,
   complianceAccess,
   compliancePatchValue,
-  normalizeCompliance,
+  resolveComplianceOption,
 } from "@/lib/compliance";
+import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotes } from "@/hooks/use-case-notes";
@@ -1504,6 +1503,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const router = useRouter();
   const { officeSettings } = useOfficeSettings();
   const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
+  const { options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
@@ -1667,6 +1667,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
   // Optional Compliance (only shown while the office has switched it on). "" = not set.
   const [compliance, setCompliance] = useState<string>(patient.compliance ?? "");
+  const complianceOption = resolveComplianceOption(compliance, complianceOptions);
   const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
   const [patientLocationId, setPatientLocationId] = useState<string>(patient.locationId ?? "");
 
@@ -5414,16 +5415,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {caseStatus}
             </span>
           )}
-          {complianceEnabled && normalizeCompliance(compliance) && (
+          {complianceEnabled && complianceOption && (
             <span
               className="status-pill"
               style={{
-                backgroundColor: withAlpha(COMPLIANCE_COLORS[normalizeCompliance(compliance)!], 0.2),
-                color: getContrastTextColor(COMPLIANCE_COLORS[normalizeCompliance(compliance)!]),
+                backgroundColor: withAlpha(complianceOption.color, 0.2),
+                color: getContrastTextColor(complianceOption.color),
               }}
               title="Compliance"
             >
-              Compliance: {normalizeCompliance(compliance)}
+              Compliance: {complianceOption.label}
             </span>
           )}
         </div>
@@ -5820,12 +5821,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                 disabled={!complianceAccess(complianceEnabled, !patientReadOnly).canEdit}
                 onChange={(event) => setCompliance(event.target.value)}
-                value={normalizeCompliance(compliance) ?? ""}
+                value={complianceOption?.id ?? ""}
               >
                 <option value="">Not set</option>
-                {COMPLIANCE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                {(complianceOption && !complianceOption.show ? [...complianceShownOptions, complianceOption] : complianceShownOptions).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
                   </option>
                 ))}
               </select>

@@ -30,6 +30,7 @@ import {
   type PatientPageSectionMode,
 } from "@/lib/patient-page-prefs";
 import { useContactCategories } from "@/hooks/use-contact-categories";
+import { ComplianceCategoriesEditor } from "@/components/compliance-categories-editor";
 import { useFileManager } from "@/hooks/use-file-manager";
 import {
   getDeletedPatients,
@@ -170,7 +171,7 @@ const backupModules: BackupModuleDefinition[] = [
     id: "caseStatuses",
     label: "Case Statuses + Lien/LOP",
     description: "Statuses, colors, Lien/LOP label and options",
-    keys: ["casemate.case-statuses.v1"],
+    keys: ["casemate.case-statuses.v1", "casemate.compliance-options.v1"],
   },
   {
     id: "dashboardRules",
@@ -4869,6 +4870,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        <ComplianceCategoriesEditor canEdit={canEditSettings} />
 
         {/* Review? options — same UX as Lien Options. The patient page
             renders this list as a dropdown above billing; users want a

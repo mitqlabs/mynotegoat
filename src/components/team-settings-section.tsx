@@ -1,6 +1,6 @@
 "use client";
 
-import { persistMemberPermissions } from "@/lib/member-permissions-save";
+import { persistMemberMainLocation, persistMemberPermissions } from "@/lib/member-permissions-save";
 import { logActivity } from "@/lib/activity-log";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -305,22 +305,27 @@ export function TeamSettingsSection() {
       changes.push("changed hidden patient-page sections");
     }
     if (before.mainLocationId !== nextPerms.mainLocationId) changes.push("changed main location");
+    setMembers((cur) =>
+      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),
+    );
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const saved =
+      before.mainLocationId !== nextPerms.mainLocationId && changes.length === 1
+        ? await persistMemberMainLocation(supabase, member.member_user_id, nextPerms.mainLocationId ?? "", nextPerms, isOwner)
+        : await persistMemberPermissions(supabase, member.member_user_id, nextPerms);
+    if (!saved.ok) {
+      // Not saved → don't log it as done (the log used to say "changed" for refused saves).
+      setError(saved.error);
+      void loadMembers();
+      return;
+    }
     if (changes.length) {
       logActivity({
         category: "team",
         action: "team.permissions_changed",
         summary: `${member.label}: ${changes.join(", ")}`,
       });
-    }
-    setMembers((cur) =>
-      cur.map((m) => (m.member_user_id === member.member_user_id ? { ...m, permissions: nextPerms } : m)),
-    );
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
-    const saved = await persistMemberPermissions(supabase, member.member_user_id, nextPerms);
-    if (!saved.ok) {
-      setError(saved.error);
-      void loadMembers();
     }
   };
 

@@ -9,6 +9,9 @@ import {
   fetchActivity,
   type ActivityEntry,
 } from "@/lib/activity-log";
+import { buildPersonOptions, entryMatchesPerson } from "@/lib/activity-people";
+import { useWorkspacePeople } from "@/hooks/use-workspace-people";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
 
 /**
  * Dashboard Activity Log: who did what. Filter by category (e.g. Billing
@@ -97,20 +100,21 @@ export function ActivityLogPanel() {
     void load();
   }, [load]);
 
-  const people = useMemo(
-    () => Array.from(new Set((entries ?? []).map((e) => e.actorLabel))).sort(),
-    [entries],
-  );
+  const { officeSettings } = useOfficeSettings();
+  const roster = useWorkspacePeople((officeSettings.doctorName ?? "").trim());
+  // Everyone on the team, not just people with entries in this period.
+  const people = useMemo(() => buildPersonOptions(entries ?? [], roster), [entries, roster]);
+  const selectedPerson = useMemo(() => people.find((p) => p.key === person) ?? null, [people, person]);
 
   const visible = useMemo(() => {
     const q = patientQuery.trim().toLowerCase();
     return (entries ?? []).filter(
       (e) =>
         (isAdmin || e.actorRole === "manager" || e.actorRole === "staff") &&
-        (person === "ALL" || e.actorLabel === person) &&
+        (!selectedPerson || entryMatchesPerson(e, selectedPerson)) &&
         (!q || e.patientName.toLowerCase().includes(q) || e.summary.toLowerCase().includes(q)),
     );
-  }, [entries, person, patientQuery, isAdmin]);
+  }, [entries, selectedPerson, patientQuery, isAdmin]);
 
   const toggleCategory = (key: string) =>
     setCategories((current) => {
@@ -196,8 +200,8 @@ export function ActivityLogPanel() {
           >
             <option value="ALL">Everyone</option>
             {people.map((p) => (
-              <option key={p} value={p}>
-                {p}
+              <option key={p.key} value={p.key}>
+                {p.label}
               </option>
             ))}
           </select>
@@ -284,7 +288,9 @@ export function ActivityLogPanel() {
             ) : visible.length === 0 ? (
               <tr>
                 <td className="px-3 py-4 text-[var(--text-muted)]" colSpan={5}>
-                  Nothing logged for these filters yet.
+                  {selectedPerson && (entries ?? []).length > 0
+                    ? `Nothing logged for ${selectedPerson.label} in this period. Try a longer period.`
+                    : "Nothing logged for these filters yet."}
                 </td>
               </tr>
             ) : (

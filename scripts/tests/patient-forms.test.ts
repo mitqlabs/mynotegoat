@@ -340,7 +340,7 @@ test("wiring: cloud-backed + merge-safe, token-scoped writes, insert reuses the 
   assert.match(fn, /renderMacroTemplateWithPromptSpans\(macro\.body/);
   assert.match(fn, /appendSoapSection\(selectedEncounter\.id, "objective"/);
   assert.match(fn, /addMacroRun\(/);
-  assert.match(fn, /window\.confirm\(/);
+  assert.match(fn, /(appConfirm|window\.confirm)\(/);
   assert.doesNotMatch(fn, /setSoapSection\(/, "never replaces Objective");
   assert.match(fn, /customAnswersHtml\(snapshot, answers\)/);
   const sql = readFileSync("supabase/patient_form_requests.sql", "utf8");

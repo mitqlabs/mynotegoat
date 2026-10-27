@@ -39,7 +39,7 @@ test("new settings are searchable: Case number format (Office) and Compliance to
   for (const q of ["case number", "case number format", "case #"]) {
     assert.ok(computeSettingsSearch(q, [])!.keys.has("office"), q);
   }
-  for (const q of ["compliance", "compliance column", "case status"]) {
+  for (const q of ["compliance", "compliance column", "compliance categories", "compliance colors", "case status"]) {
     assert.ok(computeSettingsSearch(q, [])!.keys.has("caseStatuses"), q);
   }
 });
@@ -64,6 +64,10 @@ test("each extra section lives on exactly ONE tab + Everything (Marketing is Off
     const tabs = SETTINGS_TABS.map((t) => t.id).filter((t) => showExtraSection(s.id, t, null));
     assert.deepEqual(tabs.sort(), [s.tab, "all"].sort(), s.id);
   }
+  // Team Members moved from Account to Office (+ Everything).
+  assert.equal(showExtraSection("team", "office", null), true);
+  assert.equal(showExtraSection("team", "all", null), true);
+  assert.equal(showExtraSection("team", "account", null), false);
   assert.equal(showExtraSection("marketing", "notes", null), false); // the bug: it showed on every tab
   assert.equal(showExtraSection("marketing", "billing", null), false);
   assert.equal(showExtraSection("marketing", "office", null), true);

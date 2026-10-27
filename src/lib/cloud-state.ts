@@ -8,6 +8,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.cash-payments.v1",
   "casemate.patient-packages.v1",
   "casemate.contact-subcategories.v1",
+  // Settings → Compliance Categories: merged by id (newest wins), removes are tombstones.
+  "casemate.compliance-options.v1",
   "casemate.key-date-dismissals.v1",
   "casemate.cleared-tasks.v1",
   "casemate.duplicate-dismissals.v1",
@@ -1088,6 +1090,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.office-settings.v1",
           "casemate.email-settings.v1",
           "casemate.case-statuses.v1",
+          "casemate.compliance-options.v1",
           "casemate.key-dates.v1",
           // Which federal holidays the New Appointment modal has already
           // offered to add to Key Dates (see holiday-keydate-prompts.ts).
