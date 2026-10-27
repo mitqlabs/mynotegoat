@@ -157,7 +157,7 @@ import {
 } from "@/lib/file-storage";
 import { loadEmailSettings, renderEmailTemplate } from "@/lib/email-settings";
 import { loadOfficeSettings } from "@/lib/office-settings";
-import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { checkOfficeDeletePassword, ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
@@ -5197,17 +5197,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleDeletePatient = async () => {
-    // Role gate first (Settings → Admin Access), then the existing password.
-    if (!(await ensureDeleteAllowed("patients"))) {
+    // Role gate first (Settings → Admin Access); this window asks for the password itself.
+    if (!(await ensureDeleteAllowed("patients", { passwordAlreadyAsked: true }))) {
       setShowDeleteModal(false);
       return;
     }
-    const settings = loadOfficeSettings();
-    if (!settings.deletePassword) {
+    // The office's one delete password lives in the cloud (hash) so it is the same on every device and for every team member.
+    const check = await checkOfficeDeletePassword(deletePasswordInput);
+    if (check === "none") {
       setDeleteError("No delete password is set. Go to Settings → Office to set one first.");
       return;
     }
-    if (deletePasswordInput !== settings.deletePassword) {
+    if (check === "wrong") {
       setDeleteError("Incorrect password.");
       return;
     }
