@@ -67,7 +67,7 @@ export function MarketingVisitTypesSection() {
     <section className="panel-card p-4">
       <button
         aria-expanded={open}
-        className="group flex w-full items-start justify-between gap-3 text-left"
+        className="group flex w-full items-start justify-between gap-3 text-left rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >

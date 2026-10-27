@@ -121,6 +121,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "notegoat.access-hint.v1": "system", // boot speed hint (access + team), re-verified every open
   "notegoat.boot-delta.v1.": "system", // boot delta cursors/stamps (cache of cloud data)
   "casemate.active-workspace-id.v1": "system",
+  "casemate.location-view-main-applied.v1": "system", // per-device marker: which Main location was last applied at login
   "casemate.local-cache-workspace.v1": "system", // which workspace the local cache belongs to
   "casemate.__safety-backup__.v1": "system",
   "casemate.cloud-sync-at": "system",

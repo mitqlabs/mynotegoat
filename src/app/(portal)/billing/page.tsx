@@ -5,6 +5,7 @@ import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { patients as seedPatients } from "@/lib/mock-data";
 import { loadPatientDiagnosesMap, type PatientDiagnosisEntry } from "@/lib/patient-diagnoses";
 
@@ -15,6 +16,7 @@ type BillingPatient = {
   dob: string;
   dateOfLoss: string;
   attorney: string;
+  matrix?: { caseNumberFormat?: string; caseSeq?: string };
 };
 
 type BillingPatientRow = BillingPatient & {
@@ -103,21 +105,6 @@ function toSortStamp(dateValue: string) {
 function getNames(fullName: string) {
   const [lastName = "", firstName = ""] = fullName.split(",").map((value) => value.trim());
   return { firstName, lastName };
-}
-
-function buildCaseNumber(dateOfLoss: string, fullName: string) {
-  const formattedDate = toUsDate(dateOfLoss);
-  const dateMatch = formattedDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!dateMatch) {
-    return "";
-  }
-  const { firstName, lastName } = getNames(fullName);
-  const month = dateMatch[1];
-  const day = dateMatch[2];
-  const year = dateMatch[3].slice(-2);
-  const cleanLast = lastName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
-  const cleanFirst = firstName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
-  return `${month}${day}${year}${cleanLast}${cleanFirst}`;
 }
 
 function escapeHtml(value: string) {
@@ -459,6 +446,7 @@ export default function BillingPage() {
         dob: toUsDate(entry.dob),
         dateOfLoss: toUsDate(entry.dateOfLoss),
         attorney: entry.attorney,
+        matrix: entry.matrix,
       });
     });
     encountersByNewest.forEach((entry) => {
@@ -493,7 +481,7 @@ export default function BillingPage() {
     return Array.from(patientsById.values())
       .map((entry) => {
         const totals = chargeTotalsByPatientId.get(entry.id) ?? { count: 0, total: 0 };
-        const caseNumber = buildCaseNumber(entry.dateOfLoss, entry.fullName);
+        const caseNumber = caseNumberOf(entry);
         return {
           ...entry,
           caseNumber,
@@ -636,7 +624,7 @@ export default function BillingPage() {
       patientPhone: selectedPatient.phone,
       patientDob: selectedPatient.dob,
       patientDoi: selectedPatient.dateOfLoss,
-      caseNumber: buildCaseNumber(selectedPatient.dateOfLoss, selectedPatient.fullName),
+      caseNumber: caseNumberOf(selectedPatient),
       attorneyName: selectedPatient.attorney,
       attorneyPhone: attorneyContact?.phone ?? "",
       providerName,
@@ -777,7 +765,7 @@ export default function BillingPage() {
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
               <p className="text-xs text-[var(--text-muted)]">Case #</p>
               <p className="font-semibold">
-                {selectedPatient ? buildCaseNumber(selectedPatient.dateOfLoss, selectedPatient.fullName) || "-" : "-"}
+                {selectedPatient ? caseNumberOf(selectedPatient) || "-" : "-"}
               </p>
             </div>
             <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">

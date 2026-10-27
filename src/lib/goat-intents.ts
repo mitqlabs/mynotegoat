@@ -236,3 +236,34 @@ export function isGoatActionPhrase(raw: string): boolean {
   if (/^(how|where|what|whats|what's|when|who|which|why|is|are|was|were|does|did|has|have|any)\b/i.test(q) || /\?\s*$/.test(q)) return false;
   return Boolean(isAddNote(q) || isBooking(q) || isTell(q) || detectNewVisitBooking(q) || detectNewPatientRequest(q));
 }
+
+const TITLE_STOP = new Set("for about re regarding on at to and or with from the a an in of by tomorrow today tonight next this that his her their if when so".split(" "));
+/**
+ * "call tyler smith" → "Call Tyler Smith". Capitalizes the first word, the name words after a leading
+ * contact verb (up to the first small word), and the matched patient's own name wherever it appears.
+ * Never lowercases anything and leaves words you already capitalized alone.
+ */
+export function tidyTodoTitle(title: string, patientFullName?: string): string {
+  let t = title.replace(/\s+/g, " ").trim();
+  if (!t) return t;
+  const cap = (w: string) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w);
+  const words = t.split(" ");
+  const verb = CONTACT_VERB.exec(t);
+  if (verb) {
+    const verbWords = verb[0].trim().split(/\s+/).length;
+    for (let i = verbWords; i < words.length; i++) {
+      const bare = words[i].toLowerCase().replace(/[^a-z'-]/g, "");
+      if (!bare || TITLE_STOP.has(bare) || /\d/.test(words[i])) break;
+      words[i] = cap(words[i]);
+    }
+  }
+  t = words.join(" ");
+  if (patientFullName) {
+    const parts = patientFullName.replace(/,/g, " ").split(/\s+/).filter((x) => x.length >= 2);
+    for (const part of parts) {
+      const esc = part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      t = t.replace(new RegExp(`(?<![A-Za-z])${esc}(?![A-Za-z])`, "gi"), (m) => cap(m));
+    }
+  }
+  return cap(t);
+}

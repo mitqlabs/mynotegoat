@@ -40,3 +40,44 @@ export function hasStoredLocationChoice(): boolean {
     return false;
   }
 }
+
+const MAIN_APPLIED_KEY = "casemate.location-view-main-applied.v1";
+
+/**
+ * The location to switch to at login, or null to leave the viewer's view alone.
+ * The member's main location is only a STARTING view (they can switch afterwards), applied:
+ *   - when they have no stored choice on this device, or
+ *   - when their main location is new or changed since it was last applied here
+ *     (so an owner changing it actually reaches a device that already has a stored choice).
+ * A main location that no longer exists is ignored.
+ */
+export function resolveLoginLocation(opts: {
+  userId: string;
+  main: string;
+  locationIds: string[];
+  stored: string | null;
+  applied: string | null;
+}): string | null {
+  const { userId, main, locationIds, stored, applied } = opts;
+  if (!main || !locationIds.includes(main)) return null;
+  if (stored === null) return main;
+  return applied === `${userId}:${main}` ? null : main;
+}
+
+export function getAppliedMain(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(MAIN_APPLIED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function markMainApplied(userId: string, main: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MAIN_APPLIED_KEY, `${userId}:${main}`);
+  } catch {
+    // ignore
+  }
+}

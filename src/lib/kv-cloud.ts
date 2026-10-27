@@ -10,6 +10,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import { markKeyClean } from "@/lib/dirty-keys";
 import { enqueueFailedWrite, markWriteSucceeded, setSaveQueueWriter } from "@/lib/save-queue";
 import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 
@@ -160,9 +161,11 @@ export async function fetchKvRowsDelta(
  */
 export async function upsertKvValue(key: string, value: unknown): Promise<void> {
   reportCloudWriteStart(`kv:${key}`);
+  const startedAt = Date.now();
   try {
     await rawUpsertKvValue(key, value);
     markWriteSucceeded(key);
+    markKeyClean(key, startedAt);
     reportCloudWriteSuccess(`kv:${key}`);
   } catch (error) {
     // Hold it and retry when the connection comes back (save-queue.ts).
@@ -174,7 +177,9 @@ export async function upsertKvValue(key: string, value: unknown): Promise<void> 
 }
 
 async function retryKvWrite(key: string, value: unknown): Promise<void> {
+  const startedAt = Date.now();
   await rawUpsertKvValue(key, value);
+  markKeyClean(key, startedAt);
   // Clears a sticky "Couldn't save" once the held write lands.
   reportCloudWriteSuccess(`kv-retry:${key}`, { force: true });
 }

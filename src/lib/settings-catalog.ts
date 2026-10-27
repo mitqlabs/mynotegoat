@@ -99,6 +99,8 @@ export const settingsSearchCatalog: Array<{
     key: "caseStatuses",
     title: "Case Status Categories",
     aliases: [
+      "compliance",
+      "compliance column",
       "status",
       "case status",
       "lien",
@@ -256,6 +258,9 @@ export const settingsSearchCatalog: Array<{
       "doctor name",
       "office",
       "office name",
+      "case number",
+      "case number format",
+      "case #",
       "account",
       "password",
       "office account settings",
