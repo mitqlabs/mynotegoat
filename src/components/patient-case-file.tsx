@@ -714,6 +714,69 @@ function formatMonthDayDiff(diff: { months: number; days: number } | null) {
   return `${monthLabel}, ${dayLabel}`;
 }
 
+function formatCalcMoney(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+// Scratch "what should we ask for" tool. Nothing here is saved.
+function AskCalculator({ billed }: { billed: number }) {
+  const [mode, setMode] = useState<"pct" | "amt">("pct");
+  const [value, setValue] = useState("");
+  const n = Number.parseFloat(value);
+  const valid = billed > 0 && Number.isFinite(n) && n >= 0;
+  const pct = valid ? (mode === "pct" ? n : (n / billed) * 100) : null;
+  const amt = valid ? (mode === "pct" ? (billed * n) / 100 : n) : null;
+  const disc = pct === null ? null : 100 - pct;
+  return (
+    <div className="w-full shrink-0 rounded-lg border border-[var(--line-soft)] bg-white/60 px-3 py-2 text-sm sm:w-56">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="font-medium text-[var(--text-muted)]">Ask calculator</span>
+        <div className="flex overflow-hidden rounded-md border border-[var(--line-soft)] text-xs">
+          {(["pct", "amt"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setValue(""); }}
+              className={`px-2 py-0.5 font-medium ${mode === m ? "bg-[var(--brand-primary)] text-white" : "text-[var(--text-muted)]"}`}
+            >
+              {m === "pct" ? "%" : "$"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="relative">
+        {mode === "amt" && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">$</span>}
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="any"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={mode === "pct" ? "50" : "1000"}
+          aria-label={mode === "pct" ? "Ask percentage" : "Ask amount"}
+          className={`w-full rounded-md border border-[var(--line-soft)] bg-white py-1 tabular-nums ${mode === "amt" ? "pl-5 pr-2" : "pl-2 pr-6"}`}
+        />
+        {mode === "pct" && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">%</span>}
+      </div>
+      <dl className="mt-1.5 space-y-0.5 tabular-nums">
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--text-muted)]">{mode === "pct" ? "Ask for" : "% of billed"}</dt>
+          <dd className="font-medium text-[var(--text-main)]">
+            {mode === "pct" ? (amt === null ? "-" : formatCalcMoney(amt)) : formatPercentage(pct)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--text-muted)]">Discount</dt>
+          <dd className="font-medium text-[var(--text-main)]">
+            {disc === null || amt === null ? "-" : `${formatPercentage(disc)} (${formatCalcMoney(billed - amt)})`}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function formatPercentage(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "-";
@@ -5226,6 +5289,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     paidAmountValue >= 0
       ? (paidAmountValue / billedAmountValue) * 100
       : null;
+  const percentageDiscount =
+    billedAmountValue > 0 && Number.isFinite(paidAmountValue) && paidAmountValue > 0
+      ? ((billedAmountValue - paidAmountValue) / billedAmountValue) * 100
+      : null;
   const balanceDue =
     billedAmountValue >= 0
       ? billedAmountValue -
@@ -8225,7 +8292,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 }`}
                 data-paid={isPaidFilled(paidDate, paidAmount) ? "true" : undefined}
               >
-                <dl className="space-y-2 text-sm sm:text-base">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <dl className="min-w-0 flex-1 space-y-2 text-sm sm:text-base">
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
                     <dt className="font-medium text-[var(--text-muted)]">Initial To Discharge:</dt>
                     <dd className="font-medium tabular-nums text-[var(--text-main)]">{initialToDischarge}</dd>
@@ -8239,12 +8307,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     <dd className="font-medium tabular-nums text-[var(--text-main)]">{rbToPaid}</dd>
                   </div>
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
-                    <dt className="font-medium text-[var(--text-muted)]">Percentage Paid:</dt>
-                    <dd className="font-medium tabular-nums text-[var(--text-main)]">
-                      {formatPercentage(percentagePaid)}
+                    <dt className="font-medium text-[var(--text-muted)]">% Paid:</dt>
+                    <dd className="flex flex-wrap items-baseline gap-x-4 font-medium tabular-nums text-[var(--text-main)]">
+                      <span>{formatPercentage(percentagePaid)}</span>
+                      <span>
+                        <span className="text-[var(--text-muted)]">% Disc.: </span>
+                        {formatPercentage(percentageDiscount)}
+                      </span>
                     </dd>
                   </div>
                 </dl>
+                <AskCalculator billed={billedAmountValue} />
+                </div>
               </div>
 
               {/* Review lives in the pill beside Lien and Case Status at the top. */}
