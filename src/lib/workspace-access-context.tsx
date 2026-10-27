@@ -24,12 +24,15 @@ import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import type { PortalFeature } from "@/lib/plan-access";
 import type { WorkspaceMembership } from "@/lib/workspace-membership";
 import {
+  ROLE_ACTIONS,
+  actionAllowedFor,
   deleteRuleFor,
   isAdminTier,
   pageAccessFor,
   roleTierOf,
   type AdminAccessSettings,
   type DeletableKind,
+  type RoleActionKey,
   type DeleteRule,
   type RoleTier,
 } from "@/lib/admin-access";
@@ -53,15 +56,17 @@ export interface WorkspaceAccessValue {
   canEdit: (feature: PortalFeature) => boolean;
   /** Is this patient-page sub-panel hidden for this member? (never for owner) */
   sectionHidden: (sectionKey: string) => boolean;
-  /** "allowed" | "password" | "never" for this role, from Admin Access. */
+  /** Can this role do this in-page action (add / edit contacts…)? Needs Full access to the page too. */
+  can: (action: RoleActionKey) => boolean;
+  /** "allowed" | "password" | "never" for this role, from Roles & Permissions. */
   deleteRule: (kind: DeletableKind) => DeleteRule;
-  /** The Admin Access settings behind the checks above. */
+  /** The Roles & Permissions settings behind the checks above. */
   adminAccess: AdminAccessSettings;
 }
 
 const OWNER_FULL: Omit<
   WorkspaceAccessValue,
-  "access" | "canView" | "canEdit" | "sectionHidden" | "deleteRule" | "adminAccess"
+  "access" | "canView" | "canEdit" | "can" | "sectionHidden" | "deleteRule" | "adminAccess"
 > = {
   isOwner: true,
   isMember: false,
@@ -89,7 +94,7 @@ export function WorkspaceAccessProvider({
     const fullAccess = isAdminTier(roleTier);
     const perms = membership?.permissions ?? {};
     const hidden = new Set(perms.hiddenSections ?? []);
-    // Access comes from the ROLE now (Settings → Admin Access), capped by
+    // Access comes from the ROLE now (Settings → Roles & Permissions), capped by
     // what the office has switched on office-wide. The old per-member
     // grants are still read for members who have them and haven't been
     // given a role yet, so nobody's access changes until the role is set.
@@ -111,6 +116,10 @@ export function WorkspaceAccessProvider({
       canEdit: (f) => access(f) === "edit",
       // Owners/office-admins see every section; a regular member hides the
       // panels the owner switched off for them.
+      // An action also needs Full access to the page it lives on (View only = no adding or editing).
+      can: (action) =>
+        actionAllowedFor(roleTier, action, adminAccess) &&
+        access(ROLE_ACTIONS.find((a) => a.key === action)!.feature) === "edit",
       sectionHidden: (sectionKey) => (fullAccess ? false : hidden.has(sectionKey)),
       deleteRule: (kind) => deleteRuleFor(roleTier, kind, adminAccess),
       adminAccess,
@@ -128,6 +137,7 @@ export function useWorkspaceAccess(): WorkspaceAccessValue {
     access: () => "edit",
     canView: () => true,
     canEdit: () => true,
+    can: () => true,
     sectionHidden: () => false,
     deleteRule: () => "allowed",
     adminAccess: defaultAdminAccess(),

@@ -390,7 +390,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Owner — the account the office was created under. Same as Admin, plus the only one who can make or unmake Admins.",
           "Admin — everything: every page, Settings, Team, all deletes.",
-          "Manager — runs the office. Pages and deletes come from Settings → Admin Access.",
+          "Manager — runs the office. Pages, actions and deletes come from Settings → Roles & Permissions.",
           "Staff — the day-to-day pages; no deletes by default.",
         ],
       },
@@ -408,17 +408,20 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Change what Managers and Staff can reach",
         steps: [
-          "Settings → Admin Access.",
+          "Settings → Office tab → Roles & Permissions (or search \u201croles\u201d or \u201cpermissions\u201d).",
+          "One grid: rows are things people do, columns are Staff, Manager and Admin.",
           "Pages: per role, No access / View only / Full.",
-          "Who can delete what: per role and per kind — Not allowed / With password / Allowed.",
-          "What Managers can see: which Dashboard sections.",
+          "Actions inside a page: for example Contacts → add contacts, edit contacts (Managers can edit contacts by default; Staff can add but not edit).",
+          "Deleting: per role and per kind — Not allowed / With password / Allowed.",
+          "Dashboard sections a Manager sees.",
+          "Each person follows their role. If someone has been given something different on their own card in Team Members, they show a \u201cCustom access\u201d tag and a Reset to role defaults button.",
         ],
-        why: "Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
+        why: "Only the owner can change the grid, unless the owner switches on \u201cLet Admins change roles\u201d. Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
       },
       {
         heading: "The delete password",
         steps: [
-          "Settings → Admin Access → Delete password → type it twice → Save password.",
+          "Settings → Roles & Permissions → Delete password → type it twice → Save password.",
           "Anything set to \u201cWith password\u201d now asks for it before deleting.",
           "\u201cAsk Admins for it too\u201d makes admins type it as well.",
         ],
@@ -427,7 +430,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       },
       {
         heading: "What these checks are and aren't",
-        why: "Role checks run in the browser. They stop mistakes and casual snooping — not someone technical who really wants in. The one rule enforced in the database is that managers can't read admin activity in the log. If you need true separation, say so and it can be pushed down to the database.",
+        why: "Role checks run in the browser. They stop mistakes and casual snooping — not someone technical who really wants in. Two rules are enforced in the database: managers can't read admin activity in the log, and only the owner (or Admins, if the owner allowed it) can change the role grid itself. If you need true separation, say so and it can be pushed down to the database.",
       },
     ],
   },
@@ -454,12 +457,12 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
           "Team Members — logins, roles, doctor flag, per-person patient-page sections.",
-          "Admin Access — roles, what managers see, who can delete what, the delete password.",
+          "Roles & Permissions (Office tab) — what Staff, Managers and Admins can open, add, edit and delete, the delete password.",
           "Marketing — the visit types and which case statuses count as active.",
           "Admin — Diagnostics, Backup & Restore, Data Recovery, Security Baseline, Subscription.",
         ],
         watchOut:
-          "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cAdmin Access\u201d and the \u201cAdmin\u201d group are different things.",
+          "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cRoles & Permissions\u201d and the \u201cAdmin\u201d group are different things.",
       },
       {
         heading: "Save to Cloud",

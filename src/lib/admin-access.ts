@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Admin Access — who can do what.
+ * Roles & Permissions (formerly Admin Access) — who can do what.
  *
  * Roles:
  *   owner   the account the office was created under. Not a role anyone is
@@ -13,9 +13,16 @@
  *           Statistics (the business numbers) is admin-only, always.
  *   staff   the day-to-day pages; deletes are off by default.
  *
- * Honest limitation: these checks run in the app, so they stop mistakes and
- * casual snooping, not a determined technical user. Enforcing roles in the
- * database (RLS) is the airtight version and is a separate piece of work.
+ * Settings → Roles & Permissions edits all of this. The role definitions
+ * (pages, actions, deletes, dashboard sections) live in their OWN cloud row
+ * (ROLE_SETTINGS_KEY) so the database can lock who may change them; the delete
+ * password stays in ADMIN_ACCESS_KEY, which Admins may keep editing.
+ *
+ * Honest limitation: what each role may DO with office data is checked in the
+ * app, so it stops mistakes and casual snooping, not a determined technical
+ * user (every member can read and write the office's data rows in the
+ * database). What IS enforced in the database is who may change the role
+ * definitions themselves — see the role-settings migration.
  */
 
 import type { PortalFeature } from "@/lib/plan-access";
@@ -30,6 +37,17 @@ export const CONFIGURABLE_ROLES: { key: ConfigurableRole; label: string }[] = [
   { key: "manager", label: "Manager" },
   { key: "staff", label: "Staff" },
 ];
+
+/**
+ * One-off actions inside a page that a role can be given or denied
+ * (separate from page access and deletes). Admins and the owner always may.
+ */
+export const ROLE_ACTIONS = [
+  { key: "contacts.create", feature: "contacts", group: "Contacts", label: "Add contacts" },
+  { key: "contacts.edit", feature: "contacts", group: "Contacts", label: "Edit contacts" },
+] as const;
+
+export type RoleActionKey = (typeof ROLE_ACTIONS)[number]["key"];
 
 export const DELETABLE_KINDS = [
   { key: "patients", label: "Patients" },
@@ -81,6 +99,10 @@ export interface AdminAccessSettings {
   rolePages: Record<ConfigurableRole, Partial<Record<PortalFeature, AccessLevel>>>;
   /** Per-kind delete rules per role. */
   roleDeletes: Record<ConfigurableRole, Record<DeletableKind, DeleteRule>>;
+  /** In-page actions (add / edit contacts…) per role. */
+  roleActions: Record<ConfigurableRole, Record<RoleActionKey, boolean>>;
+  /** When true, Admins may change the role definitions too. Owner-only switch; off by default. */
+  adminsCanEditRoles: boolean;
   /** Admins are asked for the delete password too when true. */
   passwordAppliesToAdmins: boolean;
   /** SHA-256 of salt + password. Empty = fall back to the office password. */
@@ -88,7 +110,10 @@ export interface AdminAccessSettings {
   deletePasswordSalt: string;
 }
 
+/** Delete password + "ask admins too". Admins may edit this. */
 export const ADMIN_ACCESS_KEY = "casemate.admin-access.v1";
+/** The role definitions. Only the owner (or Admins, if the owner allows it) may write this row. */
+export const ROLE_SETTINGS_KEY = "casemate.role-settings.v1";
 
 export function defaultAdminAccess(): AdminAccessSettings {
   return {
@@ -150,6 +175,12 @@ export function defaultAdminAccess(): AdminAccessSettings {
         tasks: "allowed",
       },
     },
+    // Everyone can add a contact; editing existing ones is for managers (and admins).
+    roleActions: {
+      manager: { "contacts.create": true, "contacts.edit": true },
+      staff: { "contacts.create": true, "contacts.edit": false },
+    },
+    adminsCanEditRoles: false,
     passwordAppliesToAdmins: false,
     deletePasswordHash: "",
     deletePasswordSalt: "",
@@ -197,6 +228,15 @@ export function normalizeAdminAccess(value: unknown): AdminAccessSettings {
       base.roleDeletes.manager[kind.key] = rule;
     }
   }
+
+  const actions = (raw.roleActions ?? {}) as Record<string, unknown>;
+  for (const role of CONFIGURABLE_ROLES) {
+    const stored = (actions[role.key] ?? {}) as Record<string, unknown>;
+    for (const action of ROLE_ACTIONS) {
+      if (typeof stored[action.key] === "boolean") base.roleActions[role.key][action.key] = stored[action.key] as boolean;
+    }
+  }
+  if (typeof raw.adminsCanEditRoles === "boolean") base.adminsCanEditRoles = raw.adminsCanEditRoles;
 
   if (typeof raw.passwordAppliesToAdmins === "boolean") base.passwordAppliesToAdmins = raw.passwordAppliesToAdmins;
   if (typeof raw.deletePasswordHash === "string") base.deletePasswordHash = raw.deletePasswordHash;
@@ -280,4 +320,85 @@ export function canSeeDashboardSection(
   if (section === "statistics") return false;
   if (tier === "manager") return settings.managerDashboard[section];
   return false;
+}
+
+/** Can this role do `action`? Admins and the owner always can; manager/staff follow the role grid. */
+export function actionAllowedFor(
+  tier: RoleTier,
+  action: RoleActionKey,
+  settings: AdminAccessSettings,
+): boolean {
+  if (isAdminTier(tier)) return true;
+  if (tier !== "manager" && tier !== "staff") return false;
+  return settings.roleActions[tier][action] === true;
+}
+
+/**
+ * Who may change the role definitions: the owner always; an Admin only when the
+ * owner switched "Admins can change roles" on. Managers and staff never.
+ * (The database enforces the same rule on the role-settings row.)
+ */
+export function canEditRoleSettings(tier: RoleTier, settings: AdminAccessSettings): boolean {
+  if (tier === "owner") return true;
+  return tier === "admin" && settings.adminsCanEditRoles;
+}
+
+/** The part of the settings stored in ROLE_SETTINGS_KEY (everything but the delete password). */
+export function roleDefinitionsOf(settings: AdminAccessSettings) {
+  return {
+    managerDashboard: settings.managerDashboard,
+    rolePages: settings.rolePages,
+    roleDeletes: settings.roleDeletes,
+    roleActions: settings.roleActions,
+    adminsCanEditRoles: settings.adminsCanEditRoles,
+  };
+}
+
+/**
+ * Combine the two cloud rows into one settings object. The role definitions
+ * come from the role row when it exists, else from the older Admin Access row
+ * (so nothing an office already set is lost); the delete password always
+ * comes from the Admin Access row.
+ */
+export function mergeStoredAccess(adminAccessRaw: unknown, roleRaw: unknown): AdminAccessSettings {
+  const legacy = adminAccessRaw && typeof adminAccessRaw === "object" ? (adminAccessRaw as Record<string, unknown>) : {};
+  const roles = roleRaw && typeof roleRaw === "object" ? (roleRaw as Record<string, unknown>) : null;
+  const security = {
+    passwordAppliesToAdmins: legacy.passwordAppliesToAdmins,
+    deletePasswordHash: legacy.deletePasswordHash,
+    deletePasswordSalt: legacy.deletePasswordSalt,
+  };
+  if (!roles) return normalizeAdminAccess({ ...legacy, ...security });
+  // Role row wins for every role field; the old row's legacy delete map is ignored once a role row exists.
+  return normalizeAdminAccess({ ...roles, ...security });
+}
+
+/** What a manager/staff member's access to `feature` actually is, in plain words (for the Roles grid and G.O.A.T.). */
+export function accessLabel(level: AccessLevel): string {
+  return level === "edit" ? "Full" : level === "view" ? "View only" : "No access";
+}
+
+/**
+ * Per-person overrides on top of the role: patient-page sections hidden for
+ * that member, plus old per-page grants from before roles existed (these no
+ * longer do anything; clearing them is harmless).
+ */
+export function memberOverrideSummary(permissions: Record<string, unknown> | null | undefined): string[] {
+  if (!permissions) return [];
+  const out: string[] = [];
+  const hidden = Array.isArray(permissions.hiddenSections) ? permissions.hiddenSections.length : 0;
+  if (hidden > 0) out.push(`${hidden} patient-page section${hidden === 1 ? "" : "s"} hidden`);
+  const legacy = LEGACY_GRANT_KEYS.filter((k) => permissions[k] === "view" || permissions[k] === "edit").length;
+  if (legacy > 0) out.push(`${legacy} old page grant${legacy === 1 ? "" : "s"} (no longer used)`);
+  return out;
+}
+
+const LEGACY_GRANT_KEYS = ROLE_PAGES.map((p) => p.feature as string);
+
+/** The member's permissions with every override removed — role, identity, location and on/off are kept. */
+export function permissionsWithoutOverrides<T extends Record<string, unknown>>(permissions: T): T {
+  const next: Record<string, unknown> = { ...permissions };
+  delete next.hiddenSections;
+  for (const key of LEGACY_GRANT_KEYS) delete next[key];
+  return next as T;
 }

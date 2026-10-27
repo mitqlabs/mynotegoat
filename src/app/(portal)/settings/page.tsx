@@ -5300,11 +5300,11 @@ export default function SettingsPage() {
       {showExtra("team") && <TeamSettingsSection />}
 
       <CollapsibleSection
-        description="Roles, what Managers can see and delete, and the delete password."
+        description="What each role (Staff, Manager, Admin) can open, add, edit and delete — plus the delete password."
         hidden={!showSection("adminAccess")}
         isOpen={sectionIsOpen("adminAccess")}
         onToggle={() => toggleSection("adminAccess")}
-        title="Admin Access"
+        title="Roles & Permissions"
       >
         <AdminAccessSection />
       </CollapsibleSection>
