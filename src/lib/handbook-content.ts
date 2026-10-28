@@ -121,6 +121,40 @@ export const handbookChapters: HandbookChapter[] = [
           "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow.",
       },
       {
+        heading: "Compliance column — turn it on and use it",
+        steps: [
+          "Settings → Office tab → Case Status Categories → tick Compliance column. It is off by default.",
+          "Patient List now has a Compliance column right after Status, and a Compliance filter next to the Case Status filter.",
+          "Click a patient's Compliance pill to pick a value from the menu — it works like the Case Status pill and saves right away. The choices start as New Patient, Yes, No, DNS ATM and Non-Compliant.",
+          "Inside a patient's page, Compliance is a field next to Case Status, and shows as a Compliance pill in the top card once it is set.",
+          "A patient with nothing chosen shows a grey Not set pill, never a blank cell. To list those patients, pick Not set in the Compliance filter.",
+        ],
+        why: "Compliance tracks how well a patient is following the care plan, separate from Case Status. Turning the column off only hides it — nothing already entered is lost. Who can change a value follows the same rule as editing patients.",
+        watchOut:
+          "No Compliance column? It has not been switched on yet. An admin turns it on in Settings → Office → Case Status Categories. To rename the choices, change their colors or add your own, see Compliance Categories in Where things live in Settings.",
+      },
+      {
+        heading: "The office pill (offices with more than one location)",
+        steps: [
+          "Only offices with more than one location show it: a small grey pill beside the patient's name in Patient List.",
+          "Click the pill, pick the office — or No office set to clear it. It saves right away and shows Saving…, then Saved (or Failed if it did not go through).",
+          "The name area and the pill have fixed widths, so the pills line up in a column. A long name is cut off with … — hover it, or open the patient, to see the whole name.",
+        ],
+        why: "The pill is the patient's office. The office list at the top of Patient List filters by it, and a team member's Main location (Settings → Office → Team Members) decides which office they land on at sign-in.",
+        watchOut: "Someone with view-only access to Patient List sees the pill but cannot click it to change it.",
+      },
+      {
+        heading: "Case numbers and their format",
+        steps: [
+          "A new patient's Case # builds itself. By default it is the injury date + the first 2 letters of the last name + the first 2 of the first name — John Smith, injured 07/18/2026 → 071826SMJO.",
+          "An admin can change the pattern: Settings → Office tab → Office Settings → Office Information → Case number format. Type a pattern or tap tokens such as {MMDDYY}, {LAST2}, {FIRST2}, {YYYY} or the counter {N3}.",
+          "The line under the box shows an example (John Smith, injury 07/18/2026) as you type. Reset to default puts the original pattern back.",
+        ],
+        why: "The pattern in force is stamped on each patient when they are created, so changing the format only affects NEW patients. An existing case number, its files and its folder never change.",
+        watchOut:
+          "Only letters, numbers and - _ . # are allowed between tokens, because case numbers become file and folder names. While the pattern is invalid the box shows what is wrong and the last good pattern stays in use.",
+      },
+      {
         heading: "Attorney's phone fills itself",
         steps: [
           "Start typing the attorney's name — matching contacts appear.",
@@ -361,6 +395,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Dashboard → Activity Log.",
           "Category pills narrow it (Billing only, Notes only…). Period defaults to the last 7 days.",
           "Person and the search box narrow it further; the search matches a patient name or the action text.",
+          "Person lists your whole team — including someone with no activity yet — plus anyone who appears in the log. Pick one to see what they did AND what was done to them (for example \u201cchanged main location\u201d on their own login).",
         ],
         why: "Only milestones are recorded — created, closed, reopened, deleted — never keystrokes. Deletions carry a copy of what was removed, which is often the fastest way to put something back.",
         watchOut:
@@ -397,13 +432,22 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Add a team member",
         steps: [
-          "Settings → Team Members → + Team Member.",
+          "Settings → Office tab → Team Members → + Team Member.",
           "Email, a temporary password (6+ characters), first and last name, their job title.",
           "Access role: Admin, Manager or Staff.",
           "Create Member.",
         ],
         watchOut:
           "Turning someone's Active toggle off blocks their login and shows \u201cOFF · no login\u201d — use that when someone leaves, rather than deleting them, so the Activity Log still makes sense.",
+      },
+      {
+        heading: "Set a team member's main location",
+        steps: [
+          "Settings → Office tab → Team Members.",
+          "Find the person's card. In Main location, pick the office they should open on at sign-in — or All locations.",
+          "It saves as soon as you pick it. Owners and Admins can set it for any member, including other Admins.",
+        ],
+        why: "Main location is only their starting view; they can still switch offices from Patient List. The setting only appears for offices with more than one location. The change is recorded in the Activity Log (\u201cchanged main location\u201d).",
       },
       {
         heading: "Change what Managers and Staff can reach",
@@ -416,14 +460,16 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         why: "Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
       },
       {
-        heading: "The delete password",
+        heading: "Set or change the delete password (one password, two places to set it)",
         steps: [
-          "Settings → Admin Access → Delete password → type it twice → Save password.",
-          "Anything set to \u201cWith password\u201d now asks for it before deleting.",
-          "\u201cAsk Admins for it too\u201d makes admins type it as well.",
+          "Settings → Office tab → Office Settings → Patient-Delete Password. Or Settings → Account tab → Admin Access → Delete password. Both show the same single password.",
+          "First time: type it in Choose password and Repeat it, then Save password. To change it, also type the Current delete password.",
+          "Anything set to \u201cWith password\u201d now asks for it before deleting — including the Delete window on a patient's page.",
+          "\u201cAsk Admins for it too\u201d (Admin Access) makes admins type it as well.",
         ],
+        why: "The password is stored in the cloud (as a salted hash, never the plain text), so it is the same on every computer and for every team member. \u201cSaved\u201d only appears after the cloud copy has been read back and matches.",
         watchOut:
-          "If something is set to \u201cWith password\u201d and no password exists, that delete is blocked outright. Set the password first. (The older Office delete password still works as an answer to the same prompt.)",
+          "If something is set to \u201cWith password\u201d and no password exists, that delete is blocked outright — and the patient Delete window tells you to set one under Settings → Office. Only Owners and Admins see the password box.",
       },
       {
         heading: "What these checks are and aren't",
@@ -449,17 +495,29 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "The map",
         steps: [
-          "Office Settings — office details and logo, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, Case Flow rules, which patient-page sections start open.",
+          "Office Settings (Office tab) — office details and logo, the Case number format, the Patient-Delete Password, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, the Compliance column and Compliance Categories, Case Flow rules, which patient-page sections start open.",
           "Macros — SOAP macros, billing macros (treatments, diagnosis codes, bundles), package builder.",
           "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
-          "Team Members — logins, roles, doctor flag, per-person patient-page sections.",
-          "Admin Access — roles, what managers see, who can delete what, the delete password.",
+          "Team Members (Office tab) — logins, roles, doctor flag, Main location, per-person patient-page sections.",
+          "Admin Access (Account tab) — roles, what managers see, who can delete what, the delete password.",
           "Marketing — the visit types and which case statuses count as active.",
           "Admin — Diagnostics, Backup & Restore, Data Recovery, Security Baseline, Subscription.",
         ],
         watchOut:
           "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cAdmin Access\u201d and the \u201cAdmin\u201d group are different things.",
+      },
+      {
+        heading: "Compliance Categories — rename, recolor, add",
+        steps: [
+          "Settings → Office tab → Case Status Categories → Compliance Categories (below the Case Status list). The Compliance column switch is just above, in the same section.",
+          "Add: type the name in New Compliance Option, pick a Color, press Add Option.",
+          "Rename: click the name, type, press Enter (Esc backs out). Color: use the color box on its row.",
+          "Show: untick it to stop offering that option in the pill menu and the filter. Remove: asks first, and says how many patients have it.",
+          "Reset Compliance Defaults puts back New Patient, Yes, No, DNS ATM and Non-Compliant and removes the ones you added.",
+        ],
+        why: "Each option keeps a hidden id, so renaming never orphans what is already saved on patients. A hidden option still displays on patients that already have it. Removing an option makes those patients show Not set — which is why it asks first.",
+        watchOut: "These are the choices on the Compliance pill. They have nothing to do with Case Status Categories above them, which are a separate list.",
       },
       {
         heading: "Save to Cloud",
@@ -512,6 +570,44 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         ],
         watchOut:
           "+ Encounter only appears once the patient is Checked In. Other statuses show a dash — that is the single most common 'the button is missing' call.",
+      },
+      {
+        heading: "Add a note to a patient (the Notes panel)",
+        steps: [
+          "Open the patient's page → Notes.",
+          "Type the note and press Enter (Shift+Enter starts a new line), or press Add note.",
+          "Each note is saved as its own line, stamped with today's date and your name. Newest first.",
+          "Notes added through G.O.A.T. (/note or \u201cadd a note for…\u201d) land in this same list.",
+        ],
+        why: "Notes are saved to the cloud, so every computer sees the same list, and two people adding notes at the same time never overwrite each other. If the connection is down you will see \u201cSaved on this device\u201d and it syncs as soon as it is back.",
+        watchOut: "This panel is the patient's running Notes. SOAP notes for a visit are written in Encounters, not here.",
+      },
+      {
+        heading: "Edit a note, change its date, and Earlier notes",
+        steps: [
+          "Patient's page → Notes → Edit on that note's line (Delete asks Delete note? first). The person who wrote it, the Owner and Admins can edit or delete it.",
+          "To change a note's date: Edit → Date, then Save. Only the Owner and Admins see the Date box.",
+          "Notes typed before this change appear below the list as Earlier notes — one text box, still editable and never deleted.",
+        ],
+        why: "The date on a note is the day it was written unless an Owner or Admin changes it, so staff can't back-date their own entries. An edited note shows \u201cedited by\u201d with the person's name.",
+      },
+      {
+        heading: "% Paid, % Disc. and the Ask calculator",
+        steps: [
+          "Open the patient's page → Additional Details. The summary shows % Paid (paid ÷ billed) and, beside it, % Disc. (how much of the bill was reduced).",
+          "Both fill in once there is a billed amount and a $ Paid Amount.",
+          "Next to them is the Ask calculator, for working out what to ask a firm for. Choose % or $, then type a number. In % mode it shows the dollar amount to Ask for; in $ mode it shows what % of billed that is. Discount shows the matching % and dollars off.",
+        ],
+        why: "The Ask calculator is a scratch pad — nothing you type in it is saved or changes the bill. % Disc. is read from what was actually paid.",
+        watchOut: "With no billed amount, the calculator shows a dash. Enter the billed amount first.",
+      },
+      {
+        heading: "Set a patient's Compliance",
+        steps: [
+          "Open the patient's page. In the top card, next to Case Status, pick a value in Compliance.",
+          "Once a value is set it also shows as a Compliance pill in the header.",
+        ],
+        why: "Only there while the office has switched on the Compliance column (Settings → Office → Case Status Categories). It is the same value as the pill in Patient List.",
       },
       {
         heading: "Add an imaging or specialist referral",

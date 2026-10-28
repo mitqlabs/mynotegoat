@@ -117,6 +117,17 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "Compliance and notes — ask or tell G.O.A.T.",
+      steps: [
+        "Count: \"how many patients are non-compliant\", \"who is non-compliant\", \"how many patients have DNS ATM\", \"how many patients have no compliance set\". It lists the patients and links to Patient List.",
+        "Change one: \"set compliance for Mock Smith to Yes\" or \"mark Mock Smith non-compliant\". You get ONE confirm card showing the old and new value. Nothing changes until you tap Confirm. If two patients match, it asks which one; it never picks silently.",
+        "Read notes: \"what notes does Mock Smith have\" or \"show Mock Smith's notes\" lists the newest notes in the patient's Notes panel (date, who wrote it) and any Earlier notes, with a link to open the patient.",
+        "Compliance is optional. If your office has not switched it on, G.O.A.T. says so and links to the setting instead of guessing. Staff without edit access to patients can ask and count, but not change.",
+        "How-to questions about screens and settings are answered from this Handbook, with a link to the exact section.",
+      ],
+      why: "These use your own office's settings and data only, inside NoteGoat — no outside AI. Changes always go through a confirm card, the same save path as clicking it yourself, and show up in the Activity Log.",
+    },
+    {
       heading: "\"/\" commands (optional shortcuts)",
       steps: [
         "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
