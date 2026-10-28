@@ -290,13 +290,18 @@ export async function loadBroadcastQueue(
   );
   const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
   if (!ids.length) return [];
-  const { data: pts } = await admin
-    .from("patients")
-    .select("id, phone, text_reminders_off")
-    .eq("workspace_id", device.workspace_id)
-    .in("id", ids);
+  // Chunked: an all-active broadcast can hold hundreds of ids (URL length).
+  const pts: { id: unknown; phone: unknown; text_reminders_off: unknown }[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data: part } = await admin
+      .from("patients")
+      .select("id, phone, text_reminders_off")
+      .eq("workspace_id", device.workspace_id)
+      .in("id", ids.slice(i, i + 100));
+    pts.push(...(part ?? []));
+  }
   const phoneById = new Map(
-    (pts ?? []).filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
+    pts.filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
   );
   // Visit times, so a text never goes to a visit that already passed (or
   // one outside the chosen window).
@@ -341,16 +346,21 @@ export async function claimBroadcasts(
 ): Promise<Set<string>> {
   if (!ids.length) return new Set();
   const nowIso = now.toISOString();
-  const { data, error } = await admin
-    .from("reminder_broadcast_recipients")
-    .update({ claimed_by: device.id, claimed_until: new Date(now.getTime() + minutes * 60_000).toISOString() })
-    .eq("workspace_id", device.workspace_id)
-    .eq("status", "queued")
-    .in("id", ids)
-    .or(`claimed_until.is.null,claimed_until.lt.${nowIso},claimed_by.eq.${device.id}`)
-    .select("id");
-  if (error) throw new Error(`broadcast claim failed: ${error.message}`);
-  return new Set((data ?? []).map((r) => r.id as string));
+  const claimed = new Set<string>();
+  // Chunked: an all-active broadcast can lease hundreds of ids (URL length).
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await admin
+      .from("reminder_broadcast_recipients")
+      .update({ claimed_by: device.id, claimed_until: new Date(now.getTime() + minutes * 60_000).toISOString() })
+      .eq("workspace_id", device.workspace_id)
+      .eq("status", "queued")
+      .in("id", ids.slice(i, i + 100))
+      .or(`claimed_until.is.null,claimed_until.lt.${nowIso},claimed_by.eq.${device.id}`)
+      .select("id");
+    if (error) throw new Error(`broadcast claim failed: ${error.message}`);
+    for (const r of data ?? []) claimed.add(r.id as string);
+  }
+  return claimed;
 }
 
 /** Record a device's result for one broadcast text. Only queued rows change. */

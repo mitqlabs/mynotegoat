@@ -137,6 +137,15 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",
     },
     {
+      heading: "Broadcast texts: who does it go to?",
+      steps: [
+        "Ask: \"who does broadcast send to\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. It never sends a text itself.",
+        "All active patients (the default): every patient whose case status is Active, once per phone number. Booked on a day: only patients with a visit that day (optional time window, skips canceled visits).",
+        "Always left out: no valid phone, \"no text reminders\" or STOP replies. Discharged, Ready to Submit, Submitted, Dropped and Paid patients are not Active.",
+      ],
+      why: "Answered from the Handbook (Message patients chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
       heading: "\"/\" commands (optional shortcuts)",
       steps: [
         "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
