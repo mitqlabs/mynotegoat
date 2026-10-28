@@ -13,6 +13,7 @@
  * plan for ONE confirm card; nothing is written here. Names are matched
  * fuzzily but never guessed: ambiguous / unknown lines are flagged on the card.
  */
+import { isEverydayWord } from "@/lib/goat-name-guard";
 import { editDistance } from "@/lib/goat-ai/global-chat";
 
 export type OmStatus = "Active" | "Discharged" | "Ready To Submit" | "Submitted" | "Dropped" | "Paid";
@@ -170,6 +171,7 @@ const words = (s: string) => (s.toLowerCase().replace(/[’']s\b/g, "").match(/[
 
 function partMatch(w: string, part: string): 0 | 1 | 2 {
   if (w === part) return 2;
+  if (isEverydayWord(w)) return 0;
   if (w.length === 3 && part.length <= 5 && w[0] === part[0] && editDistance(w, part) === 1) return 1;
   if (w.length >= 4 && part.length >= 4 && w[0] === part[0] && editDistance(w, part) <= (part.length >= 7 ? 2 : 1)) return 1;
   return 0;
@@ -228,7 +230,7 @@ function rowFor(typed: string, patients: OmPatient[], amount?: number): OmRow {
   else {
     row.flag = "unmatched";
     // Close-but-not-sure names are offered as picks, never chosen.
-    const loose = patients.filter((p) => words(typed).some((w) => !NAME_STOP.has(w) && w.length >= 3 && words(p.fullName).some((pt) => pt.startsWith(w.slice(0, 3)) && editDistance(w, pt) <= 2)));
+    const loose = patients.filter((p) => words(typed).some((w) => !NAME_STOP.has(w) && !isEverydayWord(w) && w.length >= 3 && words(p.fullName).some((pt) => pt.startsWith(w.slice(0, 3)) && editDistance(w, pt) <= 2)));
     row.candidates = loose.slice(0, 5).map((p) => p.id);
   }
   return row;

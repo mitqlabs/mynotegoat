@@ -110,7 +110,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Notes, to-dos and payments",
       steps: [
-        "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
+        "Notes: \"add a note for john smith: spoke to atty\" — saved as a new entry in the patient's Notes log, stamped with today's date and your name.",
         "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
         "Open on a patient's page? \"him\", \"her\", \"them\", \"this patient\" — or no name at all — mean that patient. \"remind me to call for appointment\" on John Smith's page → \"Call John Smith for appointment\", attached to his case, one confirm. Name someone else (\"remind me to call Jane Doe\") and it's theirs; if the name could be several people, it asks. The same goes for notes (\"add a note that he called\"), team messages (\"tell Hannah to call her about the MRI\"), booking (\"book him friday at 3\") and lookups (\"when is his next appt\").",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
@@ -121,9 +121,9 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
-        "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK), takes the rest as the text, and goes straight to the confirm card with the patient's name on it.",
+        "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK) and shows that patient as a button to confirm. It never picks silently, even when only one patient matches. Tap the patient, and the note goes to the confirm card with the patient's name on it. If no patient matches, it shows the patient search, filled in with what you typed.",
         "It only asks \"Which case?\" when more than one patient matches, and only asks for the text when you typed just a name.",
-        "Just /note asks \"Which case?\", then the text. Just /todo asks \"Just a to-do, or add to a case?\". A /todo that doesn't start with a patient name is a plain to-do. The to-do keeps your full wording (\"call\" is never mistaken for a name). If the text names a patient (\"/todo call tyler smith\") the card is for that patient; if two patients match it asks which one; if no one is named the card says \"No patient\" with Attach chips instead of guessing from the page you are on.",
+        "Just /note shows a patient search (type a name, case # or phone and tap the patient), then asks \"What's the note?\". Just /todo works the same way, and the search also has \"No patient / general to-do\". Then it asks \"What's the task?\". A /todo that names no patient is a plain to-do. The to-do keeps your full wording (\"call\" is never mistaken for a name). If the text names a patient (\"/todo call tyler smith\") G.O.A.T. shows that patient as a button to confirm, and the name stays in the task text; if two patients match it asks which one; if no one is named the card says \"No patient\" with Attach chips instead of guessing from the page you are on.",
         "Changed your mind halfway? Tap a chip, type another / or @ command, ask something new, or type cancel — the half-finished step is dropped.",
         "/view shows a list: /view todo (every open to-do; click a line to open it, click the name to open the patient), /view schedule (today), /view messages (unread). Admins also get /view appointment check and /view quick biz. After typing \"/view \" the menu suggests them.",
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
@@ -228,6 +228,7 @@ export const goatHandbookChapter: HandbookChapter = {
         "Ask by visit type and time: \"any upcoming new patients?\", \"new patients this week\", \"any re-exams friday\", \"when is the next new patient\", \"who's coming in tomorrow\", \"how many appointments today\".",
         "G.O.A.T. answers with a short list: date, time, patient, visit type and office. Each patient's name is a link (shown once), plus a link to that day on the Schedule.",
         "Typos and stray punctuation are fine (\"new patients>\" works). Canceled and no-show visits are left out.",
+        "Count canceled, no-show or completed visits: \"how many canceled appointments\", \"no-shows this week\", \"who canceled last month\". With no timeframe it asks \"For which time frame?\" with buttons (Today, This week, This month, Last month, All time), then answers.",
         "It only sees the offices you can see. Admin-only numbers (case counts, money) stay admin-only.",
         "If G.O.A.T. isn't sure what you mean, it asks a short question with buttons (schedule, to-dos, case, contact) instead of listing everything.",
       ],

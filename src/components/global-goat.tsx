@@ -42,7 +42,7 @@ import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
 import { createPatientRecord } from "@/lib/mock-data";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
-import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
+import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, tidyNoteText, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
@@ -65,6 +65,9 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { caseNumberOf } from "@/lib/follow-up-queue";
 import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { notifyChange } from "@/lib/local-sync";
+import { CASE_NOTE_ENTRIES_KEY, addEntry, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
+import { currentAuthor as currentNoteAuthor } from "@/hooks/use-case-note-entries";
+import { logActivity } from "@/lib/activity-log";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { clearedIdSet, taskClearId } from "@/lib/cleared-tasks";
@@ -82,13 +85,14 @@ import { isNoPatientName, pickTodoPatient, todoTitleForPagePatient, detectNewPat
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
-import { breaksFlow, continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { breaksFlow, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget, briefName, splitLinks } from "@/lib/goat-briefs";
+import { isOfficeStatsQuestion, parseTimeframeReply } from "@/lib/goat-appt-stats";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
@@ -618,15 +622,20 @@ export function GlobalGoatPopup({
     push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
   };
 
-  /** Confirm: append the signed line to the patient's Notes (the same store the Notes box uses). */
-  const saveNote = (msg: ChatMessage, line: string) => {
+  /** Confirm: save the note as one quick-note entry (date + author stamped) in the patient's Notes log. */
+  const saveNote = (msg: ChatMessage, _line: string) => {
     const d = msg.noteDraft;
     if (!d || d.state !== "open") return;
-    const p = patientById(d.patientId);
-    const existing = getCaseNote(d.patientId) ?? p?.matrix?.notes ?? "";
-    setCaseNote(d.patientId, appendNote(existing, line));
-    notifyChange(STORAGE_KEY_CASE_NOTES);
-    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saved", saved: line } } : x)) }));
+    const { author, userId } = currentNoteAuthor();
+    const entry = entryFromGoatNote({ patientId: d.patientId, text: d.text, author, authorUserId: userId });
+    if (!entry) return;
+    const next = addEntry(loadCaseNoteEntries(), entry);
+    // Local cache first (the Notes box reads it), then merge + write to the cloud (queued and retried if it fails).
+    void saveCaseNoteEntries(next).then(() => notifyChange(CASE_NOTE_ENTRIES_KEY));
+    notifyChange(CASE_NOTE_ENTRIES_KEY);
+    logActivity({ category: "notes", action: "case_note.added", summary: "Added a note to Notes (G.O.A.T.)", patientId: d.patientId, patientName: d.patientName, details: { text: entry.text } });
+    const saved = `${formatEntryDate(entry.date)}${author ? ` ${author}` : ""}\n${entry.text}`;
+    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saved", saved } } : x)) }));
   };
 
   const pickTime = (msg: ChatMessage, time: string) => {
@@ -1400,13 +1409,13 @@ export function GlobalGoatPopup({
   // ---- "/" command flows (step by step) ----
   const flowCtx = (): FlowCtx => ({
     today: practiceData().today,
-    patients: allPatients().map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
+    patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, caseNumber: caseNumberOf(p), phone: p.phone })),
     contacts: practiceOverride ? [] : loadContactDirectory().map((c) => ({ id: c.id, name: c.name, category: c.category, phone: c.phone })),
     openPatientId: openPatientId ?? null,
   });
   const runFlowTurn = (turn: FlowTurn) => {
     flowRef.current = turn.pending;
-    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })) });
+    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })), flowPicker: turn.picker });
     const a = turn.action;
     if (!a) return;
     if (a.type === "noteConfirm") {
@@ -1742,6 +1751,11 @@ export function GlobalGoatPopup({
       const u = runUnderstand(question);
       if (u && actOn(u, question)) return;
     }
+    // Office-wide count/list by status ("how many canceled appts do we have") is a schedule
+    // question: answer it from the schedule before any patient-name guessing.
+    if (casual && !flowRef.current && !replyPending() && isOfficeStatsQuestion(question, practiceData().today, allPatients().map((p) => p.fullName)) && tryPractice(question, false)) return;
+    // "For which time frame?" is waiting: a typed "this week" / "today" answers it.
+    if (casual && !flowRef.current && !replyPending() && lastOffice()?.kind === "apptStatsAsk" && parseTimeframeReply(question, practiceData().today) && tryPractice(question, false)) return;
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
@@ -2327,6 +2341,14 @@ export function GlobalGoatPopup({
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
+                    {m.flowPicker && (
+                      <FlowPatientPicker
+                        picker={m.flowPicker}
+                        patients={flowCtx().patients}
+                        disabled={Boolean(job) || practiceBusy}
+                        onPick={(p) => { setMsg(m.id, { flowPicker: { ...m.flowPicker!, picked: p.fullName } }); tryFlow(`${FLOW_TOKEN}${m.flowPicker!.next}-case ${p.id}`); }}
+                      />
+                    )}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -2941,16 +2963,51 @@ function OmUndoCard({ undo, onConfirm, onCancel }: { undo: NonNullable<ChatMessa
   );
 }
 
+/** Patient type-ahead for /note and /todo: real patients, searched by name, case # or phone. */
+function FlowPatientPicker({ picker, patients, disabled, onPick }: { picker: NonNullable<ChatMessage["flowPicker"]>; patients: FlowCtx["patients"]; disabled: boolean; onPick: (p: FlowCtx["patients"][number]) => void }) {
+  const [q, setQ] = useState(picker.prefill ?? "");
+  if (picker.picked) return <div className="mt-2 text-xs font-semibold text-[var(--text-muted)]">✓ {picker.picked}</div>;
+  const hits = searchPatients(q, patients);
+  return (
+    <div className="mt-2 space-y-1.5" data-goat-patient-picker>
+      <input
+        autoFocus
+        aria-label="Search patients by name, case number or phone"
+        className="w-full rounded-xl border border-[#72bdcf] bg-white px-2.5 py-1.5 text-xs"
+        disabled={disabled}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Name, case #, or phone"
+        style={{ fontSize: 12 }}
+        value={q}
+      />
+      {q.trim() && !hits.length && <div className="text-xs text-[var(--text-muted)]">No patient matches “{q.trim()}”.</div>}
+      {hits.map((p) => (
+        <button
+          className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
+          disabled={disabled}
+          key={p.id}
+          onClick={() => onPick(p)}
+          style={{ fontSize: 12 }}
+          type="button"
+        >
+          {p.fullName}
+          <span className="font-normal text-[var(--text-muted)]">{[p.caseNumber, p.caseStatus].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
   const signer = useLoginSigner();
   const [now] = useState(() => new Date());
-  const line = formatNote(draft.text, signer, now);
+  const line = `${formatEntryDate(todayIso(now))}${signer ? ` ${signatureFor(signer).slice(1)}` : ""}\n${tidyNoteText(draft.text)}`;
   if (draft.state === "saved") {
     return (
       <div className="mt-1.5 text-xs">
         <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.saved}</p>
         <p className="mt-1 font-semibold text-emerald-700">
-          ✓ Saved to Case Notes ·{" "}
+          ✓ Saved to Notes ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
             Open patient file ↗
           </Link>
@@ -2968,7 +3025,7 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
         <button
           className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`}
           disabled={busy}
-          onClick={() => onSave(formatNote(draft.text, signer, new Date()))}
+          onClick={() => onSave(line)}
           style={{ fontSize: 12 }}
           type="button"
         >

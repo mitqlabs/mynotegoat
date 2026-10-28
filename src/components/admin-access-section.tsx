@@ -5,6 +5,7 @@ import { useAdminAccess } from "@/hooks/use-admin-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { logActivity } from "@/lib/activity-log";
 import { appConfirm } from "@/components/app-dialog";
+import { DeletePasswordField } from "@/components/delete-password-field";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import type { AccessLevel } from "@/lib/team-permissions";
 import {
@@ -14,7 +15,6 @@ import {
   ROLE_PAGES,
   canEditRoleSettings,
   defaultAdminAccess,
-  hashDeletePassword,
   isAdminTier,
   type AdminAccessSettings,
   type ConfigurableRole,
@@ -78,9 +78,6 @@ const selectClass = "w-full rounded-md border border-[var(--line-soft)] bg-white
 export function AdminAccessSection() {
   const { roleTier } = useWorkspaceAccess();
   const { adminAccess, saveRoles, saveSecurity } = useAdminAccess();
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [notice, setNotice] = useState("");
   const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   // Keeps quick back-to-back toggles from overwriting each other before the first save returns.
   const latest = useRef(adminAccess);
@@ -105,25 +102,6 @@ export function AdminAccessSection() {
     } else {
       setStatus({ tone: "error", text: result.error });
     }
-  };
-
-  const savePassword = async () => {
-    if (password.length < 4) return setNotice("Use at least 4 characters.");
-    if (password !== confirm) return setNotice("The two passwords don't match.");
-    const { salt, hash } = await hashDeletePassword(password);
-    const result = await saveSecurity({ ...adminAccess, deletePasswordSalt: salt, deletePasswordHash: hash });
-    setPassword("");
-    setConfirm("");
-    if (!result.ok) return setNotice(result.error);
-    setNotice("Delete password saved.");
-    logActivity({ category: "team", action: "access.password_set", summary: "Set the delete password" });
-  };
-
-  const clearPassword = async () => {
-    const result = await saveSecurity({ ...adminAccess, deletePasswordSalt: "", deletePasswordHash: "" });
-    if (!result.ok) return setNotice(result.error);
-    setNotice("Delete password removed. Anything set to “With password” is blocked until you set a new one.");
-    logActivity({ category: "team", action: "access.password_cleared", summary: "Removed the delete password" });
   };
 
   const resetToDefaults = async () => {
@@ -323,38 +301,8 @@ export function AdminAccessSection() {
 
         <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
           <h3 className="text-sm font-semibold">Delete password</h3>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            {adminAccess.deletePasswordHash
-              ? "A password is set. Enter a new one to replace it."
-              : "No password set yet. Anything marked “With password” stays blocked until you set one."}
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <input
-              autoComplete="new-password"
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="New password"
-              type="password"
-              value={password}
-            />
-            <input
-              autoComplete="new-password"
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              onChange={(e) => setConfirm(e.target.value)}
-              placeholder="Repeat it"
-              type="password"
-              value={confirm}
-            />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button className="btn btn-primary" onClick={() => void savePassword()} type="button">
-              Save password
-            </button>
-            {adminAccess.deletePasswordHash && (
-              <button className="btn btn-secondary" onClick={() => void clearPassword()} type="button">
-                Remove password
-              </button>
-            )}
+          <div className="mt-2">
+            <DeletePasswordField />
           </div>
           <label className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5">
             <span className="text-xs font-semibold">
@@ -366,7 +314,6 @@ export function AdminAccessSection() {
               onChange={(on) => void saveSecurity({ ...adminAccess, passwordAppliesToAdmins: on })}
             />
           </label>
-          {notice && <p className="mt-2 text-xs font-semibold text-[var(--brand-primary)]">{notice}</p>}
         </article>
       </div>
     </div>

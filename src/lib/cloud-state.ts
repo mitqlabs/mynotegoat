@@ -20,6 +20,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.goat-learned.v1",
   // G.O.A.T. Dx suggestion "Ignore" records: merged by id, newest wins (restore = tombstone).
   "casemate.dx-suggestion-ignores.v1",
+  // Patient Notes log (quick notes): merged by id, newest wins, deletes are tombstones.
+  "casemate.case-note-entries.v1",
 ]);
 
 /**
@@ -1098,6 +1100,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.dashboard-priority-rules.v1",
           "casemate.files.v1",
           "casemate.case-notes.v1",
+          // Patient Notes log (quick notes). Union-merged by id — see UNION_MERGE_KEYS.
+          "casemate.case-note-entries.v1",
           "casemate.patient-page-prefs.v1",
           "casemate.module-visibility.v1",
           // SMS templates were dual-written to workspace_kv (namespace

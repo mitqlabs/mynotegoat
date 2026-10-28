@@ -1,3 +1,4 @@
+import { isAmbiguousNameWord, isEverydayWord, matchNameToken } from "@/lib/goat-name-guard";
 import { joinDrTitle } from "@/lib/goat-message";
 /**
  * Casual-language front door for G.O.A.T. action commands.
@@ -131,8 +132,8 @@ const COMMON_WORDS = new Set(
 
 function wordMatches(w: string, target: string, loose = false): boolean {
   if (w === target) return true;
-  if (COMMON_WORDS.has(w)) return false;
-  if (w.length >= 4 && target.length >= 4 && editDistance(w, target) <= 1) return true;
+  if (COMMON_WORDS.has(w) || isEverydayWord(w)) return false;
+  if (w.length >= 4 && target.length >= 4 && editDistance(w, target) <= 1 && matchNameToken(w, target) === "fuzzy") return true;
   // Inside a full name ("collin eliliot"), a longer last name may be two typos off.
   if (loose && w.length >= 5 && target.length >= 5 && w[0] === target[0] && editDistance(w, target) <= 2) return true;
   return false;
@@ -150,6 +151,8 @@ export function patientsNamed<T extends CommandPatient>(words: string[], patient
   });
   if (full.length) return full;
   if (ws.length !== 1) return [];
+  // A lone word that is also a real word ("will", "may", "mark") is not a name without the rest of it.
+  if (isAmbiguousNameWord(ws[0])) return [];
   return patients.filter((p) => nameWords(p.fullName).some((n) => wordMatches(ws[0], n)));
 }
 

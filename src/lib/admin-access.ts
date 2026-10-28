@@ -268,6 +268,27 @@ export async function verifyDeletePassword(
   return (await sha256Hex(`${settings.deletePasswordSalt}:${attempt}`)) === settings.deletePasswordHash;
 }
 
+export type DeletePasswordCheck = "none" | "wrong" | "ok";
+
+/**
+ * One delete password for the whole office. New passwords are stored as a
+ * salted hash in Admin Access (cloud, shared by every device and team member).
+ * Older offices still have the first-generation plaintext copy in Office
+ * settings; it keeps working until a new password is saved.
+ */
+export async function checkDeletePassword(
+  settings: AdminAccessSettings,
+  legacyOfficePassword: string,
+  attempt: string,
+): Promise<DeletePasswordCheck> {
+  const legacy = (legacyOfficePassword ?? "").trim();
+  if (!settings.deletePasswordHash && !legacy) return "none";
+  if (!attempt) return "wrong";
+  if (settings.deletePasswordHash && (await verifyDeletePassword(settings, attempt))) return "ok";
+  if (legacy && attempt === legacy) return "ok";
+  return "wrong";
+}
+
 /** The role tier for a membership. Owners and non-members are "owner". */
 export function roleTierOf(membership: {
   isMember: boolean;

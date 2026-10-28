@@ -15,6 +15,8 @@
  * canonical phrase the existing G.O.A.T. paths already handle (each ends on
  * one confirm card), or one short question when a required detail is missing.
  */
+import { parseApptStats } from "@/lib/goat-appt-stats";
+import { acceptHits, isNeverName, isShortTypo, matchNameToken, type TokenHit } from "@/lib/goat-name-guard";
 import { normalizeCasual } from "@/lib/goat-assistant";
 
 // The catalog and the reviewed phrase list live in one data file (G.O.A.T. Library → Built in).
@@ -99,16 +101,9 @@ const NOT_NAMES = new Set(["the", "a", "an", "to", "for", "and", "at", "on", "in
 
 const tokenize = (t: string) => [...t.matchAll(/[A-Za-z][A-Za-z'-]*/g)].map((m) => ({ w: m[0].toLowerCase().replace(/'s$|s'$/, ""), raw: m[0], at: m.index ?? 0 }));
 
+/** Typo-tolerant name match: the shared rules in goat-name-guard (never an everyday word, never a short token). */
 function close(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b || a === `${b}s`) return true;
-  // Sound-alike first letters: kara/cara, katie/catie, phil/fil.
-  const snd = (w: string) => w.replace(/^c(?=[aou])/, "k").replace(/^ph/, "f");
-  if (a[0] !== b[0] && snd(a)[0] === snd(b)[0]) return close(snd(a), snd(b));
-  if (a[0] !== b[0]) return false;
-  if (a.length < 4 || b.length < 4) return Math.min(a.length, b.length) >= 3 && a.slice(0, 2) === b.slice(0, 2) && editDistance(a, b) <= 1;
-  const d = editDistance(a, b);
-  return d <= (Math.min(a.length, b.length) >= 7 ? 2 : 1);
+  return matchNameToken(a, b) !== null;
 }
 
 export interface PatientHit {
@@ -123,18 +118,30 @@ export interface PatientHit {
 const PRONOUN_RE = /\b(?:him|her|them|his|their|he|she|this patient|same patient|that patient|the patient)\b/i;
 
 export function findPatient(text: string, patients: UPatient[], lastPatientId?: string | null): PatientHit {
-  const toks = tokenize(text).filter((t) => !NOT_NAMES.has(t.w));
+  const toks = tokenize(text).filter((t) => !NOT_NAMES.has(t.w) && !isNeverName(t.w));
   const scored: Array<{ p: UPatient; score: number; span: [number, number] }> = [];
   for (const p of patients) {
     const { first, last } = nameParts(p.fullName);
     const fl = first.toLowerCase();
     const ll = last.toLowerCase();
+    const hitOf = (t: (typeof toks)[number], part: string, which: "first" | "last", index: number): TokenHit | null => {
+      const m = matchNameToken(t.w, part);
+      if (m) return { index: t.at === 0 ? 0 : index + 1, raw: t.raw, kind: m === "exact" ? "exact" : "fuzzy", part: which };
+      return isShortTypo(t.w, part) ? { index: t.at === 0 ? 0 : index + 1, raw: t.raw, kind: "short", part: which } : null;
+    };
     let fi = -1;
     let li = -1;
+    const hits: TokenHit[] = [];
     toks.forEach((t, i) => {
-      if (fi < 0 && close(t.w, fl)) fi = i;
-      if (li < 0 && close(t.w, ll)) li = i;
+      const f = fi < 0 ? hitOf(t, fl, "first", i) : null;
+      if (f) { fi = i; hits.push(f); }
+      const l = li < 0 ? hitOf(t, ll, "last", i) : null;
+      if (l) { li = i; hits.push(l); }
     });
+    // Context rules: ambiguous words (may/will) and lone typo hits need more than one weak token.
+    const keep = acceptHits(hits);
+    if (fi >= 0 && !keep.some((h) => h.part === "first")) fi = -1;
+    if (li >= 0 && !keep.some((h) => h.part === "last")) li = -1;
     if (fi < 0 && li < 0) continue;
     const exact = (i: number, n: string) => (i >= 0 && toks[i].w === n ? 0.25 : 0);
     const score = (fi >= 0 ? 1 : 0) + (li >= 0 ? 1.2 : 0) + exact(fi, fl) + exact(li, ll) + (fi >= 0 && li >= 0 && Math.abs(fi - li) === 1 ? 0.5 : 0) + (/active/i.test(p.caseStatus ?? "Active") ? 0.05 : 0);
@@ -404,6 +411,9 @@ function pickAction(t: string, hasPatient: boolean, attorneys: string[] = []): A
 
 export function understand(raw: string, ctx: UContext): Understood | null {
   if (!raw.trim() || raw.trim().startsWith("/") || raw.trim().startsWith("@")) return null;
+  // Intent first: an office-wide count/list by status ("how many canceled appts do we have")
+  // is a schedule question, never "cancel <patient>" and never a patient lookup.
+  if (parseApptStats(raw, ctx.today, ctx.patients.map((p) => p.fullName))) return null;
   const t = normalizeForIntent(raw);
   const template = phraseTemplate(raw, ctx.patients, ctx.today, [...(ctx.names ?? []), ...(ctx.attorneys ?? [])]);
   const hit = findPatient(t, ctx.patients, ctx.lastPatientId);

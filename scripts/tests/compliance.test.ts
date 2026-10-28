@@ -17,12 +17,15 @@ import {
   liveComplianceOptions,
   shownComplianceOptions,
   complianceAccess,
+  compliancePillStyle,
+  complianceDisplay,
   compliancePatchValue,
   complianceRank,
   matchesComplianceFilter,
   normalizeCompliance,
   COMPLIANCE_NOT_SET,
 } from "../../src/lib/compliance";
+import { softPillStyle } from "../../src/lib/color-utils";
 import { getDefaultCaseStatusSettings, normalizeCaseStatusSettings } from "../../src/lib/case-statuses";
 import { patientToRow, rowToPatient } from "../../src/lib/patients-cloud";
 import { autoMergeRecord } from "../../src/lib/patient-merge";
@@ -168,5 +171,53 @@ assert.equal(resolveComplianceOption("c-a", mergeComplianceOptions(devA, removed
 // Patient save keeps working with custom ids
 assert.equal(compliancePatchValue("c-abc", undefined), "c-abc");
 assert.equal(patientToRow(mock({ compliance: "c-abc" }), "ws-mock").compliance, "c-abc");
+
+// Pill colors: the configured color applies, found by stable id or by legacy label
+{
+  const T = "2026-10-27T00:00:00.000Z";
+  let o = renameComplianceOption(getDefaultComplianceOptions(), "DNS ATM", "Do Not Schedule", T);
+  o = setComplianceOptionColor(o, "DNS ATM", "#112233", T);
+  o = setComplianceOptionColor(o, "No", "#d11f1f", T);
+  // stored id and the legacy text value both land on the renamed, recolored option
+  for (const stored of ["DNS ATM", "dns atm", "Do Not Schedule"]) {
+    const opt = resolveComplianceOption(stored, o);
+    assert.equal(opt?.id, "DNS ATM", `${stored} resolves to the renamed option`);
+    assert.equal(compliancePillStyle(opt).backgroundColor, "rgba(17, 34, 51, 0.2)", `${stored} uses the configured color (soft tint)`);
+  }
+  // Compliance is the SAME pill as Case Status: identical style function for the same color
+  for (const opt of liveComplianceOptions(o)) {
+    assert.deepEqual(compliancePillStyle(opt), softPillStyle(opt.color), `${opt.id} pill == status pill`);
+  }
+  // text is always readable on its own tint (WCAG AA 4.5:1), dark or light or mid-tone colors
+  const lum = (r: number, g: number, b: number) => {
+    const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  for (const color of ["#112233", "#0d79bf", "#1f9d60", "#c9423a", "#f0a43f", "#f4e526", "#80e74b", "#5f75ff", "#8e3b8f", "#ffffff", "#000000"]) {
+    const st = softPillStyle(color);
+    const [r, g, b] = rgbOf(color);
+    const bg = [r, g, b].map((v) => 255 + (v - 255) * 0.2) as [number, number, number];
+    const fg = rgbOf(st.color);
+    const ratio = (lum(...bg) + 0.05) / (lum(fg[0], fg[1], fg[2]) + 0.05);
+    assert.ok(ratio >= 4.5, `${color} text ${st.color} readable on tint (${ratio.toFixed(2)})`);
+  }
+  // unset / cleared / unknown / removed → neutral, readable, never blank
+  const gone = removeComplianceOption(o, "Non-Compliant", T);
+  for (const stored of [undefined, "", "   ", "no-such-option", "Non-Compliant"]) {
+    const style = compliancePillStyle(resolveComplianceOption(stored, stored === "Non-Compliant" ? gone : o));
+    assert.deepEqual(style, { backgroundColor: "#eef1f4", color: "#475569" }, `unset-like value ${JSON.stringify(stored)} is neutral`);
+  }
+  // what the list shows: never an empty label
+  assert.deepEqual(complianceDisplay(undefined, o).label, "Not set");
+  assert.deepEqual(complianceDisplay("   ", o).label, "Not set");
+  assert.equal(complianceDisplay("Yes", o).option?.id, "Yes");
+  assert.equal(complianceDisplay(" yes ", o).option?.id, "Yes", "whitespace/case still maps to the option");
+  assert.equal(complianceDisplay("Non-Compliant", gone).label, "Non-Compliant", "a removed option keeps its name");
+  assert.equal(complianceDisplay("Non-Compliant", gone).option, undefined);
+  assert.equal(complianceDisplay("c-abc123", o).label, "Unknown option", "an unknown generated id isn't shown raw");
+  assert.equal(complianceDisplay("legacy thing", o).label, "legacy thing", "plain legacy text shows as typed");
+  for (const v of [undefined, "", " ", "x", "c-zz", "Yes", "No"]) assert.ok(complianceDisplay(v, o).label.trim().length > 0, `label for ${JSON.stringify(v)} is never blank`);
+}
 
 console.log("PASS compliance (mock data)");
