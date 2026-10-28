@@ -62,7 +62,7 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
         AUTOMATION_STEPS(time),
         "",
         NOTES,
-        "If the automation is already there, open it and make sure it's on, Every Day, Run Immediately, and runs Send-Reminders. Then in Text Reminders check that Send reminders automatically is on, Dry run is off, today is a run day, and read Recent sends for skipped patients (opted out, no phone, or not on a Scheduled visit). To send right now, use Send Reminders Now.",
+        "If the automation is already there, open it and make sure it's on, Every Day, Run Immediately, and runs Send-Reminders. Then in Text Reminders check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), today is one of the Run days, and read Recent sends for skipped patients (opted out, no phone, or not on a Scheduled visit). To send right now, use Send Reminders Now.",
       ].join("\n"),
       links,
     };
@@ -70,11 +70,11 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
   return {
     text: [
       `Setting up ${time} reminders is 3 steps. Step 2 is required because the shortcut does NOT run by itself.`,
-      "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the code, and add the Send-Reminders shortcut.",
+      "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the setup code, and add the Send-Reminders shortcut.",
       `Step 2 (required): create the ${time} automation on the iPhone:`,
       AUTOMATION_STEPS(time),
       NOTES,
-      "Step 3: tick Send reminders automatically (and untick Dry run once Recent sends looks right). Then tick \"I created the " + time + " automation\" on the page.",
+      "Step 3: check Send reminders automatically. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Then check \"I made the " + time + " automation\" on the page.",
     ].join("\n"),
     links,
   };
@@ -97,9 +97,36 @@ export function reminderPageHelp(question: string, opts: { canSeeSettings?: bool
   return {
     text: [
       "Settings → Text Reminders has two sections. Tap a heading to open or close it; NoteGoat remembers it for the whole office.",
-      "• Set up: the 3-step checklist, your sending devices, How it works, the two shortcuts and opt-out setup. It starts closed once the 8 AM automation box is ticked and a device has run. A red \"automation may not be set up\" warning stays at the top even when Set up is closed.",
+      "• Set up: five cards, each with a Done / To do / Optional tag and a one-line summary. Tap a card to open it. The cards are the 3-step checklist, Sending devices (+ Add iPhone / + Add Mac, Main sender or Backup sender, last checked, last run), How it works, Opt-out (STOP), iPhone setup and iMac setup. The whole Set up section starts closed once the 8 AM automation box is checked and a device has run. A red \"automation may not be set up\" warning stays at the top even when Set up is closed.",
       "• Texts: send settings, Message patients and Recent sends. It starts open. Recent messages and Recent sends can each be closed too.",
       "Every date on the page is mm/dd/yy. A device's last run shows the day's running total, for example \"10/29/26: 14 sent\" (everything logged for that day, not just the last batch).",
+    ].join("\n"),
+    links,
+  };
+}
+
+const MAC_TOPIC = /\b(i?mac|macbook|mac setup|setup file|\.command|not opened|open anyway|move to trash|gatekeeper|sequoia)\b/i;
+const MAC_ASK = /\b(not opened|open anyway|move to trash|blocked|can'?t open|cannot open|won'?t open|malware|apple|sequoia|set\s*up|setup|install|how)\b/i;
+
+/**
+ * "The iMac says Not Opened", "how do I set up the iMac". Pure and offline; same
+ * steps as Settings → Text Reminders → iMac setup and the Handbook.
+ */
+export function macSetupHelp(question: string, opts: { canSeeSettings?: boolean } = {}): RemindersHelp | null {
+  const raw = question.trim();
+  if (!raw || raw.startsWith("/") || raw.startsWith("@")) return null;
+  if (!MAC_TOPIC.test(raw) || !MAC_ASK.test(raw)) return null;
+  if (!/\b(remind\w*|texts?|notegoat|setup file|\.command|not opened|open anyway)\b/i.test(raw) && !/\bi?mac\b/i.test(raw)) return null;
+  const links = [{ label: "Handbook → Text reminders", href: REMINDERS_HANDBOOK_ANCHOR }, ...(opts.canSeeSettings === false ? [] : [SETTINGS_LINK])];
+  return {
+    text: [
+      "iMac setup is in Settings → Text Reminders → Set up → iMac setup. It is optional; the iPhone can send everything on its own.",
+      "1. On the iMac, open Messages and make sure it is signed in to the office Apple ID.",
+      "2. In NoteGoat, click + Add Mac and Copy setup code.",
+      "3. Click Download iMac setup. In Downloads, right-click NoteGoat-Reminders-Setup.command, choose Open, then Open again.",
+      "4. If macOS says \"Not Opened\" (newer macOS, such as Sequoia): click Done (not Move to Trash). Open System Settings → Privacy & Security, scroll down to the message about NoteGoat-Reminders-Setup.command, and click Open Anyway. Type your Mac password if it asks, then click Open Anyway again.",
+      "5. Terminal opens. Paste the setup code, then type your Mac password (nothing shows while you type; that is normal). When it says All set, press Return.",
+      "6. The first time it sends, macOS asks to let it control Messages. Click OK.",
     ].join("\n"),
     links,
   };

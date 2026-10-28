@@ -181,7 +181,7 @@ export async function queueBroadcast(
   if (!input.recipients.length) return { ok: false, error: "There's nobody to text." };
   const row = { workspace_id: workspaceId, message, target_date: input.date, exclude_canceled: true };
   const { data: b, error } = await db.from("reminder_broadcasts").insert(row).select("id").single();
-  if (error || !b) return { ok: false, error: `Couldn't queue the message: ${error?.message ?? "unknown error"}` };
+  if (error || !b) return { ok: false, error: `Couldn't send the message: ${error?.message ?? "unknown error"}` };
   const rows = input.recipients.map((r) => ({
     broadcast_id: (b as { id: string }).id,
     workspace_id: workspaceId,
@@ -195,12 +195,12 @@ export async function queueBroadcast(
   }
   if (rErr) {
     await db.from("reminder_broadcasts").update({ canceled_at: new Date().toISOString() }).eq("id", (b as { id: string }).id);
-    return { ok: false, error: `Couldn't queue the message (nothing was sent): ${rErr.message}` };
+    return { ok: false, error: `Couldn't send the message (nothing was sent): ${rErr.message}` };
   }
   return { ok: true, broadcastId: (b as { id: string }).id, count: rows.length };
 }
 
-/** Has an active Mac checked in? (Decides whether the "Queued" line mentions the iMac.) */
+/** Has an active Mac checked in? (Decides whether the "Ready for N patients" line mentions the iMac.) */
 export async function readMacSeen(db: Db, workspaceId: string): Promise<boolean> {
   const { data } = await db
     .from("reminder_devices")

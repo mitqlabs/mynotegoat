@@ -9,6 +9,7 @@
 import type { ReactNode } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
+import { SetupCard } from "@/components/setup-card";
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 
@@ -19,7 +20,7 @@ function Badge({ children, tone }: { children: ReactNode; tone: "required" | "do
       : tone === "done"
         ? "bg-emerald-100 text-emerald-800"
         : "bg-[var(--bg-soft)] text-[var(--text-muted)]";
-  return <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${cls}`}>{children}</span>;
+  return <span className={`rounded-md px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide ${cls}`}>{children}</span>;
 }
 
 function StepNumber({ n, done }: { n: number; done?: boolean }) {
@@ -63,107 +64,99 @@ export function AutomationWarning({
 export function ReminderSetupChecklist({
   settings,
   onConfirm,
+  open,
+  onToggle,
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
+  open: boolean;
+  onToggle: (next: boolean) => void;
 }) {
   const time = hourLabel(settings.sendHour);
   const confirmed = settings.automationConfirmed;
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   return (
-    <section className="grid gap-3" data-testid="reminder-setup-checklist">
-      <div className="rounded-xl border border-[var(--line-soft)] bg-white">
-        <div className="border-b border-[var(--line-soft)] px-4 py-3">
-          <p className="font-bold">Set up automatic reminders on the office iPhone</p>
-          <p className="text-sm text-[var(--text-muted)]">
-            Three steps. <b>Step 2 is required</b>: installing the shortcut does not make it run by itself.
-          </p>
-        </div>
+    <SetupCard
+      onToggle={onToggle}
+      open={open}
+      status={confirmed ? "done" : "todo"}
+      summary={
+        confirmed
+          ? `Done. You made the ${time} automation${confirmedOn ? ` on ${confirmedOn}` : ""}.`
+          : `Step 2 is required. Without it the iPhone never sends by itself.`
+      }
+      testId="reminder-setup-checklist"
+      title="Automatic reminders: 3 steps"
+    >
+      <ol className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]">
+        <li className="flex gap-3 px-3 py-3">
+          <StepNumber n={1} />
+          <div className="grid gap-1">
+            <p className="font-semibold">
+              Add the shortcut to the iPhone <Badge tone="plain">One time</Badge>
+            </p>
+            <p className="text-[var(--text-muted)]">
+              Click <b>+ Add iPhone</b> in <b>Sending devices</b>, copy the setup code, then open <b>iPhone setup</b> below and follow it.
+            </p>
+          </div>
+        </li>
 
-        <ol className="divide-y divide-[var(--line-soft)]">
-          <li className="flex gap-3 px-4 py-3">
-            <StepNumber n={1} />
-            <div className="grid gap-1 text-sm">
-              <p className="font-semibold">
-                Install the shortcut <Badge tone="plain">One time</Badge>
-              </p>
-              <p className="text-[var(--text-muted)]">
-                Click <b>+ Add iPhone</b> below, copy the code, then open <b>iPhone setup (Shortcuts app)</b> further down and
-                add <b>Send-Reminders</b>.
-              </p>
-            </div>
-          </li>
+        <li className={`flex gap-3 px-3 py-3 ${confirmed ? "bg-emerald-50/50" : "bg-amber-50"}`} data-testid="step-automation">
+          <StepNumber done={confirmed} n={2} />
+          <div className="grid min-w-0 flex-1 gap-2">
+            <p className="font-semibold">
+              Make the {time} automation <Badge tone={confirmed ? "done" : "required"}>{confirmed ? "Done" : "Required"}</Badge>
+            </p>
+            <p className="font-semibold text-amber-900">
+              The shortcut does not start by itself. You set the alarm once, on the phone. It takes about 30 seconds.
+            </p>
+            <ol className="list-decimal space-y-1.5 pl-5">
+              <li>
+                On the office iPhone, open <b>Shortcuts</b>. If you are inside a folder, tap <b>‹</b> until you reach the main screen.
+              </li>
+              <li>
+                Tap <b>Automation</b>, then <b>+</b>, then <b>Time of Day</b>.
+              </li>
+              <li>
+                Set the time to <b>{time}</b> and <b>Repeat: Every Day</b>. Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off.
+              </li>
+              <li>
+                Search <b>Run Shortcut</b> and tap it. Tap the blue <b>Shortcut</b> word and pick <b>Send-Reminders</b>. Leave <b>Input</b> empty.
+              </li>
+              <li>
+                Name it (for example <b>{time.replace(":00", "")} Reminders</b>) and go back to save it.
+              </li>
+              <li>
+                If iOS asks permission the first time it texts, tap <b>Always Allow</b>.
+              </li>
+            </ol>
+            <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
+              <li>Every day is fine. NoteGoat only sends when reminders are due, and never texts anyone twice.</li>
+              <li>Keep just one of these automations. Delete any copy.</li>
+              <li>Shortcut list empty? Use the <b>Run Shortcut</b> search, or close Shortcuts completely and try again.</li>
+              <li>Using only the iMac? Skip this step.</li>
+            </ul>
+            <label className="mt-1 inline-flex items-center gap-2 font-semibold" data-testid="automation-confirm">
+              <input checked={confirmed} className="h-4 w-4" onChange={(e) => onConfirm(e.target.checked)} type="checkbox" />
+              I made the {time} automation
+              {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(checked {confirmedOn})</span>}
+            </label>
+          </div>
+        </li>
 
-          <li className={`flex gap-3 px-4 py-3 ${confirmed ? "bg-emerald-50/50" : "bg-amber-50"}`} data-testid="step-automation">
-            <StepNumber done={confirmed} n={2} />
-            <div className="grid min-w-0 flex-1 gap-2 text-sm">
-              <p className="font-semibold">
-                Create the {time} automation <Badge tone={confirmed ? "done" : "required"}>{confirmed ? "Done" : "Required"}</Badge>
-              </p>
-              <p className="font-semibold text-amber-900">
-                The shortcut does NOT run by itself. iOS can&apos;t put a schedule inside a shortcut, so you set the timer once,
-                by hand, on the phone. Takes about 30 seconds.
-              </p>
-              <ol className="list-decimal space-y-1.5 pl-5 text-[var(--text-main)]">
-                <li>
-                  On the office iPhone, open <b>Shortcuts</b>. If you&apos;re inside a folder such as <b>All Shortcuts</b>, tap the{" "}
-                  <b>‹</b> back arrow until you reach the main screen.
-                </li>
-                <li>
-                  Open <b>Automation</b> (along the bottom, or in the list on the main screen), tap <b>+</b>, then choose{" "}
-                  <b>Time of Day</b>.
-                </li>
-                <li>
-                  Set the time to <b>{time}</b> and <b>Repeat: Every Day</b>. Turn <b>Automation</b> (run automatically /{" "}
-                  <b>Run Immediately</b>) <b>ON</b> and <b>Notify When Run</b> <b>OFF</b>.
-                </li>
-                <li>
-                  In the search bar at the bottom, type <b>Run Shortcut</b> and tap it. Tap the blue <b>Shortcut</b> word in that
-                  action and pick <b>Send-Reminders</b>. Leave <b>Input</b> empty.
-                </li>
-                <li>
-                  Rename it at the top, for example <b>{time.replace(":00", "")} Reminders</b>, then tap the back arrow to save.
-                </li>
-                <li>
-                  The first time it texts, iOS may ask permission. Tap <b>Always Allow</b>.
-                </li>
-              </ol>
-              <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-                <li>Running every day is fine. NoteGoat only sends when reminders are due, and never texts anyone twice.</li>
-                <li>Keep just one automation for this. Delete any duplicate.</li>
-                <li>
-                  Shortcut list empty when you pick one? Use the <b>Run Shortcut</b> search above, or force-quit Shortcuts and try
-                  again.
-                </li>
-                <li>iMac only? Skip this step. The iMac setup has its own timer.</li>
-              </ul>
-              <label className="mt-1 inline-flex items-center gap-2 font-semibold" data-testid="automation-confirm">
-                <input
-                  checked={confirmed}
-                  className="h-4 w-4"
-                  onChange={(e) => onConfirm(e.target.checked)}
-                  type="checkbox"
-                />
-                I created the {time} automation
-                {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(ticked {confirmedOn})</span>}
-              </label>
-            </div>
-          </li>
-
-          <li className="flex gap-3 px-4 py-3">
-            <StepNumber n={3} />
-            <div className="grid gap-1 text-sm">
-              <p className="font-semibold">
-                Turn on sending <Badge tone="plain">When the log looks right</Badge>
-              </p>
-              <p className="text-[var(--text-muted)]">
-                Tick <b>Send reminders automatically</b> and, once <b>Recent sends</b> looks right in dry run, untick <b>Dry run</b>.
-                Tomorrow at {time}, check <b>Recent sends</b> to see it ran.
-              </p>
-            </div>
-          </li>
-        </ol>
-      </div>
-    </section>
+        <li className="flex gap-3 px-3 py-3">
+          <StepNumber n={3} />
+          <div className="grid gap-1">
+            <p className="font-semibold">
+              Turn on sending <Badge tone="plain">When Recent sends looks right</Badge>
+            </p>
+            <p className="text-[var(--text-muted)]">
+              In <b>Texts</b>, check the box <b>Send reminders automatically</b>. While <b>Test mode</b> is checked, nothing is texted. When <b>Recent sends</b> looks right, uncheck <b>Test mode</b>.
+              Tomorrow at {time}, check <b>Recent sends</b> to see it ran.
+            </p>
+          </div>
+        </li>
+      </ol>
+    </SetupCard>
   );
 }

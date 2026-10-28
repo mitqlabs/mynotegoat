@@ -107,8 +107,8 @@ const hb = readFileSync("src/lib/handbook-content.ts", "utf8");
 check("handbook says the shortcut does not run by itself", () => { assert.match(hb, /The shortcut does NOT run by itself/); });
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8") + readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
 check("panel has the required step, checkbox and warning", () => {
-  assert.match(panel, /does NOT run by itself/);
-  assert.match(panel, /I created the \{time\} automation/);
+  assert.match(panel, /does not start by itself/);
+  assert.match(panel, /I made the \{time\} automation/);
   assert.match(panel, /may not be set up — see Step 2/);
 });
 

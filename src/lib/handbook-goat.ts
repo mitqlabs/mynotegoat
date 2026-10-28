@@ -137,9 +137,9 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",
     },
     {
-      heading: "Broadcast texts: who does it go to?",
+      heading: "Texting many patients at once: who gets it?",
       steps: [
-        "Ask: \"who does broadcast send to\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. Questions like these never send anything. To actually send, use \"Text patients from G.O.A.T.\" below.",
+        "Ask: \"who gets a text to everyone\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. Questions like these never send anything. To actually send, use \"Text patients from G.O.A.T.\" below.",
         "All active patients (the default): every patient whose case status is Active, once per phone number. Booked on a day: only patients with a visit that day (optional time window, skips canceled visits).",
         "Always left out: no valid phone, \"no text reminders\" or STOP replies. Discharged, Ready to Submit, Submitted, Dropped and Paid patients are not Active.",
       ],
@@ -154,11 +154,11 @@ export const goatHandbookChapter: HandbookChapter = {
         "Step 2, the message: if you didn't type one, G.O.A.T. asks \"What should the text say?\". Typing cancel or never mind stops it and nothing is sent.",
         "Step 3, the Send card: your message in a box you can edit (up to 640 characters), how many patients will get it, and a list you can open to see the names. It also shows who is left out. Nothing is sent until you tap Send.",
         "Left out, same as Message patients: no valid phone, \"no text reminders\" or STOP replies, and repeat phone numbers (one text per phone). All active patients uses the same Active rule as Message patients. Quiet hours still apply, so nothing goes out overnight.",
-        "After you tap Send, it says \"Queued.\" and tells you to run Send Reminders Now on your iPhone. The iMac is only mentioned if an iMac has actually connected. If the patient list changed while you were looking, G.O.A.T. updates the list and asks you to tap Send again, with nothing queued.",
-        "The text goes through the same queue as Settings → Text Reminders → Message patients, and shows in Recent sends and the Activity Log (Messages).",
+        "After you tap Send, it says \"Ready for N patient(s). Now run Send Reminders Now on the office iPhone to send it.\" The iMac is only mentioned if an iMac has actually connected. If Test mode is on, it tells you nothing will be texted. If the patient list changed while you were looking, G.O.A.T. updates the list and asks you to tap Send again, with nothing sent.",
+        "The text goes out the same way as Settings → Text Reminders → Message patients, and shows in Recent sends and the Activity Log (Messages).",
       ],
       watchOut: "G.O.A.T. never sends a text on its own. It is not available in practice mode. A message about texting that is a question (\"how do I text everyone\") only gets an explanation.",
-      why: "Runs entirely inside NoteGoat with your own office data, no outside AI, and no patient names or numbers leave your office. The Send tap is the only thing that queues a text.",
+      why: "Runs entirely inside NoteGoat with your own office data, no outside AI, and no patient names or numbers leave your office. The Send tap is the only thing that sends a text.",
     },
     {
       heading: "Cancel a whole day of appointments (bulk cancel)",
@@ -180,16 +180,25 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
         "Closed = office shut: no scheduling and no text reminders for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
-        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. The Appointments column on Key Dates shows the real number of booked visits, and a red notice lists Closed days that still have patients booked.",
+        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, a red \"N still booked\" count appears only on upcoming Closed days that still have patients Scheduled or set to Reschedule; every other row shows \u2014. Click it to filter the Warning List to that date (a bar says \"Showing 10/29/26 only\", with Show all). Old and cleared items are behind \"Show past & cleared\".",
       ],
       why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
+      heading: "iMac says \"Not Opened\" when setting up text reminders",
+      steps: [
+        "Ask: \"the imac says Not Opened\", \"how do I set up the imac for text reminders\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
+        "On newer macOS (Sequoia): click Done (not Move to Trash). Open System Settings → Privacy & Security, scroll to the message about NoteGoat-Reminders-Setup.command, click Open Anyway, type your Mac password if asked, then click Open Anyway again.",
+        "Then Terminal opens: paste the setup code from + Add Mac, type your Mac password (nothing shows), and press Return at All set. The iMac is optional; the iPhone sends on its own.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
     },
     {
       heading: "Text Reminders page: sections and dates",
       steps: [
         "Ask: \"where did the setup steps go on text reminders\", \"why does last run say 1 sent\", \"what format are the dates\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
-        "The page has a Set up section (checklist, devices, shortcuts, opt-out setup; closed once setup is done) and a Texts section (send settings, Message patients, Recent sends; open). Tap a heading to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
-        "All dates there are mm/dd/yy, and a device's last run shows the day's running total (for example \"10/29/26: 14 sent\").",
+        "The page has a Set up section made of cards (3-step checklist, Sending devices with a Main sender or Backup sender, How it works, Opt-out STOP, iPhone setup, iMac setup), each with a Done / To do / Optional tag and a one-line summary. It is closed once setup is done. A Texts section holds send settings, Message patients and Recent sends (open). Tap a heading or card to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
+        "All dates there are mm/dd/yy, and a sender's last run shows the day's running total (for example \"10/29/26: 14 sent\"). Test mode (nothing is texted) is a checkbox in Texts.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
     },

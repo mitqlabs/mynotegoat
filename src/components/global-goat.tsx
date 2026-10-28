@@ -85,7 +85,7 @@ import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
 import { understandCompliance } from "@/lib/goat-compliance";
-import { reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
+import { macSetupHelp, reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
 import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { broadcastHelp } from "@/lib/goat-broadcast-help";
 import { keyDatesHelp } from "@/lib/goat-keydates-help";
@@ -1522,7 +1522,7 @@ export function GlobalGoatPopup({
     setMsg(msg.id, { textDraft: { ...d, state: "queuing", result: undefined } });
     const settings = smsSettings();
     const fresh = await loadTextRecipients(client, ws, d.audience, settings).catch(() => null);
-    if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was queued. Try again." } });
+    if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was sent. Try again." } });
     const shown = new Set((d.recipients ?? []).map((r) => r.id));
     const same = fresh.recipients.length === shown.size && fresh.recipients.every((r) => shown.has(r.patientId));
     if (!same) {
@@ -1537,8 +1537,8 @@ export function GlobalGoatPopup({
     const r = await queueBroadcast(client, ws, { message: d.message, date: fresh.date, recipients: fresh.recipients, booked: d.audience.kind === "booked" }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "Couldn't queue the message." }));
     if (!r.ok) return setMsg(msg.id, { textDraft: { ...d, state: "open", result: r.error } });
     const mac = await readMacSeen(client, ws).catch(() => false);
-    logActivity({ category: "messages", action: "broadcast.queued", summary: `Queued a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
-    setMsg(msg.id, { textDraft: { ...d, state: "queued", result: `Queued. ${queuedStatusText(r.count, settings.dryRun, mac)}` } });
+    logActivity({ category: "messages", action: "broadcast.queued", summary: `Sent a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
+    setMsg(msg.id, { textDraft: { ...d, state: "queued", result: queuedStatusText(r.count, settings.dryRun, mac) } });
   };
 
   const BULK_NEEDS_EDIT = "Canceling appointments needs permission to edit the schedule. Ask an owner or admin.";
@@ -1964,7 +1964,7 @@ export function GlobalGoatPopup({
       } catch {
         sendHour = undefined;
       }
-      const rh = remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
+      const rh = macSetupHelp(question, { canSeeSettings: isGoatAdmin }) ?? remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
       if (rh) {
         push({ role: "user", text: question, practice: true });
         push({ role: "goat", text: rh.text, practice: true, links: rh.links });
