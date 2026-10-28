@@ -45,6 +45,11 @@ export interface SmsReminderSettings {
   optOutLine: boolean;
   /** Wording of that line. */
   optOutText: string;
+  /** Staff ticked "I created the 8 AM automation" (the iPhone's Shortcuts
+   *  automation iOS won't let a shortcut ship with). Saved to cloud settings. */
+  automationConfirmed: boolean;
+  /** ISO time the box was ticked ("" when not). */
+  automationConfirmedAt: string;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
@@ -67,6 +72,8 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     timeZone: "America/Los_Angeles",
     optOutLine: true,
     optOutText: DEFAULT_OPT_OUT_TEXT,
+    automationConfirmed: false,
+    automationConfirmedAt: "",
   };
 }
 
@@ -101,6 +108,10 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   if (typeof raw.timeZone === "string" && raw.timeZone.trim()) base.timeZone = raw.timeZone.trim();
   if (raw.optOutLine === false) base.optOutLine = false;
   if (typeof raw.optOutText === "string" && raw.optOutText.trim()) base.optOutText = raw.optOutText.trim().slice(0, 120);
+  if (raw.automationConfirmed === true) {
+    base.automationConfirmed = true;
+    if (typeof raw.automationConfirmedAt === "string") base.automationConfirmedAt = raw.automationConfirmedAt;
+  }
   return base;
 }
 

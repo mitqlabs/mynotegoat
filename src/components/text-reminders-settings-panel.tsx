@@ -14,9 +14,11 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { createSmsTemplate, DEFAULT_REMINDER_BODY, SMS_TOKENS } from "@/lib/sms-templates";
 import {
+  buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
   defaultSmsReminderSettings,
   normalizeSmsReminderSettings,
+  sendableReminders,
   SMS_REMINDER_SETTINGS_KEY,
   type SmsReminderSettings,
 } from "@/lib/sms-reminders";
@@ -35,6 +37,9 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
+import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
 function loadSettings(): SmsReminderSettings {
   if (typeof window === "undefined") return defaultSmsReminderSettings();
@@ -79,9 +84,12 @@ export function TextRemindersSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
   const { officeSettings } = useOfficeSettings();
   const { scheduleSettings } = useScheduleSettings();
+  const { scheduleAppointments } = useScheduleAppointments();
   const [settings, setSettings] = useState<SmsReminderSettings>(() => loadSettings());
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [log, setLog] = useState<LogRow[]>([]);
+  // Send history over the last two weeks (times + visit dates only), for the "8 AM automation may not be set up" check.
+  const [history, setHistory] = useState<{ createdAt: string; visitDate: string }[]>([]);
   const [newToken, setNewToken] = useState("");
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
@@ -144,6 +152,15 @@ export function TextRemindersSettingsPanel() {
     ]);
     setDevices((d as DeviceRow[] | null) ?? []);
     setLog((l as LogRow[] | null) ?? []);
+    const since = new Date(Date.now() - (AUTO_RUN_LOOKBACK_DAYS + 2) * 86_400_000).toISOString();
+    const { data: h } = await client
+      .from("reminder_log")
+      .select("created_at, visit_date")
+      .eq("workspace_id", workspaceId)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1000);
+    setHistory(((h as { created_at: string; visit_date: string }[] | null) ?? []).map((r) => ({ createdAt: r.created_at, visitDate: r.visit_date })));
     // Patients who replied STOP (latest action per patient, still opted out).
     const { data: o } = await client
       .from("reminder_opt_outs")
@@ -289,9 +306,37 @@ export function TextRemindersSettingsPanel() {
   };
 
   const activeDevices = devices.filter((d) => !d.revoked_at);
+  const hasIphone = activeDevices.some((d) => d.kind === "iphone");
+
+  const confirmAutomation = (confirmed: boolean) =>
+    update({ automationConfirmed: confirmed, automationConfirmedAt: confirmed ? new Date().toISOString() : "" });
+
+  // No automatic send near the send hour on the last two run days that had reminders due?
+  const missedAutoRuns = useMemo(() => {
+    if (!settings.enabled || !hasIphone) return [];
+    const patientsById = new Map(patientDirectory.map((p) => [p.id, p]));
+    const loggedVisitDates = new Set(history.map((r) => r.visitDate));
+    const firstDevice = activeDevices.reduce<string | null>((min, d) => (!min || d.created_at < min ? d.created_at : min), null);
+    const result = automationHealth({
+      now: new Date(),
+      timeZone: settings.timeZone,
+      sendHour: settings.sendHour,
+      runDays,
+      logTimes: history.map((r) => r.createdAt),
+      deviceAddedAt: firstDevice,
+      // Due = something was texted for that visit date, or reminders are still waiting for it.
+      hasDueReminders: (visitDate) =>
+        loggedVisitDates.has(visitDate) ||
+        sendableReminders(buildReminderQueue(scheduleAppointments, patientsById, settings, visitDate)).length > 0,
+    });
+    return result.warn ? result.missed : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, settings, runDays, scheduleAppointments, devices, hasIphone]);
 
   return (
     <div className="space-y-5" data-testid="text-reminders-panel">
+      <ReminderSetupChecklist hasIphone={hasIphone} onConfirm={confirmAutomation} settings={settings} warning={missedAutoRuns} />
+
       <div className="flex flex-wrap items-end gap-4">
         <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
           <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" />
@@ -517,7 +562,7 @@ export function TextRemindersSettingsPanel() {
         </ul>
         <p className="mt-2 font-semibold">Two shortcuts on the iPhone</p>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-          <li><b>Send Reminders</b> runs by itself at {hourLabel(settings.sendHour)} and texts tomorrow&apos;s patients.</li>
+          <li><b>Send-Reminders</b> texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you create the automation in <b>Step 2</b> above; the shortcut can&apos;t schedule itself.</li>
           <li>
             <b>Send Reminders Now</b> is the backup. If the phone was off or dead, tap it: it sends <b>today&apos;s</b>{" "}
             reminders that never went out (only visits still ahead, worded &quot;today&quot;), plus tomorrow&apos;s if they&apos;re due.
@@ -546,7 +591,10 @@ export function TextRemindersSettingsPanel() {
             <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
             {" "}(same steps), the backup for days the phone missed 8 AM. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
           </li>
-          <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>8:00 AM</b>, <b>Daily</b> → <b>Run Immediately</b> → <b>Send Reminders</b> → <b>Done</b>. The first run asks for permission; tap <b>Always Allow</b>.</li>
+          <li>
+            <b>Not done yet:</b> the shortcut does not run by itself. Do <b>Step 2 (required)</b> in the checklist at the top of
+            this page to create the {hourLabel(settings.sendHour)} automation.
+          </li>
         </ol>
         <details className="mt-3 text-[var(--text-muted)]" data-testid="iphone-steps-manual">
           <summary className="cursor-pointer text-xs font-semibold">Build it by hand instead</summary>
@@ -592,9 +640,9 @@ export function TextRemindersSettingsPanel() {
               <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
             </li>
             <li>
-              Tap <b>Automation</b> (bottom) → <b>+</b> → <b>Time of Day</b>. Pick <b>8:00 AM</b>, <b>Daily</b>, choose <b>Run Immediately</b>, and turn <b>Notify When Run</b> off.
+              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> in the checklist at the top of this page to
+              create the {hourLabel(settings.sendHour)} automation.
             </li>
-            <li>Tap <b>Next</b> → <b>Run Shortcut</b> → pick <b>Send Reminders</b> → <b>Done</b>. It only sends on run days.</li>
           </ol>
         </details>
       </details>

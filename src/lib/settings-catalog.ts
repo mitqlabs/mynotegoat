@@ -235,7 +235,7 @@ export const settingsSearchCatalog: Array<{
   {
     key: "textReminders",
     title: "Text Reminders",
-    aliases: ["reminder", "appointment reminder", "automatic text", "imac", "mac", "sms", "24 hour"],
+    aliases: ["reminder", "appointment reminder", "automatic text", "imac", "mac", "sms", "24 hour", "8 am", "automation", "shortcut", "send reminders", "iphone reminders"],
     parent: "templates",
   },
   {
