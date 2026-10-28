@@ -66,7 +66,7 @@ import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
-import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { softPillStyle } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import {
@@ -5409,10 +5409,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {!isCashPatient && (
             <span
               className="status-pill"
-              style={{
-                backgroundColor: withAlpha(statusColor, 0.2),
-                color: getContrastTextColor(statusColor),
-              }}
+              style={softPillStyle(statusColor)}
             >
               {caseStatus}
             </span>

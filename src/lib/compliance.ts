@@ -8,7 +8,7 @@
  * (patients.compliance), so it syncs the same way Case Status does.
  */
 
-import { getContrastTextColor } from "@/lib/color-utils";
+import { softPillStyle } from "@/lib/color-utils";
 import { unionMerge } from "@/lib/kv-merge";
 
 /** Default option labels. A default's stable id IS its original label, so values already saved on patients keep working. */
@@ -227,14 +227,35 @@ export function complianceColor(value: string | undefined, options?: ComplianceO
   return resolveComplianceOption(value, options)?.color ?? null;
 }
 
+/** Neutral pill for "Not set" and for values that don't match a live option. */
+export const COMPLIANCE_NEUTRAL_PILL = { backgroundColor: "#eef1f4", color: "#475569" } as const;
+
 /**
- * Pill colors for a compliance value. A set value is a SOLID pill in the option's own color
- * with readable text on it (the old tinted background + white text made dark colors vanish,
- * leaving what looked like a blank pill). Not set / unknown = neutral grey, always readable.
+ * Pill colors for a compliance value: the SAME soft tinted pill as Case Status
+ * (softPillStyle). Not set / unknown = neutral grey, always readable.
  */
 export function compliancePillStyle(option: ComplianceOption | undefined): { backgroundColor: string; color: string } {
-  if (!option) return { backgroundColor: "#eef1f4", color: "#475569" };
-  return { backgroundColor: option.color, color: getContrastTextColor(option.color) };
+  return option ? softPillStyle(option.color) : { ...COMPLIANCE_NEUTRAL_PILL };
+}
+
+/**
+ * What a patient's stored value shows as in the list. A value that matches a live option
+ * shows that option (its label + color). A removed option, or a value that matches nothing
+ * (legacy / typo / another device's id), still shows text — never a blank pill — in neutral grey.
+ * `allOptions` should include removed records so a removed option keeps its name.
+ */
+export function complianceDisplay(
+  value: string | undefined,
+  allOptions: ComplianceOption[],
+): { option?: ComplianceOption; label: string; known: boolean } {
+  const live = resolveComplianceOption(value, allOptions);
+  if (live) return { option: live, label: live.label, known: true };
+  const v = normalizeCompliance(value);
+  if (!v) return { label: COMPLIANCE_NOT_SET_LABEL, known: false };
+  const removed = allOptions.find((o) => o.deleted && (o.id === v || sameLabel(o.label, v)));
+  if (removed) return { label: removed.label, known: false };
+  // A generated id ("c-lx3k…") means nothing to a person; plain text is shown as typed.
+  return { label: /^c-[a-z0-9]+$/.test(v) ? "Unknown option" : v, known: false };
 }
 
 /** Filter value meaning "no compliance chosen yet". */

@@ -22,13 +22,14 @@ import {
 } from "@/lib/review-status";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
+import { ColorPillMenu } from "@/components/color-pill-menu";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useTasks } from "@/hooks/use-tasks";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { formatUsDateFromIso, type TaskPriority, type TaskRecord } from "@/lib/tasks";
-import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { softPillStyle } from "@/lib/color-utils";
 import {
   caseNumberOf,
   buildFollowUpItems,
@@ -41,7 +42,7 @@ import {
   COMPLIANCE_NOT_SET_LABEL,
   complianceAccess,
   complianceLabel,
-  compliancePillStyle,
+  complianceDisplay,
   complianceRank,
   resolveComplianceOption,
   matchesComplianceFilter,
@@ -578,7 +579,7 @@ export default function PatientsPage() {
   }, [savedFromQuery]);
 
   const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
-  const { options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
+  const { allOptions: allComplianceOptions, options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
   const { scheduleAppointments, addAppointments } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
@@ -1535,7 +1536,7 @@ export default function PatientsPage() {
       if (colId === "dateOfLoss") return formatUsDateDisplay(patient.dateOfLoss);
       if (colId === "attorney") return cleanAttorneyLabel(patient.attorney);
       if (colId === "status") return patient.caseStatus;
-      if (colId === "compliance") return complianceLabel(complianceOf(patient), complianceOptions) || "-";
+      if (colId === "compliance") return normalizeCompliance(complianceOf(patient)) ? complianceDisplay(complianceOf(patient), allComplianceOptions).label : "-";
       if (colId === "review") return reviewOf(patient);
       return "";
     };
@@ -2272,15 +2273,7 @@ export default function PatientsPage() {
                           <td key={colId} className="px-4 py-3">
                             <span
                               className="status-pill"
-                              style={{
-                                backgroundColor: withAlpha(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                  0.2,
-                                ),
-                                color: getContrastTextColor(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                ),
-                              }}
+                              style={softPillStyle(statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf")}
                             >
                               {patient.caseStatus}
                             </span>
@@ -2288,29 +2281,23 @@ export default function PatientsPage() {
                         );
                       }
                       if (colId === "compliance") {
-                        const currentOption = resolveComplianceOption(complianceOf(patient), complianceOptions);
+                        // Same soft pill as Case Status; click to pick from a menu of colored options.
+                        const shown = complianceDisplay(complianceOf(patient), allComplianceOptions);
                         // Options switched off in Settings are no longer offered, but a patient that has one still shows it.
-                        const rowOptions = currentOption && !currentOption.show ? [...complianceShownOptions, currentOption] : complianceShownOptions;
-                        // Always a value the <select> really has, so it can never render blank.
-                        const current = currentOption && rowOptions.some((option) => option.id === currentOption.id) ? currentOption.id : "";
+                        const rowOptions = shown.option && !shown.option.show ? [...complianceShownOptions, shown.option] : complianceShownOptions;
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <select
-                              aria-label={`Compliance for ${patient.fullName}`}
-                              className="status-pill max-w-full cursor-pointer border-0 py-1 pr-6 text-sm font-semibold disabled:cursor-default"
-                              disabled={!complianceCanEdit}
-                              onChange={(event) => handleListComplianceChange(patient, event.target.value)}
-                              style={compliancePillStyle(current ? currentOption : undefined)}
+                            <ColorPillMenu
+                              ariaLabel={`Compliance for ${patient.fullName}`}
+                              choices={rowOptions}
+                              onChange={(next) => handleListComplianceChange(patient, next)}
+                              readOnly={!complianceCanEdit}
+                              shownColor={shown.option?.color}
+                              shownLabel={shown.label}
                               title={complianceCanEdit ? "Change compliance — saves immediately" : "You have view-only access"}
-                              value={current}
-                            >
-                              <option value="" style={{ backgroundColor: "#ffffff", color: "#1f2937" }}>{COMPLIANCE_NOT_SET_LABEL}</option>
-                              {rowOptions.map((option) => (
-                                <option key={option.id} value={option.id} style={{ backgroundColor: "#ffffff", color: "#1f2937" }}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
+                              unsetLabel={COMPLIANCE_NOT_SET_LABEL}
+                              value={shown.option?.id ?? ""}
+                            />
                           </td>
                         );
                       }
@@ -2610,15 +2597,7 @@ export default function PatientsPage() {
                         <td key={colId} className="px-4 py-3">
                           <span
                             className="status-pill"
-                            style={{
-                              backgroundColor: withAlpha(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                0.2,
-                              ),
-                              color: getContrastTextColor(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                              ),
-                            }}
+                            style={softPillStyle(statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf")}
                           >
                             {item.caseStatus}
                           </span>
