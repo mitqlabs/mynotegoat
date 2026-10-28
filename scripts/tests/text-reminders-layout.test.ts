@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  plainResult,
+  senderRole,
+  TEMPLATE_WORDS,
   fmtDate,
   fmtDateTime,
   fmtDay,
@@ -19,6 +22,7 @@ import {
   sentFromText,
   summaryAfterEmptyRun,
 } from "../../src/lib/reminder-format";
+import { SMS_TOKENS } from "../../src/lib/sms-templates";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 import { macSetupHelp, reminderPageHelp } from "../../src/lib/goat-reminders-help";
 
@@ -59,9 +63,9 @@ assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z", revoked_
 assert.equal(officeMacSeen([dev({ kind: "iphone", last_seen_at: "2026-10-28T10:00:00Z" })]), false, "an iPhone is not a Mac");
 assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z" })]), true);
 assert.doesNotMatch(queuedStatusText(30, false, false), /iMac/);
-assert.match(queuedStatusText(30, false, false), /Run "Send Reminders Now" on your iPhone/);
-assert.match(queuedStatusText(30, false, true), /iMac also sends it automatically within about 10 minutes/);
-assert.match(queuedStatusText(30, true, true), /Dry run is on/);
+assert.match(queuedStatusText(30, false, false), /run "Send Reminders Now" on the office iPhone/);
+assert.match(queuedStatusText(30, false, true), /iMac also sends it by itself within about 10 minutes/);
+assert.match(queuedStatusText(30, true, true), /Test mode is on, so nothing will be texted/);
 assert.equal(sentFromText(false), "your iPhone");
 assert.equal(sentFromText(true), "your iPhone or iMac");
 const composer = readFileSync("src/components/message-patients-composer.tsx", "utf8");
@@ -152,7 +156,7 @@ assert.doesNotMatch(panel, /Two shortcuts on the iPhone/);
 assert.equal((panel.match(/How it works/g) ?? []).length >= 1, true);
 // Device token: shown only after creating one, with Copy, Hide and a don't-share note.
 assert.match(panel, /\{newToken && \(/);
-for (const needle of ['data-testid="copy-device-token"', 'data-testid="hide-device-token"', "Do not share this code", "It will not be shown again"]) assert.ok(panel.includes(needle), needle);
+for (const needle of ['data-testid="copy-device-token"', 'data-testid="hide-device-token"', "Do not share this setup code", "It will not be shown again"]) assert.ok(panel.includes(needle), needle);
 assert.match(panel, /\+ Add iPhone[\s\S]{0,200}\+ Add Mac[\s\S]{0,400}testId="section-devices"/, "Add buttons sit in the Sending devices card header");
 // iMac: the Sequoia "Not Opened" step is there, and the manual steps stay nested.
 const iMac = panel.slice(panel.indexOf('testId="section-imac"'));
@@ -173,3 +177,27 @@ const pg = reminderPageHelp("where did the setup steps go on text reminders?");
 assert.ok(pg && /Sending devices/.test(pg.text) && /How it works/.test(pg.text) && /iMac setup/.test(pg.text));
 
 console.log("text-reminders-layout: OK");
+
+// ---- Plain words: no jargon in what people read ----
+assert.equal(senderRole(true), "Main sender");
+assert.equal(senderRole(false), "Backup sender");
+assert.equal(plainResult("dry-run"), "Test mode (not texted)");
+assert.equal(plainResult("failed"), "Did not send");
+assert.equal(plainResult("sent"), "Sent");
+for (const t of SMS_TOKENS) assert.ok(TEMPLATE_WORDS.some((w) => w.token === t.token), `plain words for ${t.token}`);
+assert.equal(TEMPLATE_WORDS.length, SMS_TOKENS.length);
+const composerSrc = readFileSync("src/components/message-patients-composer.tsx", "utf8");
+const checklistSrc = readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
+for (const [name, src] of [["panel", panel], ["composer", composerSrc], ["checklist", checklistSrc]] as const) {
+  for (const bad of ["Dry run", "Revoke", "Make primary", "Queue message", "Queuing", "Placeholders:", "New code", "Copy code", "Hide code"]) {
+    assert.ok(!src.includes(bad), `${name} no longer says "${bad}"`);
+  }
+}
+for (const good of ["Test mode (nothing is texted)", "senderRole(d.is_primary)", "Make main sender", "Get new setup code", "Copy setup code", "Hide setup code", "What can I put in a template?", 'data-testid="run-days-help"']) {
+  assert.ok(panel.includes(good), `panel says "${good}"`);
+}
+assert.match(panel, />\s*Remove\s*</, "Remove button");
+assert.match(panel, /appConfirm\("Remove this sender\?/, "Remove asks first");
+assert.ok(composerSrc.includes('"Send message"') && composerSrc.includes("Sending…"), "composer button says Send message");
+assert.match(panel, /<details[^>]*data-testid="template-words"/, "placeholders hidden behind a link");
+console.log("plain words checks passed");

@@ -96,7 +96,7 @@ export function ReminderSetupChecklist({
               Add the shortcut to the iPhone <Badge tone="plain">One time</Badge>
             </p>
             <p className="text-[var(--text-muted)]">
-              Click <b>+ Add iPhone</b> in <b>Sending devices</b>, copy the code, then open <b>iPhone setup</b> below and follow it.
+              Click <b>+ Add iPhone</b> in <b>Sending devices</b>, copy the setup code, then open <b>iPhone setup</b> below and follow it.
             </p>
           </div>
         </li>
@@ -139,7 +139,7 @@ export function ReminderSetupChecklist({
             <label className="mt-1 inline-flex items-center gap-2 font-semibold" data-testid="automation-confirm">
               <input checked={confirmed} className="h-4 w-4" onChange={(e) => onConfirm(e.target.checked)} type="checkbox" />
               I made the {time} automation
-              {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(ticked {confirmedOn})</span>}
+              {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(checked {confirmedOn})</span>}
             </label>
           </div>
         </li>
@@ -148,10 +148,10 @@ export function ReminderSetupChecklist({
           <StepNumber n={3} />
           <div className="grid gap-1">
             <p className="font-semibold">
-              Turn on sending <Badge tone="plain">When the log looks right</Badge>
+              Turn on sending <Badge tone="plain">When Recent sends looks right</Badge>
             </p>
             <p className="text-[var(--text-muted)]">
-              In <b>Texts</b>, tick <b>Send reminders automatically</b>. When <b>Recent sends</b> looks right, untick <b>Dry run</b>.
+              In <b>Texts</b>, check the box <b>Send reminders automatically</b>. While <b>Test mode</b> is checked, nothing is texted. When <b>Recent sends</b> looks right, uncheck <b>Test mode</b>.
               Tomorrow at {time}, check <b>Recent sends</b> to see it ran.
             </p>
           </div>

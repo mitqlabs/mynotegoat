@@ -3,7 +3,7 @@
 /**
  * Settings → Text Reminders. Automatic day-before appointment texts sent
  * from the office Mac. Settings live in casemate.sms-reminders.v1
- * (localStorage + workspace_kv); devices and the send log live in Supabase.
+ * (this browser + the cloud copy); devices and the send log live in Supabase.
  */
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -12,7 +12,7 @@ import { DraftTextarea } from "@/components/draft-textarea";
 import { markLocalWrite } from "@/lib/local-sync";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { createSmsTemplate, DEFAULT_REMINDER_BODY, SMS_TOKENS } from "@/lib/sms-templates";
+import { createSmsTemplate, DEFAULT_REMINDER_BODY } from "@/lib/sms-templates";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -40,7 +40,7 @@ import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPref
 import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
-import { devicesStatus, fmtDate, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { devicesStatus, fmtDate, plainResult, senderRole, TEMPLATE_WORDS, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -244,8 +244,8 @@ export function TextRemindersSettingsPanel() {
 
   const addDevice = async (kind: "mac" | "iphone") => {
     const client = getSupabaseBrowserClient();
-    if (!client || !workspaceId) return setMessage("Sign in to add a device.");
-    const name = (await appPrompt("Name this device", { defaultValue: kind === "iphone" ? "Office iPhone" : "Office iMac" }))?.trim();
+    if (!client || !workspaceId) return setMessage("Sign in to add a sender.");
+    const name = (await appPrompt("Give this sender a name", { defaultValue: kind === "iphone" ? "Office iPhone" : "Office iMac" }))?.trim();
     if (!name) return;
     const token = generateDeviceToken();
     const firstActive = !devices.some((d) => !d.revoked_at);
@@ -261,7 +261,7 @@ export function TextRemindersSettingsPanel() {
       const others = devices.filter((d) => !d.revoked_at).map((d) => d.id);
       if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
     }
-    if (error) return setMessage(`Couldn't add the device: ${error.message}`);
+    if (error) return setMessage(`Couldn't add the sender: ${error.message}`);
     setNewToken(token);
     setNewTokenName(name);
     setNewTokenKind(kind);
@@ -272,16 +272,16 @@ export function TextRemindersSettingsPanel() {
   };
 
   const revokeDevice = async (id: string) => {
-    if (!(await appConfirm("Revoke this device? It will stop sending immediately."))) return;
+    if (!(await appConfirm("Remove this sender? It will stop sending texts right away. You can add it again later.", { confirmLabel: "Remove", cancelLabel: "Keep it", danger: true }))) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     const { error } = await client.from("reminder_devices").update({ revoked_at: new Date().toISOString() }).eq("id", id);
-    if (error) setMessage(`Couldn't revoke: ${error.message}`);
+    if (error) setMessage(`Couldn't remove it: ${error.message}`);
     void refresh();
   };
 
   const newCode = async (id: string) => {
-    if (!(await appConfirm("Make a new code for this device? The old code stops working; update it in the Shortcut."))) return;
+    if (!(await appConfirm("Get a new setup code for this sender? The old code stops working, so you will need to paste the new one into the iPhone or iMac setup.", { confirmLabel: "Get new setup code", cancelLabel: "Cancel" }))) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     const token = generateDeviceToken();
@@ -289,10 +289,10 @@ export function TextRemindersSettingsPanel() {
       .from("reminder_devices")
       .update({ token_hash: await hashDeviceToken(token) })
       .eq("id", id);
-    if (error) return setMessage(`Couldn't make a new code: ${error.message}`);
+    if (error) return setMessage(`Couldn't make a new setup code: ${error.message}`);
     const dev = devices.find((d) => d.id === id);
     setNewToken(token);
-    setNewTokenName(dev?.name ?? "this device");
+    setNewTokenName(dev?.name ?? "this sender");
     setNewTokenKind(dev?.kind === "mac" ? "mac" : "iphone");
     setCopied(false);
     setMessage("");
@@ -306,7 +306,7 @@ export function TextRemindersSettingsPanel() {
     const others = devices.filter((d) => d.id !== id && !d.revoked_at).map((d) => d.id);
     if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
     const { error } = await client.from("reminder_devices").update({ is_primary: true }).eq("id", id);
-    if (error) setMessage(`Couldn't change the primary device: ${error.message}`);
+    if (error) setMessage(`Couldn't change the main sender: ${error.message}`);
     void refresh();
   };
 
@@ -361,7 +361,7 @@ export function TextRemindersSettingsPanel() {
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
       <CollapsibleSection
-        hint={setupDone ? "Done. Open to change devices, shortcuts or opt-out setup." : "Checklist, sending devices, shortcuts and opt-out setup."}
+        hint={setupDone ? "Done. Open to change senders, shortcuts or opt-out setup." : "Checklist, sending devices, shortcuts and opt-out setup."}
         onToggle={(next) => setSection("setup", next)}
         open={setupOpen}
         testId="section-setup"
@@ -394,10 +394,10 @@ export function TextRemindersSettingsPanel() {
       >
         {newToken && (
           <div className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3" data-testid="new-device-token">
-            <p className="font-semibold">Your new code for {newTokenName}. Copy it now. It will not be shown again.</p>
+            <p className="font-semibold">Your new setup code for {newTokenName}. Copy it now. It will not be shown again.</p>
             <code className="select-all break-all rounded-md bg-white px-2 py-1.5 font-mono text-sm">{newToken}</code>
             <p className="text-amber-900">
-              <b>Do not share this code.</b> Anyone who has it can send texts as your office. Paste it into{" "}
+              <b>Do not share this setup code.</b> Anyone who has it can send texts as your office. Paste it into{" "}
               {newTokenKind === "mac" ? "the iMac setup" : "the iPhone setup"} below.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -409,16 +409,16 @@ export function TextRemindersSettingsPanel() {
                 }}
                 type="button"
               >
-                {copied ? "✓ Copied" : "Copy code"}
+                {copied ? "✓ Copied" : "Copy setup code"}
               </button>
               <button className={rowBtn} data-testid="hide-device-token" onClick={() => { setNewToken(""); setCopied(false); }} type="button">
-                Hide code
+                Hide setup code
               </button>
             </div>
           </div>
         )}
         {activeDevices.length === 0 ? (
-          <p className="text-[var(--text-muted)]">No device connected yet. Click <b>+ Add iPhone</b> (or <b>+ Add Mac</b>) above.</p>
+          <p className="text-[var(--text-muted)]">No sender yet. Click <b>+ Add iPhone</b> (or <b>+ Add Mac</b>) above.</p>
         ) : (
           <ul className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]" data-testid="device-list">
             {activeDevices.map((d) => {
@@ -429,23 +429,23 @@ export function TextRemindersSettingsPanel() {
                     <p className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{d.name}</span>
                       <span className="rounded-md bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold">
-                        {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
+                        {senderRole(d.is_primary)}
                       </span>
                     </p>
-                    <p className="text-[var(--text-muted)]">{lastCheckedText(d.last_seen_at, settings.timeZone)}</p>
+                    <p className="text-[var(--text-muted)]">{d.kind === "iphone" ? "iPhone" : "iMac"} · {lastCheckedText(d.last_seen_at, settings.timeZone)}</p>
                     {run && <p className="text-[var(--text-muted)]">{run}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {!d.is_primary && (
                       <button className={rowBtn} onClick={() => void makePrimary(d.id)} type="button">
-                        Make primary
+                        Make main sender
                       </button>
                     )}
                     <button className={rowBtn} onClick={() => void newCode(d.id)} type="button">
-                      New code
+                      Get new setup code
                     </button>
                     <button className={`${rowBtn} text-red-700`} onClick={() => void revokeDevice(d.id)} type="button">
-                      Revoke
+                      Remove
                     </button>
                   </div>
                 </li>
@@ -465,15 +465,14 @@ export function TextRemindersSettingsPanel() {
       >
         <ul className="list-disc space-y-1.5 pl-5" data-testid="how-it-works">
           <li>
-            On each run day at {hourLabel(settings.sendHour)}, your main device (iPhone or Mac) gets tomorrow&apos;s list and texts each
-            patient from Messages, a little apart. Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}.
+            On each run day at {hourLabel(settings.sendHour)}, your main sender (the iPhone or iMac) texts each patient with a visit the next day, one at a time, from the Messages app. Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}.
           </li>
           <li>
-            Left out: closed days (Key Dates), canceled and no-show visits, patients marked &quot;no text reminders&quot;, patients with no
+            Who does not get a text: closed days (Key Dates), canceled and no-show visits, patients marked &quot;no text reminders&quot;, patients with no
             phone, and anyone who replied STOP.
           </li>
           <li>
-            Nobody gets two texts. It is one text per patient per day. A backup device only sends what is still unsent 30 minutes later.
+            Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
             <b>Send-Reminders</b> (iPhone shortcut) texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you
@@ -481,11 +480,11 @@ export function TextRemindersSettingsPanel() {
           </li>
           <li>
             <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
-            reminders (only visits still ahead, worded &quot;today&quot;), tomorrow&apos;s if due, and any queued Message patients texts.
+            reminders (only visits still ahead, worded &quot;today&quot;), tomorrow&apos;s if due, and any Message patients texts that are waiting to go out.
             Anyone already texted is skipped.
           </li>
-          <li>The iMac checks every 10 minutes by itself, so it needs no button. It also picks up STOP replies by itself.</li>
-          <li>Dry run means devices only log what they would send. Turn it off when the log looks right.</li>
+          <li>The iMac looks for texts to send every 10 minutes by itself, so it needs no button. It also notices STOP replies by itself.</li>
+          <li>Test mode means nothing is texted. It only shows in Recent sends what would have gone out. Turn it off when Recent sends looks right.</li>
         </ul>
         <SendFromIphoneButton />
       </SetupCard>
@@ -544,7 +543,7 @@ export function TextRemindersSettingsPanel() {
             <li>
               On the office iPhone, tap{" "}
               <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
-              {" "}→ <b>Add Shortcut</b>, and paste the same <Mono>ngr_</Mono> device code when it asks.
+              {" "}→ <b>Add Shortcut</b>, and paste the same setup code when it asks.
             </li>
             <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
             <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
@@ -571,11 +570,11 @@ export function TextRemindersSettingsPanel() {
       >
         <div className="space-y-3" data-testid="iphone-steps">
           <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy code</b>. It starts with <Mono>ngr_</Mono>. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
+            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>. It is a long line of letters and numbers. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
             <li>
               On the office iPhone, open this page and tap{" "}
               <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-              {" "}→ <b>Add Shortcut</b>. Paste your code when it asks.
+              {" "}→ <b>Add Shortcut</b>. Paste your setup code when it asks.
             </li>
             <li>
               Get{" "}
@@ -587,9 +586,9 @@ export function TextRemindersSettingsPanel() {
             </li>
           </ol>
         </div>
-        <InnerFold testId="iphone-steps-manual" title="Advanced: build the shortcut by hand instead">
+        <InnerFold testId="iphone-steps-manual" title="Only if the download did not work: build the shortcut by hand">
           <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
+            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>.</li>
             <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
             <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
             <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
@@ -627,7 +626,7 @@ export function TextRemindersSettingsPanel() {
             <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
             <li>
               Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
-              <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
+              <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Nobody gets two texts.
             </li>
             <li>
               <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the {hourLabel(settings.sendHour)} automation.
@@ -647,7 +646,7 @@ export function TextRemindersSettingsPanel() {
         <div className="space-y-3" data-testid="mac-steps">
           <ol className="list-decimal space-y-2 pl-5">
             <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
-            <li>Above, click <b>+ Add Mac</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
+            <li>Above, click <b>+ Add Mac</b>, then <b>Copy setup code</b>.</li>
             <li>
               <a className="font-semibold text-[var(--brand-primary)] underline" data-testid="mac-setup-download" download href="/mac/NoteGoat-Reminders-Setup.command">Download iMac setup</a>
               . Then open <b>Downloads</b>, <b>right-click</b> the file <Mono>NoteGoat-Reminders-Setup.command</Mono>, choose <b>Open</b>, then <b>Open</b> again.
@@ -658,28 +657,28 @@ export function TextRemindersSettingsPanel() {
               and click <b>Open Anyway</b>. Type your Mac password if it asks, then click <b>Open Anyway</b> again.
             </li>
             <li>
-              Terminal opens and explains each step. Paste the code when it asks, then type your <b>Mac password</b>. Nothing shows while you
+              Terminal opens and explains each step. Paste the setup code when it asks, then type your <b>Mac password</b>. Nothing shows while you
               type, and that is normal. (The password lets the iMac wake up at 8:45 AM.) When it says <b>All set</b>, press <b>Return</b>.
             </li>
             <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
           </ol>
-          <p className="mt-2 text-[var(--text-muted)]">As a backup, the iMac waits 30 minutes for the primary device and only sends what is still unsent.</p>
+          <p className="mt-2 text-[var(--text-muted)]">The iMac is the backup sender. It waits 30 minutes for the main sender and only sends what is still unsent.</p>
         </div>
-        <InnerFold testId="mac-steps-manual" title="Advanced: set up in Terminal by hand">
+        <InnerFold testId="mac-steps-manual" title="Only if the download did not work: set up in Terminal by hand">
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
-            <li>Above, click <b>+ Add Mac</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
+            <li>Above, click <b>+ Add Mac</b>, then <b>Copy setup code</b>.</li>
             <li>Open <b>Terminal</b> (press <b>⌘ Space</b>, type <b>Terminal</b>, press <b>Return</b>).</li>
             <li>
-              Paste this and press <b>Return</b> (it downloads the sender):
+              Paste this and press <b>Return</b> (it downloads the sending program):
               <div className="mt-1">
                 <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && RAW=https://raw.githubusercontent.com/mitqlabs/mynotegoat/main/tools/mac-reminders; curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
               </div>
             </li>
             <li>Paste <Mono>bash install.sh</Mono> and press <b>Return</b>.</li>
-            <li>When it asks, paste the code and press <b>Return</b> (nothing shows while pasting; that&apos;s normal). It saves the code in the Keychain and tests the connection.</li>
+            <li>When it asks, paste the setup code and press <b>Return</b> (nothing shows while pasting; that&apos;s normal). It saves the setup code on the iMac and checks that it works.</li>
             <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
-            <li>Done. The Mac checks every 10 minutes between 8 AM and 6 PM. As backup it waits 30 minutes for the primary and only sends what is still unsent.</li>
+            <li>Done. The Mac checks every 10 minutes between 8 AM and 6 PM. As the backup sender it waits 30 minutes for the main sender and only sends what is still unsent.</li>
             <li>
               Optional: wake a sleeping iMac each morning. In Terminal paste{" "}
               <Mono>sudo pmset repeat wakeorpoweron MTWRFSU 08:45:00</Mono> and type your Mac password. To undo:{" "}
@@ -690,7 +689,7 @@ export function TextRemindersSettingsPanel() {
               <Mono>bash ~/Library/Application\ Support/NoteGoat/notegoat-reminders.sh --preview</Mono>. Log:{" "}
               <Mono>~/Library/Logs/NoteGoat/reminders.log</Mono>
             </li>
-            <li>Made a <b>New code</b>? Run the &quot;bash install.sh&quot; step again and paste the new code. To remove: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then <b>Revoke</b> the device above.</li>
+            <li>Got a <b>new setup code</b>? Run the &quot;bash install.sh&quot; step again and paste the new code. To remove the iMac: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then click <b>Remove</b> on its row above.</li>
           </ol>
         </InnerFold>
       </SetupCard>
@@ -710,7 +709,7 @@ export function TextRemindersSettingsPanel() {
         </label>
         <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
           <input checked={settings.dryRun} onChange={(e) => update({ dryRun: e.target.checked })} type="checkbox" />
-          Dry run (log only, send nothing)
+          Test mode (nothing is texted)
         </label>
         <label className="grid gap-1">
           <span className={label}>Send time</span>
@@ -725,7 +724,7 @@ export function TextRemindersSettingsPanel() {
       </div>
 
       <div className="grid gap-1">
-        <span className={label}>Run days (each run texts the NEXT day&apos;s appointments)</span>
+        <span className={label}>Run days</span>
         <div className="flex flex-wrap items-center gap-2">
           {WEEKDAY_SHORT.map((day, dow) => (
             <button
@@ -749,6 +748,9 @@ export function TextRemindersSettingsPanel() {
             </button>
           )}
         </div>
+        <p className="text-sm text-[var(--text-muted)]" data-testid="run-days-help">
+          Pick the days the phone sends texts. Each day it texts the patients who have a visit the <b>next</b> day. For example, if Thursday is picked, patients booked Friday get a text on Thursday.
+        </p>
       </div>
 
       <div className="grid gap-2">
@@ -793,9 +795,20 @@ export function TextRemindersSettingsPanel() {
             value={template.body}
           />
         )}
-        <p className="text-xs text-[var(--text-muted)]">
-          Placeholders: {SMS_TOKENS.map((t) => `${t.token} = ${t.label}`).join(" · ")}. Keep it short; no diagnoses or visit details.
-        </p>
+        <details className="text-sm" data-testid="template-words">
+          <summary className="cursor-pointer font-semibold text-[var(--brand-primary)]">What can I put in a template?</summary>
+          <div className="mt-2 grid gap-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2">
+            <p className="text-[var(--text-muted)]">Type any of these words exactly as shown. NoteGoat swaps each one for the real name, date or time when the text is sent.</p>
+            <ul className="grid gap-0.5">
+              {TEMPLATE_WORDS.map((w) => (
+                <li key={w.token}>
+                  <Mono>{w.token}</Mono> becomes {w.plain}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[var(--text-muted)]">Keep it short. Do not put health details in a text.</p>
+          </div>
+        </details>
         {template && (
           <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
             <span className="font-semibold">Preview: </span>
@@ -833,7 +846,7 @@ export function TextRemindersSettingsPanel() {
               <tr>
                 <th className="py-1 pr-3">When</th>
                 <th className="py-1 pr-3">Visit date</th>
-                <th className="py-1 pr-3">Phone</th>
+                <th className="py-1 pr-3">Phone ending</th>
                 <th className="py-1">Result</th>
               </tr>
             </thead>
@@ -842,9 +855,9 @@ export function TextRemindersSettingsPanel() {
                 <tr className="border-t border-[var(--line-soft)]" key={row.id}>
                   <td className="py-1 pr-3">{fmtDateTime(row.created_at, settings.timeZone)}</td>
                   <td className="py-1 pr-3">{fmtDate(row.visit_date)}</td>
-                  <td className="py-1 pr-3">•••{row.phone_last4}</td>
+                  <td className="py-1 pr-3">{row.phone_last4}</td>
                   <td className="py-1">
-                    {row.status}
+                    {plainResult(row.status)}
                     {row.error ? ` — ${row.error}` : ""}
                   </td>
                 </tr>

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → Text Reminders → Message patients. Queue one text (e.g. an
+ * Settings → Text Reminders → Message patients. Send one text (e.g. an
  * emergency closure) for an audience: all active patients (default) or the
  * patients booked on a day. Stored in Supabase (reminder_broadcasts +
  * reminder_broadcast_recipients); the office's sending device delivers it
@@ -295,9 +295,9 @@ export function MessagePatientsComposer({
         isBooked ? `Booked ${usDate(date)}${windowLabel ? `, ${windowLabel}` : ""}.` : `${audienceOption.label}.`,
         ...(!isBooked && sendDay.deferred ? [`It's quiet hours now. It will go out after ${to12h(`${String(settings.quietEndHour).padStart(2, "0")}:00`)}.`] : []),
         `"${message}"`,
-        ...(settings.dryRun ? ["Dry run is on: nothing will actually be texted; it will only be logged."] : []),
+        ...(settings.dryRun ? ["Test mode is on: nothing will actually be texted."] : []),
       ],
-      confirmLabel: "Queue message",
+      confirmLabel: "Send message",
       cancelLabel: "Cancel",
     });
     if (!ok) return;
@@ -308,7 +308,7 @@ export function MessagePatientsComposer({
     const { data: b, error } = await client.from("reminder_broadcasts").insert(row).select("id").single();
     if (error || !b) {
       setBusy(false);
-      return setStatus(`Couldn't queue the message: ${error?.message ?? "unknown error"}`);
+      return setStatus(`Couldn't send the message: ${error?.message ?? "unknown error"}`);
     }
     const rows = recipients.map((r) => ({
       broadcast_id: b.id,
@@ -326,7 +326,7 @@ export function MessagePatientsComposer({
       await client.from("reminder_broadcasts").update({ canceled_at: new Date().toISOString() }).eq("id", b.id);
     }
     setBusy(false);
-    if (rErr) return setStatus(`Couldn't queue the message (nothing was sent): ${rErr.message}`);
+    if (rErr) return setStatus(`Couldn't send the message (nothing was sent): ${rErr.message}`);
     setText("");
     setJustQueued(true);
     setStatus(queuedStatusText(recipients.length, settings.dryRun, macConnected));
@@ -358,7 +358,7 @@ export function MessagePatientsComposer({
       </div>
       {settings.dryRun && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 font-semibold text-amber-800">
-          Dry run is on: messages are only logged, nobody is texted.
+          Test mode is on: nobody is texted. Turn it off in Texts when you are ready.
         </p>
       )}
       <label className="grid gap-1">
@@ -427,7 +427,7 @@ export function MessagePatientsComposer({
           onClick={() => void queue()}
           type="button"
         >
-          {busy ? "Queuing…" : "Queue message"}
+          {busy ? "Sending…" : "Send message"}
         </button>
       </div>
       {showList && recipients.length > 0 && (
@@ -457,7 +457,7 @@ export function MessagePatientsComposer({
         <CollapsibleSection
           actions={
             <button className="text-xs font-semibold text-[var(--brand-primary)]" onClick={() => void loadHistory()} type="button">
-              Refresh status
+              Refresh
             </button>
           }
           onToggle={(next) => onRecentToggle?.(next)}
@@ -474,9 +474,9 @@ export function MessagePatientsComposer({
             const summary = h.canceled_at
               ? `Canceled · sent ${count("sent")} of ${rs.length}`
               : count("dry-run")
-                ? `Dry run · ${count("dry-run")} logged`
+                ? `Test mode · ${count("dry-run")} not texted`
                 : queued
-                  ? `Queued · sent ${count("sent")} of ${rs.length}`
+                  ? `Waiting · sent ${count("sent")} of ${rs.length}`
                   : `Sent ${count("sent")} of ${rs.length}${count("failed") ? ` · ${count("failed")} failed` : ""}`;
             return (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-1" key={h.id}>
