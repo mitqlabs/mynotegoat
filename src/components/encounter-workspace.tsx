@@ -4183,6 +4183,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           {selectedEncounter && (
             <CaseNotesBox
               patientId={selectedEncounter.patientId}
+              patientName={selectedPatient?.fullName ?? ""}
               seed={selectedPatient?.matrix?.notes ?? ""}
             />
           )}
