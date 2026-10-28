@@ -365,6 +365,48 @@ export const handbookChaptersOffice: HandbookChapter[] = [
     ],
   },
   {
+    id: "text-reminders",
+    title: "Text reminders (8 AM automation)",
+    summary: "Set up automatic appointment texts from the office iPhone, and what to do when they didn't send.",
+    audience: "admin",
+    tasks: [
+      {
+        heading: "Set up automatic reminders on the iPhone (3 steps)",
+        steps: [
+          "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the code, then add the Send-Reminders shortcut as shown under iPhone setup (Shortcuts app).",
+          "Step 2 (REQUIRED): create the 8 AM automation. The shortcut does NOT run by itself. iOS can't put a schedule inside a shortcut, so you set the timer once, by hand. Steps are below.",
+          "Step 3: tick Send reminders automatically in Text Reminders and, once Recent sends looks right in dry run, untick Dry run. Tomorrow morning check Recent sends to see it ran.",
+          "On the Text Reminders page, tick \u201cI created the 8 AM automation\u201d when Step 2 is done. The card turns green.",
+        ],
+        why: "Installing the shortcut only gives the phone something to run. Nothing tells it when. The automation is the alarm clock, and only you can create it on the phone.",
+      },
+      {
+        heading: "Step 2: create the 8 AM automation (about 30 seconds)",
+        steps: [
+          "On the office iPhone, open Shortcuts. If you're inside All Shortcuts or a folder, tap the back arrow until you reach the main screen.",
+          "Open Automation and tap +.",
+          "Choose Time of Day. Set 8:00 AM and Repeat: Every Day. Turn Automation (Run Immediately) ON and Notify When Run OFF.",
+          "In the search bar at the bottom, type Run Shortcut and tap it. Tap the blue Shortcut word and pick Send-Reminders. Leave Input empty.",
+          "Rename it at the top, for example 8 AM Reminders, then save.",
+          "The first time it texts, iOS may ask permission. Tap Always Allow.",
+        ],
+        why: "Running every day is fine. NoteGoat only sends when reminders are due and never texts anyone twice.",
+        watchOut: "Keep only one automation for this. If your office changed the send hour in Text Reminders, make the automation match that time.",
+      },
+      {
+        heading: "Reminders didn't send",
+        steps: [
+          "Open the iPhone's Shortcuts → Automation tab. If it's empty, Step 2 was never done. Do it now.",
+          "If the automation is there, tap it and check it's Every Day, Run Immediately is on, and it runs Send-Reminders.",
+          "In NoteGoat, open Text Reminders and read Recent sends. Reminders are skipped for patients who opted out, have no phone number, or aren't on a Scheduled visit.",
+          "Check that Send reminders automatically is on, Dry run is off, and today is one of the Run days.",
+          "Need them out right now? Use Send Reminders Now in Text Reminders, or run the Send-Reminders shortcut by hand.",
+        ],
+        why: "If the phone hasn't sent by itself for two expected days, Text Reminders shows a red warning: \u201cYour 8 AM automation may not be set up — see Step 2\u201d.",
+      },
+    ],
+  },
+  {
     id: "reviews",
     title: "Reviews",
     summary: "Who to ask for a Google review, and what the four statuses mean.",

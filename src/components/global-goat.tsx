@@ -77,6 +77,8 @@ import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
 import { understandCompliance } from "@/lib/goat-compliance";
+import { remindersHelp } from "@/lib/goat-reminders-help";
+import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { broadcastHelp } from "@/lib/goat-broadcast-help";
 import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
@@ -1756,6 +1758,21 @@ export function GlobalGoatPopup({
     // Understand first, then act: straight to one confirm card (or one short question).
     const skipUnderstand = understoodRef.current;
     understoodRef.current = false;
+    // "reminders didn't send" / "how do I set up 8 AM reminders": the Handbook steps, including the required iPhone automation.
+    if (!opts && casual && !skipUnderstand && !flowRef.current && !replyPending() && !askRef.current) {
+      let sendHour: number | undefined;
+      try {
+        sendHour = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null")).sendHour;
+      } catch {
+        sendHour = undefined;
+      }
+      const rh = remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin });
+      if (rh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: rh.text, practice: true, links: rh.links });
+        return;
+      }
+    }
     // Compliance ("set compliance for X to Yes", "how many are non-compliant") and "what notes does X have":
     // answered from the office's own settings and data, before the general understanding step can misroute them.
     if (!opts && casual && !skipUnderstand && !flowRef.current && !replyPending() && !askRef.current) {
