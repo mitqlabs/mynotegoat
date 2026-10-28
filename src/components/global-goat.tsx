@@ -65,7 +65,7 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { caseNumberOf } from "@/lib/follow-up-queue";
 import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { notifyChange } from "@/lib/local-sync";
-import { CASE_NOTE_ENTRIES_KEY, addEntry, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
+import { CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
 import { currentAuthor as currentNoteAuthor } from "@/hooks/use-case-note-entries";
 import { logActivity } from "@/lib/activity-log";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
@@ -75,7 +75,9 @@ import { caseReviewAnswer, detectPipeline, detectReview, pipelineAnswer, type Pi
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
-import { loadCaseStatuses } from "@/lib/case-statuses";
+import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
+import { understandCompliance } from "@/lib/goat-compliance";
+import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
@@ -384,7 +386,7 @@ export function GlobalGoatPopup({
   const practiceBusy = false;
   const { addAppointments, removeAppointment, updateAppointment } = useScheduleAppointments();
   const { addTask, tasks: openTaskRows } = useTasks();
-  const { roleTier, roleKnown } = useWorkspaceAccess();
+  const { roleTier, roleKnown, canEdit: canEditFeature } = useWorkspaceAccess();
   /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
   const isGoatAdmin = roleKnown && isAdminTier(roleTier);
   /** Null when office stats are allowed, else the reply to give. */
@@ -1663,7 +1665,11 @@ export function GlobalGoatPopup({
     if (!q || q.state !== "open") return;
     const plan: QuickPlan = time ? { ...q, time } : q;
     let result = "";
-    if (plan.kind === "doi" && plan.doi) {
+    if (plan.kind === "compliance" && plan.compliance !== undefined) {
+      updatePatientRecordById(plan.patientId, { compliance: normalizeCompliance(plan.compliance) ?? "" });
+      const label = plan.compliance ? complianceLabel(plan.compliance, loadComplianceOptions()) || plan.compliance : "";
+      result = label ? `✓ Compliance set to ${label}.` : "✓ Compliance cleared.";
+    } else if (plan.kind === "doi" && plan.doi) {
       updatePatientRecordById(plan.patientId, { dateOfLoss: plan.doi });
       result = `✓ Date of injury set to ${cardDate(plan.doi)}.`;
     } else if (plan.appointmentId) {
@@ -1740,6 +1746,24 @@ export function GlobalGoatPopup({
     // Understand first, then act: straight to one confirm card (or one short question).
     const skipUnderstand = understoodRef.current;
     understoodRef.current = false;
+    // Compliance ("set compliance for X to Yes", "how many are non-compliant") and "what notes does X have":
+    // answered from the office's own settings and data, before the general understanding step can misroute them.
+    if (!opts && casual && !skipUnderstand && !flowRef.current && !replyPending() && !askRef.current) {
+      const cs = understandCompliance(question, {
+        patients: allPatients().map((p) => ({ ...toChatPatient(p), compliance: p.compliance })),
+        options: loadComplianceOptions(),
+        enabled: loadCaseStatusSettings().complianceEnabled === true,
+        canEdit: canEditFeature("patients"),
+        canViewPatients: canView("patients"),
+        notesFor: (id) => ({ entries: entriesForPatient(loadCaseNoteEntries(), id), legacy: getCaseNote(id) ?? allPatients().find((x) => x.id === id)?.matrix?.notes ?? "" }),
+      });
+      if (cs) {
+        push({ role: "user", text: question, practice: true });
+        if (cs.kind === "say") push({ role: "goat", text: cs.text, practice: true, ...(cs.links ? { links: cs.links } : {}) });
+        else push({ role: "goat", text: cs.plan.summary, practice: true, patientName: displayName(cs.plan.patientName), quick: { ...cs.plan, state: "open" }, replyTo: question }, cs.plan.patientId);
+        return;
+      }
+    }
     if (casual && !skipUnderstand && !flowRef.current && handleCorrection(question)) return;
     if (casual && !skipUnderstand && !flowRef.current && !replyPending()) {
       if (askRef.current) {
