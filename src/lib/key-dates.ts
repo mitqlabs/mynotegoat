@@ -387,3 +387,40 @@ export function upcomingClosedBookings(
   }
   return out;
 }
+
+export interface KeyDateAppointmentCount {
+  /** Every appointment on the date or range, whatever its status. */
+  total: number;
+  /** Of those, how many are Canceled. */
+  canceled: number;
+}
+
+/**
+ * The neutral "28 appointments" count on EVERY key date row (past or future;
+ * Open, Closed or Covered): every appointment in the date or range, all
+ * statuses, with the Canceled ones noted. Rows with nothing are absent from
+ * the map, so the table shows "—" only when there are truly 0.
+ */
+export function keyDateAppointmentCounts(
+  rows: KeyDateRecord[],
+  appointments: Array<{ date: string; status?: string }>,
+): Map<string, KeyDateAppointmentCount> {
+  const out = new Map<string, KeyDateAppointmentCount>();
+  for (const row of rows) {
+    let total = 0;
+    let canceled = 0;
+    for (const appt of appointments) {
+      if (!isDateInRange(appt.date, row.startDate, row.endDate)) continue;
+      total += 1;
+      if (appt.status === "Canceled") canceled += 1;
+    }
+    if (total > 0) out.set(row.id, { total, canceled });
+  }
+  return out;
+}
+
+/** "28 appointments" / "1 appointment" / "18 appointments · 10 canceled". */
+export function formatKeyDateAppointmentCount(count: KeyDateAppointmentCount): string {
+  const base = `${count.total} appointment${count.total === 1 ? "" : "s"}`;
+  return count.canceled > 0 ? `${base} · ${count.canceled} canceled` : base;
+}

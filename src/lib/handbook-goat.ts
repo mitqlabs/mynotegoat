@@ -180,7 +180,7 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
         "Closed = office shut: no scheduling and no text reminders for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
-        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, a red \"N still booked\" count appears only on upcoming Closed days that still have patients Scheduled or set to Reschedule; every other row shows \u2014. Click it to filter the Warning List to that date (a bar says \"Showing 10/29/26 only\", with Show all). Old and cleared items are behind \"Show past & cleared\".",
+        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, every row shows its appointment count (like \"18 appointments \u00b7 10 canceled\"; \u2014 means none); click it to list that date's appointments at the bottom (a bar says \"Showing 10/29/26 only\", with Show all). A red \"N still booked\" also appears on upcoming Closed days that still have patients Scheduled or set to Reschedule. Old and cleared items are behind \"Show past & cleared\".",
       ],
       why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
     },

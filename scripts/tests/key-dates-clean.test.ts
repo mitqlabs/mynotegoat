@@ -9,7 +9,9 @@ import { readFileSync } from "node:fs";
 import {
   formatKeyDateRangeShort,
   formatShortDateFromIso,
+  formatKeyDateAppointmentCount,
   isStillBookedStatus,
+  keyDateAppointmentCounts,
   todayIsoLocal,
   upcomingClosedBookings,
   type KeyDateRecord,
@@ -87,24 +89,41 @@ assert.equal(upcomingClosedBookings([half], halfAppts, TODAY).get("HALF")?.count
 assert.deepEqual([...closedDates([kd({})])], ["2026-10-29"]);
 assert.deepEqual(withoutClosedDates([{ visitDate: "2026-10-29" }, { visitDate: "2026-10-30" }], closedDates([kd({})])), [{ visitDate: "2026-10-30" }]);
 
+// ── EVERY key date row shows a clickable appointment count (all statuses) ──
+const counts = keyDateAppointmentCounts(rows, appts);
+assert.deepEqual(counts.get("KD-1"), { total: 6, canceled: 1 }, "all statuses on the day, canceled noted");
+assert.deepEqual(counts.get("PAST-CLOSED"), { total: 1, canceled: 0 }, "past dates keep their count");
+assert.deepEqual(counts.get("PAST-CLOSED-2"), { total: 1, canceled: 0 });
+assert.deepEqual(counts.get("OPEN"), { total: 1, canceled: 0 }, "Open days show their appointments");
+assert.deepEqual(counts.get("COVERED"), { total: 1, canceled: 0 }, "Covered days show their appointments");
+assert.deepEqual(counts.get("RANGE"), { total: 2, canceled: 0 }, "a range counts every day in it");
+assert.equal(counts.has("EMPTY-CLOSED"), false, "a date with truly 0 appointments is absent → shows —");
+assert.equal(formatKeyDateAppointmentCount({ total: 28, canceled: 0 }), "28 appointments");
+assert.equal(formatKeyDateAppointmentCount({ total: 1, canceled: 0 }), "1 appointment");
+assert.equal(formatKeyDateAppointmentCount({ total: 18, canceled: 10 }), "18 appointments · 10 canceled");
+// The warning count is still a separate, narrower thing.
+assert.equal(m.get("KD-1")?.count, 2);
+
 // ── the page wires it up ──
+assert.ok(readFileSync("src/app/(portal)/key-dates/page.tsx", "utf8").includes("keyDateAppointmentCounts(keyDates, scheduleAppointments)"));
 const page = readFileSync("src/app/(portal)/key-dates/page.tsx", "utf8");
 assert.ok(page.includes("upcomingClosedBookings(keyDates, scheduleAppointments, todayIso, dismissals)"));
 assert.ok(page.includes("still booked"));
 assert.ok(!/cleared<\/span>|\{cleared\} cleared/.test(page), "no 'N cleared' counts in the main table");
 assert.ok(!page.includes("· closed"), "no '1 appointment · closed' pill");
+assert.ok(page.includes("Canceled") && page.includes("Showing {formatKeyDateRangeShort(focusedKeyDate)}"), "full per-date list with Canceled tag and the Showing bar");
 assert.ok(!page.includes("Hide ${"), "no 'Hide N cleared warnings' row");
 assert.ok(page.includes("Show past &amp; cleared") || page.includes("Show past & cleared"), "history is behind a small link");
 // Past rows can't be clicked, and a stale filter is dropped automatically.
-assert.ok(page.includes("bookingsByKeyDateId.has(focusedKeyDateId) ? focusedKeyDateId : null"));
+assert.ok(page.includes("appointmentCountByKeyDateId.has(focus.id)") && page.includes("bookingsByKeyDateId.has(focus.id)"), "a stale filter is dropped");
 assert.ok(page.includes("Showing {formatKeyDateRangeShort(focusedKeyDate)}") && page.includes("Show all"));
 assert.ok(!/formatUsDateFromIso\(row\.appointment\.date\)/.test(page), "warning dates are mm/dd/yy");
 
 // ── Handbook + G.O.A.T. use the same words ──
 const handbook = readFileSync("src/lib/handbook-content.ts", "utf8");
-assert.ok(handbook.includes("still booked") && handbook.includes("Show past & cleared"));
+assert.ok(handbook.includes("still booked") && handbook.includes("Show past & cleared") && handbook.includes("28 appointments"));
 const help = keyDatesHelp("what does closed do on key dates");
-assert.ok(help && /still booked/.test(help.text) && /Show past & cleared/.test(help.text));
+assert.ok(help && /still booked/.test(help.text) && /Show past & cleared/.test(help.text) && /appointments/.test(help.text));
 assert.ok(!/how many you've cleared/.test(help!.text));
 
 console.log("key-dates-clean: OK");
