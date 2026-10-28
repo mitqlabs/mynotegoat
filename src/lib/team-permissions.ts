@@ -30,7 +30,7 @@ export type MemberPermissions = Partial<Record<PortalFeature, AccessLevel>> & {
    *  Kept for existing members; "admin" in roleTier means the same thing. */
   officeAdmin?: boolean;
   /** Role: "admin" (everything), "manager" (configurable in Settings →
-   *  Admin Access) or "staff" (per-section grants only). */
+   *  Roles & Permissions) or "staff" (per-section grants only). */
   roleTier?: "admin" | "manager" | "staff";
   /** Patient-page sub-panels hidden for this member (panel keys). */
   hiddenSections?: string[];

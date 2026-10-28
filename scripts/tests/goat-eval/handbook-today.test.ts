@@ -36,6 +36,9 @@ for (const [q, must] of [
   ["how do I change a patient's office", /No office set/],
   ["how do I use the ask calculator", /Ask calculator/],
   ["what is the percent paid and percent disc", /% Disc\./],
+  ["how do I change what managers and staff can do", /Roles & Permissions/],
+  ["who can change roles and permissions", /Let Admins change roles/],
+  ["what do the contact cards show", /Category pill/],
 ] as Array<[string, RegExp]>) {
   check(`how-to: ${q}`, () => { const a = answerHowToFull(q, admin); assert.ok(a.found, a.text); assert.match(a.text, must); assert.ok(a.links.length >= 1); });
 }
