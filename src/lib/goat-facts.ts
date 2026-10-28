@@ -276,9 +276,12 @@ export function extractRom(lines: string[]): string[] {
       const sn = sentence.trim();
       if (!sn) continue;
       const hasMeasure = ROM_MOTION.test(sn) && /\d+\s*(?:°|deg|degrees)\b|\b(full|limited|restricted|reduced|decreased|normal|WNL|within normal limits)\b/i.test(sn);
-      if (!hasMeasure && !(inRom && ROM_MOTION.test(sn))) continue;
+      // "Extremity: Range of motion in within normal limits." — a whole-area statement with no movement named.
+      const bareRom = !ROM_MOTION.test(sn) && /^(?:[A-Za-z][A-Za-z /&-]{1,40}:\s*)?(range of motion|rom)\b/i.test(sn) && /\b(within normal limits|wnl|normal|full|limited|restricted|reduced|decreased)\b/i.test(sn);
+      if (!hasMeasure && !bareRom && !(inRom && ROM_MOTION.test(sn))) continue;
       const own = ROM_REGIONS.find(([, re]) => re.test(sn))?.[0];
-      const r = own ?? region;
+      const bareLabel = bareRom && !own && head && !headRegion && !/range of motion|rom/i.test(head[1]) ? head[1].trim().replace(/^./, (c) => c.toUpperCase()) : "";
+      const r = bareLabel || (own ?? region);
       const text = sn.replace(/\s*(\d+)\s*(?:degrees|deg)\b\.?/gi, " $1°").replace(/\s+/g, " ").trim();
       const lineOut = r && !new RegExp(`^${r}\\b`, "i").test(text) ? `${r}: ${text}` : text;
       if (!out.includes(lineOut) && out.length < 20) out.push(lineOut);

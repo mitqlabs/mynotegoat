@@ -17,7 +17,7 @@ import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-fin
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
-import { answerFromFiles, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, findingsCardFromFile, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
@@ -1305,12 +1305,34 @@ function askGoatOne(ctx: GoatContext, question: string): GoatResult {
   const matchers = [...searchGroups.map((g) => makeMatcher(g.terms)), ...leftovers.map((w) => makeMatcher([w]))];
   const terms = [...new Set([...searchGroups.flatMap((g) => g.terms), ...leftovers])];
 
-  const files =
+  let files =
     ctx.files && ctx.files.length
       ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq })
       : null;
   // Recommendations were found, so a word-search "X doesn't mention recs" would be wrong.
   if (files && recsShown) files.notes = files.notes.filter((n) => !/\b(?:doesn't|don't) mention\b/.test(n));
+  // "pm findings": the report as a Findings card (recommendations, ROM, exam findings, diagnoses),
+  // not the raw line dump. A ROM or recommendations question already has its own card above.
+  if (files?.clinical && !asksRom && !asksRecs && files.matches.length && ctx.files) {
+    const top = files.matches[0];
+    const topFile = ctx.files.find((f) => f.id === top.fileId);
+    const card = topFile ? findingsCardFromFile(topFile) : null;
+    if (card && card.blocks.length) {
+      const others = files.matches.slice(1).map((m) => m.name);
+      const note = [...files.notes, others.length ? `Also matched: ${others.join(", ")}.` : ""].filter(Boolean).join(" ");
+      answers.unshift({
+        title: "Findings",
+        lines: [],
+        groups: [{ lead: `${top.who.length ? `${top.who.join(" / ")} — ` : ""}${top.name}`, blocks: card.blocks.map((b) => ({ ...b, plain: true })), note: note || undefined }],
+        source: `Patient Files — ${top.name} (${top.dateLabel} ${top.date || "—"})`,
+        section: "specialist",
+        copyText: card.text,
+        fileId: top.fileId,
+      });
+      romShown = true; // structured answer first
+      files = null;
+    }
+  }
   // "Also mentioned": skip what an answer card above already shows in full.
   const shownSections = new Set(answers.filter((a) => a.groups?.length).map((a) => a.section));
   // A region question only wants mentions of that region ("knee MRI" → not a lumbar note about the MRI).
