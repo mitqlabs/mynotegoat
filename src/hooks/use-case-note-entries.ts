@@ -27,7 +27,7 @@ import { loadOfficeSettings } from "@/lib/office-settings";
 import { logActivity } from "@/lib/activity-log";
 
 /** Name stamped on a note by the person signed in right now. */
-function currentAuthor(): { author: string; userId: string } {
+export function currentAuthor(): { author: string; userId: string } {
   const m = getCurrentMembershipSync();
   const office = loadOfficeSettings();
   const author = authorDisplayName({
