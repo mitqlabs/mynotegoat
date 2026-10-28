@@ -18,10 +18,13 @@ import {
   isTimeWithinHours,
   keyDateHasHours,
   normalizeKeyDateTime,
-  formatKeyDateRange,
+  formatKeyDateRangeShort,
+  formatShortDateFromIso,
   formatUsDateFromIso,
   dismissalsToResetForClosure,
-  summarizeKeyDateBookings,
+  isStillBookedStatus,
+  todayIsoLocal,
+  upcomingClosedBookings,
   type KeyDateOfficeStatus,
   type KeyDateRecord,
 } from "@/lib/key-dates";
@@ -125,6 +128,8 @@ export default function KeyDatesPage() {
   const { encountersByNewest, deleteEncounter } = useEncounterNotes();
   const { updatePatientPayments } = useCashPayments();
   const { dismissals, dismissAppointment, restoreAppointment } = useKeyDateDismissals();
+  // "Show past & cleared": old visits, Covered-day visits and cleared warnings
+  // live behind a small link so the default list is only what needs action.
   const [showDismissed, setShowDismissed] = useState(false);
 
   const [draft, setDraft] = useState<KeyDateDraft>(() => createDraft());
@@ -174,24 +179,50 @@ export default function KeyDatesPage() {
     return rows.sort(compareConflictRows);
   }, [keyDates, scheduleAppointments]);
 
-  // Rows not yet dismissed are what the user sees by default. Dismissed
-  // rows are tucked away behind a "Show N cleared" toggle so the user
-  // can un-dismiss one if they change their mind.
-  const warningRows = useMemo(
-    () => allWarningRows.filter((row) => !dismissals.has(row.appointment.id)),
-    [allWarningRows, dismissals],
-  );
-  const dismissedRows = useMemo(
-    () => allWarningRows.filter((row) => dismissals.has(row.appointment.id)),
-    [allWarningRows, dismissals],
-  );
-  // Clicking the Appointments count on a Configured Key Date narrows the
-  // warning list below to just that date. null = show everything.
+  const todayIso = todayIsoLocal();
+
+  // A "needs action" warning is a patient still booked (Scheduled / Reschedule)
+  // today or later on a Closed date. Everything else (past visits, Covered
+  // days, anything already cleared) is history and sits behind the link.
+  const isActionable = (row: ConflictRow) =>
+    row.appointment.date >= todayIso &&
+    isStillBookedStatus(row.appointment.status) &&
+    row.matches.some((m) => m.officeStatus === "Closed");
+
+  // Clicking a count pill on a Configured Key Date narrows the warning list to
+  // that date. null = every upcoming Closed day.
   const [focusedKeyDateId, setFocusedKeyDateId] = useState<string | null>(null);
-  const visibleDismissedRows = useMemo(
-    () => (focusedKeyDateId ? dismissedRows.filter((row) => row.matches.some((m) => m.id === focusedKeyDateId)) : dismissedRows),
-    [dismissedRows, focusedKeyDateId],
+
+  // How many still-booked visits each upcoming Closed date has. Past dates,
+  // Open / Covered days and empty Closed days are not in this map at all.
+  const bookingsByKeyDateId = useMemo(
+    () => upcomingClosedBookings(keyDates, scheduleAppointments, todayIso, dismissals),
+    [keyDates, scheduleAppointments, todayIso, dismissals],
   );
+
+  // The filter is dropped automatically when its date has nothing left to show
+  // (it passed, was deleted, or its last visit was canceled), so a stale filter
+  // can never hide the other warnings.
+  const effectiveFocusId =
+    focusedKeyDateId && bookingsByKeyDateId.has(focusedKeyDateId) ? focusedKeyDateId : null;
+  const focusedKeyDate = effectiveFocusId ? keyDates.find((entry) => entry.id === effectiveFocusId) ?? null : null;
+  const inFocus = (row: ConflictRow) => !effectiveFocusId || row.matches.some((m) => m.id === effectiveFocusId);
+
+  const visibleWarningRows = useMemo(
+    () => allWarningRows.filter((row) => isActionable(row) && !dismissals.has(row.appointment.id) && inFocus(row)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWarningRows, dismissals, effectiveFocusId, todayIso],
+  );
+  // Past, Covered-day and cleared visits, newest first.
+  const historyRows = useMemo(
+    () =>
+      allWarningRows
+        .filter((row) => !(isActionable(row) && !dismissals.has(row.appointment.id)) && inFocus(row))
+        .sort((a, b) => compareConflictRows(b, a)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allWarningRows, dismissals, effectiveFocusId, todayIso],
+  );
+  const HISTORY_LIMIT = 50;
 
   // Two-click inline confirm for Cancel, same reason as the Delete one above:
   // browsers can suppress window.confirm entirely, which made the button look
@@ -201,55 +232,30 @@ export default function KeyDatesPage() {
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState("");
 
-  // How many outstanding warnings each configured key date accounts for.
-  // Counted off warningRows (undismissed) so the number matches what the list
-  // below actually shows, and drops to 0 as they are cleared.
+  // How many warnings (any kind) each key date accounts for, for the
+  // "Text affected patients" shortcut on partial days.
   const warningCountByKeyDateId = useMemo(() => {
     const counts = new Map<string, number>();
-    warningRows.forEach((row) => {
-      row.matches.forEach((match) => {
-        counts.set(match.id, (counts.get(match.id) ?? 0) + 1);
+    allWarningRows
+      .filter((row) => !dismissals.has(row.appointment.id))
+      .forEach((row) => {
+        row.matches.forEach((match) => {
+          counts.set(match.id, (counts.get(match.id) ?? 0) + 1);
+        });
       });
-    });
     return counts;
-  }, [warningRows]);
+  }, [allWarningRows, dismissals]);
 
-  const focusedKeyDate = focusedKeyDateId
-    ? keyDates.find((entry) => entry.id === focusedKeyDateId) ?? null
-    : null;
-
-  // The list honours the focus filter; if the focused date's warnings all get
-  // cleared the filter simply yields an empty list, which reads correctly.
-  const visibleWarningRows = useMemo(
+  // Upcoming Closed dates that still have patients booked, soonest first.
+  const closedWithBookings = useMemo(
     () =>
-      focusedKeyDateId
-        ? warningRows.filter((row) => row.matches.some((m) => m.id === focusedKeyDateId))
-        : warningRows,
-    [focusedKeyDateId, warningRows],
+      keyDates
+        .filter((row) => bookingsByKeyDateId.has(row.id))
+        .map((row) => ({ row, booked: bookingsByKeyDateId.get(row.id)?.count ?? 0 }))
+        .sort((a, b) => a.row.startDate.localeCompare(b.row.startDate)),
+    [keyDates, bookingsByKeyDateId],
   );
-
-  // The REAL number of visits on each key date (single day or range) —
-  // independent of "Clear", which only hides a row from the warning list.
-  const bookingsByKeyDateId = useMemo(
-    () => summarizeKeyDateBookings(keyDates, scheduleAppointments, dismissals),
-    [keyDates, scheduleAppointments, dismissals],
-  );
-
-  // Upcoming full-day closures that still have patients booked. Never hidden
-  // by "Clear": these are the days where reminders are blocked and patients
-  // may still be planning to come in.
-  const closedWithBookings = useMemo(() => {
-    const today = new Date();
-    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    return keyDates
-      .filter((row) => row.officeStatus === "Closed" && !keyDateHasHours(row) && row.endDate >= todayIso)
-      .map((row) => ({ row, booked: bookingsByKeyDateId.get(row.id)?.booked ?? 0 }))
-      .filter((entry) => entry.booked > 0)
-      .sort((a, b) => a.row.startDate.localeCompare(b.row.startDate));
-  }, [keyDates, bookingsByKeyDateId]);
-
-  const closedWarnings = warningRows.filter((row) => row.hasClosedDate);
-  const coveredWarnings = warningRows.filter((row) => !row.hasClosedDate);
+  const totalStillBooked = closedWithBookings.reduce((sum, entry) => sum + entry.booked, 0);
 
   const patientIdByName = useMemo(() => {
     const map = new Map<string, string>();
@@ -276,17 +282,18 @@ export default function KeyDatesPage() {
   // cascade the patient file uses, and is always gated behind a confirm.
   const handleCancelAppointment = async (appointment: ScheduleAppointmentRecord) => {
     const dateLabel = formatUsDateFromIso(appointment.date);
+    const shortDate = formatShortDateFromIso(appointment.date);
     // A visit the patient actually attended is history, not something to call
     // off. Cancel is for appointments that never happened.
     if (appointment.status === "Check Out") {
       setActionNotice(
-        `${appointment.patientName}'s appointment on ${dateLabel} is already Checked Out — a completed visit can't be canceled.`,
+        `${appointment.patientName}'s appointment on ${shortDate} is already Checked Out — a completed visit can't be canceled.`,
       );
       return;
     }
     updateAppointment(appointment.id, (current) => ({ ...current, status: "Canceled" }));
     setActionNotice(
-      `${appointment.patientName}'s appointment on ${dateLabel} is now Canceled. It stays on the schedule and the patient file so you can see it was there.`,
+      `${appointment.patientName}'s appointment on ${shortDate} is now Canceled. It stays on the schedule and the patient file so you can see it was there.`,
     );
     restoreAppointment(appointment.id);
     const patientId = resolvePatientId(appointment);
@@ -311,7 +318,7 @@ export default function KeyDatesPage() {
   };
 
   const handleDeleteAppointment = async (appointment: ScheduleAppointmentRecord) => {
-    const confirmed = (await appConfirm(`Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatUsDateFromIso(appointment.date)}?\n\n` +
+    const confirmed = (await appConfirm(`Delete ${appointment.patientName}'s ${appointment.appointmentType} on ${formatShortDateFromIso(appointment.date)}?\n\n` +
             "This removes the appointment globally — it will no longer appear on the patient file, schedule, or dashboard."));
     if (!confirmed) return;
     if (!(await ensureDeleteAllowed("appointments"))) return;
@@ -372,18 +379,16 @@ export default function KeyDatesPage() {
     // After a successful save: forget old "Clear"s on a day that is now fully
     // Closed (they were made when it was Covered) and say what happens next.
     const afterSave = () => {
-      const now = new Date();
-      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const toReset = dismissalsToResetForClosure(payload, scheduleAppointments, dismissals, todayIso);
       toReset.forEach((id) => restoreAppointment(id));
       const booked = scheduleAppointments.filter(
-        (a) => a.status !== "Canceled" && a.status !== "No Show" && a.date >= startDate && a.date <= endDate,
+        (a) => isStillBookedStatus(a.status) && a.date >= todayIso && a.date >= startDate && a.date <= endDate,
       ).length;
-      const when = startDate === endDate ? formatUsDateFromIso(startDate) : `${formatUsDateFromIso(startDate)} – ${formatUsDateFromIso(endDate)}`;
+      const when = formatKeyDateRangeShort({ startDate, endDate });
       if (payload.officeStatus === "Closed" && !payload.openStart && !payload.openEnd) {
         setFormNotice(
           booked > 0
-            ? `${when} is Closed: no text reminders will go out for it. ${booked} appointment${booked === 1 ? " is" : "s are"} still booked — cancel or reschedule them below. Reminders already sent can't be recalled.`
+            ? `${when} is Closed: no text reminders will go out for it. ${booked} patient${booked === 1 ? " is" : "s are"} still booked. Cancel or reschedule them in the Warning List below. Reminders already sent can't be recalled.`
             : `${when} is Closed: no text reminders will go out for it.`,
         );
       } else if (payload.officeStatus === "Covered") {
@@ -426,16 +431,15 @@ export default function KeyDatesPage() {
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-end gap-3">
-          <div className="grid gap-2 text-right text-sm">
-            <p>
-              <span className="font-semibold text-[#b43b34]">{closedWarnings.length}</span> Closed-date conflicts
-            </p>
-            <p>
-              <span className="font-semibold text-[#0d79bf]">{coveredWarnings.length}</span> Covered-date appointments
-            </p>
-          </div>
-        </div>
+        <p className="text-sm text-right">
+          {totalStillBooked > 0 ? (
+            <>
+              <span className="font-semibold text-[#b43b34]">{totalStillBooked}</span> patient{totalStillBooked === 1 ? " is" : "s are"} still booked on upcoming Closed days
+            </>
+          ) : (
+            <span className="text-[var(--text-muted)]">No patients are booked on upcoming Closed days.</span>
+          )}
+        </p>
       </section>
 
       <form className="panel-card p-4" onSubmit={(e) => { e.preventDefault(); void submitForm(); }}>
@@ -572,8 +576,8 @@ export default function KeyDatesPage() {
           <ul className="mt-1 list-disc pl-5">
             {closedWithBookings.map(({ row, booked }) => (
               <li key={row.id}>
-                {formatKeyDateRange(row)}
-                {row.reason ? ` (${row.reason})` : ""}: {booked} appointment{booked === 1 ? "" : "s"} booked. Text reminders are blocked for this day, so cancel or reschedule these visits, or message the patients.
+                {formatKeyDateRangeShort(row)}
+                {row.reason ? ` (${row.reason})` : ""}: {booked} still booked. No reminder texts go out for a Closed day, so cancel or reschedule them, or text the patients.
               </li>
             ))}
           </ul>
@@ -598,7 +602,7 @@ export default function KeyDatesPage() {
             <tbody>
               {keyDates.map((row) => (
                 <tr key={row.id} className="border-t border-[var(--line-soft)]">
-                  <td className="px-4 py-3">{formatKeyDateRange(row)}</td>
+                  <td className="px-4 py-3">{formatKeyDateRangeShort(row)}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -618,44 +622,29 @@ export default function KeyDatesPage() {
                   <td className="px-4 py-3">{row.reason || "-"}</td>
                   <td className="px-4 py-3">
                     {(() => {
-                      const { booked, cleared } = bookingsByKeyDateId.get(row.id) ?? { booked: 0, cleared: 0 };
-                      if (booked === 0) {
-                        return <span className="text-xs text-[var(--text-muted)]">None</span>;
+                      // One rule: a red count only for a Closed day that has not
+                      // passed and still has patients booked. Everything else is "—".
+                      const info = bookingsByKeyDateId.get(row.id);
+                      if (!info) {
+                        return <span className="text-[var(--text-muted)]" title="Nobody to cancel or reschedule">—</span>;
                       }
-                      const label = `${booked} appointment${booked === 1 ? "" : "s"}`;
-                      const note = cleared > 0 ? <span className="ml-2 text-xs text-[var(--text-muted)]">{cleared} cleared</span> : null;
-                      // An Open day is a normal day: just the number, no warning.
-                      if (row.officeStatus === "Open" && !keyDateHasHours(row)) {
-                        return <span className="text-xs font-semibold text-[var(--text-muted)]">{label}</span>;
-                      }
-                      const isFocused = focusedKeyDateId === row.id;
-                      const closed = row.officeStatus === "Closed" && !keyDateHasHours(row);
+                      const isFocused = effectiveFocusId === row.id;
                       return (
-                        <>
-                          <button
-                            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                              isFocused
-                                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                                : closed
-                                  ? "border-red-200 bg-red-50 text-red-700"
-                                  : "border-amber-200 bg-amber-50 text-amber-700"
-                            }`}
-                            onClick={() => {
-                              setFocusedKeyDateId(isFocused ? null : row.id);
-                              if (!isFocused && cleared > 0) setShowDismissed(true);
-                            }}
-                            title={
-                              isFocused
-                                ? "Showing only this date's appointments — click to show all"
-                                : "Show only this date's appointments in the warning list below"
-                            }
-                            type="button"
-                          >
-                            {label}
-                            {closed ? " · closed" : ""}
-                          </button>
-                          {note}
-                        </>
+                        <button
+                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                            isFocused
+                              ? "border-red-700 bg-red-700 text-white"
+                              : "border-red-200 bg-red-50 text-red-700"
+                          }`}
+                          onClick={() => {
+                            setFocusedKeyDateId(isFocused ? null : row.id);
+                            if (!isFocused && info.cleared > 0) setShowDismissed(true);
+                          }}
+                          title={isFocused ? "Click to show every Closed day again" : "Show only this date in the Warning List below"}
+                          type="button"
+                        >
+                          {info.count} still booked
+                        </button>
                       );
                     })()}
                   </td>
@@ -720,7 +709,7 @@ export default function KeyDatesPage() {
               ))}
               {keyDates.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={4}>
+                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={5}>
                     {isLoading ? "Loading key dates from cloud..." : "No key dates yet."}
                   </td>
                 </tr>
@@ -732,28 +721,28 @@ export default function KeyDatesPage() {
 
       <section className="panel-card overflow-hidden">
         <div className="border-b border-[var(--line-soft)] px-4 py-3">
-          <h4 className="text-lg font-semibold">
-            Warning List: Appointments On Key Dates
-            {focusedKeyDate ? ` — ${formatKeyDateRange(focusedKeyDate)}` : ""}
-          </h4>
-          {focusedKeyDate ? (
-            <p className="text-sm text-[var(--text-muted)]">
-              Showing only {focusedKeyDate.reason || "this key date"}.{" "}
-              <button
-                className="font-semibold text-[var(--brand-primary)] underline"
-                onClick={() => setFocusedKeyDateId(null)}
-                type="button"
-              >
-                Show all key dates
-              </button>
-            </p>
-          ) : (
-            <p className="text-sm text-[var(--text-muted)]">
-              Use this to catch migration mistakes where appointments landed on office key dates.
-              Click an Appointments count above to narrow this to one date.
-            </p>
-          )}
+          <h4 className="text-lg font-semibold">Warning List: Patients Still Booked On Closed Days</h4>
+          <p className="text-sm text-[var(--text-muted)]">
+            Upcoming visits on days the office is Closed. Cancel or reschedule them, or text the patients.
+          </p>
         </div>
+
+        {focusedKeyDate && (
+          <div className="flex flex-wrap items-center gap-3 border-b border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] px-4 py-2 text-sm font-semibold">
+            <span>
+              Showing {formatKeyDateRangeShort(focusedKeyDate)}
+              {focusedKeyDate.reason ? ` (${focusedKeyDate.reason})` : ""} only
+            </span>
+            <span aria-hidden="true">·</span>
+            <button
+              className="text-[var(--brand-primary)] underline"
+              onClick={() => setFocusedKeyDateId(null)}
+              type="button"
+            >
+              Show all
+            </button>
+          </div>
+        )}
 
         {actionNotice && (
           <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -769,50 +758,35 @@ export default function KeyDatesPage() {
         )}
 
         <div className="overflow-x-auto">
-          <table className="min-w-[960px] w-full text-sm">
+          <table className="min-w-[860px] w-full text-sm">
             <thead className="bg-[var(--bg-soft)] text-left">
               <tr>
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Time</th>
                 <th className="px-4 py-3 font-semibold">Patient</th>
                 <th className="px-4 py-3 font-semibold">Appointment</th>
-                <th className="px-4 py-3 font-semibold">Key Date Status</th>
-                <th className="px-4 py-3 font-semibold">Key Date Reason</th>
+                <th className="px-4 py-3 font-semibold">Why</th>
                 <th className="px-4 py-3 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {visibleWarningRows.map((row) => {
-                const keyStatusLabel = row.matches
-                  .map((entry) => (keyDateHasHours(entry) ? `Outside hours (${formatKeyDateHours(entry)})` : entry.officeStatus))
-                  .join(", ");
                 const reasonLabel = row.matches
+                  .filter((entry) => entry.officeStatus === "Closed")
                   .map((entry) =>
-                    `${entry.reason || "No reason"} (${formatKeyDateRange({
-                      startDate: entry.startDate,
-                      endDate: entry.endDate,
-                    })})`,
+                    `${keyDateHasHours(entry) ? `Outside open hours (${formatKeyDateHours(entry)})` : "Closed"}${
+                      entry.reason ? `: ${entry.reason}` : ""
+                    }`,
                   )
                   .join("; ");
                 const patientId = resolvePatientId(row.appointment);
                 return (
                   <tr key={`warning-${row.appointment.id}`} className="border-t border-[var(--line-soft)]">
-                    <td className="px-4 py-3">{formatUsDateFromIso(row.appointment.date)}</td>
+                    <td className="px-4 py-3">{formatShortDateFromIso(row.appointment.date)}</td>
                     <td className="px-4 py-3">{formatTimeLabel(row.appointment.startTime)}</td>
                     <td className="px-4 py-3 font-semibold">{row.appointment.patientName}</td>
                     <td className="px-4 py-3">{row.appointment.appointmentType}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          row.hasClosedDate
-                            ? "bg-[rgba(201,66,58,0.15)] text-[#b43b34]"
-                            : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
-                        }`}
-                      >
-                        {keyStatusLabel}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{reasonLabel}</td>
+                    <td className="px-4 py-3 text-[var(--text-muted)]">{reasonLabel}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <button
@@ -892,8 +866,8 @@ export default function KeyDatesPage() {
               })}
               {visibleWarningRows.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={7}>
-                    No appointments currently fall on key dates.
+                  <td className="px-4 py-4 text-[var(--text-muted)]" colSpan={6}>
+                    {focusedKeyDate ? "Nobody is still booked on this date." : "No patients are booked on upcoming Closed days."}
                   </td>
                 </tr>
               )}
@@ -901,17 +875,21 @@ export default function KeyDatesPage() {
           </table>
         </div>
 
-        {visibleDismissedRows.length > 0 && (
-          <div className="mt-4">
+        {historyRows.length > 0 && (
+          <div className="border-t border-[var(--line-soft)] px-4 py-3">
             <button
-              className="btn btn-secondary btn-sm"
+              className="text-sm font-semibold text-[var(--brand-primary)] underline"
               onClick={() => setShowDismissed((v) => !v)}
               type="button"
             >
-              {showDismissed ? "Hide" : "Show"} {visibleDismissedRows.length} cleared warning{visibleDismissedRows.length === 1 ? "" : "s"}
+              {showDismissed ? "Hide past & cleared" : "Show past & cleared"}
             </button>
             {showDismissed && (
               <div className="mt-2 overflow-x-auto">
+                <p className="mb-2 text-xs text-[var(--text-muted)]">
+                  Old visits, visits on Covered days, and warnings you cleared. Nothing here needs action.
+                  {historyRows.length > HISTORY_LIMIT ? ` Showing the newest ${HISTORY_LIMIT} of ${historyRows.length}.` : ""}
+                </p>
                 <table className="min-w-[720px] w-full text-xs">
                   <thead className="bg-[var(--bg-soft)] text-left text-[var(--text-muted)]">
                     <tr>
@@ -919,27 +897,41 @@ export default function KeyDatesPage() {
                       <th className="px-3 py-2 font-semibold">Time</th>
                       <th className="px-3 py-2 font-semibold">Patient</th>
                       <th className="px-3 py-2 font-semibold">Appointment</th>
+                      <th className="px-3 py-2 font-semibold">Note</th>
                       <th className="px-3 py-2 text-right font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleDismissedRows.map((row) => (
-                      <tr key={`cleared-${row.appointment.id}`} className="border-t border-[var(--line-soft)] text-[var(--text-muted)]">
-                        <td className="px-3 py-2">{formatUsDateFromIso(row.appointment.date)}</td>
-                        <td className="px-3 py-2">{formatTimeLabel(row.appointment.startTime)}</td>
-                        <td className="px-3 py-2">{row.appointment.patientName}</td>
-                        <td className="px-3 py-2">{row.appointment.appointmentType}</td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => restoreAppointment(row.appointment.id)}
-                            type="button"
-                          >
-                            Un-clear
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {historyRows.slice(0, HISTORY_LIMIT).map((row) => {
+                      const cleared = dismissals.has(row.appointment.id);
+                      const note = cleared
+                        ? "Cleared"
+                        : row.appointment.date < todayIso
+                          ? "Past visit"
+                          : row.matches.every((m) => m.officeStatus !== "Closed")
+                            ? "Covered day"
+                            : "Not booked";
+                      return (
+                        <tr key={`history-${row.appointment.id}`} className="border-t border-[var(--line-soft)] text-[var(--text-muted)]">
+                          <td className="px-3 py-2">{formatShortDateFromIso(row.appointment.date)}</td>
+                          <td className="px-3 py-2">{formatTimeLabel(row.appointment.startTime)}</td>
+                          <td className="px-3 py-2">{row.appointment.patientName}</td>
+                          <td className="px-3 py-2">{row.appointment.appointmentType}</td>
+                          <td className="px-3 py-2">{note}</td>
+                          <td className="px-3 py-2 text-right">
+                            {cleared && (
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => restoreAppointment(row.appointment.id)}
+                                type="button"
+                              >
+                                Show again
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

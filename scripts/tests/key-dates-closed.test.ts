@@ -130,11 +130,11 @@ assert.equal(keyDatesHelp("tell patients we are closed on the 29th, no reminders
 assert.equal(keyDatesHelp("how many visits tomorrow"), null);
 const handbook = readFileSync("src/lib/handbook-content.ts", "utf8");
 assert.ok(handbook.includes("Covered = someone covers"), "Handbook explains Closed vs Covered");
-assert.ok(handbook.includes("the Appointments column shows how many visits are really booked"));
+assert.ok(handbook.includes("still booked\\u201d only for a Closed day"));
 
 // The page wires the real count, the closed-with-bookings alert and the form notice.
 const page = readFileSync("src/app/(portal)/key-dates/page.tsx", "utf8");
-assert.ok(page.includes("summarizeKeyDateBookings(keyDates, scheduleAppointments, dismissals)"));
+assert.ok(page.includes("upcomingClosedBookings(keyDates, scheduleAppointments, todayIso, dismissals)"));
 assert.ok(page.includes("Closed days that still have patients booked"));
 assert.ok(page.includes("dismissalsToResetForClosure"));
 const route = readFileSync("src/app/api/reminders/queue/route.ts", "utf8");

@@ -833,9 +833,10 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Closed = the office is shut: no scheduling and NO text reminders for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
           "A Closed day stops APPOINTMENT reminders only. Message patients texts (for example \"we are closed Thursday\") are never blocked by a Key Date, so you can still tell patients you are closed.",
           "Add Open from / until times for a partial day: visits outside those hours are flagged and get no reminders.",
-          "In Configured Key Dates, the Appointments column shows how many visits are really booked on that day or range. A red notice at the top lists Closed days that still have patients booked.",
-          "The list underneath shows appointments already booked on those days.",
-          "Use Cancel Appointment there, or Clear to dismiss a row you have dealt with. Clear only hides the row; the visit stays booked and still counts in the Appointments column.",
+          "In Configured Key Dates, the Appointments column shows a red \u201c8 still booked\u201d only for a Closed day that has not passed and still has patients Scheduled or set to Reschedule. Canceled, No Show and already-seen visits are not counted. Every other row (past dates, Open days, Covered days, Closed days with nobody booked) shows a plain \u2014.",
+          "Click the red count to show just that date in the Warning List. A blue bar says \u201cShowing 10/29/26 only\u201d; click Show all to see every upcoming Closed day again. Old dates have no count to click.",
+          "The Warning List underneath shows only patients still booked on upcoming Closed days. Click Show past & cleared at the bottom to see old visits, Covered-day visits and cleared warnings.",
+          "Use Cancel Appointment there, or Clear to hide a row you have dealt with. Clear only hides the row; the visit stays booked and still counts in the red number.",
         ],
         why: "Reminders go out the day before, so set the day to Closed before then. A text that has already been sent can't be recalled; changing the day afterwards only stops texts not yet sent. If you meant to tell patients you are closed, use Settings → Text Reminders → Message patients → All active patients.",
         watchOut:
