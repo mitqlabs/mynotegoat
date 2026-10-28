@@ -11,8 +11,10 @@ import {
   planCatchUp,
   planReminderRun,
   planScheduledRun,
+  withoutClosedDates,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
+import { summaryAfterEmptyRun } from "@/lib/reminder-format";
 import {
   adminClient,
   alreadySentIds,
@@ -114,6 +116,12 @@ export async function GET(request: NextRequest) {
     groups = [{ visitDate, sameDay: false, hours: config.hoursByDate.get(visitDate) }];
   }
 
+  // Never text for a full-day Closed key date, whichever path planned it.
+  const openGroups = withoutClosedDates(groups, config.closedIsoDates);
+  if (openGroups.length < groups.length && !reason) reason = "The office is closed that day (Key Dates).";
+  groups = openGroups;
+  reminderRun = reminderRun && groups.length > 0;
+
   await admin.from("reminder_devices").update({ last_seen_at: now.toISOString() }).eq("id", device.id);
 
   const reply = (body: Record<string, unknown>) =>
@@ -211,7 +219,8 @@ export async function GET(request: NextRequest) {
       .eq("id", device.id);
   };
   if (reminderRun && !preview && reminderItems.length === 0 && !held) {
-    await finishRun(`${visitDate}: nothing to send`);
+    // Keep the day's real totals ("10/29/26: 14 sent") instead of overwriting them.
+    await finishRun(summaryAfterEmptyRun(device.last_run_summary, visitDate));
   }
 
   const describe = () => {

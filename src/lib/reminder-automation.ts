@@ -266,6 +266,10 @@ export function backupWaitReason(input: {
 
 /** "9:5" / "09:05:00" → "09:05" (empty when unparseable). */
 export function normalizeHHMM(value: string): string {
+  // "" means "no time" (e.g. an all-active broadcast has no visit). It must NOT
+  // become "00:00", which made every time-less recipient look like a visit that
+  // already passed and silently dropped them from today's broadcast.
+  if (!value || !value.trim()) return "";
   const [h, m] = (value || "").split(":").map(Number);
   if (!Number.isFinite(h)) return "";
   return `${String(h).padStart(2, "0")}:${String(Number.isFinite(m) ? m : 0).padStart(2, "0")}`;
@@ -351,6 +355,15 @@ export function planCatchUp(input: {
   else if (today.hour < settings.sendHour) notes.push(`Tomorrow's reminders go out at ${settings.sendHour}:00.`);
   else dates.push({ visitDate, mode: "tomorrow", ...hoursFor(visitDate) });
   return { ...base, dates, reason: notes.join(" ") };
+}
+
+/**
+ * Last line of defence for every send path (scheduled, Send Now, catch-up,
+ * preview): whatever the planner decided, a visit date that is a full-day
+ * Closed key date never gets reminder texts.
+ */
+export function withoutClosedDates<T extends { visitDate: string }>(groups: T[], closedIsoDates: Set<string>): T[] {
+  return groups.filter((g) => !closedIsoDates.has(g.visitDate));
 }
 
 /**

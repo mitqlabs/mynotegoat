@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decodeQueueItemId } from "@/lib/reminder-automation";
+import { runSummary } from "@/lib/reminder-format";
 import { ackBroadcast, adminClient, authenticateDevice } from "@/lib/reminder-server";
 
 export const dynamic = "force-dynamic";
@@ -99,7 +100,21 @@ export async function POST(request: NextRequest) {
     logged += 1;
     counts[status] += 1;
   }
-  const summary = `${visitDate}: ${counts.sent} sent, ${counts.failed} failed, ${counts["dry-run"]} dry-run`;
+  // Running totals for the day from the send log, not just this call: the iPhone acks one text per call.
+  let summary = runSummary(visitDate, { sent: counts.sent, failed: counts.failed, dryRun: counts["dry-run"] });
+  if (reminderResults > 0 && visitDate) {
+    const total = async (status: string) => {
+      const { count } = await admin
+        .from("reminder_log")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", device.workspace_id)
+        .eq("visit_date", visitDate)
+        .eq("status", status);
+      return count ?? 0;
+    };
+    const [sent, failed, dryRun] = await Promise.all([total("sent"), total("failed"), total("dry-run")]);
+    summary = runSummary(visitDate, { sent, failed, dryRun });
+  }
   // Broadcast-only acks don't count as the day's reminder run.
   if (reminderResults > 0) await admin
     .from("reminder_devices")

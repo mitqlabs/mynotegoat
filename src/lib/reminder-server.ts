@@ -15,6 +15,7 @@ export interface ReminderDevice {
   name: string;
   kind: string;
   last_run_at: string | null;
+  last_run_summary?: string | null;
   run_requested_until: string | null;
   is_primary: boolean;
 }
@@ -35,7 +36,7 @@ export async function authenticateDevice(
   const hash = await hashDeviceToken(token);
   const { data, error } = await admin
     .from("reminder_devices")
-    .select("id, workspace_id, name, kind, last_run_at, run_requested_until, is_primary, revoked_at")
+    .select("id, workspace_id, name, kind, last_run_at, last_run_summary, run_requested_until, is_primary, revoked_at")
     .eq("token_hash", hash)
     .maybeSingle();
   if (error || !data || data.revoked_at) return null;
@@ -45,6 +46,7 @@ export async function authenticateDevice(
     name: data.name,
     kind: data.kind ?? "mac",
     last_run_at: data.last_run_at ?? null,
+    last_run_summary: data.last_run_summary ?? null,
     run_requested_until: data.run_requested_until ?? null,
     is_primary: data.is_primary === true,
   };

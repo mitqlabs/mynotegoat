@@ -77,9 +77,10 @@ import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
 import { understandCompliance } from "@/lib/goat-compliance";
-import { remindersHelp } from "@/lib/goat-reminders-help";
+import { reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
 import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { broadcastHelp } from "@/lib/goat-broadcast-help";
+import { keyDatesHelp } from "@/lib/goat-keydates-help";
 import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -1755,6 +1756,15 @@ export function GlobalGoatPopup({
         return;
       }
     }
+    // "what does Closed do to reminders", "I marked a day closed but they still got texts": the Handbook answer.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const kh = keyDatesHelp(question);
+      if (kh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: kh.text, practice: true, links: kh.links });
+        return;
+      }
+    }
     // Understand first, then act: straight to one confirm card (or one short question).
     const skipUnderstand = understoodRef.current;
     understoodRef.current = false;
@@ -1766,7 +1776,7 @@ export function GlobalGoatPopup({
       } catch {
         sendHour = undefined;
       }
-      const rh = remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin });
+      const rh = remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
       if (rh) {
         push({ role: "user", text: question, practice: true });
         push({ role: "goat", text: rh.text, practice: true, links: rh.links });

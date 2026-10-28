@@ -7,6 +7,7 @@
  */
 
 import type { ReactNode } from "react";
+import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
@@ -32,38 +33,45 @@ function StepNumber({ n, done }: { n: number; done?: boolean }) {
   );
 }
 
-export function ReminderSetupChecklist({
+/** The red "automation may not be set up" notice. Shown at the top of the page even when Set up is collapsed. */
+export function AutomationWarning({
   settings,
-  onConfirm,
   warning,
   hasIphone,
 }: {
   settings: SmsReminderSettings;
-  onConfirm: (confirmed: boolean) => void;
   /** Dates (YYYY-MM-DD) of recent run days with no automatic send; empty = no warning. */
   warning: string[];
   hasIphone: boolean;
 }) {
   const time = hourLabel(settings.sendHour);
+  if (!warning.length || !hasIphone) return null;
+  return (
+    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm" data-testid="automation-warning" role="alert">
+      <p className="font-bold text-red-800">Your {time} automation may not be set up — see Step 2</p>
+      <p className="mt-1 text-red-900">
+        Reminders were due on {warning.slice(0, 2).map((d) => fmtDate(d)).join(" and ")}, but the phone didn&apos;t send
+        them by itself around {time}.
+        {settings.automationConfirmed
+          ? " You ticked the box below, so open Shortcuts → Automation and make sure the automation is on and set to Run Immediately."
+          : " If you haven't made the automation yet, do Step 2 now."}
+      </p>
+    </div>
+  );
+}
+
+export function ReminderSetupChecklist({
+  settings,
+  onConfirm,
+}: {
+  settings: SmsReminderSettings;
+  onConfirm: (confirmed: boolean) => void;
+}) {
+  const time = hourLabel(settings.sendHour);
   const confirmed = settings.automationConfirmed;
-  const confirmedOn = settings.automationConfirmedAt
-    ? new Date(settings.automationConfirmedAt).toLocaleDateString("en-US", { dateStyle: "short" })
-    : "";
+  const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   return (
     <section className="grid gap-3" data-testid="reminder-setup-checklist">
-      {warning.length > 0 && hasIphone && (
-        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm" data-testid="automation-warning" role="alert">
-          <p className="font-bold text-red-800">Your {time} automation may not be set up — see Step 2</p>
-          <p className="mt-1 text-red-900">
-            Reminders were due on {warning.slice(0, 2).map((d) => d.slice(5).replace("-", "/")).join(" and ")}, but the phone didn&apos;t send
-            them by itself around {time}.
-            {confirmed
-              ? " You ticked the box below, so open Shortcuts → Automation and make sure the automation is on and set to Run Immediately."
-              : " If you haven't made the automation yet, do Step 2 now."}
-          </p>
-        </div>
-      )}
-
       <div className="rounded-xl border border-[var(--line-soft)] bg-white">
         <div className="border-b border-[var(--line-soft)] px-4 py-3">
           <p className="font-bold">Set up automatic reminders on the office iPhone</p>

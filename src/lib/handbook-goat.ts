@@ -146,6 +146,24 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Answered from the Handbook (Message patients chapter) inside NoteGoat, no outside AI. Nothing is changed.",
     },
     {
+      heading: "Key Dates: Closed vs Covered, and reminders",
+      steps: [
+        "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
+        "Closed = office shut: no scheduling and no text reminders for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
+        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. The Appointments column on Key Dates shows the real number of booked visits, and a red notice lists Closed days that still have patients booked.",
+      ],
+      why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
+      heading: "Text Reminders page: sections and dates",
+      steps: [
+        "Ask: \"where did the setup steps go on text reminders\", \"why does last run say 1 sent\", \"what format are the dates\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
+        "The page has a Set up section (checklist, devices, shortcuts, opt-out setup; closed once setup is done) and a Texts section (send settings, Message patients, Recent sends; open). Tap a heading to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
+        "All dates there are mm/dd/yy, and a device's last run shows the day's running total (for example \"10/29/26: 14 sent\").",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
       heading: "\"/\" commands (optional shortcuts)",
       steps: [
         "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",

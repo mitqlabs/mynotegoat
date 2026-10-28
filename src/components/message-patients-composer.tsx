@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { fmtDate, queuedStatusText, sentFromText } from "@/lib/reminder-format";
+import { CollapsibleSection } from "@/components/collapsible-section";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
   addDaysIso,
@@ -31,7 +33,10 @@ import type { SmsReminderSettings } from "@/lib/sms-reminders";
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
 const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
-const btn = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-4 text-sm font-semibold";
+// Solid brand button. Do NOT also set bg-white here: two bg-* classes on one element
+// are resolved by stylesheet order, and white-on-white made this button invisible.
+const primaryBtn =
+  "h-[42px] shrink-0 rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-4 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 const MAX = 640;
 /** Supabase returns at most 1000 rows per request; recipients insert in chunks. */
 const PAGE = 1000;
@@ -47,10 +52,8 @@ type BroadcastRow = {
   reminder_broadcast_recipients: { status: string; appointment_id: string | null }[] | null;
 };
 
-const usDate = (iso: string) => {
-  const [y, m, d] = iso.split("-");
-  return y && m && d ? `${Number(m)}/${Number(d)}/${y}` : iso;
-};
+/** mm/dd/yy, like every other date on the Text Reminders page. */
+const usDate = fmtDate;
 
 /** Must match the shortcut name in tools/build-shortcuts.py. */
 export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=Send%20Reminders%20Now";
@@ -94,11 +97,19 @@ export function MessagePatientsComposer({
   settings,
   workspaceId,
   prefill,
+  macConnected = false,
+  recentOpen = true,
+  onRecentToggle,
 }: {
   settings: SmsReminderSettings;
   workspaceId: string;
   /** e.g. from a Key Date: closure text for the visits outside its hours. */
   prefill?: MessagePatientsPrefill | null;
+  /** An active, non-revoked Mac has checked in. Only then does the text mention the iMac. */
+  macConnected?: boolean;
+  /** "Recent messages" open/closed (kept in the cloud-backed settings by the parent). */
+  recentOpen?: boolean;
+  onRecentToggle?: (open: boolean) => void;
 }) {
   const todayIso = useMemo(() => localNow(new Date(), settings.timeZone).iso, [settings.timeZone]);
   const { ask, confirmDialog } = useSimpleConfirm();
@@ -318,11 +329,7 @@ export function MessagePatientsComposer({
     if (rErr) return setStatus(`Couldn't queue the message (nothing was sent): ${rErr.message}`);
     setText("");
     setJustQueued(true);
-    setStatus(
-      settings.dryRun
-        ? `Queued for ${recipients.length} patient(s). Dry run is on, so devices will only log it.`
-        : `Queued for ${recipients.length} patient(s). Run "Send Reminders Now" on your iPhone to send it now. The iMac sends it automatically within about 10 minutes.`,
-    );
+    setStatus(queuedStatusText(recipients.length, settings.dryRun, macConnected));
     void loadHistory();
   };
 
@@ -346,7 +353,7 @@ export function MessagePatientsComposer({
       <div>
         <p className="font-semibold">Message patients</p>
         <p className="text-[var(--text-muted)]">
-          Send one text to everyone booked on a day, for example an emergency closure. It goes out from your iPhone or iMac like the reminders.
+          Send one text to everyone booked on a day, for example an emergency closure. It goes out from {sentFromText(macConnected)} like the reminders.
         </p>
       </div>
       {settings.dryRun && (
@@ -414,7 +421,7 @@ export function MessagePatientsComposer({
               : `${recipients.length} active patient(s)`} {recipients.length > 0 && (showList ? "▴" : "▾")}
         </button>
         <button
-          className={`${btn} bg-[var(--brand-primary)] text-white disabled:opacity-50`}
+          className={primaryBtn}
           data-testid="message-patients-send"
           disabled={busy || loading || !text.trim() || !recipients.length || Boolean(windowError)}
           onClick={() => void queue()}
@@ -447,8 +454,19 @@ export function MessagePatientsComposer({
       {status && <p className="font-semibold">{status}</p>}
       {justQueued && <SendFromIphoneButton className="justify-self-start" />}
       {history.length > 0 && (
+        <CollapsibleSection
+          actions={
+            <button className="text-xs font-semibold text-[var(--brand-primary)]" onClick={() => void loadHistory()} type="button">
+              Refresh status
+            </button>
+          }
+          onToggle={(next) => onRecentToggle?.(next)}
+          open={recentOpen}
+          testId="recent-messages"
+          title="Recent messages"
+          variant="inline"
+        >
         <div className="grid gap-1">
-          <span className={label}>Recent messages</span>
           {history.map((h) => {
             const rs = h.reminder_broadcast_recipients ?? [];
             const count = (s: string) => rs.filter((r) => r.status === s).length;
@@ -474,10 +492,8 @@ export function MessagePatientsComposer({
               </div>
             );
           })}
-          <button className="justify-self-start text-xs font-semibold text-[var(--brand-primary)]" onClick={() => void loadHistory()} type="button">
-            Refresh status
-          </button>
         </div>
+        </CollapsibleSection>
       )}
       {confirmDialog}
     </div>

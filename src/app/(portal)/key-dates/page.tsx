@@ -20,6 +20,8 @@ import {
   normalizeKeyDateTime,
   formatKeyDateRange,
   formatUsDateFromIso,
+  dismissalsToResetForClosure,
+  summarizeKeyDateBookings,
   type KeyDateOfficeStatus,
   type KeyDateRecord,
 } from "@/lib/key-dates";
@@ -127,6 +129,8 @@ export default function KeyDatesPage() {
 
   const [draft, setDraft] = useState<KeyDateDraft>(() => createDraft());
   const [formError, setFormError] = useState("");
+  // Shown after a save: what the status means for the visits already booked.
+  const [formNotice, setFormNotice] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   // Inline delete confirmation. The previous implementation used
   // window.confirm, but Chrome / Safari can suppress those dialogs
@@ -181,10 +185,14 @@ export default function KeyDatesPage() {
     () => allWarningRows.filter((row) => dismissals.has(row.appointment.id)),
     [allWarningRows, dismissals],
   );
-
   // Clicking the Appointments count on a Configured Key Date narrows the
   // warning list below to just that date. null = show everything.
   const [focusedKeyDateId, setFocusedKeyDateId] = useState<string | null>(null);
+  const visibleDismissedRows = useMemo(
+    () => (focusedKeyDateId ? dismissedRows.filter((row) => row.matches.some((m) => m.id === focusedKeyDateId)) : dismissedRows),
+    [dismissedRows, focusedKeyDateId],
+  );
+
   // Two-click inline confirm for Cancel, same reason as the Delete one above:
   // browsers can suppress window.confirm entirely, which made the button look
   // dead. Also the visible result banner — cancelling used to change the
@@ -219,6 +227,26 @@ export default function KeyDatesPage() {
         : warningRows,
     [focusedKeyDateId, warningRows],
   );
+
+  // The REAL number of visits on each key date (single day or range) —
+  // independent of "Clear", which only hides a row from the warning list.
+  const bookingsByKeyDateId = useMemo(
+    () => summarizeKeyDateBookings(keyDates, scheduleAppointments, dismissals),
+    [keyDates, scheduleAppointments, dismissals],
+  );
+
+  // Upcoming full-day closures that still have patients booked. Never hidden
+  // by "Clear": these are the days where reminders are blocked and patients
+  // may still be planning to come in.
+  const closedWithBookings = useMemo(() => {
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return keyDates
+      .filter((row) => row.officeStatus === "Closed" && !keyDateHasHours(row) && row.endDate >= todayIso)
+      .map((row) => ({ row, booked: bookingsByKeyDateId.get(row.id)?.booked ?? 0 }))
+      .filter((entry) => entry.booked > 0)
+      .sort((a, b) => a.row.startDate.localeCompare(b.row.startDate));
+  }, [keyDates, bookingsByKeyDateId]);
 
   const closedWarnings = warningRows.filter((row) => row.hasClosedDate);
   const coveredWarnings = warningRows.filter((row) => !row.hasClosedDate);
@@ -341,6 +369,32 @@ export default function KeyDatesPage() {
       return;
     }
 
+    // After a successful save: forget old "Clear"s on a day that is now fully
+    // Closed (they were made when it was Covered) and say what happens next.
+    const afterSave = () => {
+      const now = new Date();
+      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const toReset = dismissalsToResetForClosure(payload, scheduleAppointments, dismissals, todayIso);
+      toReset.forEach((id) => restoreAppointment(id));
+      const booked = scheduleAppointments.filter(
+        (a) => a.status !== "Canceled" && a.status !== "No Show" && a.date >= startDate && a.date <= endDate,
+      ).length;
+      const when = startDate === endDate ? formatUsDateFromIso(startDate) : `${formatUsDateFromIso(startDate)} – ${formatUsDateFromIso(endDate)}`;
+      if (payload.officeStatus === "Closed" && !payload.openStart && !payload.openEnd) {
+        setFormNotice(
+          booked > 0
+            ? `${when} is Closed: no text reminders will go out for it. ${booked} appointment${booked === 1 ? " is" : "s are"} still booked — cancel or reschedule them below. Reminders already sent can't be recalled.`
+            : `${when} is Closed: no text reminders will go out for it.`,
+        );
+      } else if (payload.officeStatus === "Covered") {
+        setFormNotice(
+          `${when} is Covered, not Closed: visits stay bookable and text reminders STILL go out. Choose Closed if the office is shut and patients should not be reminded.`,
+        );
+      } else {
+        setFormNotice("");
+      }
+    };
+
     try {
       if (!editingId) {
         const result = await addKeyDate(payload);
@@ -349,6 +403,7 @@ export default function KeyDatesPage() {
           return;
         }
         resetForm();
+        afterSave();
         return;
       }
 
@@ -358,6 +413,7 @@ export default function KeyDatesPage() {
         return;
       }
       resetForm();
+      afterSave();
     } catch (err) {
       // Cloud write failed (network, RLS, etc.). Surface explicitly
       // so the user can retry — never silently drop a save.
@@ -422,6 +478,13 @@ export default function KeyDatesPage() {
               <option value="Covered">Covered</option>
               <option value="Open">Open</option>
             </select>
+            <span className="text-xs text-[var(--text-muted)]">
+              {draft.officeStatus === "Closed"
+                ? "Closed: no scheduling, and NO text reminders for that day."
+                : draft.officeStatus === "Covered"
+                  ? "Covered: someone covers. Still bookable; text reminders STILL go out."
+                  : "Open: a normal working day."}
+            </span>
           </label>
 
           <label className="grid gap-1 xl:col-span-2">
@@ -480,6 +543,9 @@ export default function KeyDatesPage() {
         </div>
 
         {formError && <p className="mt-3 text-sm font-semibold text-[#b43b34]">{formError}</p>}
+        {formNotice && !formError && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{formNotice}</p>
+        )}
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {editingId && (
@@ -499,6 +565,20 @@ export default function KeyDatesPage() {
           </button>
         </div>
       </form>
+
+      {closedWithBookings.length > 0 && (
+        <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-semibold">Closed days that still have patients booked</p>
+          <ul className="mt-1 list-disc pl-5">
+            {closedWithBookings.map(({ row, booked }) => (
+              <li key={row.id}>
+                {formatKeyDateRange(row)}
+                {row.reason ? ` (${row.reason})` : ""}: {booked} appointment{booked === 1 ? "" : "s"} booked. Text reminders are blocked for this day, so cancel or reschedule these visits, or message the patients.
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="panel-card overflow-hidden">
         <div className="border-b border-[var(--line-soft)] px-4 py-3">
@@ -538,28 +618,44 @@ export default function KeyDatesPage() {
                   <td className="px-4 py-3">{row.reason || "-"}</td>
                   <td className="px-4 py-3">
                     {(() => {
-                      const count = warningCountByKeyDateId.get(row.id) ?? 0;
-                      if (count === 0) {
+                      const { booked, cleared } = bookingsByKeyDateId.get(row.id) ?? { booked: 0, cleared: 0 };
+                      if (booked === 0) {
                         return <span className="text-xs text-[var(--text-muted)]">None</span>;
                       }
+                      const label = `${booked} appointment${booked === 1 ? "" : "s"}`;
+                      const note = cleared > 0 ? <span className="ml-2 text-xs text-[var(--text-muted)]">{cleared} cleared</span> : null;
+                      // An Open day is a normal day: just the number, no warning.
+                      if (row.officeStatus === "Open" && !keyDateHasHours(row)) {
+                        return <span className="text-xs font-semibold text-[var(--text-muted)]">{label}</span>;
+                      }
                       const isFocused = focusedKeyDateId === row.id;
+                      const closed = row.officeStatus === "Closed" && !keyDateHasHours(row);
                       return (
-                        <button
-                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                            isFocused
-                              ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                              : "border-amber-200 bg-amber-50 text-amber-700"
-                          }`}
-                          onClick={() => setFocusedKeyDateId(isFocused ? null : row.id)}
-                          title={
-                            isFocused
-                              ? "Showing only this date's appointments — click to show all"
-                              : "Show only this date's appointments in the warning list below"
-                          }
-                          type="button"
-                        >
-                          {count} appointment{count === 1 ? "" : "s"}
-                        </button>
+                        <>
+                          <button
+                            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                              isFocused
+                                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                                : closed
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-amber-200 bg-amber-50 text-amber-700"
+                            }`}
+                            onClick={() => {
+                              setFocusedKeyDateId(isFocused ? null : row.id);
+                              if (!isFocused && cleared > 0) setShowDismissed(true);
+                            }}
+                            title={
+                              isFocused
+                                ? "Showing only this date's appointments — click to show all"
+                                : "Show only this date's appointments in the warning list below"
+                            }
+                            type="button"
+                          >
+                            {label}
+                            {closed ? " · closed" : ""}
+                          </button>
+                          {note}
+                        </>
                       );
                     })()}
                   </td>
@@ -805,14 +901,14 @@ export default function KeyDatesPage() {
           </table>
         </div>
 
-        {dismissedRows.length > 0 && (
+        {visibleDismissedRows.length > 0 && (
           <div className="mt-4">
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setShowDismissed((v) => !v)}
               type="button"
             >
-              {showDismissed ? "Hide" : "Show"} {dismissedRows.length} cleared warning{dismissedRows.length === 1 ? "" : "s"}
+              {showDismissed ? "Hide" : "Show"} {visibleDismissedRows.length} cleared warning{visibleDismissedRows.length === 1 ? "" : "s"}
             </button>
             {showDismissed && (
               <div className="mt-2 overflow-x-auto">
@@ -827,7 +923,7 @@ export default function KeyDatesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dismissedRows.map((row) => (
+                    {visibleDismissedRows.map((row) => (
                       <tr key={`cleared-${row.appointment.id}`} className="border-t border-[var(--line-soft)] text-[var(--text-muted)]">
                         <td className="px-3 py-2">{formatUsDateFromIso(row.appointment.date)}</td>
                         <td className="px-3 py-2">{formatTimeLabel(row.appointment.startTime)}</td>
