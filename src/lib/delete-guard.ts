@@ -4,7 +4,7 @@
  * One gate for "may this person delete this?".
  *
  * Roles come from the member's role (Settings → Team); the rules come from
- * Settings → Admin Access. Returns true when the delete may proceed — call
+ * Settings → Roles & Permissions. Returns true when the delete may proceed — call
  * it before your own "are you sure?" confirm.
  *
  * Honest limitation: this runs in the browser, so it prevents mistakes and
@@ -15,11 +15,9 @@
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadOfficeSettings, STORAGE_KEY_OFFICE_SETTINGS } from "@/lib/office-settings";
 import {
-  ADMIN_ACCESS_KEY,
   DELETABLE_KINDS,
   defaultAdminAccess,
   deleteRuleFor,
-  normalizeAdminAccess,
   roleTierOf,
   checkDeletePassword,
   type DeletePasswordCheck,
@@ -51,20 +49,9 @@ const kindLabel = (kind: DeletableKind) =>
   DELETABLE_KINDS.find((k) => k.key === kind)?.label.toLowerCase() ?? "this";
 
 async function currentSettings(): Promise<AdminAccessSettings> {
-  try {
-    const { fetchKvValue } = await import("@/lib/kv-cloud");
-    const remote = await fetchKvValue<unknown>(ADMIN_ACCESS_KEY);
-    if (remote !== null && remote !== undefined) return normalizeAdminAccess(remote);
-  } catch {
-    // Fall through to the cached copy.
-  }
-  try {
-    const raw = window.localStorage.getItem(ADMIN_ACCESS_KEY);
-    if (raw) return normalizeAdminAccess(JSON.parse(raw));
-  } catch {
-    // Fall through to defaults.
-  }
-  return defaultAdminAccess();
+  // Cloud first (both rows), then the cached copy, then the defaults.
+  const { fetchAccessFromCloud, readCachedAccess } = await import("@/lib/role-settings-store");
+  return (await fetchAccessFromCloud()) ?? readCachedAccess() ?? defaultAdminAccess();
 }
 
 /**
@@ -96,7 +83,7 @@ export async function ensureDeleteAllowed(
   // that already guards patient deletes, so there aren't two secrets.
   const officePassword = await officeDeletePassword();
   if (!settings.deletePasswordHash && !officePassword) {
-    (await appAlert(`Deleting ${kindLabel(kind)} needs the delete password, and none has been set yet. An admin can set one in Settings → Admin Access.`));
+    (await appAlert(`Deleting ${kindLabel(kind)} needs the delete password, and none has been set yet. An admin can set one in Settings → Roles & Permissions.`));
     return false;
   }
   const attempt = (await appPrompt(`Enter the delete password to delete ${kindLabel(kind)}.`, { title: "Delete password", inputType: "password", confirmLabel: "Delete" })) ?? "";

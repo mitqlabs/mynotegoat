@@ -12,7 +12,7 @@ import {
   type MemberPermissions,
 } from "@/lib/team-permissions";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
-import { roleTierOf, type RoleTier } from "@/lib/admin-access";
+import { memberOverrideSummary, permissionsWithoutOverrides, roleTierOf, type RoleTier } from "@/lib/admin-access";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -99,7 +99,7 @@ export function TeamSettingsSection() {
   const [lastName, setLastName] = useState("");
   const [role, setRole] = useState("");
   const [draftPerms, setDraftPerms] = useState<MemberPermissions>(EMPTY_PERMS);
-  // New members start as Staff; what a role can reach lives in Admin Access.
+  // New members start as Staff; what a role can reach lives in Roles & Permissions.
   const [draftRole, setDraftRole] = useState<Exclude<RoleTier, "owner">>("staff");
   const [busy, setBusy] = useState(false);
 
@@ -395,6 +395,13 @@ export function TeamSettingsSection() {
 
   const locations = officeSettings.multiLocation ? officeSettings.locations ?? [] : [];
 
+  /** Drop this person's own overrides so they follow their role again (role, location and on/off stay). */
+  const resetMemberToRoleDefaults = async (member: Member) => {
+    const who = member.label || member.email || "this member";
+    if (!(await appConfirm(`Reset ${who} to the ${memberRole(member)} role defaults? Their own hidden patient-page sections are cleared. Their role, location and login stay as they are.`, { confirmLabel: "Reset" }))) return;
+    void saveMemberPerms(member, permissionsWithoutOverrides(member.permissions));
+  };
+
   const setMemberSectionHidden = (member: Member, key: string, hidden: boolean) => {
     const set = new Set(member.permissions.hiddenSections ?? []);
     if (hidden) set.add(key);
@@ -568,6 +575,14 @@ export function TeamSettingsSection() {
                               OFF · no login
                             </span>
                           )}
+                          {memberRole(member) !== "admin" && memberOverrideSummary(member.permissions).length > 0 && (
+                            <span
+                              className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+                              title={`Differs from the ${memberRole(member)} role: ${memberOverrideSummary(member.permissions).join(", ")}`}
+                            >
+                              Custom access
+                            </span>
+                          )}
                           <button
                             className="rounded-md border border-[var(--line-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                             onClick={() => beginEditMember(member)}
@@ -614,9 +629,7 @@ export function TeamSettingsSection() {
                         }
                         type="button"
                       >
-                        {expandedMembers.has(member.member_user_id)
-                          ? "▾ Access"
-                          : `▸ Access (${Object.keys(member.permissions).length})`}
+                        {expandedMembers.has(member.member_user_id) ? "▾ Access" : "▸ Access"}
                       </button>
                       <button
                         className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
@@ -671,7 +684,7 @@ export function TeamSettingsSection() {
                       <span className="text-xs font-semibold">
                         Role{" "}
                         <span className="font-normal text-[var(--text-muted)]">
-                          — Admin is everything; Manager is set in Admin Access
+                          — Admin is everything; Manager and Staff follow Roles & Permissions
                         </span>
                       </span>
                       <select
@@ -698,10 +711,26 @@ export function TeamSettingsSection() {
                     ) : (
                       <>
                         <p className="rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-[11px] text-[var(--text-muted)]">
-                          Which pages {memberRole(member) === "manager" ? "Managers" : "Staff"} can open — and what
-                          they can delete — is set once for the whole role in Settings → Admin Access, so it doesn&apos;t
-                          have to be repeated on every person&apos;s card.
+                          {memberRole(member) === "manager" ? "Managers" : "Staff"} get what the role allows — which
+                          pages they can open, what they can add, edit and delete — set once for everyone in{" "}
+                          <span className="font-semibold">Settings → Roles &amp; Permissions</span>. Anything changed
+                          for just this person is listed below.
                         </p>
+                        {memberOverrideSummary(member.permissions).length > 0 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                            <span className="text-[11px] text-amber-900">
+                              <span className="font-semibold">Differs from the {memberRole(member)} role:</span>{" "}
+                              {memberOverrideSummary(member.permissions).join(", ")}.
+                            </span>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => void resetMemberToRoleDefaults(member)}
+                              type="button"
+                            >
+                              Reset to role defaults
+                            </button>
+                          </div>
+                        )}
                         <div>
                           <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                             Patient-page sections — flip OFF to hide from this member
@@ -812,7 +841,7 @@ export function TeamSettingsSection() {
                   <option value="staff">Staff — day-to-day</option>
                 </select>
                 <span className="text-[11px] text-[var(--text-muted)]">
-                  What each role can open and delete is set in Settings → Admin Access.
+                  What each role can open, add, edit and delete is set in Settings → Roles & Permissions.
                 </span>
               </label>
               <div className="mt-3 flex items-center gap-2">

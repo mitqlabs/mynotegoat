@@ -1,62 +1,53 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { type AdminAccessSettings } from "@/lib/admin-access";
 import {
-  ADMIN_ACCESS_KEY,
-  defaultAdminAccess,
-  normalizeAdminAccess,
-  type AdminAccessSettings,
-} from "@/lib/admin-access";
+  fetchAccessFromCloud,
+  readCachedAccess,
+  saveRoleDefinitions,
+  saveSecuritySettings,
+  type SaveResult,
+} from "@/lib/role-settings-store";
 
 /**
- * Admin Access settings (who may see which Dashboard sections, which deletes
- * a manager may do, the delete password hash).
+ * Roles & Permissions settings (what each role may open, add, edit and delete, which
+ * Dashboard sections a manager sees) plus the delete password.
  *
- * Cached in localStorage so checks are instant on first paint, then refreshed
- * from the cloud so a change by an admin reaches every device.
+ * A cached copy gives instant checks on first paint, then the cloud copy replaces it so
+ * a change by the owner reaches every device.
  */
-function readCache(): AdminAccessSettings {
-  if (typeof window === "undefined") return defaultAdminAccess();
-  try {
-    const raw = window.localStorage.getItem(ADMIN_ACCESS_KEY);
-    return raw ? normalizeAdminAccess(JSON.parse(raw)) : defaultAdminAccess();
-  } catch {
-    return defaultAdminAccess();
-  }
-}
-
 export function useAdminAccess() {
-  const [settings, setSettings] = useState<AdminAccessSettings>(() => readCache());
+  const [settings, setSettings] = useState<AdminAccessSettings>(() => readCachedAccess());
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { fetchKvValue } = await import("@/lib/kv-cloud");
-      const remote = await fetchKvValue<unknown>(ADMIN_ACCESS_KEY);
-      if (cancelled || remote === null || remote === undefined) return;
-      const next = normalizeAdminAccess(remote);
-      setSettings(next);
-      try {
-        window.localStorage.setItem(ADMIN_ACCESS_KEY, JSON.stringify(next));
-      } catch {
-        // Cache only.
-      }
+      const remote = await fetchAccessFromCloud();
+      if (cancelled || !remote) return;
+      setSettings(remote);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const save = useCallback(async (next: AdminAccessSettings) => {
+  /** Save the role definitions. Reverts to the cloud copy if the database refused it. */
+  const saveRoles = useCallback(async (next: AdminAccessSettings): Promise<SaveResult> => {
     setSettings(next);
-    try {
-      window.localStorage.setItem(ADMIN_ACCESS_KEY, JSON.stringify(next));
-    } catch {
-      // Cache only.
+    const result = await saveRoleDefinitions(next);
+    if (!result.ok) {
+      const remote = await fetchAccessFromCloud();
+      setSettings(remote ?? readCachedAccess());
     }
-    const { upsertKvValue } = await import("@/lib/kv-cloud");
-    await upsertKvValue(ADMIN_ACCESS_KEY, next);
+    return result;
   }, []);
 
-  return { adminAccess: settings, saveAdminAccess: save };
+  /** Save the delete password settings. */
+  const saveSecurity = useCallback(async (next: AdminAccessSettings): Promise<SaveResult> => {
+    setSettings(next);
+    return saveSecuritySettings(next);
+  }, []);
+
+  return { adminAccess: settings, saveRoles, saveSecurity };
 }

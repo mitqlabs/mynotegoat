@@ -711,7 +711,7 @@ export function MessagesWorkspace() {
                             (other) => other.id !== m.id && other.threadRootId === m.id,
                           ).length;
                           // The starter can clear their own thread; admins and
-                          // managers can clear any, per Settings → Admin Access.
+                          // managers can clear any, per Settings → Roles & Permissions.
                           const canDeleteThread =
                             supportsPrivateThreads &&
                             (mine || canDeleteAnyThread) &&

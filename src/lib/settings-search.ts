@@ -21,7 +21,7 @@ export const EXTRA_SECTIONS: ExtraSection[] = [
     id: "team",
     title: "Team Members",
     description: "Invite staff, set each member's role, access, main location and which sections they see.",
-    aliases: ["team", "staff", "member", "members", "user", "users", "invite", "login", "logins", "role", "roles", "access", "permissions", "main location", "default location", "deactivate", "disable", "doctor", "front desk", "manager", "admin"],
+    aliases: ["team", "staff", "member", "members", "user", "users", "invite", "login", "logins", "role", "roles", "access", "permissions", "overrides", "reset to role defaults", "main location", "default location", "deactivate", "disable", "doctor", "front desk", "manager", "admin"],
     tab: "office",
   },
   {
@@ -100,14 +100,14 @@ export function showExtraSection(
 /** Settings tabs: each section key lists the tab(s) it shows on; wrappers appear on several so their children are reachable. */
 export type SettingsTabId = "office" | "schedule" | "notes" | "goat" | "reminders" | "forms" | "billing" | "account" | "all";
 export const SETTINGS_TABS: { id: SettingsTabId; label: string; keys: SettingsSectionKey[] }[] = [
-  { id: "office", label: "Office", keys: ["officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories"] },
+  { id: "office", label: "Office", keys: ["officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories", "adminAccess"] },
   { id: "schedule", label: "Schedule", keys: ["officeSettings", "schedule"] },
   { id: "notes", label: "Notes & Macros", keys: ["macros", "soapMacros", "templates", "documents"] },
   { id: "goat", label: "G.O.A.T.", keys: ["goat"] },
   { id: "reminders", label: "Reminders", keys: ["officeSettings", "dashboard", "templates", "smsTemplates", "textReminders", "emailSettings"] },
   { id: "forms", label: "Forms", keys: ["templates", "forms"] },
   { id: "billing", label: "Billing", keys: ["macros", "billingMacros", "packageBuilder", "admin", "subscription"] },
-  { id: "account", label: "Account", keys: ["adminAccess", "admin", "diagnostics", "backup", "recovery", "security"] },
+  { id: "account", label: "Account", keys: ["admin", "diagnostics", "backup", "recovery", "security"] },
   { id: "all", label: "Everything", keys: [] },
 ];
 export const SETTINGS_TAB_WRAPPERS = new Set<SettingsSectionKey>(["officeSettings", "macros", "templates", "admin"]);

@@ -14,14 +14,14 @@ import {
 } from "@/lib/admin-access";
 
 /**
- * The office's ONE delete password (Settings → Office and Settings → Admin
- * Access both show this). It is saved as a salted hash in the cloud so it is
+ * The office's ONE delete password (Settings → Office and Settings → Roles
+ * & Permissions both show this). It is saved as a salted hash in the cloud so it is
  * the same on every device and for every team member, and the Saved message
  * only appears after the cloud copy has been read back and matches.
  */
 export function DeletePasswordField() {
   const { roleTier } = useWorkspaceAccess();
-  const { adminAccess, saveAdminAccess } = useAdminAccess();
+  const { adminAccess, saveSecurity } = useAdminAccess();
   const { officeSettings, updateOfficeSettings } = useOfficeSettings();
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
@@ -55,12 +55,13 @@ export function DeletePasswordField() {
       if (hasPassword) {
         const ok = await checkDeletePassword(base, legacyPassword, current);
         if (ok !== "ok") {
-          setError("The current delete password isn't right. Forgot it? Remove it in Settings → Admin Access, then set a new one.");
+          setError("The current delete password isn't right. Forgot it? Remove it in Settings → Roles & Permissions, then set a new one.");
           return;
         }
       }
       const { salt, hash } = await hashDeletePassword(password);
-      await saveAdminAccess({ ...base, deletePasswordSalt: salt, deletePasswordHash: hash });
+      const result = await saveSecurity({ ...base, deletePasswordSalt: salt, deletePasswordHash: hash });
+      if (!result.ok) throw new Error(result.error);
       const back = normalizeAdminAccess(await fetchKvValue<unknown>(ADMIN_ACCESS_KEY));
       if (back.deletePasswordHash !== hash) {
         throw new Error("cloud read-back did not match");
@@ -87,7 +88,8 @@ export function DeletePasswordField() {
       const { fetchKvValue } = await import("@/lib/kv-cloud");
       const remoteRaw = await fetchKvValue<unknown>(ADMIN_ACCESS_KEY);
       const base = remoteRaw ? normalizeAdminAccess(remoteRaw) : adminAccess;
-      await saveAdminAccess({ ...base, deletePasswordSalt: "", deletePasswordHash: "" });
+      const result = await saveSecurity({ ...base, deletePasswordSalt: "", deletePasswordHash: "" });
+      if (!result.ok) throw new Error(result.error);
       if (legacyPassword) updateOfficeSettings({ deletePassword: "" });
       logActivity({ category: "team", action: "access.password_cleared", summary: "Removed the delete password" });
       setSaved("Delete password removed. Deleting patients is blocked until you set a new one.");

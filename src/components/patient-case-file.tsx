@@ -5196,7 +5196,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleDeletePatient = async () => {
-    // Role gate first (Settings → Admin Access); this window asks for the password itself.
+    // Role gate first (Settings → Roles & Permissions); this window asks for the password itself.
     if (!(await ensureDeleteAllowed("patients", { passwordAlreadyAsked: true }))) {
       setShowDeleteModal(false);
       return;

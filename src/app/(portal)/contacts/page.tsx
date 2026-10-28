@@ -5,7 +5,6 @@ import { withMainFirst } from "@/lib/contact-email";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { logActivity } from "@/lib/activity-log";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
-import { isAdminTier } from "@/lib/admin-access";
 import { useMemo, useState } from "react";
 import { useContactCategories } from "@/hooks/use-contact-categories";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
@@ -26,9 +25,6 @@ import {
 } from "@/lib/contact-sort";
 import { appAlert, appConfirm } from "@/components/app-dialog";
 
-const COLS =
-  "md:grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_10.5rem_minmax(0,1.9fr)]";
-
 function PhoneIcon() {
   return (
     <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -42,6 +38,25 @@ function MailIcon() {
     <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <rect height="14" rx="2" width="18" x="3" y="5" />
       <path d="m3 7 9 6 9-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FaxIcon() {
+  return (
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path d="M7 8V3h8l2 2v3" strokeLinecap="round" strokeLinejoin="round" />
+      <rect height="9" rx="1.5" width="18" x="3" y="8" />
+      <path d="M7 17h10v4H7z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function BuildingIcon() {
+  return (
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path d="M5 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17M15 9h3a1 1 0 0 1 1 1v11M3 21h18" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 7h2M9 11h2M9 15h2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -109,8 +124,9 @@ function toContactForm(contact: ContactRecord): ContactFormState {
 
 /** Display rows for a saved contact (labeled list, or legacy single email). */
 function toDisplayEmails(contact: ContactRecord): ContactEmail[] {
-  if (contact.emails?.length) return withMainFirst(contact.emails);
-  if (contact.email) return [{ name: "", label: "", email: contact.email }];
+  const saved = (contact.emails ?? []).filter((e) => e.email?.trim());
+  if (saved.length) return withMainFirst(saved);
+  if (contact.email?.trim()) return [{ name: "", label: "", email: contact.email }];
   return [];
 }
 
@@ -199,10 +215,10 @@ function normalizeLookupValue(value: string) {
 export default function ContactsPage() {
   const { categories, subCategories } = useContactCategories();
   const { contacts, addContact, updateContact, removeContact } = useContactDirectory();
-  // Everyone can add a contact. Editing an existing one is for managers and
-  // admins; deleting is set per role in Settings → Admin Access.
-  const { roleTier, deleteRule } = useWorkspaceAccess();
-  const canEditContacts = isAdminTier(roleTier) || roleTier === "manager";
+  // Who can add, edit and delete contacts is set per role in Settings → Roles & Permissions.
+  const { can, deleteRule } = useWorkspaceAccess();
+  const canAddContacts = can("contacts.create");
+  const canEditContacts = can("contacts.edit");
   const canDeleteContacts = deleteRule("contacts") !== "never";
   // Clicking a name opens the contact (edit form, with Delete inside).
   const canOpenContact = canEditContacts || canDeleteContacts;
@@ -334,7 +350,7 @@ export default function ContactsPage() {
   };
 
   const saveEditedContact = () => {
-    if (!editingContactId) {
+    if (!editingContactId || !canEditContacts) {
       return;
     }
 
@@ -371,6 +387,7 @@ export default function ContactsPage() {
   };
 
   const openAddModal = () => {
+    if (!canAddContacts) return;
     setShowAddContactModal(true);
     setAddContactError("");
     setAddContactForm(createBlankContactForm(defaultCategory));
@@ -383,6 +400,7 @@ export default function ContactsPage() {
   };
 
   const saveNewContact = () => {
+    if (!canAddContacts) return;
     const result = addContact(addContactForm);
     if (!result.added) {
       setAddContactError(result.reason ?? "Could not add contact.");
@@ -467,22 +485,26 @@ export default function ContactsPage() {
               </label>
             )}
 
-            <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-muted)] transition-all hover:text-[var(--brand-primary)] active:scale-[0.97] active:shadow-inner"
-              onClick={() => setShowConsolidateModal(true)}
-              title="Find patients with similar attorney names and merge them onto one canonical name"
-              type="button"
-            >
-              Consolidate Attorneys
-            </button>
+            {canEditContacts && (
+              <button
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-muted)] transition-all hover:text-[var(--brand-primary)] active:scale-[0.97] active:shadow-inner"
+                onClick={() => setShowConsolidateModal(true)}
+                title="Find patients with similar attorney names and merge them onto one canonical name"
+                type="button"
+              >
+                Consolidate Attorneys
+              </button>
+            )}
 
-            <button
-              className="btn btn-primary"
-              onClick={openAddModal}
-              type="button"
-            >
-              Add Contact
-            </button>
+            {canAddContacts && (
+              <button
+                className="btn btn-primary"
+                onClick={openAddModal}
+                type="button"
+              >
+                Add Contact
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -495,16 +517,13 @@ export default function ContactsPage() {
       )}
 
       <section className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_4px_16px_rgba(16,24,40,0.05)]">
-        <div className={`hidden items-center gap-4 border-b border-[var(--line-soft)] px-5 py-2.5 text-[11px] font-semibold text-[#7b8794] md:grid ${COLS}`}>
-          <span className="pl-11"><SortHeader k="name" label="Name" onSort={changeSort} sort={sort} /></span>
-          <SortHeader k="category" label="Category" onSort={changeSort} sort={sort} />
-          <span className="uppercase tracking-wide">Phone</span>
-          <span className="uppercase tracking-wide">Email</span>
-        </div>
-        <div className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2 text-[11px] font-semibold text-[#7b8794] md:hidden">
+        <div className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2 text-[11px] font-semibold text-[#7b8794]">
           <span className="uppercase tracking-wide">Sort</span>
           <SortHeader k="name" label="Name" onSort={changeSort} sort={sort} />
           <SortHeader k="category" label="Category" onSort={changeSort} sort={sort} />
+          <span className="ml-auto font-medium normal-case tracking-normal text-[#9aa5b1]">
+            {filteredContacts.length} {filteredContacts.length === 1 ? "contact" : "contacts"}
+          </span>
         </div>
 
         {filteredContacts.length === 0 && (
@@ -513,7 +532,7 @@ export default function ContactsPage() {
           </p>
         )}
 
-        <ul>
+        <ul className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {filteredContacts.map((contact, index) => {
           const isEditing = editingContactId === contact.id;
           const emailRows = toDisplayEmails(contact);
@@ -527,7 +546,7 @@ export default function ContactsPage() {
             : 0;
           const groupHeader = showGroup ? (
             <li
-              className="flex items-center gap-2 border-t border-[var(--line-soft)] bg-[#f8fafc] px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide first:border-t-0"
+              className="col-span-full flex items-center gap-2 border-b border-[var(--line-soft)] px-1 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-wide first:pt-0"
               data-contact-group
               key={`group-${contact.category}`}
               style={{ color: pill.fg }}
@@ -541,7 +560,7 @@ export default function ContactsPage() {
           if (isEditing) {
             return [
               groupHeader,
-              <li key={contact.id} className="border-t border-[var(--line-soft)] bg-[#f8fafc] px-5 py-3 first:border-t-0">
+              <li key={contact.id} className="col-span-full rounded-xl border border-[var(--line-soft)] bg-[#f8fafc] px-5 py-3">
                 <p className="mb-2 text-sm font-semibold">{contact.name}</p>
                 <form className="grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-2 py-1" onSubmit={(e) => { e.preventDefault(); if (canEditContacts) saveEditedContact(); }}>
                   <fieldset className="contents" disabled={!canEditContacts}>
@@ -684,10 +703,10 @@ export default function ContactsPage() {
             groupHeader,
             <li
               key={contact.id}
-              className={`group grid grid-cols-[minmax(0,1fr)] items-start gap-x-4 gap-y-1 border-t border-[#eef1f4] px-5 py-2.5 text-[13px] text-[#334155] transition-colors first:border-t-0 hover:bg-[#f6f9fc] ${COLS}`}
+              className="group flex min-w-0 flex-col gap-2 rounded-xl border border-[#e8edf2] bg-white p-3 text-[13px] text-[#334155] transition-colors hover:border-[#cfd9e3] hover:bg-[#fbfdff]"
               data-contact-row
             >
-              <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-start gap-2.5">
                 <span
                   aria-hidden
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -695,67 +714,70 @@ export default function ContactsPage() {
                 >
                   {initialsFor(contact.name)}
                 </span>
-                <div className="min-w-0">
-                  {canOpenContact ? (
-                    <button
-                      className="block max-w-full cursor-pointer truncate text-left text-[14px] font-semibold leading-5 text-[#1f2937] decoration-[var(--brand-primary)]/40 underline-offset-2 transition-colors hover:text-[var(--brand-primary)] hover:underline focus-visible:text-[var(--brand-primary)] focus-visible:underline focus-visible:outline-none"
-                      data-contact-open
-                      onClick={() => startEditing(contact)}
-                      title={`Open ${contact.name}`}
-                      type="button"
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {canOpenContact ? (
+                      <button
+                        className="block max-w-full cursor-pointer truncate text-left text-[14px] font-semibold leading-5 text-[#1f2937] decoration-[var(--brand-primary)]/40 underline-offset-2 transition-colors hover:text-[var(--brand-primary)] hover:underline focus-visible:text-[var(--brand-primary)] focus-visible:underline focus-visible:outline-none"
+                        data-contact-open
+                        onClick={() => startEditing(contact)}
+                        title={`Open ${contact.name}`}
+                        type="button"
+                      >
+                        <span className="font-semibold">{contact.name}</span>
+                      </button>
+                    ) : (
+                      <p className="truncate text-[14px] font-semibold leading-5 text-[#1f2937]" title={contact.name}>{contact.name}</p>
+                    )}
+                    <span
+                      className="shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-semibold leading-4"
+                      style={{ background: pill.bg, color: pill.fg }}
                     >
-                      <span className="font-semibold">{contact.name}</span>
-                    </button>
-                  ) : (
-                    <p className="truncate text-[14px] font-semibold leading-5 text-[#1f2937]" title={contact.name}>{contact.name}</p>
-                  )}
-                  {contact.address && (
-                    <p className="truncate text-[11.5px] leading-4 text-[#8a96a3]" title={contact.address}>{contact.address}</p>
-                  )}
+                      {contact.category}
+                    </span>
+                  </div>
+                  {contact.subCategory ? (
+                    <p className="truncate text-[11.5px] leading-4 text-[#64748b]">{contact.subCategory}</p>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="order-last col-span-1 flex min-w-0 flex-wrap items-center gap-1.5 pl-11 md:order-none md:col-span-1 md:min-h-8 md:pl-0">
-                <span
-                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4"
-                  style={{ background: pill.bg, color: pill.fg }}
-                >
-                  {contact.category}
-                </span>
-                {contact.subCategory ? (
-                  <span className="truncate text-[12px] text-[#64748b]">{contact.subCategory}</span>
-                ) : null}
-              </div>
-
-              <div className="order-last col-span-1 pl-11 tabular-nums md:order-none md:col-span-1 md:flex md:min-h-8 md:flex-col md:justify-center md:pl-0">
-                <p className="flex items-center gap-1.5 leading-5">
-                  <PhoneIcon />
-                  {contact.phone || <span className="text-[#9aa5b1]">—</span>}
-                </p>
-                {contact.fax && <p className="pl-5 text-[11.5px] leading-4 text-[#8a96a3]">Fax {contact.fax}</p>}
-              </div>
-
-              <div className="order-last col-span-1 min-w-0 pl-11 md:order-none md:col-span-1 md:flex md:min-h-8 md:flex-col md:justify-center md:pl-0">
-                {emailRows.length === 0 ? (
-                  <p className="flex items-center gap-1.5 leading-5 text-[#9aa5b1]"><MailIcon />—</p>
-                ) : (
-                  emailRows.map((e, i) => (
-                    <p key={i} className="flex min-w-0 items-center gap-1.5 leading-5">
+              {(contact.phone || contact.fax || contact.address || emailRows.length > 0) && (
+                <div className="grid min-w-0 gap-1 pl-[2.625rem] text-[12.5px] leading-5">
+                  {contact.phone && (
+                    <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-phone>
+                      <PhoneIcon />
+                      <span className="truncate">{contact.phone}</span>
+                    </p>
+                  )}
+                  {contact.fax && (
+                    <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-fax>
+                      <FaxIcon />
+                      <span className="truncate">{contact.fax}</span>
+                    </p>
+                  )}
+                  {contact.address && (
+                    <p className="flex min-w-0 items-start gap-1.5" data-contact-address>
+                      <span className="mt-[3px]"><BuildingIcon /></span>
+                      <span className="min-w-0 break-words">{contact.address}</span>
+                    </p>
+                  )}
+                  {emailRows.map((e, i) => (
+                    <p key={i} className="flex min-w-0 items-center gap-1.5" data-contact-email>
                       <MailIcon />
                       <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
                       {i === 0 && emailRows.length > 1 && (
                         <span className="shrink-0 rounded-full bg-[#fef3c7] px-1.5 text-[10.5px] font-semibold leading-4 text-[#92400e]" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
                       )}
                       {(e.name || e.label) && (
-                        <span className="shrink-0 rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
+                        <span className="shrink-0 truncate rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
                           {[e.name, e.label].filter(Boolean).join(" · ")}
                         </span>
                       )}
                     </p>
-                  ))
-                )}
-              </div>
-
+                  ))}
+                </div>
+              )}
             </li>,
           ];
         })}
