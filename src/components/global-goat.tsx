@@ -68,6 +68,14 @@ import { notifyChange } from "@/lib/local-sync";
 import { CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
 import { currentAuthor as currentNoteAuthor } from "@/hooks/use-case-note-entries";
 import { logActivity } from "@/lib/activity-log";
+import { BulkCancelCard, TextCard } from "@/components/goat-text-cards";
+import { clock12, describeBulkCancel, minutesOf, selectBulkCancel, type BulkCancelQuery } from "@/lib/goat-bulk-cancel";
+import { loadTextRecipients, queueBroadcast, readMacSeen } from "@/lib/broadcast-queue";
+import { dayLabel as textDayLabel, dayPhrase as textDayPhrase, parseTextRequest, suggestedCancelText, tidyTextMessage } from "@/lib/goat-text";
+import { queuedStatusText } from "@/lib/reminder-format";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import type { TextAudience } from "@/lib/goat-text";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { clearedIdSet, taskClearId } from "@/lib/cleared-tasks";
@@ -91,7 +99,7 @@ import { isNoPatientName, pickTodoPatient, todoTitleForPagePatient, detectNewPat
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
-import { breaksFlow, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { breaksFlow, naturalCancelTurn, naturalTextTurn, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
@@ -388,7 +396,7 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
-  const { addAppointments, removeAppointment, updateAppointment } = useScheduleAppointments();
+  const { addAppointments, removeAppointment, updateAppointment, updateManyAppointments, scheduleAppointments } = useScheduleAppointments();
   const { addTask, tasks: openTaskRows } = useTasks();
   const { roleTier, roleKnown, canEdit: canEditFeature } = useWorkspaceAccess();
   /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
@@ -792,7 +800,7 @@ export function GlobalGoatPopup({
         mem = { ...mem, listed: m.omListed };
         sawListed = true;
       }
-      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
+      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk || m.textDraft || m.bulkCancel);
       if (action && !sawAction) {
         sawAction = true;
         followUps = Boolean(m.om || m.omUndo);
@@ -1367,6 +1375,11 @@ export function GlobalGoatPopup({
       send(scheduleSlashToBooking(sl.rest));
       return true;
     }
+    if (sl.cmd === "text" && !isGoatAdmin) {
+      push({ role: "user", text: question, practice: true });
+      push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      return true;
+    }
     const started = startFlow(sl.cmd, sl.rest, flowCtx());
     if (started) {
       push({ role: "user", text: sl.cmd === "contact" && sl.rest.includes("\n") ? `/contact … (pasted list)` : question, practice: true });
@@ -1433,6 +1446,10 @@ export function GlobalGoatPopup({
     } else if (a.type === "contactPaste") {
       if (!showContactImport(a.text, true)) push({ role: "goat", text: "I couldn't find a phone number in that. Each contact needs a name and a phone — try again, or type cancel.", practice: true });
       if (!looksLikeContactPaste(a.text) && parseContactPaste(a.text).every((d) => !d.phone)) flowRef.current = { k: "contactAdd" };
+    } else if (a.type === "textConfirm") {
+      void showTextCard(a.audience, a.message);
+    } else if (a.type === "bulkCancel") {
+      showBulkCancel(a.query);
     } else if (a.type === "contactEdit") {
       const c = loadContactDirectory().find((x) => x.id === a.contactId);
       if (c) push({ role: "goat", text: `Edit ${c.name}:`, practice: true, contactEdit: { contactId: c.id, name: c.name, category: c.category, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "", state: "open" } });
@@ -1451,6 +1468,171 @@ export function GlobalGoatPopup({
     if (!isFlowToken(question)) push({ role: "user", text: question.includes("\n") ? `${question.split("\n")[0].slice(0, 80)} … (pasted list)` : question, practice: true });
     runFlowTurn(turn);
     return true;
+  };
+
+  // ---- /text and bulk cancel ----
+  const TEXT_ADMIN_ONLY = "Texting patients is for owners and admins. Ask an owner or admin to send it.";
+  const smsSettings = () => {
+    try {
+      return normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
+    } catch {
+      return normalizeSmsReminderSettings(null);
+    }
+  };
+  /** Who gets it + the message → the Send card. Reads recipients from the cloud; queues nothing. */
+  const showTextCard = async (audience: TextAudience, message: string) => {
+    if (practiceOverride) {
+      push({ role: "goat", text: "This is practice mode, so I can't text anyone here.", practice: true });
+      return;
+    }
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    const ws = getActiveWorkspaceIdSync();
+    const found = client && ws ? await loadTextRecipients(client, ws, audience, smsSettings()).catch(() => null) : null;
+    if (!found) {
+      push({ role: "goat", text: "I couldn't load your patients just now, so I haven't set anything up. Check your connection and try again.", practice: true });
+      return;
+    }
+    const n = found.recipients.length;
+    push({
+      role: "goat",
+      practice: true,
+      text: n ? "Here's the text. Look it over, then tap Send." : "There's nobody with a phone number for that, so there's nothing to send.",
+      textDraft: {
+        audience,
+        message: tidyTextMessage(message).slice(0, 840),
+        state: "open",
+        recipients: found.recipients.map((r) => ({ id: r.patientId, name: r.patientName })),
+        skipped: found.skipped,
+        deferred: found.deferred,
+      },
+    });
+  };
+  /** The Send tap: re-read who gets it (never queue a stale list), then queue exactly like Message patients. */
+  const sendTextDraft = async (msg: ChatMessage) => {
+    const d = msg.textDraft;
+    if (!d || d.state !== "open") return;
+    if (!isGoatAdmin || practiceOverride) return setMsg(msg.id, { textDraft: { ...d, result: TEXT_ADMIN_ONLY } });
+    const client = getSupabaseBrowserClient();
+    const ws = getActiveWorkspaceIdSync();
+    if (!client || !ws) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "Sign in to message patients." } });
+    setMsg(msg.id, { textDraft: { ...d, state: "queuing", result: undefined } });
+    const settings = smsSettings();
+    const fresh = await loadTextRecipients(client, ws, d.audience, settings).catch(() => null);
+    if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was sent. Try again." } });
+    const shown = new Set((d.recipients ?? []).map((r) => r.id));
+    const same = fresh.recipients.length === shown.size && fresh.recipients.every((r) => shown.has(r.patientId));
+    if (!same) {
+      setMsg(msg.id, {
+        textDraft: {
+          ...d, state: "open", recipients: fresh.recipients.map((r) => ({ id: r.patientId, name: r.patientName })), skipped: fresh.skipped, deferred: fresh.deferred,
+          result: `The list changed while you were looking (it was ${shown.size}, now ${fresh.recipients.length}). Check it, then tap Send again.`,
+        },
+      });
+      return;
+    }
+    const r = await queueBroadcast(client, ws, { message: d.message, date: fresh.date, recipients: fresh.recipients, booked: d.audience.kind === "booked" }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "Couldn't queue the message." }));
+    if (!r.ok) return setMsg(msg.id, { textDraft: { ...d, state: "open", result: r.error } });
+    const mac = await readMacSeen(client, ws).catch(() => false);
+    logActivity({ category: "messages", action: "broadcast.queued", summary: `Sent a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
+    setMsg(msg.id, { textDraft: { ...d, state: "queued", result: queuedStatusText(r.count, settings.dryRun, mac) } });
+  };
+
+  const BULK_NEEDS_EDIT = "Canceling appointments needs permission to edit the schedule. Ask an owner or admin.";
+  /** The checklist of visits a bulk cancel would touch. Cancels nothing. */
+  const showBulkCancel = (q: BulkCancelQuery) => {
+    if (practiceOverride) {
+      push({ role: "goat", text: "This is practice mode, so I can't cancel real appointments here.", practice: true });
+      return;
+    }
+    if (!roleKnown || !canEditFeature("appointments")) {
+      push({ role: "goat", text: BULK_NEEDS_EDIT, practice: true });
+      return;
+    }
+    const today = practiceData().today;
+    const day = textDayLabel(q.date, today);
+    const rows = selectBulkCancel(scheduleAppointments, q);
+    const win = q.windowLabel ? ` (${q.windowLabel})` : "";
+    if (!rows.length) {
+      const onDay = scheduleAppointments.filter((a) => a.date === q.date && (a.status === "Scheduled" || a.status === "Reschedule"));
+      const providerMissing = q.provider && onDay.length > 0 && !onDay.some((a) => a.provider.toLowerCase().includes(q.provider!.toLowerCase()));
+      push({
+        role: "goat",
+        practice: true,
+        text: providerMissing
+          ? `I don't see any appointments for Dr. ${q.provider} ${textDayPhrase(q.date, today)}. Nothing was canceled.`
+          : `I don't see any Scheduled appointments ${textDayPhrase(q.date, today)}${win}. Nothing to cancel.`,
+      });
+      return;
+    }
+    push({
+      role: "goat",
+      practice: true,
+      text: `I found ${rows.length} appointment${rows.length === 1 ? "" : "s"} ${textDayPhrase(q.date, today)}${win}. Untick any you want to keep.`,
+      bulkCancel: {
+        heading: describeBulkCancel(q, textDayPhrase(q.date, today)),
+        dayWord: day,
+        state: "open",
+        rows: rows.map((a) => ({ id: a.id, patientId: a.patientId, patientName: a.patientName, time: clock12(minutesOf(a.startTime)), type: a.appointmentType, provider: a.provider, prevStatus: a.status, checked: true })),
+      },
+    });
+  };
+  const confirmBulkCancel = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d || d.state !== "open") return;
+    if (practiceOverride || !roleKnown || !canEditFeature("appointments")) return setMsg(msg.id, { bulkCancel: { ...d, state: "open" }, text: BULK_NEEDS_EDIT });
+    const picked = new Set(d.rows.filter((r) => r.checked).map((r) => r.id));
+    // Only visits that are STILL Scheduled / Reschedule (someone may have checked a patient in since the list was shown).
+    const live = new Set(scheduleAppointments.filter((a) => picked.has(a.id) && (a.status === "Scheduled" || a.status === "Reschedule")).map((a) => a.id));
+    if (!live.size) return setMsg(msg.id, { bulkCancel: { ...d, state: "canceled" }, text: "Those visits have already changed, so I canceled nothing." });
+    updateManyAppointments((a) => live.has(a.id), (a) => ({ ...a, status: "Canceled" }));
+    const rows = d.rows.filter((r) => live.has(r.id));
+    logActivity({ category: "appointments", action: "appointment.bulk_canceled", summary: `Canceled ${rows.length} appointment${rows.length === 1 ? "" : "s"} for ${d.dayWord} (G.O.A.T.)`, details: { count: rows.length, ids: rows.map((r) => r.id) } });
+    const left = picked.size - live.size;
+    setMsg(msg.id, { bulkCancel: { ...d, rows, state: "done", offerText: isGoatAdmin, result: `Canceled ${rows.length} appointment${rows.length === 1 ? "" : "s"} for ${d.dayWord}.${left ? ` (${left} had already changed, so I left ${left === 1 ? "it" : "them"} alone.)` : ""} Undo puts everyone back.` } });
+  };
+  const undoBulkCancel = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d || d.state !== "done" || !roleKnown || !canEditFeature("appointments")) return;
+    const prev = new Map(d.rows.map((r) => [r.id, r.prevStatus]));
+    // Only put back visits that are still Canceled (never overwrite a newer change).
+    const back = scheduleAppointments.filter((a) => prev.has(a.id) && a.status === "Canceled");
+    updateManyAppointments((a) => prev.has(a.id) && a.status === "Canceled", (a) => ({ ...a, status: (prev.get(a.id) ?? "Scheduled") as typeof a.status }));
+    logActivity({ category: "appointments", action: "appointment.bulk_cancel_undone", summary: `Undid the bulk cancel for ${d.dayWord}: restored ${back.length} appointment${back.length === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: back.length } });
+    setMsg(msg.id, { bulkCancel: { ...d, state: "undone", result: `Undone. ${back.length} appointment${back.length === 1 ? " is" : "s are"} back on the schedule.` } });
+  };
+  /** "Also text these patients": the normal /text Send card, prefilled with the canceled patients. */
+  const textCanceled = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d) return;
+    const ids = Array.from(new Set(d.rows.map((r) => r.patientId).filter(Boolean)));
+    const date = scheduleAppointments.find((a) => a.id === d.rows[0]?.id)?.date ?? practiceData().today;
+    if (!isGoatAdmin) return push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+    setMsg(msg.id, { bulkCancel: { ...d, offerText: false } });
+    void showTextCard({ kind: "patients", ids, label: `${ids.length} canceled ${ids.length === 1 ? "patient" : "patients"}` }, suggestedCancelText(date, practiceData().today));
+  };
+  /** "text everyone …" / "cancel all appointments tomorrow" typed without a "/". True if it was one of those. */
+  const tryNaturalAction = (raw: string): boolean => {
+    const text = raw.trim();
+    const ctx = flowCtx();
+    const t = naturalTextTurn(text, ctx);
+    if (t) {
+      push({ role: "user", text, practice: true });
+      if (!isGoatAdmin) push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      else runFlowTurn(t);
+      return true;
+    }
+    const c = naturalCancelTurn(text, ctx);
+    if (c) {
+      push({ role: "user", text, practice: true });
+      if (!roleKnown || !canEditFeature("appointments")) push({ role: "goat", text: BULK_NEEDS_EDIT, practice: true });
+      else runFlowTurn(c);
+      return true;
+    }
+    return false;
   };
   const confirmContactEdit = (msg: ChatMessage, d: NonNullable<ChatMessage["contactEdit"]>) => {
     const r = updateContact(d.contactId, { name: d.name, category: d.category as ContactCategory, phone: d.phone, fax: d.fax, email: d.email, address: d.address });
@@ -1713,7 +1895,7 @@ export function GlobalGoatPopup({
     if (!question || job || practiceBusy) return;
     // Two requests in one message: "book John Wed 2pm and remind me to call his lawyer".
     // Each step runs on its own (each still gets its own confirm card); "his/him" carries the patient.
-    if (casual) {
+    if (casual && !parseTextRequest(raw.trim(), practiceData().today) && flowRef.current?.k !== "textMsg") {
       const steps = splitSteps(question);
       if (steps.length > 1) {
         const hit = findPatientsInQuestion(steps[0], allPatients().map(toChatPatient)).confident?.patient;
@@ -1747,6 +1929,12 @@ export function GlobalGoatPopup({
         return send(`tell ${mc.recipients[0].firstName} ${mc.text}`, { to: mc.recipients, display: question, prefix });
       }
     }
+    // A waiting /text or bulk-cancel step takes the typed reply as-is (a text message is free text: never re-read it as a to-do).
+    const stepK = flowRef.current?.k;
+    if (!opts && stepK && (stepK === "textMsg" || stepK === "textWho" || stepK === "textDay" || stepK === "textPick" || stepK === "cancelDay") && tryFlow(stepK === "textMsg" ? raw.trim() : question)) return;
+    // "text everyone "we're closed tomorrow"", "text all active patients that we're closed Friday", "cancel all appointments tomorrow":
+    // the action wins over the Handbook answer below; a "how do I…" question still gets the answer. Nothing happens before a tap.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current && tryNaturalAction(raw)) return;
     // "who does broadcast send to", "how do I text all active patients": the Handbook answer (never sends anything).
     if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
       const bh = broadcastHelp(question, { canSeeSettings: isGoatAdmin });
@@ -2408,6 +2596,19 @@ export function GlobalGoatPopup({
                         patients={flowCtx().patients}
                         disabled={Boolean(job) || practiceBusy}
                         onPick={(p) => { setMsg(m.id, { flowPicker: { ...m.flowPicker!, picked: p.fullName } }); tryFlow(`${FLOW_TOKEN}${m.flowPicker!.next}-case ${p.id}`); }}
+                      />
+                    )}
+                    {m.textDraft && <TextCard d={m.textDraft} today={practiceData().today} onCancel={() => setMsg(m.id, { textDraft: { ...m.textDraft!, state: "canceled" } })} onChange={(message) => setMsg(m.id, { textDraft: { ...m.textDraft!, message, result: undefined } })} onSend={() => void sendTextDraft(m)} />}
+                    {m.bulkCancel && (
+                      <BulkCancelCard
+                        d={m.bulkCancel}
+                        busy={Boolean(job) || practiceBusy}
+                        onCancelVisits={() => confirmBulkCancel(m)}
+                        onNever={() => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, state: "canceled" } })}
+                        onTextThem={() => textCanceled(m)}
+                        onToggle={(id) => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, rows: m.bulkCancel!.rows.map((r) => (r.id === id ? { ...r, checked: !r.checked } : r)) } })}
+                        onToggleAll={(checked) => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, rows: m.bulkCancel!.rows.map((r) => ({ ...r, checked })) } })}
+                        onUndo={() => undoBulkCancel(m)}
                       />
                     )}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}

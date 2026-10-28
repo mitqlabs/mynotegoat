@@ -11,6 +11,8 @@
  *  /todo call tyler smith → matched patient as buttons, the name stays in the task
  *  /contact → Add or edit? → Add: one contact or a pasted list → review card
  *                          → Edit: pick contact → edit card → confirm
+ *  /text    → Who gets it? (one patient / all active / everyone scheduled a day)
+ *           → "What should it say?" → a Send card (nothing is queued before Send)
  */
 import { isEverydayWord } from "@/lib/goat-name-guard";
 import { matchPatientsByName } from "@/lib/goat-notes";
@@ -20,6 +22,9 @@ import { isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { detectPipeline, detectReview } from "@/lib/goat-pipeline";
 import { looksLikeContactPaste } from "@/lib/goat-contacts-import";
 import { detectPlainTodo, isNoPatientName } from "@/lib/goat-intents";
+import { parseBulkCancel, type BulkCancelQuery } from "@/lib/goat-bulk-cancel";
+import { dayPhrase, parseTextRequest, parseTextRest, tidyTextMessage, type TextAudience, type TextParse } from "@/lib/goat-text";
+import { findDate } from "@/lib/goat-understand";
 
 /**
  * True when typed text is clearly a NEW request, not an answer to the waiting
@@ -30,6 +35,8 @@ export function breaksFlow(text: string, pending?: Pending | null): boolean {
   const t = text.trim();
   if (!t) return false;
   if (t.startsWith("/") && !t.startsWith(TOKEN)) return true;
+  // The text for a patient broadcast is free text ("Reply C to confirm", "remind them…"): only a "/" command leaves.
+  if (pending?.k === "textMsg") return false;
   if (t.startsWith("@")) return true;
   if ((CHIPS as readonly string[]).some((c) => c.toLowerCase() === t.toLowerCase())) return true;
   if (detectPlainTodo(t)) return true; // "remind me to …" is a new request, never a name answer
@@ -59,17 +66,24 @@ export type Pending =
   | { k: "todoText"; patientId?: string }
   | { k: "contactKind" }
   | { k: "contactAdd" }
-  | { k: "contactPick" };
+  | { k: "contactPick" }
+  | { k: "textWho"; message?: string; dateHint?: string }
+  | { k: "textDay"; message?: string }
+  | { k: "textPick"; message?: string }
+  | { k: "textMsg"; audience: TextAudience }
+  | { k: "cancelDay"; query: Omit<BulkCancelQuery, "date"> };
 
 export type FlowAction =
   | { type: "noteConfirm"; patientId: string; text: string }
   | { type: "todoConfirm"; title: string; due: string; patientId?: string }
   | { type: "contactPaste"; text: string }
-  | { type: "contactEdit"; contactId: string };
+  | { type: "contactEdit"; contactId: string }
+  | { type: "textConfirm"; audience: TextAudience; message: string }
+  | { type: "bulkCancel"; query: BulkCancelQuery };
 
 export interface FlowChoice { label: string; token: string }
 /** Show the patient type-ahead (real patients; search by name, case # or phone). Picking one sends `/:<next>-case <id>`. */
-export interface FlowPicker { next: "note" | "todo"; prefill?: string; allowNone?: boolean }
+export interface FlowPicker { next: "note" | "todo" | "text"; prefill?: string; allowNone?: boolean }
 export interface FlowTurn { say: string; choices?: FlowChoice[]; pending: Pending | null; action?: FlowAction; picker?: FlowPicker }
 
 /** Chip tokens start with this so they never collide with typed text. */
@@ -105,9 +119,9 @@ export function searchPatients(query: string, patients: FlowPatient[], limit = 8
 }
 
 /** Matching cases for a typed name: always shown as buttons to confirm (never a silent pick). Max 8. */
-export function casePicker(name: string, ctx: FlowCtx, next: "note" | "todo", text?: string, found?: FlowPatient[]): FlowTurn {
+export function casePicker(name: string, ctx: FlowCtx, next: "note" | "todo" | "text", text?: string, found?: FlowPatient[]): FlowTurn {
   const all = found ?? matchPatientsByName(name, ctx.patients);
-  const pend: Pending = next === "note" ? { k: "notePick", ...(text ? { text } : {}) } : { k: "todoPick", ...(text ? { text } : {}) };
+  const pend: Pending = next === "note" ? { k: "notePick", ...(text ? { text } : {}) } : next === "text" ? { k: "textPick", ...(text ? { message: text } : {}) } : { k: "todoPick", ...(text ? { text } : {}) };
   if (!all.length) {
     return {
       say: `I couldn't find a patient for "${name}". Search below, or type the name again.`,
@@ -126,7 +140,7 @@ export function casePicker(name: string, ctx: FlowCtx, next: "note" | "todo", te
 }
 
 /** Bare "/note" or "/todo": the patient type-ahead (and for to-dos a "No patient" option). */
-function whichCase(ctx: FlowCtx, next: "note" | "todo", prefill?: string, text?: string): FlowTurn {
+function whichCase(ctx: FlowCtx, next: "note" | "todo" | "text", prefill?: string, text?: string): FlowTurn {
   const open = ctx.patients.find((p) => p.id === ctx.openPatientId);
   const choices: FlowChoice[] = [];
   if (open) choices.push({ label: label(open), token: `${TOKEN}${next}-case ${open.id}` });
@@ -134,7 +148,7 @@ function whichCase(ctx: FlowCtx, next: "note" | "todo", prefill?: string, text?:
   return {
     say: "Which patient? Start typing a name, case # or phone.",
     choices: choices.length ? choices : undefined,
-    pending: next === "note" ? { k: "notePick", ...(text ? { text } : {}) } : { k: "todoPick", ...(text ? { text } : {}) },
+    pending: next === "note" ? { k: "notePick", ...(text ? { text } : {}) } : next === "text" ? { k: "textPick", ...(text ? { message: text } : {}) } : { k: "todoPick", ...(text ? { text } : {}) },
     picker: { next, prefill, allowNone: next === "todo" },
   };
 }
@@ -191,7 +205,7 @@ export function splitNameAndText(rest: string, patients: FlowPatient[]): { match
 }
 
 /** Name matched → the matched patient(s) as confirm buttons (never a silent pick). */
-function namedFlow(next: "note" | "todo", m: FlowPatient[], text: string, ctx: FlowCtx): FlowTurn {
+function namedFlow(next: "note" | "todo" | "text", m: FlowPatient[], text: string, ctx: FlowCtx): FlowTurn {
   return casePicker("", ctx, next, text, m);
 }
 function withCase(next: "note" | "todo", p: FlowPatient, text: string | undefined, ctx: FlowCtx): FlowTurn {
@@ -240,6 +254,7 @@ export function startFlow(cmd: string, rest: string, ctx: FlowCtx): FlowTurn | n
     if (anywhere.length) return namedFlow("todo", anywhere, rest.trim(), ctx);
     return null; // no patient named → a general to-do (one-shot path)
   }
+  if (cmd === "text") return startTextFlow(rest, ctx);
   if (cmd === "contact" || cmd === "contacts") {
     if (rest && /\n/.test(rest)) return { say: "", pending: null, action: { type: "contactPaste", text: rest } };
     if (/^add\b/i.test(rest)) return addPrompt();
@@ -247,6 +262,130 @@ export function startFlow(cmd: string, rest: string, ctx: FlowCtx): FlowTurn | n
     return { say: "Add or edit?", choices: [{ label: "Add", token: `${TOKEN}contact-add` }, { label: "Edit", token: `${TOKEN}contact-edit` }], pending: { k: "contactKind" } };
   }
   return null;
+}
+
+
+// ---- /text: audience → message → Send card ----
+
+const GROUPS = (ctx: FlowCtx, dateHint?: string): FlowChoice[] => {
+  const day = dateHint && dateHint >= ctx.today ? dateHint : undefined;
+  const sched = (iso: string) => ({ label: `Everyone scheduled ${dayPhrase(iso, ctx.today)}`, token: `${TOKEN}text-day-${iso}` });
+  const tomorrow = findDate("tomorrow", ctx.today)!.iso;
+  return [
+    { label: "All active patients", token: `${TOKEN}text-active` },
+    ...(day ? [sched(day)] : [sched(tomorrow), sched(ctx.today)]),
+  ];
+};
+const ONE_PATIENT: FlowChoice = { label: "One patient", token: `${TOKEN}text-one` };
+
+/** "Who should get it?" with the three audiences as buttons. */
+function textWho(ctx: FlowCtx, message?: string, dateHint?: string, say = "Who should get this text?"): FlowTurn {
+  return { say, choices: [...GROUPS(ctx, dateHint), ONE_PATIENT], pending: { k: "textWho", ...(message ? { message } : {}), ...(dateHint ? { dateHint } : {}) } };
+}
+
+/** The audience is known: the message is known → the Send card; otherwise ask for it. */
+function afterAudience(audience: TextAudience, message?: string): FlowTurn {
+  return message
+    ? { say: "", pending: null, action: { type: "textConfirm", audience, message } }
+    : { say: "What should the text say?", pending: { k: "textMsg", audience } };
+}
+
+function textDay(ctx: FlowCtx, message?: string, say = "Which day? I'll text everyone scheduled that day."): FlowTurn {
+  const iso = (w: string) => findDate(w, ctx.today)!.iso;
+  return {
+    say,
+    choices: [
+      { label: "Everyone scheduled today", token: `${TOKEN}text-day-${iso("today")}` },
+      { label: "Everyone scheduled tomorrow", token: `${TOKEN}text-day-${iso("tomorrow")}` },
+    ],
+    pending: { k: "textDay", ...(message ? { message } : {}) },
+  };
+}
+
+/** One parsed request → the next step. */
+function textTurn(r: TextParse, ctx: FlowCtx): FlowTurn | null {
+  const msg = r.message || undefined;
+  if (r.audience) {
+    if (r.audience.kind === "booked" && r.audience.date < ctx.today) return textDay(ctx, msg, "That day has already passed. Which day?");
+    return afterAudience(r.audience, msg);
+  }
+  if (r.ambiguous) return textWho(ctx, msg, r.dateHint, "Who should get it?");
+  if (r.needsDay) return textDay(ctx, msg);
+  if (r.nameRest) {
+    const { matches, text } = splitNameAndText(r.nameRest, ctx.patients);
+    if (!matches.length) return null;
+    return casePicker("", ctx, "text", r.message || tidyTextMessage(text) || undefined, matches);
+  }
+  return null;
+}
+
+/**
+ * Natural phrasing without "/text": "text everyone "we're closed tomorrow"",
+ * "text all active patients that we're closed Friday". Null = not a text request (or a how-do-I
+ * question, or a name that isn't a patient), so normal chat handles it.
+ */
+export function naturalTextTurn(raw: string, ctx: FlowCtx): FlowTurn | null {
+  const r = parseTextRequest(raw, ctx.today);
+  if (!r) return null;
+  // Without "/text", a lone first name ("text hannah can you call Mock Law") is far more likely a team message than a
+  // patient text, so only a FULL patient name starts a one-patient text from plain words.
+  if (!r.audience && !r.ambiguous && !r.needsDay && r.nameRest) {
+    const { matches } = splitNameAndText(r.nameRest, ctx.patients);
+    const low = r.nameRest.toLowerCase();
+    const full = matches.some((p) => {
+      const t = p.fullName.toLowerCase().split(/\s+/).filter(Boolean);
+      return t.length >= 2 && low.includes(t[0].slice(0, 3)) && low.includes(t[t.length - 1].slice(0, 4));
+    });
+    if (!full) return null;
+  }
+  return textTurn(r, ctx);
+}
+
+function startTextFlow(rest: string, ctx: FlowCtx): FlowTurn {
+  if (!rest.trim()) return { ...textWho(ctx, undefined, undefined, "Who should get the text?"), pending: { k: "textWho" } };
+  const r = parseTextRest(rest, ctx.today);
+  const turn = r ? textTurn(r, ctx) : null;
+  if (turn) return turn;
+  // Nothing recognised as a group or a patient: a short word or two is a name to search; a sentence is the message.
+  const words = rest.trim().split(/\s+/);
+  if (words.length <= 3 && !/[.!?]/.test(rest)) return { ...whichCase(ctx, "text", rest.trim()), say: `I couldn't tell which patient "${rest.trim()}" is. Search below.` };
+  return textWho(ctx, tidyTextMessage(rest), undefined, "Who should get this text?");
+}
+
+/** A typed answer to "Who should get this text?". */
+function textWhoReply(t: string, pending: Extract<Pending, { k: "textWho" }>, ctx: FlowCtx): FlowTurn | null {
+  const msg = pending.message;
+  const r = parseTextRest(t, ctx.today);
+  if (r?.audience) return textTurn({ ...r, message: msg ?? r.message }, ctx);
+  if (r?.ambiguous) return textWho(ctx, msg, pending.dateHint, "That could be a few groups. Which one?");
+  if (r?.needsDay) return textDay(ctx, msg);
+  if (/^(?:one|a|single|just one)(?:\s+patient)?$/i.test(t)) return whichCase(ctx, "text", undefined, msg);
+  const day = t.split(/\s+/).length <= 4 ? findDate(t.replace(/\b(?:tmrw|tmw|tomorow)\b/i, "tomorrow"), ctx.today) : null;
+  if (day) return textTurn({ audience: { kind: "booked", date: day.iso }, ambiguous: false, needsDay: false, nameRest: "", message: msg ?? "" }, ctx);
+  const m = searchPatients(t, ctx.patients);
+  return casePicker(t, ctx, "text", msg, m.length ? m : undefined);
+}
+
+// ---- bulk cancel: "cancel everything tomorrow" → (day?) → checklist card → red button ----
+
+function cancelDay(ctx: FlowCtx, query: Omit<BulkCancelQuery, "date">, say = "Which day should I look at?"): FlowTurn {
+  const iso = (w: string) => findDate(w, ctx.today)!.iso;
+  return {
+    say,
+    choices: [
+      { label: "Today", token: `${TOKEN}cancel-day-${iso("today")}` },
+      { label: "Tomorrow", token: `${TOKEN}cancel-day-${iso("tomorrow")}` },
+    ],
+    pending: { k: "cancelDay", query },
+  };
+}
+
+/** "cancel all appointments for tomorrow" and friends. Null = not a bulk cancel (one patient's cancel is the normal flow). */
+export function naturalCancelTurn(raw: string, ctx: FlowCtx): FlowTurn | null {
+  const r = parseBulkCancel(raw, ctx.today);
+  if (!r) return null;
+  if (r.needsDay || !r.query.date) return cancelDay(ctx, r.query, r.dayNote ? `${r.dayNote} Which day?` : "Which day should I look at?");
+  return { say: "", pending: null, action: { type: "bulkCancel", query: { ...r.query, date: r.query.date } } };
 }
 
 const addPrompt = (): FlowTurn => ({ say: "Type one contact (name, phone, address) or paste a list — one contact per block.", pending: { k: "contactAdd" } });
@@ -261,6 +400,10 @@ export function contactPicker(q: string, ctx: FlowCtx): FlowTurn {
     pending: { k: "contactPick" },
   };
 }
+
+/** The message already typed for a /text flow, carried through the button taps. */
+const textMessageOf = (pending: Pending | null | undefined): string | undefined =>
+  pending?.k === "textWho" || pending?.k === "textDay" || pending?.k === "textPick" ? pending.message : undefined;
 
 /** Continue a pending flow with typed text or a chip token. Null = flow doesn't apply (let normal chat handle it). */
 export function continueFlow(input: string, pending: Pending | null, ctx: FlowCtx): FlowTurn | null {
@@ -282,26 +425,56 @@ export function continueFlow(input: string, pending: Pending | null, ctx: FlowCt
         return whichCase(ctx, "todo");
       case "todo-case":
         return p ? withCase("todo", p, pending?.k === "todoPick" ? pending.text : undefined, ctx) : null;
+      case "text-active":
+        return afterAudience({ kind: "active" }, textMessageOf(pending));
+      case "text-one":
+        return whichCase(ctx, "text", undefined, textMessageOf(pending));
+      case "text-case":
+        return p ? afterAudience({ kind: "patients", ids: [p.id], label: p.fullName }, textMessageOf(pending)) : null;
       case "contact-add":
         return addPrompt();
       case "contact-edit":
         return { say: "Which contact? Type part of the name.", pending: { k: "contactPick" } };
       case "contact-pick":
         return ctx.contacts.some((c) => c.id === arg) ? { say: "Change what you need, then Confirm.", pending: null, action: { type: "contactEdit", contactId: arg } } : null;
-      default:
-        return null;
+      default: {
+        const cd = /^cancel-day-(\d{4}-\d{2}-\d{2})$/.exec(tok);
+        if (cd) return pending?.k === "cancelDay" ? { say: "", pending: null, action: { type: "bulkCancel", query: { ...pending.query, date: cd[1] } } } : null;
+        const day = /^text-day-(\d{4}-\d{2}-\d{2})$/.exec(tok);
+        return day ? afterAudience({ kind: "booked", date: day[1] }, textMessageOf(pending)) : null;
+      }
     }
   }
   if (!pending) return null;
   if (breaksFlow(t, pending)) return null; // a new request replaces the old step
-  if ((pending.k === "notePick" || pending.k === "todoPick" || pending.k === "contactPick") && notAName(t)) return null;
-  if (CANCEL.test(t)) return { say: "Okay, cancelled.", pending: null };
+  if ((pending.k === "notePick" || pending.k === "todoPick" || pending.k === "contactPick" || pending.k === "textPick" || pending.k === "textWho" || pending.k === "textDay" || pending.k === "cancelDay") && notAName(t)) return null;
+  if (pending.k === "textMsg" ? /^(?:cancel|never ?mind|nvm|stop|forget it)[.!]?$/i.test(t) : CANCEL.test(t)) return { say: "Okay, cancelled. Nothing was sent.", pending: null };
   switch (pending.k) {
     case "notePick":
     case "todoPick": {
       const next = pending.k === "notePick" ? "note" : "todo";
       const m = searchPatients(t, ctx.patients);
       return casePicker(t, ctx, next, pending.text, m.length ? m : undefined);
+    }
+    case "textWho":
+      return textWhoReply(t, pending, ctx);
+    case "textPick": {
+      const m = searchPatients(t, ctx.patients);
+      return casePicker(t, ctx, "text", pending.message, m.length ? m : undefined);
+    }
+    case "textDay": {
+      const hit = findDate(t.replace(/\b(?:tmrw|tmw|tomorow)\b/i, "tomorrow"), ctx.today);
+      if (!hit) return textDay(ctx, pending.message, "I didn't catch the day. Pick one, or type a day like Friday or 10/30.");
+      return textTurn({ audience: { kind: "booked", date: hit.iso }, ambiguous: false, needsDay: false, nameRest: "", message: pending.message ?? "" }, ctx);
+    }
+    case "cancelDay": {
+      const hit = findDate(t.replace(/\b(?:tmrw|tmw|tomorow)\b/i, "tomorrow"), ctx.today);
+      if (!hit || hit.iso < ctx.today) return cancelDay(ctx, pending.query, "I didn't catch the day. Pick one, or type a day like Friday or 10/30.");
+      return { say: "", pending: null, action: { type: "bulkCancel", query: { ...pending.query, date: hit.iso } } };
+    }
+    case "textMsg": {
+      const message = tidyTextMessage(t);
+      return message ? afterAudience(pending.audience, message) : { say: "What should the text say?", pending };
     }
     case "noteText":
       return { say: "", pending: null, action: { type: "noteConfirm", patientId: pending.patientId, text: t } };

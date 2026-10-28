@@ -108,7 +108,29 @@ export interface ChatMessage {
   /** "/todo" confirm card. */
   todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
   /** "/note" and "/todo": the patient type-ahead (name / case # / phone). `picked` once a patient is chosen. */
-  flowPicker?: { next: "note" | "todo"; prefill?: string; allowNone?: boolean; picked?: string };
+  flowPicker?: { next: "note" | "todo" | "text"; prefill?: string; allowNone?: boolean; picked?: string };
+  /** "/text": who gets it, the message, and the Send card. Nothing is queued until the user taps Send. Names only — never phone numbers. */
+  textDraft?: {
+    audience: import("@/lib/goat-text").TextAudience;
+    message: string;
+    state: "open" | "queuing" | "queued" | "canceled" | "error";
+    recipients?: Array<{ id: string; name: string }>;
+    skipped?: { optedOut: number; noPhone: number; sharedPhone: number };
+    deferred?: boolean;
+    /** The "Queued…" line, or the reason nothing was queued. */
+    result?: string;
+  };
+  /** Bulk cancel: the checklist of visits. Nothing is canceled until the red button is tapped. */
+  bulkCancel?: {
+    heading: string;
+    /** "tomorrow" / "Fri 10/30", for the card. */
+    dayWord: string;
+    rows: Array<{ id: string; patientId: string; patientName: string; time: string; type: string; provider: string; prevStatus: string; checked: boolean }>;
+    state: "open" | "done" | "canceled" | "undone";
+    result?: string;
+    /** Set after cancel: "Also text these patients?" has been offered. */
+    offerText?: boolean;
+  };
   noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
   /** A button that opens an existing form prefilled (New Patient / New Appointment). Nothing is saved until the user saves the form. */
   formLaunch?:

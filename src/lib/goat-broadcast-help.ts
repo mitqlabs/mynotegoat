@@ -29,7 +29,7 @@ export function broadcastHelp(question: string, opts: { canSeeSettings?: boolean
     "It goes out through your office iPhone: tap Send now from this device (or run Send Reminders Now) to send it right away. If an iMac is set up, it also sends it by itself within about 10 minutes.",
   ].join("\n");
   const rules =
-    "Always left out: patients with no valid phone number, patients marked \"no text reminders\" or who replied STOP, and repeat phone numbers (one text per phone). \"Active\" means the Patients list status Active (Discharged, Ready to Submit, Submitted, Dropped and Paid are not). Quiet hours still apply, so nothing sends overnight. More choices (All patients, Patients seen in a time period) are planned.";
+    "Always left out: patients with no valid phone number, patients marked \"no text reminders\" or who replied STOP, and repeat phone numbers (one text per phone). \"Active\" means the Patients list status Active (Discharged, Ready to Submit, Submitted, Dropped and Paid are not). Quiet hours still apply, so nothing sends overnight. More choices (All patients, Patients seen in a time period) are planned.\n\nShortcut: owners and admins can also tell G.O.A.T. \"text all active patients that we're closed Friday\" (or type /text). It shows the list and the message, and nothing is sent until you tap Send.";
   return {
     text: who
       ? `A text to many patients goes to the group you pick under Send to:\n${audiences}\n\n${rules}\n\n${steps}`
