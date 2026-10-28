@@ -315,3 +315,75 @@ export function dismissalsToResetForClosure(
     )
     .map((appt) => appt.id);
 }
+
+/** Today as YYYY-MM-DD in the browser's local time. */
+export function todayIsoLocal(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+/** YYYY-MM-DD → mm/dd/yy (for example 2026-10-29 → 10/29/26). Anything else passes through. */
+export function formatShortDateFromIso(dateIso: string): string {
+  const [year, month, day] = dateIso.split("-");
+  if (!year || !month || !day) return dateIso;
+  return `${month}/${day}/${year.slice(-2)}`;
+}
+
+/** "10/29/26" or "12/24/26 - 01/03/27". */
+export function formatKeyDateRangeShort(row: Pick<KeyDateRecord, "startDate" | "endDate">): string {
+  const start = formatShortDateFromIso(row.startDate);
+  return row.startDate === row.endDate ? start : `${start} - ${formatShortDateFromIso(row.endDate)}`;
+}
+
+/**
+ * "Still booked" = the patient is still expected: Scheduled or Reschedule.
+ * Canceled, No Show and anyone already seen (Check In / Check Out) are not.
+ * A visit with no status is treated as Scheduled.
+ */
+export function isStillBookedStatus(status: string | undefined | null): boolean {
+  return !status || status === "Scheduled" || status === "Reschedule";
+}
+
+export interface UpcomingClosedBookings {
+  /** Still-booked visits dated today or later on this Closed date. */
+  count: number;
+  /** Of those, how many were hidden with "Clear". */
+  cleared: number;
+}
+
+/**
+ * The ONLY number the Key Dates table shows. Counts, per Closed key date that
+ * has not ended yet, the Scheduled / Reschedule visits dated today or later
+ * (for a date with special hours, only visits outside those hours). Past dates,
+ * Open and Covered days and Closed days with nobody booked are simply absent
+ * from the map, so the table shows a plain "—" for them.
+ */
+export function upcomingClosedBookings(
+  rows: KeyDateRecord[],
+  appointments: Array<{ id: string; date: string; startTime?: string; status?: string }>,
+  todayIso: string,
+  dismissed: ReadonlySet<string> = new Set(),
+): Map<string, UpcomingClosedBookings> {
+  const out = new Map<string, UpcomingClosedBookings>();
+  for (const row of rows) {
+    if (row.officeStatus !== "Closed" || row.endDate < todayIso) continue;
+    let count = 0;
+    let cleared = 0;
+    for (const appt of appointments) {
+      if (appt.date < todayIso || !isStillBookedStatus(appt.status)) continue;
+      if (!isDateInRange(appt.date, row.startDate, row.endDate)) continue;
+      if (
+        keyDateHasHours(row) &&
+        isTimeWithinHours(appt.startTime ?? "", {
+          start: normalizeKeyDateTime(row.openStart),
+          end: normalizeKeyDateTime(row.openEnd),
+        })
+      ) {
+        continue;
+      }
+      count += 1;
+      if (dismissed.has(appt.id)) cleared += 1;
+    }
+    if (count > 0) out.set(row.id, { count, cleared });
+  }
+  return out;
+}

@@ -35,7 +35,7 @@ export function keyDatesHelp(question: string): KeyDatesHelp | null {
     "A Closed day stops appointment reminders only. Message patients texts are never blocked by a Key Date.",
     "Add \"Open from / until\" hours to make a partial day: visits outside those hours get no reminders.",
     "Set it BEFORE the reminder run. Texts already sent can't be recalled; changing a day to Closed afterwards only stops anything not yet sent. Reminders for a day go out the day before.",
-    "In the Configured Key Dates table, Appointments shows how many visits are really booked that day (and how many you've cleared). A red notice at the top lists Closed days that still have patients booked, so you can cancel, reschedule or text them (Settings → Text Reminders → Message patients → All active patients).",
+    "In the Configured Key Dates table, a red \"8 still booked\" appears only for a Closed day that hasn't passed and still has Scheduled or Reschedule visits (Canceled, No Show and seen visits aren't counted). Every other row shows \"—\". Click the red count to see just that date in the Warning List, then Show all to go back. \"Show past & cleared\" at the bottom of the Warning List holds old and cleared items. You can cancel, reschedule or text those patients (Settings → Text Reminders → Message patients → All active patients).",
   ].join("\n");
   return { text, links: [KEYDATES_LINK, { label: "Handbook", href: KEYDATES_HANDBOOK_ANCHOR }] };
 }
