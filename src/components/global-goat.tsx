@@ -77,6 +77,7 @@ import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
 import { understandCompliance } from "@/lib/goat-compliance";
+import { broadcastHelp } from "@/lib/goat-broadcast-help";
 import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -1741,6 +1742,15 @@ export function GlobalGoatPopup({
         }
         const prefix = mc.recipients.map((r) => `@${r.label}`).join(" ");
         return send(`tell ${mc.recipients[0].firstName} ${mc.text}`, { to: mc.recipients, display: question, prefix });
+      }
+    }
+    // "who does broadcast send to", "how do I text all active patients": the Handbook answer (never sends anything).
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const bh = broadcastHelp(question, { canSeeSettings: isGoatAdmin });
+      if (bh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: bh.text, practice: true, links: bh.links });
+        return;
       }
     }
     // Understand first, then act: straight to one confirm card (or one short question).
