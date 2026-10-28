@@ -50,6 +50,9 @@ export interface SmsReminderSettings {
   automationConfirmed: boolean;
   /** ISO time the box was ticked ("" when not). */
   automationConfirmedAt: string;
+  /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
+   *  computer shows the same layout. A section that is not listed uses its default. */
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends", boolean>>;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
@@ -74,6 +77,7 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     optOutText: DEFAULT_OPT_OUT_TEXT,
     automationConfirmed: false,
     automationConfirmedAt: "",
+    sections: {},
   };
 }
 
@@ -111,6 +115,12 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   if (raw.automationConfirmed === true) {
     base.automationConfirmed = true;
     if (typeof raw.automationConfirmedAt === "string") base.automationConfirmedAt = raw.automationConfirmedAt;
+  }
+  if (raw.sections && typeof raw.sections === "object") {
+    const sec = raw.sections as Record<string, unknown>;
+    for (const key of ["setup", "texts", "messages", "sends"] as const) {
+      if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
+    }
   }
   return base;
 }

@@ -47,7 +47,9 @@ assert.ok(picked.every((r) => r.appointmentId === "" && r.time === ""));
 
 // No appointment needed in the queue: an empty visit time passes a broadcast with no window
 assert.equal(broadcastTimeOk("", {}), true);
-assert.equal(broadcastTimeOk("", { notBefore: "09:00" }), false); // a window is only ever set for Booked on a day
+// "Visit already passed" never applies to a recipient with no visit (All active patients, sent mid-day).
+assert.equal(broadcastTimeOk("", { notBefore: "09:00" }), true);
+assert.equal(broadcastTimeOk("", { startTime: "09:00" }), false); // a chosen window still needs a visit time
 
 // Booked audience now also dedupes by phone (siblings on one phone get one text)
 const booked = pickBroadcastRecipients(

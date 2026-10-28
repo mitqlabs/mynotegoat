@@ -79,3 +79,28 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
     links,
   };
 }
+
+const PAGE_TOPIC = /\b(text reminders?|reminders? (?:page|settings|screen)|set\s*up (?:section|card)|recent (?:sends|messages)|last run|last checked|run summary|sending devices?)\b/i;
+const PAGE_ASK =
+  /\b(collaps\w*|expand\w*|sections?|layout|hide|hidden|where (?:did|is|are|do)|too much|date format|dates?|mm\/dd|last run|last checked|run summary|\d+ sent|count)\b/i;
+
+/**
+ * "Where did the setup steps go on Text Reminders", "why does last run say 1 sent",
+ * "what format are the dates". Pure and offline; same answer as the Handbook
+ * (#chapter-text-reminders, "How the Text Reminders page is laid out").
+ */
+export function reminderPageHelp(question: string, opts: { canSeeSettings?: boolean } = {}): RemindersHelp | null {
+  const raw = question.trim();
+  if (!raw || raw.startsWith("/") || raw.startsWith("@")) return null;
+  if (!PAGE_TOPIC.test(raw) || !PAGE_ASK.test(raw)) return null;
+  const links = [{ label: "Handbook → Text reminders", href: REMINDERS_HANDBOOK_ANCHOR }, ...(opts.canSeeSettings === false ? [] : [SETTINGS_LINK])];
+  return {
+    text: [
+      "Settings → Text Reminders has two sections. Tap a heading to open or close it; NoteGoat remembers it for the whole office.",
+      "• Set up: the 3-step checklist, your sending devices, How it works, the two shortcuts and opt-out setup. It starts closed once the 8 AM automation box is ticked and a device has run. A red \"automation may not be set up\" warning stays at the top even when Set up is closed.",
+      "• Texts: send settings, Message patients and Recent sends. It starts open. Recent messages and Recent sends can each be closed too.",
+      "Every date on the page is mm/dd/yy. A device's last run shows the day's running total, for example \"10/29/26: 14 sent\" (everything logged for that day, not just the last batch).",
+    ].join("\n"),
+    links,
+  };
+}

@@ -281,7 +281,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Pick Send to: All active patients (the default) or Booked on a day. For Booked on a day, also pick Today, Tomorrow or a date.",
           "Check the count under the message. Tap it to see exactly who will get the text.",
           "Tap Queue message, then confirm \"Text N patient(s)?\".",
-          "Your office device sends it: the iMac within about 10 minutes, or tap Send now from this device on the iPhone.",
+          "Your office iPhone sends it: tap Send now from this device (or run Send Reminders Now). If an iMac is connected, it also sends it within about 10 minutes. The \"Queued\" line only mentions the iMac when one has actually checked in.",
         ],
         why: "Everything is saved in your workspace, so every computer and team member sees the same list and Recent messages.",
         watchOut: "Confirm shows the number of patients. If it's higher than you expected, open the list before you queue it.",
@@ -370,6 +370,18 @@ export const handbookChaptersOffice: HandbookChapter[] = [
     summary: "Set up automatic appointment texts from the office iPhone, and what to do when they didn't send.",
     audience: "admin",
     tasks: [
+      {
+        heading: "How the Text Reminders page is laid out",
+        steps: [
+          "Settings → Text Reminders has two sections. Tap a heading to open or close it. NoteGoat remembers what you opened or closed for the whole office, on every computer.",
+          "Set up: the 3-step checklist, Sending devices, How it works, the two iPhone shortcuts and the opt-out setup. It starts closed once the 8 AM automation box is ticked and a device has run, and open until then.",
+          "Texts (open by default): send settings (automatic sending, dry run, send time, run days, template), Message patients, and Recent sends.",
+          "Recent messages (under Message patients) and Recent sends can each be closed on their own.",
+          "The red warning \u201cYour 8 AM automation may not be set up\u201d always stays at the top, even when Set up is closed.",
+          "Every date on the page is mm/dd/yy, for example 10/29/26.",
+        ],
+        why: "A device's last run shows the day's running total, for example \u201c10/29/26: 14 sent\u201d. It counts everything logged for that day, so it matches Recent sends. A later check with nothing left to send doesn't erase it.",
+      },
       {
         heading: "Set up automatic reminders on the iPhone (3 steps)",
         steps: [
@@ -818,9 +830,14 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Days the office is closed",
         steps: [
           "Key Dates → fill the date, pick Closed, Covered, or Open (a day the office works even though it would normally be off, e.g. a holiday), give a reason, Add Key Date.",
+          "Closed = the office is shut: no scheduling and NO text reminders for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
+          "A Closed day stops APPOINTMENT reminders only. Message patients texts (for example \"we are closed Thursday\") are never blocked by a Key Date, so you can still tell patients you are closed.",
+          "Add Open from / until times for a partial day: visits outside those hours are flagged and get no reminders.",
+          "In Configured Key Dates, the Appointments column shows how many visits are really booked on that day or range. A red notice at the top lists Closed days that still have patients booked.",
           "The list underneath shows appointments already booked on those days.",
-          "Use Cancel Appointment there, or Clear to dismiss a row you have dealt with.",
+          "Use Cancel Appointment there, or Clear to dismiss a row you have dealt with. Clear only hides the row; the visit stays booked and still counts in the Appointments column.",
         ],
+        why: "Reminders go out the day before, so set the day to Closed before then. A text that has already been sent can't be recalled; changing the day afterwards only stops texts not yet sent. If you meant to tell patients you are closed, use Settings → Text Reminders → Message patients → All active patients.",
         watchOut:
           "Delete and Cancel need two clicks — the button turns into Confirm Delete / Confirm Cancel. Nothing happens on the first click; that is deliberate, because some browsers swallow pop-up confirmations.",
       },

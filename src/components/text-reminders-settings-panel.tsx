@@ -37,7 +37,9 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
-import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { CollapsibleSection } from "@/components/collapsible-section";
+import { fmtDate, fmtDateTime, fmtRunSummary, officeMacSeen, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -71,9 +73,6 @@ type DeviceRow = {
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
-const fmt = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" }) : "never";
-
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
@@ -87,6 +86,7 @@ export function TextRemindersSettingsPanel() {
   const { scheduleAppointments } = useScheduleAppointments();
   const [settings, setSettings] = useState<SmsReminderSettings>(() => loadSettings());
   const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [log, setLog] = useState<LogRow[]>([]);
   // Send history over the last two weeks (times + visit dates only), for the "8 AM automation may not be set up" check.
   const [history, setHistory] = useState<{ createdAt: string; visitDate: string }[]>([]);
@@ -151,6 +151,7 @@ export function TextRemindersSettingsPanel() {
         .limit(25),
     ]);
     setDevices((d as DeviceRow[] | null) ?? []);
+    setDevicesLoaded(true);
     setLog((l as LogRow[] | null) ?? []);
     const since = new Date(Date.now() - (AUTO_RUN_LOOKBACK_DAYS + 2) * 86_400_000).toISOString();
     const { data: h } = await client
@@ -308,6 +309,14 @@ export function TextRemindersSettingsPanel() {
   const activeDevices = devices.filter((d) => !d.revoked_at);
   const hasIphone = activeDevices.some((d) => d.kind === "iphone");
 
+  const setSection = (key: ReminderSection, open: boolean) =>
+    update({ sections: { ...settings.sections, [key]: open } });
+
+  // Set up starts collapsed once it is finished (box ticked AND a device has run). Until the devices
+  // load, the ticked box alone decides, so the page doesn't open and then snap shut.
+  const setupDone = devicesLoaded ? reminderSetupDone(settings.automationConfirmed, devices) : settings.automationConfirmed;
+  const setupOpen = sectionOpen(settings.sections, "setup", !setupDone);
+
   const confirmAutomation = (confirmed: boolean) =>
     update({ automationConfirmed: confirmed, automationConfirmedAt: confirmed ? new Date().toISOString() : "" });
 
@@ -335,153 +344,16 @@ export function TextRemindersSettingsPanel() {
 
   return (
     <div className="space-y-5" data-testid="text-reminders-panel">
-      <ReminderSetupChecklist hasIphone={hasIphone} onConfirm={confirmAutomation} settings={settings} warning={missedAutoRuns} />
+      <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
-          <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" />
-          Send reminders automatically
-        </label>
-        <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
-          <input checked={settings.dryRun} onChange={(e) => update({ dryRun: e.target.checked })} type="checkbox" />
-          Dry run (log only, send nothing)
-        </label>
-        <label className="grid gap-1">
-          <span className={label}>Send time</span>
-          <select className={input} onChange={(e) => update({ sendHour: Number(e.target.value) })} value={settings.sendHour}>
-            {Array.from({ length: 13 }, (_, i) => i + 8).map((h) => (
-              <option key={h} value={h}>
-                {hourLabel(h)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="grid gap-1">
-        <span className={label}>Run days (each run texts the NEXT day&apos;s appointments)</span>
-        <div className="flex flex-wrap items-center gap-2">
-          {WEEKDAY_SHORT.map((day, dow) => (
-            <button
-              className={`h-[42px] rounded-xl border px-3 text-sm font-semibold ${
-                runDays.includes(dow)
-                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                  : "border-[var(--line-soft)] bg-white"
-              }`}
-              key={day}
-              onClick={() => toggleDay(dow)}
-              type="button"
-            >
-              {day}
-            </button>
-          ))}
-          {settings.runDays === null ? (
-            <span className="text-sm text-[var(--text-muted)]">Automatic: the day before each open office day.</span>
-          ) : (
-            <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => update({ runDays: null })} type="button">
-              Reset to automatic ({autoDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"})
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-2">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid min-w-[14rem] flex-1 gap-1">
-            <span className={label}>Message template</span>
-            <select className={input} onChange={(e) => update({ templateId: e.target.value })} value={template?.id ?? ""}>
-              {smsTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!smsTemplates.some((t) => /remind/i.test(t.name)) && (
-            <button
-              className={btn}
-              onClick={() => {
-                const created = createSmsTemplate(
-                  "⏰ Appointment Reminder",
-                  DEFAULT_REMINDER_BODY,
-                );
-                updateSmsTemplates((current) => [...current, created]);
-                update({ templateId: created.id });
-              }}
-              type="button"
-            >
-              + Appointment Reminder template
-            </button>
-          )}
-        </div>
-        {template && (
-          <DraftTextarea
-            className="min-h-[90px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-            key={template.id}
-            onSave={(body) => {
-              const id = template.id;
-              updateSmsTemplates((current) =>
-                current.map((t) => (t.id === id ? { ...t, body, updatedAt: new Date().toISOString() } : t)),
-              );
-            }}
-            value={template.body}
-          />
-        )}
-        <p className="text-xs text-[var(--text-muted)]">
-          Placeholders: {SMS_TOKENS.map((t) => `${t.token} = ${t.label}`).join(" · ")}. Keep it short; no diagnoses or visit details.
-        </p>
-        {template && (
-          <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
-            <span className="font-semibold">Preview: </span>
-            {previewWithOptOut}
-          </p>
-        )}
-      </div>
-
-      <div className="grid gap-2" data-testid="opt-out-settings">
-        <span className={label}>Opt-out (reply STOP)</span>
-        <label className="inline-flex items-center gap-2 text-sm font-semibold">
-          <input checked={settings.optOutLine} onChange={(e) => update({ optOutLine: e.target.checked })} type="checkbox" />
-          Add an opt-out line to every text (reminders and Message patients)
-        </label>
-        {settings.optOutLine && (
-          <input
-            aria-label="Opt-out wording"
-            className={input}
-            maxLength={120}
-            onBlur={(e) => update({ optOutText: e.target.value.trim() || DEFAULT_OPT_OUT_TEXT })}
-            onChange={(e) => setSettings((current) => ({ ...current, optOutText: e.target.value }))}
-            value={settings.optOutText}
-          />
-        )}
-        <p className="text-xs text-[var(--text-muted)]">
-          When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
-          their text reminders turn off. START turns them back on. NoteGoat never texts back. A message that already says
-          STOP doesn&apos;t get the line twice.
-        </p>
-        <div className="rounded-xl border border-[var(--line-soft)] bg-white" data-testid="opt-out-list">
-          <p className="border-b border-[var(--line-soft)] px-3 py-2 text-sm font-semibold">
-            Opted out by reply ({optOuts.length})
-          </p>
-          {optOuts.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Nobody has replied STOP.</p>
-          ) : (
-            <ul className="max-h-60 overflow-y-auto text-sm">
-              {optOuts.map((row) => (
-                <li className="flex items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
-                  <span>
-                    <span className="font-semibold">{row.name}</span>{" "}
-                    <span className="text-[var(--text-muted)]">· {fmt(row.at)}</span>
-                  </span>
-                  <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold" onClick={() => void reEnable(row)} type="button">
-                    Turn texts back on
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+      <CollapsibleSection
+        hint={setupDone ? "Done. Open to change devices, shortcuts or opt-out setup." : "Checklist, sending devices, shortcuts and opt-out setup."}
+        onToggle={(next) => setSection("setup", next)}
+        open={setupOpen}
+        testId="section-setup"
+        title="Set up"
+      >
+      <ReminderSetupChecklist onConfirm={confirmAutomation} settings={settings} />
 
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -521,9 +393,9 @@ export function TextRemindersSettingsPanel() {
                 <span className="font-semibold">{d.name}</span>{" "}
                 <span className="rounded-md bg-[var(--bg-soft)] px-1.5 py-0.5 text-xs font-semibold">
                   {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
-                </span>
-                last checked in {fmt(d.last_seen_at)} · last run {fmt(d.last_run_at)}
-                {d.last_run_summary ? ` (${d.last_run_summary})` : ""}
+                </span>{" "}
+                last checked in {fmtDateTime(d.last_seen_at, settings.timeZone)} · last run {fmtDateTime(d.last_run_at, settings.timeZone)}
+                {d.last_run_summary ? ` (${fmtRunSummary(d.last_run_summary)})` : ""}
               </span>
               <span className="inline-flex items-center gap-3">
                 {!d.is_primary && (
@@ -577,8 +449,50 @@ export function TextRemindersSettingsPanel() {
         <SendFromIphoneButton className="mt-2" />
       </div>
 
-      <MessagePatientsComposer prefill={messagePrefill} settings={settings} workspaceId={workspaceId} />
-      {confirmDialog}
+      <div className="grid gap-2" data-testid="opt-out-settings">
+        <span className={label}>Opt-out (reply STOP)</span>
+        <label className="inline-flex items-center gap-2 text-sm font-semibold">
+          <input checked={settings.optOutLine} onChange={(e) => update({ optOutLine: e.target.checked })} type="checkbox" />
+          Add an opt-out line to every text (reminders and Message patients)
+        </label>
+        {settings.optOutLine && (
+          <input
+            aria-label="Opt-out wording"
+            className={input}
+            maxLength={120}
+            onBlur={(e) => update({ optOutText: e.target.value.trim() || DEFAULT_OPT_OUT_TEXT })}
+            onChange={(e) => setSettings((current) => ({ ...current, optOutText: e.target.value }))}
+            value={settings.optOutText}
+          />
+        )}
+        <p className="text-xs text-[var(--text-muted)]">
+          When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
+          their text reminders turn off. START turns them back on. NoteGoat never texts back. A message that already says
+          STOP doesn&apos;t get the line twice.
+        </p>
+        <div className="rounded-xl border border-[var(--line-soft)] bg-white" data-testid="opt-out-list">
+          <p className="border-b border-[var(--line-soft)] px-3 py-2 text-sm font-semibold">
+            Opted out by reply ({optOuts.length})
+          </p>
+          {optOuts.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Nobody has replied STOP.</p>
+          ) : (
+            <ul className="max-h-60 overflow-y-auto text-sm">
+              {optOuts.map((row) => (
+                <li className="flex items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
+                  <span>
+                    <span className="font-semibold">{row.name}</span>{" "}
+                    <span className="text-[var(--text-muted)]">· {fmtDateTime(row.at, settings.timeZone)}</span>
+                  </span>
+                  <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold" onClick={() => void reEnable(row)} type="button">
+                    Turn texts back on
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
         <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
@@ -715,14 +629,137 @@ export function TextRemindersSettingsPanel() {
         </ol>
         </details>
       </details>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hint="Send settings, Message patients and Recent sends."
+        onToggle={(next) => setSection("texts", next)}
+        open={sectionOpen(settings.sections, "texts", true)}
+        testId="section-texts"
+        title="Texts"
+      >
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
+          <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" />
+          Send reminders automatically
+        </label>
+        <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
+          <input checked={settings.dryRun} onChange={(e) => update({ dryRun: e.target.checked })} type="checkbox" />
+          Dry run (log only, send nothing)
+        </label>
+        <label className="grid gap-1">
+          <span className={label}>Send time</span>
+          <select className={input} onChange={(e) => update({ sendHour: Number(e.target.value) })} value={settings.sendHour}>
+            {Array.from({ length: 13 }, (_, i) => i + 8).map((h) => (
+              <option key={h} value={h}>
+                {hourLabel(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <div className="grid gap-1">
-        <div className="flex items-center justify-between">
-          <span className={label}>Recent sends</span>
+        <span className={label}>Run days (each run texts the NEXT day&apos;s appointments)</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {WEEKDAY_SHORT.map((day, dow) => (
+            <button
+              className={`h-[42px] rounded-xl border px-3 text-sm font-semibold ${
+                runDays.includes(dow)
+                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                  : "border-[var(--line-soft)] bg-white"
+              }`}
+              key={day}
+              onClick={() => toggleDay(dow)}
+              type="button"
+            >
+              {day}
+            </button>
+          ))}
+          {settings.runDays === null ? (
+            <span className="text-sm text-[var(--text-muted)]">Automatic: the day before each open office day.</span>
+          ) : (
+            <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => update({ runDays: null })} type="button">
+              Reset to automatic ({autoDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"})
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="grid min-w-[14rem] flex-1 gap-1">
+            <span className={label}>Message template</span>
+            <select className={input} onChange={(e) => update({ templateId: e.target.value })} value={template?.id ?? ""}>
+              {smsTemplates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!smsTemplates.some((t) => /remind/i.test(t.name)) && (
+            <button
+              className={btn}
+              onClick={() => {
+                const created = createSmsTemplate(
+                  "⏰ Appointment Reminder",
+                  DEFAULT_REMINDER_BODY,
+                );
+                updateSmsTemplates((current) => [...current, created]);
+                update({ templateId: created.id });
+              }}
+              type="button"
+            >
+              + Appointment Reminder template
+            </button>
+          )}
+        </div>
+        {template && (
+          <DraftTextarea
+            className="min-h-[90px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+            key={template.id}
+            onSave={(body) => {
+              const id = template.id;
+              updateSmsTemplates((current) =>
+                current.map((t) => (t.id === id ? { ...t, body, updatedAt: new Date().toISOString() } : t)),
+              );
+            }}
+            value={template.body}
+          />
+        )}
+        <p className="text-xs text-[var(--text-muted)]">
+          Placeholders: {SMS_TOKENS.map((t) => `${t.token} = ${t.label}`).join(" · ")}. Keep it short; no diagnoses or visit details.
+        </p>
+        {template && (
+          <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
+            <span className="font-semibold">Preview: </span>
+            {previewWithOptOut}
+          </p>
+        )}
+      </div>
+
+      <MessagePatientsComposer
+        macConnected={officeMacSeen(devices)}
+        onRecentToggle={(next) => setSection("messages", next)}
+        prefill={messagePrefill}
+        recentOpen={sectionOpen(settings.sections, "messages", true)}
+        settings={settings}
+        workspaceId={workspaceId}
+      />
+
+      <CollapsibleSection
+        actions={
           <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void refresh()} type="button">
             Refresh
           </button>
-        </div>
+        }
+        onToggle={(next) => setSection("sends", next)}
+        open={sectionOpen(settings.sections, "sends", true)}
+        testId="recent-sends"
+        title="Recent sends"
+        variant="inline"
+      >
         {log.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">Nothing sent yet.</p>
         ) : (
@@ -738,8 +775,8 @@ export function TextRemindersSettingsPanel() {
             <tbody>
               {log.map((row) => (
                 <tr className="border-t border-[var(--line-soft)]" key={row.id}>
-                  <td className="py-1 pr-3">{fmt(row.created_at)}</td>
-                  <td className="py-1 pr-3">{row.visit_date}</td>
+                  <td className="py-1 pr-3">{fmtDateTime(row.created_at, settings.timeZone)}</td>
+                  <td className="py-1 pr-3">{fmtDate(row.visit_date)}</td>
                   <td className="py-1 pr-3">•••{row.phone_last4}</td>
                   <td className="py-1">
                     {row.status}
@@ -750,10 +787,13 @@ export function TextRemindersSettingsPanel() {
             </tbody>
           </table>
         )}
-      </div>
+      </CollapsibleSection>
+      </CollapsibleSection>
+      {confirmDialog}
     </div>
   );
 }
+
 
 function Mono({ children }: { children: ReactNode }) {
   return (

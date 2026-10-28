@@ -253,3 +253,65 @@ export function isHolidaySourcedKeyDate(row: KeyDateRecord, holidayName: string)
       return Boolean(holiday) && (reason === holiday || reason.includes(holiday));
     });
 }
+
+/** A visit that still counts as "on the books" (not Canceled, not a No Show). */
+export function isBookedStatus(status: string | undefined | null): boolean {
+  return status !== "Canceled" && status !== "No Show";
+}
+
+export interface KeyDateBookings {
+  /** Visits on the books across the whole date or range. */
+  booked: number;
+  /** Of those, how many were "Cleared" from the warning list. */
+  cleared: number;
+}
+
+/**
+ * How many visits are booked on each key date (single day or range).
+ * Counts every visit on the books regardless of "Clear" — clearing hides a
+ * row from the warning list, it does not make the booking go away, so the
+ * table must never read "None" for a day that has patients on it.
+ */
+export function summarizeKeyDateBookings(
+  rows: KeyDateRecord[],
+  appointments: Array<{ id: string; date: string; status?: string }>,
+  dismissed: ReadonlySet<string> = new Set(),
+): Map<string, KeyDateBookings> {
+  const out = new Map<string, KeyDateBookings>();
+  for (const row of rows) {
+    let booked = 0;
+    let cleared = 0;
+    for (const appt of appointments) {
+      if (!isBookedStatus(appt.status)) continue;
+      if (!isDateInRange(appt.date, row.startDate, row.endDate)) continue;
+      booked += 1;
+      if (dismissed.has(appt.id)) cleared += 1;
+    }
+    out.set(row.id, { booked, cleared });
+  }
+  return out;
+}
+
+/**
+ * Appointment ids whose earlier "Clear" must be forgotten because the key
+ * date they sit on is now a full-day Closed. A visit cleared while the day
+ * was Covered ("doctor away, someone covers") is a different thing from a
+ * visit on a day the office is shut, and must show up again.
+ */
+export function dismissalsToResetForClosure(
+  row: Pick<KeyDateRecord, "startDate" | "endDate" | "officeStatus" | "openStart" | "openEnd">,
+  appointments: Array<{ id: string; date: string; status?: string }>,
+  dismissed: ReadonlySet<string>,
+  todayIso: string,
+): string[] {
+  if (row.officeStatus !== "Closed" || keyDateHasHours(row)) return [];
+  return appointments
+    .filter(
+      (appt) =>
+        dismissed.has(appt.id) &&
+        isBookedStatus(appt.status) &&
+        appt.date >= todayIso &&
+        isDateInRange(appt.date, row.startDate, row.endDate),
+    )
+    .map((appt) => appt.id);
+}
