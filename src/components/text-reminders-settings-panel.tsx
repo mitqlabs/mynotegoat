@@ -38,8 +38,9 @@ import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
 import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
-import { fmtDate, fmtDateTime, fmtRunSummary, officeMacSeen, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { devicesStatus, fmtDate, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -77,6 +78,7 @@ const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
 const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
+const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold";
 const btn = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-4 text-sm font-semibold";
 
 export function TextRemindersSettingsPanel() {
@@ -91,6 +93,8 @@ export function TextRemindersSettingsPanel() {
   // Send history over the last two weeks (times + visit dates only), for the "8 AM automation may not be set up" check.
   const [history, setHistory] = useState<{ createdAt: string; visitDate: string }[]>([]);
   const [newToken, setNewToken] = useState("");
+  const [newTokenName, setNewTokenName] = useState("");
+  const [newTokenKind, setNewTokenKind] = useState<"mac" | "iphone">("iphone");
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
@@ -259,8 +263,11 @@ export function TextRemindersSettingsPanel() {
     }
     if (error) return setMessage(`Couldn't add the device: ${error.message}`);
     setNewToken(token);
+    setNewTokenName(name);
+    setNewTokenKind(kind);
     setCopied(false);
     setMessage("");
+    update({ sections: { ...settings.sections, devices: true } });
     void refresh();
   };
 
@@ -283,9 +290,13 @@ export function TextRemindersSettingsPanel() {
       .update({ token_hash: await hashDeviceToken(token) })
       .eq("id", id);
     if (error) return setMessage(`Couldn't make a new code: ${error.message}`);
+    const dev = devices.find((d) => d.id === id);
     setNewToken(token);
+    setNewTokenName(dev?.name ?? "this device");
+    setNewTokenKind(dev?.kind === "mac" ? "mac" : "iphone");
     setCopied(false);
     setMessage("");
+    update({ sections: { ...settings.sections, devices: true } });
     void refresh();
   };
 
@@ -307,6 +318,9 @@ export function TextRemindersSettingsPanel() {
   };
 
   const activeDevices = devices.filter((d) => !d.revoked_at);
+  const devicesCard = devicesStatus(devices, settings.timeZone);
+  const iphoneCard = iphoneStatus(devices);
+  const imacCard = imacStatus(devices);
   const hasIphone = activeDevices.some((d) => d.kind === "iphone");
 
   const setSection = (key: ReminderSection, open: boolean) =>
@@ -353,167 +367,229 @@ export function TextRemindersSettingsPanel() {
         testId="section-setup"
         title="Set up"
       >
-      <ReminderSetupChecklist onConfirm={confirmAutomation} settings={settings} />
+      <ReminderSetupChecklist
+        onConfirm={confirmAutomation}
+        onToggle={(next) => setSection("steps", next)}
+        open={sectionOpen(settings.sections, "steps", !settings.automationConfirmed)}
+        settings={settings}
+      />
 
-      <div className="grid gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={label}>Sending devices</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <button className={btn} onClick={() => void addDevice("iphone")} type="button">
+      <SetupCard
+        actions={
+          <>
+            <button className={rowBtn} onClick={() => void addDevice("iphone")} type="button">
               + Add iPhone
             </button>
-            <button className={btn} onClick={() => void addDevice("mac")} type="button">
+            <button className={rowBtn} onClick={() => void addDevice("mac")} type="button">
               + Add Mac
             </button>
-          </div>
-        </div>
+          </>
+        }
+        onToggle={(next) => setSection("devices", next)}
+        open={sectionOpen(settings.sections, "devices", true)}
+        status={devicesCard.status}
+        summary={devicesCard.summary}
+        testId="section-devices"
+        title="Sending devices"
+      >
         {newToken && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-semibold">Device token (shown once; paste it into the Shortcut or Mac setup):</p>
+          <div className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3" data-testid="new-device-token">
+            <p className="font-semibold">Your new code for {newTokenName}. Copy it now. It will not be shown again.</p>
+            <code className="select-all break-all rounded-md bg-white px-2 py-1.5 font-mono text-sm">{newToken}</code>
+            <p className="text-amber-900">
+              <b>Do not share this code.</b> Anyone who has it can send texts as your office. Paste it into{" "}
+              {newTokenKind === "mac" ? "the iMac setup" : "the iPhone setup"} below.
+            </p>
+            <div className="flex flex-wrap gap-2">
               <button
-                className="text-sm font-semibold text-[var(--brand-primary)]"
+                className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                data-testid="copy-device-token"
                 onClick={() => {
                   void navigator.clipboard?.writeText(newToken).then(() => setCopied(true));
                 }}
                 type="button"
               >
-                {copied ? "Copied" : "Copy"}
+                {copied ? "✓ Copied" : "Copy code"}
+              </button>
+              <button className={rowBtn} data-testid="hide-device-token" onClick={() => { setNewToken(""); setCopied(false); }} type="button">
+                Hide code
               </button>
             </div>
-            <code className="break-all">{newToken}</code>
           </div>
         )}
         {activeDevices.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">No device connected yet.</p>
+          <p className="text-[var(--text-muted)]">No device connected yet. Click <b>+ Add iPhone</b> (or <b>+ Add Mac</b>) above.</p>
         ) : (
-          activeDevices.map((d) => (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" key={d.id}>
-              <span>
-                <span className="font-semibold">{d.name}</span>{" "}
-                <span className="rounded-md bg-[var(--bg-soft)] px-1.5 py-0.5 text-xs font-semibold">
-                  {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
-                </span>{" "}
-                last checked in {fmtDateTime(d.last_seen_at, settings.timeZone)} · last run {fmtDateTime(d.last_run_at, settings.timeZone)}
-                {d.last_run_summary ? ` (${fmtRunSummary(d.last_run_summary)})` : ""}
-              </span>
-              <span className="inline-flex items-center gap-3">
-                {!d.is_primary && (
-                  <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void makePrimary(d.id)} type="button">
-                    Make primary
-                  </button>
-                )}
-                <button className="text-sm font-semibold text-[var(--brand-primary)]" onClick={() => void newCode(d.id)} type="button">
-                  New code
-                </button>
-                <button className="text-sm font-semibold text-red-700" onClick={() => void revokeDevice(d.id)} type="button">
-                  Revoke
-                </button>
-              </span>
-            </div>
-          ))
+          <ul className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]" data-testid="device-list">
+            {activeDevices.map((d) => {
+              const run = lastRunText(d.last_run_summary, d.last_run_at, settings.timeZone);
+              return (
+                <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3" key={d.id}>
+                  <div className="min-w-0 grid gap-0.5">
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{d.name}</span>
+                      <span className="rounded-md bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold">
+                        {d.kind === "iphone" ? "iPhone" : "Mac"} · {d.is_primary ? "Primary" : "Backup"}
+                      </span>
+                    </p>
+                    <p className="text-[var(--text-muted)]">{lastCheckedText(d.last_seen_at, settings.timeZone)}</p>
+                    {run && <p className="text-[var(--text-muted)]">{run}</p>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!d.is_primary && (
+                      <button className={rowBtn} onClick={() => void makePrimary(d.id)} type="button">
+                        Make primary
+                      </button>
+                    )}
+                    <button className={rowBtn} onClick={() => void newCode(d.id)} type="button">
+                      New code
+                    </button>
+                    <button className={`${rowBtn} text-red-700`} onClick={() => void revokeDevice(d.id)} type="button">
+                      Revoke
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
-        {message && <p className="text-sm font-semibold text-red-700">{message}</p>}
-      </div>
+        {message && <p className="font-semibold text-red-700">{message}</p>}
+      </SetupCard>
 
-      <div className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm">
-        <p className="font-semibold">How it works</p>
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
+      <SetupCard
+        onToggle={(next) => setSection("how", next)}
+        open={sectionOpen(settings.sections, "how", false)}
+        summary={`Who sends the texts, and when. Runs ${hourLabel(settings.sendHour)} on ${runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "no days"}.`}
+        testId="section-how"
+        title="How it works"
+      >
+        <ul className="list-disc space-y-1.5 pl-5" data-testid="how-it-works">
           <li>
-            On each run day at {hourLabel(settings.sendHour)}, the primary device (iPhone or Mac) asks NoteGoat for
-            tomorrow&apos;s list and sends each text from Messages, a little apart.
+            On each run day at {hourLabel(settings.sendHour)}, your main device (iPhone or Mac) gets tomorrow&apos;s list and texts each
+            patient from Messages, a little apart. Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}.
           </li>
-          <li>Run days: {runDays.map((d) => WEEKDAY_SHORT[d]).join(", ") || "none"}. A closed day in Key Dates is skipped.</li>
-          <li>Skipped: canceled and no-show visits, patients marked &quot;no text reminders&quot;, and patients with no phone.</li>
-          <li>One text per patient per day, and never the same reminder twice.</li>
           <li>
-            Two devices? The primary sends first. The backup only sends what is still unsent 30 minutes later, and a
-            device only sends reminders it has claimed, so nobody gets two texts.
+            Left out: closed days (Key Dates), canceled and no-show visits, patients marked &quot;no text reminders&quot;, patients with no
+            phone, and anyone who replied STOP.
           </li>
-          <li>In dry run, devices only log what they would send. Turn dry run off when the log looks right.</li>
-        </ul>
-        <p className="mt-2 font-semibold">Two shortcuts on the iPhone</p>
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-          <li><b>Send-Reminders</b> texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you create the automation in <b>Step 2</b> above; the shortcut can&apos;t schedule itself.</li>
           <li>
-            <b>Send Reminders Now</b> is the backup. If the phone was off or dead, tap it: it sends <b>today&apos;s</b>{" "}
-            reminders that never went out (only visits still ahead, worded &quot;today&quot;), plus tomorrow&apos;s if they&apos;re due.
+            Nobody gets two texts. It is one text per patient per day. A backup device only sends what is still unsent 30 minutes later.
+          </li>
+          <li>
+            <b>Send-Reminders</b> (iPhone shortcut) texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you
+            make the automation (Step 2 above).
+          </li>
+          <li>
+            <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
+            reminders (only visits still ahead, worded &quot;today&quot;), tomorrow&apos;s if due, and any queued Message patients texts.
             Anyone already texted is skipped.
           </li>
-          <li>The iMac checks every 10 minutes on its own, so it needs no button.</li>
-          <li>
-            Replies of <b>STOP</b> are picked up automatically by the iMac (each check). On an iPhone-only office, add the{" "}
-            <b>NoteGoat Opt-Out</b> shortcut and its automation (see &quot;Opt-out replies on the iPhone&quot; below).
-          </li>
+          <li>The iMac checks every 10 minutes by itself, so it needs no button. It also picks up STOP replies by itself.</li>
+          <li>Dry run means devices only log what they would send. Turn it off when the log looks right.</li>
         </ul>
-        <SendFromIphoneButton className="mt-2" />
-      </div>
+        <SendFromIphoneButton />
+      </SetupCard>
 
-      <div className="grid gap-2" data-testid="opt-out-settings">
-        <span className={label}>Opt-out (reply STOP)</span>
-        <label className="inline-flex items-center gap-2 text-sm font-semibold">
-          <input checked={settings.optOutLine} onChange={(e) => update({ optOutLine: e.target.checked })} type="checkbox" />
-          Add an opt-out line to every text (reminders and Message patients)
-        </label>
-        {settings.optOutLine && (
-          <input
-            aria-label="Opt-out wording"
-            className={input}
-            maxLength={120}
-            onBlur={(e) => update({ optOutText: e.target.value.trim() || DEFAULT_OPT_OUT_TEXT })}
-            onChange={(e) => setSettings((current) => ({ ...current, optOutText: e.target.value }))}
-            value={settings.optOutText}
-          />
-        )}
-        <p className="text-xs text-[var(--text-muted)]">
-          When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), the iMac or iPhone tells NoteGoat and
-          their text reminders turn off. START turns them back on. NoteGoat never texts back. A message that already says
-          STOP doesn&apos;t get the line twice.
-        </p>
-        <div className="rounded-xl border border-[var(--line-soft)] bg-white" data-testid="opt-out-list">
-          <p className="border-b border-[var(--line-soft)] px-3 py-2 text-sm font-semibold">
-            Opted out by reply ({optOuts.length})
-          </p>
-          {optOuts.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Nobody has replied STOP.</p>
-          ) : (
-            <ul className="max-h-60 overflow-y-auto text-sm">
-              {optOuts.map((row) => (
-                <li className="flex items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
-                  <span>
-                    <span className="font-semibold">{row.name}</span>{" "}
-                    <span className="text-[var(--text-muted)]">· {fmtDateTime(row.at, settings.timeZone)}</span>
-                  </span>
-                  <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold" onClick={() => void reEnable(row)} type="button">
-                    Turn texts back on
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <SetupCard
+        onToggle={(next) => setSection("optout", next)}
+        open={sectionOpen(settings.sections, "optout", false)}
+        summary={optOutSummary(settings.optOutLine, optOuts.length)}
+        testId="section-optout"
+        title="Opt-out (reply STOP)"
+      >
+        <div className="grid gap-3" data-testid="opt-out-settings">
+          <label className="inline-flex items-center gap-2 font-semibold">
+            <input checked={settings.optOutLine} onChange={(e) => update({ optOutLine: e.target.checked })} type="checkbox" />
+            Add an opt-out line to every text (reminders and Message patients)
+          </label>
+          {settings.optOutLine && (
+            <input
+              aria-label="Opt-out wording"
+              className={input}
+              maxLength={120}
+              onBlur={(e) => update({ optOutText: e.target.value.trim() || DEFAULT_OPT_OUT_TEXT })}
+              onChange={(e) => setSettings((current) => ({ ...current, optOutText: e.target.value }))}
+              value={settings.optOutText}
+            />
           )}
+          <p className="text-[var(--text-muted)]">
+            When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), their text reminders turn off. START turns them back on.
+            NoteGoat never texts back. A message that already says STOP does not get the line twice.
+          </p>
+          <div className="rounded-lg border border-[var(--line-soft)]" data-testid="opt-out-list">
+            <p className="border-b border-[var(--line-soft)] px-3 py-2 font-semibold">Opted out by reply ({optOuts.length})</p>
+            {optOuts.length === 0 ? (
+              <p className="px-3 py-2 text-[var(--text-muted)]">Nobody has replied STOP.</p>
+            ) : (
+              <ul className="max-h-60 overflow-y-auto">
+                {optOuts.map((row) => (
+                  <li className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
+                    <span>
+                      <span className="font-semibold">{row.name}</span>{" "}
+                      <span className="text-[var(--text-muted)]">· {fmtDateTime(row.at, settings.timeZone)}</span>
+                    </span>
+                    <button className={rowBtn} onClick={() => void reEnable(row)} type="button">
+                      Turn texts back on
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
-      </div>
 
-      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="iphone-steps">
-        <summary className="cursor-pointer font-semibold">iPhone setup (Shortcuts app)</summary>
-        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-          <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once). Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
-          <li>
-            On the office iPhone, open this page and tap{" "}
-            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-            {" "}→ <b>Add Shortcut</b>, and paste your code when it asks. Then get{" "}
-            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
-            {" "}(same steps), the backup for days the phone missed 8 AM. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
-          </li>
-          <li>
-            <b>Not done yet:</b> the shortcut does not run by itself. Do <b>Step 2 (required)</b> in the checklist at the top of
-            this page to create the {hourLabel(settings.sendHour)} automation.
-          </li>
-        </ol>
-        <details className="mt-3 text-[var(--text-muted)]" data-testid="iphone-steps-manual">
-          <summary className="cursor-pointer text-xs font-semibold">Build it by hand instead</summary>
-          <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-            <li>Here in NoteGoat, click <b>+ Add iPhone</b>, then <b>Copy</b> the code (it starts with <Mono>ngr_</Mono> and is shown once).</li>
+        <InnerFold testId="optout-iphone-steps" title="Catch STOP replies on the iPhone (only if the iPhone sends the texts)">
+          <p className="text-[var(--text-muted)]">The iMac reads STOP replies on its own. Skip this if you use the iMac.</p>
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>
+              On the office iPhone, tap{" "}
+              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
+              {" "}→ <b>Add Shortcut</b>, and paste the same <Mono>ngr_</Mono> device code when it asks.
+            </li>
+            <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
+            <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
+            <li>Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off. Tap <b>Next</b>.</li>
+            <li>Pick <b>Run Shortcut</b> → <b>NoteGoat Opt-Out</b>. Tap the shortcut&apos;s <b>Input</b> and choose <b>Shortcut Input</b> (the message). Tap <b>Done</b>.</li>
+            <li>Repeat steps 2–5 with <Mono>START</Mono> if you want patients to be able to opt back in.</li>
+          </ol>
+          <p className="text-[var(--text-muted)]">
+            Good to know: iOS only runs this for messages that <i>contain</i> STOP, and NoteGoat only acts when the whole reply is the
+            word. If the patient is saved in the iPhone&apos;s Contacts, iOS may pass their name instead of their number, and NoteGoat
+            can&apos;t match it. Check &quot;Opted out by reply&quot; above, and mark them &quot;no text reminders&quot; by hand if needed.
+            Words like UNSUBSCRIBE need their own automation.
+          </p>
+        </InnerFold>
+      </SetupCard>
+
+      <SetupCard
+        onToggle={(next) => setSection("iphone", next)}
+        open={sectionOpen(settings.sections, "iphone", false)}
+        status={iphoneCard.status}
+        summary={iphoneCard.summary}
+        testId="section-iphone"
+        title="iPhone setup (Shortcuts app)"
+      >
+        <div className="space-y-3" data-testid="iphone-steps">
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy code</b>. It starts with <Mono>ngr_</Mono>. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
+            <li>
+              On the office iPhone, open this page and tap{" "}
+              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
+              {" "}→ <b>Add Shortcut</b>. Paste your code when it asks.
+            </li>
+            <li>
+              Get{" "}
+              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
+              {" "}the same way. It is the backup for days the phone missed {hourLabel(settings.sendHour)}. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
+            </li>
+            <li>
+              <b>Last step, required:</b> make the {hourLabel(settings.sendHour)} automation. Do <b>Step 2</b> in the box at the top of Set up.
+            </li>
+          </ol>
+        </div>
+        <InnerFold testId="iphone-steps-manual" title="Advanced: build the shortcut by hand instead">
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
             <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
             <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
             <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
@@ -554,81 +630,70 @@ export function TextRemindersSettingsPanel() {
               <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Duplicates are still blocked.
             </li>
             <li>
-              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> in the checklist at the top of this page to
-              create the {hourLabel(settings.sendHour)} automation.
+              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the {hourLabel(settings.sendHour)} automation.
             </li>
           </ol>
-        </details>
-      </details>
+        </InnerFold>
+      </SetupCard>
 
-      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="optout-iphone-steps">
-        <summary className="cursor-pointer font-semibold">Opt-out replies on the iPhone (STOP)</summary>
-        <p className="mt-2 text-[var(--text-muted)]">
-          Only needed if the iPhone sends the texts. The iMac reads STOP replies on its own.
-        </p>
-        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-          <li>
-            On the office iPhone, tap{" "}
-            <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
-            {" "}→ <b>Add Shortcut</b>, and paste the same <Mono>ngr_</Mono> device code when it asks.
-          </li>
-          <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
-          <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
-          <li>Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off. Tap <b>Next</b>.</li>
-          <li>Pick <b>Run Shortcut</b> → <b>NoteGoat Opt-Out</b>. Tap the shortcut&apos;s <b>Input</b> and choose <b>Shortcut Input</b> (the message). Tap <b>Done</b>.</li>
-          <li>Repeat steps 2–5 with <Mono>START</Mono> if you want patients to be able to opt back in.</li>
-        </ol>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Limits: iOS only runs this for messages whose text <i>contains</i> STOP; NoteGoat only acts when the whole reply is
-          the keyword. If the patient is saved in the iPhone&apos;s Contacts, iOS may pass their contact name instead of the
-          number, and NoteGoat can&apos;t match it; check &quot;Opted out by reply&quot; above, and mark them &quot;no text
-          reminders&quot; by hand if needed. Words like UNSUBSCRIBE need their own automation.
-        </p>
-      </details>
-
-      <details className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm" data-testid="mac-steps">
-        <summary className="cursor-pointer font-semibold">iMac setup (one click)</summary>
-        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-          <li>On the iMac, make sure <b>Messages</b> is signed in to the office Apple ID. Then here in NoteGoat click <b>+ Add Mac</b> and <b>Copy</b> the code (starts with <Mono>ngr_</Mono>, shown once).</li>
-          <li>
-            <a className="font-semibold text-[var(--brand-primary)] underline" data-testid="mac-setup-download" download href="/mac/NoteGoat-Reminders-Setup.command">Download iMac setup</a>
-            . In <b>Downloads</b>, <b>right-click</b> the file → <b>Open</b> → <b>Open</b> (only the first time; a plain double-click may be blocked by macOS).
-          </li>
-          <li>Terminal opens and explains each step. Paste the code when asked, then type your <b>Mac password</b> when asked (it sets the iMac to wake at 8:45 AM). Nothing shows while typing; that&apos;s normal. When it says <b>All set</b>, press <b>Return</b>.</li>
-        </ol>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">The first time it sends, macOS asks to let it control <b>Messages</b>; click <b>OK</b>. As backup the Mac waits 30 minutes for the primary and only sends what is still unsent.</p>
-        <details className="mt-3 text-[var(--text-muted)]" data-testid="mac-steps-manual">
-          <summary className="cursor-pointer text-xs font-semibold">Advanced: set up in Terminal by hand</summary>
-        <ol className="mt-2 list-decimal space-y-2 pl-5 text-[var(--text-muted)]">
-          <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
-          <li>Here in NoteGoat, click <b>+ Add Mac</b>, then <b>Copy</b> the code (starts with <Mono>ngr_</Mono>, shown once).</li>
-          <li>Open <b>Terminal</b> (press <b>⌘ Space</b>, type <b>Terminal</b>, press <b>Return</b>).</li>
-          <li>
-            Paste this and press <b>Return</b> (it downloads the sender):
-            <div className="mt-1">
-              <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && RAW=https://raw.githubusercontent.com/mitqlabs/mynotegoat/main/tools/mac-reminders; curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
-            </div>
-          </li>
-          <li>Paste <Mono>bash install.sh</Mono> and press <b>Return</b>.</li>
-          <li>When it asks, paste the code and press <b>Return</b> (nothing shows while pasting; that&apos;s normal). It saves the code in the Keychain and tests the connection.</li>
-          <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
-          <li>
-            Done. The Mac checks every 10 minutes between 8 AM and 6 PM. As backup it waits 30 minutes for the primary and only sends what is still unsent.
-          </li>
-          <li>
-            Optional: wake a sleeping iMac each morning. In Terminal paste{" "}
-            <Mono>sudo pmset repeat wakeorpoweron MTWRFSU 08:45:00</Mono> and type your Mac password. To undo:{" "}
-            <Mono>sudo pmset repeat cancel</Mono>
-          </li>
-          <li>
-            Check the list without sending:{" "}
-            <Mono>bash ~/Library/Application\ Support/NoteGoat/notegoat-reminders.sh --preview</Mono>. Log:{" "}
-            <Mono>~/Library/Logs/NoteGoat/reminders.log</Mono>
-          </li>
-          <li>Made a <b>New code</b>? Run step 5 again and paste the new code. To remove: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then <b>Revoke</b> the device here.</li>
-        </ol>
-        </details>
-      </details>
+      <SetupCard
+        onToggle={(next) => setSection("imac", next)}
+        open={sectionOpen(settings.sections, "imac", false)}
+        status={imacCard.status}
+        summary={imacCard.summary}
+        testId="section-imac"
+        title="iMac setup (one click)"
+      >
+        <div className="space-y-3" data-testid="mac-steps">
+          <ol className="list-decimal space-y-2 pl-5">
+            <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
+            <li>Above, click <b>+ Add Mac</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
+            <li>
+              <a className="font-semibold text-[var(--brand-primary)] underline" data-testid="mac-setup-download" download href="/mac/NoteGoat-Reminders-Setup.command">Download iMac setup</a>
+              . Then open <b>Downloads</b>, <b>right-click</b> the file <Mono>NoteGoat-Reminders-Setup.command</Mono>, choose <b>Open</b>, then <b>Open</b> again.
+            </li>
+            <li data-testid="mac-not-opened-step">
+              <b>If macOS says &quot;Not Opened&quot;</b> (newer macOS, such as Sequoia): click <b>Done</b>. Do not click Move to Trash. Then open{" "}
+              <b>System Settings</b> → <b>Privacy &amp; Security</b>, scroll down to the message about <Mono>NoteGoat-Reminders-Setup.command</Mono>,
+              and click <b>Open Anyway</b>. Type your Mac password if it asks, then click <b>Open Anyway</b> again.
+            </li>
+            <li>
+              Terminal opens and explains each step. Paste the code when it asks, then type your <b>Mac password</b>. Nothing shows while you
+              type, and that is normal. (The password lets the iMac wake up at 8:45 AM.) When it says <b>All set</b>, press <b>Return</b>.
+            </li>
+            <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
+          </ol>
+          <p className="mt-2 text-[var(--text-muted)]">As a backup, the iMac waits 30 minutes for the primary device and only sends what is still unsent.</p>
+        </div>
+        <InnerFold testId="mac-steps-manual" title="Advanced: set up in Terminal by hand">
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>On the iMac, open <b>Messages</b> and make sure it is signed in to the office Apple ID.</li>
+            <li>Above, click <b>+ Add Mac</b>, then <b>Copy code</b> (it starts with <Mono>ngr_</Mono>).</li>
+            <li>Open <b>Terminal</b> (press <b>⌘ Space</b>, type <b>Terminal</b>, press <b>Return</b>).</li>
+            <li>
+              Paste this and press <b>Return</b> (it downloads the sender):
+              <div className="mt-1">
+                <Mono>{`mkdir -p ~/notegoat-reminders && cd ~/notegoat-reminders && RAW=https://raw.githubusercontent.com/mitqlabs/mynotegoat/main/tools/mac-reminders; curl -fsSLO $RAW/install.sh -O $RAW/notegoat-reminders.sh -O $RAW/uninstall.sh`}</Mono>
+              </div>
+            </li>
+            <li>Paste <Mono>bash install.sh</Mono> and press <b>Return</b>.</li>
+            <li>When it asks, paste the code and press <b>Return</b> (nothing shows while pasting; that&apos;s normal). It saves the code in the Keychain and tests the connection.</li>
+            <li>The first time it sends, macOS asks to let it control <b>Messages</b>. Click <b>OK</b>.</li>
+            <li>Done. The Mac checks every 10 minutes between 8 AM and 6 PM. As backup it waits 30 minutes for the primary and only sends what is still unsent.</li>
+            <li>
+              Optional: wake a sleeping iMac each morning. In Terminal paste{" "}
+              <Mono>sudo pmset repeat wakeorpoweron MTWRFSU 08:45:00</Mono> and type your Mac password. To undo:{" "}
+              <Mono>sudo pmset repeat cancel</Mono>
+            </li>
+            <li>
+              Check the list without sending:{" "}
+              <Mono>bash ~/Library/Application\ Support/NoteGoat/notegoat-reminders.sh --preview</Mono>. Log:{" "}
+              <Mono>~/Library/Logs/NoteGoat/reminders.log</Mono>
+            </li>
+            <li>Made a <b>New code</b>? Run the &quot;bash install.sh&quot; step again and paste the new code. To remove: <Mono>bash ~/notegoat-reminders/uninstall.sh</Mono>, then <b>Revoke</b> the device above.</li>
+          </ol>
+        </InnerFold>
+      </SetupCard>
       </CollapsibleSection>
 
       <CollapsibleSection

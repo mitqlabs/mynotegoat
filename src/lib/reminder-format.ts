@@ -75,7 +75,7 @@ export function reminderSetupDone(automationConfirmed: boolean, devices: DeviceL
   return automationConfirmed && devices.some((d) => !d.revoked_at && Boolean(d.last_run_at));
 }
 
-export type ReminderSection = "setup" | "texts" | "messages" | "sends";
+export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac";
 
 /** Open/closed state for a collapsible section. Unset = its default. */
 export function sectionOpen(
@@ -98,4 +98,47 @@ export function queuedStatusText(count: number, dryRun: boolean, macConnected: b
 /** The composer's one-line description of where the text goes out from. */
 export function sentFromText(macConnected: boolean): string {
   return macConnected ? "your iPhone or iMac" : "your iPhone";
+}
+
+/** "Last checked 10/28/26 10:41 AM", or "Has not checked in yet" for a device that never has. */
+export function lastCheckedText(ts: string | null | undefined, timeZone = "America/Los_Angeles"): string {
+  const when = fmtDateTime(ts, timeZone);
+  return when === "never" ? "Has not checked in yet" : `Last checked ${when}`;
+}
+
+/** A device's last run as "Last run 10/29/26: 14 sent"; "" when it has not run. */
+export function lastRunText(summary: string | null | undefined, runAt: string | null | undefined, timeZone = "America/Los_Angeles"): string {
+  if (summary && summary.trim()) return `Last run ${fmtRunSummary(summary)}`;
+  return runAt ? `Last run ${fmtDateTime(runAt, timeZone)}` : "";
+}
+
+/** The Opt-out card's collapsed summary: "On · 0 opted out". */
+export function optOutSummary(lineOn: boolean, count: number): string {
+  return `${lineOn ? "On" : "Off"} · ${count} opted out`;
+}
+
+export type CardStatus = "done" | "todo" | "optional" | "info";
+
+/** Sending devices card: not done until a device is added; the summary names what is connected. */
+export function devicesStatus(devices: Array<DeviceLike & { name: string; is_primary: boolean | null }>, timeZone = "America/Los_Angeles"): { status: CardStatus; summary: string } {
+  const active = devices.filter((d) => !d.revoked_at);
+  if (!active.length) return { status: "todo", summary: "No device yet. Click + Add iPhone to start." };
+  const seen = active.map((d) => d.last_seen_at).filter((t): t is string => Boolean(t)).sort().pop();
+  const names = active.length === 1 ? active[0].name : `${active.length} devices`;
+  return { status: seen ? "done" : "todo", summary: `${names} · ${lastCheckedText(seen, timeZone)}` };
+}
+
+/** iPhone setup card: done once an active iPhone has checked in. */
+export function iphoneStatus(devices: DeviceLike[]): { status: CardStatus; summary: string } {
+  const ok = devices.some((d) => d.kind === "iphone" && !d.revoked_at && Boolean(d.last_seen_at));
+  return ok
+    ? { status: "done", summary: "Done. Your iPhone is connected." }
+    : { status: "todo", summary: "Not done. Add the iPhone above, then follow these steps." };
+}
+
+/** iMac setup card: optional, done once a Mac has checked in. */
+export function imacStatus(devices: DeviceLike[]): { status: CardStatus; summary: string } {
+  return officeMacSeen(devices)
+    ? { status: "done", summary: "Done. Your iMac is connected." }
+    : { status: "optional", summary: "Optional. Only needed if you want the iMac to send too." };
 }
