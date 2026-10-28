@@ -137,9 +137,9 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",
     },
     {
-      heading: "Broadcast texts: who does it go to?",
+      heading: "Texting many patients at once: who gets it?",
       steps: [
-        "Ask: \"who does broadcast send to\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. It never sends a text itself.",
+        "Ask: \"who gets a text to everyone\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. It never sends a text itself.",
         "All active patients (the default): every patient whose case status is Active, once per phone number. Booked on a day: only patients with a visit that day (optional time window, skips canceled visits).",
         "Always left out: no valid phone, \"no text reminders\" or STOP replies. Discharged, Ready to Submit, Submitted, Dropped and Paid patients are not Active.",
       ],
@@ -155,11 +155,20 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
     },
     {
+      heading: "iMac says \"Not Opened\" when setting up text reminders",
+      steps: [
+        "Ask: \"the imac says Not Opened\", \"how do I set up the imac for text reminders\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
+        "On newer macOS (Sequoia): click Done (not Move to Trash). Open System Settings → Privacy & Security, scroll to the message about NoteGoat-Reminders-Setup.command, click Open Anyway, type your Mac password if asked, then click Open Anyway again.",
+        "Then Terminal opens: paste the setup code from + Add Mac, type your Mac password (nothing shows), and press Return at All set. The iMac is optional; the iPhone sends on its own.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
       heading: "Text Reminders page: sections and dates",
       steps: [
         "Ask: \"where did the setup steps go on text reminders\", \"why does last run say 1 sent\", \"what format are the dates\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
-        "The page has a Set up section (checklist, devices, shortcuts, opt-out setup; closed once setup is done) and a Texts section (send settings, Message patients, Recent sends; open). Tap a heading to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
-        "All dates there are mm/dd/yy, and a device's last run shows the day's running total (for example \"10/29/26: 14 sent\").",
+        "The page has a Set up section made of cards (3-step checklist, Sending devices with a Main sender or Backup sender, How it works, Opt-out STOP, iPhone setup, iMac setup), each with a Done / To do / Optional tag and a one-line summary. It is closed once setup is done. A Texts section holds send settings, Message patients and Recent sends (open). Tap a heading or card to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
+        "All dates there are mm/dd/yy, and a sender's last run shows the day's running total (for example \"10/29/26: 14 sent\"). Test mode (nothing is texted) is a checkbox in Texts.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
     },

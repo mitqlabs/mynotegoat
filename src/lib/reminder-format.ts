@@ -52,7 +52,7 @@ export function runSummary(visitDate: string, counts: { sent: number; failed: nu
   return `${visitDate}: ${parts.join(", ")}`;
 }
 
-/** A later "nothing to send" poll must not erase the day's real totals. */
+/** A later "nothing to send" check must not erase the day's real totals. */
 export function summaryAfterEmptyRun(previous: string | null | undefined, visitDate: string): string {
   const prev = previous ?? "";
   return prev.startsWith(`${visitDate}:`) && /\d+ (sent|dry-run)/.test(prev) ? prev : `${visitDate}: nothing to send`;
@@ -75,7 +75,7 @@ export function reminderSetupDone(automationConfirmed: boolean, devices: DeviceL
   return automationConfirmed && devices.some((d) => !d.revoked_at && Boolean(d.last_run_at));
 }
 
-export type ReminderSection = "setup" | "texts" | "messages" | "sends";
+export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac";
 
 /** Open/closed state for a collapsible section. Unset = its default. */
 export function sectionOpen(
@@ -87,15 +87,88 @@ export function sectionOpen(
   return typeof v === "boolean" ? v : defaultOpen;
 }
 
-/** The composer's "Queued…" line. The iMac is named only when a Mac has really checked in. */
-export function queuedStatusText(count: number, dryRun: boolean, macConnected: boolean): string {
-  if (dryRun) return `Queued for ${count} patient(s). Dry run is on, so devices will only log it.`;
-  return `Queued for ${count} patient(s). Run "Send Reminders Now" on your iPhone to send it now.${
-    macConnected ? " The iMac also sends it automatically within about 10 minutes." : ""
+/** The line under "Send message". Nothing goes out until the iPhone runs; the iMac is named only when a Mac has really checked in. */
+export function queuedStatusText(count: number, testMode: boolean, macConnected: boolean): string {
+  if (testMode) return `Ready for ${count} patient(s). Test mode is on, so nothing will be texted. It will only be written in Recent sends.`;
+  return `Ready for ${count} patient(s). Now run "Send Reminders Now" on the office iPhone to send it.${
+    macConnected ? " The iMac also sends it by itself within about 10 minutes." : ""
   }`;
 }
 
 /** The composer's one-line description of where the text goes out from. */
 export function sentFromText(macConnected: boolean): string {
   return macConnected ? "your iPhone or iMac" : "your iPhone";
+}
+
+/** "Last checked 10/28/26 10:41 AM", or "Has not checked in yet" for a device that never has. */
+export function lastCheckedText(ts: string | null | undefined, timeZone = "America/Los_Angeles"): string {
+  const when = fmtDateTime(ts, timeZone);
+  return when === "never" ? "Has not checked in yet" : `Last checked ${when}`;
+}
+
+/** A device's last run as "Last run 10/29/26: 14 sent"; "" when it has not run. */
+export function lastRunText(summary: string | null | undefined, runAt: string | null | undefined, timeZone = "America/Los_Angeles"): string {
+  if (summary && summary.trim()) return `Last run ${fmtRunSummary(summary)}`;
+  return runAt ? `Last run ${fmtDateTime(runAt, timeZone)}` : "";
+}
+
+/** The Opt-out card's collapsed summary: "On · 0 opted out". */
+export function optOutSummary(lineOn: boolean, count: number): string {
+  return `${lineOn ? "On" : "Off"} · ${count} opted out`;
+}
+
+export type CardStatus = "done" | "todo" | "optional" | "info";
+
+/** Sending devices card: not done until a device is added; the summary names what is connected. */
+export function devicesStatus(devices: Array<DeviceLike & { name: string; is_primary: boolean | null }>, timeZone = "America/Los_Angeles"): { status: CardStatus; summary: string } {
+  const active = devices.filter((d) => !d.revoked_at);
+  if (!active.length) return { status: "todo", summary: "No device yet. Click + Add iPhone to start." };
+  const seen = active.map((d) => d.last_seen_at).filter((t): t is string => Boolean(t)).sort().pop();
+  const names = active.length === 1 ? active[0].name : `${active.length} devices`;
+  return { status: seen ? "done" : "todo", summary: `${names} · ${lastCheckedText(seen, timeZone)}` };
+}
+
+/** iPhone setup card: done once an active iPhone has checked in. */
+export function iphoneStatus(devices: DeviceLike[]): { status: CardStatus; summary: string } {
+  const ok = devices.some((d) => d.kind === "iphone" && !d.revoked_at && Boolean(d.last_seen_at));
+  return ok
+    ? { status: "done", summary: "Done. Your iPhone is connected." }
+    : { status: "todo", summary: "Not done. Add the iPhone above, then follow these steps." };
+}
+
+/** iMac setup card: optional, done once a Mac has checked in. */
+export function imacStatus(devices: DeviceLike[]): { status: CardStatus; summary: string } {
+  return officeMacSeen(devices)
+    ? { status: "done", summary: "Done. Your iMac is connected." }
+    : { status: "optional", summary: "Optional. Only needed if you want the iMac to send too." };
+}
+
+/** "Main sender" / "Backup sender" for a device row. */
+export function senderRole(isPrimary: boolean | null | undefined): string {
+  return isPrimary ? "Main sender" : "Backup sender";
+}
+
+/** What each template word becomes in the text, in plain words. Keyed by the exact word you type. */
+export const TEMPLATE_WORDS: { token: string; plain: string }[] = [
+  { token: "{{FIRST_NAME}}", plain: "the patient's first name" },
+  { token: "{{LAST_NAME}}", plain: "the patient's last name" },
+  { token: "{{FULL_NAME}}", plain: "the patient's first and last name" },
+  { token: "{{APPT_DATE}}", plain: "the day of the visit, like 10/29/2026" },
+  { token: "{{TIME}}", plain: "the time of the visit, like 10:30 AM" },
+  { token: "{{TODAY}}", plain: "today's date" },
+  { token: "{{OFFICE_NAME}}", plain: "your office name" },
+  { token: "{{DOCTOR_NAME}}", plain: "the doctor's name" },
+  { token: "{{OFFICE_PHONE}}", plain: "your office phone number" },
+];
+
+/** The Result column in Recent sends, in plain words. */
+export function plainResult(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "sent") return "Sent";
+  if (s === "failed") return "Did not send";
+  if (s === "dry-run" || s === "dry_run") return "Test mode (not texted)";
+  if (s === "skipped") return "Skipped";
+  if (s === "queued") return "Waiting to send";
+  if (s === "canceled" || s === "cancelled") return "Canceled";
+  return status;
 }

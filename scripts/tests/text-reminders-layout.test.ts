@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  plainResult,
+  senderRole,
+  TEMPLATE_WORDS,
   fmtDate,
   fmtDateTime,
   fmtDay,
   fmtRunSummary,
+  devicesStatus,
+  imacStatus,
+  iphoneStatus,
+  lastCheckedText,
+  lastRunText,
   officeMacSeen,
+  optOutSummary,
   queuedStatusText,
   reminderSetupDone,
   runSummary,
@@ -13,8 +22,9 @@ import {
   sentFromText,
   summaryAfterEmptyRun,
 } from "../../src/lib/reminder-format";
+import { SMS_TOKENS } from "../../src/lib/sms-templates";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
-import { reminderPageHelp } from "../../src/lib/goat-reminders-help";
+import { macSetupHelp, reminderPageHelp } from "../../src/lib/goat-reminders-help";
 
 // Dates are mm/dd/yy.
 assert.equal(fmtDate("2026-10-29"), "10/29/26");
@@ -53,9 +63,9 @@ assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z", revoked_
 assert.equal(officeMacSeen([dev({ kind: "iphone", last_seen_at: "2026-10-28T10:00:00Z" })]), false, "an iPhone is not a Mac");
 assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z" })]), true);
 assert.doesNotMatch(queuedStatusText(30, false, false), /iMac/);
-assert.match(queuedStatusText(30, false, false), /Run "Send Reminders Now" on your iPhone/);
-assert.match(queuedStatusText(30, false, true), /iMac also sends it automatically within about 10 minutes/);
-assert.match(queuedStatusText(30, true, true), /Dry run is on/);
+assert.match(queuedStatusText(30, false, false), /run "Send Reminders Now" on the office iPhone/);
+assert.match(queuedStatusText(30, false, true), /iMac also sends it by itself within about 10 minutes/);
+assert.match(queuedStatusText(30, true, true), /Test mode is on, so nothing will be texted/);
 assert.equal(sentFromText(false), "your iPhone");
 assert.equal(sentFromText(true), "your iPhone or iMac");
 const composer = readFileSync("src/components/message-patients-composer.tsx", "utf8");
@@ -92,7 +102,7 @@ const iSetup = panel.indexOf('testId="section-setup"');
 const iTexts = panel.indexOf('testId="section-texts"');
 assert.ok(iWarn > 0 && iWarn < iSetup && iSetup < iTexts, "warning, Set up, Texts in that order");
 const inSetup = panel.slice(iSetup, iTexts);
-for (const needle of ["<ReminderSetupChecklist", "Sending devices", "How it works", "Two shortcuts on the iPhone", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"'])
+for (const needle of ["<ReminderSetupChecklist", "Sending devices", "How it works", "Send Reminders Now</b> (iPhone shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"'])
   assert.ok(inSetup.includes(needle), `Set up contains ${needle}`);
 const inTexts = panel.slice(iTexts);
 for (const needle of ["Send reminders automatically", "Message template", "<MessagePatientsComposer", 'testId="recent-sends"'])
@@ -102,7 +112,7 @@ assert.ok(!inTexts.includes("Sending devices"), "devices are not in Texts");
 assert.doesNotMatch(panel, /toLocale(Date|Time)?String/);
 assert.doesNotMatch(panel, /\{row\.visit_date\}/);
 assert.doesNotMatch(readFileSync("src/components/reminder-setup-checklist.tsx", "utf8"), /toLocale/);
-assert.match(panel, /fmtRunSummary\(d\.last_run_summary\)/);
+assert.match(panel, /lastRunText\(d\.last_run_summary/);
 
 // G.O.A.T. answers layout / date questions and never edits anything.
 const g = reminderPageHelp("where did the setup steps go on text reminders?");
@@ -111,4 +121,83 @@ assert.ok(reminderPageHelp("why does last run say 1 sent on the text reminders p
 assert.equal(reminderPageHelp("what's the weather"), null);
 assert.equal(reminderPageHelp("/note text reminders"), null);
 
+
+// ---- Set up cards: consistent, plain, one-line summaries, cloud-backed collapse state ----
+assert.equal(lastCheckedText("2026-10-28T17:41:00Z", "America/Los_Angeles"), "Last checked 10/28/26 10:41 AM");
+assert.equal(lastCheckedText(null), "Has not checked in yet");
+assert.equal(lastRunText("2026-10-29: 14 sent", null), "Last run 10/29/26: 14 sent");
+assert.equal(lastRunText(null, "2026-10-28T17:41:00Z"), "Last run 10/28/26 10:41 AM");
+assert.equal(lastRunText(null, null), "");
+assert.equal(optOutSummary(true, 0), "On · 0 opted out");
+assert.equal(optOutSummary(false, 3), "Off · 3 opted out");
+const named = (o: Partial<{ name: string; kind: string; is_primary: boolean; revoked_at: string | null; last_seen_at: string | null; last_run_at: string | null }>) => ({
+  name: "Office iPhone", kind: "iphone", is_primary: true, revoked_at: null, last_seen_at: null, last_run_at: null, ...o,
+});
+assert.equal(devicesStatus([]).status, "todo");
+assert.match(devicesStatus([]).summary, /Add iPhone/);
+assert.equal(devicesStatus([named({})]).status, "todo", "added but never checked in");
+const seenDev = named({ last_seen_at: "2026-10-28T17:41:00Z" });
+assert.deepEqual(devicesStatus([seenDev], "America/Los_Angeles"), { status: "done", summary: "Office iPhone · Last checked 10/28/26 10:41 AM" });
+assert.equal(devicesStatus([seenDev, named({ name: "Office iMac", kind: "mac", is_primary: false })]).summary.startsWith("2 devices"), true);
+assert.equal(devicesStatus([named({ last_seen_at: "2026-10-28T17:41:00Z", revoked_at: "2026-10-28T18:00:00Z" })]).status, "todo", "revoked devices don't count");
+assert.equal(iphoneStatus([seenDev]).status, "done");
+assert.equal(iphoneStatus([]).status, "todo");
+assert.equal(imacStatus([]).status, "optional");
+assert.equal(imacStatus([named({ kind: "mac", last_seen_at: "2026-10-28T17:41:00Z" })]).status, "done");
+const cardSections = normalizeSmsReminderSettings({ sections: { steps: false, devices: true, how: false, optout: true, iphone: false, imac: true, nope: true } });
+assert.deepEqual(cardSections.sections, { steps: false, devices: true, how: false, optout: true, iphone: false, imac: true });
+assert.equal(sectionOpen({}, "how", false), false);
+for (const id of ["section-devices", "section-how", "section-optout", "section-iphone", "section-imac"]) assert.match(panel, new RegExp(`testId="${id}"`));
+assert.match(panel, /setSection\("how", next\)/);
+assert.match(panel, /sectionOpen\(settings\.sections, "how", false\)/, "How it works starts closed");
+for (const k of ["optout", "iphone", "imac"]) assert.match(panel, new RegExp(`sectionOpen\\(settings\\.sections, "${k}", false\\)`), `${k} starts closed`);
+// No duplicated "Two shortcuts" block; the shortcut notes live in How it works.
+assert.doesNotMatch(panel, /Two shortcuts on the iPhone/);
+assert.equal((panel.match(/How it works/g) ?? []).length >= 1, true);
+// Device token: shown only after creating one, with Copy, Hide and a don't-share note.
+assert.match(panel, /\{newToken && \(/);
+for (const needle of ['data-testid="copy-device-token"', 'data-testid="hide-device-token"', "Do not share this setup code", "It will not be shown again"]) assert.ok(panel.includes(needle), needle);
+assert.match(panel, /\+ Add iPhone[\s\S]{0,200}\+ Add Mac[\s\S]{0,400}testId="section-devices"/, "Add buttons sit in the Sending devices card header");
+// iMac: the Sequoia "Not Opened" step is there, and the manual steps stay nested.
+const iMac = panel.slice(panel.indexOf('testId="section-imac"'));
+for (const needle of ['data-testid="mac-not-opened-step"', "Not Opened", "<b>Done</b>", "Privacy &amp; Security", "Open Anyway", 'testId="mac-steps-manual"', "<InnerFold"])
+  assert.ok(iMac.includes(needle), `iMac setup contains ${needle}`);
+assert.ok(iMac.indexOf("mac-not-opened-step") < iMac.indexOf("mac-steps-manual"), "Open Anyway step is before the Advanced fold");
+// Same look everywhere: the page doesn't use tiny text for body copy.
+assert.doesNotMatch(panel, /text-\[1\d?px\]|text-\[9px\]/);
+assert.doesNotMatch(readFileSync("src/components/setup-card.tsx", "utf8"), /text-\[\d+px\]|text-lg|text-xl/);
+
+// G.O.A.T. explains the macOS "Not Opened" / Open Anyway step.
+const mh = macSetupHelp("the imac says Not Opened when I open the setup file");
+assert.ok(mh && /Done/.test(mh.text) && /Privacy & Security/.test(mh.text) && /Open Anyway/.test(mh.text));
+assert.ok(macSetupHelp("how do i set up the imac for text reminders"));
+assert.equal(macSetupHelp("what's the weather"), null);
+assert.equal(macSetupHelp("/note imac not opened"), null);
+const pg = reminderPageHelp("where did the setup steps go on text reminders?");
+assert.ok(pg && /Sending devices/.test(pg.text) && /How it works/.test(pg.text) && /iMac setup/.test(pg.text));
+
 console.log("text-reminders-layout: OK");
+
+// ---- Plain words: no jargon in what people read ----
+assert.equal(senderRole(true), "Main sender");
+assert.equal(senderRole(false), "Backup sender");
+assert.equal(plainResult("dry-run"), "Test mode (not texted)");
+assert.equal(plainResult("failed"), "Did not send");
+assert.equal(plainResult("sent"), "Sent");
+for (const t of SMS_TOKENS) assert.ok(TEMPLATE_WORDS.some((w) => w.token === t.token), `plain words for ${t.token}`);
+assert.equal(TEMPLATE_WORDS.length, SMS_TOKENS.length);
+const composerSrc = readFileSync("src/components/message-patients-composer.tsx", "utf8");
+const checklistSrc = readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
+for (const [name, src] of [["panel", panel], ["composer", composerSrc], ["checklist", checklistSrc]] as const) {
+  for (const bad of ["Dry run", "Revoke", "Make primary", "Queue message", "Queuing", "Placeholders:", "New code", "Copy code", "Hide code"]) {
+    assert.ok(!src.includes(bad), `${name} no longer says "${bad}"`);
+  }
+}
+for (const good of ["Test mode (nothing is texted)", "senderRole(d.is_primary)", "Make main sender", "Get new setup code", "Copy setup code", "Hide setup code", "What can I put in a template?", 'data-testid="run-days-help"']) {
+  assert.ok(panel.includes(good), `panel says "${good}"`);
+}
+assert.match(panel, />\s*Remove\s*</, "Remove button");
+assert.match(panel, /appConfirm\("Remove this sender\?/, "Remove asks first");
+assert.ok(composerSrc.includes('"Send message"') && composerSrc.includes("Sending…"), "composer button says Send message");
+assert.match(panel, /<details[^>]*data-testid="template-words"/, "placeholders hidden behind a link");
+console.log("plain words checks passed");
