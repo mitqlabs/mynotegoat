@@ -184,7 +184,8 @@ walk(ROOT);
     [/\bfetch\s*\(|XMLHttpRequest|\/api\//, "network call"],
     [/goat-ai\/(?!global-chat)|openai|anthropic|\bxai\b|\bllm\b|chat\/completions/i, "cloud AI"],
   ];
-  const ALLOWED_STORES = new Set(["@/lib/patient-billing", "@/lib/mock-data", "@/lib/case-notes", "@/lib/local-sync", "@/lib/activity-log", "@/lib/goat-notes", "@/lib/goat-om", "@/lib/schedule-appointments", "@/lib/goat-ai/global-chat"]);
+  // goat-name-guard is a pure string-matching module (no storage, no network), so it is safe here.
+  const ALLOWED_STORES = new Set(["@/lib/patient-billing", "@/lib/mock-data", "@/lib/case-notes", "@/lib/local-sync", "@/lib/activity-log", "@/lib/goat-notes", "@/lib/goat-om", "@/lib/schedule-appointments", "@/lib/goat-ai/global-chat", "@/lib/goat-name-guard"]);
   for (const f of omFiles) {
     const src = readFileSync(join(libDir, f), "utf8").replace(/^\s*(\*|\/\/).*$/gm, "");
     for (const [re, what] of BANNED) {

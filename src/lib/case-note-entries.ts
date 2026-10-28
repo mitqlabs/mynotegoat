@@ -17,7 +17,7 @@
  * still shown as "Earlier notes" — nothing is converted or lost.
  */
 import { unionMerge } from "@/lib/kv-merge";
-import { signatureFor, signerFromLogin } from "@/lib/goat-notes";
+import { signatureFor, signerFromLogin, tidyNoteText } from "@/lib/goat-notes";
 
 export const CASE_NOTE_ENTRIES_KEY = "casemate.case-note-entries.v1";
 
@@ -136,6 +136,15 @@ export function makeEntry(input: {
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
+}
+
+/**
+ * A note typed to G.O.A.T. ("/note", "add a note to …") as a quick-note entry: the
+ * wording is tidied like the old signed line, and the date + author are stamped by
+ * makeEntry (the signature is the author field, not part of the text).
+ */
+export function entryFromGoatNote(input: { patientId: string; text: string; author: string; authorUserId?: string; now?: Date }): CaseNoteEntry | null {
+  return makeEntry({ ...input, text: tidyNoteText(input.text) });
 }
 
 export function addEntry(all: CaseNoteEntry[], entry: CaseNoteEntry): CaseNoteEntry[] {

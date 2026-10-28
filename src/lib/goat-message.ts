@@ -1,3 +1,4 @@
+import { isEverydayWord } from "@/lib/goat-name-guard";
 import { findNameAnywhere } from "@/lib/goat-commands";
 /**
  * "tell hanna i need notes for John" → a team message about John's case,
@@ -61,7 +62,7 @@ export function matchRecipient(name: string, team: TeamPerson[]): TeamPerson[] {
   // "Dr. Mitchell" (or just "Mitchell"): the last name.
   const byLast = pool.filter((p) => last(p) && last(p) === w1);
   if (byLast.length) return dedupe(byLast);
-  return dedupe(pool.filter((p) => w1.length >= 4 && first(p).length >= 3 && editDistance(w1, first(p)) <= 1));
+  return dedupe(pool.filter((p) => w1.length >= 4 && !isEverydayWord(w1) && first(p).length >= 3 && editDistance(w1, first(p)) <= 1));
 }
 
 function dedupe(list: TeamPerson[]): TeamPerson[] {
