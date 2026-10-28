@@ -33,12 +33,14 @@ import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import {
   complianceAccess,
   compliancePatchValue,
+  compliancePillStyle,
   resolveComplianceOption,
 } from "@/lib/compliance";
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
-import { useCaseNotes } from "@/hooks/use-case-notes";
+import { useCaseNotesText } from "@/hooks/use-case-note-entries";
+import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
@@ -65,7 +67,7 @@ import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
-import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { softPillStyle } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import {
@@ -157,7 +159,7 @@ import {
 } from "@/lib/file-storage";
 import { loadEmailSettings, renderEmailTemplate } from "@/lib/email-settings";
 import { loadOfficeSettings } from "@/lib/office-settings";
-import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { checkOfficeDeletePassword, ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
@@ -1659,11 +1661,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     patient.matrix?.specialistRecommendations ?? "",
   );
   // Case Notes live in a shared store so this box mirrors the encounter
-  // workspace's Notes box (seeded from the legacy matrix.notes value).
-  const { notes: patientNotes, setNotes: setPatientNotes } = useCaseNotes(
-    patient.id,
-    patient.matrix?.notes ?? "",
-  );
+  // workspace's Notes box (quick-note log + old free-form text, seeded from the legacy matrix.notes value).
+  const patientNotes = useCaseNotesText(patient.id, patient.matrix?.notes ?? "");
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
   // Optional Compliance (only shown while the office has switched it on). "" = not set.
   const [compliance, setCompliance] = useState<string>(patient.compliance ?? "");
@@ -5197,17 +5196,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleDeletePatient = async () => {
-    // Role gate first (Settings → Admin Access), then the existing password.
-    if (!(await ensureDeleteAllowed("patients"))) {
+    // Role gate first (Settings → Admin Access); this window asks for the password itself.
+    if (!(await ensureDeleteAllowed("patients", { passwordAlreadyAsked: true }))) {
       setShowDeleteModal(false);
       return;
     }
-    const settings = loadOfficeSettings();
-    if (!settings.deletePassword) {
+    // The office's one delete password lives in the cloud (hash) so it is the same on every device and for every team member.
+    const check = await checkOfficeDeletePassword(deletePasswordInput);
+    if (check === "none") {
       setDeleteError("No delete password is set. Go to Settings → Office to set one first.");
       return;
     }
-    if (deletePasswordInput !== settings.deletePassword) {
+    if (check === "wrong") {
       setDeleteError("Incorrect password.");
       return;
     }
@@ -5407,10 +5407,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {!isCashPatient && (
             <span
               className="status-pill"
-              style={{
-                backgroundColor: withAlpha(statusColor, 0.2),
-                color: getContrastTextColor(statusColor),
-              }}
+              style={softPillStyle(statusColor)}
             >
               {caseStatus}
             </span>
@@ -5418,10 +5415,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {complianceEnabled && complianceOption && (
             <span
               className="status-pill"
-              style={{
-                backgroundColor: withAlpha(complianceOption.color, 0.2),
-                color: getContrastTextColor(complianceOption.color),
-              }}
+              style={compliancePillStyle(complianceOption)}
               title="Compliance"
             >
               Compliance: {complianceOption.label}
@@ -5921,15 +5915,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
           </button>
           {sectionPanelsOpen.notes && (
-            <label className="mt-3 grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-              <textarea
-                className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                onChange={(event) => setPatientNotes(event.target.value)}
-                placeholder="Enter any free-form case notes..."
-                value={patientNotes}
-              />
-            </label>
+            <div className="mt-3">
+              <CaseNotesLog patientId={patient.id} patientName={patient.fullName} seed={patient.matrix?.notes ?? ""} />
+            </div>
           )}
         </section>
 
