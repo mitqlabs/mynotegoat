@@ -268,6 +268,53 @@ export const handbookChaptersOffice: HandbookChapter[] = [
     ],
   },
   {
+    id: "message-patients",
+    title: "Message patients (broadcast texts)",
+    summary: "Text a group of patients at once, such as \"we're closed Thursday\". Choose who gets it under Send to.",
+    audience: "admin",
+    tasks: [
+      {
+        heading: "Send a broadcast text",
+        steps: [
+          "Settings → Text Reminders → Message patients.",
+          "Type the message (up to 640 characters).",
+          "Pick Send to: All active patients (the default) or Booked on a day. For Booked on a day, also pick Today, Tomorrow or a date.",
+          "Check the count under the message. Tap it to see exactly who will get the text.",
+          "Tap Queue message, then confirm \"Text N patient(s)?\".",
+          "Your office device sends it: the iMac within about 10 minutes, or tap Send now from this device on the iPhone.",
+        ],
+        why: "Everything is saved in your workspace, so every computer and team member sees the same list and Recent messages.",
+        watchOut: "Confirm shows the number of patients. If it's higher than you expected, open the list before you queue it.",
+      },
+      {
+        heading: "Who gets it: the Send to choices",
+        steps: [
+          "All active patients: every patient whose case status on the Patients list is Active. Discharged, Ready to Submit, Submitted, Dropped, Paid and any other status are NOT included.",
+          "Booked on a day: only patients with a visit on that day. You can limit it to a time window, and Skip canceled visits is on by default. Use this for \"we're closing early today\".",
+          "Coming later: All patients, and Patients seen in a time period.",
+        ],
+        why: "Closed Thursday with nobody booked? Use All active patients. Booked on a day would text no one, because nobody is on Thursday's schedule.",
+        watchOut: "A patient with no case status counts as Active, the same as a brand-new case.",
+      },
+      {
+        heading: "Who is always left out",
+        steps: [
+          "Patients with no valid phone number.",
+          "Patients marked \"no text reminders\", or who replied STOP. A reply of START turns it back on.",
+          "Repeat phone numbers: if two patients share one phone (a parent and child), that phone gets one text.",
+          "Quiet hours still apply. If you queue it at night, it goes out after quiet hours end (8:00 AM by default).",
+        ],
+        why: "One text per patient and per phone, and never to anyone who asked to stop.",
+      },
+      {
+        heading: "Ask G.O.A.T.",
+        steps: [
+          "Ask \"who does broadcast send to\" or \"how do I text all active patients\". G.O.A.T. answers from this chapter and links here. It never sends a text itself.",
+        ],
+      },
+    ],
+  },
+  {
     id: "messages",
     title: "Messages",
     summary: "The team feed: mentions, tagging a case, To-Dos and Eyes Only.",

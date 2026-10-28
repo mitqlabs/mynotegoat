@@ -442,11 +442,18 @@ export function broadcastTimeOk(time: string, window: BroadcastTimeWindow): bool
   return true;
 }
 
+/** A US phone: 10 digits, or 11 starting with 1. */
+function hasValidPhone(phone: string): boolean {
+  const d = phone.replace(/\D/g, "");
+  return d.length === 10 || (d.length === 11 && d.startsWith("1"));
+}
+
 export function pickBroadcastRecipients(
   rows: BroadcastCandidate[],
   options: { excludeCanceled: boolean } & BroadcastTimeWindow,
 ): BroadcastCandidate[] {
   const seen = new Set<string>();
+  const seenPhones = new Set<string>();
   return rows
     .slice()
     .sort((a, b) => normalizeHHMM(a.time).localeCompare(normalizeHHMM(b.time)))
@@ -455,11 +462,115 @@ export function pickBroadcastRecipients(
       if (options.excludeCanceled && /^cancel/i.test(row.status)) return false;
       if (!broadcastTimeOk(row.time, options)) return false;
       if (row.optedOut) return false;
-      const d = row.phone.replace(/\D/g, "");
-      if (!(d.length === 10 || (d.length === 11 && d.startsWith("1")))) return false;
+      if (!hasValidPhone(row.phone)) return false;
+      // Family members who share one phone get one text.
+      const key = phoneMatchKey(row.phone);
+      if (seenPhones.has(key)) return false;
       seen.add(row.patientId);
+      seenPhones.add(key);
       return true;
     });
+}
+
+// ---- "Message patients": who the text goes to (the audience) ----
+
+/**
+ * Audiences for "Message patients". To add one later ("All patients",
+ * "Patients seen in a time period"): add an id here, a case in
+ * `pickAudienceRecipients` (and, if it needs extra inputs, the loader in
+ * message-patients-composer.tsx). "booked" is the visit-based one and keeps
+ * its own date + time-window picker; every other audience is a patient list.
+ */
+export type BroadcastAudience = "active" | "booked";
+
+export interface BroadcastAudienceOption {
+  id: BroadcastAudience;
+  label: string;
+  /** One line shown under the selector. */
+  summary: string;
+}
+
+export const BROADCAST_AUDIENCES: BroadcastAudienceOption[] = [
+  { id: "active", label: "All active patients", summary: "Every patient whose case status is Active." },
+  { id: "booked", label: "Booked on a day", summary: "Only patients with a visit on the day you pick." },
+];
+
+export const DEFAULT_BROADCAST_AUDIENCE: BroadcastAudience = "active";
+
+/**
+ * "Active" for broadcasts = the Patients list status named Active (any
+ * capitalisation) or no status at all (new patients default to Active). Every
+ * other status (Discharged, Ready to Submit, Submitted, Dropped, Paid and any
+ * status the office adds) is NOT active.
+ */
+export function isActiveCaseStatus(status: unknown): boolean {
+  const s = typeof status === "string" ? status.trim().toLowerCase() : "";
+  return s === "" || s === "active";
+}
+
+/** A patient row as read for a patient-list audience. */
+export interface BroadcastPatient {
+  patientId: string;
+  patientName: string;
+  phone: string;
+  caseStatus: string;
+  optedOut?: boolean;
+}
+
+/**
+ * Recipients for a patient-list audience (anything but "booked"): one text
+ * per patient with a valid phone, once per phone number, never anyone who
+ * opted out. Sorted by name. No appointment, so appointmentId/time are "".
+ */
+export function pickAudienceRecipients(
+  audience: Exclude<BroadcastAudience, "booked">,
+  patients: BroadcastPatient[],
+): BroadcastCandidate[] {
+  const inAudience = (p: BroadcastPatient) => {
+    switch (audience) {
+      case "active":
+        return isActiveCaseStatus(p.caseStatus);
+    }
+  };
+  const seen = new Set<string>();
+  const seenPhones = new Set<string>();
+  return patients
+    .slice()
+    .sort((a, b) => a.patientName.localeCompare(b.patientName, undefined, { sensitivity: "base" }))
+    .filter((p) => {
+      if (!p.patientId || seen.has(p.patientId) || !inAudience(p) || p.optedOut) return false;
+      if (!hasValidPhone(p.phone)) return false;
+      const key = phoneMatchKey(p.phone);
+      if (seenPhones.has(key)) return false;
+      seen.add(p.patientId);
+      seenPhones.add(key);
+      return true;
+    })
+    .map((p) => ({
+      appointmentId: "",
+      patientId: p.patientId,
+      patientName: p.patientName,
+      time: "",
+      status: p.caseStatus,
+      phone: p.phone,
+    }));
+}
+
+/**
+ * The day a list-audience broadcast is queued for ("send day"). The device
+ * queue only reads broadcasts whose target date is today or later, so this is
+ * today, unless it's the evening part of quiet hours: then the first
+ * non-quiet moment is tomorrow, and today's date would expire before it.
+ */
+export function broadcastSendDay(
+  now: Date,
+  settings: Pick<SmsReminderSettings, "timeZone" | "quietStartHour" | "quietEndHour">,
+): { iso: string; deferred: boolean } {
+  const today = localNow(now, settings.timeZone);
+  const { quietStartHour: qs, quietEndHour: qe } = settings;
+  const quiet = qs !== qe && (qs < qe ? today.hour >= qs && today.hour < qe : today.hour >= qs || today.hour < qe);
+  const eveningOfWrap = quiet && qs > qe && today.hour >= qs;
+  return eveningOfWrap ? { iso: addDaysIso(today.iso, 1), deferred: true } : { iso: today.iso, deferred: quiet };
 }
 
 // ---- Opt-out by reply ("STOP") ----
