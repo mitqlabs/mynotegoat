@@ -9,6 +9,8 @@ import {
   isIphoneCamera,
   moveItem,
   pickCamera,
+  reconcileCamera,
+  sameCameras,
   scanFileName,
   type CameraOption,
 } from "@/lib/scan-pdf";
@@ -103,6 +105,48 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<"" | "capture" | "save">("");
   const [message, setMessage] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const camerasRef = useRef<CameraOption[]>([]);
+  const cameraIdRef = useRef<string | null>(null);
+  /** True once the user picks from the dropdown this session. */
+  const userPickedRef = useRef(false);
+  const permittedRef = useRef(false);
+
+  useEffect(() => {
+    camerasRef.current = cameras;
+  }, [cameras]);
+  useEffect(() => {
+    cameraIdRef.current = cameraId;
+  }, [cameraId]);
+
+  const readLastCamera = () => {
+    try {
+      return window.localStorage.getItem(CAMERA_KEY);
+    } catch {
+      return null;
+    }
+  };
+
+  /** Re-list cameras (iPhone can appear late) and keep/switch the choice. */
+  const refreshCameras = useCallback(async () => {
+    if (!permittedRef.current || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      permittedRef.current = true;
+      const list = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === "videoinput")
+        .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+      const prev = camerasRef.current;
+      if (list.length === 0) return; // transient blank list: keep what we have
+      const nextId = reconcileCamera(prev, list, cameraIdRef.current, userPickedRef.current, readLastCamera());
+      if (!sameCameras(prev, list)) {
+        camerasRef.current = list;
+        setCameras(list);
+      }
+      if (nextId !== cameraIdRef.current) setCameraId(nextId);
+    } catch (e) {
+      console.warn("[scanner] camera refresh failed", e);
+    }
+  }, []);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -118,6 +162,10 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
       setMessage("");
       setRetakeIndex(null);
       setCameraId(null);
+      setCameras([]);
+      camerasRef.current = [];
+      userPickedRef.current = false;
+      permittedRef.current = false;
       return;
     }
     let cancelled = false;
@@ -145,12 +193,8 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
         setCamState("none");
         return;
       }
-      let last: string | null = null;
-      try {
-        last = window.localStorage.getItem(CAMERA_KEY);
-      } catch {
-        /* no saved choice */
-      }
+      const last = readLastCamera();
+      camerasRef.current = list;
       setCameras(list);
       setCameraId(pickCamera(list, last));
     })();
@@ -158,6 +202,18 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
       cancelled = true;
     };
   }, [open, stopStream]);
+
+  // Cameras come and go while open (Continuity Camera wakes when the iPhone is
+  // locked nearby). One listener for the component's life; refreshCameras is a
+  // no-op until the open flow has camera permission (reset on close).
+  const refreshRef = useRef(refreshCameras);
+  useEffect(() => {
+    const md = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    if (!md?.addEventListener) return;
+    const onChange = () => void refreshRef.current();
+    md.addEventListener("devicechange", onChange);
+    return () => md.removeEventListener("devicechange", onChange);
+  }, []);
 
   // Start the chosen camera at the highest resolution it offers.
   useEffect(() => {
@@ -181,6 +237,8 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
           void videoRef.current.play().catch((e) => console.warn("[scanner] preview play failed", e));
         }
         setCamState("live");
+        // Some Chrome builds only list Continuity cameras once a capture is running.
+        void refreshCameras();
       })
       .catch((err) => {
         if (cancelled) return;
@@ -190,11 +248,12 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
     return () => {
       cancelled = true;
     };
-  }, [open, cameraId, stopStream]);
+  }, [open, cameraId, stopStream, refreshCameras]);
 
   useEffect(() => () => stopStream(), [stopStream]);
 
   const chooseCamera = (id: string) => {
+    userPickedRef.current = true;
     setCameraId(id);
     try {
       window.localStorage.setItem(CAMERA_KEY, id);
@@ -320,8 +379,21 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
               </option>
             ))}
           </select>
+          <button
+            className={btn}
+            disabled={refreshing || camState === "denied"}
+            onClick={async () => {
+              setRefreshing(true);
+              await refreshCameras();
+              setRefreshing(false);
+            }}
+            title="Look for cameras again"
+            type="button"
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
           {!phoneListed && (
-            <span className="text-xs text-[var(--text-muted)]">Bring your iPhone near your Mac to use it as the camera.</span>
+            <span className="text-xs text-[var(--text-muted)]">Don&apos;t see your iPhone? Lock it, set it near the Mac, then click Refresh.</span>
           )}
         </div>
 
