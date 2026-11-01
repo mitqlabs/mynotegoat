@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMarketingSettings } from "@/hooks/use-marketing-settings";
+import { useMarketingReps } from "@/hooks/use-marketing-reps";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { DEFAULT_MARKETING_VISIT_TYPES } from "@/lib/marketing";
 import { resolveCaseBucket, type MarketingCaseBucket } from "@/lib/marketing-settings";
@@ -22,6 +23,8 @@ const BUCKET_OPTIONS: { value: MarketingCaseBucket; label: string }[] = [
 export function MarketingVisitTypesSection() {
   const { settings, setVisitTypes, setCaseBucket } = useMarketingSettings();
   const { caseStatuses } = useCaseStatuses();
+  const { reps, addRep, renameRep, removeRep, moveRep } = useMarketingReps();
+  const [repDraft, setRepDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -74,7 +77,7 @@ export function MarketingVisitTypesSection() {
         <div>
           <h3 className="text-xl font-semibold">Marketing</h3>
           <p className="text-sm text-[var(--text-muted)]">
-            Customize the “Type of Contact” options used when logging marketing activity.
+            Customize the “Type of Contact” and “Our Rep” options used when logging marketing activity.
           </p>
         </div>
         <span
@@ -89,6 +92,57 @@ export function MarketingVisitTypesSection() {
 
       {open && (
         <div className="mt-3 grid gap-6 lg:grid-cols-2">
+          <div className="lg:col-span-2">
+            <h4 className="text-sm font-semibold text-[var(--text-muted)]">Our Reps</h4>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              The people who do marketing visits. These are the choices in the “Our Rep” dropdown;
+              the first one, Dr. Mike, is picked for you on a new entry. Edit a name to rename it
+              (Tab or Enter to save). Renaming or deleting a rep never changes entries already logged.
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              {reps.map((rep, index) => (
+                <RepRow
+                  key={rep.id}
+                  value={rep.name}
+                  canUp={index > 0}
+                  canDown={index < reps.length - 1}
+                  onMove={(dir) => moveRep(rep.id, dir)}
+                  onRename={(next) => renameRep(rep.id, next)}
+                  onRemove={() => removeRep(rep.id)}
+                />
+              ))}
+              {reps.length === 0 && (
+                <span className="text-sm text-[var(--text-muted)]">No reps yet — add one below.</span>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                className="min-w-[200px] flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                onChange={(e) => setRepDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addRep(repDraft);
+                    setRepDraft("");
+                  }
+                }}
+                placeholder="e.g. Dr. Rivera"
+                value={repDraft}
+              />
+              <button
+                className="btn btn-primary disabled:opacity-40"
+                disabled={!repDraft.trim()}
+                onClick={() => {
+                  addRep(repDraft);
+                  setRepDraft("");
+                }}
+                type="button"
+              >
+                Add Rep
+              </button>
+            </div>
+          </div>
+
           <div>
           <h4 className="text-sm font-semibold text-[var(--text-muted)]">Types of Contact</h4>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -237,6 +291,70 @@ function VisitTypeRow({
         className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
         onClick={async () => {
           if ((await appConfirm(`Delete the “${value}” contact type?`))) onRemove();
+        }}
+        type="button"
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
+function RepRow({
+  value,
+  canUp,
+  canDown,
+  onMove,
+  onRename,
+  onRemove,
+}: {
+  value: string;
+  canUp: boolean;
+  canDown: boolean;
+  onMove: (dir: -1 | 1) => void;
+  onRename: (next: string) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <div className="flex items-center gap-1.5 rounded-lg">
+      <button
+        aria-label="Move up"
+        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs disabled:opacity-30"
+        disabled={!canUp}
+        onClick={() => onMove(-1)}
+        title="Move up"
+        type="button"
+      >
+        ↑
+      </button>
+      <button
+        aria-label="Move down"
+        className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs disabled:opacity-30"
+        disabled={!canDown}
+        onClick={() => onMove(1)}
+        title="Move down"
+        type="button"
+      >
+        ↓
+      </button>
+      <input
+        className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
+        onBlur={() => {
+          onRename(draft);
+          setDraft(value);
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        value={draft}
+      />
+      <button
+        className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
+        onClick={async () => {
+          if (await appConfirm(`Delete “${value}” from the rep list? Entries already logged keep this name.`)) onRemove();
         }}
         type="button"
       >
