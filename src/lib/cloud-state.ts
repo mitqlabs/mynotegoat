@@ -8,6 +8,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.cash-payments.v1",
   "casemate.patient-packages.v1",
   "casemate.contact-subcategories.v1",
+  // Marketing "Our Rep" list: merged by id (newest wins), removes are tombstones.
+  "casemate.marketing-reps.v1",
   // Settings → Compliance Categories: merged by id (newest wins), removes are tombstones.
   "casemate.compliance-options.v1",
   "casemate.key-date-dismissals.v1",
@@ -1081,6 +1083,8 @@ async function bootstrapTableBackedEntities() {
           // Dual-written to the "contacts" namespace, so it hydrates here.
           "casemate.marketing.v1",
           "casemate.marketing-settings.v1",
+          // Marketing "Our Rep" dropdown list. Union-merged — see UNION_MERGE_KEYS.
+          "casemate.marketing-reps.v1",
           // Written to the cloud but never pulled back before (lost on a
           // workspace switch / sign-out). Union-merged — see UNION_MERGE_KEYS.
           "casemate.contact-subcategories.v1",

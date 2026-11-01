@@ -34,8 +34,8 @@ export const EXTRA_SECTIONS: ExtraSection[] = [
   {
     id: "marketing",
     title: "Marketing",
-    description: "Customize the \"Type of Contact\" options used when logging marketing activity, and which case statuses count toward a firm's Active and Total cases.",
-    aliases: ["marketing", "type of contact", "types of contact", "visit type", "visit types", "contact type", "case count", "firm", "firms", "attorney marketing", "outreach"],
+    description: "Manage the \"Our Rep\" list (who does marketing visits) and the \"Type of Contact\" options used when logging marketing activity, and which case statuses count toward a firm's Active and Total cases.",
+    aliases: ["marketing", "our rep", "our reps", "rep", "reps", "marketing rep", "representative", "type of contact", "types of contact", "visit type", "visit types", "contact type", "case count", "firm", "firms", "attorney marketing", "outreach"],
     tab: "office",
   },
   {

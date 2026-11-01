@@ -20,7 +20,7 @@ test('"team" finds Team Members (no "No settings match" banner)', () => {
   assert.equal(r.hasVisible, true);
 });
 test("section titles & descriptions match: Office, Marketing, Features, Team Members, Treatment Plan", () => {
-  for (const [q, extra] of [["marketing", "marketing"], ["features", "modules"], ["team members", "team"], ["treatment plan", "treatmentPlan"], ["type of contact", "marketing"]] as const) {
+  for (const [q, extra] of [["marketing", "marketing"], ["features", "modules"], ["team members", "team"], ["treatment plan", "treatmentPlan"], ["type of contact", "marketing"], ["our rep", "marketing"]] as const) {
     assert.ok(computeSettingsSearch(q, MEMBERS)!.extras.has(extra), q);
   }
   assert.ok(computeSettingsSearch("office", MEMBERS)!.keys.has("officeSettings"));

@@ -53,6 +53,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.module-visibility.v1": "workspace",
   "casemate.marketing.v1": "workspace",
   "casemate.marketing-settings.v1": "workspace",
+  "casemate.marketing-reps.v1": "workspace", // Marketing "Our Rep" dropdown list (id/name), union-merged
   "casemate.holiday-keydate-prompts.v1": "workspace",
   "casemate.goat-settings.v1": "workspace",
   "casemate.goat-answer-prefs.v1": "workspace",

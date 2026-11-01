@@ -491,9 +491,12 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Marketing → pick Everyone, Attorneys or Insurance agents at the top.",
           "Find the firm or agent.",
-          "Pick the date and the type — Visit, Lunch Drop-off, Call, Email, Gift, Meeting, Event, Other.",
-          "Add notes and save.",
+          "Press Log Activity. The row has three boxes: Date, Our Rep and Type of Contact.",
+          "Our Rep is already set to Dr. Mike — open the box to pick someone else (or None).",
+          "Type of Contact starts empty. Open the box and pick one — Visit, Lunch Drop-off, Call, Email, Gift, Meeting, Event, Other. You can't save until you pick one.",
+          "Add notes (the wide box underneath) and save.",
         ],
+        why: "Our Rep and Type of Contact are lists you manage in Settings → Marketing, so everyone spells names the same way.",
         watchOut:
           "Only Attorney and Insurance Agent contacts appear here. Case counts match on the attorney name written on each patient, so insurance agents show none — that's expected, not a gap. A firm spelled two ways shows split numbers; that's what Consolidate Attorneys fixes.",
       },
@@ -643,11 +646,21 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
           "Team Members (Office tab) — logins, roles, doctor flag, Main location, per-person patient-page sections.",
           "Roles & Permissions (Office tab, right after Team Members) — what Staff, Managers and Admins can open, add, edit and delete, which Dashboard sections Managers see, the delete password.",
-          "Marketing — the visit types and which case statuses count as active.",
+          "Marketing — the Our Reps list (who does marketing visits), the visit types, and which case statuses count as active.",
           "Admin — Diagnostics, Backup & Restore, Data Recovery, Security Baseline, Subscription.",
         ],
         watchOut:
           "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cRoles & Permissions\u201d and the \u201cAdmin\u201d group are different things.",
+      },
+      {
+        heading: "Marketing: Our Reps list — add, rename, remove",
+        steps: [
+          "Settings → Office tab → Marketing (click to open). Our Reps is at the top.",
+          "Add: type the name (for example Dr. Rivera) and press Add Rep.",
+          "Rename: click the name, type, press Enter. Order: use the up and down arrows. Remove: press Delete and confirm.",
+        ],
+        why: "This list is the choices in the Our Rep box when you log marketing activity. It starts with Dr. Mike, who is picked for you on every new entry. It is saved in the cloud, so every computer shows the same list.",
+        watchOut: "Renaming or deleting a rep never changes entries you already logged — they keep the name they were saved with, and still show it when you edit them.",
       },
       {
         heading: "Compliance Categories — rename, recolor, add",
