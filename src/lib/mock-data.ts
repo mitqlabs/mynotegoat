@@ -50,7 +50,9 @@ export type PatientMatrixField =
   | "review"
   // Stamped on a NEW patient only when the office uses a custom case number format.
   | "caseNumberFormat"
-  | "caseSeq";
+  | "caseSeq"
+  // Extra dates of injury (a second accident during care): ISO dates, comma-separated (lib/additional-dois).
+  | "additionalDois";
 
 export interface PatientRecord {
   id: string;
@@ -258,6 +260,7 @@ const matrixFieldList: PatientMatrixField[] = [
   "notes",
   "review",
   "caseNumberFormat",
+  "additionalDois",
   "caseSeq",
 ];
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import { isoToShortUs } from "@/lib/additional-dois";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { toUsDateCanonical } from "@/lib/follow-up-queue";
 
@@ -75,6 +76,7 @@ function readRegionsList(entry: ImagingSummaryEntry): string {
  */
 export function QuickGlance({
   doi,
+  additionalDois,
   ie,
   discharge,
   billed,
@@ -85,6 +87,8 @@ export function QuickGlance({
   legacyReviewed,
 }: {
   doi: string;
+  /** Extra dates of injury on this same record (ISO), shown under the main DOI. */
+  additionalDois?: string[];
   ie: string;
   /** The Discharge box date (lib/discharge-date): saved, else the attended Discharge visit. */
   discharge?: DischargeInfo;
@@ -203,6 +207,11 @@ export function QuickGlance({
         <div>
           <div className="font-semibold text-[var(--text-muted)]">DOI</div>
           <div className="font-semibold tabular-nums">{doiLabel || dash}</div>
+          {(additionalDois ?? []).map((iso) => (
+            <div className="font-semibold tabular-nums" data-quick-glance="additional-doi" key={iso} title="Additional date of injury">
+              + {isoToShortUs(iso)}
+            </div>
+          ))}
         </div>
         <div>
           <div className="font-semibold text-[var(--text-muted)]">IE</div>

@@ -26,6 +26,7 @@ import {
   type PatientRecord,
   type UpdatePatientRecordPatch,
 } from "@/lib/mock-data";
+import { extraDoisFor, serializeAdditionalDois } from "@/lib/additional-dois";
 import {
   loadEncounterNoteRecords,
   saveEncounterNoteRecords,
@@ -287,6 +288,21 @@ function noReassignments() {
   };
 }
 
+/** Winner's matrix over the loser's, except extra dates of injury are unioned so no accident is lost
+ *  (including the loser's own primary DOI when it differs from the winner's). */
+function mergeMatrix(winner: PatientRecord, loser: PatientRecord): PatientRecord["matrix"] {
+  const matrix = { ...(loser.matrix ?? {}), ...(winner.matrix ?? {}) };
+  const winnerPrimary = (winner.dateOfLoss ?? "").trim() ? winner.dateOfLoss : loser.dateOfLoss;
+  const loserPrimary = (loser.dateOfLoss ?? "").trim() && loser.dateOfLoss !== winnerPrimary ? loser.dateOfLoss : "";
+  const all = serializeAdditionalDois([
+    ...extraDoisFor(winnerPrimary, winner.matrix?.additionalDois),
+    ...extraDoisFor(winnerPrimary, loser.matrix?.additionalDois),
+    ...(loserPrimary ? [loserPrimary] : []),
+  ]);
+  if (all) matrix.additionalDois = all;
+  return matrix;
+}
+
 /**
  * Default field-merge strategy: for each field, prefer the WINNER's value
  * if non-blank, otherwise fall back to the LOSER's value. Arrays/objects
@@ -315,7 +331,7 @@ export function autoMergeRecord(
     compliance: winner.compliance || loser.compliance || winner.compliance,
     dateOfLoss: pickStr(winner.dateOfLoss, loser.dateOfLoss),
     priority: winner.priority ?? loser.priority,
-    matrix: { ...(loser.matrix ?? {}), ...(winner.matrix ?? {}) },
+    matrix: mergeMatrix(winner, loser),
     relatedCases: dedupeRelatedCases([
       ...(winner.relatedCases ?? []),
       ...(loser.relatedCases ?? []),

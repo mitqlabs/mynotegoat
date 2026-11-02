@@ -32,6 +32,8 @@ const demoPatientContext: Record<string, string> = {
   PATIENT_SEX: "Male",
   MARITAL_STATUS: "Single",
   DATE_OF_INJURY: "03/01/2026",
+  ADDITIONAL_DATES_OF_INJURY: "03/15/26",
+  ALL_DATES_OF_INJURY: "03/01/26, 03/15/26",
   PATIENT_PHONE: "818-555-0144",
   PATIENT_EMAIL: "john.doe@example.com",
   CASE_NUMBER: "030126DOJO",

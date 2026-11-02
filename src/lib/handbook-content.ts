@@ -707,6 +707,19 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         why: "Which panels start open, and which are hidden from a given person, is set by an admin in Settings — so two people can see the same patient differently.",
       },
       {
+        heading: "Add a second date of injury (same case)",
+        steps: [
+          "Open the patient's page. In the top card, next to Date Of Injury, tap + Add date of injury.",
+          "Type the date (MM/DD/YY) and tap Add. It saves by itself and appears under the main date as \"Also injured 11/02/26\".",
+          "To take one off, tap the × on it.",
+          "The extra dates also show in Quick Glance under DOI, on the Encounters side-rail, and in G.O.A.T. (\"dates\", timeline).",
+          "In Reports and Letters, use the tokens {{ADDITIONAL_DATES_OF_INJURY}} (only the extra dates) or {{ALL_DATES_OF_INJURY}} (the main date plus the extras, e.g. \"01/12/26, 02/03/26\").",
+          "MRI requests, X-ray requests, specialist referrals and letters that already print \"Date of Injury: …\" automatically print \"Dates of Injury: 01/12/26, 02/03/26\" once a patient has more than one. With only one date nothing changes.",
+        ],
+        why: "Use this when a patient is hurt again while you are still treating the same case. It stays ONE patient and ONE case: the main Date Of Injury, the Case #, files and billing do not change, and it is shared with everyone in the office.",
+        watchOut: "The main Date Of Injury is still the one that builds the Case #. Merging two patient records keeps every date of injury from both.",
+      },
+      {
         heading: "Book an appointment for this patient",
         steps: [
           "Open Appointments / Encounters.",

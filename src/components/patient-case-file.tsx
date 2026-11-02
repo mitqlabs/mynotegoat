@@ -59,6 +59,15 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
 import { onLocalChange } from "@/lib/local-sync";
 import { getPatientById, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import {
+  addAdditionalDoi,
+  doiTokens,
+  extraDoisFor,
+  isoToLongUs,
+  isoToShortUs,
+  parseAdditionalDois,
+  serializeAdditionalDois,
+} from "@/lib/additional-dois";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
@@ -1650,6 +1659,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [patientSex, setPatientSex] = useState<"Male" | "Female" | "Other" | "">(patient.sex ?? "");
   const [maritalStatus, setMaritalStatus] = useState<MaritalStatus | "">(patient.maritalStatus ?? "");
   const [dateOfLoss, setDateOfLoss] = useState(toUsDate(patient.dateOfLoss));
+  // Extra dates of injury on this same record (a second accident during care), ISO. Saved in matrix.additionalDois.
+  const [additionalDois, setAdditionalDois] = useState<string[]>(() => parseAdditionalDois(patient.matrix?.additionalDois));
+  const [addDoiOpen, setAddDoiOpen] = useState(false);
+  const [addDoiDraft, setAddDoiDraft] = useState("");
+  const [addDoiError, setAddDoiError] = useState("");
+  const primaryDoiIso = toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss;
+  const extraDois = extraDoisFor(primaryDoiIso, serializeAdditionalDois(additionalDois));
   const [initialExam, setInitialExam] = useState(toUsDate(patient.matrix?.initialExam ?? ""));
   const [patientPhone, setPatientPhone] = useState(formatUsPhoneInput(patient.phone));
   const [textRemindersOff, setTextRemindersOff] = useState(Boolean(patient.textRemindersOff));
@@ -2810,6 +2826,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       review: reviewStatus,
       isCashPatient,
       doi: dateOfLoss,
+      additionalDois: extraDoisFor(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).map(isoToLongUs),
       initialExam: effectiveInitialExam,
       priorCare,
       xrayFindings,
@@ -2853,7 +2870,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     goatTermGroups, goatContacts, goatFiles.enabled, goatFiles.files,
     hiddenStyle, canView, goatMacroLibrary.templates, getPlansForPatient, patient.id, patient.fullName,
     lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
-    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, effectiveInitialExam, priorCare, xrayFindings,
+    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, additionalDois, patient.dateOfLoss, effectiveInitialExam, priorCare, xrayFindings,
     mriCtFindings, specialistRecommendations, xrayReferrals, mriReferrals, specialistReferrals, patientNotes,
     patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, effectiveDischargeDate, dischargeInfo, billedAmount,
     paidAmount, paidDate, rbSentDate,
@@ -3138,6 +3155,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       PATIENT_SEX: patientSex,
       MARITAL_STATUS: maritalStatus,
       DATE_OF_INJURY: toUsDate(dateOfLoss),
+      ...doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)),
       PATIENT_PHONE: patientPhone,
       PATIENT_EMAIL: patientEmail,
       CASE_NUMBER: caseNumber,
@@ -3959,6 +3977,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         sex: patientSex,
         maritalStatus,
         dateOfLoss,
+        additionalDatesOfInjury: doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).ADDITIONAL_DATES_OF_INJURY,
+        allDatesOfInjury: doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).ALL_DATES_OF_INJURY,
         initialExam: effectiveInitialExam,
         phone: patientPhone,
         email: patientEmail,
@@ -4922,6 +4942,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
+  const commitAddDoi = () => {
+    const result = addAdditionalDoi(additionalDois, primaryDoiIso, addDoiDraft);
+    if (result.error) {
+      setAddDoiError(result.error);
+      return;
+    }
+    setAdditionalDois(result.list);
+    setAddDoiOpen(false);
+    setAddDoiDraft("");
+    setAddDoiError("");
+    autoSavePatientFile({ additionalDois: result.list });
+  };
+
   // Build the full patch for updatePatientRecordById. Accepts overrides so
   // an autosave triggered right after a setState call can pass the
   // freshly-computed value (the closure-captured state would otherwise be
@@ -4934,6 +4967,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     locationId?: string;
     review?: string;
     textRemindersOff?: boolean;
+    additionalDois?: string[];
   } = {}): UpdatePatientRecordPatch => {
     const effectiveSpecialists = overrides.specialistReferrals ?? specialistReferrals;
     const effectiveXrays = overrides.xrayReferrals ?? xrayReferrals;
@@ -4971,6 +5005,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       alerts: patientAlerts.length > 0 ? patientAlerts : undefined,
       matrix: {
         initialExam: toIsoDateFromUsDate(initialExam),
+        additionalDois: serializeAdditionalDois(overrides.additionalDois ?? additionalDois),
         lien: resolvedLienStatus,
         priorCare: priorCare.trim(),
         xrayFindings: xrayFindings.trim(),
@@ -5034,7 +5069,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         caseStatus: rec.caseStatus,
         compliance: compliancePatchValue(rec.compliance ?? "", patient.compliance),
         attorney: rec.attorney,
-        matrix: { discharge: rec.matrix?.discharge ?? "", rbSent: rec.matrix?.rbSent ?? "", review: normalizeReviewStatus(rec.matrix?.review) },
+        matrix: {
+          discharge: rec.matrix?.discharge ?? "",
+          rbSent: rec.matrix?.rbSent ?? "",
+          review: normalizeReviewStatus(rec.matrix?.review),
+          additionalDois: serializeAdditionalDois(parseAdditionalDois(rec.matrix?.additionalDois)),
+        },
       });
       const { take } = takeExternal(base, flatten(live.build() as Record<string, unknown>), incoming);
       for (const k of take) {
@@ -5045,6 +5085,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         else if (k === "matrix.discharge") setDischargeDate(toUsDate(v ?? ""));
         else if (k === "matrix.rbSent") setRbSentDate(toUsDate(v ?? ""));
         else if (k === "matrix.review") setReviewStatus(v);
+        else if (k === "matrix.additionalDois") setAdditionalDois(parseAdditionalDois(v));
         base[k] = incoming[k];
       }
     };
@@ -5673,17 +5714,88 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {!isCashPatient && showCaseFields && (
-            <label className="grid gap-1 self-start">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
+            <div className="grid gap-1 self-start" data-testid="doi-field">
+              <div className="flex items-baseline justify-between gap-2">
+                <label className="text-sm font-semibold text-[var(--text-muted)]" htmlFor="patient-doi-input">Date Of Injury</label>
+                <button
+                  className="text-sm font-semibold text-[var(--brand-primary)] hover:underline"
+                  data-testid="add-doi-link"
+                  onClick={() => {
+                    setAddDoiOpen((open) => !open);
+                    setAddDoiDraft("");
+                    setAddDoiError("");
+                  }}
+                  title="A second accident during care: adds another date of injury to this same patient. The main date, Case # and everything else stay the same."
+                  type="button"
+                >
+                  + Add date of injury
+                </button>
+              </div>
               <input
                 className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                id="patient-doi-input"
                 inputMode="numeric"
                 maxLength={10}
                 onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
                 placeholder="MM/DD/YYYY"
                 value={dateOfLoss}
               />
-            </label>
+              {extraDois.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5" data-testid="additional-dois">
+                  {extraDois.map((iso) => (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2.5 py-0.5 text-sm font-semibold tabular-nums"
+                      key={iso}
+                    >
+                      <span className="font-normal text-[var(--text-muted)]">Also injured</span>
+                      {isoToShortUs(iso)}
+                      <button
+                        aria-label={`Remove date of injury ${isoToShortUs(iso)}`}
+                        className="rounded-full px-1 text-[var(--text-muted)] hover:text-[#b43b34]"
+                        onClick={() => {
+                          const next = additionalDois.filter((d) => d !== iso);
+                          setAdditionalDois(next);
+                          autoSavePatientFile({ additionalDois: next });
+                        }}
+                        title="Remove this date of injury"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {addDoiOpen && (
+                <div className="mt-1 grid gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      className="w-32 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={10}
+                      onChange={(event) => {
+                        setAddDoiDraft(formatUsDateInput(event.target.value));
+                        setAddDoiError("");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitAddDoi();
+                        } else if (event.key === "Escape") {
+                          setAddDoiOpen(false);
+                        }
+                      }}
+                      placeholder="MM/DD/YY"
+                      value={addDoiDraft}
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={commitAddDoi} type="button">Add</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setAddDoiOpen(false)} type="button">Cancel</button>
+                  </div>
+                  {addDoiError && <span className="text-sm text-[#b43b34]">{addDoiError}</span>}
+                </div>
+              )}
+            </div>
           )}
 
           {!isCashPatient && (
@@ -5932,6 +6044,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           legacyReviewed={{ xray: patient.matrix?.xrayReviewed, mri: patient.matrix?.mriReviewed }}
           billed={currentBillTotal}
           doi={dateOfLoss}
+          additionalDois={extraDois}
           ie={effectiveInitialExam}
           discharge={hiddenStyle("additionalDetails") ? undefined : dischargeInfo}
           mriReferrals={mriReferrals}
