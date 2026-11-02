@@ -449,7 +449,7 @@ export default function AppointmentsPage() {
     selectedLocationId,
     setLocation,
   } = useLocationView();
-  const { encountersByNewest, createEncounter, deleteEncounter, setSignedAndConfirm } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, deleteEncounter, setSignedAndConfirm, syncEncounterTypeForAppointment } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
@@ -1260,6 +1260,17 @@ export default function AppointmentsPage() {
       note: editNoteDraft.trim(),
       appointmentType: editTypeDraft.trim() || current.appointmentType,
     }));
+    // The note for this visit follows the appointment's new type.
+    void syncEncounterTypeForAppointment(
+      {
+        id: selectedAppointment.id,
+        patientId: selectedAppointment.patientId,
+        // The note is dated by the ORIGINAL visit date, even if the date was also edited.
+        date: selectedAppointment.date,
+      },
+      selectedAppointment.appointmentType,
+      editTypeDraft.trim() || selectedAppointment.appointmentType,
+    );
 
     const coveredOnEdit = findKeyDatesForDate(keyDates, editDateDraft).some(
       (entry) => entry.officeStatus === "Covered",

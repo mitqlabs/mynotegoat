@@ -43,6 +43,7 @@ import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { mergePatientCloudNotes } from "@/lib/encounter-merge";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
@@ -1530,7 +1531,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm, putEncounterRecords } = useEncounterNotes();
+  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm, putEncounterRecords, syncEncounterTypeForAppointment } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
@@ -2436,19 +2437,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   }, [patient.id]);
 
   const patientEncounterRecords = useMemo(() => {
-    const byId = new Map<string, (typeof encountersByNewest)[number]>();
-    for (const note of cloudPatientNotes) byId.set(note.id, note);
-    // In-memory copies win when newer: they carry edits made on this device
-    // that may not have reached the cloud snapshot fetched above.
-    for (const note of encountersByNewest) {
-      if (note.patientId !== patient.id) continue;
-      const cloud = byId.get(note.id);
-      if (!cloud || note.updatedAt >= cloud.updatedAt) byId.set(note.id, note);
-    }
-    return Array.from(byId.values()).sort(
-      (left, right) =>
-        toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
-    );
+    // In-memory copies win when newer; notes deleted on this page never
+    // come back from the (older) cloud snapshot fetched above.
+    const merged = mergePatientCloudNotes(encountersByNewest, cloudPatientNotes, patient.id);
+    return merged
+      .filter((note) => note.patientId === patient.id)
+      .sort(
+        (left, right) =>
+          toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
+      );
   }, [cloudPatientNotes, encountersByNewest, patient.id]);
 
   // openPatientEncounterRecords memo used to live here for the
@@ -9979,6 +9976,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         appointment={editTargetAppointment}
         onClose={() => setEditAppointmentId(null)}
         onSaved={(updated) => {
+          // The note for this visit follows the appointment's new type.
+          if (editTargetAppointment) {
+            void syncEncounterTypeForAppointment(
+              editTargetAppointment,
+              editTargetAppointment.appointmentType,
+              updated.appointmentType,
+            );
+          }
           setEncounterMessage(
             `Appointment updated for ${toUsDate(updated.date)} at ${formatTimeLabel(updated.startTime)}.`,
           );

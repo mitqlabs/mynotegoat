@@ -86,6 +86,8 @@ export const goatHandbookChapter: HandbookChapter = {
         "Shared levels are split (\"C5-6 & C6-7 herniations\" shows on both). A size cut off in the PDF says so instead of guessing.",
         "Combined reports (e.g. Cervical + Lumbar MRI) show every region under its own heading, even when the report splits the impression with \"LUMBAR SPINE:\" sub-headings. Nothing is cut off.",
         "More than one study: the latest is first. Ask for one region to see just that one.",
+        "\"When was the MRI\" counts only real reports. A referral or order form is never listed as an MRI, even with MRI in its file name (\"MRI REFER…\", \"MRI order…\"). Name referral forms with the word referral or refer so they are recognised.",
+        "The regions shown (e.g. \"Cervical, Lumbar MRI\") are only the ones the report's own title, sub-headings or impression name. A body part mentioned in the history or on a form is not listed. The date is the report's own date: it is never copied from another file.",
         "Show original opens the report text exactly as written.",
       ],
       why: "Rules only — no outside AI. If a report isn't written level by level (e.g. a knee MRI), you get the report text as before.",

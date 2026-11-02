@@ -44,7 +44,10 @@ export function imagingFactsAnswer(ctx: GoatContext, question: string, facts: Fi
   if (files.length) {
     for (const f of files.slice(0, 2)) {
       const region = f.regions.filter((r) => /Cervical|Thoracic|Lumbar|Shoulder|Knee|Hip|Wrist/.test(r)).join(", ");
-      const b = box.find((x) => x.doneDate && isoToMdy(x.doneDate) === f.mainDate) ?? box[0];
+      // A report's date is its OWN date. The MRI panel's done date fills in only when there is exactly
+      // one report file and one done study (the same study) — never lent from one file to another.
+      const doneBox = box.filter((x) => x.doneDate);
+      const b = files.length === 1 && doneBox.length === 1 ? doneBox[0] : undefined;
       const date = f.mainDate || (b?.doneDate ? isoToMdy(b.doneDate) : "");
       lines.push(`${who}'s ${region ? `${region} ` : ""}${mod.label} was ${date ? `done on ${date}` : "done (no date found in the report)"}.`);
       const imp = f.impressions.length ? f.impressions : f.findings;
