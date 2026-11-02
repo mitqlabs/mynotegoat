@@ -94,7 +94,8 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Specialist findings (pain management, ortho, neuro)",
       steps: [
         "Ask \"pm findings\" or \"ortho findings\". G.O.A.T. leads with the patient's own referred doctor, e.g. \"Pain management: Dr. Name, seen, report uploaded 10/26/2026.\" If none is linked: \"No pain management doctor on this case.\"",
-        "Then short bullets from the report: Recommendations / Plan first, then Range of motion (ROM measurements like \"Lumbar flexion 40/60 degrees\", even when they sit under Physical Exam), then Assessment / Diagnoses and Findings, with the page and Open file. Letterhead, addresses, signatures and page footers are left out.",
+        "Then one Findings card from the report, in the doctor's own words: Recommendations first, then Range of motion by region (every movement with its degrees and with / without pain, e.g. \"40° anterior flexion (with pain)\"), then Exam findings by region (palpation, facet loading, straight leg raise, Spurling's and other tests), then Assessment / Diagnoses, with Open file. Nothing is guessed: a part the report doesn't have is left out, and a complaint in the history (\"worse with neck range of motion\") is never listed as ROM. Letterhead, addresses, signatures and page footers are left out.",
+        "Ask \"pm rom\" for just the Range of motion card, or \"pm recs\" for just the recommendations. The Findings card has no raw line dump.",
         "If a report from the specialist is dated after the referral but the referral isn't marked completed, G.O.A.T. says so. It never changes the referral itself — mark it completed in the Specialist box.",
       ],
       why: "Rules only, in your browser — no outside AI. Contacts not linked to this patient are never listed.",

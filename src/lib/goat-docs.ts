@@ -9,7 +9,7 @@
  */
 
 import { cleanTerms, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
-import { extractRom, formatRomMeasure, romHeading, type RomRegion } from "@/lib/goat-rom";
+import { extractRom, formatRomMeasure, romHeading, romMeasuresIn, type RomRegion } from "@/lib/goat-rom";
 import {
   extractRecommendations,
   recommendationBlocksFrom,
@@ -94,6 +94,8 @@ export interface GoatFilesResult {
   title?: string;
   /** Show every line (an imaging report's sections for the asked region) instead of the first few. */
   expanded?: boolean;
+  /** A specialist report was asked for as a whole ("pm findings"): the answer is its Findings card, not word hits. */
+  clinical?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +429,24 @@ export function reportFromDoctor(files: GoatFile[], doctor: string, afterUs = ""
   return best ? { fileId: best.fileId, name: best.name, date: best.date, dateLabel: best.dateLabel } : null;
 }
 
+/**
+ * A ROM sentence wrapped across PDF lines ("… 40 degrees in anterior" / "flexion with pain, 60 degrees …")
+ * is one sentence. ROM lines are kept apart from their neighbours (a measurement list is one item per
+ * line), so the wrapped pieces are glued here first, only when the next line clearly carries on:
+ * it starts in lower case, or the line before ends in a comma / connecting word.
+ */
+function mergeWrappedRom(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    const carriesOn = prev !== undefined && !/[.:;!?]["')\]]?$/.test(prev) && (/^[a-z]/.test(line) || /(,|\b(with|without|and|or|of|to|at|the|a|an|in|on|for|by|is|are|was)|-)$/i.test(prev));
+    if (carriesOn && (ROM_LINE.test(prev) || ROM_LINE.test(line))) {
+      out[out.length - 1] = prev.endsWith("-") && /^[a-z]/.test(line) ? `${prev.slice(0, -1)}${line}` : `${prev} ${line}`;
+    } else out.push(line);
+  }
+  return out;
+}
+
 const docUnitCache = new WeakMap<GoatFile, DocUnit[]>();
 
 export function docUnits(file: GoatFile): DocUnit[] {
@@ -439,7 +459,7 @@ export function docUnits(file: GoatFile): DocUnit[] {
   const repeated = repeatedEdgeLines(pageLines);
   const normLine = (l: string) => l.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   pageLines.forEach((lines, i) => {
-    const raw = lines.flatMap((l) => splitInlineLabel(l)).filter(Boolean);
+    const raw = mergeWrappedRom(lines.flatMap((l) => splitInlineLabel(l)).filter(Boolean));
     let n = 0;
     for (const text of joinWrapped(raw, (l) => isHeading(l) || isLetterheadLine(l) || repeated.has(normLine(l)) || ROM_LINE.test(l)).flatMap(splitNumbered)) {
       // Letterhead / footer: kept for "who wrote it", but it neither ends a section nor answers anything.
@@ -545,7 +565,7 @@ export function clinicalSections(file: GoatFile): ClinicalSection[] {
     }
     if (!cur || cur.kind !== "rom") {
       // ROM measurements usually sit under Physical Exam, not their own heading.
-      if (ROM_LINE.test(u.text) && u.section !== "boiler" && !META_LABEL.test(u.text)) {
+      if (isRomStatement(u.text) && u.section !== "boiler" && !META_LABEL.test(u.text)) {
         const text = cleanClinicalItem(u.text);
         if (text.length >= 3 && text.length <= 260) {
           let rom = out.find((s) => s.kind === "rom" && s.heading === "Range of motion");
@@ -563,6 +583,11 @@ export function clinicalSections(file: GoatFile): ClinicalSection[] {
     cur.items.push({ text: text.length > 260 ? `${text.slice(0, 257).trimEnd()}…` : text, page: u.page });
   }
   return out.filter((s) => s.items.length > 0);
+}
+
+/** A real ROM statement or measurement ("ROM is 40 degrees in flexion", "Range of motion within normal limits"), not a complaint that mentions it ("worse with neck range of motion"). */
+export function isRomStatement(text: string): boolean {
+  return ROM_LINE.test(text) && romMeasuresIn(text).length > 0;
 }
 
 const CLINICAL_TITLE: Record<ClinicalKind, string> = {
@@ -590,6 +615,97 @@ export function clinicalLines(file: GoatFile, perSection = 8): GoatFileLine[] {
     for (const x of uniq.slice(0, perSection)) lines.push({ text: x.text, page: x.page, inSection: true });
   }
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// "pm findings": the doctor's Findings card (exam findings, ROM, diagnoses, recommendations)
+// ---------------------------------------------------------------------------
+
+export interface GoatFindingsCard {
+  /** Blocks in the order shown: Recommendations, Range of motion (by region), Exam findings (by region), Diagnoses / impression. */
+  blocks: Array<{ heading: string; items: string[] }>;
+  /** Plain text for the Copy button. */
+  text: string;
+}
+
+const EXAM_HEADING = /^(physical exam(ination)?s?|exam(ination)?s?( findings)?|objective( findings| exam(ination)?)?|orthop[ae]dic( exam(ination)?| tests?)?|neurolog(ic|ical)( exam(ination)?| tests?)?|musculoskeletal( exam(ination)?)?|focused exam(ination)?|clinical findings|spine exam(ination)?)$/i;
+/** Exam findings written without an exam heading: palpation, provocative tests, neuro. */
+const EXAM_TEST =
+  /\b(tender(ness)?|palpat\w*|spasm\w*|trigger points?|facet (loading|tenderness|joint)|straight leg|slr|spurling'?s?|lhermitte'?s?|hoffman'?s?|patrick'?s?|faber|gaenslen'?s?|kemp'?s?|yeoman'?s?|FABER|valsalva|distraction test|compression test|reflexes?|strength|motor|sensation|sensory|dermatom\w*|gait|babinski|clonus|hypertonic\w*|atrophy|swelling|deformity|antalgic|myotom\w*)\b/i;
+
+function examBucketLabel(region: BodyRegion | null): string {
+  return region ? `${region} exam` : "Exam";
+}
+
+/** Sentences of one report line ("Cervical spine: Tenderness … Spurling's test is positive.") — the label before ":" dropped when it only names a region. */
+function examSentences(text: string): string[] {
+  const body = text.replace(/^[A-Za-z][A-Za-z /&()-]{1,40}?\s*:\s+(?=\S)/, (m) => (regionsNamedIn(m).length || /spine|extremit|neck|back/i.test(m) ? "" : m));
+  return body
+    .split(/(?<=[.;])\s+(?=[A-Z(])/)
+    .map((x) => cleanClinicalItem(x))
+    .filter((x) => x.length >= 3 && x.length <= 260 && /[a-z]/i.test(x));
+}
+
+/**
+ * A specialist report as a Findings card. Everything is the report's own words:
+ * ROM from the measurements (every movement, in report order), exam findings from
+ * the Physical Exam part (ROM sentences left out), diagnoses and recommendations
+ * from their headings. Nothing is guessed; empty parts are left out.
+ */
+export function findingsCardFromFile(file: GoatFile): GoatFindingsCard {
+  const units = docUnits(file);
+  const secs = clinicalSections(file);
+  const itemsOf = (kind: ClinicalKind) => [...new Set(secs.filter((s) => s.kind === kind).flatMap((s) => s.items.map((i) => i.text)))];
+  const blocks: GoatFindingsCard["blocks"] = [];
+
+  const recs = itemsOf("recommendations");
+  if (recs.length) blocks.push({ heading: "Recommendations", items: recs.slice(0, 12) });
+
+  const rom = extractRom(units.filter((u) => !u.letterhead).map((u) => ({ text: u.text, contextRegion: u.region, heading: u.heading })));
+  for (const r of rom) blocks.push({ heading: romHeading(r), items: r.measures.map(formatRomMeasure) });
+
+  // Exam findings: the units under a Physical Exam heading; without one, any line with an exam test in it.
+  const buckets = new Map<string, string[]>();
+  const add = (region: BodyRegion | null, sentence: string) => {
+    if (isRomStatement(sentence) || META_LABEL.test(sentence)) return;
+    const label = examBucketLabel(region);
+    const list = buckets.get(label) ?? [];
+    if (!list.some((x) => x.toLowerCase() === sentence.toLowerCase())) list.push(sentence);
+    buckets.set(label, list);
+  };
+  let inExam = false;
+  let sawExam = false;
+  for (const u of units) {
+    if (u.letterhead) continue;
+    const head = u.text.replace(/[:\s]+$/, "").trim();
+    if (EXAM_HEADING.test(head) && head.length <= 40) {
+      inExam = sawExam = true;
+      continue;
+    }
+    if (u.heading) {
+      const kind = clinicalKindOf(u.text);
+      if (kind === "findings") { inExam = sawExam = true; continue; }
+      if (kind || !regionsNamedIn(u.text).length) inExam = false;
+      continue;
+    }
+    if (!inExam || u.section === "boiler") continue;
+    const own = regionsNamedIn(/^([A-Za-z][A-Za-z /&()-]{1,40}?)\s*:\s/.exec(u.text)?.[1] ?? "")[0] ?? null;
+    for (const sentence of examSentences(u.text)) add(regionsNamedIn(sentence)[0] ?? own, sentence);
+  }
+  if (!sawExam) {
+    for (const u of units) {
+      if (u.letterhead || u.heading || u.section === "boiler" || u.section === "header") continue;
+      for (const sentence of examSentences(u.text)) if (EXAM_TEST.test(sentence)) add(regionsNamedIn(sentence)[0] ?? u.region, sentence);
+    }
+  }
+  for (const [heading, items] of buckets) if (items.length) blocks.push({ heading, items: items.slice(0, 14) });
+
+  // Wrapped list lines join into one ("M54.2 Cervicalgia M54.50 Low back pain"): one diagnosis per code again.
+  const dx = itemsOf("diagnosis").flatMap((d) => d.split(/\s+(?=[A-TV-Z]\d{2}(?:\.\w{1,4})?\s+[A-Za-z])/));
+  if (dx.length) blocks.push({ heading: "Diagnoses / impression", items: dx.slice(0, 12) });
+
+  const text = blocks.map((b) => `${b.heading}:\n${b.items.map((i) => `- ${i}`).join("\n")}`).join("\n");
+  return { blocks, text };
 }
 
 /** An imaging report of one of these types (file name, or its title / study lines). */
@@ -881,6 +997,7 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
     moreFiles: Math.max(0, withLines.length - MAX_FILES),
     highlight,
     unread,
+    ...(clinicalMode ? { clinical: true } : {}),
     ...(imagingMode && rq
       ? {
           title: `${rq.modalities.length ? rq.modalities.join(" / ") : "Imaging"} report${regionAsked ? ` · ${rq.levels.length ? rq.levels.join(", ") : rq.regions.join(", ")}` : ""}`,
