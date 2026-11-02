@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decodeQueueItemId } from "@/lib/reminder-automation";
 import { runSummary } from "@/lib/reminder-format";
-import { ackBroadcast, adminClient, authenticateDevice } from "@/lib/reminder-server";
+import { ackBirthday, ackBroadcast, adminClient, authenticateDevice } from "@/lib/reminder-server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ type AckResult = { id?: unknown; status?: unknown; error?: unknown };
  * POST /api/reminders/ack — the device reports what it sent.
  * Body: { visitDate: "YYYY-MM-DD", results: [{ id, status: "sent"|"failed"|"dry-run", error? }] }
  * Ids: plain = appointment on visitDate; "r:<date>:<id>" = reminder for that
- * date; "b:<id>" = a Message-patients text. Only ids in this workspace count.
+ * date; "b:<id>" = a Message-patients text; "bd:<year>:<patient id>" = a birthday text. Only ids in this workspace count.
  * A second "sent" for the same appointment + date is ignored (unique index).
  */
 export async function POST(request: NextRequest) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       ? [{ id: body.id, status: body.status, error: body.error }]
       : [];
   const refs = results.map((r) => decodeQueueItemId(typeof r.id === "string" ? r.id : "", visitDate));
-  const hasPlain = results.some((r) => typeof r.id === "string" && !/^(b|r):/.test(r.id));
+  const hasPlain = results.some((r) => typeof r.id === "string" && !/^(b|bd|r):/.test(r.id));
   if (!visitDate && (hasPlain || !results.length)) return NextResponse.json({ error: "Missing visitDate." }, { status: 400 });
 
   const apptIds = Array.from(
@@ -68,6 +68,13 @@ export async function POST(request: NextRequest) {
     const errorText = typeof result.error === "string" ? result.error.slice(0, 300) : null;
     if (!ref || !status) {
       ignored += 1;
+      continue;
+    }
+    if (ref.kind === "birthday") {
+      if (await ackBirthday(admin, device, ref.year, ref.patientId, status, errorText)) {
+        logged += 1;
+        counts[status] += 1;
+      } else duplicates += 1;
       continue;
     }
     if (ref.kind === "broadcast") {

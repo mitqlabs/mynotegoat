@@ -98,7 +98,7 @@ export function reminderPageHelp(question: string, opts: { canSeeSettings?: bool
     text: [
       "Settings → Text Reminders has two sections. Tap a heading to open or close it; NoteGoat remembers it for the whole office.",
       "• Set up: five cards, each with a Done / To do / Optional tag and a one-line summary. Tap a card to open it. The cards are the 3-step checklist, Sending devices (+ Add iPhone / + Add Mac, Main sender or Backup sender, last checked, last run), How it works, Opt-out (STOP), iPhone setup and iMac setup. The whole Set up section starts closed once the 8 AM automation box is checked and a device has run. A red \"automation may not be set up\" warning stays at the top even when Set up is closed.",
-      "• Texts: send settings, Message patients and Recent sends. It starts open. Recent messages and Recent sends can each be closed too.",
+      "• Texts: send settings, Message patients, Birthday texts and Recent sends. It starts open. Recent messages and Recent sends can each be closed too.",
       "Every date on the page is mm/dd/yy. A device's last run shows the day's running total, for example \"10/29/26: 14 sent\" (everything logged for that day, not just the last batch).",
     ].join("\n"),
     links,
@@ -127,6 +127,31 @@ export function macSetupHelp(question: string, opts: { canSeeSettings?: boolean 
       "4. If macOS says \"Not Opened\" (newer macOS, such as Sequoia): click Done (not Move to Trash). Open System Settings → Privacy & Security, scroll down to the message about NoteGoat-Reminders-Setup.command, and click Open Anyway. Type your Mac password if it asks, then click Open Anyway again.",
       "5. Terminal opens. Paste the setup code, then type your Mac password (nothing shows while you type; that is normal). When it says All set, press Return.",
       "6. The first time it sends, macOS asks to let it control Messages. Click OK.",
+    ].join("\n"),
+    links,
+  };
+}
+
+const BIRTHDAY_TOPIC = /\bbirthday\s*(?:texts?|messages?|shortcut|reminders?)\b|\b(?:texts?|messages?|wish(?:es)?)\b.{0,40}\bbirthday\b|\bhappy birthday\b/i;
+const BIRTHDAY_ASK = /\b(do we|can we|can i|how (?:do|can|does|to)|turn on|turn off|enable|disable|set\s*up|setup|who gets|does|will|is there|automatic\w*|daily|every)\b/i;
+
+/**
+ * "Do we text patients happy birthday", "how do I turn on birthday texts".
+ * Pure and offline; same answer as the Handbook (#chapter-text-reminders,
+ * "Text patients happy birthday"). Never changes a setting and never sends.
+ */
+export function birthdayTextsHelp(question: string, opts: { canSeeSettings?: boolean; sendHour?: number } = {}): RemindersHelp | null {
+  const raw = question.trim();
+  if (!raw || raw.startsWith("/") || raw.startsWith("@")) return null;
+  // "text john happy birthday" is a request to send, not a question about the feature.
+  if (/^(?:please\s+)?(?:text|send|message)\b/i.test(raw)) return null;
+  if (!BIRTHDAY_TOPIC.test(raw) || !BIRTHDAY_ASK.test(raw)) return null;
+  const links = [{ label: "Handbook → Text reminders", href: REMINDERS_HANDBOOK_ANCHOR }, ...(opts.canSeeSettings === false ? [] : [SETTINGS_LINK])];
+  return {
+    text: [
+      "Yes. NoteGoat can text patients happy birthday on their birthday. It starts off. To turn it on: Settings → Text Reminders → Texts → Birthday texts, tick \"Text patients happy birthday on their birthday\", and check the message (it starts as \"Happy birthday, {first name}! From all of us at Prime Spine.\").",
+      `It goes out with the daily ${hourText(opts.sendHour)} reminders from the same iPhone shortcut, so there is nothing new to set up on the phone.`,
+      "Only Active patients with a phone number get one, on the day of their birthday (Feb 29 birthdays on Feb 28 in years with no Feb 29). Never patients marked \"no text reminders\" or who replied STOP, and each patient gets at most one a year. Test mode applies. A missed birthday is not sent late.",
     ].join("\n"),
     links,
   };

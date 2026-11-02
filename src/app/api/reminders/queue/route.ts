@@ -4,6 +4,7 @@ import {
   broadcastBackupHold,
   buildDeviceQueue,
   CLAIM_MINUTES,
+  encodeBirthdayItemId,
   encodeReminderItemId,
   isQuietNow,
   localHHMM,
@@ -19,12 +20,16 @@ import {
   adminClient,
   alreadySentIds,
   authenticateDevice,
+  claimBirthdays,
   claimBroadcasts,
   claimReminders,
+  loadBirthdayQueue,
   loadBroadcastQueue,
   otherPrimaryExists,
   loadVisitDay,
   loadWorkspaceConfig,
+  ackBirthday,
+  type BirthdayQueueRow,
 } from "@/lib/reminder-server";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +52,15 @@ export const dynamic = "force-dynamic";
  *
  * Every call (outside quiet hours) also hands out queued "Message patients"
  * texts. Item ids: plain = appointment on `visitDate`; "r:<date>:<id>" =
- * reminder for another date; "b:<id>" = broadcast. /ack understands all.
+ * reminder for another date; "b:<id>" = broadcast; "bd:<year>:<patient id>" =
+ * birthday text. /ack understands all.
+ *
+ * Birthday texts (Settings → Text Reminders → Birthday texts, default off):
+ * from the send hour on, outside quiet hours, every ACTIVE patient whose
+ * birthday is today (office time zone) who is not opted out gets one text, at
+ * most once per patient per year (birthday_text_log). They ride the same
+ * daily run, so the device/Shortcut needs no change. Not tied to office open
+ * days or Key Date closures: it is not about a visit.
  *
  * Legacy: run_requested_until (old Settings "Send now") still counts as
  * force=1 until a run completes.
@@ -158,6 +171,13 @@ export async function GET(request: NextRequest) {
 
   const dryRun = settings.dryRun;
   const willSend = !dryRun && !preview;
+
+  // Birthday texts: same daily run, from the send hour on, never in quiet hours.
+  const localToday = localNow(now, settings.timeZone);
+  let birthdays: BirthdayQueueRow[] =
+    !quiet && localToday.hour >= settings.sendHour
+      ? await loadBirthdayQueue(admin, device, todayIso, settings, { retryDryRun: willSend || preview })
+      : [];
   let held = false;
   const isBackup = willSend ? await otherPrimaryExists(admin, device) : false;
 
@@ -177,6 +197,15 @@ export async function GET(request: NextRequest) {
       held = true;
     }
   }
+  if (willSend && isBackup && birthdays.length) {
+    // The backup waits for the main sender, like reminders.
+    const wait = backupWaitReason({ now, settings, requestedAt: null, selfForced });
+    if (wait) {
+      birthdays = [];
+      held = true;
+      if (!reason) reason = wait;
+    }
+  }
   if (willSend && isBackup && broadcasts.length) {
     const before = broadcasts.length;
     broadcasts = broadcasts.filter((b) => !broadcastBackupHold(b.createdAt, now, selfForced));
@@ -192,6 +221,11 @@ export async function GET(request: NextRequest) {
       if (kept.length < items.length) held = true;
       byDate.set(date, kept);
     }
+    if (birthdays.length) {
+      const claimed = await claimBirthdays(admin, device, birthdays, now);
+      if (claimed.size < birthdays.length) held = true;
+      birthdays = birthdays.filter((b) => claimed.has(b.patientId));
+    }
     if (broadcasts.length) {
       const claimed = await claimBroadcasts(admin, device, broadcasts.map((b) => b.recipientId), CLAIM_MINUTES, now);
       if (claimed.size < broadcasts.length) held = true;
@@ -204,10 +238,12 @@ export async function GET(request: NextRequest) {
     for (const item of items) reminderItems.push({ ...item, id: encodeReminderItemId(date, item.id, visitDate) });
   }
   const broadcastItems: DeviceQueueItem[] = broadcasts.map((b) => ({ id: `b:${b.recipientId}`, phone: b.phone, text: b.text }));
-  const items = [...reminderItems, ...broadcastItems];
+  const birthdayItems: DeviceQueueItem[] = birthdays.map((b) => ({ id: encodeBirthdayItemId(b.year, b.patientId), phone: b.phone, text: b.text }));
+  // Birthdays first: they are few, and a device that stops at its cap must not strand them.
+  const items = [...birthdayItems, ...reminderItems, ...broadcastItems];
   if (held && !items.length && !reason) reason = "Another device is sending these right now.";
 
-  const run = reminderRun || broadcastItems.length > 0;
+  const run = reminderRun || broadcastItems.length > 0 || birthdayItems.length > 0;
   const send = run && !dryRun;
 
   // A reminder run with nothing left to do is finished here, so the
@@ -229,6 +265,7 @@ export async function GET(request: NextRequest) {
     const tomorrowCount = (byDate.get(visitDate)?.length ?? 0);
     if (todayCount) parts.push(`${todayCount} for today`);
     if (tomorrowCount) parts.push(`${tomorrowCount} for tomorrow`);
+    if (birthdayItems.length) parts.push(`${birthdayItems.length} birthday text(s)`);
     if (broadcastItems.length) parts.push(`${broadcastItems.length} office message(s)`);
     return parts.join(", ");
   };
@@ -252,6 +289,7 @@ export async function GET(request: NextRequest) {
         }
       }
       if (logRows.length) await admin.from("reminder_log").insert(logRows);
+      for (const b of birthdays) await ackBirthday(admin, device, b.year, b.patientId, "dry-run", null, now);
       if (broadcasts.length) {
         await admin
           .from("reminder_broadcast_recipients")
