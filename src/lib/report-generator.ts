@@ -20,6 +20,10 @@ type NarrativePatientContext = {
   sex?: string;
   maritalStatus?: string;
   dateOfLoss: string;
+  /** Extra dates of injury on the same record, already formatted (mm/dd/yyyy, "A and B"). Blank when none. */
+  additionalDatesOfInjury?: string;
+  /** The main date of injury plus the extras. */
+  allDatesOfInjury?: string;
   initialExam: string;
   phone: string;
   email: string;
@@ -654,6 +658,8 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
     PATIENT_PHONE: input.patient.phone,
     PATIENT_EMAIL: input.patient.email,
     DATE_OF_INJURY: toUsDate(input.patient.dateOfLoss),
+    ADDITIONAL_DATES_OF_INJURY: input.patient.additionalDatesOfInjury ?? "",
+    ALL_DATES_OF_INJURY: input.patient.allDatesOfInjury ?? toUsDate(input.patient.dateOfLoss),
     INITIAL_EXAM: toUsDate(input.patient.initialExam),
     CASE_NUMBER: input.patient.caseNumber,
     ATTORNEY_NAME: input.patient.attorney,

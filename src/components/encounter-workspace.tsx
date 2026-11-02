@@ -86,6 +86,7 @@ import {
   type AppointmentStatus,
 } from "@/lib/schedule-appointments";
 import { appConfirm } from "@/components/app-dialog";
+import { extraDoisFor } from "@/lib/additional-dois";
 
 type EncounterWorkspaceProps = {
   initialPatientId?: string;
@@ -5537,6 +5538,7 @@ function EncounterQuickGlance({
       }}
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
+      additionalDois={extraDoisFor(patient.dateOfLoss ?? "", typeof patient.matrix?.additionalDois === "string" ? patient.matrix.additionalDois : "")}
       ie={initialExam}
       discharge={dischargeHidden ? undefined : discharge}
       mriReferrals={patient.mriReferrals}

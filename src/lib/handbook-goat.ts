@@ -67,6 +67,14 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "Second dates of injury",
+      steps: [
+        "If a patient was hurt again during care, add the extra date on their page (Date Of Injury → + Add date of injury). It stays the same case.",
+        "Ask \"dates\" or \"timeline\": G.O.A.T. lists the main date of injury and then each additional date (same case) in order.",
+        "G.O.A.T. never changes dates of injury on its own; the main date of injury (\"set his DOI to …\") works as before.",
+      ],
+    },
+    {
       heading: "Case pipeline and Case Review (admins)",
       steps: [
         "Ask in plain words: \"who needs an mri referral\", \"waiting on mri results\", \"waiting for report\", \"what's ready to submit\", \"waiting for checks\" (= Submitted), \"which cases have no attorney\". \"case pipeline\" gives all the counts.",

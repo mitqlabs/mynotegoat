@@ -32,7 +32,7 @@ const autoFieldCategories: FieldCategory[] = [
   },
   {
     label: "Case Info",
-    tokens: ["DATE_OF_INJURY", "INITIAL_EXAM", "CASE_NUMBER", "CASE_STATUS", "LIEN_STATUS", "PRIOR_CARE", "PATIENT_NOTES"],
+    tokens: ["DATE_OF_INJURY", "ADDITIONAL_DATES_OF_INJURY", "ALL_DATES_OF_INJURY", "INITIAL_EXAM", "CASE_NUMBER", "CASE_STATUS", "LIEN_STATUS", "PRIOR_CARE", "PATIENT_NOTES"],
   },
   {
     label: "Findings",
@@ -113,6 +113,8 @@ const examplePreviewContext: Record<string, string> = {
   HE_SHE: "She",
   HIS_HER: "Her",
   DATE_OF_INJURY: "01/12/2026",
+  ADDITIONAL_DATES_OF_INJURY: "02/03/26",
+  ALL_DATES_OF_INJURY: "01/12/26, 02/03/26",
   INITIAL_EXAM: "01/19/2026",
   CASE_NUMBER: "2026-PI-0042",
   ATTORNEY_NAME: "James Mitchell, Esq.",

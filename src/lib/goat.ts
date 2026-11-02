@@ -126,6 +126,8 @@ export interface GoatContext {
   review: string;
   isCashPatient: boolean;
   doi: string;
+  /** Extra dates of injury on this same record (a second accident during care), mm/dd/yyyy. */
+  additionalDois?: string[];
   initialExam: string;
   priorCare: string;
   xrayFindings: string;
@@ -484,6 +486,10 @@ function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
   const ie = dayStamp(ctx.initialExam);
   const lines = [
     `Date of injury: ${doi === null ? "not entered" : `${fmtDay(doi)} (${relative(doi, today)})`}.`,
+    ...(ctx.additionalDois ?? []).flatMap((d) => {
+      const day = dayStamp(d);
+      return day === null ? [] : [`Additional date of injury (same case): ${fmtDay(day)} (${relative(day, today)}).`];
+    }),
     `Initial exam: ${ie === null ? "not entered" : `${fmtDay(ie)}${doi !== null ? ` — ${ie - doi} days after the injury` : ""}`}.`,
   ];
   if (ctx.details) {

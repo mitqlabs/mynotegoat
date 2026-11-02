@@ -1,3 +1,5 @@
+import { withAllDoisLabel } from "@/lib/additional-dois";
+
 export type DocumentTemplateScope = "specialistReferral" | "imagingRequest" | "generalLetter";
 
 export interface DocumentTemplate {
@@ -105,6 +107,8 @@ export const documentTemplateFieldGroups: DocumentTemplateFieldGroup[] = [
     label: "Case",
     fields: [
       { token: "DATE_OF_INJURY", label: "Date Of Injury" },
+      { token: "ADDITIONAL_DATES_OF_INJURY", label: "Additional Dates Of Injury" },
+      { token: "ALL_DATES_OF_INJURY", label: "All Dates Of Injury" },
       { token: "CASE_NUMBER", label: "Case #" },
     ],
   },
@@ -497,6 +501,9 @@ export function renderDocumentTemplate(
    *  contain literal "[[token_id]]" strings. */
   promptAnswers?: Record<string, string>,
 ) {
+  // More than one date of injury on the case: the "Date of Injury:" line lists them all.
+  if (context.ADDITIONAL_DATES_OF_INJURY) body = withAllDoisLabel(body);
+
   // PASS 1: Conditional blocks (supports nesting).
   //
   // Syntax: {{#if TOKEN}}...content...{{/if}}
