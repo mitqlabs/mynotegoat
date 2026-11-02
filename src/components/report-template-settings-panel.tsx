@@ -168,7 +168,7 @@ const examplePreviewContext: Record<string, string> = {
   MRI_COMPLETED_DATE: "02/12/2026",
   MRI_REVIEWED_DATE: "02/17/2026",
   IMAGING_SUMMARY: "X-Ray:\n1. X-Ray | Completed: 01/19/2026 | Center: Valley Imaging | Regions: Cervical, Thoracic\n\nMRI/CT:\n1. MRI | Completed: 02/12/2026 | Center: Advanced MRI Center | Regions: Cervical",
-  SPECIALIST_SUMMARY: "1. Dr. Robert Chen, Orthopedic | Sent: 02/20/2026 | Completed: 03/05/2026\n   Recommendations: Continue conservative care, consider epidural if symptoms persist.\n2. Dr. Sarah Kim, Neurologist | Sent: 03/01/2026 | Completed: 03/15/2026\n   Recommendations: EMG/NCV recommended for upper extremity radiculopathy evaluation.",
+  SPECIALIST_SUMMARY: "1. Dr. Robert Chen, Orthopedic\n   Recommendations:\n   Cervical\n   Right C5-C6 epidural injection.\n   Alternatives\n   Alternative to Injection Therapy: Continue conservative care.\n2. Dr. Sarah Kim, Neurologist\n   Recommendations:\n   EMG/NCV for upper extremity radiculopathy evaluation.",
   SPECIALIST_NAME: "Dr. Robert Chen, Orthopedic and Dr. Sarah Kim, Neurologist",
   SPECIALIST_1_NAME: "Dr. Robert Chen, Orthopedic",
   SPECIALIST_1_SENT: "02/20/2026",

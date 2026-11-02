@@ -11,6 +11,11 @@
  * The height is stored for the TOP pane only; the bottom takes whatever is
  * left, so the pair always fills its container even when the window changes
  * size.
+ *
+ * Optional `bottomStorageKey`: the bottom pane gets a remembered height too, and
+ * the SAME single grip trades height between the two panes (drag up = bottom
+ * taller, drag down = top taller; the pair's total stays put). Both heights are
+ * remembered. Without it the bottom just fills what is left (older behavior).
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -34,6 +39,8 @@ export function SplitPane({
   minTopHeight = 140,
   minBottomHeight = 140,
   maxHeight = "72vh",
+  bottomStorageKey,
+  defaultBottomHeight = 260,
 }: {
   storageKey: string;
   top: ReactNode;
@@ -44,10 +51,14 @@ export function SplitPane({
   /** Caps the pair so both halves stay on screen and each scrolls inside
    *  itself, instead of a long prior note pushing the page down. */
   maxHeight?: string;
+  /** Registered localStorage key for the bottom pane's own height (enables its bottom grip). */
+  bottomStorageKey?: string;
+  defaultBottomHeight?: number;
 }) {
   const [topHeight, setTopHeight] = useState(defaultTopHeight);
+  const [bottomHeight, setBottomHeight] = useState(defaultBottomHeight);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const dragStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const dragStateRef = useRef<{ startY: number; startHeight: number; total: number } | null>(null);
 
   // Read the saved height after mount rather than during render, so the
   // server and the first client render agree.
@@ -55,8 +66,13 @@ export function SplitPane({
     setTopHeight(readSavedHeight(storageKey, defaultTopHeight));
   }, [storageKey, defaultTopHeight]);
 
+  useEffect(() => {
+    if (bottomStorageKey) setBottomHeight(readSavedHeight(bottomStorageKey, defaultBottomHeight));
+  }, [bottomStorageKey, defaultBottomHeight]);
+
   const clampHeight = useCallback(
-    (next: number) => {
+    (next: number, total?: number) => {
+      if (total !== undefined) return Math.min(total - minBottomHeight, Math.max(minTopHeight, next));
       const container = containerRef.current;
       const available = container ? container.getBoundingClientRect().height : 0;
       const max = available > 0 ? Math.max(minTopHeight, available - minBottomHeight) : next;
@@ -67,14 +83,16 @@ export function SplitPane({
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    dragStateRef.current = { startY: event.clientY, startHeight: topHeight };
+    dragStateRef.current = { startY: event.clientY, startHeight: topHeight, total: topHeight + bottomHeight };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragStateRef.current;
     if (!drag) return;
-    setTopHeight(clampHeight(drag.startHeight + (event.clientY - drag.startY)));
+    const next = clampHeight(drag.startHeight + (event.clientY - drag.startY), bottomStorageKey ? drag.total : undefined);
+    setTopHeight(next);
+    if (bottomStorageKey) setBottomHeight(drag.total - next);
   };
 
   const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -83,6 +101,7 @@ export function SplitPane({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     try {
       window.localStorage.setItem(storageKey, String(Math.round(topHeight)));
+      if (bottomStorageKey) window.localStorage.setItem(bottomStorageKey, String(Math.round(bottomHeight)));
     } catch (err) {
       // Per-browser convenience only — losing it just means the next visit
       // opens at the default.
@@ -91,7 +110,7 @@ export function SplitPane({
   };
 
   return (
-    <div className="flex min-h-0 flex-col" ref={containerRef} style={{ maxHeight }}>
+    <div className="flex min-h-0 flex-col" ref={containerRef} style={bottomStorageKey ? undefined : { maxHeight }}>
       <div className="min-h-0 shrink-0 overflow-auto" style={{ height: topHeight }}>
         {top}
       </div>
@@ -105,10 +124,13 @@ export function SplitPane({
           if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
           event.preventDefault();
           const step = event.shiftKey ? 48 : 16;
-          const next = clampHeight(topHeight + (event.key === "ArrowDown" ? step : -step));
+          const total = topHeight + bottomHeight;
+          const next = clampHeight(topHeight + (event.key === "ArrowDown" ? step : -step), bottomStorageKey ? total : undefined);
           setTopHeight(next);
+          if (bottomStorageKey) setBottomHeight(total - next);
           try {
             window.localStorage.setItem(storageKey, String(Math.round(next)));
+            if (bottomStorageKey) window.localStorage.setItem(bottomStorageKey, String(Math.round(total - next)));
           } catch {
             // Same as above — cosmetic only.
           }
@@ -124,7 +146,13 @@ export function SplitPane({
         <div className="absolute left-1/2 top-1/2 h-1.5 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--line-soft)] transition-colors group-hover:bg-[var(--brand-primary)]" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">{bottom}</div>
+      {bottomStorageKey ? (
+        <div className="min-h-0 shrink-0 overflow-auto" style={{ height: bottomHeight }}>
+          {bottom}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto">{bottom}</div>
+      )}
     </div>
   );
 }

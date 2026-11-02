@@ -295,51 +295,88 @@ function formatImagingSummary(
   return blocks.join(anyFindings ? "\n\n" : "\n");
 }
 
-// Split a free-text recommendations block into individual items so they
-// can be sub-numbered under a parent specialist (1 → 1a, 1b, 1c). Splits
-// on hard line breaks and on common bullet markers (•, –, "1.", "1)")
-// at the start of a line so the user's preferred input style — typed
-// dashes, pasted bulleted lists, hand-numbered lines — all collapse to
-// a single canonical numbering scheme in the report.
-function splitRecommendationItems(text: string): string[] {
-  const trimmed = text.trim();
-  if (!trimmed) return [];
-  const lines = trimmed
-    .split(/\r?\n+/)
-    .map((line) => line.trim())
-    // Strip leading bullets / hand-numbers so we don't double-prefix.
-    .map((line) => line.replace(/^([•\-–*]+|\d+[.)]|[a-z][.)])\s*/i, "").trim())
-    .filter((line) => line.length > 0);
-  return lines;
+const escapeRecHtml = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+interface RecGroup {
+  heading: string;
+  items: string[];
 }
 
-function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
+/**
+ * Split a specialist's recommendations text into the G.O.A.T. card's shape: a plain
+ * heading line ("Cervical", "Lumbar", "Alternatives") followed by its items. Bullets
+ * ("- ", "•", "1.") are stripped. A heading is an un-bulleted, short line with no closing
+ * period that has items after it, or a line ending in ":" with nothing after the colon.
+ * Text with no headings comes back as one heading-less group.
+ */
+export function parseRecommendationGroups(text: string): RecGroup[] {
+  const raw = text
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const stripped = line.replace(/^([•\-–*]+|\d+[.)]|[a-z][.)])\s+/i, "").trim();
+      return { text: stripped, bulleted: stripped !== line };
+    })
+    .filter((line) => line.text.length > 0);
+  const groups: RecGroup[] = [];
+  raw.forEach((line, i) => {
+    const hasNext = i < raw.length - 1 && !isHeadingLine(raw[i + 1]);
+    if (isHeadingLine(line) && hasNext) {
+      groups.push({ heading: line.text.replace(/:\s*$/, ""), items: [] });
+      return;
+    }
+    if (!groups.length) groups.push({ heading: "", items: [] });
+    groups[groups.length - 1].items.push(line.text);
+  });
+  return groups;
+}
+
+function isHeadingLine(line: { text: string; bulleted: boolean }) {
+  if (line.bulleted) return false;
+  const text = line.text.replace(/:\s*$/, "");
+  const words = text.split(/\s+/).length;
+  if (!text || words > 5 || /[.!?;,]$/.test(text) || /:\s/.test(text)) return false;
+  return true;
+}
+
+const REC_INDENT = "1.5em";
+const REC_ALT_INDENT = "3em";
+
+/**
+ * "Specialists" section, laid out like the G.O.A.T. card: the specialist, "Recommendations:",
+ * then each region as a bold heading with its recommendation on the line below, and under
+ * Alternatives one alternative per line. Returned as HTML (the text is escaped here) so the
+ * heading can be bold and wrapped lines stay aligned under their own indent.
+ */
+export function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
   if (!entries.length) {
     return "";
   }
-  return entries
+  const block = (indent: string, html: string, extra = "") =>
+    `<div style="padding-left:${indent}"${extra}>${html}</div>`;
+  const body = entries
     .map((entry, index) => {
       // Sent / Completed dates were dropped per the office's preferred
       // narrative format — the specialist's name and their actual
       // recommendations are what carries weight in the report.
-      const parentNumber = index + 1;
-      const headerLine = `${parentNumber}. ${entry.specialist || "-"}`;
-      const recItems = splitRecommendationItems(entry.recommendations ?? "");
-      if (recItems.length === 0) {
-        return headerLine;
+      const header = `<div>${index + 1}. ${escapeRecHtml(entry.specialist || "-")}</div>`;
+      const groups = parseRecommendationGroups(entry.recommendations ?? "");
+      if (groups.length === 0) return header;
+      const parts: string[] = [header, block(REC_INDENT, "Recommendations:")];
+      for (const group of groups) {
+        const isAlternatives = /^alternatives?$/i.test(group.heading);
+        if (group.heading) parts.push(block(REC_INDENT, `<b>${escapeRecHtml(group.heading)}</b>`));
+        for (const item of group.items) {
+          parts.push(block(isAlternatives ? REC_ALT_INDENT : REC_INDENT, escapeRecHtml(item)));
+        }
       }
-      // Sub-number recommendations as 1a / 1b / 1c... so each item gets a
-      // stable handle the doctor can refer to in correspondence ("per
-      // item 1b of the consult..."). Capped at 26 sub-items per
-      // specialist — way past anything realistic in clinical practice.
-      const lines = recItems.slice(0, 26).map((item, subIdx) => {
-        const letter = String.fromCharCode("a".charCodeAt(0) + subIdx);
-        return `   ${parentNumber}${letter}. ${item}`;
-      });
-      const overflow = recItems.length > 26 ? [`   …(${recItems.length - 26} additional items)`] : [];
-      return [headerLine, "   Recommendations:", ...lines, ...overflow].join("\n");
+      return parts.join("");
     })
-    .join("\n");
+    .join("");
+  // data-rec-block: the report cleanup leaves these bold headings tight (no extra blank line above).
+  return `<div data-rec-block="1">${body}</div>`;
 }
 
 export function appointmentTypeToTokenPrefix(typeName: string) {
@@ -595,7 +632,7 @@ export function buildNarrativeReportContext(input: NarrativeReportBuildInput) {
 
   // Tokens whose values are sanitised HTML and must NOT be escaped by
   // renderDocumentTemplate — they keep <b>, <u>, <p> etc. intact.
-  const rawHtmlTokens = new Set<string>();
+  const rawHtmlTokens = new Set<string>(["SPECIALIST_SUMMARY"]);
 
   const context: Record<string, string> = {
     TODAY_DATE: getTodayUsDate(),

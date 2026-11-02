@@ -211,7 +211,7 @@ export function isHeading(line: string): boolean {
 // Report or referral?
 // ---------------------------------------------------------------------------
 
-const REFERRAL_NAME = /referr|\border\b|request|authori[sz]ation|\brx\b|prescription|requisition/i;
+const REFERRAL_NAME = /(?<![a-z])refer\w*|\bref\b|\border\b|request|authori[sz]ation|\brx\b|prescription|requisition/i;
 const REPORT_NAME = /consult|eval|report|finding|note|exam|follow|visit|h\s?&\s?p|impression|initial|progress|procedure|op\b|operative/i;
 const REFERRAL_TEXT = [
   /\breferral form\b/i,

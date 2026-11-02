@@ -34,6 +34,8 @@ export const UNION_MERGE_KEYS = new Set([
 export const PRESERVE_ON_WIPE_KEYS = new Set([
   "casemate.sidebar-collapsed",
   "casemate.soap-split-height.v1",
+  "casemate.soap-split-bottom-height.v1",
+  "casemate.soap-split-columns.v1",
   "casemate.quick-glance.open.v1",
   "casemate.files-view-mode",
   "casemate.contacts-sort.v1",

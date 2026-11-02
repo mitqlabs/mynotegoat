@@ -890,6 +890,32 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         watchOut: "Check the patient in first. A note started on a visit that is still Scheduled cannot check anyone out later.",
       },
       {
+        heading: "Resize the previous-note boxes",
+        steps: [
+          "When a previous note shows under the one you are typing, drag the blue grip bar between them: up gives the previous-note row (all four boxes together) more height, down gives your note more.",
+          "Drag the thin bar between the Subjective, Objective, Assessment and Plan boxes to make one wider. Double-click a bar to put the widths back to equal.",
+          "Your sizes are remembered for your login on every computer. Phones and narrow windows keep the simple stacked layout.",
+        ],
+      },
+      {
+        heading: "An older visit is missing from the Encounters list",
+        steps: [
+          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the Copy From dropdown.",
+          "If a visit still shows + Enc., wait a second or two for the patient's notes to load before clicking it.",
+          "Do not start a second note for it. The note is not lost: older notes are simply not kept on this computer, and they load when you pick the patient.",
+        ],
+        why: "Nothing is deleted when a visit looks missing. Notes are only removed when someone deletes them on purpose.",
+      },
+      {
+        heading: "Change a visit's type and keep the note in step",
+        steps: [
+          "Change the type on the appointment (Edit Appointment, the Appointments page, or the type menu in the Encounters table).",
+          "The note for that visit follows automatically, so a New Patient visit no longer carries an Office Visit note.",
+          "Copy From shows each visit with its appointment's type.",
+        ],
+        watchOut: "If two notes exist for the same day, NoteGoat leaves them alone rather than guess which one to rename.",
+      },
+      {
         heading: "Write the note",
         steps: [
           "The Subjective / Objective / Assessment / Plan tabs sit BELOW the macro buttons, above the note box.",
@@ -1110,6 +1136,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Print / Save PDF, then choose Save as PDF in the browser dialog.",
         ],
         why: "Most of the report fills itself from the chart — demographics, visits, diagnoses, imaging, specialists, charges. Narrative Inputs only ask for what the chart cannot know, like a prognosis.",
+      },
+      {
+        heading: "How the Specialists section reads",
+        steps: [
+          "Each specialist shows as \u201c1. Dr. Name\u201d, then \u201cRecommendations:\u201d.",
+          "Under it, every region (Cervical, Lumbar, Alternatives\u2026) is a bold heading with its recommendation on the line below, and each alternative is on its own line.",
+          "It reads the Specialist box's recommendations exactly as G.O.A.T. lays them out, so paste G.O.A.T.'s text there and the report matches the G.O.A.T. card.",
+        ],
+        why: "No 1a / 1b lettering and no \u201cCervical:\u201d run into the sentence \u2014 long lines wrap under their own indent, so it stays easy to read.",
+        watchOut: "Recommendations typed as one plain paragraph print as plain lines under \u201cRecommendations:\u201d \u2014 headings only appear when the text has a short heading line (like Cervical) above its recommendation.",
       },
       {
         heading: "The decompression paragraph",

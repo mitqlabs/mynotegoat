@@ -4,6 +4,8 @@ import { ageTokenOn } from "@/lib/age";
 import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
+import { toInlineMacroHtml } from "@/lib/macro-inline";
+import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
@@ -31,6 +33,8 @@ import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { mergePatientCloudNotes } from "@/lib/encounter-merge";
+import { encounterDisplayType } from "@/lib/encounter-link";
 import { draftKeyFor } from "@/lib/draft-recovery";
 import { normalizeEditorBlocks } from "@/lib/soap-html-normalize";
 import {
@@ -970,16 +974,6 @@ function AppointmentsOverview({
   );
 }
 
-/** One-paragraph macro HTML → its inline content; null if it has several blocks or line breaks. */
-function toInlineMacroHtml(html: string): string | null {
-  let inner = html.trim();
-  const wrapped = /^<(p|div)>([\s\S]*)<\/\1>$/i.exec(inner);
-  if (wrapped) inner = wrapped[2].trim();
-  inner = inner.replace(/(?:<br\s*\/?>\s*)+$/i, "").trim();
-  if (!inner || /<\/?(p|div|ul|ol|li|table|h[1-6]|blockquote)\b|<br\b|\n/i.test(inner)) return null;
-  return inner;
-}
-
 export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId, initialQuestionnaireId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
   const { getPlansForPatient, updatePlan } = useTreatmentPlans();
@@ -1007,7 +1001,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // Discharge visits across the schedule — the Discharge box date (lib/discharge-date).
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   const {
-    encountersByNewest,
+    encountersByNewest: hookEncountersByNewest,
     createEncounter,
     updateEncounter,
     setSoapSection,
@@ -1024,6 +1018,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setSignedAndConfirm,
     resaveEncountersToCloud,
     deleteEncounter,
+    syncEncounterTypeForAppointment,
     forceSaveAll,
   } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
@@ -1100,6 +1095,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     initialPatientId ?? null,
   );
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "closed">("all");
+
+  // The page-wide notes list only holds a pruned slice of old notes, so an
+  // older visit can be missing from it even though it exists. Same fix the
+  // patient page uses: fetch the picked patient's notes straight from the
+  // cloud (one small query) and combine them with the in-memory list. This
+  // feeds the appointments table "+ Enc."/link column, the prior-encounter
+  // dropdown, the encounter list and next-encounter. Display only: nothing
+  // fetched here is written back anywhere; on failure we fall back to the
+  // in-memory list exactly as before.
+  const cloudPatientId = selectedPatientIdForList;
+  const [cloudPatientNotes, setCloudPatientNotes] = useState<{
+    patientId: string;
+    notes: typeof hookEncountersByNewest;
+  } | null>(null);
+  useEffect(() => {
+    if (!cloudPatientId) return;
+    let cancelled = false;
+    void import("@/lib/encounter-notes-cloud")
+      .then(({ fetchEncounterNotesForPatient }) => fetchEncounterNotesForPatient(cloudPatientId))
+      .then((rows) => {
+        if (!cancelled && rows) setCloudPatientNotes({ patientId: cloudPatientId, notes: rows });
+      })
+      .catch(() => {
+        // Fall back to the in-memory list.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudPatientId]);
+  const encountersByNewest = useMemo(
+    () =>
+      cloudPatientNotes && cloudPatientNotes.patientId === cloudPatientId && cloudPatientId
+        ? mergePatientCloudNotes(hookEncountersByNewest, cloudPatientNotes.notes, cloudPatientId)
+        : hookEncountersByNewest,
+    [hookEncountersByNewest, cloudPatientNotes, cloudPatientId],
+  );
   const [message, setMessage] = useState("");
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
   const [openChargesPanel, setOpenChargesPanel] = useState(false);
@@ -2403,8 +2434,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       }
       return 0;
     }
-    prepared.forEach(({ snippetId, macro, answers, html }) => {
-      appendSoapSection(selectedEncounter.id, "plan", html);
+    prepared.forEach(({ snippetId, macro, answers, html }, index) => {
+      appendSoapSection(selectedEncounter.id, "plan", html, {
+        inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(prepared[index - 1].macro.buttonName),
+      });
       addMacroRun(selectedEncounter.id, {
         id: snippetId,
         section: "plan",
@@ -2730,8 +2763,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           return t != null && t >= planStartT && t <= planEndT && t < targetT;
         }).length;
         const snippets = buildPlanSnippets(coverage, source.patientId, priorInRange + createdIds.length, row.dateUs);
-        for (const { snippetId, macro, answers, html } of snippets) {
-          appendSoapSection(newId, "plan", html);
+        for (const [index, { snippetId, macro, answers, html }] of snippets.entries()) {
+          appendSoapSection(newId, "plan", html, {
+            inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(snippets[index - 1].macro.buttonName),
+          });
           addMacroRun(newId, {
             id: snippetId,
             section: "plan",
@@ -3145,8 +3180,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           .filter((run) => run.section === "plan")
           .forEach((run) => removeMacroRun(note.id, run.id));
         setSoapSection(note.id, "plan", "");
-        for (const { snippetId, macro, answers, html } of snippets) {
-          appendSoapSection(note.id, "plan", html);
+        for (const [index, { snippetId, macro, answers, html }] of snippets.entries()) {
+          appendSoapSection(note.id, "plan", html, {
+            inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(snippets[index - 1].macro.buttonName),
+          });
           addMacroRun(note.id, {
             id: snippetId,
             section: "plan",
@@ -3933,20 +3970,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                                 appointmentType: nextType,
                                                 durationMin: matched?.durationMin ?? current.durationMin,
                                               }));
-                                              // Also propagate to a linked
-                                              // encounter on the same date so
-                                              // the encounter editor's stored
-                                              // type doesn't drift from the
-                                              // appointment's.
-                                              const linkedEnc = encountersByNewest.find(
-                                                (e) =>
-                                                  e.patientId === apt.patientId &&
-                                                  e.encounterDate === dateUs &&
-                                                  e.appointmentType.toLowerCase() === apt.appointmentType.toLowerCase(),
+                                              // Also make the linked encounter follow, so
+                                              // its stored type never drifts from the
+                                              // appointment's (also finds older notes
+                                              // that aren't in the page list).
+                                              void syncEncounterTypeForAppointment(
+                                                apt,
+                                                apt.appointmentType,
+                                                nextType,
                                               );
-                                              if (linkedEnc) {
-                                                updateEncounter(linkedEnc.id, { appointmentType: nextType });
-                                              }
                                             }
                                             setAptTypeEditId(null);
                                           }}
@@ -4402,7 +4434,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {priorPatientEncounters.map((entry) => (
                           <option key={entry.id} value={entry.id}>
                             {entry.encounterDate}
-                            {entry.appointmentType ? ` • ${entry.appointmentType}` : ""}
+                            {(() => {
+                              const shownType = encounterDisplayType(entry, scheduleAppointments);
+                              return shownType ? ` • ${shownType}` : "";
+                            })()}
                             {entry.signed ? " • Closed" : ""}
                           </option>
                         ))}
@@ -4668,7 +4703,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             visit at a glance, in the same left-to-right order
                             as the tabs above. Drops to two columns on a
                             narrower screen and one on a phone. */}
-                        <div className="grid h-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <ResizableColumns storageKey="casemate.soap-split-columns.v1">
                           {encounterSections.map((section) => {
                             const body = saltSourceEncounter.soap[section].trim();
                             const isActive = section === activeSection;
@@ -4710,10 +4745,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               </div>
                             );
                           })}
-                        </div>
+                        </ResizableColumns>
                       </div>
                     }
                     storageKey="casemate.soap-split-height.v1"
+                    bottomStorageKey="casemate.soap-split-bottom-height.v1"
                     top={
                       <div className="grid gap-1">
                         <span className="text-sm font-semibold text-[var(--text-muted)]">

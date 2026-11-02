@@ -1,4 +1,5 @@
 "use client";
+import { appendInlineToLastBlock } from "@/lib/macro-inline";
 import { getSessionUser } from "@/lib/supabase-browser";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +31,13 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { findNoteForTypeChange } from "@/lib/encounter-link";
+import {
+  isEncounterDeleted,
+  markEncounterDeleted,
+  mergeNewerById,
+  unmarkEncounterDeleted,
+} from "@/lib/encounter-merge";
 import { logActivity } from "@/lib/activity-log";
 
 const SYNC_KEY = "casemate.encounter-notes.v1";
@@ -125,27 +133,8 @@ function replacePromptSpan(
   return html.replace(pattern, renderMacroPromptSpan(runId, promptId, newValue));
 }
 
-/** Keep, per id, whichever copy has the newer updatedAt. Records only in
- *  `incoming` are added. Records only in `local` are dropped (deleted
- *  elsewhere) unless edited in the last 15s (likely not flushed yet). */
-export function mergeNewerById(
-  local: EncounterNoteRecord[],
-  incoming: EncounterNoteRecord[],
-  now = Date.now(),
-): EncounterNoteRecord[] {
-  const localById = new Map(local.map((n) => [n.id, n]));
-  const incomingIds = new Set(incoming.map((n) => n.id));
-  const out = incoming.map((inc) => {
-    const cur = localById.get(inc.id);
-    if (!cur) return inc;
-    return (Date.parse(inc.updatedAt) || 0) > (Date.parse(cur.updatedAt) || 0) ? inc : cur;
-  });
-  for (const cur of local) {
-    if (!incomingIds.has(cur.id) && now - (Date.parse(cur.updatedAt) || 0) < 15000) out.push(cur);
-  }
-  if (out.length === local.length && out.every((n, i) => n === local[i])) return local;
-  return out;
-}
+// Pure merge helpers live in lib/encounter-merge (testable without React).
+export { mergeNewerById };
 
 export function useEncounterNotes() {
   const [encounters, setEncounters] = useState<EncounterNoteRecord[]>(() =>
@@ -173,6 +162,8 @@ export function useEncounterNotes() {
         const byId = new Map(local.map((n) => [n.id, n]));
         let changed = false;
         for (const c of cloud) {
+          // Deleted on this page while the download was in flight: don't bring it back.
+          if (isEncounterDeleted(c.id)) continue;
           const existing = byId.get(c.id);
           if (!existing) {
             byId.set(c.id, c);
@@ -266,6 +257,7 @@ export function useEncounterNotes() {
             if (payload.eventType === "DELETE") {
               const oldId = (payload.old as { id?: string } | undefined)?.id;
               if (!oldId) return;
+              markEncounterDeleted(oldId);
               setEncounters((local) => {
                 const idx = local.findIndex((n) => n.id === oldId);
                 if (idx < 0) return local;
@@ -521,6 +513,55 @@ export function useEncounterNotes() {
   );
 
   /**
+   * An appointment's type was just changed: make its note follow, so the
+   * note never keeps the old type ("Office Visit" note under a "New Patient"
+   * appointment). Finds the note by saved appointmentId, else same patient +
+   * date + the OLD type, never guessing between several. A note that isn't in
+   * this page's (pruned) list is fetched from the cloud first, then saved
+   * with the new type like any other edit. Returns true if a note was updated.
+   */
+  const syncEncounterTypeForAppointment = useCallback(
+    async (
+      appointment: { id: string; patientId: string; date: string },
+      beforeType: string,
+      afterType: string,
+    ): Promise<boolean> => {
+      const nextType = afterType.trim();
+      if (!nextType || nextType.toLowerCase() === beforeType.trim().toLowerCase()) return false;
+      const inMemory = findNoteForTypeChange(
+        encountersForLogRef.current.filter((n) => n.patientId === appointment.patientId),
+        appointment,
+        beforeType,
+      );
+      if (inMemory) {
+        upsertEncounter(inMemory.id, (current) => ({ ...current, appointmentType: nextType }));
+        return true;
+      }
+      try {
+        const { fetchEncounterNotesForPatient } = await import("@/lib/encounter-notes-cloud");
+        const rows = await fetchEncounterNotesForPatient(appointment.patientId);
+        if (!rows) return false;
+        const found = findNoteForTypeChange(
+          rows.filter((n) => !isEncounterDeleted(n.id)),
+          appointment,
+          beforeType,
+        );
+        if (!found) return false;
+        const stamped = { ...found, appointmentType: nextType, updatedAt: nowIso() };
+        updateRecords((current) =>
+          current.some((e) => e.id === found.id)
+            ? current.map((e) => (e.id === found.id ? { ...e, appointmentType: nextType, updatedAt: stamped.updatedAt } : e))
+            : [...current, stamped],
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [updateRecords, upsertEncounter],
+  );
+
+  /**
    * Apply the macro-prune grace check to a given encounter state for
    * a specific section and the HTML value of that section. Pure-ish
    * helper: returns the next encounter state with runs/charges
@@ -710,7 +751,7 @@ export function useEncounterNotes() {
   );
 
   const appendSoapSection = useCallback(
-    (encounterId: string, section: EncounterSection, snippet: string) => {
+    (encounterId: string, section: EncounterSection, snippet: string, options?: { inlineWithPrevious?: boolean }) => {
       const trimmedSnippet = normalizeEditorBlocks(snippet);
       if (!trimmedSnippet) {
         return;
@@ -722,7 +763,10 @@ export function useEncounterNotes() {
         // elements, so the block boundary already gives a single clean
         // line break; adding <p><br></p> was inserting an unwanted empty
         // "enter" paragraph before every stacked macro.
-        const composed = existing ? `${existing}${trimmedSnippet}` : trimmedSnippet;
+        // `inlineWithPrevious` (chained decompression regions) continues the last
+        // paragraph one space after its text instead of starting a new line.
+        const chained = existing && options?.inlineWithPrevious ? appendInlineToLastBlock(existing, trimmedSnippet) : null;
+        const composed = chained ?? (existing ? `${existing}${trimmedSnippet}` : trimmedSnippet);
         const nextText = normalizeEditorBlocks(composed);
         return {
           ...current,
@@ -1347,6 +1391,8 @@ export function useEncounterNotes() {
       const at = nowIso();
       const stamped = records.map((r) => ({ ...r, updatedAt: at }));
       const ids = new Set(stamped.map((r) => r.id));
+      // A restore intentionally brings back ids that were deleted earlier.
+      for (const id of ids) unmarkEncounterDeleted(id);
       updateRecords((current) => [...current.map((e) => stamped.find((r) => r.id === e.id) ?? e), ...stamped.filter((r) => !current.some((e) => e.id === r.id))]);
       for (const r of stamped) {
         forgetCloudCopy(r.id);
@@ -1372,6 +1418,10 @@ export function useEncounterNotes() {
           details: { encounterId },
         });
       }
+      // Record the delete BEFORE removing it, so other hook instances on this
+      // page drop it too (they now keep notes that merely aren't in the
+      // local cache) and a stale cloud snapshot can't bring it back.
+      markEncounterDeleted(encounterId);
       updateRecords((current) => current.filter((entry) => entry.id !== encounterId));
       // The auto-delete diff inside dualWriteEncounterNotesToCloud was
       // removed because it was wiping rows that were merely missing from
@@ -1431,6 +1481,7 @@ export function useEncounterNotes() {
     resaveEncountersToCloud,
     deleteEncounter,
     putEncounterRecords,
+    syncEncounterTypeForAppointment,
     forceSaveAll,
   };
 }
