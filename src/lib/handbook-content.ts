@@ -892,7 +892,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "Resize the previous-note boxes",
         steps: [
-          "When a previous note shows under the one you are typing, drag the blue grip bar between them: up gives the previous-note row (all four boxes together) more height, down gives your note more.",
+          "When a previous note shows under the one you are typing, there is ONE blue grip bar between them. Drag it up and all four previous-note boxes (Subjective, Objective, Assessment, Plan) get taller together; drag it down and your note gets taller instead. Double-click the bar to put both heights back to normal.",
           "Drag the thin bar between the Subjective, Objective, Assessment and Plan boxes to make one wider. Double-click a bar to put the widths back to equal.",
           "Your sizes are remembered for your login on every computer. Phones and narrow windows keep the simple stacked layout.",
         ],
