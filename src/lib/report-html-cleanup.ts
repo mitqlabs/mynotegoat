@@ -99,6 +99,9 @@ function lineIsAllBold(line: Line) {
   return visible.length > 0 && visible.every((seg) => seg.bold);
 }
 function isBoldHeading(line: Line) {
+  // Specialist recommendation headings ("Cervical", "Alternatives") are card-style
+  // labels inside their own block, not section headings: no extra spacing around them.
+  if (line.segs[0]?.node.parentElement?.closest("[data-rec-block]")) return false;
   if (line.inList || line.hasObject || lineHasMark(line) || !lineIsAllBold(line)) return false;
   const text = headingText(line);
   // Dates / numbered rows ("01/02/2026 (Re-Exam)") are row labels, not headings.

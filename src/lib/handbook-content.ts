@@ -1138,6 +1138,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         why: "Most of the report fills itself from the chart — demographics, visits, diagnoses, imaging, specialists, charges. Narrative Inputs only ask for what the chart cannot know, like a prognosis.",
       },
       {
+        heading: "How the Specialists section reads",
+        steps: [
+          "Each specialist shows as \u201c1. Dr. Name\u201d, then \u201cRecommendations:\u201d.",
+          "Under it, every region (Cervical, Lumbar, Alternatives\u2026) is a bold heading with its recommendation on the line below, and each alternative is on its own line.",
+          "It reads the Specialist box's recommendations exactly as G.O.A.T. lays them out, so paste G.O.A.T.'s text there and the report matches the G.O.A.T. card.",
+        ],
+        why: "No 1a / 1b lettering and no \u201cCervical:\u201d run into the sentence \u2014 long lines wrap under their own indent, so it stays easy to read.",
+        watchOut: "Recommendations typed as one plain paragraph print as plain lines under \u201cRecommendations:\u201d \u2014 headings only appear when the text has a short heading line (like Cervical) above its recommendation.",
+      },
+      {
         heading: "The decompression paragraph",
         why: "The report can write the decompression summary for you: how many treatments, which segments, and the weight from first to last. It counts only CLOSED notes whose appointment type says decompression.",
         watchOut:
