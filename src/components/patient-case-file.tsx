@@ -901,6 +901,13 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         margin: 0 !important; padding: 0 !important; border: 0 !important; text-indent: 0 !important;
         margin-left: 0 !important; padding-left: 0 !important;
       }
+      /* Never let one over-wide line shrink the whole printout. Chrome scales
+         the entire document down (tiny text, wide page) when anything
+         overflows the page width, so force every inline run to be breakable
+         and every box to stay inside the page. */
+      .content, .content * { max-width: 100%; overflow-wrap: anywhere; }
+      .content *:not(.kv-label) { white-space: pre-wrap !important; }
+      .content img, .content table, .content svg, .content video { max-width: 100% !important; height: auto; }
       h1, h2, h3, h4, h5, h6 { margin: 14px 0 4px 0; text-indent: 0; }
       p { margin: 0 0 6px 0; text-indent: 0; }
       ul, ol { margin: 0 0 6px 0; padding-left: 20px; text-indent: 0; }

@@ -354,14 +354,18 @@ export function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
   if (!entries.length) {
     return "";
   }
-  const block = (indent: string, html: string, extra = "") =>
-    `<div style="padding-left:${indent}"${extra}>${html}</div>`;
-  const body = entries
+  // Plain <p> lines with an inline padding-left: the one markup that screen, print / Save as PDF and
+  // pasted-into-Word all keep. data-rec-block marks every line so the report cleanup leaves the bold
+  // headings tight and the print layout pass (applyLabelValueHangingIndent) never turns
+  // "Alternative to ...: text" into a label column. No flex, no negative text-indent.
+  const block = (indent: string, html: string) =>
+    `<p data-rec-block="1" style="margin:0;padding-left:${indent};text-indent:0">${html}</p>`;
+  return entries
     .map((entry, index) => {
       // Sent / Completed dates were dropped per the office's preferred
       // narrative format — the specialist's name and their actual
       // recommendations are what carries weight in the report.
-      const header = `<div>${index + 1}. ${escapeRecHtml(entry.specialist || "-")}</div>`;
+      const header = block("0", `${index + 1}. ${escapeRecHtml(entry.specialist || "-")}`);
       const groups = parseRecommendationGroups(entry.recommendations ?? "");
       if (groups.length === 0) return header;
       const parts: string[] = [header, block(REC_INDENT, "Recommendations:")];
@@ -375,8 +379,6 @@ export function formatSpecialistSummary(entries: NarrativeSpecialistEntry[]) {
       return parts.join("");
     })
     .join("");
-  // data-rec-block: the report cleanup leaves these bold headings tight (no extra blank line above).
-  return `<div data-rec-block="1">${body}</div>`;
 }
 
 export function appointmentTypeToTokenPrefix(typeName: string) {

@@ -62,6 +62,15 @@ export function applyLabelValueHangingIndent(html: string): string {
   // -- the "derangements econdary" artifact we kept seeing.
   let next = html.replace(/[­​‌‍﻿]/g, "");
 
+  // Report blocks that carry their own layout (the Specialists section: data-rec-block
+  // lines with inline padding) are set aside so "Alternative to X: text" is not turned
+  // into a label column; they are put back untouched at the end.
+  const protectedBlocks: string[] = [];
+  next = next.replace(/<p\b[^>]*\bdata-rec-block="1"[^>]*>[\s\S]*?<\/p>/gi, (match) => {
+    protectedBlocks.push(match);
+    return `<!--rec-block-${protectedBlocks.length - 1}-->`;
+  });
+
   // (Removed an earlier pre-process that split <p|div>A<br>B</p|div>
   // into separate blocks. It tore through nested elements — e.g. the
   // title <div><span><u><br></u></span></div> ended up as orphaned
@@ -168,6 +177,8 @@ export function applyLabelValueHangingIndent(html: string): string {
     });
     if (before === next) break;
   }
+
+  next = next.replace(/<!--rec-block-(\d+)-->/g, (_m, i: string) => protectedBlocks[Number(i)] ?? "");
 
   if (typeof window !== "undefined") {
     const w = window as unknown as { __DOC_LAYOUT_DEBUG?: boolean };

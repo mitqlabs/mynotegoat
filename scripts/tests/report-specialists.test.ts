@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { applyLabelValueHangingIndent } from "../../src/lib/document-html-layout";
 import { formatSpecialistSummary, parseRecommendationGroups } from "../../src/lib/report-generator";
 
 let passed = 0;
@@ -28,7 +29,7 @@ const goatText = [
 ].join("\n");
 
 const text = (html: string) =>
-  html.replace(/<\/div>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").trim().split("\n");
+  html.replace(/<\/p>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").trim().split("\n");
 
 test("groups: headings with their items, bullets stripped", () => {
   const g = parseRecommendationGroups(goatText);
@@ -72,8 +73,8 @@ test("no inline 'Cervical:' and no 1a/1b lettering", () => {
 });
 test("alternatives are indented deeper; wrapped lines stay inside their block", () => {
   const html = formatSpecialistSummary([entry("Dr. Jane Roe", goatText)]);
-  assert.ok(html.includes('padding-left:3em">Alternative to Injection Therapy'));
-  assert.ok(html.includes('padding-left:1.5em">Right C5-C6'));
+  assert.ok(html.includes('padding-left:3em;text-indent:0">Alternative to Injection Therapy'));
+  assert.ok(html.includes('padding-left:1.5em;text-indent:0">Right C5-C6'));
   assert.ok(!html.includes("\n"));
 });
 test("text is escaped; specialist with no recommendations is just the name; empty list is empty", () => {
@@ -89,4 +90,24 @@ test("wiring: SPECIALIST_SUMMARY is a raw-HTML token and the cleanup keeps these
   assert.ok(clean.includes('closest("[data-rec-block]")'));
 });
 
+
+test("export: print hanging-indent pass leaves the Specialists block untouched", () => {
+  const block = formatSpecialistSummary([entry("Dr. Jane Roe", goatText)]);
+  const doc = `<p>Findings: canal stenosis.</p>${block}<p><b><u>Prognosis</u></b></p><p>Fair.</p>`;
+  const out = applyLabelValueHangingIndent(doc);
+  assert.ok(out.includes(block), "block must pass through byte-for-byte");
+  assert.ok(!/kv-label">Alternative/.test(out), "alternatives must not become label/value rows");
+  assert.ok(/<p>Fair\.<\/p>/.test(out) || out.includes("Fair."), "text after the block is kept");
+  assert.ok(!/class="kv-cont"[^>]*>(?:<[^>]+>)*Prognosis/.test(out), "following paragraphs are not pulled into the value column");
+  assert.ok(out.includes('class="kv"'), "ordinary Label: value rows still convert");
+});
+test("export: markup is plain <p> with inline padding (no div/flex/negative indent)", () => {
+  const html = formatSpecialistSummary([entry("Dr. Jane Roe", goatText)]);
+  assert.ok(!/<div|flex|text-indent:-/.test(html));
+  assert.ok(/<p data-rec-block="1" style="margin:0;padding-left:3em;text-indent:0">Alternative to Injection Therapy: /.test(html));
+});
+test("export: print CSS keeps any over-wide line from shrinking the whole printout", () => {
+  const src = readFileSync(new URL("../../src/components/patient-case-file.tsx", import.meta.url), "utf8");
+  assert.ok(/\.content, \.content \* \{ max-width: 100%; overflow-wrap: anywhere; \}/.test(src));
+});
 console.log(`\n${passed} passed`);
