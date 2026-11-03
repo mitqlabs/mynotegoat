@@ -15,6 +15,7 @@
  */
 
 import { isActiveCaseStatus, splitPatientName, withOptOutLine } from "@/lib/reminder-automation";
+import { expandTokens } from "@/lib/sms-render";
 import { BIRTHDAY_MESSAGE_MAX, DEFAULT_BIRTHDAY_MESSAGE } from "@/lib/sms-reminders";
 
 export { DEFAULT_BIRTHDAY_MESSAGE, BIRTHDAY_MESSAGE_MAX };
@@ -91,12 +92,23 @@ export function birthdayFirstName(fullName: string): string {
   return tidyFirstName(splitPatientName(fullName).firstName);
 }
 
-const FIRST_NAME_TOKEN = /\{\{\s*first[\s_-]*name\s*\}\}|\{\s*first[\s_-]*name\s*\}/gi;
-
-/** Fill `{first name}` (also `{{FIRST_NAME}}`) into the wording. Empty wording uses the default. */
-export function renderBirthdayText(template: string, fullName: string): string {
+/**
+ * Fill the words ({first name}, {last name}, {office name}, ... or the older {{FIRST_NAME}} form)
+ * into the wording. Empty wording uses the default. A birthday has no visit, so the
+ * appointment date and time come out blank.
+ */
+export function renderBirthdayText(
+  template: string,
+  fullName: string,
+  office?: { officeName?: string; doctorName?: string; phone?: string },
+): string {
   const body = (template ?? "").trim() || DEFAULT_BIRTHDAY_MESSAGE;
-  return body.replace(FIRST_NAME_TOKEN, () => birthdayFirstName(fullName)).trim();
+  const { lastName } = splitPatientName(fullName);
+  const first = birthdayFirstName(fullName);
+  return expandTokens(body, {
+    patient: { firstName: first, lastName, fullName: [first, lastName].filter(Boolean).join(" ") },
+    office: office ? { officeName: office.officeName ?? "", doctorName: office.doctorName ?? "", phone: office.phone } : undefined,
+  }).trim();
 }
 
 /** US phone as +1XXXXXXXXXX; "" when it is not a 10-digit (or 1 + 10) number. */
@@ -115,6 +127,7 @@ export function pickBirthdayRecipients(
   patients: BirthdayPatient[],
   todayIso: string,
   settings: { birthdayMessage?: string; optOutLine?: boolean; optOutText?: string },
+  office?: { officeName?: string; doctorName?: string; phone?: string },
 ): BirthdayRecipient[] {
   const seen = new Set<string>();
   return patients
@@ -127,7 +140,7 @@ export function pickBirthdayRecipients(
       const phone = birthdayPhone(p.phone);
       if (!phone || !birthdayFirstName(p.fullName)) return [];
       seen.add(p.patientId);
-      const text = withOptOutLine(renderBirthdayText(settings.birthdayMessage ?? "", p.fullName), settings);
+      const text = withOptOutLine(renderBirthdayText(settings.birthdayMessage ?? "", p.fullName, office), settings);
       return text ? [{ patientId: p.patientId, phone, text }] : [];
     });
 }

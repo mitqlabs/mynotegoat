@@ -24,6 +24,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.dx-suggestion-ignores.v1",
   // Patient Notes log (quick notes): merged by id, newest wins, deletes are tombstones.
   "casemate.case-note-entries.v1",
+  // Text Reminders → Messages library: merged by id (newest wins), deletes are tombstones.
+  "casemate.sms-templates.v1",
 ]);
 
 /**

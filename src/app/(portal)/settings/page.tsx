@@ -5054,7 +5054,7 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        description="Patient text message templates. Texts are sent manually through your Mac's Messages app — click a phone in the app, pick a template, hit send."
+        description="Your saved text messages. Same list as Text Reminders → Messages. Pick one when you text a patient, or attach it to an Auto Text."
         hidden={!showSection("smsTemplates")}
         isOpen={sectionIsOpen("smsTemplates")}
         onToggle={() => toggleSection("smsTemplates")}

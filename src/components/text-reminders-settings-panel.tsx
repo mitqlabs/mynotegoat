@@ -6,13 +6,14 @@
  * (this browser + the cloud copy); devices and the send log live in Supabase.
  */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
-import { DraftTextarea } from "@/components/draft-textarea";
 import { markLocalWrite } from "@/lib/local-sync";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { createSmsTemplate, DEFAULT_REMINDER_BODY } from "@/lib/sms-templates";
+import { planAutoTextMigration } from "@/lib/message-library";
+import { AutoTextRows } from "@/components/auto-texts-panel";
+import { MessagesLibraryPanel } from "@/components/messages-library-panel";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -27,9 +28,7 @@ import {
   effectiveRunDays,
   generateDeviceToken,
   hashDeviceToken,
-  renderReminderText,
   WEEKDAY_SHORT,
-  withOptOutLine,
 } from "@/lib/reminder-automation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
@@ -37,11 +36,10 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
-import { DEFAULT_BIRTHDAY_MESSAGE, renderBirthdayText } from "@/lib/birthday-texts";
 import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
-import { devicesStatus, fmtDate, plainResult, senderRole, TEMPLATE_WORDS, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -81,7 +79,6 @@ const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
 const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
 const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold";
-const btn = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-4 text-sm font-semibold";
 
 export function TextRemindersSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
@@ -113,20 +110,22 @@ export function TextRemindersSettingsPanel() {
 
   const autoDays = useMemo(() => autoRunDays(scheduleSettings.officeHours), [scheduleSettings.officeHours]);
   const runDays = effectiveRunDays(settings, scheduleSettings.officeHours);
-  const template =
-    smsTemplates.find((t) => t.id === settings.templateId) ??
-    smsTemplates.find((t) => /remind/i.test(t.name)) ??
-    smsTemplates[0];
-
-  const preview = template
-    ? renderReminderText(
-        template.body,
-        { appointmentId: "x", patientId: "x", patientName: "Doe, Jane", phone: "5550100", date: "2026-04-20", time: "10:30", appointmentType: "Office Visit" },
-        undefined,
-        { officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone },
-      )
-    : "";
-  const previewWithOptOut = withOptOutLine(preview, settings);
+  // One-time tidy-up for offices that set up texts before Messages existed: attach the wording they
+  // already use (and save it as a message if needed). Waits a moment so the cloud copy arrives first;
+  // never switches anything on or off. Same ids on every computer, so two computers do not make two copies.
+  const attachRef = useRef({ settings, templates: smsTemplates });
+  attachRef.current = { settings, templates: smsTemplates };
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const { settings: s, templates } = attachRef.current;
+      const plan = planAutoTextMigration(s, templates, new Date().toISOString());
+      if (!plan) return;
+      if (plan.addMessages.length) updateSmsTemplates((current) => [...current.filter((m) => !plan.addMessages.some((a) => a.id === m.id)), ...plan.addMessages]);
+      update(plan.settingsPatch);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const workspaceId = typeof window === "undefined" ? "" : getActiveWorkspaceIdSync();
   // Deep link from Key Dates ("Text affected patients"): a closure text for
@@ -707,17 +706,20 @@ export function TextRemindersSettingsPanel() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        hint="Send settings, Message patients and Recent sends."
-        onToggle={(next) => setSection("texts", next)}
-        open={sectionOpen(settings.sections, "texts", true)}
-        testId="section-texts"
-        title="Texts"
+        hint="Turn each automatic text on or off and pick the message it sends."
+        onToggle={(next) => setSection("autotexts", next)}
+        open={sectionOpen(settings.sections, "autotexts", true)}
+        testId="section-autotexts"
+        title="Auto Texts"
       >
+      <AutoTextRows
+        messages={smsTemplates}
+        office={{ officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone }}
+        settings={settings}
+        update={update}
+      />
+
       <div className="flex flex-wrap items-end gap-4">
-        <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
-          <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" />
-          Send reminders automatically
-        </label>
         <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
           <input checked={settings.dryRun} onChange={(e) => update({ dryRun: e.target.checked })} type="checkbox" />
           Test mode (nothing is texted)
@@ -764,137 +766,18 @@ export function TextRemindersSettingsPanel() {
         </p>
       </div>
 
-      <div className="grid gap-2">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid min-w-[14rem] flex-1 gap-1">
-            <span className={label}>Message template</span>
-            <select className={input} onChange={(e) => update({ templateId: e.target.value })} value={template?.id ?? ""}>
-              {smsTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!smsTemplates.some((t) => /remind/i.test(t.name)) && (
-            <button
-              className={btn}
-              onClick={() => {
-                const created = createSmsTemplate(
-                  "⏰ Appointment Reminder",
-                  DEFAULT_REMINDER_BODY,
-                );
-                updateSmsTemplates((current) => [...current, created]);
-                update({ templateId: created.id });
-              }}
-              type="button"
-            >
-              + Appointment Reminder template
-            </button>
-          )}
-        </div>
-        {template && (
-          <DraftTextarea
-            className="min-h-[90px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-            key={template.id}
-            onSave={(body) => {
-              const id = template.id;
-              updateSmsTemplates((current) =>
-                current.map((t) => (t.id === id ? { ...t, body, updatedAt: new Date().toISOString() } : t)),
-              );
-            }}
-            value={template.body}
-          />
-        )}
-        <details className="text-sm" data-testid="template-words">
-          <summary className="cursor-pointer font-semibold text-[var(--brand-primary)]">What can I put in a template?</summary>
-          <div className="mt-2 grid gap-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2">
-            <p className="text-[var(--text-muted)]">Type any of these words exactly as shown. NoteGoat swaps each one for the real name, date or time when the text is sent.</p>
-            <ul className="grid gap-0.5">
-              {TEMPLATE_WORDS.map((w) => (
-                <li key={w.token}>
-                  <Mono>{w.token}</Mono> becomes {w.plain}
-                </li>
-              ))}
-            </ul>
-            <p className="text-[var(--text-muted)]">Keep it short. Do not put health details in a text.</p>
-          </div>
-        </details>
-        {template && (
-          <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2 text-sm">
-            <span className="font-semibold">Preview: </span>
-            {previewWithOptOut}
-          </p>
-        )}
-      </div>
-
-      <MessagePatientsComposer
-        macConnected={officeMacSeen(devices)}
-        onRecentToggle={(next) => setSection("messages", next)}
-        prefill={messagePrefill}
-        recentOpen={sectionOpen(settings.sections, "messages", true)}
-        settings={settings}
-        workspaceId={workspaceId}
-      />
-
-      <SetupCard
-        onToggle={(next) => setSection("birthday", next)}
-        open={sectionOpen(settings.sections, "birthday", true)}
-        summary={
-          settings.birthdayTexts
-            ? `On. Patients get a birthday text on their birthday${settings.dryRun ? " (Test mode is on, so nothing is texted yet)" : ""}.`
-            : "Off. Turn it on to text patients on their birthday."
-        }
-        testId="section-birthday"
-        title="Birthday texts"
-      >
-        <div className="grid gap-3" data-testid="birthday-settings">
-          <label className="inline-flex items-center gap-2 font-semibold">
-            <input checked={settings.birthdayTexts} data-testid="birthday-toggle" onChange={(e) => update({ birthdayTexts: e.target.checked })} type="checkbox" />
-            Text patients happy birthday on their birthday
-          </label>
-          <label className="grid gap-1">
-            <span className={label}>Birthday message</span>
-            <textarea
-              aria-label="Birthday message"
-              className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              data-testid="birthday-message"
-              maxLength={320}
-              onBlur={(e) => update({ birthdayMessage: e.target.value.trim() || DEFAULT_BIRTHDAY_MESSAGE })}
-              onChange={(e) => setSettings((current) => ({ ...current, birthdayMessage: e.target.value }))}
-              value={settings.birthdayMessage}
-            />
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className={rowBtn}
-              onClick={() => update({ birthdayMessage: `${settings.birthdayMessage.trimEnd()} {first name}`.trim().slice(0, 320) })}
-              type="button"
-            >
-              Add the first name
-            </button>
-            <button className={rowBtn} onClick={() => update({ birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE })} type="button">
-              Use the standard message
-            </button>
-            <span className="text-[var(--text-muted)]">
-              Type <Mono>{"{first name}"}</Mono> where the patient&apos;s first name goes.
-            </span>
-          </div>
-          <p data-testid="birthday-preview">
-            <span className="font-semibold">Example: </span>
-            {withOptOutLine(renderBirthdayText(settings.birthdayMessage, "Doe, Jane"), settings)}
-          </p>
-          <ul className="list-disc space-y-1.5 pl-5 text-[var(--text-muted)]">
-            <li>
-              It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.
-            </li>
-            <li>Only <b>Active</b> patients with a phone number get one, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
-            <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
-            <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
-            <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>
-          </ul>
-          <div className="rounded-lg border border-[var(--line-soft)]" data-testid="birthday-log">
-            <p className="border-b border-[var(--line-soft)] px-3 py-2 font-semibold">Recent birthday texts</p>
+      <details className="text-sm" data-testid="birthday-how">
+        <summary className="cursor-pointer font-semibold text-[var(--brand-primary)]">How birthday texts work</summary>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[var(--text-muted)]">
+          <li>It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.</li>
+          <li>Only <b>Active</b> patients with a phone number get one, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
+          <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
+          <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
+          <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>
+        </ul>
+      </details>
+          <details className="rounded-lg border border-[var(--line-soft)] bg-white" data-testid="birthday-log">
+            <summary className="cursor-pointer px-3 py-2 font-semibold">Recent birthday texts</summary>
             {birthdayLog.length === 0 ? (
               <p className="px-3 py-2 text-[var(--text-muted)]">None yet.</p>
             ) : (
@@ -920,9 +803,34 @@ export function TextRemindersSettingsPanel() {
                 </tbody>
               </table>
             )}
-          </div>
-        </div>
-      </SetupCard>
+          </details>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hint="Your saved text messages. Add, edit or delete them here."
+        onToggle={(next) => setSection("library", next)}
+        open={sectionOpen(settings.sections, "library", true)}
+        testId="section-library"
+        title="Messages"
+      >
+        <MessagesLibraryPanel settings={settings} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hint="Message patients and Recent sends."
+        onToggle={(next) => setSection("texts", next)}
+        open={sectionOpen(settings.sections, "texts", true)}
+        testId="section-texts"
+        title="Texts"
+      >
+      <MessagePatientsComposer
+        macConnected={officeMacSeen(devices)}
+        onRecentToggle={(next) => setSection("messages", next)}
+        prefill={messagePrefill}
+        recentOpen={sectionOpen(settings.sections, "messages", true)}
+        settings={settings}
+        workspaceId={workspaceId}
+      />
 
       <CollapsibleSection
         actions={

@@ -208,7 +208,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Birthday texts: who gets one, and when",
       steps: [
         "Ask: \"do we text patients happy birthday\", \"how do I turn on birthday texts\", \"who gets a birthday text\". G.O.A.T. answers from the Handbook and links to Settings \u2192 Text Reminders. It never changes the setting.",
-        "It is a switch in Settings \u2192 Text Reminders \u2192 Texts \u2192 Birthday texts (off until you turn it on) with a message you can edit. {first name} becomes the patient's first name. Default: \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
+        "It is a switch in Settings \u2192 Text Reminders \u2192 Auto Texts \u2192 Birthday (off until you turn it on) with a menu to pick which saved message it sends. Write messages in Settings \u2192 Text Reminders \u2192 Messages; {first name} becomes the patient's first name. If nothing is picked it uses \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
         "It rides the daily 8 AM reminder run, so the iPhone shortcut needs no change. Active patients with a phone only, on the day of their birthday (Feb 29 \u2192 Feb 28 in non-leap years). Never \"no text reminders\" or STOP patients. Once per patient per year, remembered in the cloud. Test mode applies.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI, and no patient names or birthdays go to any outside service. Nothing is changed.",
@@ -217,8 +217,8 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Text Reminders page: sections and dates",
       steps: [
         "Ask: \"where did the setup steps go on text reminders\", \"why does last run say 1 sent\", \"what format are the dates\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
-        "The page has a Set up section made of cards (3-step checklist, Sending devices with a Main sender or Backup sender, How it works, Opt-out STOP, iPhone setup, iMac setup), each with a Done / To do / Optional tag and a one-line summary. It is closed once setup is done. A Texts section holds send settings, Message patients, Birthday texts and Recent sends (open). Tap a heading or card to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
-        "All dates there are mm/dd/yy, and a sender's last run shows the day's running total (for example \"10/29/26: 14 sent\"). Test mode (nothing is texted) is a checkbox in Texts.",
+        "The page has four sections: Set up, Auto Texts, Messages and Texts. Set up is made of cards (3-step checklist, Sending devices with a Main sender or Backup sender, How it works, Opt-out STOP, iPhone setup, iMac setup), each with a Done / To do / Optional tag and a one-line summary. It is closed once setup is done. Auto Texts holds the Reminders and Birthday switches, the message each one sends, and Test mode, send time and run days. Messages holds your saved text messages (add, edit, delete). A Texts section holds Message patients and Recent sends (open). Tap a heading or card to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
+        "All dates there are mm/dd/yy, and a sender's last run shows the day's running total (for example \"10/29/26: 14 sent\"). Test mode (nothing is texted) is a checkbox in Auto Texts.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
     },

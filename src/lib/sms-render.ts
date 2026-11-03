@@ -36,7 +36,10 @@ export function expandTokens(body: string, ctx: SmsTokenContext): string {
     "{{LAST_NAME}}": last,
     "{{FULL_NAME}}": full,
     "{{TIME}}": ctx.appointment?.time ?? "",
+    "{{APPT_TIME}}": ctx.appointment?.time ?? "",
+    "{{APPOINTMENT_TIME}}": ctx.appointment?.time ?? "",
     "{{APPT_DATE}}": ctx.appointment?.date ?? "",
+    "{{APPOINTMENT_DATE}}": ctx.appointment?.date ?? "",
     // Old alias of {{APPT_DATE}}; kept so saved templates don't break.
     "{{DATE}}": ctx.appointment?.date ?? "",
     "{{TODAY}}": ctx.today ?? todayUsDate(),
@@ -46,7 +49,11 @@ export function expandTokens(body: string, ctx: SmsTokenContext): string {
     "{{DOCTOR_NAME}}": ctx.office?.doctorName ?? "",
     "{{OFFICE_PHONE}}": ctx.office?.phone ?? "",
   };
-  return body.replace(/\{\{[A-Z_]+\}\}/g, (tok) =>
-    Object.prototype.hasOwnProperty.call(map, tok) ? map[tok] : tok,
-  );
+  // Both spellings work: {{FIRST_NAME}} (older messages) and {first name} (what the
+  // Messages editor inserts). Case, spaces, dashes and underscores do not matter.
+  // A word we do not know is left exactly as typed.
+  return body.replace(/\{\{\s*([A-Za-z][A-Za-z _-]*?)\s*\}\}|\{\s*([A-Za-z][A-Za-z _-]*?)\s*\}/g, (whole, a?: string, b?: string) => {
+    const key = `{{${(a ?? b ?? "").trim().replace(/[\s-]+/g, "_").toUpperCase()}}}`;
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : whole;
+  });
 }
