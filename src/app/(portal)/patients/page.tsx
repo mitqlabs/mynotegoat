@@ -5,7 +5,7 @@ import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { checkIntakeAppointment, intakeTime, mdyToIso, newPatientVisitType, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
+import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -721,6 +721,10 @@ export default function PatientsPage() {
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
   const [showNewPatientCase, setShowNewPatientCase] = useState(false);
   const [newPatientMessage, setNewPatientMessage] = useState("");
+  // Taken / outside-hours first visit: the open times as buttons + "Book anyway".
+  // Both belong to one date + time + office; changing any of them clears them.
+  const [newPatientSlotIssue, setNewPatientSlotIssue] = useState<{ key: string; reason: "taken" | "outside"; time: string; suggestions: string[]; canOverride: boolean } | null>(null);
+  const [newPatientBookAnyway, setNewPatientBookAnyway] = useState("");
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>({
     lastName: "",
     firstName: "",
@@ -773,6 +777,8 @@ export default function PatientsPage() {
 
   const openNewPatientModal = () => {
     setNewPatientMessage("");
+    setNewPatientSlotIssue(null);
+    setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
     setNewPatientAsk([]);
     resetNewPatientDraft();
@@ -810,6 +816,8 @@ export default function PatientsPage() {
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
     setNewPatientMessage("");
+    setNewPatientSlotIssue(null);
+    setNewPatientBookAnyway("");
   };
 
   const attorneyContacts = useMemo(() => {
@@ -826,6 +834,9 @@ export default function PatientsPage() {
     });
     return Array.from(deduped.values());
   }, [contacts]);
+
+  const newPatientSlotKey = `${newPatientDraft.evalDate}|${newPatientDraft.evalTime}|${newPatientDraft.locationId}`;
+  const slotIssue = newPatientSlotIssue && newPatientSlotIssue.key === newPatientSlotKey ? newPatientSlotIssue : null;
 
   const createNewPatient = () => {
     const firstName = newPatientDraft.firstName.trim();
@@ -847,35 +858,28 @@ export default function PatientsPage() {
 
     // New Patient Evaluation → the first appointment. Checked BEFORE the
     // patient is created so a bad date/time or a full slot is fixed first.
-    let firstVisit: { iso: string; time: string; type: string; durationMin: number; settings: typeof globalScheduleSettings } | null = null;
+    let firstVisit: { iso: string; time: string; type: string; durationMin: number; override: boolean } | null = null;
+    setNewPatientSlotIssue(null);
     if (newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) {
-      const iso = mdyToIso(newPatientDraft.evalDate);
-      if (!iso) {
-        setNewPatientMessage("New Patient Evaluation date must be MM/DD/YYYY.");
-        return;
-      }
       const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
       const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
-      const t = intakeTime(newPatientDraft.evalTime, iso, settings);
-      if (!t) {
-        setNewPatientMessage("Add the New Patient Evaluation time (e.g. 3:00 PM).");
+      const plan = planNewPatientFirstVisit(
+        { dateMdy: newPatientDraft.evalDate, timeText: newPatientDraft.evalTime, bookAnyway: newPatientBookAnyway === newPatientSlotKey },
+        scheduleAppointments,
+        settings,
+        appointmentTypes,
+      );
+      if (plan.kind === "error") {
+        setNewPatientMessage(plan.message);
         return;
       }
-      const type = newPatientVisitType(appointmentTypes);
-      if (!type) {
-        setNewPatientMessage("No appointment types are set up (Settings → Schedule).");
+      if (plan.kind === "conflict") {
+        // Shown under the time as buttons for the open times + a "Book anyway" tick.
+        setNewPatientMessage("");
+        setNewPatientSlotIssue({ key: newPatientSlotKey, reason: plan.reason, time: plan.time, suggestions: plan.suggestions, canOverride: plan.canOverride });
         return;
       }
-      const check = checkIntakeAppointment({ apptDate: iso, apptTime: t.time, appointmentType: type.name, durationMin: type.durationMin }, scheduleAppointments, settings);
-      if (check.outsideHours && settings.enforceOfficeHours) {
-        setNewPatientMessage(`${to12hLabel(t.time)} is outside office hours that day.${check.suggestions.length ? ` Open: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
-        return;
-      }
-      if (check.taken) {
-        setNewPatientMessage(`${to12hLabel(t.time)} is taken.${check.suggestions.length ? ` Open nearby: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
-        return;
-      }
-      firstVisit = { iso, time: t.time, type: type.name, durationMin: type.durationMin, settings };
+      if (plan.kind === "book") firstVisit = { iso: plan.iso, time: plan.time, type: plan.type, durationMin: plan.durationMin, override: plan.override };
     }
 
     const attorneyName = newPatientDraft.isCashPatient
@@ -960,7 +964,8 @@ export default function PatientsPage() {
         durationMin: firstVisit.durationMin,
         status: "Scheduled",
         note: "",
-        overrideOfficeHours: false,
+        // "Book anyway" = the Schedule's override (same flag the Schedule and G.O.A.T. save).
+        overrideOfficeHours: firstVisit.override,
       };
       try {
         addAppointments([record]);
@@ -3174,6 +3179,47 @@ export default function PatientsPage() {
                       </div>
                       {newPatientDraft.evalDate.trim() && (
                         <p className="mt-1.5 text-xs text-[var(--text-muted)]">Save books a New Patient visit on the Schedule (office hours and open times are checked first).</p>
+                      )}
+                      {slotIssue && (
+                        <div className="mt-2 grid gap-2 rounded-xl border border-[#efc9c5] bg-[#fdf4f3] px-3 py-2.5" data-testid="new-patient-slot-issue" role="alert">
+                          <p className="text-sm font-semibold text-[#b43b34]">
+                            {to12hLabel(slotIssue.time)} {slotIssue.reason === "outside" ? "is outside office hours that day." : "is taken."}
+                          </p>
+                          {slotIssue.suggestions.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm text-[var(--text-muted)]">{slotIssue.reason === "outside" ? "Open times:" : "Open nearby:"}</span>
+                              {slotIssue.suggestions.map((time) => (
+                                <button
+                                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+                                  data-testid="new-patient-slot-chip"
+                                  key={time}
+                                  onClick={() => setNewPatientDraft((current) => ({ ...current, evalTime: time }))}
+                                  type="button"
+                                >
+                                  {to12hLabel(time)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {slotIssue.canOverride ? (
+                            <label className="flex items-start gap-2 text-sm" data-testid="new-patient-book-anyway">
+                              <input
+                                checked={newPatientBookAnyway === newPatientSlotKey}
+                                className="mt-0.5 h-4 w-4"
+                                onChange={(event) => setNewPatientBookAnyway(event.target.checked ? newPatientSlotKey : "")}
+                                type="checkbox"
+                              />
+                              <span>
+                                <span className="block font-semibold">Book anyway at {to12hLabel(slotIssue.time)}</span>
+                                <span className="block text-xs text-[var(--text-muted)]">
+                                  {slotIssue.reason === "outside" ? "Books it outside office hours." : "Double-books this time."} Then click Create Patient.
+                                </span>
+                              </span>
+                            </label>
+                          ) : (
+                            <p className="text-xs text-[var(--text-muted)]">Overrides are turned off in Settings → Schedule, so pick an open time.</p>
+                          )}
+                        </div>
                       )}
                       <datalist id="new-patient-attorney-options">
                         {attorneyContacts.map((contact) => (

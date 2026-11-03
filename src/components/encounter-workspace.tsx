@@ -5154,7 +5154,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   ? `Edit Answer: ${runMacro.questions.find((q) => q.id === editingMacroPromptId)?.label ?? runMacro.buttonName}`
                   : editingMacroRun
                     ? `Edit Macro Answers: ${runMacro.buttonName}`
-                    : `Run Macro: ${runMacro.buttonName}`}
+                    : runMacro.buttonName}
               </h4>
               <button
                 className="btn btn-secondary btn-sm"

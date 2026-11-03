@@ -30,7 +30,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Just say what to do",
       steps: [
-        "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons.",
+        "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons. The New Patient popup on the Patient List works the same way: a taken time shows the open times as buttons plus a \u201cBook anyway\u201d tick (the same override as the Schedule, when overrides are on in Settings → Schedule).",
         "It only asks when something it needs is missing, and then just one short question (\"Move it to when?\").",
         "It understands names spelled a bit wrong (\"jon smth\"), \"him/her\" for the patient you were just on, and days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\".",
         ...handbookPhrases(),
