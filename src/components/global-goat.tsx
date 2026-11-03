@@ -85,7 +85,7 @@ import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
 import { understandCompliance } from "@/lib/goat-compliance";
-import { macSetupHelp, reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
+import { birthdayTextsHelp, macSetupHelp, reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
 import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { broadcastHelp } from "@/lib/goat-broadcast-help";
 import { keyDatesHelp } from "@/lib/goat-keydates-help";
@@ -1964,7 +1964,7 @@ export function GlobalGoatPopup({
       } catch {
         sendHour = undefined;
       }
-      const rh = macSetupHelp(question, { canSeeSettings: isGoatAdmin }) ?? remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
+      const rh = macSetupHelp(question, { canSeeSettings: isGoatAdmin }) ?? birthdayTextsHelp(question, { canSeeSettings: isGoatAdmin, sendHour }) ?? remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
       if (rh) {
         push({ role: "user", text: question, practice: true });
         push({ role: "goat", text: rh.text, practice: true, links: rh.links });

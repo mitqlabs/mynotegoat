@@ -397,11 +397,18 @@ export function planScheduledRun(input: {
 /**
  * Queue item ids. Plain appointment id = the reply's visitDate (backward
  * compatible); "r:<date>:<appt>" = a reminder for another date (catch-up);
- * "b:<recipient id>" = a "Message patients" broadcast text.
+ * "b:<recipient id>" = a "Message patients" broadcast text;
+ * "bd:<year>:<patient id>" = a birthday text (the year is in the id so a late
+ * ack still lands on the right year).
  */
 export type QueueItemRef =
   | { kind: "reminder"; visitDate: string; appointmentId: string }
-  | { kind: "broadcast"; recipientId: string };
+  | { kind: "broadcast"; recipientId: string }
+  | { kind: "birthday"; year: number; patientId: string };
+
+export function encodeBirthdayItemId(year: number, patientId: string): string {
+  return `bd:${year}:${patientId}`;
+}
 
 export function encodeReminderItemId(visitDate: string, appointmentId: string, primaryVisitDate: string): string {
   return visitDate === primaryVisitDate ? appointmentId : `r:${visitDate}:${appointmentId}`;
@@ -409,6 +416,8 @@ export function encodeReminderItemId(visitDate: string, appointmentId: string, p
 
 export function decodeQueueItemId(id: string, fallbackVisitDate: string): QueueItemRef | null {
   if (!id) return null;
+  const bd = /^bd:(\d{4}):(.+)$/.exec(id);
+  if (bd) return { kind: "birthday", year: Number(bd[1]), patientId: bd[2] };
   if (id.startsWith("b:")) return id.length > 2 ? { kind: "broadcast", recipientId: id.slice(2) } : null;
   const m = /^r:(\d{4}-\d{2}-\d{2}):(.+)$/.exec(id);
   if (m) return { kind: "reminder", visitDate: m[1], appointmentId: m[2] };

@@ -37,6 +37,7 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
+import { DEFAULT_BIRTHDAY_MESSAGE, renderBirthdayText } from "@/lib/birthday-texts";
 import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
@@ -72,6 +73,7 @@ type DeviceRow = {
   revoked_at: string | null;
 };
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
+type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; created_at: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
@@ -98,6 +100,7 @@ export function TextRemindersSettingsPanel() {
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
+  const [birthdayLog, setBirthdayLog] = useState<BirthdayLogRow[]>([]);
   const { ask, confirmDialog } = useSimpleConfirm();
 
   const update = (patch: Partial<SmsReminderSettings>) => {
@@ -166,6 +169,14 @@ export function TextRemindersSettingsPanel() {
       .order("created_at", { ascending: false })
       .limit(1000);
     setHistory(((h as { created_at: string; visit_date: string }[] | null) ?? []).map((r) => ({ createdAt: r.created_at, visitDate: r.visit_date })));
+    // Recent birthday texts (last 4 digits only). Missing table = nothing yet.
+    const { data: bd } = await client
+      .from("birthday_text_log")
+      .select("id, year, phone_last4, status, error, created_at")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setBirthdayLog((bd as BirthdayLogRow[] | null) ?? []);
     // Patients who replied STOP (latest action per patient, still opted out).
     const { data: o } = await client
       .from("reminder_opt_outs")
@@ -825,6 +836,93 @@ export function TextRemindersSettingsPanel() {
         settings={settings}
         workspaceId={workspaceId}
       />
+
+      <SetupCard
+        onToggle={(next) => setSection("birthday", next)}
+        open={sectionOpen(settings.sections, "birthday", true)}
+        summary={
+          settings.birthdayTexts
+            ? `On. Patients get a birthday text on their birthday${settings.dryRun ? " (Test mode is on, so nothing is texted yet)" : ""}.`
+            : "Off. Turn it on to text patients on their birthday."
+        }
+        testId="section-birthday"
+        title="Birthday texts"
+      >
+        <div className="grid gap-3" data-testid="birthday-settings">
+          <label className="inline-flex items-center gap-2 font-semibold">
+            <input checked={settings.birthdayTexts} data-testid="birthday-toggle" onChange={(e) => update({ birthdayTexts: e.target.checked })} type="checkbox" />
+            Text patients happy birthday on their birthday
+          </label>
+          <label className="grid gap-1">
+            <span className={label}>Birthday message</span>
+            <textarea
+              aria-label="Birthday message"
+              className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              data-testid="birthday-message"
+              maxLength={320}
+              onBlur={(e) => update({ birthdayMessage: e.target.value.trim() || DEFAULT_BIRTHDAY_MESSAGE })}
+              onChange={(e) => setSettings((current) => ({ ...current, birthdayMessage: e.target.value }))}
+              value={settings.birthdayMessage}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className={rowBtn}
+              onClick={() => update({ birthdayMessage: `${settings.birthdayMessage.trimEnd()} {first name}`.trim().slice(0, 320) })}
+              type="button"
+            >
+              Add the first name
+            </button>
+            <button className={rowBtn} onClick={() => update({ birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE })} type="button">
+              Use the standard message
+            </button>
+            <span className="text-[var(--text-muted)]">
+              Type <Mono>{"{first name}"}</Mono> where the patient&apos;s first name goes.
+            </span>
+          </div>
+          <p data-testid="birthday-preview">
+            <span className="font-semibold">Example: </span>
+            {withOptOutLine(renderBirthdayText(settings.birthdayMessage, "Doe, Jane"), settings)}
+          </p>
+          <ul className="list-disc space-y-1.5 pl-5 text-[var(--text-muted)]">
+            <li>
+              It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.
+            </li>
+            <li>Only <b>Active</b> patients with a phone number get one, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
+            <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
+            <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
+            <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>
+          </ul>
+          <div className="rounded-lg border border-[var(--line-soft)]" data-testid="birthday-log">
+            <p className="border-b border-[var(--line-soft)] px-3 py-2 font-semibold">Recent birthday texts</p>
+            {birthdayLog.length === 0 ? (
+              <p className="px-3 py-2 text-[var(--text-muted)]">None yet.</p>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead className="text-left text-[var(--text-muted)]">
+                  <tr>
+                    <th className="px-3 py-1">When</th>
+                    <th className="px-3 py-1">Phone ending</th>
+                    <th className="px-3 py-1">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {birthdayLog.map((row) => (
+                    <tr className="border-t border-[var(--line-soft)]" key={row.id}>
+                      <td className="px-3 py-1">{fmtDateTime(row.created_at, settings.timeZone)}</td>
+                      <td className="px-3 py-1">{row.phone_last4}</td>
+                      <td className="px-3 py-1">
+                        {row.status === "claimed" ? "Handed to the phone, no answer yet" : plainResult(row.status)}
+                        {row.error ? ` — ${row.error}` : ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </SetupCard>
 
       <CollapsibleSection
         actions={

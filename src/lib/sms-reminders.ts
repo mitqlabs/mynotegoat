@@ -50,12 +50,19 @@ export interface SmsReminderSettings {
   automationConfirmed: boolean;
   /** ISO time the box was ticked ("" when not). */
   automationConfirmedAt: string;
+  /** Text every active patient whose birthday is today, during the same daily
+   *  run. Off until the office turns it on. Saved to cloud settings. */
+  birthdayTexts: boolean;
+  /** Birthday text wording. `{first name}` becomes the patient's first name. */
+  birthdayMessage: string;
   /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
    *  computer shows the same layout. A section that is not listed uses its default. */
-  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac", boolean>>;
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday", boolean>>;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
+export const DEFAULT_BIRTHDAY_MESSAGE = "Happy birthday, {first name}! From all of us at Prime Spine.";
+export const BIRTHDAY_MESSAGE_MAX = 320;
 
 export function defaultSmsReminderSettings(): SmsReminderSettings {
   return {
@@ -77,6 +84,8 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     optOutText: DEFAULT_OPT_OUT_TEXT,
     automationConfirmed: false,
     automationConfirmedAt: "",
+    birthdayTexts: false,
+    birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE,
     sections: {},
   };
 }
@@ -116,9 +125,13 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
     base.automationConfirmed = true;
     if (typeof raw.automationConfirmedAt === "string") base.automationConfirmedAt = raw.automationConfirmedAt;
   }
+  if (raw.birthdayTexts === true) base.birthdayTexts = true;
+  if (typeof raw.birthdayMessage === "string" && raw.birthdayMessage.trim()) {
+    base.birthdayMessage = raw.birthdayMessage.trim().slice(0, BIRTHDAY_MESSAGE_MAX);
+  }
   if (raw.sections && typeof raw.sections === "object") {
     const sec = raw.sections as Record<string, unknown>;
-    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "iphone", "imac"] as const) {
+    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "iphone", "imac", "birthday"] as const) {
       if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
     }
   }

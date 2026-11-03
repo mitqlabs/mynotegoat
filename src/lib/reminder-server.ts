@@ -8,6 +8,7 @@ import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { broadcastTimeOk, hashDeviceToken, parseOptOutReply, phoneMatchKey, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
+import { birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
 
 export interface ReminderDevice {
   id: string;
@@ -466,4 +467,164 @@ export async function applyInboundReplies(
     }
   }
   return result;
+}
+
+// ---- Daily birthday texts ----
+
+/** A failed birthday text is tried again later the same year, at most this many times. */
+export const BIRTHDAY_MAX_ATTEMPTS = 3;
+
+export interface BirthdayQueueRow extends BirthdayRecipient {
+  year: number;
+  /** What the send log already says about this patient this year. */
+  prior: "none" | "failed" | "dry-run";
+  attempts: number;
+}
+
+/**
+ * Birthday texts for today: active patients whose birthday is today (office
+ * time zone; Feb 29 → Feb 28 in non-leap years), not opted out, with a phone
+ * and first name, minus anyone the send log (birthday_text_log) already has
+ * for this year. A patient is never handed out again once claimed or sent,
+ * so "at most once per patient per year" holds even if a device never
+ * answers. If the log table is missing or unreadable this returns nothing:
+ * the queue never sends a text it cannot record.
+ *
+ * `retryDryRun`: true when about to really send (or previewing), so rows a
+ * test run logged count as not sent yet. False in test mode, so the same
+ * test text is not logged again on every 10-minute check.
+ */
+export async function loadBirthdayQueue(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  todayIso: string,
+  settings: SmsReminderSettings,
+  opts: { retryDryRun: boolean },
+): Promise<BirthdayQueueRow[]> {
+  if (!settings.birthdayTexts) return [];
+  const suffixes = birthdayDobSuffixes(todayIso);
+  if (!suffixes.length) return [];
+  const year = Number(todayIso.slice(0, 4));
+  const { data: pts, error } = await admin
+    .from("patients")
+    .select("id, full_name, phone, dob, case_status, text_reminders_off")
+    .eq("workspace_id", device.workspace_id)
+    .or(suffixes.map((x) => `dob.like.*-${x}`).join(","))
+    .limit(1000);
+  if (error || !pts?.length) return [];
+  const patients: BirthdayPatient[] = pts.map((row) => ({
+    patientId: String(row.id ?? ""),
+    fullName: String(row.full_name ?? ""),
+    dob: String(row.dob ?? ""),
+    phone: String(row.phone ?? ""),
+    caseStatus: String(row.case_status ?? ""),
+    optedOut: row.text_reminders_off === true,
+  }));
+  const picks = pickBirthdayRecipients(patients, todayIso, settings);
+  if (!picks.length) return [];
+  const { data: logRows, error: logError } = await admin
+    .from("birthday_text_log")
+    .select("patient_id, status, attempts")
+    .eq("workspace_id", device.workspace_id)
+    .eq("year", year)
+    .in("patient_id", picks.map((p) => p.patientId));
+  if (logError) return [];
+  const logged = new Map((logRows ?? []).map((r) => [String(r.patient_id), { status: String(r.status), attempts: Number(r.attempts) || 1 }]));
+  const out: BirthdayQueueRow[] = [];
+  for (const pick of picks) {
+    const row = logged.get(pick.patientId);
+    if (!row) out.push({ ...pick, year, prior: "none", attempts: 0 });
+    else if (row.status === "failed" && row.attempts < BIRTHDAY_MAX_ATTEMPTS) out.push({ ...pick, year, prior: "failed", attempts: row.attempts });
+    else if (row.status === "dry-run" && opts.retryDryRun) out.push({ ...pick, year, prior: "dry-run", attempts: row.attempts });
+    // claimed / sent / failed too often: never again this year.
+  }
+  return out;
+}
+
+/**
+ * Record that this device is about to text these patients. The unique key
+ * (workspace, patient, year) makes the first claim win; everyone else is
+ * dropped. Returns the patient ids this device now holds.
+ */
+export async function claimBirthdays(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  rows: BirthdayQueueRow[],
+  now: Date,
+): Promise<Set<string>> {
+  const held = new Set<string>();
+  const nowIso = now.toISOString();
+  for (const row of rows) {
+    const common = { status: "claimed", device_id: device.id, claimed_at: nowIso, error: null, sent_at: null };
+    if (row.prior === "none") {
+      const { error } = await admin.from("birthday_text_log").insert({
+        workspace_id: device.workspace_id,
+        patient_id: row.patientId,
+        year: row.year,
+        attempts: 1,
+        phone_last4: row.phone.slice(-4),
+        ...common,
+      });
+      if (!error) held.add(row.patientId);
+      continue;
+    }
+    // A failed or test row: take it over only if nobody changed it meanwhile.
+    const { data } = await admin
+      .from("birthday_text_log")
+      .update({ ...common, attempts: row.prior === "failed" ? row.attempts + 1 : 1, phone_last4: row.phone.slice(-4) })
+      .eq("workspace_id", device.workspace_id)
+      .eq("patient_id", row.patientId)
+      .eq("year", row.year)
+      .eq("status", row.prior)
+      .eq("attempts", row.attempts)
+      .select("id");
+    if ((data ?? []).length > 0) held.add(row.patientId);
+  }
+  return held;
+}
+
+/**
+ * A device's answer for one birthday text. sent / failed only change a row
+ * this workspace has CLAIMED. dry-run writes a test row (only if there is
+ * none yet). Returns false when nothing changed (a repeat or unknown id).
+ */
+export async function ackBirthday(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  year: number,
+  patientId: string,
+  status: "sent" | "failed" | "dry-run",
+  error: string | null,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!patientId || Math.abs(year - now.getUTCFullYear()) > 1) return false;
+  if (status === "dry-run") {
+    const { data: p } = await admin
+      .from("patients")
+      .select("id, phone")
+      .eq("workspace_id", device.workspace_id)
+      .eq("id", patientId)
+      .maybeSingle();
+    if (!p) return false;
+    const { error: insErr } = await admin.from("birthday_text_log").insert({
+      workspace_id: device.workspace_id,
+      patient_id: patientId,
+      year,
+      status: "dry-run",
+      attempts: 1,
+      phone_last4: String(p.phone ?? "").replace(/\D/g, "").slice(-4),
+      device_id: device.id,
+      claimed_at: now.toISOString(),
+    });
+    return !insErr;
+  }
+  const { data } = await admin
+    .from("birthday_text_log")
+    .update({ status, error, device_id: device.id, sent_at: status === "sent" ? now.toISOString() : null })
+    .eq("workspace_id", device.workspace_id)
+    .eq("patient_id", patientId)
+    .eq("year", year)
+    .eq("status", "claimed")
+    .select("id");
+  return (data ?? []).length > 0;
 }
