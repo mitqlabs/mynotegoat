@@ -1222,7 +1222,7 @@ export function MacroSettingsPanel() {
           <ScrollLock />
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-xl font-semibold">Run Macro: {selectedMacro.buttonName}</h4>
+              <h4 className="text-xl font-semibold">{selectedMacro.buttonName}</h4>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => setRunOpen(false)}

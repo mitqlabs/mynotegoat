@@ -9,6 +9,7 @@ import { finishDraft, parseBookingTime, snapToOfficeHours } from "@/lib/goat-boo
 import { resolveRequestedDay } from "@/lib/goat-howto";
 import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { to12hLabel } from "@/lib/time-12h";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { ScheduleSettingsConfig } from "@/lib/schedule-settings";
 
@@ -273,4 +274,59 @@ export function planCaseFirstVisit(
   if (check.outsideHours && settings.enforceOfficeHours) return { kind: "error", message: `${fmt(t.time)} is outside office hours that day.${check.suggestions.length ? ` Open: ${check.suggestions.map(fmt).join(", ")}.` : ""}` };
   if (check.taken) return { kind: "error", message: `${fmt(t.time)} is taken.${check.suggestions.length ? ` Open nearby: ${check.suggestions.map(fmt).join(", ")}.` : ""}` };
   return { kind: "book", date: iso, time: t.time, type: type.name, durationMin: type.durationMin, note: t.note };
+}
+
+/**
+ * New Patient popup: the first visit to book (Appt Date + Time) or what to tell the user.
+ * A taken time (or one outside office hours when those are enforced) is a "conflict": the popup
+ * shows the open times nearby as buttons plus a "Book anyway" tick. Ticking it (`bookAnyway`) books
+ * the double-booking exactly like the Schedule's override: only when Settings → Schedule allows
+ * overrides, and the visit is saved with overrideOfficeHours on.
+ */
+export type NewPatientVisitPlan =
+  | { kind: "none" }
+  | { kind: "error"; message: string }
+  | {
+      kind: "conflict";
+      reason: "taken" | "outside";
+      /** HH:MM the user asked for (after snapping). */
+      time: string;
+      /** Open HH:MM times nearby, closest first-to-last in clock order. */
+      suggestions: string[];
+      message: string;
+      /** False when Settings → Schedule has overrides turned off. */
+      canOverride: boolean;
+    }
+  | { kind: "book"; iso: string; time: string; type: string; durationMin: number; override: boolean };
+
+export function planNewPatientFirstVisit(
+  input: { dateMdy: string; timeText: string; bookAnyway?: boolean },
+  appointments: ScheduleAppointmentRecord[],
+  settings: ScheduleSettingsConfig,
+  types: Array<{ name: string; durationMin: number; isDefault?: boolean }>,
+): NewPatientVisitPlan {
+  if (!input.dateMdy.trim() && !input.timeText.trim()) return { kind: "none" };
+  const iso = mdyToIso(input.dateMdy);
+  if (!iso) return { kind: "error", message: "New Patient Evaluation date must be MM/DD/YYYY." };
+  const t = intakeTime(input.timeText, iso, settings);
+  if (!t) return { kind: "error", message: "Add the New Patient Evaluation time (e.g. 3:00 PM)." };
+  const type = newPatientVisitType(types);
+  if (!type) return { kind: "error", message: "No appointment types are set up (Settings → Schedule)." };
+  const check = checkIntakeAppointment({ apptDate: iso, apptTime: t.time, appointmentType: type.name, durationMin: type.durationMin }, appointments, settings);
+  const outside = check.outsideHours && settings.enforceOfficeHours;
+  if (outside || check.taken) {
+    const canOverride = settings.allowOverride !== false;
+    if (input.bookAnyway && canOverride) return { kind: "book", iso, time: t.time, type: type.name, durationMin: type.durationMin, override: true };
+    const reason = outside ? "outside" : "taken";
+    const label = to12hLabel(t.time);
+    return {
+      kind: "conflict",
+      reason,
+      time: t.time,
+      suggestions: check.suggestions,
+      canOverride,
+      message: reason === "outside" ? `${label} is outside office hours that day.` : `${label} is taken.`,
+    };
+  }
+  return { kind: "book", iso, time: t.time, type: type.name, durationMin: type.durationMin, override: false };
 }
