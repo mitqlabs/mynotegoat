@@ -4,6 +4,7 @@ import { DRILL_SORT_KEY, nextDrillSort, parseDrillSort, sortDrillPatients, type 
 import { useReferralTicks } from "@/hooks/use-referral-ticks";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { PatientsByLocationCard } from "@/components/patients-by-location-card";
 import { ScrollLock } from "@/components/scroll-lock";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
 import { ActivityLogPanel } from "@/components/activity-log-panel";
@@ -1456,6 +1457,8 @@ export default function DashboardPage() {
     </div>
       </DashboardSection>
       )}
+
+      {visibleSections > 0 && <PatientsByLocationCard patients={patients} statuses={statusFilterOptions} />}
 
       {referralDrill && (
         <div

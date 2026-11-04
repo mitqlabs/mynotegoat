@@ -85,6 +85,7 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.contacts-sort.v1": "user",
   "casemate.scanner-camera.v1": "user",
   "casemate.referral-drill-sort.v1": "user",
+  "casemate.dashboard.location-mode.v1": "user",
   "casemate.sidebar-collapsed": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
   "casemate.goat-install-tip.v1": "user",

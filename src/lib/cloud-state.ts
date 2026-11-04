@@ -41,6 +41,7 @@ export const PRESERVE_ON_WIPE_KEYS = new Set([
   "casemate.contacts-sort.v1",
   "casemate.scanner-camera.v1",
   "casemate.dashboard.sections-open.v1",
+  "casemate.dashboard.location-mode.v1",
   "casemate.timer-sound-repeat.v1",
   "casemate.patient-sort-column.v1",
   "casemate.patient-sort-asc.v1",
