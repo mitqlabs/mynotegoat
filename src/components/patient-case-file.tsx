@@ -39,6 +39,7 @@ import {
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { AttorneyEmailCopy } from "@/components/attorney-email-copy";
+import { ContactEmailLine, findEmailContact } from "@/components/contact-email-line";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { CaseNotesLog } from "@/components/case-notes-log";
@@ -6246,6 +6247,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.center)} key={`em-${entry.center}`} />
                   <p>Regions: {formatImagingRegionsSummary(entry, "xray")}</p>
                   {entry.isPrior ? (
                     <p>Date done: {entry.doneDate || "-"}</p>
@@ -6468,6 +6470,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.center)} key={`em-${entry.center}`} />
                   <p>Regions: {formatImagingRegionsSummary(entry, "mri")}</p>
                   {entry.isPrior ? (
                     <p>Date done: {entry.doneDate || "-"}</p>
@@ -6667,6 +6670,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.specialist)} key={`em-${entry.specialist}`} />
                   <p>Sent: {entry.sentDate || "-"} | Scheduled: {entry.scheduledDate || "-"} | Completed: {entry.completedDate || "-"}</p>
                   {entry.recommendations.trim() && (
                     <p className="mt-1 text-[var(--text-muted)]">{entry.recommendations}</p>

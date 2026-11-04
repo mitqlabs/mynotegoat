@@ -114,6 +114,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Look things up",
       steps: [
         "Patients: \"kara's attorney\", \"when was maria's last visit\", \"does alex have an mri\".",
+        "Referral cards (MRI, X-ray, Specialist): small email line under the name from Contacts, with envelope (email) and copy icons; hidden if no email.",
         "Patient Phone icons: the chat bubble is Text, the person-plus is Add to Contacts.",
         "Attorney email: \"kara's attorney email\" or \"email for Hartounian\" gives the starred email from Contacts (plus any others). On the patient's page the Attorney Email box has an envelope (opens Outlook) and a copy icon for the same thing.",
         "Office: \"whats on the schedule tomorrow\", \"show our to-dos\", \"mock imaging fax number\".",
