@@ -21,6 +21,8 @@ export interface PracticePatient {
   listYear?: number;
   /** Self-pay (non-PI) patient: the Patients list's default PI tab leaves them out. */
   cash?: boolean;
+  /** Home address (one line), for "how many patients from Glendale". */
+  address?: string;
 }
 
 export interface PracticeData {

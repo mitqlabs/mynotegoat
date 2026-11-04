@@ -100,7 +100,7 @@ export function adminStatsGate(roleKnown: boolean, isAdmin: boolean): string | n
 }
 /** Office-answer kinds that are stats (Quick Biz territory). */
 export function isStatsOfficeKind(kind: string | undefined): boolean {
-  return kind === "caseCount" || kind === "caseSummary";
+  return kind === "caseCount" || kind === "caseSummary" || kind === "locationStats";
 }
 export const ADMIN_ONLY_REPLY = "Sorry — office numbers (case counts, money, Appointment Check, Quick Biz) are for admins. Ask the office owner or an admin if you need them. I can still give you the Morning Rundown.";
 

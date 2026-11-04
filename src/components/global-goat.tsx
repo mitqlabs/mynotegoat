@@ -106,6 +106,7 @@ import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMem
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget, briefName, splitLinks } from "@/lib/goat-briefs";
+import { parseLocationQuestion } from "@/lib/patient-locations";
 import { isOfficeStatsQuestion, parseTimeframeReply } from "@/lib/goat-appt-stats";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
 import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
@@ -2002,6 +2003,8 @@ export function GlobalGoatPopup({
     }
     // Office-wide count/list by status ("how many canceled appts do we have") is a schedule
     // question: answer it from the schedule before any patient-name guessing.
+    // "how many patients from Glendale" / "top zip codes": a location count, never a patient named Glendale.
+    if (casual && !flowRef.current && !replyPending() && parseLocationQuestion(question) && tryPractice(question, false)) return;
     if (casual && !flowRef.current && !replyPending() && isOfficeStatsQuestion(question, practiceData().today, allPatients().map((p) => p.fullName)) && tryPractice(question, false)) return;
     // "For which time frame?" is waiting: a typed "this week" / "today" answers it.
     if (casual && !flowRef.current && !replyPending() && lastOffice()?.kind === "apptStatsAsk" && parseTimeframeReply(question, practiceData().today) && tryPractice(question, false)) return;

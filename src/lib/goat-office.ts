@@ -7,10 +7,11 @@ import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
 import { detectPlainTodo } from "@/lib/goat-intents";
 import { answerScheduleQuery } from "@/lib/goat-schedule-query";
 import { answerApptStats, parseApptStats, parseTimeframeReply, type ApptStatsQuery } from "@/lib/goat-appt-stats";
+import { answerLocationQuestion, parseLocationQuestion } from "@/lib/patient-locations";
 import { SETTING_QUESTION, answerPractice, listScope, detectPracticeIntent, findSettings, runPracticeTool, type PracticeChoice, type PracticeData, type PracticeIntent, type ToolLink } from "@/lib/goat-practice";
 
 export interface OfficeMemory {
-  kind: "todo" | "schedule" | "caseCount" | "caseSummary" | "contact" | "apptStatsAsk";
+  kind: "todo" | "schedule" | "caseCount" | "caseSummary" | "contact" | "apptStatsAsk" | "locationStats";
   /** apptStatsAsk: what was being counted while G.O.A.T. waits for a time frame. */
   statuses?: ApptStatsQuery["statuses"];
   statusLabel?: string;
@@ -110,6 +111,9 @@ export function answerOffice(question: string, data: PracticeData, last: OfficeM
   // never a patient lookup (and never "cancel <patient>").
   const stats = parseApptStats(question, data.today, data.patients.map((p) => p.fullName));
   if (stats) return answerApptStats(stats, data, question);
+  // "how many patients from Glendale" / "top zip codes": counts by home address.
+  const loc = parseLocationQuestion(question);
+  if (loc) return { ...answerLocationQuestion(loc, data.patients), memory: { kind: "locationStats" } };
   // "For which time frame?" was asked: a short timeframe ("this week", "today") is the answer.
   if (last?.kind === "apptStatsAsk" && last.statuses && last.statusLabel) {
     const range = parseTimeframeReply(question, data.today);

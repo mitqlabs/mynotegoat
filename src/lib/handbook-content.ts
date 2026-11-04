@@ -573,6 +573,18 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         watchOut:
           "Those ticks live in your browser only. Nobody else sees them, and clearing browser data loses them. The list follows the filters at the top of Statistics.",
       },
+      {
+        heading: "Patients by Location — where your patients live",
+        steps: [
+          "Dashboard (Statistics) → Patients by Location.",
+          "City lists every city (grouped by city and state, spelling and capitals cleaned up); ZIP lists every ZIP code as \u201cZIP · City\u201d. Most patients first, with a bar, the count and the percent.",
+          "The status menu narrows it to Active, Discharged or any other case status. The Total line shows how many patients are counted.",
+          "Click any row to list those patients; click a name to open them.",
+          "\u201cNo address\u201d (always last) is everyone missing a city or ZIP. Click it to get the list and open each patient to fill in their address.",
+        ],
+        why: "Your City / ZIP choice is saved to your account, so it follows you to any computer you sign in on.",
+        watchOut: "It reads the patient's home address. A street with no city (\u201c123 Main St\u201d) counts as No address.",
+      },
     ],
   },
   {
