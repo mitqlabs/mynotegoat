@@ -128,6 +128,9 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // system: sync bookkeeping, crash-recovery drafts, caches of cloud data
   "notegoat.access-hint.v1": "system", // boot speed hint (access + team), re-verified every open
   "notegoat.boot-delta.v1.": "system", // boot delta cursors/stamps (cache of cloud data)
+  "notegoat-boot-cache": "system", // IndexedDB resume cache of cloud note rows (cleared after a full boot)
+  "notegoat-boot-": "system", // BroadcastChannel name: boot progress relay between tabs
+  "notegoat-boot-notes-": "system", // Web Lock name: one tab downloads notes at a time
   "casemate.active-workspace-id.v1": "system",
   "casemate.location-view-main-applied.v1": "system", // per-device marker: which Main location was last applied at login
   "casemate.local-cache-workspace.v1": "system", // which workspace the local cache belongs to

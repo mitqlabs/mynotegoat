@@ -119,6 +119,7 @@ export default function PortalLayout({
   const [showSavedFlash, setShowSavedFlash] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapErrorDetail, setBootstrapErrorDetail] = useState<string | null>(null);
+  const [bootProgressText, setBootProgressText] = useState<string | null>(null);
   // Set when someone chooses "Open Anyway". Staff were clicking through it
   // and carrying on for hours without telling anyone, so it stays on screen
   // for the life of the tab — it can't be dismissed.
@@ -320,21 +321,26 @@ export default function PortalLayout({
       // hard error screen instead. Mounting on stale/empty localStorage is
       // exactly how the 2026-04-08 data loss happened.
       try {
-        // Hard deadline: never sit on "Checking account access…" forever.
-        // Past 45s show the locked error screen with Retry instead.
-        let deadline: ReturnType<typeof setTimeout> | null = null;
+        // No-progress watchdog: keep waiting while notes keep arriving
+        // ("Loading notes X of Y"); show the locked error screen with Retry
+        // only after 45s with NO progress at all.
+        const bp = await import("@/lib/boot-progress");
+        const offProgress = bp.onBootProgress((p) => {
+          if (!active) return;
+          setBootProgressText(
+            p.phase === "waiting-other-tab"
+              ? `Another NoteGoat tab is loading notes (${p.done} of ${p.total})…`
+              : `Loading notes ${p.done} of ${p.total}…`,
+          );
+        });
         try {
-          await Promise.race([
+          await bp.withStallWatchdog(
             prepareCloudStateBeforeMount(),
-            new Promise<never>((_, reject) => {
-              deadline = setTimeout(
-                () => reject(new CloudBootstrapError("Loading your data from the cloud took too long. Check your connection and tap Retry.")),
-                45_000,
-              );
-            }),
-          ]);
+            45_000,
+            () => new CloudBootstrapError("Loading your data from the cloud stopped making progress. Check your connection and tap Retry."),
+          );
         } finally {
-          if (deadline) clearTimeout(deadline);
+          offProgress();
         }
         // Bring back this user's prefs (sorts, columns, chat…) from the cloud.
         void import("@/lib/user-prefs-cloud").then((m) =>
@@ -580,6 +586,11 @@ export default function PortalLayout({
         <div className="absolute inset-x-0 top-[18vh] flex justify-center">
           <div className="rounded-3xl border border-[var(--line-soft,#e2e8f0)] bg-[var(--bg-panel,#fff)] px-10 shadow-xl backdrop-blur-sm">
             <GoatCheckIn />
+            {bootProgressText ? (
+              <p className="pb-4 text-center text-sm text-[var(--text-muted,#64748b)]" aria-live="polite">
+                {bootProgressText}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

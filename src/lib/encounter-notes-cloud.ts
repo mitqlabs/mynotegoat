@@ -240,14 +240,36 @@ export async function fetchEncounterNoteMeta(): Promise<
 }
 
 /** Same as fetchEncounterNotesByIds but the 100-id chunks run in parallel. */
-export async function fetchEncounterNotesByIdsParallel(ids: string[]): Promise<EncounterNoteRecord[] | null> {
+/** Max encounter_notes chunk requests in flight at once during boot. */
+export const NOTES_FETCH_CONCURRENCY = 5;
+
+/**
+ * Fetch notes by id in 100-id chunks, at most NOTES_FETCH_CONCURRENCY at a
+ * time (was: every chunk at once, which piled ~30 big requests onto the DB
+ * per boot). `onChunk` runs after each chunk lands (for progress + resume).
+ */
+export async function fetchEncounterNotesByIdsParallel(
+  ids: string[],
+  onChunk?: (rows: EncounterNoteRecord[], done: number, total: number) => void | Promise<void>,
+): Promise<EncounterNoteRecord[] | null> {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (unique.length === 0) return [];
   const chunks: string[][] = [];
   for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
-  const results = await Promise.all(chunks.map((c) => fetchEncounterNotesByIds(c)));
-  if (results.some((r) => r === null)) return null;
-  return results.flatMap((r) => r ?? []);
+  const { runPool } = await import("@/lib/boot-progress");
+  let fetchedCount = 0;
+  const results = await runPool(
+    chunks.map((c) => async () => {
+      const rows = await fetchEncounterNotesByIds(c);
+      if (rows === null) return null;
+      fetchedCount += c.length;
+      await onChunk?.(rows, fetchedCount, unique.length);
+      return rows;
+    }),
+    NOTES_FETCH_CONCURRENCY,
+  );
+  if (results === null) return null;
+  return results.flat();
 }
 
 export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRecord[] | null> {
@@ -277,6 +299,8 @@ export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRe
     }
     const rows = (data ?? []) as EncounterNoteRow[];
     all.push(...rows);
+    // Each page counts as progress for the boot no-progress watchdog.
+    void import("@/lib/boot-progress").then((bp) => bp.emitBootProgress({ phase: "notes", done: all.length, total: all.length }));
     if (rows.length < pageSize) break;
     from += pageSize;
   }
