@@ -40,15 +40,20 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
         ))}
       </select>
       <a
-        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-2.5 py-2 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+        aria-label="Email this address"
+        className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
         data-testid="attorney-email-mailto"
         href={mailtoHref(value)}
-        title="Open a new email to this address in your mail app"
+        title="Email (opens your mail app)"
       >
-        Email
+        <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+          <rect height="14" rx="2" width="18" x="3" y="5" />
+          <path d="m3 7 9 6 9-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </a>
       <button
-        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-2.5 py-2 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+        aria-label={copied ? "Copied" : "Copy email"}
+        className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
         data-testid="attorney-email-copy"
         onClick={() => {
           void navigator.clipboard?.writeText(value).then(
@@ -59,10 +64,19 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
             () => undefined,
           );
         }}
-        title="Copy this email"
+        title={copied ? "Copied" : "Copy email"}
         type="button"
       >
-        {copied ? "✓ Copied" : "Copy"}
+        {copied ? (
+          <svg aria-hidden className="h-4 w-4 text-[#2f8a4c]" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+            <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <rect height="12" rx="2" width="12" x="9" y="9" />
+            <path d="M5 15V5a2 2 0 0 1 2-2h8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
     </div>
   );

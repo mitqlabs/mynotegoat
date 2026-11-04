@@ -5689,7 +5689,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
 
           {/* Row 3 has five columns on xl: Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam. */}
-          <div className={!isCashPatient && showCaseFields ? "grid items-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1fr)]" : "contents"}>
+          <div className={!isCashPatient && showCaseFields ? "grid items-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]" : "contents"}>
           {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
