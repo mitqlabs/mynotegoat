@@ -739,45 +739,45 @@ export default function ContactsPage() {
                   {contact.subCategory ? (
                     <p className="truncate text-[11.5px] leading-4 text-[#64748b]">{contact.subCategory}</p>
                   ) : null}
+                  {(contact.phone || contact.fax || contact.address || emailRows.length > 0) && (
+                    <div className="mt-1 grid min-w-0 gap-1 text-[12.5px] leading-5">
+                      {contact.phone && (
+                        <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-phone>
+                          <PhoneIcon />
+                          <span className="truncate">{contact.phone}</span>
+                        </p>
+                      )}
+                      {contact.fax && (
+                        <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-fax>
+                          <FaxIcon />
+                          <span className="truncate">{contact.fax}</span>
+                        </p>
+                      )}
+                      {contact.address && (
+                        <p className="flex min-w-0 items-start gap-1.5" data-contact-address>
+                          <span className="mt-[3px]"><BuildingIcon /></span>
+                          <span className="min-w-0 break-words">{contact.address}</span>
+                        </p>
+                      )}
+                      {emailRows.map((e, i) => (
+                        <p key={i} className="flex min-w-0 items-center gap-1.5" data-contact-email>
+                          <MailIcon />
+                          <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
+                          {i === 0 && emailRows.length > 1 && (
+                            <span className="shrink-0 rounded-full bg-[#fef3c7] px-1.5 text-[10.5px] font-semibold leading-4 text-[#92400e]" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
+                          )}
+                          {(e.name || e.label) && (
+                            <span className="shrink-0 truncate rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
+                              {[e.name, e.label].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {(contact.phone || contact.fax || contact.address || emailRows.length > 0) && (
-                <div className="grid min-w-0 gap-1 pl-[2.625rem] text-[12.5px] leading-5">
-                  {contact.phone && (
-                    <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-phone>
-                      <PhoneIcon />
-                      <span className="truncate">{contact.phone}</span>
-                    </p>
-                  )}
-                  {contact.fax && (
-                    <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-fax>
-                      <FaxIcon />
-                      <span className="truncate">{contact.fax}</span>
-                    </p>
-                  )}
-                  {contact.address && (
-                    <p className="flex min-w-0 items-start gap-1.5" data-contact-address>
-                      <span className="mt-[3px]"><BuildingIcon /></span>
-                      <span className="min-w-0 break-words">{contact.address}</span>
-                    </p>
-                  )}
-                  {emailRows.map((e, i) => (
-                    <p key={i} className="flex min-w-0 items-center gap-1.5" data-contact-email>
-                      <MailIcon />
-                      <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
-                      {i === 0 && emailRows.length > 1 && (
-                        <span className="shrink-0 rounded-full bg-[#fef3c7] px-1.5 text-[10.5px] font-semibold leading-4 text-[#92400e]" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
-                      )}
-                      {(e.name || e.label) && (
-                        <span className="shrink-0 truncate rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
-                          {[e.name, e.label].filter(Boolean).join(" · ")}
-                        </span>
-                      )}
-                    </p>
-                  ))}
-                </div>
-              )}
             </li>,
           ];
         })}

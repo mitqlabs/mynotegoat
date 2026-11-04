@@ -38,6 +38,7 @@ import {
 } from "@/lib/compliance";
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { AttorneyEmailCopy } from "@/components/attorney-email-copy";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { CaseNotesLog } from "@/components/case-notes-log";
@@ -5547,7 +5548,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Field order is deliberate, four to a row on xl:
                 1. Last Name | First Name | DOB | Phone
                 2. Sex | Marital Status | Email | Case #
-                3. Attorney | Attorney Phone | Date Of Injury | Initial Exam
+                3. Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam (five on xl)
               Everything from Case # onward is PI-only, so a cash patient
               simply drops those and the rest reflows. */}
           <label className="grid gap-1">
@@ -5687,6 +5688,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
+          {/* Row 3 has five columns on xl: Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam. */}
+          <div className={!isCashPatient && showCaseFields ? "grid items-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]" : "contents"}>
           {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
@@ -5711,6 +5714,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 value={attorneyPhone}
               />
             </label>
+          )}
+
+          {!isCashPatient && showCaseFields && (
+            <div className="grid min-w-0 gap-1 self-start">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Email</span>
+              <AttorneyEmailCopy contact={matchedAttorneyContact} key={matchedAttorneyContact?.name ?? ""} />
+            </div>
           )}
 
           {!isCashPatient && showCaseFields && (
@@ -5855,6 +5865,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               )}
             </div>
           )}
+          </div>
 
           <div className="md:col-span-2 xl:col-span-4">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
