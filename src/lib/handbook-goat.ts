@@ -78,6 +78,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Case pipeline and Case Review (admins)",
       steps: [
         "Ask in plain words: \"who needs an mri referral\", \"waiting on mri results\", \"waiting for report\", \"what's ready to submit\", \"waiting for checks\" (= Submitted), \"which cases have no attorney\". \"case pipeline\" gives all the counts.",
+        "Lien follow-ups match Case Flow: a Pending, Not Set or Not Sent lien is \"Not sent yet\" (never \"sent\"); Requested is \"Requested, waiting for received\".",
         "Each list shows the count and the patients (tap a name to open them), most urgent first: longest waiting on Case Flow, earliest discharge for Ready to submit, oldest R&B Sent (with days waiting) for Submitted.",
         "After each list, 1–2 chips offer the next step (e.g. Needs MRI → \"Waiting on MRI results?\"; Waiting for reports → \"Ready to submit?\").",
         "Case Review (greeting chip, \"do a case review\", \"what's missing\", /view case review): counts per Case Flow need — e.g. X-rays: 4, MRI/CT: 7, Specialist: 3. Tap a count to see those patients, longest open first.",

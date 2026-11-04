@@ -186,6 +186,7 @@ export const handbookChapters: HandbookChapter[] = [
         steps: [
           "Schedule Initial Visit — checked off once Patient Info has an Initial Exam date: the date typed in the box, or else the earliest New Patient appointment in any status (booked, checked in or out), or a New Patient note. A canceled or no-showed one doesn't count.",
           "Lien / LOP — clears when the lien status moves on from the one the office marks as outstanding.",
+          "Lien / LOP Follow Up reads \u201cNot sent yet\u201d while the lien is Pending, Not Set, Not Sent or blank; \u201cRequested, waiting for received\u201d once it says Requested; \u201cSent, waiting for received\u201d for any other sent status. Received clears it.",
           "X-Ray — Needs Referral clears when a referral is added; the follow-up clears when the report is received.",
           "MRI / CT and Specialist — Needs Referral → Appt Not Scheduled → Report Not Received, each clearing when that date is filled in.",
         ],

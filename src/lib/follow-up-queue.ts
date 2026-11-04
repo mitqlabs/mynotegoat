@@ -790,19 +790,10 @@ export function buildFollowUpItems(
       const normalizedLien = lienRaw.trim().toLowerCase();
       const lienHasValue = hasMatrixValue(lienRaw);
       const isSelectedClearStatus = matchesLienClearStatus(lienRaw, lienLopClearStatuses);
-      const isNotSent =
-        !lienHasValue || normalizedLien === "not set" || normalizedLien === "not sent";
-      const isReceived =
-        normalizedLien.includes("received") ||
-        normalizedLien.includes("complete") ||
-        normalizedLien.includes("resolved");
+      const stage = lienFollowUpStage(lienRaw);
+      const isNotSent = stage === "Not sent yet" || !lienHasValue;
 
-      if (!isSelectedClearStatus && (isNotSent || !isReceived)) {
-        const stage = isNotSent
-          ? "Not sent yet"
-          : normalizedLien.includes("request")
-            ? "Requested, waiting for received"
-            : "Sent, waiting for received";
+      if (!isSelectedClearStatus && stage) {
         const anchorDate =
           extractLeadingDatePart(lienRaw) ||
           extractLeadingDatePart(initialExamRaw) ||
@@ -841,4 +832,19 @@ export function buildFollowUpItems(
   });
 
   return maxItems ? sorted.slice(0, maxItems) : sorted;
+}
+
+/**
+ * Case Flow step for a Lien / LOP value. "" = nothing to chase (received).
+ * Pending (the default on a new case), Not Set, Not Sent or blank all mean
+ * nobody has sent it yet, so they read "Not sent yet", never "Sent".
+ */
+export function lienFollowUpStage(lienRaw: string): "" | "Not sent yet" | "Requested, waiting for received" | "Sent, waiting for received" {
+  const v = stripLeadingDatePart(lienRaw ?? "").trim().toLowerCase();
+  if (!hasMatrixValue(lienRaw ?? "") || !v || v === "not set" || v === "not sent" || v === "pending" || v === "-" || v === "—") {
+    return "Not sent yet";
+  }
+  if (v.includes("received") || v.includes("complete") || v.includes("resolved")) return "";
+  if (v.includes("request")) return "Requested, waiting for received";
+  return "Sent, waiting for received";
 }
