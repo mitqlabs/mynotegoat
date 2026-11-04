@@ -4,7 +4,7 @@ import { MessagesLibraryPanel } from "@/components/messages-library-panel";
 
 /**
  * Settings → SMS / Text Templates. The same Messages library that lives in
- * Text Reminders → Messages (one list, one place it is saved).
+ * the one place to add, edit or delete saved text messages (Auto Texts picks from it).
  */
 export function SmsTemplateSettingsPanel() {
   return <MessagesLibraryPanel />;

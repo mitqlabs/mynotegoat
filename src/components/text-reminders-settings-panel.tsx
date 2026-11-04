@@ -13,7 +13,6 @@ import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { planAutoTextMigration } from "@/lib/message-library";
 import { AutoTextRows } from "@/components/auto-texts-panel";
-import { MessagesLibraryPanel } from "@/components/messages-library-panel";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -718,6 +717,16 @@ export function TextRemindersSettingsPanel() {
         settings={settings}
         update={update}
       />
+      <p className="text-sm">
+        <button
+          className="font-semibold text-[var(--brand-primary)] underline"
+          data-testid="edit-messages-link"
+          onClick={() => window.dispatchEvent(new Event("notegoat:open-sms-templates"))}
+          type="button"
+        >
+          Edit messages in SMS / Text Templates
+        </button>
+      </p>
 
       <div className="flex flex-wrap items-end gap-4">
         <label className="inline-flex h-[42px] items-center gap-2 text-sm font-semibold">
@@ -806,22 +815,13 @@ export function TextRemindersSettingsPanel() {
           </details>
       </CollapsibleSection>
 
-      <CollapsibleSection
-        hint="Your saved text messages. Add, edit or delete them here."
-        onToggle={(next) => setSection("library", next)}
-        open={sectionOpen(settings.sections, "library", true)}
-        testId="section-library"
-        title="Messages"
-      >
-        <MessagesLibraryPanel settings={settings} />
-      </CollapsibleSection>
 
       <CollapsibleSection
-        hint="Message patients and Recent sends."
+        hint="Send one text to many patients, plus recent sends."
         onToggle={(next) => setSection("texts", next)}
         open={sectionOpen(settings.sections, "texts", true)}
         testId="section-texts"
-        title="Texts"
+        title="Broadcast"
       >
       <MessagePatientsComposer
         macConnected={officeMacSeen(devices)}

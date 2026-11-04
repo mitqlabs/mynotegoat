@@ -128,7 +128,7 @@ const server = readFileSync("src/lib/reminder-server.ts", "utf8");
 assert.ok(/resolveReminderMessage\(settings, templates\)/.test(server) && /resolveBirthdayMessage\(settings, templates\)/.test(server), "queue picks messages with the shared resolver");
 assert.ok(/birthdayBody/.test(server) && /body: config\.birthdayBody/.test(readFileSync("src/app/api/reminders/queue/route.ts", "utf8")), "queue sends the attached birthday message");
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
-assert.ok(/planAutoTextMigration/.test(panel) && /<MessagesLibraryPanel/.test(panel) && /<AutoTextRows/.test(panel));
+assert.ok(/planAutoTextMigration/.test(panel) && !/<MessagesLibraryPanel/.test(panel) && /<AutoTextRows/.test(panel) && /Edit messages in SMS \/ Text Templates/.test(panel));
 const lib = readFileSync("src/components/messages-library-panel.tsx", "utf8");
 assert.ok(/message-delete-blocked/.test(lib) && /appConfirm/.test(lib), "delete asks first and is blocked while in use");
 const hook = readFileSync("src/hooks/use-sms-templates.ts", "utf8");

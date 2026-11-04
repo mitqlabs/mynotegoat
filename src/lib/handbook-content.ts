@@ -276,7 +276,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Text many patients at once",
         steps: [
-          "Settings → Text Reminders → Message patients.",
+          "Settings → Text Reminders → Broadcast → Message patients.",
           "Type the message (up to 640 characters).",
           "Pick Send to: All active patients (the default) or Booked on a day. For Booked on a day, also pick Today, Tomorrow or a date.",
           "Check the count under the message. Tap it to see exactly who will get the text.",
@@ -373,12 +373,12 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "How the Text Reminders page is laid out",
         steps: [
-          "Settings → Text Reminders has four sections: Set up, Auto Texts, Messages and Texts. Tap a heading to open or close it. NoteGoat remembers what you opened or closed for the whole office, on every computer.",
+          "Settings → Text Reminders has three sections: Set up, Auto Texts and Broadcast. Tap a heading to open or close it. NoteGoat remembers what you opened or closed for the whole office, on every computer.",
           "Set up is made of cards. Each card has a title, a tag (Done, To do or Optional) and one line that says where things stand. Tap a card to open it: Automatic reminders (3 steps), Sending devices, How it works, Opt-out (reply STOP), iPhone setup, iMac setup. The whole Set up section starts closed once the 8 AM automation box is ticked and a device has run, and open until then.",
           "Sending devices: one row per phone or computer. Each row says Main sender or Backup sender, shows iPhone or iMac, \u201cLast checked 10/28/26 10:41 AM\u201d and its last run. + Add iPhone and + Add Mac are at the top of the card. Make main sender, Get new setup code and Remove are on the right of each row. Remove asks first.",
           "A new setup code shows once, right after you add a sender or click Get new setup code. Click Copy setup code, paste it where the setup asks, then click Hide setup code. Do not share it: anyone who has it can send texts as your office.",
           "Auto Texts (open by default): one row for Reminders and one for Birthday. Each row has an On/Off switch and a menu to pick the message it sends. Under the rows: Test mode, Send time and Run days.",
-          "Messages (open by default): your saved text messages. See “Write your text messages and attach them to Auto Texts” below.",
+          "Broadcast (open by default): send one text to many patients (Message patients), plus Recent sends. Your saved text messages live in Settings → Templates → SMS / Text Templates.",
           "Texts (open by default): Message patients (a one-off text) and Recent sends.",
           "Recent messages (under Message patients) and Recent sends can each be closed on their own.",
           "The red warning \u201cYour 8 AM automation may not be set up\u201d always stays at the top, even when Set up is closed.",
@@ -389,7 +389,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Write your text messages and attach them to Auto Texts",
         steps: [
-          "Go to Settings → Text Reminders → Messages. This is your library of saved text messages.",
+          "Go to Settings → Templates → SMS / Text Templates. This is your library of saved text messages, and the only place to add, edit or delete them. In Auto Texts, the “Edit messages in SMS / Text Templates” link takes you there.",
           "Click + New message. Give it a name, then type the message. To put in a patient's name or the visit date, tap a word button (First name, Last name, Full name, Appointment date, Appointment time, Today's date, Office name, Doctor name, Office phone). It is typed in as {first name}, {appt date} and so on, and swapped for the real one when the text goes out. The Example line shows what a patient will get.",
           "Click a message to open it and change it. Click Delete message to remove it (it asks first). You can't delete a message while an Auto Text uses it. Pick a different message in Auto Texts first.",
           "Then go to Auto Texts. Reminders and Birthday each have an On/Off switch and a menu. Pick the message each one sends, and turn it on. The Example line under the menu shows exactly what goes out.",
@@ -397,14 +397,14 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Your old texts were kept. The reminder wording you already used is saved as a message and attached to Reminders. If you had a Happy Birthday message it is attached to Birthday. Birthday stays Off until you turn it on.",
           "Messages and what is attached are saved to your office's cloud, so every computer shows the same thing. Pressing Delete on one computer removes it on all of them.",
         ],
-        why: "Writing a message once and attaching it means the text patients get is exactly what you see in the Example line. The Settings → Templates → SMS / Text Templates page shows the same list.",
+        why: "Writing a message once and attaching it means the text patients get is exactly what you see in the Example line.",
       },
       {
         heading: "Text patients happy birthday (Birthday texts)",
         steps: [
           "Go to Settings → Text Reminders → Auto Texts → Birthday.",
           "Turn the switch On. It starts off.",
-          "In the menu pick the message it sends (for example Happy Birthday). To write a new one, use Messages. Type {first name} where the patient's first name goes. The Example line shows exactly what a patient will get.",
+          "In the menu pick the message it sends (for example Happy Birthday). To write a new one, use Edit messages in SMS / Text Templates. Type {first name} where the patient's first name goes. The Example line shows exactly what a patient will get.",
           "That's all. The birthday texts go out with the daily reminders (the same 8 AM run, the same iPhone shortcut or iMac). There is nothing to change on the iPhone.",
           "Who gets one: Active patients with a phone number whose birthday is today (their date of birth in the Demographics, in the office time zone). A Feb 29 birthday is texted on Feb 28 in years with no Feb 29.",
           "Who never gets one: patients marked \u201cno text reminders\u201d, patients who replied STOP, patients who are not Active, and patients with no phone number or no first name. The opt-out line (Reply STOP\u2026) is added the same way as on reminders when it is on.",
@@ -923,7 +923,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "The Warning List underneath shows only patients still booked on upcoming Closed days. Click Show past & cleared at the bottom to see old visits, Covered-day visits and cleared warnings.",
           "Use Cancel Appointment there, or Clear to hide a row you have dealt with. Clear only hides the row; the visit stays booked and still counts in the red number.",
         ],
-        why: "Reminders go out the day before, so set the day to Closed before then. A text that has already been sent can't be recalled; changing the day afterwards only stops texts not yet sent. If you meant to tell patients you are closed, use Settings → Text Reminders → Message patients → All active patients.",
+        why: "Reminders go out the day before, so set the day to Closed before then. A text that has already been sent can't be recalled; changing the day afterwards only stops texts not yet sent. If you meant to tell patients you are closed, use Settings → Text Reminders → Broadcast → Message patients → All active patients.",
         watchOut:
           "Delete and Cancel need two clicks — the button turns into Confirm Delete / Confirm Cancel. Nothing happens on the first click; that is deliberate, because some browsers swallow pop-up confirmations.",
       },
