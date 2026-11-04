@@ -38,6 +38,7 @@ import {
 } from "@/lib/compliance";
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { AttorneyEmailCopy } from "@/components/attorney-email-copy";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { CaseNotesLog } from "@/components/case-notes-log";
@@ -5698,6 +5699,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 onChange={(event) => handleAttorneyChange(event.target.value)}
                 value={attorney}
               />
+              <AttorneyEmailCopy contact={matchedAttorneyContact} key={matchedAttorneyContact?.name ?? ""} />
             </label>
           )}
 

@@ -114,6 +114,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Look things up",
       steps: [
         "Patients: \"kara's attorney\", \"when was maria's last visit\", \"does alex have an mri\".",
+        "Attorney email: \"kara's attorney email\" or \"email for Hartounian\" gives the starred email from Contacts (plus any others). On the patient's page the Attorney field has an email box with a Copy button for the same thing.",
         "Office: \"whats on the schedule tomorrow\", \"show our to-dos\", \"mock imaging fax number\".",
         "Money and cases (admins): \"how many submitted cases\", \"who owes us\", \"what got paid this month\".",
       ],
