@@ -934,6 +934,8 @@ type CollapsibleSectionProps = {
    *  by the Settings smart-search filter — a non-matching section is
    *  hidden rather than rendered in a collapsed state. */
   hidden?: boolean;
+  /** DOM id so other panels can scroll to this section. */
+  id?: string;
 };
 
 function CollapsibleSection({
@@ -944,10 +946,11 @@ function CollapsibleSection({
   actions,
   children,
   hidden,
+  id,
 }: CollapsibleSectionProps) {
   if (hidden) return null;
   return (
-    <section className="panel-card p-4">
+    <section className="panel-card p-4" id={id}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button
           aria-expanded={isOpen}
@@ -2885,6 +2888,21 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setBackupInfo(hasSafetyBackup());
+  }, []);
+
+  // Auto Texts → "Edit messages in SMS / Text Templates": open that section and scroll to it.
+  const openSmsTemplatesRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    openSmsTemplatesRef.current = () => {
+      if (!showSection("smsTemplates")) selectTab("all");
+      setExpandedSections((current) => ({ ...current, smsTemplates: true }));
+      window.setTimeout(() => document.getElementById("settings-sms-templates")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    };
+  });
+  useEffect(() => {
+    const open = () => openSmsTemplatesRef.current();
+    window.addEventListener("notegoat:open-sms-templates", open);
+    return () => window.removeEventListener("notegoat:open-sms-templates", open);
   }, []);
 
   const toggleSection = (sectionKey: SettingsSectionKey) => {
@@ -5054,8 +5072,9 @@ export default function SettingsPage() {
       </CollapsibleSection>
 
       <CollapsibleSection
-        description="Your saved text messages. Same list as Text Reminders → Messages. Pick one when you text a patient, or attach it to an Auto Text."
+        description="Your saved text messages, the one place to add, edit or delete them. Pick one when you text a patient, or attach it to an Auto Text."
         hidden={!showSection("smsTemplates")}
+        id="settings-sms-templates"
         isOpen={sectionIsOpen("smsTemplates")}
         onToggle={() => toggleSection("smsTemplates")}
         title="SMS / Text Templates"

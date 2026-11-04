@@ -94,7 +94,7 @@ const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "
 assert.match(panel, /update\(\{ sections: \{ \.\.\.settings\.sections, \[key\]: open \} \}\)/, "toggles save through update() -> cloud settings");
 assert.match(panel, /dualWriteKv\(SMS_REMINDER_SETTINGS_KEY/);
 assert.doesNotMatch(panel, /localStorage\.setItem\([^)]*section/i, "no localStorage-only section state");
-for (const id of ["section-setup", "section-autotexts", "section-library", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"`));
+for (const id of ["section-setup", "section-autotexts", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"`));
 assert.match(composer, /testId="recent-messages"/);
 // Layout: the warning sits outside Set up; the checklist, devices, shortcuts and opt-out are inside it; send settings, composer and Recent sends are in Texts.
 const iWarn = panel.indexOf("<AutomationWarning");
@@ -109,12 +109,14 @@ for (const needle of ["<MessagePatientsComposer", 'testId="recent-sends"'])
   assert.ok(inTexts.includes(needle), `Texts contains ${needle}`);
 // Auto Texts: the on/off switches + message menus (own component), send settings; Messages: the library.
 const iAuto = panel.indexOf('testId="section-autotexts"');
-const iLib = panel.indexOf('testId="section-library"');
-assert.ok(iSetup < iAuto && iAuto < iLib && iLib < iTexts, "Set up, Auto Texts, Messages, Texts in that order");
-const inAuto = panel.slice(iAuto, iLib);
+assert.ok(iSetup < iAuto && iAuto < iTexts, "Set up, Auto Texts, Broadcast in that order");
+// The library lives only in SMS / Text Templates; Auto Texts links there.
+assert.ok(!panel.includes('testId="section-library"') && !panel.includes("<MessagesLibraryPanel"), "no duplicate Messages section");
+assert.ok(panel.slice(iAuto, iTexts).includes("Edit messages in SMS / Text Templates"), "Auto Texts links to SMS / Text Templates");
+assert.match(panel, /title="Broadcast"/);
+const inAuto = panel.slice(iAuto, iTexts);
 for (const needle of ["<AutoTextRows", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
   assert.ok(inAuto.includes(needle), `Auto Texts contains ${needle}`);
-assert.ok(panel.slice(iLib, iTexts).includes("<MessagesLibraryPanel"), "Messages section holds the library");
 assert.ok(!inTexts.includes("Test mode (nothing is texted)") && !inTexts.includes("Run days"), "send settings are not in Texts");
 assert.ok(!inTexts.includes("Sending devices"), "devices are not in Texts");
 // Every date on the page goes through the mm/dd/yy helpers.
