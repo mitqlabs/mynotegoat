@@ -7,6 +7,8 @@ import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { broadcastTimeOk, hashDeviceToken, parseOptOutReply, phoneMatchKey, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
+import { normalizeSmsTemplates } from "@/lib/sms-template-core";
+import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 import { birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
 
@@ -56,6 +58,8 @@ export async function authenticateDevice(
 export interface WorkspaceReminderConfig {
   settings: SmsReminderSettings;
   templateBody: string;
+  /** The message attached to Auto Texts → Birthday (words not filled in yet). */
+  birthdayBody: string;
   office: ReminderOffice;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
@@ -119,13 +123,10 @@ export async function loadWorkspaceConfig(
   for (const row of data ?? []) kv[row.key as string] = row.value;
 
   const settings = normalizeSmsReminderSettings(kv["casemate.sms-reminders.v1"]);
-  const templates = Array.isArray(kv["casemate.sms-templates.v1"])
-    ? (kv["casemate.sms-templates.v1"] as { id?: string; name?: string; body?: string }[])
-    : [];
-  const template =
-    templates.find((t) => t.id === settings.templateId) ??
-    templates.find((t) => /remind/i.test(t.name ?? "")) ??
-    templates[0];
+  // The Messages library (deleted ones are markers and never used). Same picking code the Settings page uses.
+  const templates = normalizeSmsTemplates(kv["casemate.sms-templates.v1"]);
+  const template = resolveReminderMessage(settings, templates);
+  const birthday = resolveBirthdayMessage(settings, templates);
   const officeRaw = (kv["casemate.office-settings.v1"] ?? {}) as Record<string, unknown>;
   const scheduleRaw = (kv["casemate.schedule-settings.v1"] ?? {}) as Record<string, unknown>;
   const officeHours = Array.isArray(scheduleRaw.officeHours)
@@ -139,6 +140,7 @@ export async function loadWorkspaceConfig(
   return {
     settings,
     templateBody: typeof template?.body === "string" ? template.body : "",
+    birthdayBody: birthday.body,
     office: {
       officeName: typeof officeRaw.officeName === "string" ? officeRaw.officeName : "",
       doctorName: typeof officeRaw.doctorName === "string" ? officeRaw.doctorName : "",
@@ -499,7 +501,7 @@ export async function loadBirthdayQueue(
   device: ReminderDevice,
   todayIso: string,
   settings: SmsReminderSettings,
-  opts: { retryDryRun: boolean },
+  opts: { retryDryRun: boolean; body?: string; office?: { officeName?: string; doctorName?: string; phone?: string } },
 ): Promise<BirthdayQueueRow[]> {
   if (!settings.birthdayTexts) return [];
   const suffixes = birthdayDobSuffixes(todayIso);
@@ -520,7 +522,7 @@ export async function loadBirthdayQueue(
     caseStatus: String(row.case_status ?? ""),
     optedOut: row.text_reminders_off === true,
   }));
-  const picks = pickBirthdayRecipients(patients, todayIso, settings);
+  const picks = pickBirthdayRecipients(patients, todayIso, opts.body !== undefined ? { ...settings, birthdayMessage: opts.body } : settings, opts.office);
   if (!picks.length) return [];
   const { data: logRows, error: logError } = await admin
     .from("birthday_text_log")

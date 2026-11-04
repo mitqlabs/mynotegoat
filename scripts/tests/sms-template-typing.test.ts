@@ -44,7 +44,7 @@ assert.equal(wasRecentlyWrittenLocally("casemate.sms-templates.v1"), true);
 const hook = readFileSync("src/hooks/use-sms-templates.ts", "utf8");
 assert.match(hook, /markLocalWrite\(SMS_TEMPLATES_STORAGE_KEY\)/, "template saves guard against echoes");
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
-assert.match(panel, /<DraftTextarea/, "template box uses the draft textarea");
+assert.match(readFileSync("src/components/messages-library-panel.tsx", "utf8"), /<DraftTextarea/, "message box uses the draft textarea");
 assert.match(panel, /markLocalWrite\(SMS_REMINDER_SETTINGS_KEY\)/, "reminder settings saves guard against echoes");
 
 console.log("sms-template-typing: ok");

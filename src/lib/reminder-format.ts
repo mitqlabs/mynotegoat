@@ -75,7 +75,7 @@ export function reminderSetupDone(automationConfirmed: boolean, devices: DeviceL
   return automationConfirmed && devices.some((d) => !d.revoked_at && Boolean(d.last_run_at));
 }
 
-export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday";
+export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday" | "autotexts" | "library";
 
 /** Open/closed state for a collapsible section. Unset = its default. */
 export function sectionOpen(

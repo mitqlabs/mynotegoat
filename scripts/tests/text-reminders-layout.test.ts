@@ -94,7 +94,7 @@ const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "
 assert.match(panel, /update\(\{ sections: \{ \.\.\.settings\.sections, \[key\]: open \} \}\)/, "toggles save through update() -> cloud settings");
 assert.match(panel, /dualWriteKv\(SMS_REMINDER_SETTINGS_KEY/);
 assert.doesNotMatch(panel, /localStorage\.setItem\([^)]*section/i, "no localStorage-only section state");
-for (const id of ["section-setup", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"`));
+for (const id of ["section-setup", "section-autotexts", "section-library", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"`));
 assert.match(composer, /testId="recent-messages"/);
 // Layout: the warning sits outside Set up; the checklist, devices, shortcuts and opt-out are inside it; send settings, composer and Recent sends are in Texts.
 const iWarn = panel.indexOf("<AutomationWarning");
@@ -105,8 +105,17 @@ const inSetup = panel.slice(iSetup, iTexts);
 for (const needle of ["<ReminderSetupChecklist", "Sending devices", "How it works", "Send Reminders Now</b> (iPhone shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"'])
   assert.ok(inSetup.includes(needle), `Set up contains ${needle}`);
 const inTexts = panel.slice(iTexts);
-for (const needle of ["Send reminders automatically", "Message template", "<MessagePatientsComposer", 'testId="recent-sends"'])
+for (const needle of ["<MessagePatientsComposer", 'testId="recent-sends"'])
   assert.ok(inTexts.includes(needle), `Texts contains ${needle}`);
+// Auto Texts: the on/off switches + message menus (own component), send settings; Messages: the library.
+const iAuto = panel.indexOf('testId="section-autotexts"');
+const iLib = panel.indexOf('testId="section-library"');
+assert.ok(iSetup < iAuto && iAuto < iLib && iLib < iTexts, "Set up, Auto Texts, Messages, Texts in that order");
+const inAuto = panel.slice(iAuto, iLib);
+for (const needle of ["<AutoTextRows", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
+  assert.ok(inAuto.includes(needle), `Auto Texts contains ${needle}`);
+assert.ok(panel.slice(iLib, iTexts).includes("<MessagesLibraryPanel"), "Messages section holds the library");
+assert.ok(!inTexts.includes("Test mode (nothing is texted)") && !inTexts.includes("Run days"), "send settings are not in Texts");
 assert.ok(!inTexts.includes("Sending devices"), "devices are not in Texts");
 // Every date on the page goes through the mm/dd/yy helpers.
 assert.doesNotMatch(panel, /toLocale(Date|Time)?String/);
@@ -193,11 +202,12 @@ for (const [name, src] of [["panel", panel], ["composer", composerSrc], ["checkl
     assert.ok(!src.includes(bad), `${name} no longer says "${bad}"`);
   }
 }
-for (const good of ["Test mode (nothing is texted)", "senderRole(d.is_primary)", "Make main sender", "Get new setup code", "Copy setup code", "Hide setup code", "What can I put in a template?", 'data-testid="run-days-help"']) {
+for (const good of ["Test mode (nothing is texted)", "senderRole(d.is_primary)", "Make main sender", "Get new setup code", "Copy setup code", "Hide setup code", 'data-testid="run-days-help"']) {
   assert.ok(panel.includes(good), `panel says "${good}"`);
 }
 assert.match(panel, />\s*Remove\s*</, "Remove button");
 assert.match(panel, /appConfirm\("Remove this sender\?/, "Remove asks first");
 assert.ok(composerSrc.includes('"Send message"') && composerSrc.includes("Sending…"), "composer button says Send message");
-assert.match(panel, /<details[^>]*data-testid="template-words"/, "placeholders hidden behind a link");
+const libSrc = readFileSync("src/components/messages-library-panel.tsx", "utf8");
+assert.match(libSrc, /data-testid="message-words"/, "message words are offered as tap-to-add buttons");
 console.log("plain words checks passed");

@@ -2,23 +2,16 @@
 
 import type { OfficeSettings } from "@/lib/office-settings";
 
-export interface SmsTemplate {
-  id: string;
-  name: string;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { SmsTemplate } from "@/lib/sms-template-core";
+export type { SmsTemplate } from "@/lib/sms-template-core";
+import { DEFAULT_REMINDER_BODY, normalizeSmsTemplates } from "@/lib/sms-template-core";
+export { DEFAULT_REMINDER_BODY, normalizeSmsTemplates };
 
 export type { SmsTokenContext } from "@/lib/sms-render";
 import type { SmsTokenContext } from "@/lib/sms-render";
 export { expandTokens } from "@/lib/sms-render";
 
 export const SMS_TEMPLATES_STORAGE_KEY = "casemate.sms-templates.v1";
-
-/** Built-in appointment reminder text. */
-export const DEFAULT_REMINDER_BODY =
-  "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
 
 /**
  * Placeholders shown in the UI. {{DATE}} (old alias of {{APPT_DATE}}) and
@@ -67,30 +60,8 @@ export function getDefaultSmsTemplates(): SmsTemplate[] {
   ];
 }
 
-function normalizeText(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-
-function normalizeTemplate(value: unknown): SmsTemplate | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Partial<SmsTemplate>;
-  const id = normalizeText(row.id).trim();
-  const name = normalizeText(row.name).trim();
-  if (!id || !name) return null;
-  const body = normalizeText(row.body);
-  const createdAt = normalizeText(row.createdAt) || nowIso();
-  const updatedAt = normalizeText(row.updatedAt) || createdAt;
-  return { id, name, body, createdAt, updatedAt };
-}
-
-export function normalizeSmsTemplates(value: unknown): SmsTemplate[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => normalizeTemplate(entry))
-    .filter((entry): entry is SmsTemplate => Boolean(entry));
-}
-
-export function loadSmsTemplates(): SmsTemplate[] {
+/** Every saved row, including deleted markers. Only the hook and the merge need this. */
+export function loadAllSmsTemplates(): SmsTemplate[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(SMS_TEMPLATES_STORAGE_KEY);
@@ -99,6 +70,11 @@ export function loadSmsTemplates(): SmsTemplate[] {
   } catch {
     return [];
   }
+}
+
+/** The messages people can see and use (deleted ones left out). */
+export function loadSmsTemplates(): SmsTemplate[] {
+  return loadAllSmsTemplates().filter((t) => !t.deleted);
 }
 
 export function saveSmsTemplates(rows: SmsTemplate[]) {

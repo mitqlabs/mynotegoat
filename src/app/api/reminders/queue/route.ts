@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
   const localToday = localNow(now, settings.timeZone);
   let birthdays: BirthdayQueueRow[] =
     !quiet && localToday.hour >= settings.sendHour
-      ? await loadBirthdayQueue(admin, device, todayIso, settings, { retryDryRun: willSend || preview })
+      ? await loadBirthdayQueue(admin, device, todayIso, settings, { retryDryRun: willSend || preview, body: config.birthdayBody, office: config.office })
       : [];
   let held = false;
   const isBackup = willSend ? await otherPrimaryExists(admin, device) : false;
