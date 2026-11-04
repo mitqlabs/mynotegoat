@@ -41,3 +41,8 @@ export function emailOptionLabel(e: ContactEmail): string {
   const who = [e.name, e.label].map((s) => s?.trim()).filter(Boolean).join(" · ");
   return who ? `${e.email} (${who})` : e.email;
 }
+
+/** mailto: link that opens the default mail app (e.g. Outlook) to this address. */
+export function mailtoHref(email: string): string {
+  return `mailto:${encodeURIComponent(email.trim()).replace(/%40/g, "@")}`;
+}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ContactEmail } from "@/lib/mock-data";
-import { emailOptionLabel, emailOptionsOf } from "@/lib/contact-email";
+import { emailOptionLabel, emailOptionsOf, mailtoHref } from "@/lib/contact-email";
 
 /**
  * Attorney email picker + Copy, under the Attorney field. Reads the attorney's
@@ -37,6 +37,14 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
           </option>
         ))}
       </select>
+      <a
+        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+        data-testid="attorney-email-mailto"
+        href={mailtoHref(value)}
+        title="Open a new email to this address in your mail app"
+      >
+        Email
+      </a>
       <button
         className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
         data-testid="attorney-email-copy"

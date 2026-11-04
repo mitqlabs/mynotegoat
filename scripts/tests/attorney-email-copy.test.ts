@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { emailOptionLabel, emailOptionsOf } from "../../src/lib/contact-email";
+import { emailOptionLabel, emailOptionsOf, mailtoHref } from "../../src/lib/contact-email";
 
 const opts = emailOptionsOf({
   email: "front@example.com",
@@ -16,4 +16,6 @@ assert.equal(emailOptionLabel(opts[0]), "atty@example.com");
 assert.deepEqual(emailOptionsOf({ email: "legacy@example.com" }).map((e) => e.email), ["legacy@example.com"]);
 assert.deepEqual(emailOptionsOf({}), []);
 assert.deepEqual(emailOptionsOf(null), []);
+assert.equal(mailtoHref(" atty@example.com "), "mailto:atty@example.com");
+assert.equal(mailtoHref("a+b@example.com"), "mailto:a%2Bb@example.com");
 console.log("attorney email copy OK");
