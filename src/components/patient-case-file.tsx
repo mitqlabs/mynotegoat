@@ -5599,7 +5599,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {patientPhone.replace(/\D/g, "").length > 0 && (
                   <SmsSendMenu
                     align="right"
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
+                    ariaLabel="Text this patient"
+                    className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
                     context={{
                       patient: {
                         firstName,
@@ -5607,17 +5608,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         fullName: [firstName, lastName].filter(Boolean).join(" "),
                       },
                     }}
-                    label="Text"
+                    label={
+                      <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5z" strokeLinejoin="round" />
+                      </svg>
+                    }
                     phone={patientPhone}
                   />
                 )}
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
+                  aria-label="Add to Contacts"
+                  className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
                   onClick={addPatientToContacts}
-                  title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
+                  title="Add to Contacts (downloads a .vcf — macOS opens it in Contacts with name, phone, birthday and address pre-filled)"
                   type="button"
                 >
-                  Add to Contacts
+                  <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                    <circle cx="10" cy="8" r="3.5" />
+                    <path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" strokeLinecap="round" />
+                  </svg>
                 </button>
               </span>
             </div>

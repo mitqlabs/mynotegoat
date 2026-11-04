@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
@@ -14,7 +14,9 @@ type Props = {
   phone: string;
   context: SmsTokenContext;
   /** Label shown inside the button. Defaults to the formatted phone. */
-  label?: string;
+  label?: ReactNode;
+  /** Tooltip + screen-reader name (use with an icon label). */
+  ariaLabel?: string;
   /** Extra tailwind classes for the button. */
   className?: string;
   /** Left or right edge alignment of the popup relative to the button. */
@@ -72,6 +74,7 @@ export function SmsSendMenu({
   phone,
   context,
   label,
+  ariaLabel,
   className,
   align = "left",
 }: Props) {
@@ -150,10 +153,12 @@ export function SmsSendMenu({
     <>
       <button
         aria-expanded={open}
+        aria-label={ariaLabel}
         aria-haspopup="menu"
         className={buttonClass}
         onClick={() => setOpen((current) => !current)}
         ref={buttonRef}
+        title={ariaLabel}
         type="button"
       >
         {displayLabel}
