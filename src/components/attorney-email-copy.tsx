@@ -12,17 +12,19 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
   const options = useMemo(() => emailOptionsOf(contact), [contact]);
   const [picked, setPicked] = useState(options[0]?.email ?? "");
   const [copied, setCopied] = useState(false);
-  if (!contact) return null;
-  if (!options.length) {
-    return <span className="text-sm text-[var(--text-muted)]" data-testid="attorney-email-none">No email</span>;
+  if (!contact || !options.length) {
+    return (
+      <span className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 text-[var(--text-muted)]" data-testid="attorney-email-none">
+        {contact ? "No email" : "—"}
+      </span>
+    );
   }
   const value = options.some((o) => o.email === picked) ? picked : options[0].email;
   return (
     <div className="flex min-w-0 items-center gap-1.5" data-testid="attorney-email">
       <select
         aria-label="Attorney email"
-        className="min-w-0 flex-1 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
-        disabled={options.length === 1}
+        className="min-w-0 flex-1 truncate rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2"
         onChange={(event) => {
           setPicked(event.target.value);
           setCopied(false);
@@ -38,7 +40,7 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
         ))}
       </select>
       <a
-        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-2.5 py-2 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
         data-testid="attorney-email-mailto"
         href={mailtoHref(value)}
         title="Open a new email to this address in your mail app"
@@ -46,7 +48,7 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
         Email
       </a>
       <button
-        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+        className="shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-2.5 py-2 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
         data-testid="attorney-email-copy"
         onClick={() => {
           void navigator.clipboard?.writeText(value).then(
