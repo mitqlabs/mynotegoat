@@ -153,7 +153,7 @@ export function birthdayTextsHelp(question: string, opts: { canSeeSettings?: boo
     text: [
       "Yes. Birthday texts are one of the Auto Texts, and they text patients happy birthday on their birthday. It starts off. To turn it on: Settings → Text Reminders → Auto Texts → Birthday, turn the switch on, and pick the message it sends in the menu. You write and edit messages in Settings → Templates → SMS / Text Templates (use {first name} where the patient's first name goes). If you pick none, it sends \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
       `It goes out with the daily ${hourText(opts.sendHour)} reminders from the same iPhone shortcut, so there is nothing new to set up on the phone.`,
-      "Only Active patients with a phone number get one, on the day of their birthday (Feb 29 birthdays on Feb 28 in years with no Feb 29). Never patients marked \"no text reminders\" or who replied STOP, and each patient gets at most one a year. Test mode applies. A missed birthday is not sent late.",
+      "Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays on Feb 28 in years with no Feb 29). Never patients marked \"no text reminders\" or who replied STOP, and each patient gets at most one a year. Test mode applies. A missed birthday is not sent late.",
     ].join("\n"),
     links,
   };

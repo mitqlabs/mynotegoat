@@ -410,7 +410,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Turn the switch On. It starts off.",
           "In the menu pick the message it sends (for example Happy Birthday). To write a new one, use Edit messages in SMS / Text Templates. Type {first name} where the patient's first name goes. The Example line shows exactly what a patient will get.",
           "That's all. The birthday texts go out with the daily reminders (the same 8 AM run, the same iPhone shortcut or iMac). There is nothing to change on the iPhone.",
-          "Who gets one: Active patients with a phone number whose birthday is today (their date of birth in the Demographics, in the office time zone). A Feb 29 birthday is texted on Feb 28 in years with no Feb 29.",
+          "Who gets one: every patient with a phone number, whatever their case status, whose birthday is today (their date of birth in the Demographics, in the office time zone). A Feb 29 birthday is texted on Feb 28 in years with no Feb 29.",
           "Who never gets one: patients marked \u201cno text reminders\u201d, patients who replied STOP, patients who are not Active, and patients with no phone number or no first name. The opt-out line (Reply STOP\u2026) is added the same way as on reminders when it is on.",
           "Each patient gets at most one birthday text a year. NoteGoat writes that down in the cloud, so it holds even if you use two phones or tap Send Reminders Now more than once.",
           "If the phone is off at 8 AM, the text goes out the next time the shortcut runs that same day. A birthday that was missed is not texted late. Nothing goes out during quiet hours.",
