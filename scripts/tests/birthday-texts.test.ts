@@ -70,12 +70,13 @@ const picks = pickBirthdayRecipients(
     pt("7", "Gus Ready", { caseStatus: "Ready to Submit" }),
     pt("8", "Hal Nodob", { dob: "" }),
     pt("9", "Ivy Active", { caseStatus: "active" }),
+    pt("10", "Jo Noname", { fullName: "", caseStatus: "Submitted" }),
     pt("1", "Sample, Ann"), // duplicate row
   ],
   today,
   on,
 );
-assert.deepEqual(picks.map((p) => p.patientId).sort(), ["1", "9"], "active, not opted out, birthday today, has phone");
+assert.deepEqual(picks.map((p) => p.patientId).sort(), ["1", "2", "6", "7", "9"], "any case status, not opted out, birthday today, has phone");
 assert.ok(picks.every((p) => /^\+1\d{10}$/.test(p.phone)));
 assert.ok(picks.find((p) => p.patientId === "1")!.text.startsWith("Happy birthday, Ann! From all of us at Prime Spine."));
 const noLine = pickBirthdayRecipients([pt("1", "Ann Sample")], today, { birthdayMessage: "Hi {first name}", optOutLine: false });
@@ -159,7 +160,7 @@ const P = (id: string, name: string, over: Row = {}): Row => ({
 });
 const roster = [
   P("1", "Ann Sample"),
-  P("2", "Bob Mock", { case_status: "Discharged" }),
+  P("2", "Bob Mock", { case_status: "Discharged", dob: "1985-12-26" }),
   P("3", "Cy Stop", { text_reminders_off: true }),
   P("4", "Di Other", { dob: "1985-12-25" }),
   P("5", "Ed Elsewhere", { workspace_id: "ws2" }),
@@ -176,7 +177,7 @@ async function main() {
   {
     const { admin, tables } = fakeAdmin({ patients: roster });
     const q1 = await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true });
-    assert.deepEqual(q1.map((r) => r.patientId), ["1"], "active, not opted out, this workspace, birthday today");
+    assert.deepEqual(q1.map((r) => r.patientId), ["1"], "not opted out, this workspace, birthday today");
     assert.equal(q1[0].year, 2026);
     const held = await claimBirthdays(admin, device, q1, new Date("2026-11-02T16:00:00Z"));
     assert.deepEqual([...held], ["1"]);

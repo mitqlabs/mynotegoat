@@ -7,14 +7,14 @@
  * year.
  *
  * Rules:
- *   * only patients whose case status is Active;
+ *   * every patient with a date of birth, whatever their case status;
  *   * never anyone marked "no text reminders" (that includes a STOP reply);
  *   * birthday = month and day of the date of birth, in the office time zone;
  *   * a Feb 29 birthday is celebrated on Feb 28 in years that have no Feb 29;
  *   * no phone number on file, or no first name = no text.
  */
 
-import { isActiveCaseStatus, splitPatientName, withOptOutLine } from "@/lib/reminder-automation";
+import { splitPatientName, withOptOutLine } from "@/lib/reminder-automation";
 import { expandTokens } from "@/lib/sms-render";
 import { BIRTHDAY_MESSAGE_MAX, DEFAULT_BIRTHDAY_MESSAGE } from "@/lib/sms-reminders";
 
@@ -120,7 +120,7 @@ export function birthdayPhone(phone: string): string {
 }
 
 /**
- * Everyone who should get a birthday text today: Active, not opted out, birthday
+ * Everyone who should get a birthday text today: any case status, not opted out, birthday
  * today, a usable phone and a first name. Sorted by name so the list is stable.
  */
 export function pickBirthdayRecipients(
@@ -135,7 +135,7 @@ export function pickBirthdayRecipients(
     .sort((a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: "base" }))
     .flatMap((p) => {
       if (!p.patientId || seen.has(p.patientId)) return [];
-      if (p.optedOut || !isActiveCaseStatus(p.caseStatus)) return [];
+      if (p.optedOut) return [];
       if (!isBirthdayToday(p.dob, todayIso)) return [];
       const phone = birthdayPhone(p.phone);
       if (!phone || !birthdayFirstName(p.fullName)) return [];

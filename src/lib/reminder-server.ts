@@ -484,7 +484,7 @@ export interface BirthdayQueueRow extends BirthdayRecipient {
 }
 
 /**
- * Birthday texts for today: active patients whose birthday is today (office
+ * Birthday texts for today: patients (any case status) whose birthday is today (office
  * time zone; Feb 29 → Feb 28 in non-leap years), not opted out, with a phone
  * and first name, minus anyone the send log (birthday_text_log) already has
  * for this year. A patient is never handed out again once claimed or sent,

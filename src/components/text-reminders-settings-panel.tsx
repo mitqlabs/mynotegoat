@@ -779,7 +779,7 @@ export function TextRemindersSettingsPanel() {
         <summary className="cursor-pointer font-semibold text-[var(--brand-primary)]">How birthday texts work</summary>
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[var(--text-muted)]">
           <li>It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.</li>
-          <li>Only <b>Active</b> patients with a phone number get one, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
+          <li>Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
           <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
           <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
           <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>

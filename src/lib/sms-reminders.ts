@@ -50,7 +50,7 @@ export interface SmsReminderSettings {
   automationConfirmed: boolean;
   /** ISO time the box was ticked ("" when not). */
   automationConfirmedAt: string;
-  /** Text every active patient whose birthday is today, during the same daily
+  /** Text every patient (any case status) whose birthday is today, during the same daily
    *  run. Off until the office turns it on. Saved to cloud settings. */
   birthdayTexts: boolean;
   /** Birthday text wording. `{first name}` becomes the patient's first name. */
