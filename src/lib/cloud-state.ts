@@ -830,7 +830,21 @@ async function loadEncounterNotesForBoot(
       ? planNotesDelta({ meta, local, cursor, unconfirmedIds: notes.getUnconfirmedNoteIds() })
       : null;
   if (meta && plan) {
-    const fetched = await cloud.fetchEncounterNotesByIdsParallel(plan.fetchIds);
+    // Resume: rows a previous, unfinished boot already downloaded are reused
+    // ONLY if the cloud's updated_at for that id is unchanged (so they are
+    // still exactly the cloud copy). Everything else is fetched.
+    const bp = await import("@/lib/boot-progress");
+    const stamps = new Map(meta.map((m) => [m.id, m.updatedAt]));
+    type NoteRec = import("@/lib/encounter-notes").EncounterNoteRecord;
+    const cache = workspaceId ? await bp.readChunkCache<NoteRec>(workspaceId) : new Map<string, { stamp: string; row: NoteRec }>();
+    const { reused, toFetch } = bp.splitByChunkCache(plan.fetchIds, stamps, cache);
+    const total = plan.fetchIds.length;
+    bp.emitBootProgress({ phase: "notes", done: reused.length, total });
+    const fresh = await cloud.fetchEncounterNotesByIdsParallel(toFetch, async (rows, done) => {
+      bp.emitBootProgress({ phase: "notes", done: reused.length + done, total });
+      if (workspaceId) await bp.writeChunkRows(workspaceId, rows, (id) => stamps.get(id));
+    });
+    const fetched = fresh === null ? null : [...reused, ...fresh];
     if (fetched !== null) {
       const fetchedIds = new Set(fetched.map((n) => n.id));
       // A note listed as changed but gone by the time we fetched it was just
@@ -901,7 +915,17 @@ async function bootstrapTableBackedEntities() {
   // download notes that changed since this browser's last load.
   const notesOn = isCloudEntityEnabled("encounterNotes");
   const notesP = notesOn
-    ? swallow(loadEncounterNotesForBoot(bootWs, bootDelta.notesCursor ?? null, planNotesDelta, maxIso), null)
+    ? swallow(
+        import("@/lib/boot-progress").then((bp) =>
+          // One tab at a time runs the heavy download; the others wait, then
+          // reuse its rows from the resume cache (still checked against the
+          // cloud's updated_at, so cloud stays the source of truth).
+          bp.withBootLock(bootWs || "none", () =>
+            loadEncounterNotesForBoot(bootWs, bootDelta.notesCursor ?? null, planNotesDelta, maxIso),
+          ),
+        ),
+        null,
+      )
     : null;
 
   const ready = await patientsReadyP;
@@ -1503,7 +1527,11 @@ async function bootstrapTableBackedEntities() {
               ? `[Cloud Sync] Encounter notes: downloaded ${bootNotes.downloaded} changed, ${notesRows.length - bootNotes.downloaded} unchanged kept (of ${bootNotes.total} in cloud).`
               : `[Cloud Sync] Loaded ${notesRows.length} encounter note(s) from table.`,
           );
-          if (bootNotes?.cursor) writeBootDeltaState(bootWs, { notesCursor: bootNotes.cursor });
+          if (bootNotes?.cursor) {
+            writeBootDeltaState(bootWs, { notesCursor: bootNotes.cursor });
+            // Boot finished: the resume cache has done its job.
+            void import("@/lib/boot-progress").then((bp) => bp.clearChunkCache(bootWs));
+          }
         }
       }
     }

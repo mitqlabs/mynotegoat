@@ -70,6 +70,15 @@ export const handbookChapters: HandbookChapter[] = [
         why: "The app refuses to open when it can't confirm it has the current records, so an out-of-date copy on your screen can never overwrite good data in the cloud.",
       },
       {
+        heading: "While the app is opening (\"Loading notes X of Y\")",
+        steps: [
+          "A big office can take a while to open after many notes changed. The count under the goat shows it's still working, so let it finish.",
+          "If another NoteGoat tab is already loading, this tab says so and waits. Only one tab downloads at a time, and the others reuse what it downloaded.",
+          "If the count stops moving for 45 seconds, the app locks with Retry. Retry picks up where it left off instead of starting over.",
+        ],
+        why: "Anything picked up from an earlier try is used only if the cloud still has that exact version, so the cloud is always the source of truth.",
+      },
+      {
         heading: "If something you typed seems to have vanished",
         steps: [
           "Reload the page once before anything else — most often the work is saved and the screen is stale.",
