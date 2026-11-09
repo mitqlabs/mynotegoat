@@ -438,7 +438,8 @@ function getCardBackground(status: AppointmentStatus) {
 }
 
 import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
-import { appConfirm } from "@/components/app-dialog";
+import { appAlert, appConfirm } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -1067,8 +1068,14 @@ export default function AppointmentsPage() {
       return;
     }
 
+    const closedHits = scheduleDates.flatMap((dateIso) => {
+      const hit = closedDateHit(keyDates, dateIso);
+      return hit ? [hit] : [];
+    });
+    const closedDates = new Set(closedHits.map((hit) => hit.dateIso));
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const overbookedDates = scheduleDates.filter((dateIso) => {
+      if (closedDates.has(dateIso)) return false;
       const countAtSlot = scheduleAppointments.filter(
         (entry) => entry.date === dateIso && entry.startTime === sanitizedDraft.startTime,
       ).length;
@@ -1084,19 +1091,10 @@ export default function AppointmentsPage() {
       return;
     }
 
-    const closedDate = scheduleDates.find((dateIso) => Boolean(findClosedKeyDateForDate(keyDates, dateIso)));
-    if (closedDate) {
-      const closedEntry = findClosedKeyDateForDate(keyDates, closedDate);
-      const reasonSuffix = closedEntry?.reason ? ` (${closedEntry.reason})` : "";
-      setNewAppointmentError(
-        `Cannot schedule on CLOSED key date ${formatUsDateFromIso(closedDate)}${reasonSuffix}.`,
-      );
-      return;
-    }
-
     if (scheduleSettings.enforceOfficeHours) {
       const outsideOfficeHoursDate = scheduleDates.find(
         (dateIso) =>
+          !closedDates.has(dateIso) &&
           !isAppointmentWithinOfficeHours(scheduleSettings, dateIso, sanitizedDraft.startTime, durationMin),
       );
       if (
@@ -1151,13 +1149,18 @@ export default function AppointmentsPage() {
       date: dateIso,
       startTime: sanitizedDraft.startTime,
       durationMin,
-      status: "Scheduled",
-      note: sanitizedDraft.note.trim(),
+      status: closedDates.has(dateIso) ? "Canceled" : "Scheduled",
+      note: closedDates.has(dateIso)
+        ? closedDateNote(closedHits.find((hit) => hit.dateIso === dateIso)?.reason ?? "", sanitizedDraft.note.trim())
+        : sanitizedDraft.note.trim(),
       overrideOfficeHours: Boolean(sanitizedDraft.overrideOfficeHours),
       recurringSeriesId: seriesId,
     }));
 
     addAppointments(records);
+    if (closedHits.length > 0) {
+      void appAlert(closedDateNotice(closedHits), { title: "Scheduled on a closed day" });
+    }
     const coveredDates = scheduleDates.filter((dateIso) =>
       findKeyDatesForDate(keyDates, dateIso).some((row) => row.officeStatus === "Covered"),
     );
@@ -1197,16 +1200,11 @@ export default function AppointmentsPage() {
       return;
     }
 
-    const closedEntry = findClosedKeyDateForDate(keyDates, editDateDraft);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setEditError(
-        `This date is marked CLOSED in Key Dates: ${formatKeyDateRange(closedEntry)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const movedOntoClosed =
+      editDateDraft !== selectedAppointment.date ? closedDateHit(keyDates, editDateDraft) : null;
 
     if (
+      !movedOntoClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(
         scheduleSettings,
@@ -1227,7 +1225,7 @@ export default function AppointmentsPage() {
         entry.date === editDateDraft &&
         entry.startTime === editTimeDraft,
     ).length;
-    if (countAtSlot >= slotCapacity) {
+    if (!movedOntoClosed && countAtSlot >= slotCapacity) {
       setEditError(
         `Time slot ${formatTimeLabel(editTimeDraft)} is full for ${formatUsDateFromIso(editDateDraft)} (max ${slotCapacity}).`,
       );
@@ -1252,14 +1250,17 @@ export default function AppointmentsPage() {
 
     updateAppointment(selectedAppointment.id, (current) => ({
       ...current,
-      status: statusDraft,
+      status: movedOntoClosed ? "Canceled" : statusDraft,
       date: editDateDraft,
       startTime: editTimeDraft,
       room: editRoomDraft.trim(),
       overrideOfficeHours: editOverrideDraft,
-      note: editNoteDraft.trim(),
+      note: movedOntoClosed ? closedDateNote(movedOntoClosed.reason, editNoteDraft.trim()) : editNoteDraft.trim(),
       appointmentType: editTypeDraft.trim() || current.appointmentType,
     }));
+    if (movedOntoClosed) {
+      void appAlert(closedDateNotice([movedOntoClosed]), { title: "Scheduled on a closed day" });
+    }
     // The note for this visit follows the appointment's new type.
     void syncEncounterTypeForAppointment(
       {

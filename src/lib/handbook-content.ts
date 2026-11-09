@@ -916,7 +916,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "The warnings when you save",
         steps: [
           "Time slot full — that slot is at capacity.",
-          "Closed key date — offers to skip those dates and book the rest. OK skips, Cancel abandons everything.",
+          "Closed key date — the visit is still saved and marked Canceled, and a popup names the closed day so you notice. It is never dropped quietly.",
           "Already has an appointment that day — same offer.",
           "Outside office hours — the time is outside the day's hours.",
         ],
@@ -927,7 +927,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Days the office is closed",
         steps: [
           "Key Dates → fill the date, pick Closed, Covered, or Open (a day the office works even though it would normally be off, e.g. a holiday), give a reason, Add Key Date.",
-          "Closed = the office is shut: no scheduling and NO text reminders for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
+          "Closed = the office is shut: a visit you put on that day is still saved and marked Canceled, and a popup tells you. NO text reminders go out for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
           "A Closed day stops APPOINTMENT reminders only. Message patients texts (for example \"we are closed Thursday\") are never blocked by a Key Date, so you can still tell patients you are closed.",
           "Add Open from / until times for a partial day: visits outside those hours are flagged and get no reminders.",
           "In Configured Key Dates, EVERY row (past or future; Open, Closed or Covered) shows a grey count of its appointments, such as \u201c28 appointments\u201d or \u201c18 appointments \u00b7 10 canceled\u201d. A plain \u2014 means there are truly none. Click the count and every appointment on that date, canceled ones included (tagged Canceled), appears at the bottom, with a bar that says \u201cShowing 10/29/26 only \u00b7 Show all\u201d. Open, Cancel and Clear work there as usual.",

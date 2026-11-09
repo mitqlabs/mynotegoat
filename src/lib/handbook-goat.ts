@@ -194,7 +194,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Key Dates: Closed vs Covered, and reminders",
       steps: [
         "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
-        "Closed = office shut: no scheduling and no text reminders for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
+        "Closed = office shut: a visit booked on that day is still saved and marked Canceled, and a popup tells you. Text reminders do not go out for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
         "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, every row shows its appointment count (like \"18 appointments \u00b7 10 canceled\"; \u2014 means none); click it to list that date's appointments at the bottom (a bar says \"Showing 10/29/26 only\", with Show all). A red \"N still booked\" also appears on upcoming Closed days that still have patients Scheduled or set to Reschedule. Old and cleared items are behind \"Show past & cleared\".",
       ],
       why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
@@ -244,7 +244,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Schedule visits and new patients (no / needed)",
       steps: [
-        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
+        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm. If that day is a closed Key Date, the card says so; Confirm still schedules the visit and marks it Canceled.",
         "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
         "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, day, time and the New Patient visit type filled in (one provider and one location are picked for you). You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
         "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",

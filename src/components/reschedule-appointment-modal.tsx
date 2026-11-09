@@ -7,10 +7,9 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import {
-  findClosedKeyDateForDate,
-  formatUsDateFromIso,
-} from "@/lib/key-dates";
+import { appAlert } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { formatUsDateFromIso } from "@/lib/key-dates";
 import {
   createAppointmentId,
   formatTimeLabel,
@@ -164,18 +163,11 @@ export function RescheduleAppointmentModal({
       return;
     }
 
-    // Block CLOSED key dates
-    const closedEntry = findClosedKeyDateForDate(keyDates, newDate);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setError(
-        `Cannot reschedule onto CLOSED key date ${formatUsDateFromIso(newDate)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const landedOnClosed = closedDateHit(keyDates, newDate);
 
-    // Office-hours enforcement
+    // Office-hours enforcement. A closed day is still booked (as Canceled).
     if (
+      !landedOnClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(scheduleSettings, newDate, newTime, newDurationMin) &&
       (!scheduleSettings.allowOverride || !overrideOfficeHours)
@@ -198,7 +190,7 @@ export function RescheduleAppointmentModal({
         entry.date === newDate &&
         entry.startTime === newTime,
     ).length;
-    if (!overrideActive && occupants >= slotCapacity) {
+    if (!landedOnClosed && !overrideActive && occupants >= slotCapacity) {
       setError(
         `Time slot ${formatTimeLabel(newTime)} on ${formatUsDateFromIso(newDate)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
@@ -219,8 +211,8 @@ export function RescheduleAppointmentModal({
       startTime: newTime,
       durationMin: newDurationMin,
       room: newRoom.trim(),
-      note: newNote.trim(),
-      status: "Scheduled",
+      note: landedOnClosed ? closedDateNote(landedOnClosed.reason, newNote.trim()) : newNote.trim(),
+      status: landedOnClosed ? "Canceled" : "Scheduled",
       overrideOfficeHours: Boolean(overrideOfficeHours),
     };
     addAppointments([newRecord]);
@@ -238,16 +230,31 @@ export function RescheduleAppointmentModal({
         (current) => {
           const shiftedDate = addDaysIso(current.date, dayDelta);
           const shiftedTime = addMinutesToTime(current.startTime, timeDelta);
+          const shiftedClosed = closedDateHit(keyDates, shiftedDate);
           return {
             ...current,
             date: shiftedDate,
             startTime: shiftedTime,
+            ...(shiftedClosed
+              ? { status: "Canceled" as const, note: closedDateNote(shiftedClosed.reason, current.note) }
+              : {}),
           };
         },
       );
     }
 
     onRescheduled?.(appointment, newRecord);
+    const shiftedHits =
+      applyScope === "future"
+        ? futureSiblings.flatMap((entry) => {
+            const hit = closedDateHit(keyDates, addDaysIso(entry.date, daysBetweenIso(appointment.date, newDate)));
+            return hit ? [hit] : [];
+          })
+        : [];
+    const closedHits = [...(landedOnClosed ? [landedOnClosed] : []), ...shiftedHits];
+    if (closedHits.length > 0) {
+      void appAlert(closedDateNotice(closedHits), { title: "Scheduled on a closed day" });
+    }
     onClose();
   };
 

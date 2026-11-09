@@ -35,6 +35,8 @@ import { PRACTICE_HELP, isPatientSpecific, isPracticeWide, yearOfDate, type Prac
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
 import { bookingRecord, draftSummary, finishDraft, planBooking, retime } from "@/lib/goat-booking";
+import { closedDateHit } from "@/lib/closed-date-booking";
+import { loadKeyDates } from "@/lib/key-dates";
 import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
 import { continueNewPatientBooking, startNewPatientBooking, type NewPatientCtx, type NewPatientStep } from "@/lib/goat-new-patient-booking";
@@ -585,6 +587,10 @@ export function GlobalGoatPopup({
     const data = practiceData();
     const settings = scheduleSettings() ?? loadScheduleSettings();
     const step = planBooking({ question, patient: { id: patient.id, fullName: patient.fullName }, todayIso: data.today, appointments: data.appointments, settings, types: [...new Set(data.appointments.map((a) => a.appointmentType).filter(Boolean))] });
+    if (step.kind === "draft") {
+      const hit = closedDateHit(loadKeyDates(), step.draft.date);
+      if (hit) step.draft.closedReason = hit.reason;
+    }
     const name = displayName(patient.fullName);
     if (step.kind === "needDay") {
       push({ role: "goat", text: `What day should I book ${name}? (e.g. "Thursday at 3" or "10/20 9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question }, formLaunch: { kind: "newAppointment", label: "Or open New Appointment", patientId: patient.id } });
@@ -634,7 +640,10 @@ export function GlobalGoatPopup({
     // "make it 2pm instead" after it was booked: the new time replaces the old appointment.
     if (b.replacesId) removeAppointment(b.replacesId);
     updateBooking(msg.id, { ...draftForRecord, override, state: "booked", appointmentId: record.id, replacesId: b.replacesId, newPatient: np ? { ...np, patientId: record.patientId } : undefined });
-    push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
+    const closedLine = record.status === "Canceled"
+      ? `Scheduled ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}, and marked it Canceled — that day is closed.`
+      : `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`;
+    push({ role: "goat", text: closedLine, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
   };
 
   /** Confirm: save the note as one quick-note entry (date + author stamped) in the patient's Notes log. */

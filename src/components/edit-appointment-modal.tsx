@@ -9,10 +9,9 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import {
-  findClosedKeyDateForDate,
-  formatUsDateFromIso,
-} from "@/lib/key-dates";
+import { appAlert } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { formatUsDateFromIso } from "@/lib/key-dates";
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -162,16 +161,10 @@ export function EditAppointmentModal({
       return;
     }
 
-    const closedEntry = findClosedKeyDateForDate(keyDates, date);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setError(
-        `Cannot move onto CLOSED key date ${formatUsDateFromIso(date)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const movedOntoClosed = date !== appointment.date ? closedDateHit(keyDates, date) : null;
 
     if (
+      !movedOntoClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(scheduleSettings, date, startTime, durationMin) &&
       (!scheduleSettings.allowOverride || !overrideOfficeHours)
@@ -193,7 +186,7 @@ export function EditAppointmentModal({
       (entry) =>
         entry.id !== appointment.id && entry.date === date && entry.startTime === startTime,
     ).length;
-    if (!overrideActive && occupants >= slotCapacity) {
+    if (!movedOntoClosed && !overrideActive && occupants >= slotCapacity) {
       setError(
         `Time slot ${formatTimeLabel(startTime)} on ${formatUsDateFromIso(date)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
@@ -208,12 +201,12 @@ export function EditAppointmentModal({
         startTime,
         durationMin,
         appointmentType: appointmentType.trim(),
-        status,
+        status: movedOntoClosed ? "Canceled" : status,
         provider: provider.trim(),
         location: location.trim(),
         room: room.trim(),
         caseLabel: caseLabel.trim(),
-        note: note.trim(),
+        note: movedOntoClosed ? closedDateNote(movedOntoClosed.reason, note.trim()) : note.trim(),
         overrideOfficeHours: Boolean(overrideOfficeHours),
       };
       updatedRecord = next;
@@ -222,6 +215,9 @@ export function EditAppointmentModal({
 
     if (updatedRecord) {
       onSaved?.(updatedRecord);
+    }
+    if (movedOntoClosed) {
+      void appAlert(closedDateNotice([movedOntoClosed]), { title: "Scheduled on a closed day" });
     }
     onClose();
   };

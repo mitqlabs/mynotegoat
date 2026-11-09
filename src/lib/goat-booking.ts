@@ -9,6 +9,7 @@ import { dayLabel, resolveRequestedDay } from "@/lib/goat-howto";
 import { appointmentTypeOptions, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { getOfficeHoursForDate, isAppointmentWithinOfficeHours, type ScheduleSettingsConfig } from "@/lib/schedule-settings";
 import { to12hLabel } from "@/lib/time-12h";
+import { closedDateNote } from "@/lib/closed-date-booking";
 
 export interface BookingPatient {
   id: string;
@@ -30,6 +31,8 @@ export interface BookingDraft {
   /** Up to 2 open times before and 2 after (HH:MM). */
   suggestions: string[];
   override?: boolean;
+  /** Set when the day is a full CLOSED key date. The visit is saved as Canceled. */
+  closedReason?: string;
 }
 
 const toMin = (t: string) => {
@@ -211,6 +214,13 @@ export function finishDraft(d: Pick<BookingDraft, "patientId" | "patientName" | 
 
 export function draftSummary(d: BookingDraft): string {
   const lines = [`Book ${d.patientName}: ${d.type}, ${dayLabel(d.date)} at ${to12hLabel(d.time)}?`];
+  if (d.closedReason !== undefined) {
+    lines.push(
+      d.closedReason
+        ? `That day is closed (${d.closedReason}). Confirming still schedules it and marks it Canceled.`
+        : "That day is closed. Confirming still schedules it and marks it Canceled.",
+    );
+  }
   if (d.taken) lines.push(`That time is taken.${d.suggestions.length ? " Open nearby:" : ""}`);
   else if (d.outsideHours) lines.push(`That's outside office hours.${d.suggestions.length ? " Open times nearby:" : ""}`);
   return [...lines, ...d.notes].join("\n");
@@ -231,8 +241,8 @@ export function bookingRecord(d: BookingDraft, id: string, appointments: Schedul
     date: d.date,
     startTime: d.time,
     durationMin: d.durationMin,
-    status: "Scheduled",
-    note: "Booked with G.O.A.T.",
+    status: d.closedReason !== undefined ? "Canceled" : "Scheduled",
+    note: d.closedReason !== undefined ? closedDateNote(d.closedReason, "Booked with G.O.A.T.") : "Booked with G.O.A.T.",
     overrideOfficeHours: Boolean(d.override && d.outsideHours),
   };
 }
