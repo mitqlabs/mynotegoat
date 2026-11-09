@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
 import { GoatPageView } from "@/components/goat-page-view";
 import { GoatCloseout } from "@/components/goat-closeout";
 import { GoatHandoff } from "@/components/goat-handoff";
@@ -67,6 +68,12 @@ export default function GoatPage() {
       }),
     [iso, scheduleAppointments, tasks, handled, listVersion],
   );
+  const mail = useGoatMail({
+    patients,
+    appointments: scheduleAppointments,
+    claimDocument: officeSettings.claimDocument,
+    listVersion,
+  });
   const closeout = useMemo(
     () =>
       buildCloseout({
@@ -80,7 +87,31 @@ export default function GoatPage() {
   return (
     <GoatPageView
       isAdmin={isAdminTier(roleTier)}
-      model={{ ...model, questions: 0 }}
+      model={{ ...model, mailNeedingAction: mail.actionCount, questions: mail.questionCount }}
+      mail={
+        <GoatMailBoard
+          notice={mail.notice}
+          onAnswer={mail.answer}
+          onConnect={() => void mail.connect()}
+          onDisconnect={() => void mail.disconnect()}
+          onResolve={mail.resolve}
+          rows={mail.rows}
+          status={mail.status}
+          variant="triage"
+        />
+      }
+      questions={
+        <GoatMailBoard
+          notice={mail.notice}
+          onAnswer={mail.answer}
+          onConnect={() => void mail.connect()}
+          onDisconnect={() => void mail.disconnect()}
+          onResolve={mail.resolve}
+          rows={mail.rows}
+          status={mail.status}
+          variant="questions"
+        />
+      }
       onMoveIntake={(id) => updatePatientRecordById(id, { onPatientList: true })}
       todos={
         <UntouchedItems

@@ -28,6 +28,19 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",
     },
     {
+      heading: "GOAT Mail",
+      steps: [
+        "GOAT Mail is read-only. It never sends, deletes, or changes email. It stays empty until the office Microsoft app is registered.",
+        "Register the app in Microsoft Entra: Identity → Applications → App registrations → New registration. Name it NoteGoat GOAT Mail. Accounts in any organizational directory and personal Microsoft accounts. Redirect URI (Web): https://<your NoteGoat host>/api/goat-mail/callback.",
+        "Copy the Application (client) ID. Certificates & secrets → New client secret, and copy the Value.",
+        "API permissions → Microsoft Graph → Delegated → Mail.Read and User.Read only. Do not add Mail.Send or Mail.ReadWrite.",
+        "Set the server environment variables GOAT_MAIL_CLIENT_ID, GOAT_MAIL_CLIENT_SECRET, and GOAT_MAIL_TENANT_ID (use common, or the office tenant id). Run supabase/migrations/20261109210000_goat_mail_connections.sql so the refresh token stays on the server. Redeploy, then Connect mailbox on the GOAT Mail page.",
+        "Messages sort into New Patient referral, Lien or LOP request (the word is Settings → Office Information → Claim document), R&B / Report & Bill requested, Medicals requested, Specialist/imaging reply, Bounced email, or Other.",
+        "A clear new-patient referral is added to New Patient Intake with Quick Fill. Missing fields stay flagged. Unbooked referrals, multi-passenger crashes, and a second crash for someone already in the office are flagged. If two categories fit, or the name is unclear, it goes under GOAT Needs Your Answer instead of guessing.",
+      ],
+      why: "The mailbox connection turns on only after the owner registers the Microsoft app. Until then nothing is pulled in.",
+    },
+    {
       heading: "Just say what to do",
       steps: [
         "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons. The New Patient popup on the Patient List works the same way: a taken time shows the open times as buttons plus a \u201cBook anyway\u201d tick (the same override as the Schedule, when overrides are on in Settings → Schedule).",

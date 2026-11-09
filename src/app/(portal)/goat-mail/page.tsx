@@ -1,26 +1,33 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
+import { useOfficeSettings } from "@/hooks/use-office-settings";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { onLocalChange } from "@/lib/local-sync";
+import { patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
 
-/**
- * GOAT Mail opens from the first pill. The read-only Outlook triage
- * fills this page in; until that connection is configured it stays quiet.
- */
 export default function GoatMailPage() {
+  const { officeSettings } = useOfficeSettings();
+  const { scheduleAppointments } = useScheduleAppointments();
+  const [listVersion, setListVersion] = useState(0);
+  useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setListVersion((v) => v + 1)), []);
+  const mail = useGoatMail({
+    patients,
+    appointments: scheduleAppointments,
+    claimDocument: officeSettings.claimDocument,
+    listVersion,
+  });
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <section className="panel-card p-5">
-        <h1 className="text-xl font-semibold">GOAT Mail</h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Read-only. GOAT never sends, deletes, or changes email.
-        </p>
-        <p className="mt-3 text-sm">
-          Connect a Microsoft mailbox in Settings when the office app is registered. Until then, nothing is pulled in.
-        </p>
-        <Link className="mt-4 inline-block text-sm font-semibold text-[var(--brand-primary)] hover:underline" href="/goat">
-          Back to G.O.A.T.
-        </Link>
-      </section>
-    </div>
+    <GoatMailBoard
+      notice={mail.notice}
+      onAnswer={mail.answer}
+      onConnect={() => void mail.connect()}
+      onDisconnect={() => void mail.disconnect()}
+      onResolve={mail.resolve}
+      rows={mail.rows}
+      status={mail.status}
+      variant="page"
+    />
   );
 }

@@ -15,6 +15,7 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.key-date-dismissals.v1",
   "casemate.cleared-tasks.v1",
   "casemate.goat-untouched.v1",
+  "casemate.goat-mail.v1",
   "casemate.duplicate-dismissals.v1",
   "casemate.attorney-not-same.v1",
   // Settings → Forms templates: merged by id (newest wins), deletes are tombstones.
@@ -1171,6 +1172,7 @@ async function bootstrapTableBackedEntities() {
           // Case Flow / To-Do "Clear task" (ignore) records — union-merged.
           "casemate.cleared-tasks.v1",
           "casemate.goat-untouched.v1",
+  "casemate.goat-mail.v1",
           "casemate.duplicate-dismissals.v1",
           "casemate.attorney-not-same.v1",
           "casemate.team-settings.v1",
