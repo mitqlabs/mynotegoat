@@ -21,7 +21,7 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "The G.O.A.T. button in the sidebar and on a phone opens the GOAT Page, the full day at a glance. The chat is the small goat in the bottom-right corner of every page. Tap it for the greeting and chips — or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
-        "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
+        "Anything that changes data shows ONE confirm card first, with the full text of what will be saved. Tap Confirm and the card says Saving…, then Saved. If it fails, it shows the reason and a Retry. Nothing is saved until you tap Confirm.",
         "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
@@ -32,7 +32,7 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons. The New Patient popup on the Patient List works the same way: a taken time shows the open times as buttons plus a \u201cBook anyway\u201d tick (the same override as the Schedule, when overrides are on in Settings → Schedule).",
         "It only asks when something it needs is missing, and then just one short question (\"Move it to when?\").",
-        "It understands names spelled a bit wrong (\"jon smth\"), \"him/her\" for the patient you were just on, and days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\".",
+        "A name you type beats the chart that is open. One clear typo matches that record and the reply says which record it used. Several matches ask \"Which patient?\" and the one you pick is remembered for the next question. Nothing close enough says \"No match\" and does not guess. Everyday words such as \"call\" are never a name. \"him/her\" still means the patient you were just on. Days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\" work. If G.O.A.T. cannot do something, it says \"I can't do that yet\".",
         ...handbookPhrases(),
         "Open a case just navigates there. Nothing changes, so there's no card.",
       ],

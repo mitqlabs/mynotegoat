@@ -80,7 +80,7 @@ export interface ChatMessage {
   /** The user message this reply answered (for "not what I meant"). */
   replyTo?: string;
   /** A booking waiting for Confirm (nothing is saved before that). */
-  booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
+  booking?: BookingDraft & { state: "open" | "saving" | "booked" | "canceled" | "error"; saveError?: string; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
   /** In-chat new patient + first visit: waiting for one missing detail (phone / day / time). */
   npAsk?: { field: "phone" | "time" | "day"; pending: import("@/lib/goat-new-patient-booking").PendingNewPatientBooking; state: "open" | "done" };
   /** A change to a Case Notes line G.O.A.T. just added (redate / retext / undo), waiting for Confirm. */
@@ -106,7 +106,7 @@ export interface ChatMessage {
   /** "/contact" edit card. */
   contactEdit?: { contactId: string; name: string; category: string; phone: string; fax: string; email: string; address: string; state: "open" | "saved" | "canceled"; result?: string };
   /** "/todo" confirm card. */
-  todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
+  todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saving" | "saved" | "canceled" | "error"; saveError?: string };
   /** "/note" and "/todo": the patient type-ahead (name / case # / phone). `picked` once a patient is chosen. */
   flowPicker?: { next: "note" | "todo" | "text"; prefill?: string; allowNone?: boolean; picked?: string };
   /** "/text": who gets it, the message, and the Send card. Nothing is queued until the user taps Send. Names only — never phone numbers. */
@@ -131,7 +131,7 @@ export interface ChatMessage {
     /** Set after cancel: "Also text these patients?" has been offered. */
     offerText?: boolean;
   };
-  noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
+  noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saving" | "saved" | "canceled" | "error"; saved?: string; saveError?: string };
   /** A button that opens an existing form prefilled (New Patient / New Appointment). Nothing is saved until the user saves the form. */
   formLaunch?:
     | { kind: "newPatient"; label: string; draft: Record<string, string | boolean | number | undefined>; ask: string[] }
