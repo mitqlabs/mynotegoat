@@ -58,10 +58,10 @@ check("greet 12", () => assert.equal(greetingFor(12), "Good afternoon!"));
 check("greet 16", () => assert.equal(greetingFor(16), "Good afternoon!"));
 check("greet 17", () => assert.equal(greetingFor(17), "Good evening!"));
 check("greet 23", () => assert.equal(greetingFor(23), "Good evening!"));
-check("chips", () => assert.deepEqual([...CHIPS], ["Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
-// Roles: admins see all three, everyone else only Morning Rundown.
-check("admin chips", () => assert.deepEqual(chipsFor(true), ["Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
-check("staff chips", () => assert.deepEqual(chipsFor(false), ["Morning Rundown"]));
+check("chips", () => assert.deepEqual([...CHIPS], ["GOAT Mail", "Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
+// Roles: admins see the full bar; everyone else gets GOAT Mail and Morning Rundown.
+check("admin chips", () => assert.deepEqual(chipsFor(true), ["GOAT Mail", "Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
+check("staff chips", () => assert.deepEqual(chipsFor(false), ["GOAT Mail", "Morning Rundown"]));
 check("admin allowed all", () => { for (const k of ["rundown", "apptCheck", "business"] as const) assert.ok(briefAllowed(k, true)); });
 check("staff rundown ok", () => assert.ok(briefAllowed("rundown", false)));
 check("staff no apptCheck", () => assert.equal(briefAllowed("apptCheck", false), false));
@@ -73,7 +73,7 @@ for (const q of ["Quick Biz", "how's business", "business numbers", "Appointment
 check("gate loading", () => { assert.equal(adminStatsGate(false, true), ACCESS_LOADING_REPLY); assert.equal(adminStatsGate(false, false), ACCESS_LOADING_REPLY); });
 check("gate staff", () => assert.equal(adminStatsGate(true, false), ADMIN_ONLY_REPLY));
 check("gate admin", () => assert.equal(adminStatsGate(true, true), null));
-check("loading chips = staff chips", () => assert.deepEqual(chipsFor(false && true), ["Morning Rundown"]));
+check("loading chips = staff chips", () => assert.deepEqual(chipsFor(false && true), ["GOAT Mail", "Morning Rundown"]));
 check("stats kinds", () => { assert.ok(isStatsOfficeKind("caseCount")); assert.ok(isStatsOfficeKind("caseSummary")); for (const k of ["schedule", "todo", "contact", undefined]) assert.equal(isStatsOfficeKind(k), false); });
 {
   const od = { today: TODAY, patients: [{ id: "a", fullName: "Mock A", caseStatus: "Submitted", attorney: "Mock Law", listYear: 2026 }, { id: "b", fullName: "Mock B", caseStatus: "Active", attorney: "", listYear: 2026 }], tasks: [], appointments: [], contacts: [] } as never;
