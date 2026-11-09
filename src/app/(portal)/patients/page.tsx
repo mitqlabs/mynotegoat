@@ -9,6 +9,8 @@ import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPr
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { findDuplicateCases } from "@/lib/patient-duplicate";
 import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
+import { QuickFillBox } from "@/components/quick-fill-box";
+import type { QuickFillResult } from "@/lib/quick-fill";
 import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
 import { onLocalChange } from "@/lib/local-sync";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
@@ -2932,6 +2934,30 @@ export default function PatientsPage() {
             </div>
 
             <div className="space-y-5 px-5 py-4">
+              <QuickFillBox
+                attorneys={attorneyContacts.map((contact) => contact.name)}
+                onFill={(result: QuickFillResult) => {
+                  setNewPatientDraft((current) => ({
+                    ...current,
+                    ...(result.firstName ? { firstName: result.firstName } : {}),
+                    ...(result.lastName ? { lastName: result.lastName } : {}),
+                    ...(result.phone ? { phone: result.phone } : {}),
+                    ...(result.dob ? { dob: result.dob } : {}),
+                    ...(result.dateOfLoss ? { dateOfLoss: result.dateOfLoss } : {}),
+                    ...(result.attorney ? { attorney: result.attorney } : {}),
+                    ...(result.addressStreet ? { addressStreet: result.addressStreet } : {}),
+                    ...(result.addressUnit ? { addressUnit: result.addressUnit } : {}),
+                    ...(result.addressCity ? { addressCity: result.addressCity } : {}),
+                    ...(result.addressState ? { addressState: result.addressState } : {}),
+                    ...(result.addressZip ? { addressZip: result.addressZip } : {}),
+                    ...(result.evalDate ? { evalDate: result.evalDate } : {}),
+                    ...(result.evalTime ? { evalTime: result.evalTime } : {}),
+                  }));
+                  if (result.dateOfLoss || result.attorney) setShowNewPatientCase(true);
+                  if (result.ask.length > 0) setNewPatientAsk(result.ask);
+                }}
+                todayIso={new Date().toISOString().slice(0, 10)}
+              />
               {newPatientAsk.length > 0 && (
                 <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
                   <p className="font-semibold">Filled in by G.O.A.T. — please check:</p>
