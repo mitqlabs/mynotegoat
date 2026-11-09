@@ -440,6 +440,8 @@ function getCardBackground(status: AppointmentStatus) {
 import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { appAlert, appConfirm } from "@/components/app-dialog";
 import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { findDuplicateCases } from "@/lib/patient-duplicate";
+import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -1842,6 +1844,15 @@ export default function AppointmentsPage() {
                     <p className="text-xs text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
                       Save Appointment adds the patient and books this visit. The visit date becomes their Initial Exam. Attorney and Date of Injury go on their page later (Case info).
                     </p>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <DuplicateCaseWarning
+                        matches={findDuplicateCases(patients, {
+                          firstName: newPtDraft.firstName,
+                          lastName: newPtDraft.lastName,
+                          dateOfLoss: newPtDraft.dateOfLoss,
+                        })}
+                      />
+                    </div>
                     {(newPtDraft.attorney.trim() || newPtDraft.dateOfLoss.trim()) && (
                       <p className="text-xs sm:col-span-2 lg:col-span-3" data-testid="new-pt-goat-extra">
                         <span className="font-semibold">Also from G.O.A.T. (saved to Case info):</span>

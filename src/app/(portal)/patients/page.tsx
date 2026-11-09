@@ -7,6 +7,8 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
+import { findDuplicateCases } from "@/lib/patient-duplicate";
+import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
 import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
 import { onLocalChange } from "@/lib/local-sync";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
@@ -1303,6 +1305,15 @@ export default function PatientsPage() {
   const movePatientToList = (patientId: string) => {
     updatePatientRecordById(patientId, { onPatientList: true });
   };
+  const newPatientDuplicates = useMemo(
+    () =>
+      findDuplicateCases(patients, {
+        firstName: newPatientDraft.firstName,
+        lastName: newPatientDraft.lastName,
+        dateOfLoss: newPatientDraft.dateOfLoss,
+      }),
+    [newPatientDraft.firstName, newPatientDraft.lastName, newPatientDraft.dateOfLoss, listVersion],
+  );
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -2927,6 +2938,7 @@ export default function PatientsPage() {
                   <ul className="ml-4 list-disc">{newPatientAsk.map((q) => <li key={q}>{q}</li>)}</ul>
                 </div>
               )}
+              <DuplicateCaseWarning matches={newPatientDuplicates} />
 
               <section>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Patient</h4>
