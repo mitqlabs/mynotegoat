@@ -1,0 +1,140 @@
+/**
+ * GOAT Mail triage. No network, no mailbox.
+ * Run: npx tsx scripts/tests/goat-mail.test.ts
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { GOAT_MAIL_SETUP_STEPS, triageGoatMail, type GoatMailMessage } from "../../src/lib/goat-mail";
+
+const today = "2026-11-09";
+const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
+  id: "m1",
+  subject: "",
+  from: "front@firm.test",
+  receivedAt: "2026-11-09T15:00:00Z",
+  body: "",
+  ...over,
+});
+
+const referral = "New patient referral. Patient: Kara Testpatient. Phone 818-555-0142. Date of injury 09/25/2026.";
+
+const row = (body: string, extra: Parameters<typeof triageGoatMail>[0] = { messages: [], patients: [], appointments: [], todayIso: today, claimDocument: "lien" }) =>
+  triageGoatMail({ ...extra, messages: [msg({ body, subject: body.split("\n")[0] })] })[0];
+
+const added = row(referral);
+assert.equal(added.category, "new-patient");
+assert.equal(added.label, "New Patient referral");
+assert.equal(added.create, true);
+assert.equal(added.draft?.firstName, "Kara");
+assert.equal(added.draft?.lastName, "Testpatient");
+assert.equal(added.needsAnswer, false);
+assert.deepEqual(added.flags, ["unbooked"]);
+
+const lop = row("Please send the LOP for the Smith file. We need it signed.", { messages: [], patients: [], appointments: [], todayIso: today, claimDocument: "lop" });
+assert.equal(lop.category, "lien");
+assert.equal(lop.label, "LOP request needed");
+assert.equal(lop.create, false);
+
+const lien = row("Please send the lien. It is needed before we can move the file.");
+assert.equal(lien.label, "Lien request needed");
+
+const rb = row("Please send the R&B for this patient. Report and bill requested.");
+assert.equal(rb.category, "rb");
+assert.equal(rb.label, "R&B / Report & Bill requested");
+
+const medicals = row("Medical records request. Please send the medicals.");
+assert.equal(medicals.category, "medicals");
+
+const imaging = row("MRI report attached. Impression: no acute fracture.");
+assert.equal(imaging.category, "specialist");
+assert.equal(imaging.label, "Specialist/imaging reply");
+
+assert.equal(triageGoatMail({
+  messages: [msg({ from: "MAILER-DAEMON@office.test", subject: "Undeliverable", body: "New patient referral\nPatient: Kara Testpatient" })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0].category, "bounced");
+
+const other = row("The conference room is booked for Thursday.");
+assert.equal(other.category, "other");
+assert.equal(other.needsAnswer, false);
+assert.equal(other.create, false);
+
+const unsure = row("New patient referral for Kara Testpatient. Please also send the lien.");
+assert.equal(unsure.needsAnswer, true);
+assert.equal(unsure.question, "Which is this?");
+assert.equal(unsure.create, false);
+assert.ok(unsure.choices.some((choice) => choice.id === "new-patient"));
+assert.ok(unsure.choices.some((choice) => choice.id === "lien"));
+
+const noName = row("New patient referral. Please schedule. Date of injury 09/25/2026.");
+assert.equal(noName.needsAnswer, true);
+assert.equal(noName.question, "Who is the new patient?");
+assert.equal(noName.create, false);
+
+const duplicate = triageGoatMail({
+  messages: [msg({ subject: "New patient referral", body: referral })],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", dateOfLoss: "2026-09-25" }],
+  appointments: [{ patientId: "p1", date: "2026-11-12", status: "Scheduled" }],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(duplicate.create, false);
+assert.equal(duplicate.patientId, "p1");
+assert.equal(duplicate.flags.includes("unbooked"), false);
+
+const second = triageGoatMail({
+  messages: [msg({ subject: "New patient referral", body: referral })],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", dateOfLoss: "2026-01-15" }],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(second.create, true);
+assert.equal(second.flags.includes("second-crash"), true);
+assert.equal(second.flags.includes("unbooked"), true);
+
+const passengers = row(`New patient referral
+Patient: Kara Testpatient
+Patient: Tyler Smith
+Date of injury: 09/25/2026
+The driver and passenger were both hurt.`);
+assert.equal(passengers.needsAnswer, true);
+assert.equal(passengers.create, false);
+assert.equal(passengers.flags.includes("multi-passenger"), true);
+
+const missing = row(`New patient referral
+Patient: Kara Testpatient`);
+assert.equal(missing.create, true);
+assert.ok(missing.missing.includes("phone"));
+assert.ok(missing.missing.includes("date of injury"));
+
+const answered = triageGoatMail({
+  messages: [msg({ subject: "New patient referral", body: "New patient referral. Patient: Kara Testpatient. Please also send the lien." })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+  decisions: [{ id: "m1", category: "new-patient", updatedAt: "2026-11-09T16:00:00Z" }],
+})[0];
+assert.equal(answered.needsAnswer, false);
+assert.equal(answered.category, "new-patient");
+
+const steps = GOAT_MAIL_SETUP_STEPS.join("\n");
+assert.match(steps, /Mail\.Read/);
+assert.match(steps, /GOAT_MAIL_CLIENT_ID/);
+assert.match(steps, /GOAT_MAIL_CLIENT_SECRET/);
+assert.match(steps, /api\/goat-mail\/callback/);
+assert.match(steps, /20261109210000_goat_mail_connections\.sql/);
+assert.match(steps, /Do not add Mail\.Send, Mail\.ReadWrite/);
+
+const server = readFileSync(new URL("../../src/lib/goat-mail-server.ts", import.meta.url), "utf8");
+assert.match(server, /offline_access Mail\.Read User\.Read/);
+assert.match(server, /graph\.microsoft\.com\/v1\.0\/me\/messages/);
+assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forward/);
+assert.equal(server.includes('method: "POST"'), true);
+assert.equal((server.match(/graph\.microsoft\.com/g) ?? []).length >= 2, true);
+
+console.log("goat mail ok");

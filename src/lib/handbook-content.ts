@@ -70,11 +70,11 @@ export const handbookChapters: HandbookChapter[] = [
         why: "The app refuses to open when it can't confirm it has the current records, so an out-of-date copy on your screen can never overwrite good data in the cloud.",
       },
       {
-        heading: "While the app is opening (\"Loading notes X of Y\")",
+        heading: "While the app is opening",
         steps: [
-          "A big office can take a while to open after many notes changed. The count under the goat shows it's still working, so let it finish.",
-          "If another NoteGoat tab is already loading, this tab says so and waits. Only one tab downloads at a time, and the others reuse what it downloaded.",
-          "If the count stops moving for 45 seconds, the app locks with Retry. Retry picks up where it left off instead of starting over.",
+          "The screen says \"Opening your office…\" and stays quiet. A big office can take a while the first time; after that, only what changed is downloaded. Let it finish.",
+          "If another NoteGoat tab is already opening, this tab says \"Another tab is opening this office…\" and waits. Only one tab downloads at a time, and the others reuse what it downloaded.",
+          "If nothing arrives for 45 seconds, the app locks with Retry. Retry picks up where it left off instead of starting over.",
         ],
         why: "Anything picked up from an earlier try is used only if the cloud still has that exact version, so the cloud is always the source of truth.",
       },
@@ -916,7 +916,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "The warnings when you save",
         steps: [
           "Time slot full — that slot is at capacity.",
-          "Closed key date — offers to skip those dates and book the rest. OK skips, Cancel abandons everything.",
+          "Closed key date — the visit is still saved and marked Canceled, and a popup names the closed day so you notice. It is never dropped quietly.",
           "Already has an appointment that day — same offer.",
           "Outside office hours — the time is outside the day's hours.",
         ],
@@ -927,7 +927,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Days the office is closed",
         steps: [
           "Key Dates → fill the date, pick Closed, Covered, or Open (a day the office works even though it would normally be off, e.g. a holiday), give a reason, Add Key Date.",
-          "Closed = the office is shut: no scheduling and NO text reminders for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
+          "Closed = the office is shut: a visit you put on that day is still saved and marked Canceled, and a popup tells you. NO text reminders go out for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
           "A Closed day stops APPOINTMENT reminders only. Message patients texts (for example \"we are closed Thursday\") are never blocked by a Key Date, so you can still tell patients you are closed.",
           "Add Open from / until times for a partial day: visits outside those hours are flagged and get no reminders.",
           "In Configured Key Dates, EVERY row (past or future; Open, Closed or Covered) shows a grey count of its appointments, such as \u201c28 appointments\u201d or \u201c18 appointments \u00b7 10 canceled\u201d. A plain \u2014 means there are truly none. Click the count and every appointment on that date, canceled ones included (tagged Canceled), appears at the bottom, with a bar that says \u201cShowing 10/29/26 only \u00b7 Show all\u201d. Open, Cancel and Clear work there as usual.",

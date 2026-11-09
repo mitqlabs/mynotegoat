@@ -90,6 +90,12 @@ export interface PatientRecord {
    */
   textRemindersOff?: boolean;
   /**
+   * Staff moved this patient out of New Patient Intake onto the Patient List
+   * even though case info (date of injury) is still blank. Persisted on
+   * patients.on_patient_list.
+   */
+  onPatientList?: boolean;
+  /**
    * Optional Compliance (New Patient / Yes / No / DNS ATM / Non-Compliant),
    * shown only when the office turns the Compliance column on. Absent = never
    * set; "" = cleared. Stored in patients.compliance.
@@ -400,6 +406,7 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
     specialistReferrals: Array.isArray(value.specialistReferrals) ? value.specialistReferrals : undefined,
     locationId: cleanString(value.locationId) || undefined,
     textRemindersOff: value.textRemindersOff === true ? true : undefined,
+    onPatientList: value.onPatientList === true ? true : undefined,
     compliance: normalizeCompliance(value.compliance) ?? (value.compliance === "" ? "" : undefined),
   };
 }
@@ -768,7 +775,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff" | "compliance"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff" | "compliance" | "onPatientList"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }

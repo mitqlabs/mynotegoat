@@ -3407,6 +3407,17 @@ export default function SettingsPage() {
               value={officeSettings.officeName}
             />
           </label>
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Claim document</span>
+            <select
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => updateOfficeSettings({ claimDocument: event.target.value === "lop" ? "lop" : "lien" })}
+              value={officeSettings.claimDocument}
+            >
+              <option value="lien">Lien</option>
+              <option value="lop">LOP</option>
+            </select>
+          </label>
           {/* Practice-wide contact fields. When Multi-Location is on these
               live PER OFFICE (in Office Locations above), so hide them here. */}
           {!officeSettings.multiLocation && (

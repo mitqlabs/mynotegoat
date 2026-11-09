@@ -113,13 +113,15 @@ export interface PatientHit {
   /** The words that named the patient (removed from the rest). */
   span: [number, number] | null;
   viaPronoun: boolean;
+  /** The one match was a typo, so the reply should name the record used. */
+  typo: boolean;
 }
 
 const PRONOUN_RE = /\b(?:him|her|them|his|their|he|she|this patient|same patient|that patient|the patient)\b/i;
 
 export function findPatient(text: string, patients: UPatient[], lastPatientId?: string | null): PatientHit {
   const toks = tokenize(text).filter((t) => !NOT_NAMES.has(t.w) && !isNeverName(t.w));
-  const scored: Array<{ p: UPatient; score: number; span: [number, number] }> = [];
+  const scored: Array<{ p: UPatient; score: number; span: [number, number]; typo: boolean }> = [];
   for (const p of patients) {
     const { first, last } = nameParts(p.fullName);
     const fl = first.toLowerCase();
@@ -148,7 +150,8 @@ export function findPatient(text: string, patients: UPatient[], lastPatientId?: 
     const idx = [fi, li].filter((i) => i >= 0);
     const a = toks[Math.min(...idx)];
     const b = toks[Math.max(...idx)];
-    scored.push({ p, score, span: [a.at, b.at + b.raw.length] });
+    const typo = hits.some((h) => h.kind === "fuzzy" || h.kind === "short");
+    scored.push({ p, score, span: [a.at, b.at + b.raw.length] as [number, number], typo });
   }
   scored.sort((x, y) => y.score - x.score);
   if (scored.length) {
@@ -156,18 +159,19 @@ export function findPatient(text: string, patients: UPatient[], lastPatientId?: 
     const ties = scored.filter((s) => top.score - s.score < 0.3);
     if (ties.length === 1 || top.score >= 2) {
       const same = ties.filter((s) => s.score === top.score);
-      if (same.length === 1) return { patient: top.p, ambiguous: [], span: top.span, viaPronoun: false };
+      // A name typed in the request wins. The open chart is only used for a pronoun, below.
+      if (same.length === 1) return { patient: top.p, ambiguous: [], span: top.span, viaPronoun: false, typo: top.typo };
     }
-    return { patient: null, ambiguous: ties.map((s) => s.p), span: top.span, viaPronoun: false };
+    return { patient: null, ambiguous: ties.map((s) => s.p), span: top.span, viaPronoun: false, typo: false };
   }
   if (lastPatientId && PRONOUN_RE.test(text)) {
     const p = patients.find((x) => x.id === lastPatientId) ?? null;
     if (p) {
       const m = PRONOUN_RE.exec(text)!;
-      return { patient: p, ambiguous: [], span: [m.index, m.index + m[0].length], viaPronoun: true };
+      return { patient: p, ambiguous: [], span: [m.index, m.index + m[0].length], viaPronoun: true, typo: false };
     }
   }
-  return { patient: null, ambiguous: [], span: null, viaPronoun: false };
+  return { patient: null, ambiguous: [], span: null, viaPronoun: false, typo: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +359,8 @@ export interface Understood {
   template: string;
   /** Reschedule "from thursday to friday": the visit being moved. */
   fromDate?: string;
+  /** The one match was a typo. Say which record was used. */
+  typo?: boolean;
 }
 
 const STATUS: Array<[RegExp, string]> = [
@@ -448,7 +454,7 @@ export function understand(raw: string, ctx: UContext): Understood | null {
     }
   }
   const def = GOAT_ACTIONS.find((a) => a.id === action);
-  const out: Understood = { action, patient: hit.patient, ambiguous: hit.ambiguous, date, time, text: "", attorney: "", status: "", canonical: null, ask: null, learned: Boolean(learnedAction), template, fromDate };
+  const out: Understood = { action, patient: hit.patient, ambiguous: hit.ambiguous, date, time, text: "", attorney: "", status: "", canonical: null, ask: null, learned: Boolean(learnedAction), template, fromDate, typo: Boolean(hit.patient && hit.typo) };
   const who = hit.patient ? nameParts(hit.patient.fullName).display : "";
   const rest = cut(t, [hit.viaPronoun ? null : hit.span, date?.span, time?.span]);
 
@@ -505,7 +511,8 @@ export function understand(raw: string, ctx: UContext): Understood | null {
 
   // One short question for the first missing required detail.
   if (!out.patient && def?.required.includes("patient")) {
-    out.ask = out.ambiguous.length ? `Which ${nameParts(out.ambiguous[0].fullName).last || "one"} — ${out.ambiguous.slice(0, 3).map((p) => nameParts(p.fullName).display).join(", or ")}?` : def.ask?.patient ?? "Which patient?";
+    const lookedLikeName = tokenize(t).some((tok) => tok.w.length >= 3 && !isNeverName(tok.w) && !NOT_NAMES.has(tok.w));
+    out.ask = out.ambiguous.length ? "Which patient?" : lookedLikeName ? "No match" : def.ask?.patient ?? "Which patient?";
   } else if (action === "reschedule" && !date && !time) out.ask = def?.ask?.date ?? null;
   else if (action === "doi" && !date) out.ask = def?.ask?.date ?? null;
   else if (action === "note" && !out.text) out.ask = def?.ask?.text ?? null;

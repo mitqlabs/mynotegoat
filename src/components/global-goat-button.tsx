@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { GoatAvatar } from "@/components/goat-avatar";
@@ -40,21 +41,32 @@ export function useGlobalGoatOpen(): boolean {
   );
 }
 
-/** Sidebar / mobile-nav button. `compact` = icon only (collapsed sidebar). */
+/** Sidebar / mobile-nav entry. Opens the full GOAT Page, not the chat. */
 export function GlobalGoatButton({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
-  const open = useGlobalGoatOpen();
   const { canView } = useWorkspaceAccess();
   if (!canView("patients")) return null;
   return (
-    <button
-      aria-expanded={open}
-      className={className}
-      onClick={() => setGlobalGoatOpen(!open)}
-      title="Ask G.O.A.T."
-      type="button"
-    >
+    <Link className={className} href="/goat-page" title="GOAT Page">
       <GoatAvatar size={compact ? 30 : 28} />
       {!compact && <span>G.O.A.T.</span>}
+    </Link>
+  );
+}
+
+/** Small goat in the bottom-right of every page. Opens the chat popup. */
+export function GoatChatFab() {
+  const open = useGlobalGoatOpen();
+  const { canView } = useWorkspaceAccess();
+  if (!canView("patients") || open) return null;
+  return (
+    <button
+      aria-label="Open G.O.A.T. chat"
+      className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line-soft)] bg-white shadow-[0_8px_24px_rgba(14,51,78,0.18)] transition hover:scale-105"
+      onClick={() => setGlobalGoatOpen(true)}
+      title="G.O.A.T. chat"
+      type="button"
+    >
+      <GoatAvatar size={36} />
     </button>
   );
 }

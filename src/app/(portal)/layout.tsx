@@ -321,16 +321,17 @@ export default function PortalLayout({
       // hard error screen instead. Mounting on stale/empty localStorage is
       // exactly how the 2026-04-08 data loss happened.
       try {
-        // No-progress watchdog: keep waiting while notes keep arriving
-        // ("Loading notes X of Y"); show the locked error screen with Retry
-        // only after 45s with NO progress at all.
+        // No-progress watchdog: keep waiting while data keeps arriving.
+        // The line under the goat stays the same quiet sentence — no note
+        // counts — and the locked error screen with Retry appears only
+        // after 45s with NO progress at all.
         const bp = await import("@/lib/boot-progress");
         const offProgress = bp.onBootProgress((p) => {
           if (!active) return;
           setBootProgressText(
             p.phase === "waiting-other-tab"
-              ? `Another NoteGoat tab is loading notes (${p.done} of ${p.total})…`
-              : `Loading notes ${p.done} of ${p.total}…`,
+              ? "Another tab is opening this office…"
+              : "Opening your office…",
           );
         });
         try {
@@ -695,6 +696,8 @@ function PortalLoadingSkeleton({ pathname }: { pathname: string }) {
   }
   if (/^\/patients\/[^/]+/.test(pathname)) return <SkeletonCaseFile />;
   if (pathname.startsWith("/patients")) return <SkeletonRows label="Loading patients…" rows={8} />;
-  if (pathname.startsWith("/encounters") || pathname.startsWith("/notes")) return <SkeletonNote />;
+  if (pathname.startsWith("/encounters") || pathname.startsWith("/notes")) {
+    return <SkeletonNote label="Opening your office…" />;
+  }
   return <SkeletonRows label="Loading your office…" rows={5} />;
 }

@@ -19,20 +19,33 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "How it works",
       steps: [
-        "Click the goat button. You'll see a greeting and chips — tap one or just type.",
+        "The G.O.A.T. button in the sidebar and on a phone opens the GOAT Page, the full day at a glance. The chat is the small goat in the bottom-right corner of every page. Tap it for the greeting and chips — or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
-        "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
+        "Anything that changes data shows ONE confirm card first, with the full text of what will be saved. Tap Confirm and the card says Saving…, then Saved. If it fails, it shows the reason and a Retry. Nothing is saved until you tap Confirm.",
         "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",
     },
     {
+      heading: "GOAT Mail",
+      steps: [
+        "GOAT Mail is read-only. It never sends, deletes, or changes email. It stays empty until the office Microsoft app is registered.",
+        "Register the app in Microsoft Entra: Identity → Applications → App registrations → New registration. Name it NoteGoat GOAT Mail. Accounts in any organizational directory and personal Microsoft accounts. Redirect URI (Web): https://<your NoteGoat host>/api/goat-mail/callback.",
+        "Copy the Application (client) ID. Certificates & secrets → New client secret, and copy the Value.",
+        "API permissions → Microsoft Graph → Delegated → Mail.Read and User.Read only. Do not add Mail.Send or Mail.ReadWrite.",
+        "Set the server environment variables GOAT_MAIL_CLIENT_ID, GOAT_MAIL_CLIENT_SECRET, and GOAT_MAIL_TENANT_ID (use common, or the office tenant id). Run supabase/migrations/20261109210000_goat_mail_connections.sql so the refresh token stays on the server. Redeploy, then Connect mailbox on the GOAT Mail page.",
+        "Messages sort into New Patient referral, Lien or LOP request (the word is Settings → Office Information → Claim document), R&B / Report & Bill requested, Medicals requested, Specialist/imaging reply, Bounced email, or Other.",
+        "A clear new-patient referral is added to New Patient Intake with Quick Fill. Missing fields stay flagged. Unbooked referrals, multi-passenger crashes, and a second crash for someone already in the office are flagged. If two categories fit, or the name is unclear, it goes under GOAT Needs Your Answer instead of guessing.",
+      ],
+      why: "The mailbox connection turns on only after the owner registers the Microsoft app. Until then nothing is pulled in.",
+    },
+    {
       heading: "Just say what to do",
       steps: [
         "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons. The New Patient popup on the Patient List works the same way: a taken time shows the open times as buttons plus a \u201cBook anyway\u201d tick (the same override as the Schedule, when overrides are on in Settings → Schedule).",
         "It only asks when something it needs is missing, and then just one short question (\"Move it to when?\").",
-        "It understands names spelled a bit wrong (\"jon smth\"), \"him/her\" for the patient you were just on, and days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\".",
+        "A name you type beats the chart that is open. One clear typo matches that record and the reply says which record it used. Several matches ask \"Which patient?\" and the one you pick is remembered for the next question. Nothing close enough says \"No match\" and does not guess. Everyday words such as \"call\" are never a name. \"him/her\" still means the patient you were just on. Days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\" work. If G.O.A.T. cannot do something, it says \"I can't do that yet\".",
         ...handbookPhrases(),
         "Open a case just navigates there. Nothing changes, so there's no card.",
       ],
@@ -52,6 +65,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
+        "The buttons are always in this order: GOAT Mail, Morning Rundown, Appointment Check, Quick Biz, Case Review. GOAT Mail opens the mail page. Morning Rundown is for everyone. The GOAT Page is the full day at a glance (schedule, intake, case counts, and untouched items: a Lien/LOP requested but not signed nudges at 3 days and again at 7, plus an R&B or medicals request that has not been sent, and a referral with no visit booked). Handled hides that reminder for the office. End of day on that page lists unsigned notes, visits that were checked in with no note, and tomorrow's open times. Shift handoff is two columns (seen and no-shows; intake with what's missing, what's waiting, tomorrow's openings and rebooks) and Print prints only that summary. The sidebar G.O.A.T. button opens that page. The chat popup stays, and opens from the small goat in the bottom-right corner.",
         "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date), unread team messages, and patient questionnaires that came back and still need review (\"1 questionnaire received: Jane Example\" with a Review link to her patient file). Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
@@ -194,7 +208,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Key Dates: Closed vs Covered, and reminders",
       steps: [
         "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
-        "Closed = office shut: no scheduling and no text reminders for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
+        "Closed = office shut: a visit booked on that day is still saved and marked Canceled, and a popup tells you. Text reminders do not go out for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
         "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, every row shows its appointment count (like \"18 appointments \u00b7 10 canceled\"; \u2014 means none); click it to list that date's appointments at the bottom (a bar says \"Showing 10/29/26 only\", with Show all). A red \"N still booked\" also appears on upcoming Closed days that still have patients Scheduled or set to Reschedule. Old and cleared items are behind \"Show past & cleared\".",
       ],
       why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
@@ -244,7 +258,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Schedule visits and new patients (no / needed)",
       steps: [
-        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
+        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm. If that day is a closed Key Date, the card says so; Confirm still schedules the visit and marks it Canceled.",
         "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
         "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, day, time and the New Patient visit type filled in (one provider and one location are picked for you). You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
         "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",
@@ -357,7 +371,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "If G.O.A.T. is waiting for the app to open",
       steps: [
-        "G.O.A.T. uses the same notes the app loads. While the screen says \"Loading notes X of Y\", wait for it to finish before asking about encounters.",
+        "G.O.A.T. uses the same records the app loads. While the screen says \"Opening your office…\", wait for it to finish before asking about encounters.",
       ],
     },
     {

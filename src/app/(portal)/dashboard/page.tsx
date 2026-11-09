@@ -1086,12 +1086,49 @@ export default function DashboardPage() {
       </section>
 
       <div className="space-y-5">
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 xl:items-start">
-          {/* Column 1 — money: Billing Snapshot over Cash Patients */}
-          <div className="flex flex-col gap-5">
-          <article className="panel-card p-4">
+        {/* Four snapshot cards stay a compact 2×2 on a wide window.
+            Stretching them into full-width columns left a lot of empty
+            card interior. Cases By Month sits beside the square. */}
+        <section className="flex flex-wrap items-start gap-4">
+          <div className="grid w-full max-w-[44rem] grid-cols-1 items-stretch gap-3 sm:grid-cols-2" data-statistics-layout="2x2">
+          <article className="panel-card h-full p-3">
+            <h4 className="text-sm font-semibold">Total Cases</h4>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{filteredPatients.length}</p>
+            <div className="mt-2 space-y-0.5">
+              {caseStatuses.map((statusConfig) => (
+                <p key={statusConfig.name} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-full border border-[var(--line-soft)]"
+                    style={{ backgroundColor: statusConfig.color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{statusConfig.name.toUpperCase()}</span>
+                  <span className="font-semibold tabular-nums">{statusCounts[statusConfig.name] ?? 0}</span>
+                </p>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-card h-full p-3">
+            <h4 className="text-sm font-semibold">Cycle Lengths</h4>
+            <div className="mt-2 space-y-1.5 text-xs">
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
+              </p>
+            </div>
+          </article>
+
+          <article className="panel-card h-full p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-lg font-semibold">Billing Snapshot</h4>
+              <h4 className="text-sm font-semibold">Billing Snapshot</h4>
               <button
                 aria-label={showBilling ? "Hide billing numbers" : "Show billing numbers"}
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
@@ -1108,9 +1145,9 @@ export default function DashboardPage() {
               on top. This is for office-walk-by privacy — anyone glancing
               at the screen shouldn't see totals.
             */}
-            <div className="relative mt-4">
+            <div className="relative mt-2">
               <div
-                className={`space-y-2 text-sm transition-[filter] ${showBilling ? "" : "pointer-events-none select-none blur-md"}`}
+                className={`space-y-1.5 text-xs transition-[filter] ${showBilling ? "" : "pointer-events-none select-none blur-md"}`}
                 aria-hidden={!showBilling}
               >
                 <p className="flex items-center justify-between">
@@ -1151,9 +1188,9 @@ export default function DashboardPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card h-full p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
+              <h4 className="text-sm font-semibold">Cash Snapshot</h4>
               <button
                 aria-label={showCash ? "Hide cash numbers" : "Show cash numbers"}
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
@@ -1163,9 +1200,9 @@ export default function DashboardPage() {
                 {showCash ? "Hide" : "Show"}
               </button>
             </div>
-            <div className="relative mt-4">
+            <div className="relative mt-2">
               <div
-                className={`space-y-2 text-sm transition-[filter] ${showCash ? "" : "pointer-events-none select-none blur-md"}`}
+                className={`space-y-1.5 text-xs transition-[filter] ${showCash ? "" : "pointer-events-none select-none blur-md"}`}
                 aria-hidden={!showCash}
               >
                 <p className="flex justify-between">
@@ -1206,7 +1243,7 @@ export default function DashboardPage() {
                 {cashStats.outstandingList.length === 0 ? (
                   <p className="text-xs text-[var(--text-muted)]">No outstanding balances.</p>
                 ) : (
-                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                  <ul className="max-h-32 space-y-1 overflow-y-auto">
                     {cashStats.outstandingList.map((row) => (
                       <li
                         key={row.pid}
@@ -1237,46 +1274,7 @@ export default function DashboardPage() {
           </article>
           </div>
 
-          {/* Column 2 — counts: Total Reports over Cycle Time Averages */}
-          <div className="flex flex-col gap-5">
-          <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Total Reports</h4>
-            <p className="mt-2 text-3xl font-bold">{filteredPatients.length}</p>
-            <div className="mt-3 space-y-1">
-              {caseStatuses.map((statusConfig) => (
-                <p key={statusConfig.name} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full border border-[var(--line-soft)]"
-                    style={{ backgroundColor: statusConfig.color }}
-                  />
-                  <span>{statusConfig.name.toUpperCase()}</span>
-                  <span className="font-semibold">{statusCounts[statusConfig.name] ?? 0}</span>
-                </p>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Cycle Time Averages</h4>
-            <div className="mt-4 space-y-2 text-sm">
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
-              </p>
-            </div>
-          </article>
-          </div>
-
-          {/* Column 3 — Cases By Month */}
-          <article className="panel-card p-4">
+          <article className="panel-card w-full shrink-0 p-3 sm:w-72">
             <h4 className="text-lg font-semibold">Cases By Month</h4>
             <div className="mt-2 space-y-1 text-sm">
               {monthCounts.map((entry) => (

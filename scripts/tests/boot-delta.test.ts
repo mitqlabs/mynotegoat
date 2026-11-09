@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { planNotesDelta, planKvDelta, hashString, maxIso } from "../../src/lib/boot-delta";
 assert.equal(maxIso([]), null);
 assert.equal(maxIso(["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"]), "2026-02-01T00:00:00Z");
@@ -26,4 +27,23 @@ const want = planKvDelta({
   localRaw: (k) => (k === "k3" ? '{"x":2}' : v),
 });
 assert.deepEqual(want.sort(), ["k2", "k3", "k4"]);
+// 20,000 notes already on this computer: only the ones the cloud changed
+// since the cursor are downloaded. The rest stay as stand-ins.
+const bigCursor = "2026-11-01T00:00:00.000Z";
+const bigMeta = Array.from({ length: 20_000 }, (_, i) => ({
+  id: `n${i}`,
+  updatedAt: i < 3 ? "2026-11-09T12:00:00.000Z" : "2026-06-01T00:00:00.000Z",
+  recordUpdatedAt: `r${i}`,
+}));
+const bigLocal = bigMeta.map((m) => ({ id: m.id, updatedAt: m.recordUpdatedAt }));
+const big = planNotesDelta({ meta: bigMeta, local: bigLocal, cursor: bigCursor, unconfirmedIds: new Set() });
+assert.ok(big);
+assert.deepEqual(big.fetchIds, ["n0", "n1", "n2"]);
+assert.equal(big.standIns.length, 19_997);
+
+const layout = readFileSync(new URL("../../src/app/(portal)/layout.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(layout, /Loading notes/);
+assert.match(layout, /Opening your office/);
+assert.match(layout, /Another tab is opening this office/);
+
 console.log("boot-delta ok");
