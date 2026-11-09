@@ -6,6 +6,9 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
+import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
+import { onLocalChange } from "@/lib/local-sync";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
@@ -48,7 +51,7 @@ import {
   matchesComplianceFilter,
   normalizeCompliance,
 } from "@/lib/compliance";
-import { createPatientRecord, patients, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { createPatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -577,6 +580,8 @@ export default function PatientsPage() {
     const timeoutId = window.setTimeout(() => setSavedBanner(null), 5000);
     return () => window.clearTimeout(timeoutId);
   }, [savedFromQuery]);
+  const [listVersion, setListVersion] = useState(0);
+  useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setListVersion((v) => v + 1)), []);
 
   const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
   const { allOptions: allComplianceOptions, options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
@@ -1285,7 +1290,19 @@ export default function PatientsPage() {
 
     return sorted;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- officeOverrides re-runs the filter after an office-cell save (the patient list is module-level)
-  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
+  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides, listVersion]);
+
+  const intakePatients = useMemo(
+    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient)),
+    [filteredPatients],
+  );
+  const listedPatients = useMemo(
+    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
+    [filteredPatients],
+  );
+  const movePatientToList = (patientId: string) => {
+    updatePatientRecordById(patientId, { onPatientList: true });
+  };
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -1556,7 +1573,7 @@ export default function PatientsPage() {
       title: "Patients",
       description: [...printFilterParts(), `Sorted by ${sortWords(columnLabels[sortColumn], sortAsc, isDate)}`].join(" · "),
       columns: cols.map((c) => c.label),
-      rows: filteredPatients.map((patient) => cols.map((c) => c.cell(patient))),
+      rows: listedPatients.map((patient) => cols.map((c) => c.cell(patient))),
       printedAt: formatPrintedAt(),
       rowNoun: "patient",
       emptyText: "No patients match the selected filters.",
@@ -2159,13 +2176,15 @@ export default function PatientsPage() {
         </div>
       </section>
 
+      <NewPatientIntakeSection patients={intakePatients} onMove={movePatientToList} />
+
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">
           {/* How many patients the current filters match — e.g. Review:
               Received → "7 patients". */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--line-soft)] px-4 py-2.5 text-sm">
             <span className="font-semibold">
-              {filteredPatients.length} patient{filteredPatients.length === 1 ? "" : "s"}
+              {listedPatients.length} patient{listedPatients.length === 1 ? "" : "s"}
             </span>
             {(() => {
               const active = [
@@ -2222,7 +2241,7 @@ export default function PatientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredPatients.map((patient) => (
+                {listedPatients.map((patient) => (
                   <tr key={patient.id} className="border-t border-[var(--line-soft)]">
                     {visibleColumns.map((colId) => {
                       if (colId === "patient") {
@@ -2331,7 +2350,7 @@ export default function PatientsPage() {
                     })}
                   </tr>
                 ))}
-                {filteredPatients.length === 0 && (
+                {listedPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={visibleColumns.length}>
                       No patients match the selected filters.

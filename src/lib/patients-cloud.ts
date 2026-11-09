@@ -62,6 +62,7 @@ interface PatientRow {
   location_id: string | null;
   text_reminders_off?: boolean | null;
   compliance?: string | null;
+  on_patient_list?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -94,6 +95,7 @@ export function patientToRow(patient: PatientRecord, workspaceId: string): Patie
     // Only sent once a patient has (or had) a Compliance value, so every
     // other patient save is identical to before and never touches the column.
     ...(patient.compliance !== undefined ? { compliance: patient.compliance === "" ? null : patient.compliance } : {}),
+    ...(patient.onPatientList === true ? { on_patient_list: true } : {}),
   };
 }
 
@@ -124,6 +126,7 @@ export function rowToPatient(row: PatientRow): PatientRecord {
     locationId: row.location_id ?? undefined,
     textRemindersOff: row.text_reminders_off === true ? true : undefined,
     compliance: normalizeCompliance(row.compliance),
+    onPatientList: row.on_patient_list === true ? true : undefined,
   };
 }
 
