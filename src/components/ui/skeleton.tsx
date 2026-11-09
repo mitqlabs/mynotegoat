@@ -61,7 +61,7 @@ export function SkeletonCaseFile({ label = "Loading patient file…" }: { label?
   );
 }
 
-export function SkeletonNote({ label = "Loading notes…" }: { label?: string }) {
+export function SkeletonNote({ label = "Opening your office…" }: { label?: string }) {
   return (
     <div aria-busy="true" aria-label={label} className="panel-card grid gap-3 p-5" role="status">
       <Skeleton className="h-6 w-1/4" />

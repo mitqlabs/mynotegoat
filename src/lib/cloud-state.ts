@@ -825,10 +825,19 @@ async function loadEncounterNotesForBoot(
   const meta = await cloud.fetchEncounterNoteMeta();
   const nextCursor = meta ? maxIso(meta.map((m) => m.updatedAt)) : null;
   const local = notes.loadEncounterNoteRecords();
-  const plan =
+  // A computer that already has notes uses the cursor and downloads only
+  // what changed. A first open (nothing local yet) still uses the same
+  // resumable chunk path, so 20,000+ notes download a few at a time and
+  // can resume, instead of one unbounded full-table read.
+  const deltaPlan =
     meta && workspaceId && local.length > 0
       ? planNotesDelta({ meta, local, cursor, unconfirmedIds: notes.getUnconfirmedNoteIds() })
       : null;
+  const plan =
+    deltaPlan ??
+    (meta && workspaceId && local.length === 0
+      ? { fetchIds: meta.map((row) => row.id), standIns: [] as typeof local }
+      : null);
   if (meta && plan) {
     // Resume: rows a previous, unfinished boot already downloaded are reused
     // ONLY if the cloud's updated_at for that id is unchanged (so they are

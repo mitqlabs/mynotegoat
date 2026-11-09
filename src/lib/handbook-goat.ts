@@ -357,7 +357,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "If G.O.A.T. is waiting for the app to open",
       steps: [
-        "G.O.A.T. uses the same notes the app loads. While the screen says \"Loading notes X of Y\", wait for it to finish before asking about encounters.",
+        "G.O.A.T. uses the same records the app loads. While the screen says \"Opening your office…\", wait for it to finish before asking about encounters.",
       ],
     },
     {

@@ -213,14 +213,22 @@ export async function fetchEncounterNoteMeta(): Promise<
     const total = typeof first.count === "number" ? first.count : 0;
     const starts: number[] = [];
     for (let from = pageSize; from < total; from += pageSize) starts.push(from);
-    const rest = await Promise.all(starts.map((from) => page(from, false)));
-    for (const r of rest) {
-      if (r.error) {
-        console.error("[encounter-notes-cloud] fetchMeta failed:", r.error.message);
-        return null;
-      }
-      all.push(...((r.data ?? []) as MetaRow[]));
-    }
+    // A 20,000-note office is ~20 pages. Fetch a few at a time so the
+    // database isn't hit with every page at once.
+    const { runPool } = await import("@/lib/boot-progress");
+    const rest = await runPool(
+      starts.map((from) => async () => {
+        const r = await page(from, false);
+        if (r.error) {
+          console.error("[encounter-notes-cloud] fetchMeta failed:", r.error.message);
+          return null;
+        }
+        return (r.data ?? []) as MetaRow[];
+      }),
+      4,
+    );
+    if (rest === null) return null;
+    for (const rows of rest) all.push(...rows);
     // Rows added between requests: keep paging until a short page.
     let from = pageSize * (starts.length + 1);
     while (all.length === from) {
