@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { GoatPageView } from "@/components/goat-page-view";
 import { GoatCloseout } from "@/components/goat-closeout";
+import { GoatHandoff } from "@/components/goat-handoff";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
@@ -11,6 +12,8 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useTasks } from "@/hooks/use-tasks";
 import { buildCloseout } from "@/lib/goat-closeout";
+import { buildHandoff } from "@/lib/goat-handoff";
+import { to12hLabel } from "@/lib/time-12h";
 import { isAdminTier } from "@/lib/admin-access";
 import { buildGoatPageModel } from "@/lib/goat-page-model";
 import {
@@ -90,6 +93,32 @@ export default function GoatPage() {
         />
       }
       closeout={<GoatCloseout model={closeout} />}
+      handoff={
+        <GoatHandoff
+          {...buildHandoff({
+            officeName: model.officeName,
+            dateLabel: model.dateLabel,
+            seen: scheduleAppointments.filter((a) => a.date === iso && a.status === "Check Out").length,
+            noShows: scheduleAppointments
+              .filter((a) => a.date === iso && a.status === "No Show")
+              .map((a) => ({ name: a.patientName })),
+            intake: patients.filter((p) => model.intake.some((row) => row.id === p.id)).map((p) => ({
+              name: p.fullName,
+              missing: [
+                !(p.phone && p.phone !== "-") ? "phone" : "",
+                !p.dateOfLoss ? "date of injury" : "",
+                !(p.attorney && p.attorney !== "Self") ? "attorney" : "",
+              ].filter(Boolean),
+            })),
+            waiting: untouched,
+            openings: closeout.openings,
+            tomorrowClosed: closeout.tomorrowClosed,
+            rebooks: scheduleAppointments
+              .filter((a) => a.status === "Reschedule" && a.date >= iso)
+              .map((a) => ({ name: a.patientName, when: `${a.date} ${to12hLabel(a.startTime)}` })),
+          })}
+        />
+      }
     />
   );
 }

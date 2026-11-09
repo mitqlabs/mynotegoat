@@ -27,6 +27,7 @@ export function GoatPageView({
   questions,
   todos,
   closeout,
+  handoff,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
@@ -36,6 +37,7 @@ export function GoatPageView({
   questions?: ReactNode;
   todos?: ReactNode;
   closeout?: ReactNode;
+  handoff?: ReactNode;
 }) {
   const chips = chipsFor(isAdmin);
   return (
@@ -173,6 +175,7 @@ export function GoatPageView({
         </div>
       </div>
       {closeout}
+      {handoff}
     </div>
   );
 }
