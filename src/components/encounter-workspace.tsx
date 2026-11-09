@@ -5,6 +5,7 @@ import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { toInlineMacroHtml } from "@/lib/macro-inline";
+import { groupSoapMacros, soapMacroChipClass } from "@/lib/soap-macro-groups";
 import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -131,44 +132,9 @@ function rewriteMacroRunIds(html: string): { html: string; idMap: Map<string, st
  *   formatChargeDelta([], []) === ""
  */
 /**
- * Body-region macro buttons (Head, Cervical, Knee…) get their own row
- * under the question-style ones (MVC HX, Vitals, Chief Complaints…).
- * The doctor reaches for one of each per note, and mixing them in a
- * single wrapped row meant hunting for the region every time.
+ * Body-region names live in lib/soap-macro-groups.ts so the chip board
+ * and the bilateral pluraliser share one list.
  */
-const BODY_REGION_WORDS = new Set([
-  "head",
-  "tmj",
-  "jaw",
-  "neck",
-  "cervical",
-  "thoracic",
-  "lumbar",
-  "sacral",
-  "sacroiliac",
-  "si",
-  "coccyx",
-  "pelvis",
-  "chest",
-  "rib",
-  "ribs",
-  "shoulder",
-  "arm",
-  "elbow",
-  "forearm",
-  "wrist",
-  "hand",
-  "finger",
-  "hip",
-  "thigh",
-  "knee",
-  "leg",
-  "ankle",
-  "foot",
-  "toe",
-  "extremity",
-  "spine",
-]);
 
 /**
  * The macro question that asks which side — "LEFT/RIGHT", "Side",
@@ -275,26 +241,6 @@ function pluralizeRegionInHtml(html: string, regionName: string): string {
       return out;
     })
     .join("");
-}
-
-function isBodyRegionMacroName(name: string): boolean {
-  const words = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (words.length === 0) return false;
-  return words.some((word) => BODY_REGION_WORDS.has(word));
-}
-
-/** [question macros, body-region macros] — the second row is dropped when
- *  empty, so a section with no region macros looks exactly as it did.
- *  Not used for Subjective, which shows one row in saved order. */
-function splitMacrosByKind<T extends { buttonName: string }>(macros: T[]): T[][] {
-  const general = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
-  const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
-  return [general, regions].filter((row) => row.length > 0);
 }
 
 /**
@@ -4535,15 +4481,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            // Subjective: one wrapping row in saved order (no
-                            // general-vs-body-region split). Other sections
-                            // keep the two-row split.
-                            (activeSection === "subjective"
-                              ? [group.macros].filter((row) => row.length > 0)
-                              : splitMacrosByKind(group.macros)
-                            ).map((macroRow, rowIndex) => (
-                            <div className="flex flex-wrap gap-2 [&+div]:mt-2" key={`macro-row-${rowIndex}`}>
-                              {macroRow.map((macro) => {
+                            groupSoapMacros(group.macros).map((macroGroup) => (
+                            <div className="[&+div]:mt-2" key={macroGroup.label}>
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                {macroGroup.label}
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                              {macroGroup.macros.map((macro) => {
                                 // Native HTML5 drag-and-drop. Making the
                                 // button itself `draggable` still lets
                                 // clicks fire normally (browsers only
@@ -4555,9 +4499,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                   <button
                                     key={macro.id}
                                     draggable
-                                    className={`rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold transition-opacity ${
-                                      isDragging ? "opacity-40" : ""
-                                    } ${draggedMacroId && !isDragging ? "cursor-grab" : ""}`}
+                                    className={`${soapMacroChipClass(macroGroup.quiet, isDragging)} ${
+                                      draggedMacroId && !isDragging ? "cursor-grab" : ""
+                                    }`}
                                     onClick={() => handleRunMacroClick(macro)}
                                     onDragStart={(event) => {
                                       setDraggedMacroId(macro.id);
@@ -4590,6 +4534,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                   </button>
                                 );
                               })}
+                              </div>
                             </div>
                           ))}
                         </div>

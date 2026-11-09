@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from "react";
 import { writeDraft } from "@/lib/draft-recovery";
 
 export interface RichTextTemplateEditorHandle {
@@ -73,6 +73,39 @@ function normalizeOutgoingValue(value: string) {
   // already collapses runs of multiple empty blocks to a single one,
   // so the editor just needs to pass the HTML through unchanged.
   return value.replace(/^\s+|\s+$/g, "").trim();
+}
+
+function EditorTool({
+  label,
+  onClick,
+  children,
+  className = "",
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      aria-label={label}
+      title={label}
+      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-[var(--line-soft)] bg-white px-1.5 text-[13px] font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-soft)] ${className}`}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolGlyph({ d }: { d: string }) {
+  return (
+    <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+      <path d={d} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function isSelectionInsideEditor(editor: HTMLDivElement | null) {
@@ -393,10 +426,9 @@ export const RichTextTemplateEditor = forwardRef<
 
   return (
     <div className={`rounded-xl border border-[var(--line-soft)] bg-white ${className}`}>
-      <div className={`flex flex-wrap items-center gap-2 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] p-2 ${readOnly ? "hidden" : ""}`}>
-        <span className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-          Editor
-        </span>
+      <div className={`${readOnly ? "hidden" : ""}`}>
+        <p className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Editor</p>
+        <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1.5">
         <select
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
           defaultValue=""
@@ -448,118 +480,43 @@ export const RichTextTemplateEditor = forwardRef<
           <option value="20px">20</option>
           <option value="24px">24</option>
         </select>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("undo")}
-          type="button"
-        >
-          Undo
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("redo")}
-          type="button"
-        >
-          Redo
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("bold")}
-          type="button"
-        >
-          B
-        </button>
-        <button
-          className="btn btn-secondary btn-sm italic"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("italic")}
-          type="button"
-        >
-          I
-        </button>
-        <button
-          className="btn btn-secondary btn-sm underline"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("underline")}
-          type="button"
-        >
-          U
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("insertUnorderedList")}
-          type="button"
-        >
-          Bullets
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("insertOrderedList")}
-          type="button"
-        >
-          Numbered
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("justifyLeft")}
-          type="button"
-        >
-          Left
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("justifyCenter")}
-          type="button"
-        >
-          Center
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("justifyRight")}
-          type="button"
-        >
-          Right
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => insertText("    ")}
-          type="button"
-        >
-          Tab
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => insertHtml("<br />")}
-          type="button"
-        >
-          Line Break
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => insertHtml("<p><br /></p>")}
-          type="button"
-        >
-          Paragraph
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => runCommand("removeFormat")}
-          type="button"
-        >
-          Clear
-        </button>
+        <EditorTool label="Undo" onClick={() => runCommand("undo")}>
+          <ToolGlyph d="M7.5 7.5 3 12l4.5 4.5M3 12h11a5 5 0 0 1 0 10h-3" />
+        </EditorTool>
+        <EditorTool label="Redo" onClick={() => runCommand("redo")}>
+          <ToolGlyph d="M16.5 7.5 21 12l-4.5 4.5M21 12H10a5 5 0 0 0 0 10h3" />
+        </EditorTool>
+        <EditorTool label="Bold" onClick={() => runCommand("bold")}>B</EditorTool>
+        <EditorTool label="Italic" className="italic" onClick={() => runCommand("italic")}>I</EditorTool>
+        <EditorTool label="Underline" className="underline" onClick={() => runCommand("underline")}>U</EditorTool>
+        <EditorTool label="Bullets" onClick={() => runCommand("insertUnorderedList")}>
+          <ToolGlyph d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+        </EditorTool>
+        <EditorTool label="Numbered list" onClick={() => runCommand("insertOrderedList")}>
+          <ToolGlyph d="M10 6h11M10 12h11M10 18h11M4 5v3M4 12h2l-2 3h2M4 19h2" />
+        </EditorTool>
+        <EditorTool label="Align left" onClick={() => runCommand("justifyLeft")}>
+          <ToolGlyph d="M4 6h16M4 12h10M4 18h16" />
+        </EditorTool>
+        <EditorTool label="Align center" onClick={() => runCommand("justifyCenter")}>
+          <ToolGlyph d="M4 6h16M7 12h10M4 18h16" />
+        </EditorTool>
+        <EditorTool label="Align right" onClick={() => runCommand("justifyRight")}>
+          <ToolGlyph d="M4 6h16M10 12h10M4 18h16" />
+        </EditorTool>
+        <EditorTool label="Tab" onClick={() => insertText("    ")}>
+          <ToolGlyph d="M4 6h16M4 12h8m0 0 6 6m-6-6 6-6" />
+        </EditorTool>
+        <EditorTool label="Line break" onClick={() => insertHtml("<br />")}>
+          <ToolGlyph d="M4 7h10a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3" />
+        </EditorTool>
+        <EditorTool label="Paragraph" onClick={() => insertHtml("<p><br /></p>")}>
+          <ToolGlyph d="M6 4h8a4 4 0 0 1 0 8H8v8M8 4v16" />
+        </EditorTool>
+        <EditorTool label="Clear formatting" onClick={() => runCommand("removeFormat")}>
+          <span className="px-1 text-xs font-semibold">Clear</span>
+        </EditorTool>
+        </div>
       </div>
 
       <div
