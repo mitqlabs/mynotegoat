@@ -2473,6 +2473,9 @@ export function GlobalGoatPopup({
                 )}
               </div>
             </div>
+            <Link className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20" href="/goat-page">
+              GOAT Page
+            </Link>
             <button style={{ fontSize: 12 }}
               className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
               disabled={!chat.messages.length || Boolean(job)}

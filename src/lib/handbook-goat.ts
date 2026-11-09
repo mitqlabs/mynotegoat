@@ -19,7 +19,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "How it works",
       steps: [
-        "Click the goat button. You'll see a greeting and chips — tap one or just type.",
+        "The G.O.A.T. button in the sidebar and on a phone opens the GOAT Page, the full day at a glance. The chat is the small goat in the bottom-right corner of every page. Tap it for the greeting and chips — or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
         "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
         "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
@@ -52,7 +52,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: `Good morning chips: ${CHIPS.join(", ")}`,
       steps: [
-        "The buttons are always in this order: GOAT Mail, Morning Rundown, Appointment Check, Quick Biz, Case Review. GOAT Mail opens the mail page. Morning Rundown is for everyone.",
+        "The buttons are always in this order: GOAT Mail, Morning Rundown, Appointment Check, Quick Biz, Case Review. GOAT Mail opens the mail page. Morning Rundown is for everyone. The GOAT Page is the full day at a glance (schedule, intake, case counts). The sidebar G.O.A.T. button opens that page. The chat popup stays, and opens from the small goat in the bottom-right corner.",
         "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date), unread team messages, and patient questionnaires that came back and still need review (\"1 questionnaire received: Jane Example\" with a Review link to her patient file). Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { GlobalGoatButton } from "@/components/global-goat-button";
+import { GlobalGoatButton, GoatChatFab } from "@/components/global-goat-button";
 import { LazyGlobalGoatPopup } from "@/components/lazy-global-goat-popup";
 import { isGoatAppPath } from "@/lib/goat-app";
 import { usePathname } from "next/navigation";
@@ -428,6 +428,7 @@ export function AppShell({
                 <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
               </main>
               <LazyGlobalGoatPopup />
+              <GoatChatFab />
             </section>
           </div>
         </div>
