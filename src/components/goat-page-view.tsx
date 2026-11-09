@@ -41,7 +41,7 @@ export function GoatPageView({
 }) {
   const chips = chipsFor(isAdmin);
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="w-full space-y-4" data-goat-page-layout="full">
       <header className="flex items-center gap-3 rounded-2xl bg-[#7ec8d6] px-4 py-3 text-white">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt="" className="h-11 w-11 rounded-full bg-white/80 object-cover" src="/goat-avatar/tablet-128.png" />
@@ -84,17 +84,16 @@ export function GoatPageView({
         </div>
       </section>
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <div className="space-y-4">
-          <section className="panel-card p-4" data-goat-page="mail">
+      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
+        <section className="panel-card p-4" data-goat-page="mail">
             <h2 className="text-sm font-semibold">GOAT Mail triage</h2>
             {mail ?? (
               <p className="mt-2 text-sm text-[var(--text-muted)]">
                 No mailbox connected. GOAT Mail stays empty until the office turns on the read-only connection.
               </p>
             )}
-          </section>
-          <section className="panel-card p-4" data-goat-page="schedule">
+        </section>
+        <section className="panel-card p-4" data-goat-page="schedule">
             <div className="flex items-baseline justify-between gap-2">
               <h2 className="text-sm font-semibold">Today&apos;s schedule</h2>
               <span className="text-xs text-[var(--text-muted)]">{model.schedule.rows.length}</span>
@@ -116,9 +115,9 @@ export function GoatPageView({
               {model.schedule.rows.map((row) => (
                 <li className="flex items-center gap-3 py-2 text-sm" key={row.id}>
                   <span className="w-16 shrink-0 tabular-nums text-[var(--text-muted)]">{row.time}</span>
-                  <Link className="min-w-0 flex-1 truncate font-medium hover:underline" href={row.href}>
-                    {row.name}
-                    <span className="ml-2 font-normal text-[var(--text-muted)]">{row.detail}</span>
+                  <Link className="min-w-0 flex-1 hover:underline" href={row.href}>
+                    <span className="block truncate font-medium">{row.name}</span>
+                    <span className="block truncate text-xs font-normal text-[var(--text-muted)]">{row.detail}</span>
                   </Link>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${TONE[row.tone]}`}>{row.badge}</span>
                 </li>
@@ -127,9 +126,7 @@ export function GoatPageView({
                 <li className="py-3 text-sm text-[var(--text-muted)]">Nothing on the schedule today.</li>
               )}
             </ul>
-          </section>
-        </div>
-
+        </section>
         <div className="space-y-4">
           <section className="panel-card p-4" data-goat-page="intake">
             <h2 className="text-sm font-semibold">New Patient Intake</h2>
@@ -152,6 +149,8 @@ export function GoatPageView({
             <h2 className="text-sm font-semibold">GOAT needs your answer</h2>
             {questions ?? <p className="mt-2 text-sm text-[var(--text-muted)]">Nothing to decide right now.</p>}
           </section>
+        </div>
+        <div className="space-y-4">
           <section className="panel-card p-4" data-goat-page="todos">
             <h2 className="text-sm font-semibold">To-dos and alerts</h2>
             {todos ?? <p className="mt-2 text-sm text-[var(--text-muted)]">No untouched items yet.</p>}
@@ -174,8 +173,12 @@ export function GoatPageView({
           </section>
         </div>
       </div>
-      {closeout}
-      {handoff}
+      {(closeout || handoff) && (
+        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,28rem),1fr))]">
+          {closeout}
+          {handoff}
+        </div>
+      )}
     </div>
   );
 }
