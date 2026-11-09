@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GoatPageView } from "@/components/goat-page-view";
+import { GoatCloseout } from "@/components/goat-closeout";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useTasks } from "@/hooks/use-tasks";
+import { buildCloseout } from "@/lib/goat-closeout";
 import { isAdminTier } from "@/lib/admin-access";
 import { buildGoatPageModel } from "@/lib/goat-page-model";
 import {
@@ -27,6 +31,8 @@ export default function GoatPage() {
   const { officeSettings } = useOfficeSettings();
   const { caseStatuses } = useCaseStatuses();
   const { tasks } = useTasks();
+  const { encountersByNewest } = useEncounterNotes();
+  const { scheduleSettings } = useScheduleSettings();
   const [listVersion, setListVersion] = useState(0);
   const [handled, setHandled] = useState<HandledMark[]>([]);
   useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setListVersion((v) => v + 1)), []);
@@ -58,6 +64,16 @@ export default function GoatPage() {
       }),
     [iso, scheduleAppointments, tasks, handled, listVersion],
   );
+  const closeout = useMemo(
+    () =>
+      buildCloseout({
+        todayIso: iso,
+        appointments: scheduleAppointments,
+        notes: encountersByNewest,
+        settings: scheduleSettings,
+      }),
+    [iso, scheduleAppointments, encountersByNewest, scheduleSettings],
+  );
   return (
     <GoatPageView
       isAdmin={isAdminTier(roleTier)}
@@ -73,6 +89,7 @@ export default function GoatPage() {
           }}
         />
       }
+      closeout={<GoatCloseout model={closeout} />}
     />
   );
 }
