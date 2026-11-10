@@ -129,6 +129,7 @@ export default function PortalLayout({
 
   useEffect(() => {
     let active = true;
+    let unsubscribeSync: (() => void) | null = null;
 
     async function bootstrap() {
       // Speed: the session is read locally (no network). With it we start the
@@ -279,7 +280,7 @@ export default function PortalLayout({
       pauseSync();
       installStorageSyncInterceptor();
       let savedFlashTimer: ReturnType<typeof setTimeout> | null = null;
-      onSyncStatusChange((status, detail) => {
+      unsubscribeSync = onSyncStatusChange((status, detail) => {
         if (!active) return;
         setSyncStatus(status);
         if (status === "error") {
@@ -483,6 +484,7 @@ export default function PortalLayout({
 
     return () => {
       active = false;
+      unsubscribeSync?.();
       window.removeEventListener("casemate:cloud-sync-blocked", onBlocked);
       window.removeEventListener("casemate:listener-leak-detected", onLeak);
       window.removeEventListener("error", onWindowError);

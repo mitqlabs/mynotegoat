@@ -100,7 +100,7 @@ export function SaveBadge(props: {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-3 right-3 z-50 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2"
       data-testid="save-badge"
     >
       {body}

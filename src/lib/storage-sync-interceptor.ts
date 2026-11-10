@@ -79,20 +79,25 @@ export interface SyncStatusDetail {
   at: number;
 }
 type SyncStatusCallback = (status: SyncStatus, detail: SyncStatusDetail) => void;
-let statusCallback: SyncStatusCallback | null = null;
+const statusListeners = new Set<SyncStatusCallback>();
 
-export function onSyncStatusChange(callback: SyncStatusCallback) {
-  statusCallback = callback;
+/** Subscribe to cloud save status. Returns an unsubscribe. Several listeners can watch at once. */
+export function onSyncStatusChange(callback: SyncStatusCallback): () => void {
+  statusListeners.add(callback);
+  return () => {
+    statusListeners.delete(callback);
+  };
 }
 
 function notifyStatus(status: SyncStatus, detail: Partial<SyncStatusDetail> = {}) {
-  if (statusCallback) {
+  const payload: SyncStatusDetail = { at: Date.now(), ...detail };
+  statusListeners.forEach((callback) => {
     try {
-      statusCallback(status, { at: Date.now(), ...detail });
+      callback(status, payload);
     } catch {
       // ignore
     }
-  }
+  });
 }
 
 /**
