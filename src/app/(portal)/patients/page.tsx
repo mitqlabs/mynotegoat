@@ -9,6 +9,8 @@ import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPr
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { findDuplicateCases } from "@/lib/patient-duplicate";
 import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
+import { ReturningPatientBanner } from "@/components/returning-patient-banner";
+import { demographicsFromPatient, fillEmptyDemographics, findReturningPatients, returningNameKey } from "@/lib/returning-patient";
 import { QuickFillBox } from "@/components/quick-fill-box";
 import type { QuickFillResult } from "@/lib/quick-fill";
 import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
@@ -336,6 +338,7 @@ type NewPatientDraft = {
   addressCity: string;
   addressState: string;
   addressZip: string;
+  email: string;
   notes: string;
   isCashPatient: boolean;
   locationId: string;
@@ -596,6 +599,7 @@ export default function PatientsPage() {
   const [newPatientBookingIssue, setNewPatientBookingIssue] = useState<{ patientId: string; name: string; reason: string } | null>(null);
   /** G.O.A.T. /new: things to double-check on the prefilled form. */
   const [newPatientAsk, setNewPatientAsk] = useState<string[]>([]);
+  const [returningDismissed, setReturningDismissed] = useState("");
   // Discharge dates as the patient page's Discharge box shows them.
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   // Initial Exam dates as the patient page's Initial Exam box shows them.
@@ -749,6 +753,7 @@ export default function PatientsPage() {
     addressCity: "",
     addressState: "",
     addressZip: "",
+    email: "",
     notes: "",
     isCashPatient: false,
     locationId: "",
@@ -774,6 +779,7 @@ export default function PatientsPage() {
       addressCity: "",
       addressState: "",
       addressZip: "",
+      email: "",
       notes: "",
       isCashPatient: false,
       locationId: "",
@@ -790,6 +796,7 @@ export default function PatientsPage() {
     setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
     setNewPatientAsk([]);
+    setReturningDismissed("");
     resetNewPatientDraft();
     setShowNewPatientCase(false);
     const office = loadOfficeSettings();
@@ -931,7 +938,7 @@ export default function PatientsPage() {
       // New Patient visit's date and follows it if it moves or is canceled.
       initialExam: "",
       phone: formatUsPhoneInput(newPatientDraft.phone),
-      email: "",
+      email: newPatientDraft.email.trim(),
       address: composePatientAddress(
         newPatientDraft.addressStreet,
         newPatientDraft.addressUnit,
@@ -1306,6 +1313,21 @@ export default function PatientsPage() {
   );
   const movePatientToList = (patientId: string) => {
     updatePatientRecordById(patientId, { onPatientList: true });
+  };
+  const returningMatches = useMemo(
+    () =>
+      findReturningPatients(patients, {
+        firstName: newPatientDraft.firstName,
+        lastName: newPatientDraft.lastName,
+      }),
+    [newPatientDraft.firstName, newPatientDraft.lastName, listVersion],
+  );
+  const returningKey = returningNameKey(newPatientDraft.firstName, newPatientDraft.lastName);
+  const fillReturningPatient = (id: string) => {
+    const patient = patients.find((row) => row.id === id);
+    if (!patient) return;
+    setNewPatientDraft((current) => fillEmptyDemographics(current, demographicsFromPatient(patient)));
+    setReturningDismissed(returningKey);
   };
   const newPatientDuplicates = useMemo(
     () =>
@@ -2998,6 +3020,15 @@ export default function PatientsPage() {
                     value={newPatientDraft.phone}
                   />
                 </label>
+                {returningMatches.length > 0 && returningDismissed !== returningKey && (
+                  <div className="sm:col-span-3">
+                    <ReturningPatientBanner
+                      matches={returningMatches}
+                      onDismiss={() => setReturningDismissed(returningKey)}
+                      onFill={fillReturningPatient}
+                    />
+                  </div>
+                )}
                 <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">DOB</span>
                   <input
