@@ -21,13 +21,13 @@ export async function GET(request: NextRequest) {
     redirectUri: goatMailRedirectUri(request.nextUrl.origin),
     code,
   });
-  if ("error" in exchanged) return back(`error=${encodeURIComponent(exchanged.error)}`);
+  if ("error" in exchanged) return back("error=connect");
   const saved = await saveMailConnection(adminClient(cfg), {
     workspaceId: goatMailWorkspaceId(payload.ownerId),
     refreshToken: exchanged.refreshToken,
     email: exchanged.email,
   });
-  const res = "error" in saved ? back(`error=${encodeURIComponent(saved.error)}`) : back("connected=1");
+  const res = "error" in saved ? back("error=connect") : back("connected=1");
   res.cookies.set("goat_mail_state", "", { httpOnly: true, path: "/", maxAge: 0 });
   return res;
 }

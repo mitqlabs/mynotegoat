@@ -4,7 +4,7 @@
  * refresh-token row in goat_mail_connections.
  *
  * Stays off until the owner sets GOAT_MAIL_CLIENT_ID and GOAT_MAIL_CLIENT_SECRET.
- * Registration steps: GOAT_MAIL_SETUP_STEPS in src/lib/goat-mail.ts.
+ * Registration steps for the owner: docs/goat-mail-setup.md. The app never shows those steps.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -183,7 +183,7 @@ export async function saveMailConnection(admin: SupabaseClient, row: { workspace
     account_email: row.email,
     updated_at: new Date().toISOString(),
   });
-  if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Run the goat_mail_connections migration in Supabase, then connect again." : "Could not save the mailbox connection." };
+  if (error) return { error: "Could not save the mailbox connection." };
   return { ok: true };
 }
 

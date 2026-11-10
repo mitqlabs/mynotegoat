@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { GOAT_MAIL_SETUP_STEPS, triageGoatMail, type GoatMailMessage } from "../../src/lib/goat-mail";
+import { triageGoatMail, type GoatMailMessage } from "../../src/lib/goat-mail";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -122,13 +122,27 @@ const answered = triageGoatMail({
 assert.equal(answered.needsAnswer, false);
 assert.equal(answered.category, "new-patient");
 
-const steps = GOAT_MAIL_SETUP_STEPS.join("\n");
+const steps = readFileSync(new URL("../../docs/goat-mail-setup.md", import.meta.url), "utf8");
 assert.match(steps, /Mail\.Read/);
 assert.match(steps, /GOAT_MAIL_CLIENT_ID/);
 assert.match(steps, /GOAT_MAIL_CLIENT_SECRET/);
 assert.match(steps, /api\/goat-mail\/callback/);
 assert.match(steps, /20261109210000_goat_mail_connections\.sql/);
 assert.match(steps, /Do not add Mail\.Send, Mail\.ReadWrite/);
+
+const board = readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8");
+const handbook = readFileSync(new URL("../../src/lib/handbook-goat.ts", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../src/components/goat-page-view.tsx", import.meta.url), "utf8");
+const copy = readFileSync(new URL("../../src/lib/goat-mail.ts", import.meta.url), "utf8");
+for (const src of [board, handbook, page, copy]) {
+  assert.doesNotMatch(src, /Entra|GOAT_MAIL_CLIENT_ID|goat_mail_connections|Register the Microsoft app/);
+}
+assert.match(copy, /GOAT Mail is coming soon/);
+assert.match(copy, /Sign in with your office Outlook to let GOAT read \(never send\) your email\./);
+assert.match(board, /GOAT_MAIL_COMING_SOON/);
+assert.match(board, /GOAT_MAIL_CONNECT_LINE/);
+assert.match(board, /Connect mailbox/);
+assert.match(page, /GOAT Mail is coming soon/);
 
 const server = readFileSync(new URL("../../src/lib/goat-mail-server.ts", import.meta.url), "utf8");
 assert.match(server, /offline_access Mail\.Read User\.Read/);

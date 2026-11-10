@@ -30,15 +30,12 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "GOAT Mail",
       steps: [
-        "GOAT Mail is read-only. It never sends, deletes, or changes email. It stays empty until the office Microsoft app is registered.",
-        "Register the app in Microsoft Entra: Identity → Applications → App registrations → New registration. Name it NoteGoat GOAT Mail. Accounts in any organizational directory and personal Microsoft accounts. Redirect URI (Web): https://<your NoteGoat host>/api/goat-mail/callback.",
-        "Copy the Application (client) ID. Certificates & secrets → New client secret, and copy the Value.",
-        "API permissions → Microsoft Graph → Delegated → Mail.Read and User.Read only. Do not add Mail.Send or Mail.ReadWrite.",
-        "Set the server environment variables GOAT_MAIL_CLIENT_ID, GOAT_MAIL_CLIENT_SECRET, and GOAT_MAIL_TENANT_ID (use common, or the office tenant id). Run supabase/migrations/20261109210000_goat_mail_connections.sql so the refresh token stays on the server. Redeploy, then Connect mailbox on the GOAT Mail page.",
+        "Until GOAT Mail is turned on for the office, the page says GOAT Mail is coming soon.",
+        "When it is ready, open GOAT Mail and tap Connect mailbox. Sign in with the office Outlook account. GOAT can read that mailbox. It never sends, deletes, or changes email.",
         "Messages sort into New Patient referral, Lien or LOP request (the word is Settings → Office Information → Claim document), R&B / Report & Bill requested, Medicals requested, Specialist/imaging reply, Bounced email, or Other.",
         "A clear new-patient referral is added to New Patient Intake with Quick Fill. Missing fields stay flagged. Unbooked referrals, multi-passenger crashes, and a second crash for someone already in the office are flagged. If two categories fit, or the name is unclear, it goes under GOAT Needs Your Answer instead of guessing.",
       ],
-      why: "The mailbox connection turns on only after the owner registers the Microsoft app. Until then nothing is pulled in.",
+      why: "Staff connect the office mailbox when it is ready. They never see how the server was set up.",
     },
     {
       heading: "Just say what to do",
