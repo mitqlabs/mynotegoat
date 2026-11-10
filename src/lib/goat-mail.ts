@@ -10,18 +10,11 @@ import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
 
 export const GOAT_MAIL_KEY = "casemate.goat-mail.v1";
 
-export const GOAT_MAIL_SETUP_STEPS = [
-  "Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) with an account that can register applications.",
-  "Go to Identity → Applications → App registrations → New registration.",
-  "Name it NoteGoat GOAT Mail. Supported account types: Accounts in any organizational directory and personal Microsoft accounts.",
-  "Redirect URI: platform Web, and the exact address https://<your NoteGoat host>/api/goat-mail/callback (for this office, https://mynotegoat.com/api/goat-mail/callback).",
-  "Open the new app and copy the Application (client) ID.",
-  "Certificates & secrets → New client secret. Copy the secret Value right away. It is shown only once.",
-  "API permissions → Add a permission → Microsoft Graph → Delegated permissions → Mail.Read and User.Read. Do not add Mail.Send, Mail.ReadWrite, or any permission that can send, delete, or change mail. Grant admin consent if the tenant requires it.",
-  "On the NoteGoat server (the host's environment variables, never in the browser), set GOAT_MAIL_CLIENT_ID to the Application (client) ID, GOAT_MAIL_CLIENT_SECRET to the secret Value, and GOAT_MAIL_TENANT_ID to common (or the office tenant id if the app is single-tenant).",
-  "In the Supabase SQL editor, run supabase/migrations/20261109210000_goat_mail_connections.sql. The table stores the mailbox refresh token with row level security and no policies, so only the server can read it.",
-  "Redeploy so the server sees the variables. Open GOAT Mail and choose Connect mailbox. Sign in to the office mailbox and accept the read-only Mail.Read prompt. GOAT Mail never sends, deletes, or changes email.",
-];
+/** Shown when the server has no mailbox app yet. No setup steps. */
+export const GOAT_MAIL_COMING_SOON = "GOAT Mail is coming soon";
+
+/** Shown when the server is ready and this office has not connected a mailbox. */
+export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let GOAT read (never send) your email.";
 
 export type GoatMailCategory = "new-patient" | "lien" | "rb" | "medicals" | "specialist" | "bounced" | "other";
 

@@ -6,8 +6,9 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { onLocalChange } from "@/lib/local-sync";
 import { createPatientRecord } from "@/lib/mock-data";
 import {
+  GOAT_MAIL_CONNECT_LINE,
+  GOAT_MAIL_COMING_SOON,
   GOAT_MAIL_KEY,
-  GOAT_MAIL_SETUP_STEPS,
   answerMail,
   loadMailDecisions,
   rememberMailPatient,
@@ -135,7 +136,7 @@ export function useGoatMail(input: {
       const res = await fetch("/api/goat-mail/connect", { method: "POST", headers });
       const json = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (json?.url) window.location.assign(json.url);
-      else setNotice(json?.error || "Could not start the mailbox connection.");
+      else setNotice("Could not connect the mailbox. Try again.");
     },
     disconnect: async () => {
       const headers = await authHeaders();
@@ -211,69 +212,64 @@ export function GoatMailBoard({
 }) {
   const questions = rows.filter((row) => row.needsAnswer);
   if (!status) return <p className="mt-2 text-sm text-[var(--text-muted)]">Opening GOAT Mail…</p>;
+  const ready = Boolean(status.configured && !status.needsMigration);
+  const connectButton = (
+    <button className="mt-4 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white" onClick={onConnect} type="button">
+      Connect mailbox
+    </button>
+  );
   if (variant === "questions") {
-    if (!status?.configured || !status.connected) return <p className="mt-2 text-sm text-[var(--text-muted)]">Nothing to decide right now.</p>;
+    if (!ready || !status.connected) return <p className="mt-2 text-sm text-[var(--text-muted)]">Nothing to decide right now.</p>;
     return <RowList onAnswer={onAnswer} onResolve={onResolve} rows={questions} />;
   }
   if (variant === "triage") {
-    if (!status?.configured) {
-      return (
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
-          No mailbox connected.{" "}
-          <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href="/goat-mail">
-            GOAT Mail setup
-          </Link>
-        </p>
-      );
-    }
+    if (!ready) return <p className="mt-2 text-sm text-[var(--text-muted)]">{GOAT_MAIL_COMING_SOON}</p>;
     if (!status.connected) {
       return (
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
-          The mailbox is not connected.{" "}
-          <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href="/goat-mail">
-            Connect it
-          </Link>
-        </p>
+        <div className="mt-2">
+          <p className="text-sm">{GOAT_MAIL_CONNECT_LINE}</p>
+          {connectButton}
+        </div>
       );
     }
     return <RowList onAnswer={onAnswer} onResolve={onResolve} rows={rows} />;
+  }
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <section className="panel-card p-5">
+          <h1 className="text-xl font-semibold">{GOAT_MAIL_COMING_SOON}</h1>
+        </section>
+      </div>
+    );
+  }
+  if (!status.connected) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <section className="panel-card p-5">
+          <h1 className="text-xl font-semibold">GOAT Mail</h1>
+          <p className="mt-2 text-sm">{GOAT_MAIL_CONNECT_LINE}</p>
+          {connectButton}
+          {notice && notice !== "disconnected" && <p className="mt-3 text-sm text-[var(--text-muted)]">Could not connect the mailbox. Try again.</p>}
+        </section>
+      </div>
+    );
   }
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <section className="panel-card p-5">
         <h1 className="text-xl font-semibold">GOAT Mail</h1>
         <p className="mt-1 text-sm text-[var(--text-muted)]">Read-only. GOAT never sends, deletes, or changes email.</p>
-        {status?.account && <p className="mt-2 text-sm">Connected as {status.account}</p>}
-        {status?.error && <p className="mt-2 text-sm text-red-700">{status.error}</p>}
-        {notice && notice !== "disconnected" && <p className="mt-2 text-sm text-red-700">{notice}</p>}
-        {status?.needsMigration && <p className="mt-2 text-sm text-amber-800">Run the goat_mail_connections migration in Supabase, then connect the mailbox.</p>}
-        {status?.configured && status.connected && (
-          <button className="mt-3 text-sm font-semibold text-[var(--text-muted)] underline" onClick={onDisconnect} type="button">
-            Disconnect mailbox
-          </button>
-        )}
-        {status?.configured && !status.connected && (
-          <button className="mt-4 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white" onClick={onConnect} type="button">
-            Connect mailbox
-          </button>
-        )}
+        {status.account && <p className="mt-2 text-sm">Connected as {status.account}</p>}
+        {status.error && <p className="mt-2 text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p>}
+        <button className="mt-3 text-sm font-semibold text-[var(--text-muted)] underline" onClick={onDisconnect} type="button">
+          Disconnect mailbox
+        </button>
       </section>
-      {status?.configured && status.connected ? (
-        <section className="panel-card p-5">
-          <h2 className="text-sm font-semibold">Triage</h2>
-          <RowList onAnswer={onAnswer} onResolve={onResolve} rows={rows} />
-        </section>
-      ) : (
-        <section className="panel-card p-5">
-          <h2 className="text-sm font-semibold">Register the Microsoft app</h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">GOAT Mail stays empty until these are done. It does not call Microsoft before the server has the client id and secret.</p>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
-            {GOAT_MAIL_SETUP_STEPS.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        </section>
-      )}
+      <section className="panel-card p-5">
+        <h2 className="text-sm font-semibold">Triage</h2>
+        <RowList onAnswer={onAnswer} onResolve={onResolve} rows={rows} />
+      </section>
     </div>
   );
 }

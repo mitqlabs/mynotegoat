@@ -87,11 +87,7 @@ export function GoatPageView({
       <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
         <section className="panel-card p-4" data-goat-page="mail">
             <h2 className="text-sm font-semibold">GOAT Mail triage</h2>
-            {mail ?? (
-              <p className="mt-2 text-sm text-[var(--text-muted)]">
-                No mailbox connected. GOAT Mail stays empty until the office turns on the read-only connection.
-              </p>
-            )}
+            {mail ?? <p className="mt-2 text-sm text-[var(--text-muted)]">GOAT Mail is coming soon</p>}
         </section>
         <section className="panel-card p-4" data-goat-page="schedule">
             <div className="flex items-baseline justify-between gap-2">
