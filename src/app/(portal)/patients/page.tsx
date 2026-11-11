@@ -5,7 +5,9 @@ import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { mdyToIso, planNewPatientFirstVisit, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
+import { mdyToIso, reviewCasePopup, scheduleCaseLabel, takeNewPatientPrefill, type CasePopupConflict, type CasePopupDraft } from "@/lib/new-patient-intake";
+import { NewPatientCasePopup, type CaseAttorneyOption } from "@/components/new-patient-case-popup";
+import { isoToUsDate } from "@/components/us-date-input";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { findDuplicateCases } from "@/lib/patient-duplicate";
 import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
@@ -16,7 +18,6 @@ import type { QuickFillResult } from "@/lib/quick-fill";
 import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
 import { onLocalChange } from "@/lib/local-sync";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { to12hLabel } from "@/lib/time-12h";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -732,11 +733,12 @@ export default function PatientsPage() {
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
-  const [showNewPatientCase, setShowNewPatientCase] = useState(false);
+  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string }>(null);
+  const [caseMessage, setCaseMessage] = useState("");
+  const [caseConflict, setCaseConflict] = useState<CasePopupConflict | null>(null);
   const [newPatientMessage, setNewPatientMessage] = useState("");
   // Taken / outside-hours first visit: the open times as buttons + "Book anyway".
   // Both belong to one date + time + office; changing any of them clears them.
-  const [newPatientSlotIssue, setNewPatientSlotIssue] = useState<{ key: string; reason: "taken" | "outside"; time: string; suggestions: string[]; canOverride: boolean } | null>(null);
   const [newPatientBookAnyway, setNewPatientBookAnyway] = useState("");
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>({
     lastName: "",
@@ -792,13 +794,14 @@ export default function PatientsPage() {
 
   const openNewPatientModal = () => {
     setNewPatientMessage("");
-    setNewPatientSlotIssue(null);
     setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
     setNewPatientAsk([]);
     setReturningDismissed("");
     resetNewPatientDraft();
-    setShowNewPatientCase(false);
+    setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
     const office = loadOfficeSettings();
     setNewPatientDraft((c) => ({ ...c, locationId: c.locationId || (selectedLocationId && selectedLocationId !== NO_OFFICE_FILTER ? selectedLocationId : ""), evalProvider: office.doctorName?.trim() ?? "", evalLocation: office.officeName?.trim() ?? "" }));
     setShowNewPatientModal(true);
@@ -832,7 +835,6 @@ export default function PatientsPage() {
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
     setNewPatientMessage("");
-    setNewPatientSlotIssue(null);
     setNewPatientBookAnyway("");
   };
 
@@ -852,8 +854,6 @@ export default function PatientsPage() {
   }, [contacts]);
 
   const newPatientSlotKey = `${newPatientDraft.evalDate}|${newPatientDraft.evalTime}|${newPatientDraft.locationId}`;
-  const slotIssue = newPatientSlotIssue && newPatientSlotIssue.key === newPatientSlotKey ? newPatientSlotIssue : null;
-
   const createNewPatient = () => {
     const firstName = newPatientDraft.firstName.trim();
     const lastName = newPatientDraft.lastName.trim();
@@ -872,31 +872,33 @@ export default function PatientsPage() {
       return;
     }
 
-    // New Patient Evaluation → the first appointment. Checked BEFORE the
+    // + Case exam date/time → the first appointment. Checked BEFORE the
     // patient is created so a bad date/time or a full slot is fixed first.
-    let firstVisit: { iso: string; time: string; type: string; durationMin: number; override: boolean } | null = null;
-    setNewPatientSlotIssue(null);
-    if (newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) {
-      const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
-      const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
-      const plan = planNewPatientFirstVisit(
-        { dateMdy: newPatientDraft.evalDate, timeText: newPatientDraft.evalTime, bookAnyway: newPatientBookAnyway === newPatientSlotKey },
-        scheduleAppointments,
+    const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
+    const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+    const reviewed = reviewCasePopup(
+      {
+        attorney: newPatientDraft.attorney,
+        attorneyPhone: newPatientDraft.attorneyPhone,
+        dateOfLoss: newPatientDraft.dateOfLoss,
+        evalDate: newPatientDraft.evalDate,
+        evalTime: newPatientDraft.evalTime,
+      },
+      {
+        bookAnyway: newPatientBookAnyway === newPatientSlotKey,
+        appointments: scheduleAppointments,
         settings,
-        appointmentTypes,
-      );
-      if (plan.kind === "error") {
-        setNewPatientMessage(plan.message);
-        return;
-      }
-      if (plan.kind === "conflict") {
-        // Shown under the time as buttons for the open times + a "Book anyway" tick.
-        setNewPatientMessage("");
-        setNewPatientSlotIssue({ key: newPatientSlotKey, reason: plan.reason, time: plan.time, suggestions: plan.suggestions, canOverride: plan.canOverride });
-        return;
-      }
-      if (plan.kind === "book") firstVisit = { iso: plan.iso, time: plan.time, type: plan.type, durationMin: plan.durationMin, override: plan.override };
+        types: appointmentTypes,
+      },
+    );
+    if (!reviewed.ok) {
+      setNewPatientMessage(reviewed.message);
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      setCasePopup({ source: "new" });
+      return;
     }
+    const firstVisit = reviewed.visit;
 
     const attorneyName = newPatientDraft.isCashPatient
       ? "Self"
@@ -934,9 +936,9 @@ export default function PatientsPage() {
       attorney: attorneyName,
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
-      // Never saved from a booking: while the box is blank, every reader shows the
-      // New Patient visit's date and follows it if it moves or is canceled.
-      initialExam: "",
+      // + Case with an exam date stores that date as the Initial Exam. Left
+      // blank, every reader still shows the New Patient visit's date.
+      initialExam: newPatientDraft.isCashPatient ? "" : reviewed.initialExamIso,
       phone: formatUsPhoneInput(newPatientDraft.phone),
       email: newPatientDraft.email.trim(),
       address: composePatientAddress(
@@ -1311,8 +1313,157 @@ export default function PatientsPage() {
     () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
     [filteredPatients],
   );
-  const movePatientToList = (patientId: string) => {
-    updatePatientRecordById(patientId, { onPatientList: true });
+  const caseAttorneyOptions: CaseAttorneyOption[] = attorneyContacts.map((contact) => ({
+    id: contact.id,
+    name: contact.name,
+    phone: contact.phone,
+  }));
+
+  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string }) => {
+    setCaseMessage("");
+    setCaseConflict(null);
+    setCasePopup(next);
+  };
+
+  const casePopupNames = () => {
+    if (casePopup?.source === "intake") {
+      const patient = patients.find((row) => row.id === casePopup.patientId);
+      return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
+    }
+    return { firstName: newPatientDraft.firstName, lastName: newPatientDraft.lastName };
+  };
+
+  const casePopupInitial = (): CasePopupDraft => {
+    if (casePopup?.source === "intake") {
+      const patient = patients.find((row) => row.id === casePopup.patientId);
+      const attorney = patient && normalizeAttorneyKey(patient.attorney) !== "self" ? patient.attorney : "";
+      const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney));
+      const doi = patient?.dateOfLoss ?? "";
+      return {
+        attorney,
+        attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : "",
+        dateOfLoss: isoToUsDate(doi) || (/^\d{2}\/\d{2}\/\d{4}$/.test(doi) ? doi : ""),
+        evalDate: "",
+        evalTime: "",
+      };
+    }
+    return {
+      attorney: newPatientDraft.attorney,
+      attorneyPhone: newPatientDraft.attorneyPhone,
+      dateOfLoss: newPatientDraft.dateOfLoss,
+      evalDate: newPatientDraft.evalDate,
+      evalTime: newPatientDraft.evalTime,
+    };
+  };
+
+  const rememberAttorney = (name: string, phone: string) => {
+    const attorneyName = cleanAttorneyLabel(name);
+    const attorneyPhone = formatUsPhoneInput(phone);
+    if (!attorneyName || normalizeAttorneyKey(attorneyName) === "self" || !attorneyPhone) return true;
+    const attorneyExists = contacts.some(
+      (contact) =>
+        normalizeAttorneyKey(contact.category) === "attorney" &&
+        normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorneyName),
+    );
+    if (attorneyExists) return true;
+    const contactResult = addContact({
+      name: attorneyName,
+      category: "Attorney",
+      phone: attorneyPhone,
+      email: "",
+      fax: "",
+      address: "",
+    });
+    return contactResult.added || Boolean(contactResult.contact);
+  };
+
+  const settingsForLocation = (locationId: string) => {
+    const loc = locations.find((l) => l.id === locationId) ?? (locations.length === 1 ? locations[0] : null);
+    return loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+  };
+
+  const saveCasePopup = (draft: CasePopupDraft, bookAnyway: boolean) => {
+    const intakeId = casePopup?.source === "intake" ? casePopup.patientId : "";
+    const locationId = intakeId
+      ? patients.find((row) => row.id === intakeId)?.locationId || newPatientDraft.locationId
+      : newPatientDraft.locationId;
+    const reviewed = reviewCasePopup(draft, {
+      bookAnyway,
+      appointments: scheduleAppointments,
+      settings: settingsForLocation(locationId),
+      types: appointmentTypes,
+    });
+    if (!reviewed.ok) {
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      return;
+    }
+    if (!intakeId) {
+      setNewPatientDraft((current) => ({
+        ...current,
+        attorney: draft.attorney,
+        attorneyPhone: draft.attorneyPhone,
+        dateOfLoss: draft.dateOfLoss,
+        evalDate: draft.evalDate,
+        evalTime: draft.evalTime,
+      }));
+      const key = `${draft.evalDate}|${draft.evalTime}|${newPatientDraft.locationId}`;
+      setNewPatientBookAnyway(reviewed.visit?.override ? key : "");
+      setCasePopup(null);
+      setCaseMessage("");
+      setCaseConflict(null);
+      return;
+    }
+    const patient = patients.find((row) => row.id === intakeId);
+    if (!patient) {
+      setCasePopup(null);
+      return;
+    }
+    if (!rememberAttorney(draft.attorney, draft.attorneyPhone)) {
+      setCaseMessage("Could not save that attorney.");
+      return;
+    }
+    const attorneyName = cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
+    updatePatientRecordById(intakeId, {
+      attorney: attorneyName || "Self",
+      dateOfLoss: reviewed.dateOfLossIso,
+      lastUpdate: new Date().toISOString().slice(0, 10),
+      ...(reviewed.initialExamIso ? { matrix: { initialExam: reviewed.initialExamIso } } : {}),
+    });
+    if (reviewed.visit) {
+      const already = scheduleAppointments.some(
+        (entry) => entry.patientId === intakeId && entry.date === reviewed.visit!.iso && entry.startTime === reviewed.visit!.time && entry.status !== "Canceled",
+      );
+      if (!already) {
+        const office = loadOfficeSettings();
+        try {
+          addAppointments([
+            {
+              id: createAppointmentId(),
+              patientId: intakeId,
+              patientName: patient.fullName,
+              provider: office.doctorName?.trim() ?? "",
+              location: office.officeName?.trim() ?? "",
+              appointmentType: reviewed.visit.type,
+              caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, patient.fullName),
+              room: "",
+              date: reviewed.visit.iso,
+              startTime: reviewed.visit.time,
+              durationMin: reviewed.visit.durationMin,
+              status: "Scheduled",
+              note: "",
+              overrideOfficeHours: reviewed.visit.override,
+            },
+          ]);
+        } catch (error) {
+          setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+          return;
+        }
+      }
+    }
+    setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
   };
   const returningMatches = useMemo(
     () =>
@@ -2211,7 +2362,7 @@ export default function PatientsPage() {
         </div>
       </section>
 
-      <NewPatientIntakeSection patients={intakePatients} onMove={movePatientToList} />
+      <NewPatientIntakeSection onAddCase={(patientId) => openCasePopup({ source: "intake", patientId })} patients={intakePatients} />
 
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">
@@ -2941,14 +3092,13 @@ export default function PatientsPage() {
       {showNewPatientModal && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
-          {/* Quick add: patient info only (from a text: name + phone is enough).
-              Case info (attorney, DOI, case #, initial exam) is added later on
-              the patient page; the first visit is booked from New Appointment. */}
+          {/* Quick add: name and phone are enough. + Case opens a popup for
+              attorney, date of injury, case number, and an optional first exam. */}
           <form className="panel-card mx-auto w-full max-w-3xl overflow-hidden p-0" data-testid="new-patient-modal" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
             <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
               <div>
                 <h3 className="text-xl font-semibold">New Patient</h3>
-                <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. Add case info on their page later.</p>
+                <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. + Case adds the attorney, date of injury, and first exam.</p>
               </div>
               <button aria-label="Close" className="btn btn-secondary btn-sm" onClick={closeNewPatientModal} type="button">
                 Close
@@ -2975,7 +3125,6 @@ export default function PatientsPage() {
                     ...(result.evalDate ? { evalDate: result.evalDate } : {}),
                     ...(result.evalTime ? { evalTime: result.evalTime } : {}),
                   }));
-                  if (result.dateOfLoss || result.attorney) setShowNewPatientCase(true);
                   if (result.ask.length > 0) setNewPatientAsk(result.ask);
                 }}
                 todayIso={new Date().toISOString().slice(0, 10)}
@@ -3171,151 +3320,35 @@ export default function PatientsPage() {
 
               {!newPatientDraft.isCashPatient && (
                 <section data-row="new-patient-case">
-                  {!showNewPatientCase && !newPatientDraft.attorney.trim() && !newPatientDraft.dateOfLoss.trim() && !newPatientDraft.evalDate.trim() ? (
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       className="rounded-lg border border-dashed border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
                       data-testid="new-patient-add-case"
-                      onClick={() => setShowNewPatientCase(true)}
+                      onClick={() => openCasePopup({ source: "new" })}
                       type="button"
                     >
                       + Case
                     </button>
-                  ) : (
-                    <>
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Case (optional)</h4>
-                        <button
-                          className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
-                          onClick={() => {
-                            setShowNewPatientCase(false);
-                            setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" }));
-                          }}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-row="new-patient-case-fields">
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            list="new-patient-attorney-options"
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value));
-                              setNewPatientDraft((current) => ({ ...current, attorney: value, attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : value.trim() ? current.attorneyPhone : "" }));
-                            }}
-                            placeholder="Law firm"
-                            value={newPatientDraft.attorney}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            inputMode="numeric"
-                            maxLength={12}
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, attorneyPhone: formatUsPhoneInput(event.target.value) }))}
-                            placeholder="From Contacts"
-                            value={newPatientDraft.attorneyPhone}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Date of Injury</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            inputMode="numeric"
-                            maxLength={10}
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, dateOfLoss: formatUsDateInput(event.target.value) }))}
-                            placeholder="MM/DD/YYYY"
-                            value={newPatientDraft.dateOfLoss}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.04em]"
-                            placeholder="From DOI + name"
-                            readOnly
-                            title="MMDDYY + first 2 letters of last and first name"
-                            value={newPatientCaseNumberPreview}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date <span className="font-normal">(optional)</span></span>
-                          <UsDateInput
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            onChange={(formatted) => { setNewPatientDraft((current) => ({ ...current, evalDate: formatted })); }}
-                            placeholder="MM/DD/YYYY"
-                            value={newPatientDraft.evalDate}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                          <TimeInput12h
-                            allowEmpty
-                            ariaLabel="Appointment time"
-                            dateIso={mdyIso(newPatientDraft.evalDate)}
-                            inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            onChange={(v) => { setNewPatientDraft((current) => ({ ...current, evalTime: v })); }}
-                            placeholder=""
-                            smart
-                            value={newPatientDraft.evalTime}
-                          />
-                        </label>
-                      </div>
-                      {newPatientDraft.evalDate.trim() && (
-                        <p className="mt-1.5 text-xs text-[var(--text-muted)]">Save books a New Patient visit on the Schedule (office hours and open times are checked first).</p>
-                      )}
-                      {slotIssue && (
-                        <div className="mt-2 grid gap-2 rounded-xl border border-[#efc9c5] bg-[#fdf4f3] px-3 py-2.5" data-testid="new-patient-slot-issue" role="alert">
-                          <p className="text-sm font-semibold text-[#b43b34]">
-                            {to12hLabel(slotIssue.time)} {slotIssue.reason === "outside" ? "is outside office hours that day." : "is taken."}
-                          </p>
-                          {slotIssue.suggestions.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm text-[var(--text-muted)]">{slotIssue.reason === "outside" ? "Open times:" : "Open nearby:"}</span>
-                              {slotIssue.suggestions.map((time) => (
-                                <button
-                                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
-                                  data-testid="new-patient-slot-chip"
-                                  key={time}
-                                  onClick={() => setNewPatientDraft((current) => ({ ...current, evalTime: time }))}
-                                  type="button"
-                                >
-                                  {to12hLabel(time)}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          {slotIssue.canOverride ? (
-                            <label className="flex items-start gap-2 text-sm" data-testid="new-patient-book-anyway">
-                              <input
-                                checked={newPatientBookAnyway === newPatientSlotKey}
-                                className="mt-0.5 h-4 w-4"
-                                onChange={(event) => setNewPatientBookAnyway(event.target.checked ? newPatientSlotKey : "")}
-                                type="checkbox"
-                              />
-                              <span>
-                                <span className="block font-semibold">Book anyway at {to12hLabel(slotIssue.time)}</span>
-                                <span className="block text-xs text-[var(--text-muted)]">
-                                  {slotIssue.reason === "outside" ? "Books it outside office hours." : "Double-books this time."} Then click Create Patient.
-                                </span>
-                              </span>
-                            </label>
-                          ) : (
-                            <p className="text-xs text-[var(--text-muted)]">Overrides are turned off in Settings → Schedule, so pick an open time.</p>
-                          )}
-                        </div>
-                      )}
-                      <datalist id="new-patient-attorney-options">
-                        {attorneyContacts.map((contact) => (
-                          <option key={contact.id} value={contact.name} />
-                        ))}
-                      </datalist>
-                    </>
-                  )}
+                    {(newPatientDraft.attorney.trim() || newPatientDraft.dateOfLoss.trim() || newPatientDraft.evalDate.trim()) && (
+                      <p className="text-sm text-[var(--text-muted)]" data-testid="new-patient-case-summary">
+                        {[
+                          newPatientDraft.attorney.trim(),
+                          newPatientDraft.dateOfLoss.trim() && `DOI ${newPatientDraft.dateOfLoss.trim()}`,
+                          newPatientCaseNumberPreview && `Case # ${newPatientCaseNumberPreview}`,
+                          newPatientDraft.evalDate.trim() && `Exam ${newPatientDraft.evalDate.trim()}${newPatientDraft.evalTime.trim() ? ` ${newPatientDraft.evalTime.trim()}` : ""}`,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                    {(newPatientDraft.attorney.trim() || newPatientDraft.dateOfLoss.trim() || newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
+                      <button
+                        className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
+                        onClick={() => setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" }))}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </section>
               )}
 
@@ -3338,6 +3371,31 @@ export default function PatientsPage() {
             </div>
           </form>
         </div>
+      )}
+
+      {casePopup && (
+        <NewPatientCasePopup
+          attorneys={caseAttorneyOptions}
+          conflict={caseConflict}
+          initial={casePopupInitial()}
+          key={casePopup.source === "intake" ? casePopup.patientId : "new"}
+          message={caseMessage}
+          onCaseNumber={(dateOfLoss) => {
+            const names = casePopupNames();
+            return buildCaseNumberPreview(dateOfLoss, names.lastName, names.firstName);
+          }}
+          onClose={() => {
+            setCasePopup(null);
+            setCaseMessage("");
+            setCaseConflict(null);
+          }}
+          onDismissIssue={() => {
+            setCaseMessage("");
+            setCaseConflict(null);
+          }}
+          onSave={saveCasePopup}
+          purpose={casePopup.source}
+        />
       )}
 
     </div>

@@ -48,6 +48,8 @@ export type PatientMatrixField =
   | "billPercent"
   | "notes"
   | "review"
+  /** Source G.O.A.T. Mail message id, so the same email cannot add a second chart. */
+  | "goatMailMessageId"
   // Stamped on a NEW patient only when the office uses a custom case number format.
   | "caseNumberFormat"
   | "caseSeq"
@@ -265,6 +267,7 @@ const matrixFieldList: PatientMatrixField[] = [
   "billPercent",
   "notes",
   "review",
+  "goatMailMessageId",
   "caseNumberFormat",
   "additionalDois",
   "caseSeq",

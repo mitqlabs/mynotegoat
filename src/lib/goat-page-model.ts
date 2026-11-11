@@ -4,7 +4,7 @@
  * to-dos are passed in later; they start at zero.
  */
 import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
-import { goatGreeting, goatGreetingDate } from "@/lib/goat-greeting";
+import { goatGreeting, goatGreetingDate, goatWelcomeEmoji } from "@/lib/goat-greeting";
 import { lienFollowUpStage } from "@/lib/follow-up-queue";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { to12hLabel } from "@/lib/time-12h";
@@ -35,6 +35,7 @@ export type GoatPageScheduleRow = {
 
 export type GoatPageModel = {
   greeting: string;
+  welcomeEmoji: string;
   dateLabel: string;
   officeName: string;
   appointments: number;
@@ -138,6 +139,7 @@ export function buildGoatPageModel(input: {
   );
   return {
     greeting: goatGreeting(input.now.getHours()),
+    welcomeEmoji: goatWelcomeEmoji(input.now.getHours()),
     dateLabel: goatPageDateLabel(input.now),
     officeName: input.officeName.trim() || "the office",
     appointments: active.length,

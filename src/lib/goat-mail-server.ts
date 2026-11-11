@@ -8,7 +8,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_KEY, chosenFolderIds, isInvalidClientSecretError, isSafeFolderId, mergeMailMessages, normalizeSecretExpiresOn, type GoatMailMessage, type MailFolderChoice } from "@/lib/goat-mail";
+import { GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_KEY, GOAT_MAIL_BUCKETS_KEY, chosenFolderIds, isInvalidClientSecretError, isSafeFolderId, mergeMailMessages, normalizeMailBuckets, normalizeSecretExpiresOn, type GoatMailMessage, type MailBucket, type MailFolderChoice } from "@/lib/goat-mail";
 
 const TABLE = "goat_mail_connections";
 const SCOPE = "offline_access Mail.Read User.Read";
@@ -28,8 +28,12 @@ export function goatMailWorkspaceId(ownerId: string): string {
   return `${ownerId}:${officeId}`;
 }
 
-export function goatMailRedirectUri(origin: string): string {
-  return `${origin.replace(/\/$/, "")}/api/goat-mail/callback`;
+/** Microsoft must see one redirect address. www and the bare host would otherwise disagree. */
+export function goatMailRedirectUri(requestOrigin: string): string {
+  const fromEnv = (process.env.GOAT_MAIL_REDIRECT_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
+  const production = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  const origin = fromEnv || (production ? "https://www.mynotegoat.com" : requestOrigin.replace(/\/+$/, ""));
+  return `${origin}/api/goat-mail/callback`;
 }
 
 type StatePayload = { state: string; ownerId: string; exp: number };
@@ -245,6 +249,33 @@ export async function readMailbox(input: {
     folders,
     selectedFolderIds,
   };
+}
+
+export async function loadMailBuckets(admin: SupabaseClient, workspaceId: string): Promise<MailBucket[] | null> {
+  const { data, error } = await admin.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_BUCKETS_KEY).maybeSingle();
+  if (error || !data) return null;
+  const value = data.value as { buckets?: unknown };
+  return normalizeMailBuckets(value?.buckets);
+}
+
+export async function saveMailBuckets(admin: SupabaseClient, workspaceId: string, buckets: MailBucket[] | null): Promise<{ ok: true; buckets: MailBucket[] | null } | { error: string }> {
+  if (!buckets) {
+    await admin.from("workspace_kv").delete().eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_BUCKETS_KEY);
+    return { ok: true, buckets: null };
+  }
+  const clean = normalizeMailBuckets(buckets);
+  if (!clean) return { error: "Add at least one bucket with a name." };
+  const { error } = await admin.from("workspace_kv").upsert(
+    {
+      workspace_id: workspaceId,
+      key: GOAT_MAIL_BUCKETS_KEY,
+      value: { buckets: clean },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "workspace_id,key" },
+  );
+  if (error) return { error: "Could not save the mail buckets." };
+  return { ok: true, buckets: clean };
 }
 
 export async function loadMailSecretExpiresOn(admin: SupabaseClient, workspaceId: string): Promise<string | null> {

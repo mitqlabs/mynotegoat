@@ -10,6 +10,17 @@ export function goatGreeting(hour: number): string {
   return "Good Evening";
 }
 
+export function goatWelcomeEmoji(hour: number): string {
+  if (hour < 12) return "☀️";
+  if (hour < 17) return "🌤️";
+  return "🌙";
+}
+
+/** "Good Morning! ☀️ Happy Wednesday, Nov. 11, 2026" */
+export function goatWelcomeLine(date: Date): string {
+  return `${goatGreeting(date.getHours())}! ${goatWelcomeEmoji(date.getHours())} Happy ${goatGreetingDate(date)}`;
+}
+
 /** "Wednesday, Nov. 11, 2026" and "Friday, June 5, 2026". */
 export function goatGreetingDate(date: Date): string {
   return `${WEEKDAYS[date.getDay()]}, ${GOAT_MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;

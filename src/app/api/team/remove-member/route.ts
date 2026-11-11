@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveTeamWorkspace } from "@/lib/team-workspace";
 
 /**
  * Owner removes a staff member: deletes the membership link (revoking
@@ -40,11 +41,25 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Confirm this member actually belongs to this owner before deleting.
+  const { data: callerMembership, error: callerError } = await admin
+    .from("workspace_members")
+    .select("workspace_owner_id, permissions")
+    .eq("member_user_id", owner.id)
+    .limit(1)
+    .maybeSingle();
+  if (callerError) {
+    return NextResponse.json({ error: callerError.message }, { status: 500 });
+  }
+  const workspace = resolveTeamWorkspace(owner.id, callerMembership);
+  if ("error" in workspace) {
+    return NextResponse.json({ error: workspace.error }, { status: workspace.status });
+  }
+
+  // Confirm this member actually belongs to this office before deleting.
   const { data: membership, error: findError } = await admin
     .from("workspace_members")
     .select("member_user_id")
-    .eq("workspace_owner_id", owner.id)
+    .eq("workspace_owner_id", workspace.ownerId)
     .eq("member_user_id", memberId)
     .maybeSingle();
   if (findError) {
@@ -57,7 +72,7 @@ export async function POST(request: NextRequest) {
   await admin
     .from("workspace_members")
     .delete()
-    .eq("workspace_owner_id", owner.id)
+    .eq("workspace_owner_id", workspace.ownerId)
     .eq("member_user_id", memberId);
   await admin.from("account_profiles").delete().eq("user_id", memberId);
   await admin.auth.admin

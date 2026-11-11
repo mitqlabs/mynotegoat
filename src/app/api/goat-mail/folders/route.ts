@@ -3,10 +3,10 @@ import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-serv
 import { isSafeFolderId } from "@/lib/goat-mail";
 import { goatMailEnv, goatMailWorkspaceId, loadMailConnection, readMailbox, saveMailConnection, saveMailFolderIds } from "@/lib/goat-mail-server";
 
-/** Save which folders GOAT reads. This does not change the mailbox. */
+/** Save which folders G.O.A.T. reads. This does not change the mailbox. */
 export async function POST(request: NextRequest) {
   const env = goatMailEnv();
-  if (!env.configured) return NextResponse.json({ error: "GOAT Mail is not configured yet." }, { status: 404 });
+  if (!env.configured) return NextResponse.json({ error: "G.O.A.T. Mail is not configured yet." }, { status: 404 });
   const cfg = serverConfig();
   if (!cfg) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const admin = adminClient(cfg);

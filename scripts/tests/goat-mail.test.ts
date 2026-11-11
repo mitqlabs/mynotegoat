@@ -1,11 +1,13 @@
 /**
- * GOAT Mail triage. No network, no mailbox.
+ * G.O.A.T. Mail triage. No network, no mailbox.
  * Run: npx tsx scripts/tests/goat-mail.test.ts
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
-import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailMessages, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailDecisions, mergeMailMessages, planMailIntake, rememberMailReferral, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { parseIntakeText, referralNameFromSubject } from "../../src/lib/new-patient-intake";
+import { quickFillFromText } from "../../src/lib/quick-fill";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -97,6 +99,62 @@ assert.equal(second.create, true);
 assert.equal(second.flags.includes("second-crash"), true);
 assert.equal(second.flags.includes("unbooked"), true);
 
+const filler = "New patient referral. Patient: D This. Phone 305-295-7810. Date of injury 01/15/2026.";
+const parsedFiller = parseIntakeText(filler, { todayIso: today });
+assert.equal(parsedFiller.draft.firstName, undefined);
+assert.equal(parsedFiller.draft.lastName, undefined);
+assert.ok(parsedFiller.ask.some((line) => /name/i.test(line)));
+const badName = row(filler);
+assert.equal(badName.create, false);
+assert.equal(badName.needsAnswer, true);
+assert.equal(badName.question, "Who is the new patient?");
+
+const samePhone = triageGoatMail({
+  messages: [msg({ id: "m-phone", subject: "New patient referral", body: referral })],
+  patients: [{ id: "p9", fullName: "Testpatient, Kara", phone: "(818) 555-0142", dateOfLoss: "2026-01-02", dob: "1990-04-04" }],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(samePhone.create, false);
+assert.equal(samePhone.patientId, "p9");
+
+const sameDob = triageGoatMail({
+  messages: [msg({ id: "m-dob", subject: "New patient referral", body: "New patient referral. Patient: Kara Testpatient. DOB 04/04/1990. Date of injury 03/01/2026." })],
+  patients: [{ id: "p8", fullName: "Testpatient, Kara", phone: "818-555-0199", dob: "04/04/1990", dateOfLoss: "2025-01-01" }],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(sameDob.create, false);
+assert.equal(sameDob.patientId, "p8");
+
+assert.deepEqual(planMailIntake({
+  messageId: "m1",
+  draft: { firstName: "D", lastName: "This", phone: "305-295-7810" },
+  decisions: [],
+  patients: [],
+}), { action: "skip" });
+assert.deepEqual(planMailIntake({
+  messageId: "m1",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [{ id: "m1", patientId: "p1", updatedAt: "2026-11-09T16:00:00Z" }],
+  patients: [],
+}), { action: "skip" });
+assert.deepEqual(planMailIntake({
+  messageId: "m2",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [{ id: "m1", patientId: "p1", updatedAt: "2026-11-09T16:00:00Z" }],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", phone: "305-295-7810" }],
+}), { action: "create" });
+assert.deepEqual(planMailIntake({
+  messageId: "m2",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", phone: "818.555.0142" }],
+}), { action: "link", patientId: "p1" });
+assert.equal(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8").includes("planMailIntake"), true);
+
 const passengers = row(`New patient referral
 Patient: Kara Testpatient
 Patient: Tyler Smith
@@ -123,6 +181,25 @@ const answered = triageGoatMail({
 assert.equal(answered.needsAnswer, false);
 assert.equal(answered.category, "new-patient");
 
+const custom = triageGoatMail({
+  messages: [msg({ subject: "Records", body: "Please send the records for the file." })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+  buckets: [{ id: "records", name: "Records ask", keywords: ["records for the file"] }, { id: "other", name: "Other", keywords: [] }],
+})[0];
+assert.equal(custom.category, "records");
+assert.equal(custom.label, "Records ask");
+assert.equal(triageGoatMail({
+  messages: [msg({ body: referral })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+  buckets: null,
+})[0].category, "new-patient");
+
 const steps = readFileSync(new URL("../../docs/goat-mail-setup.md", import.meta.url), "utf8");
 assert.match(steps, /Mail\.Read/);
 assert.match(steps, /GOAT_MAIL_CLIENT_ID/);
@@ -144,26 +221,38 @@ for (const src of [board, handbook, page, copy]) {
 assert.doesNotMatch(board, /Entra/);
 assert.doesNotMatch(page, /Entra/);
 assert.match(copy, /isn't turned on for this office yet/);
-assert.match(copy, /Sign in with your office Outlook to let GOAT read \(never send\) your email\./);
+assert.match(copy, /Sign in with your office Outlook to let G.O.A.T. read \(never send\) your email\./);
 assert.match(board, /GOAT_MAIL_SETUP_LINE/);
 assert.match(board, /GOAT_MAIL_CONNECT_LINE/);
 assert.match(board, /Connect Outlook/);
+assert.match(board, /data-goat-mail-page/);
+assert.match(board, /Needs your answer/);
+assert.match(board, /grid-cols-1/);
+assert.doesNotMatch(board, /max-w-3xl/);
 assert.match(board, /href="\/api\/goat-mail\/connect"/);
-assert.match(board, /Open GOAT Mail/);
+assert.match(board, /Open G.O.A.T. Mail/);
 assert.match(board, /: "Connect"/);
 assert.match(board, /href="\/goat-mail"/);
 assert.match(shell, /href="\/goat-mail"/);
-assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "GOAT Mail sits with the G.O.A.T. sidebar link");
+assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "G.O.A.T. Mail sits with the G.O.A.T. sidebar link");
+assert.ok(shell.indexOf('href="/handbook"') < shell.indexOf('href="/goat-mail"'), "Handbook comes before G.O.A.T. Mail");
+assert.ok(shell.indexOf("<GlobalGoatButton") < shell.indexOf("settingsItem &&"), "Settings is after G.O.A.T.");
+assert.match(shell, /G\.O\.A\.T\. Mail/);
+assert.doesNotMatch(shell, />GOAT Mail</);
+const handbookLink = shell.slice(shell.indexOf('href="/handbook"'), shell.indexOf('href="/handbook"') + 280);
+assert.doesNotMatch(handbookLink, /border /);
 assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_FOLDERS_KEY], "workspace");
 assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_SECRET_KEY], "workspace");
 assert.match(board, /Microsoft secret expires on/);
-assert.match(goatPage, /GoatMailSecretNotice/);
+assert.doesNotMatch(board.slice(board.indexOf("data-goat-mail-page")), /GoatMailSecretNotice|Microsoft secret expires on/);
+assert.doesNotMatch(goatPage, /GoatMailSecretNotice/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-settings.tsx", import.meta.url), "utf8"), /GoatMailSecretNotice/);
 assert.equal(mailSecretDateLabel("2026-11-11"), "Nov. 11, 2026");
 assert.equal(mailSecretDateLabel("2026-06-05"), "June 5, 2026");
 assert.equal(mailSecretDateLabel("2026-05-01"), "May 1, 2026");
 assert.equal(mailSecretDateLabel("2026-07-04"), "July 4, 2026");
 const alert = mailSecretAlertText("2026-12-01");
-assert.equal(alert, "GOAT Mail's Microsoft secret expires on Dec. 1, 2026. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.");
+assert.equal(alert, "G.O.A.T. Mail's Microsoft secret expires on Dec. 1, 2026. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.");
 const secretToday = new Date(2026, 10, 11);
 assert.equal(mailSecretDue("2026-12-11", secretToday), true);
 assert.equal(mailSecretDue("2026-12-12", secretToday), false);
@@ -194,11 +283,82 @@ assert.match(server, /offline_access Mail\.Read User\.Read/);
 assert.match(server, /\/me\/mailFolders\//);
 assert.match(server, /childFolders/);
 assert.match(server, /workspace_kv/);
+assert.match(server, /https:\/\/www\.mynotegoat\.com/);
+assert.match(server, /NEXT_PUBLIC_SITE_URL/);
+assert.match(server, /GOAT_MAIL_REDIRECT_ORIGIN/);
 assert.match(server, /GOAT_MAIL_SECRET_KEY/);
 assert.match(server, /secretExpired/);
 assert.doesNotMatch(server, /\/me\/messages\?/);
 assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forward|\/move/);
 assert.equal(server.includes('method: "POST"'), true);
 assert.equal((server.match(/graph\.microsoft\.com/g) ?? []).length >= 1, true);
+
+const edgar = triageGoatMail({
+  messages: [msg({
+    id: "edgar",
+    subject: "RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)",
+    from: "vhenao@dtlfightsforyou.com",
+    body: `Please schedule this patient.
+
+Vivian Henao
+Legal Assistant
+The Russo Firm
+1120 Ponce De Leon Blvd
+Coral Gables, FL 33134
+Tel: 305-555-0199
+Fax: 305-395-7810
+Email: vhenao@dtlfightsforyou.com
+www.dtlfightsforyou.com
+
+On Tue, Nov 10, 2026 at 9:00 AM Someone wrote:
+> This is a quoted reply.`,
+  })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(edgar.referral?.firstName, "Edgar");
+assert.equal(edgar.referral?.lastName, "Palma");
+assert.equal(edgar.referral?.phone, undefined);
+assert.notEqual(edgar.referral?.firstName, "This");
+assert.ok(edgar.missing.includes("phone"));
+assert.deepEqual(
+  referralNameFromSubject("RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)"),
+  { firstName: "Edgar", lastName: "Palma" },
+);
+const edgarBody = `RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)
+Please schedule this patient.
+
+Vivian Henao
+Legal Assistant
+The Russo Firm
+1120 Ponce De Leon Blvd
+Coral Gables, FL 33134
+Fax: 305-395-7810
+Email: vhenao@dtlfightsforyou.com
+www.dtlfightsforyou.com`;
+const filledEdgar = quickFillFromText(edgarBody, { todayIso: today });
+assert.equal(filledEdgar.phone, undefined);
+assert.equal(filledEdgar.addressStreet, undefined);
+assert.equal(filledEdgar.addressCity, undefined);
+assert.equal(filledEdgar.addressZip, undefined);
+assert.doesNotMatch(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /creating\.add/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /rememberMailReferral/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /row\.category !== "new-patient"/);
+const kept = rememberMailReferral([], "m-keep", { firstName: "Edgar", lastName: "Palma", from: "vhenao@dtlfightsforyou.com" }, "2026-11-11T00:00:00Z");
+assert.equal(kept[0]?.referral?.lastName, "Palma");
+assert.equal(rememberMailReferral([{ id: "m-keep", resolved: true, updatedAt: "2026-11-11T00:00:00Z" }], "m-keep", { firstName: "Edgar", lastName: "Palma" }, "2026-11-11T01:00:00Z")[0]?.resolved, true);
+const roundTrip = mergeMailDecisions([], kept);
+assert.equal(roundTrip[0]?.referral?.firstName, "Edgar");
+assert.equal(roundTrip[0]?.referral?.from, "vhenao@dtlfightsforyou.com");
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /reloadMailDecisions/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /goatMailMessageId: id/);
+assert.deepEqual(planMailIntake({
+  messageId: "m-edgar",
+  draft: { firstName: "Edgar", lastName: "Palma", phone: "305-555-0100" },
+  decisions: [],
+  patients: [{ id: "p-edgar", fullName: "Palma, Edgar", goatMailMessageId: "m-edgar" }],
+}), { action: "link", patientId: "p-edgar" });
 
 console.log("goat mail ok");

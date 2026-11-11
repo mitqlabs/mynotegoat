@@ -1,8 +1,9 @@
 /**
  * New Patient Intake sits above the Patient List for PI patients who do not
  * have case info yet (no date of injury). Cash patients stay on the list.
- * "Move Patient to Patient List" sets onPatientList, which is stored on the
- * patient row (patients.on_patient_list) so it survives a refresh.
+ * Adding case info (a date of injury) moves them onto the Patient List.
+ * Delete permanently removes an intake chart only when it has no case info,
+ * notes, or appointments. onPatientList is still stored on the patient row.
  */
 export function lacksCaseInfo(patient: {
   isCashPatient?: boolean;
@@ -20,4 +21,22 @@ export function isInNewPatientIntake(patient: {
   onPatientList?: boolean;
 }): boolean {
   return lacksCaseInfo(patient) && patient.onPatientList !== true;
+}
+
+/**
+ * Why Delete is unavailable, or null when this intake chart can be removed
+ * for good. Case info, notes, and appointments each block it.
+ */
+export function intakeDeleteReason(input: {
+  inIntake: boolean;
+  hasNotes: boolean;
+  appointmentCount: number;
+}): string | null {
+  if (!input.inIntake) return "Only an intake chart with no case info can be deleted here.";
+  const notes = input.hasNotes;
+  const appointments = input.appointmentCount > 0;
+  if (notes && appointments) return "This patient has notes and appointments.";
+  if (notes) return "This patient has notes.";
+  if (appointments) return "This patient has appointments.";
+  return null;
 }

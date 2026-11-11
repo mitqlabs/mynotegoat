@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GoatBriefingBoard } from "@/components/goat-briefing-board";
-import { GoatMailBoard, GoatMailSecretNotice, useGoatMail } from "@/components/goat-mail-board";
+import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
 import { GoatPageView } from "@/components/goat-page-view";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
@@ -25,7 +25,7 @@ import {
   type HandledMark,
 } from "@/lib/goat-untouched";
 import { onLocalChange } from "@/lib/local-sync";
-import { patients, PATIENTS_STORAGE_KEY, updatePatientRecordById } from "@/lib/mock-data";
+import { patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
 export default function GoatPage() {
@@ -119,13 +119,23 @@ export default function GoatPage() {
           />
         }
         model={model}
-        onMoveIntake={(id) => updatePatientRecordById(id, { onPatientList: true })}
+        onAddReferral={(id) => void mail.addReferral(id)}
+        onDismissReferral={mail.dismissReferral}
         patients={patients}
+        referrals={mail.referrals.map((row) => ({
+          id: row.id,
+          name: [row.referral?.firstName, row.referral?.lastName].filter(Boolean).join(" "),
+          phone: row.referral?.phone,
+          dateOfLoss: row.referral?.dateOfLoss,
+          attorney: row.referral?.attorney,
+          missing: row.missing,
+          from: row.referral?.from,
+          canAdd: Boolean(row.referral?.firstName && row.referral?.lastName),
+        }))}
         scheduleSettings={scheduleSettings}
         todayIso={iso}
         todos={
           <>
-            <GoatMailSecretNotice expiresOn={mail.status?.secretExpiresOn} />
             <UntouchedItems
               items={untouched}
               onHandled={(id) => {
