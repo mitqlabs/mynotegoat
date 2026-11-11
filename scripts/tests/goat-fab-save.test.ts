@@ -14,10 +14,14 @@ assert.match(face, /avatar-128\.png 128w/);
 assert.match(face, /Saving…/);
 assert.match(face, /"Saved"/);
 assert.match(face, /Retry/);
+assert.match(face, /goat-work-ring/);
+assert.match(face, /goat-work-bob/);
+assert.match(face, /prefers-reduced-motion: reduce/);
 assert.match(face, /motion-reduce:transition-none/);
 assert.match(face, /fixed bottom-4 right-4/);
 assert.match(face, /Open G\.O\.A\.T\. chat/);
 assert.doesNotMatch(face, /GoatAvatar size=\{36\}/);
+assert.doesNotMatch(face, /bg-sky-600/);
 
 const seen: string[] = [];
 const offA = onSyncStatusChange((status) => seen.push(`a:${status}`));
