@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { appConfirm } from "@/components/app-dialog";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { onLocalChange } from "@/lib/local-sync";
 import { createPatientRecord, patients as livePatients } from "@/lib/mock-data";
@@ -42,8 +43,6 @@ type Status = {
   secretExpired?: boolean;
   buckets?: MailBucket[] | null;
 };
-
-const creating = new Set<string>();
 
 const FLAG_LABEL: Record<GoatMailRow["flags"][number], string> = {
   unbooked: "Unbooked referral",
@@ -106,46 +105,7 @@ export function useGoatMail(input: {
     [status?.messages, input.patients, input.appointments, input.claimDocument, input.listVersion, decisions, todayIso],
   );
 
-  useEffect(() => {
-    const pending = rows.filter((row) => row.create && row.draft && !creating.has(row.id));
-    if (!pending.length) return;
-    // Claim every message id before creating, so a second pass of the same
-    // inbox (reload, remount, or another copy of the email) cannot add again.
-    for (const row of pending) creating.add(row.id);
-    let next = loadMailDecisions();
-    let changed = false;
-    for (const row of pending) {
-      if (!row.draft) continue;
-      const plan = planMailIntake({
-        messageId: row.id,
-        draft: row.draft,
-        decisions: next,
-        patients: livePatients,
-      });
-      if (plan.action === "skip") continue;
-      let patientId = plan.action === "link" ? plan.patientId : undefined;
-      if (plan.action === "create") {
-        const created = createPatientRecord({
-          firstName: row.draft.firstName,
-          lastName: row.draft.lastName,
-          phone: row.draft.phone,
-          dob: row.draft.dob,
-          dateOfLoss: row.draft.dateOfLoss,
-          attorney: row.draft.attorney,
-          address: row.draft.address,
-          initialExam: row.draft.initialExam,
-          notes: row.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
-        });
-        if (!created) continue;
-        patientId = created.id;
-      }
-      if (!patientId) continue;
-      next = rememberMailPatient(next, row.id, patientId, new Date().toISOString());
-      changed = true;
-    }
-    if (!changed) return;
-    void saveMailDecisions(next);
-  }, [rows]);
+  const referrals = rows.filter((row) => row.referral && !decisions.some((item) => item.id === row.id && item.patientId));
 
   const save = (next: GoatMailDecision[]) => {
     setDecisions(next);
@@ -155,6 +115,46 @@ export function useGoatMail(input: {
   return {
     status,
     rows,
+    referrals,
+    addReferral: async (id: string) => {
+      const row = rows.find((item) => item.id === id);
+      const draft = row?.draft ?? row?.referral;
+      if (!draft?.firstName || !draft.lastName) {
+        setNotice("That referral is missing a name, so no chart was added.");
+        return;
+      }
+      const plan = planMailIntake({
+        messageId: id,
+        draft,
+        decisions: loadMailDecisions(),
+        patients: livePatients,
+      });
+      const now = new Date().toISOString();
+      if (plan.action === "link") {
+        const open = await appConfirm("This person is already in the office. Open that chart instead?");
+        if (!open) return;
+        save(rememberMailPatient(loadMailDecisions(), id, plan.patientId, now));
+        window.location.assign(`/patients/${plan.patientId}`);
+        return;
+      }
+      if (plan.action !== "create") return;
+      const created = createPatientRecord({
+        firstName: draft.firstName,
+        lastName: draft.lastName,
+        phone: draft.phone,
+        dob: draft.dob,
+        dateOfLoss: draft.dateOfLoss,
+        attorney: draft.attorney,
+        address: draft.address,
+        initialExam: draft.initialExam,
+        notes: row?.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
+      });
+      if (!created) return;
+      save(rememberMailPatient(loadMailDecisions(), id, created.id, now));
+    },
+    dismissReferral: (id: string) => {
+      save(resolveMail(loadMailDecisions(), id, new Date().toISOString()));
+    },
     actionCount: rows.length,
     questionCount: rows.filter((row) => row.needsAnswer).length,
     notice,

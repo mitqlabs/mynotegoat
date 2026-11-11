@@ -119,7 +119,19 @@ export default function GoatPage() {
           />
         }
         model={model}
+        onAddReferral={(id) => void mail.addReferral(id)}
+        onDismissReferral={mail.dismissReferral}
         patients={patients}
+        referrals={mail.referrals.map((row) => ({
+          id: row.id,
+          name: [row.referral?.firstName, row.referral?.lastName].filter(Boolean).join(" "),
+          phone: row.referral?.phone,
+          dateOfLoss: row.referral?.dateOfLoss,
+          attorney: row.referral?.attorney,
+          missing: row.missing,
+          from: row.referral?.from,
+          canAdd: Boolean(row.referral?.firstName && row.referral?.lastName),
+        }))}
         scheduleSettings={scheduleSettings}
         todayIso={iso}
         todos={

@@ -89,10 +89,51 @@ function pastDate(m: RegExpExecArray, todayIso: string): string {
 const isoToMdy = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
 const addDaysIso = (iso: string, n: number) => { const t = new Date(`${iso}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
+/** Drop quoted replies, signature blocks, and tel: links before a referral is read. */
+export function stripReferralNoise(raw: string): string {
+  let text = raw.replace(/tel:[^\s)]+/gi, " ");
+  text = text.replace(/^>.*$/gm, " ");
+  const reply = text.search(/\n(?:On .{0,160} wrote:|-----Original Message-----)/i);
+  if (reply > 0) text = text.slice(0, reply);
+  const sig = text.search(/\n(?:thanks|thank you|sincerely|best regards|regards|sent from)\b/i);
+  if (sig > 40) text = text.slice(0, sig);
+  const emailLine = text.search(/\n\s*Email\s*:/i);
+  if (emailLine > 0) text = text.slice(0, emailLine);
+  return text;
+}
+
+/** "Ready for Scheduling: Edgar Palma - …" and similar subject lines. */
+export function referralNameFromSubject(subject: string): { firstName: string; lastName: string } | null {
+  const patterns = [
+    /\bready for scheduling:\s*([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,4})\s*-/i,
+    /\b(?:client|patient)\s*:\s*([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,4})/i,
+    /\bre:\s*([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,3})\s+(?:lop|doi)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const hit = pattern.exec(subject);
+    if (!hit) continue;
+    const parts = hit[1].trim().split(/\s+/).filter((word) => !isObviouslyBadPatientName(word, "Ok"));
+    if (parts.length < 2) continue;
+    return { firstName: titleCase(parts[0]), lastName: parts.slice(1).map(titleCase).join(" ") };
+  }
+  return null;
+}
+
+function phoneFromIntake(text: string): { phone: string; raw: string } | null {
+  const re = /\(?\b(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const before = text.slice(Math.max(0, match.index - 24), match.index);
+    if (/\b(fax|tel|ext)\b/i.test(before)) continue;
+    return { phone: formatUsPhoneInput(match[1] + match[2] + match[3]), raw: match[0] };
+  }
+  return null;
+}
+
 export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys?: string[]; settings?: ScheduleSettingsConfig }): ParsedIntake {
   const ask: string[] = [];
   const d: Partial<IntakeDraft> = {};
-  let text = raw.replace(/\s+/g, " ").trim()
+  let text = stripReferralNoise(raw).replace(/\s+/g, " ").trim()
     .replace(/^\/new\b\s*/i, "")
     .replace(/^(hi|hey|hello)\b[,!.]?\s*/i, "")
     .replace(/^(i|we)\s+(have|got)\s+(a\s+)?new\s+(patient|pt)(\s+for\s+(you|u))?\s*[:,.!-]?\s*/i, "")
@@ -100,9 +141,9 @@ export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys
   const used: string[] = [];
   const take = (s: string) => { used.push(s); };
 
-  // Phone
-  const ph = /\(?\b(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b/.exec(text);
-  if (ph) { d.phone = formatUsPhoneInput(ph[1] + ph[2] + ph[3]); take(ph[0]); }
+  // Phone — skip Fax, Tel, and EXT numbers.
+  const ph = phoneFromIntake(text);
+  if (ph) { d.phone = ph.phone; take(ph.raw); }
 
   // Requested appointment ("appt tomorrow at 3", "can come in friday 10am", "book her 10/22 2:30")
   const ap = /(?:\b(?:she|he|they|pt)\s+)?(?:\b(?:can|could|will|wants? to|would like to)\s+)?\b(appt|appointment|come in|coming in|book(?: (?:him|her|them))?|schedule(?: (?:him|her|them))?|see (?:him|her|them)|wants? to come)\b([^.;]*)/i.exec(text);
@@ -163,6 +204,7 @@ export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys
   let rest = text;
   for (const u of used) rest = rest.replace(u, " ");
   rest = rest.replace(/\s+/g, " ").trim();
+  const labeledName = /\b(?:(?:patient|client)\s+name|name)\s*:\s*([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,5})(?=\s*(?:dob|d\.o\.b|contact|phone|cell|location|address|doi|dol|date)\b|[,.]|$)/i.exec(rest);
   const named = /\b(?:name(?:'s| is)?|patient(?: is)?|pt(?: is)?)\s*:?\s*([A-Za-z'’-]+(?:\s+[A-Za-z'’-]+){0,2})/i.exec(rest);
   const comma = new RegExp(`^(${NAME_WORD}),\\s*(${NAME_WORD})\\b`).exec(rest);
   const lead = new RegExp(`^(${NAME_WORD})\\s+(${NAME_WORD})(?:\\s+(${NAME_WORD}))?\\b`).exec(rest);
@@ -170,7 +212,18 @@ export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys
   const STOP = /^(she|he|they|the|was|is|in|at|on|and|with|call|calling|called|needs?|wants?|can|has|had|from|for|her|his|rear|accident|wreck|mva|hurt|appt|this|that|these|those|patient|patients|name|phone|cell|email|please|new|referral|referred|dear|hello|hi|hey|thanks|thank|regards|sincerely|unknown|none|attn|here|there|subject)$/i;
   const nameTokenOk = (word: string) => !STOP.test(word) && word.replace(/[^A-Za-z]/g, "").length >= 2;
   let nameUsed = "";
-  if (comma && nameTokenOk(comma[1]) && nameTokenOk(comma[2])) { d.lastName = titleCase(comma[1]); d.firstName = titleCase(comma[2]); nameUsed = comma[0]; }
+  if (labeledName) {
+    const parts = labeledName[1].trim().split(/\s+/).filter((word) => nameTokenOk(word));
+    if (parts.length >= 2) {
+      d.firstName = titleCase(parts[0]);
+      d.lastName = parts.slice(1).map(titleCase).join(" ");
+      nameUsed = labeledName[0];
+    } else if (parts.length === 1) {
+      d.firstName = titleCase(parts[0]);
+      ask.push("What's the last name?");
+      nameUsed = labeledName[0];
+    }
+  } else if (comma && nameTokenOk(comma[1]) && nameTokenOk(comma[2])) { d.lastName = titleCase(comma[1]); d.firstName = titleCase(comma[2]); nameUsed = comma[0]; }
   else if (named && !STOP.test(named[1].split(/\s+/)[0])) {
     const ws = named[1].split(/\s+/).filter((w) => nameTokenOk(w));
     if (ws.length >= 2) { d.firstName = titleCase(ws[0]); d.lastName = titleCase(ws[ws.length - 1]); if (ws.length === 3) ask.push(`Is the last name "${titleCase(ws[2])}" or "${titleCase(ws[1])} ${titleCase(ws[2])}"?`); }

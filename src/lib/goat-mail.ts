@@ -4,7 +4,7 @@
  * Nothing here talks to Microsoft. The mailbox read stays in the server route.
  */
 import { findDuplicateCases, duplicateDateIso, splitPatientName } from "@/lib/patient-duplicate";
-import { isObviouslyBadPatientName } from "@/lib/new-patient-intake";
+import { isObviouslyBadPatientName, referralNameFromSubject } from "@/lib/new-patient-intake";
 import { unionMerge } from "@/lib/kv-merge";
 import { notifyChange } from "@/lib/local-sync";
 import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
@@ -148,6 +148,8 @@ export type GoatMailRow = {
   patientId?: string;
   create: boolean;
   draft?: GoatMailDraft;
+  /** Parsed referral shown in New Patient Intake. Nothing is created until Add patient. */
+  referral?: GoatMailDraft & { from: string };
 };
 
 type PatientLike = { id: string; fullName: string; dateOfLoss?: string; deleted?: boolean; phone?: string; dob?: string };
@@ -373,6 +375,12 @@ export function triageGoatMail(input: {
     const text = readable(message.body);
     const found = new Set(matchMailBuckets(readable(`${message.subject}\n${message.body}`).replace(/\s+/g, " "), message.from, buckets));
     const fill = quickFillFromText(text, { todayIso: input.todayIso });
+    const fromSubject = referralNameFromSubject(message.subject);
+    if (fromSubject && !found.has("bounced")) found.add("new-patient");
+    if (fromSubject && isObviouslyBadPatientName(fill.firstName ?? "", fill.lastName ?? "")) {
+      fill.firstName = fromSubject.firstName;
+      fill.lastName = fromSubject.lastName;
+    }
     const chosen = decision?.category;
     const conflict = !chosen && found.size > 1 && !found.has("bounced");
     let category: GoatMailCategory = chosen ?? (found.size === 1 ? [...found][0] : "other");
@@ -463,6 +471,17 @@ export function triageGoatMail(input: {
       choices,
       patientId: decision?.patientId ?? duplicate[0]?.id ?? linked?.id,
       create: canCreate,
+      referral: category === "new-patient"
+        ? {
+            firstName: fill.firstName ?? "",
+            lastName: fill.lastName ?? "",
+            phone: fill.phone,
+            dob: fill.dob,
+            dateOfLoss: fill.dateOfLoss ?? "",
+            attorney: fill.attorney,
+            from: message.from,
+          }
+        : undefined,
       draft,
     });
   }

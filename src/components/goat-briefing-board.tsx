@@ -143,6 +143,9 @@ export function GoatBriefingBoard({
   mail,
   answers,
   todos,
+  referrals = [],
+  onAddReferral,
+  onDismissReferral,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
@@ -157,6 +160,9 @@ export function GoatBriefingBoard({
   mail: ReactNode;
   answers: ReactNode;
   todos: ReactNode;
+  referrals?: Array<{ id: string; name: string; phone?: string; dateOfLoss?: string; attorney?: string; missing: string[]; from?: string; canAdd: boolean }>;
+  onAddReferral?: (id: string) => void;
+  onDismissReferral?: (id: string) => void;
 }) {
   const snapshot = useSyncExternalStore(subscribeBoard, boardSnapshot, () => "");
   const boxes = useMemo(() => boxesFromSnapshot(snapshot), [snapshot]);
@@ -265,15 +271,29 @@ export function GoatBriefingBoard({
     }
     if (box.kind === "intake") {
       return (
-        <ul className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm">
+          {referrals.map((row) => (
+            <div className="rounded-lg border border-[var(--line-soft)] px-2 py-2" key={row.id}>
+              <p className="font-medium">{row.name || "Name missing"}</p>
+              <p className="text-xs text-[var(--text-muted)]">
+                {[row.phone || "No phone", row.dateOfLoss || "No date of injury", row.attorney || "No attorney"].join(" · ")}
+              </p>
+              {row.missing.length > 0 && <p className="text-xs text-[var(--text-muted)]">Missing: {row.missing.join(", ")}</p>}
+              {row.from && <p className="truncate text-xs text-[var(--text-muted)]">{row.from}</p>}
+              <div className="mt-1 flex gap-2">
+                <button className="btn btn-secondary btn-sm" disabled={!row.canAdd} onClick={() => onAddReferral?.(row.id)} type="button">Add patient</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => onDismissReferral?.(row.id)} type="button">Dismiss</button>
+              </div>
+            </div>
+          ))}
           {model.intake.map((row) => (
-            <li className="flex flex-wrap items-center justify-between gap-2" key={row.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2" key={row.id}>
               <Link className="font-medium hover:underline" href={row.href}>{row.name}</Link>
               <IntakeDeleteButton patientId={row.id} />
-            </li>
+            </div>
           ))}
-          {model.intake.length === 0 && <li className="text-sm text-[var(--text-muted)]">No one waiting on intake.</li>}
-        </ul>
+          {model.intake.length === 0 && referrals.length === 0 && <p className="text-sm text-[var(--text-muted)]">No one waiting on intake.</p>}
+        </div>
       );
     }
     if (box.kind === "case-snapshot") {

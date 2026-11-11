@@ -15,6 +15,7 @@ assert.equal(isInNewPatientIntake({ ...pi, onPatientList: true }), false);
 assert.equal(lacksCaseInfo({ dateOfLoss: "2026-02-11", isCashPatient: false }), false);
 assert.equal(isInNewPatientIntake({ dateOfLoss: "", isCashPatient: true }), false);
 assert.equal(isInNewPatientIntake({ dateOfLoss: "", deleted: true }), false);
+assert.equal(isInNewPatientIntake({ dateOfLoss: "", isCashPatient: false, lastUpdate: "2026-11-11" }), true, "a new chart with no case info stays in intake");
 
 assert.equal(intakeDeleteReason({ inIntake: true, hasNotes: false, appointmentCount: 0 }), null);
 assert.equal(intakeDeleteReason({ inIntake: false, hasNotes: false, appointmentCount: 0 }), "Only an intake chart with no case info can be deleted here.");

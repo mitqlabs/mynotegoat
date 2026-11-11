@@ -292,4 +292,29 @@ assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forwa
 assert.equal(server.includes('method: "POST"'), true);
 assert.equal((server.match(/graph\.microsoft\.com/g) ?? []).length >= 1, true);
 
+const edgar = triageGoatMail({
+  messages: [msg({
+    id: "edgar",
+    subject: "RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)",
+    from: "vhenao@dtlfightsforyou.com",
+    body: `This is ready to schedule.
+
+Email: vhenao@dtlfightsforyou.com
+The Russo Firm
+1120 Ponce De Leon Blvd
+Coral Gables, FL 33134
+Fax: 305-395-7810
+Tel: 305-555-0100`,
+  })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(edgar.referral?.firstName, "Edgar");
+assert.equal(edgar.referral?.lastName, "Palma");
+assert.equal(edgar.referral?.phone, undefined);
+assert.equal(edgar.referral?.firstName === "This", false);
+assert.doesNotMatch(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /creating\.add/);
+
 console.log("goat mail ok");
