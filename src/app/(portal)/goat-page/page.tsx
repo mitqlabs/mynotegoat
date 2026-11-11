@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GoatBriefingBoard } from "@/components/goat-briefing-board";
-import { GoatMailBoard, GoatMailSecretNotice, useGoatMail } from "@/components/goat-mail-board";
+import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
 import { GoatPageView } from "@/components/goat-page-view";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
@@ -124,7 +124,6 @@ export default function GoatPage() {
         todayIso={iso}
         todos={
           <>
-            <GoatMailSecretNotice expiresOn={mail.status?.secretExpiresOn} />
             <UntouchedItems
               items={untouched}
               onHandled={(id) => {

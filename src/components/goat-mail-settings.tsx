@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { appConfirm } from "@/components/app-dialog";
-import { FolderPicker, SecretDateField } from "@/components/goat-mail-board";
+import { FolderPicker, GoatMailSecretNotice, SecretDateField } from "@/components/goat-mail-board";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import {
   GOAT_MAIL_CONNECT_LINE,
-  GOAT_MAIL_SECRET_EXPIRED,
   GOAT_MAIL_SETUP_LINE,
   defaultMailBuckets,
   resolveMailBuckets,
@@ -175,7 +174,7 @@ export function GoatMailSettingsPanel({
             </button>
           </div>
         ) : null}
-        {status?.secretExpired ? <p className="mt-2 rounded-xl bg-[#fde8e8] px-3 py-2 text-sm text-[#9b1c1c]">{GOAT_MAIL_SECRET_EXPIRED}</p> : null}
+        <GoatMailSecretNotice expiresOn={status?.secretExpiresOn} secretExpired={status?.secretExpired} />
       </div>
       {status?.connected && (status.folders?.length ?? 0) > 0 ? (
         <FolderPicker folders={status.folders ?? []} notice={folderNotice} onSave={(ids) => void saveFolders(ids)} selected={status.selectedFolderIds ?? []} />

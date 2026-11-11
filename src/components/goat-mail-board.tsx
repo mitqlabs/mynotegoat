@@ -385,7 +385,7 @@ function MailHeader({
         {ready && !status.connected ? <p className="text-sm text-[var(--text-muted)]">{GOAT_MAIL_CONNECT_LINE}</p> : null}
         {status.connected ? <p className="truncate text-sm text-[var(--text-muted)]">Connected as {status.account || "the office mailbox"} · read only</p> : null}
         {notice && notice !== "disconnected" ? <p className="text-sm text-[var(--text-muted)]">Could not connect the mailbox. Try again.</p> : null}
-        {status.error && !status.secretExpired ? <p className="text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p> : null}
+        {status.error ? <p className="text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {ready && !status.connected ? (
@@ -500,7 +500,6 @@ export function GoatMailBoard({
   return (
     <div className="w-full space-y-4" data-goat-mail-page>
       <MailHeader notice={notice} onConnect={onConnect} onDisconnect={onDisconnect} status={status} />
-      <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
       {ready && status.connected ? <BucketColumns buckets={buckets} onAnswer={onAnswer} onResolve={onResolve} rows={rows} /> : null}
     </div>
   );
