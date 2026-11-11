@@ -11,10 +11,88 @@ import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
 export const GOAT_MAIL_KEY = "casemate.goat-mail.v1";
 
 /** Shown when the server has no mailbox app yet. No setup steps. */
-export const GOAT_MAIL_COMING_SOON = "GOAT Mail is coming soon";
+export const GOAT_MAIL_SETUP_LINE = "GOAT Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, GOAT does not read any mailbox.";
 
 /** Shown when the server is ready and this office has not connected a mailbox. */
 export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let GOAT read (never send) your email.";
+
+/** Workspace settings row. The mail API writes it. Inbox is used when it is empty. */
+export const GOAT_MAIL_FOLDERS_KEY = "casemate.goat-mail-folders.v1";
+
+/** Optional Microsoft app-secret expiry. The mail API writes this row. */
+export const GOAT_MAIL_SECRET_KEY = "casemate.goat-mail-secret.v1";
+
+const MAIL_MONTHS = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "June", "July", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."] as const;
+
+export function normalizeSecretExpiresOn(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return "";
+  return value;
+}
+
+/** "Nov. 11, 2026" and "June 5, 2026". May, June, and July have no period. */
+export function mailSecretDateLabel(iso: string): string {
+  const clean = normalizeSecretExpiresOn(iso);
+  if (!clean) return iso;
+  const date = new Date(Number(clean.slice(0, 4)), Number(clean.slice(5, 7)) - 1, Number(clean.slice(8, 10)));
+  return `${MAIL_MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+export function mailSecretAlertText(iso: string): string {
+  return `GOAT Mail's Microsoft secret expires on ${mailSecretDateLabel(iso)}. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.`;
+}
+
+export const GOAT_MAIL_SECRET_EXPIRED = "GOAT Mail's Microsoft secret has expired. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.";
+
+/** True when the date is today, already past, or no more than 30 days away. */
+export function mailSecretDue(expiresOn: string | null | undefined, today: Date): boolean {
+  const clean = normalizeSecretExpiresOn(expiresOn ?? "");
+  if (!clean) return false;
+  const expires = new Date(Number(clean.slice(0, 4)), Number(clean.slice(5, 7)) - 1, Number(clean.slice(8, 10)));
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const limit = new Date(start);
+  limit.setDate(limit.getDate() + 30);
+  return expires.getTime() <= limit.getTime();
+}
+
+/** Microsoft rejected the app secret (invalid or expired). A stale refresh token is not this. */
+export function isInvalidClientSecretError(detail: string | undefined): boolean {
+  const text = detail ?? "";
+  if (/AADSTS7000215|AADSTS7000222|invalid_client/i.test(text)) return true;
+  return /client secret/i.test(text) && /invalid|expired|expir/i.test(text);
+}
+
+export type MailFolderChoice = {
+  id: string;
+  name: string;
+  path: string;
+  wellKnownName?: string;
+};
+
+/** Graph folder ids are opaque. Reject anything that could change the request path. */
+export function isSafeFolderId(id: string): boolean {
+  return id === "inbox" || /^[A-Za-z0-9=+\/_-]{1,180}$/.test(id);
+}
+
+/** Saved folder ids that still exist, or Inbox when the office has not chosen. */
+export function chosenFolderIds(folders: MailFolderChoice[], saved: string[] | null | undefined): string[] {
+  const known = new Set(folders.map((folder) => folder.id));
+  const kept = (saved ?? []).filter((id) => (known.size > 0 ? known.has(id) : isSafeFolderId(id)));
+  if (kept.length) return kept;
+  const inbox = folders.find((folder) => folder.wellKnownName === "inbox") ?? folders.find((folder) => folder.name.toLowerCase() === "inbox");
+  return inbox ? [inbox.id] : [];
+}
+
+/** Newest first. The same message in two folders is listed once. */
+export function mergeMailMessages(groups: GoatMailMessage[][], limit = 25): GoatMailMessage[] {
+  const byId = new Map<string, GoatMailMessage>();
+  for (const group of groups) {
+    for (const message of group) if (message.id) byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((a, b) => (b.receivedAt || "").localeCompare(a.receivedAt || "")).slice(0, limit);
+}
 
 export type GoatMailCategory = "new-patient" | "lien" | "rb" | "medicals" | "specialist" | "bounced" | "other";
 

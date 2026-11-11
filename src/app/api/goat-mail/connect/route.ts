@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
 import { authorizeUrl, goatMailEnv, goatMailRedirectUri, signMailState } from "@/lib/goat-mail-server";
 
-/** Start the read-only Microsoft sign-in. Returns the authorize URL; the browser navigates there. */
-export async function POST(request: NextRequest) {
+async function beginConnect(request: NextRequest) {
   const env = goatMailEnv();
   if (!env.configured) return NextResponse.json({ error: "GOAT Mail is not configured yet." }, { status: 404 });
   const cfg = serverConfig();
@@ -21,4 +20,13 @@ export async function POST(request: NextRequest) {
   const res = NextResponse.json({ url });
   res.cookies.set("goat_mail_state", signed.cookie, { httpOnly: true, sameSite: "lax", secure: request.nextUrl.protocol === "https:", path: "/", maxAge: 600 });
   return res;
+}
+
+/** Start the read-only Microsoft sign-in. The Connect Outlook button opens this route. */
+export async function GET(request: NextRequest) {
+  return beginConnect(request);
+}
+
+export async function POST(request: NextRequest) {
+  return beginConnect(request);
 }

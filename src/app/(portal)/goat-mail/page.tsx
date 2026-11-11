@@ -20,11 +20,14 @@ export default function GoatMailPage() {
   });
   return (
     <GoatMailBoard
+      folderNotice={mail.folderNotice}
       notice={mail.notice}
       onAnswer={mail.answer}
       onConnect={() => void mail.connect()}
       onDisconnect={() => void mail.disconnect()}
       onResolve={mail.resolve}
+      onSaveFolders={(ids) => void mail.saveFolders(ids)}
+      onSaveSecret={(iso) => void mail.saveSecret(iso)}
       rows={mail.rows}
       status={mail.status}
       variant="page"
