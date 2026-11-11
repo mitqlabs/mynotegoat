@@ -1,19 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { chipsFor } from "@/lib/goat-briefs";
-import type { GoatPageModel, GoatPageScheduleRow } from "@/lib/goat-page-model";
-
-const TONE: Record<GoatPageScheduleRow["tone"], string> = {
-  next: "bg-[#e7f6ee] text-[#1f7a45]",
-  confirmed: "bg-[#e7f6ee] text-[#1f7a45]",
-  in: "bg-[#e7f0ff] text-[#1d4ed8]",
-  new: "bg-[#f3e8ff] text-[#7e22ce]",
-  risk: "bg-[#fff1f0] text-[#c93b1d]",
-  canceled: "bg-[#f3f4f6] text-[#6b7280]",
-  done: "bg-[#eef2f6] text-[#475569]",
-};
+import type { GoatPageModel } from "@/lib/goat-page-model";
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -22,22 +11,14 @@ function plural(n: number, word: string): string {
 export function GoatPageView({
   model,
   isAdmin,
-  onMoveIntake,
-  mail,
-  questions,
-  todos,
-  closeout,
-  handoff,
+  onChip,
+  children,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
-  onMoveIntake?: (patientId: string) => void;
-  /** Later sections fill these. The shell keeps the slots. */
-  mail?: ReactNode;
-  questions?: ReactNode;
-  todos?: ReactNode;
-  closeout?: ReactNode;
-  handoff?: ReactNode;
+  /** Pill clicks show that brief on the board. They do not open the chat popup. */
+  onChip: (label: string) => void;
+  children: ReactNode;
 }) {
   const chips = chipsFor(isAdmin);
   return (
@@ -73,108 +54,18 @@ export function GoatPageView({
         </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {chips.map((chip) => (
-            <Link
+            <button
               className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--brand-primary)] hover:text-white"
-              href={chip === "GOAT Mail" ? "/goat-mail" : `/goat?q=${encodeURIComponent(chip)}`}
               key={chip}
+              onClick={() => onChip(chip)}
+              type="button"
             >
               {chip}
-            </Link>
+            </button>
           ))}
         </div>
       </section>
-
-      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
-        <section className="panel-card p-4" data-goat-page="mail">
-            <h2 className="text-sm font-semibold">GOAT Mail triage</h2>
-            {mail ?? <p className="mt-2 text-sm text-[var(--text-muted)]">GOAT Mail is coming soon</p>}
-        </section>
-        <section className="panel-card p-4" data-goat-page="schedule">
-            <div className="flex items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold">Today&apos;s schedule</h2>
-              <span className="text-xs text-[var(--text-muted)]">{model.schedule.rows.length}</span>
-            </div>
-            <div className="mt-3 grid grid-cols-4 gap-2 text-center">
-              {[
-                [model.schedule.confirmed, "Confirmed"],
-                [model.schedule.checkedIn, "Checked in"],
-                [model.schedule.noShow, "No-show"],
-                [model.schedule.newPatients, "New patient"],
-              ].map(([n, label]) => (
-                <div className="rounded-xl bg-[var(--bg-soft)] px-1 py-2" key={String(label)}>
-                  <div className="text-lg font-semibold tabular-nums">{n}</div>
-                  <div className="text-[10px] text-[var(--text-muted)]">{label}</div>
-                </div>
-              ))}
-            </div>
-            <ul className="mt-3 divide-y divide-[var(--line-soft)]">
-              {model.schedule.rows.map((row) => (
-                <li className="flex items-center gap-3 py-2 text-sm" key={row.id}>
-                  <span className="w-16 shrink-0 tabular-nums text-[var(--text-muted)]">{row.time}</span>
-                  <Link className="min-w-0 flex-1 hover:underline" href={row.href}>
-                    <span className="block truncate font-medium">{row.name}</span>
-                    <span className="block truncate text-xs font-normal text-[var(--text-muted)]">{row.detail}</span>
-                  </Link>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${TONE[row.tone]}`}>{row.badge}</span>
-                </li>
-              ))}
-              {model.schedule.rows.length === 0 && (
-                <li className="py-3 text-sm text-[var(--text-muted)]">Nothing on the schedule today.</li>
-              )}
-            </ul>
-        </section>
-        <div className="space-y-4">
-          <section className="panel-card p-4" data-goat-page="intake">
-            <h2 className="text-sm font-semibold">New Patient Intake</h2>
-            <ul className="mt-2 divide-y divide-[var(--line-soft)]">
-              {model.intake.map((row) => (
-                <li className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm" key={row.id}>
-                  <Link className="font-medium hover:underline" href={row.href}>{row.name}</Link>
-                  <span className="text-xs text-[var(--text-muted)]">{row.detail}</span>
-                  {onMoveIntake && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => onMoveIntake(row.id)} type="button">
-                      Move Patient to Patient List
-                    </button>
-                  )}
-                </li>
-              ))}
-              {model.intake.length === 0 && <li className="py-2 text-sm text-[var(--text-muted)]">No one waiting on intake.</li>}
-            </ul>
-          </section>
-          <section className="panel-card p-4" data-goat-page="questions">
-            <h2 className="text-sm font-semibold">GOAT needs your answer</h2>
-            {questions ?? <p className="mt-2 text-sm text-[var(--text-muted)]">Nothing to decide right now.</p>}
-          </section>
-        </div>
-        <div className="space-y-4">
-          <section className="panel-card p-4" data-goat-page="todos">
-            <h2 className="text-sm font-semibold">To-dos and alerts</h2>
-            {todos ?? <p className="mt-2 text-sm text-[var(--text-muted)]">No untouched items yet.</p>}
-          </section>
-          <section className="panel-card p-4" data-goat-page="snapshot">
-            <h2 className="text-sm font-semibold">Case snapshot</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {[
-                [model.snapshot.openCases, "Open cases"],
-                [model.snapshot.awaitingRb, "Awaiting R&B"],
-                [model.snapshot.missingLien, "Missing Lien/LOP"],
-                [model.snapshot.inIntake, "In New Patient"],
-              ].map(([n, label]) => (
-                <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-2" key={String(label)}>
-                  <div className="text-xl font-semibold tabular-nums">{n}</div>
-                  <div className="text-xs text-[var(--text-muted)]">{label}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
-      {(closeout || handoff) && (
-        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,28rem),1fr))]">
-          {closeout}
-          {handoff}
-        </div>
-      )}
+      {children}
     </div>
   );
 }

@@ -76,14 +76,13 @@ const view = readFileSync(new URL("../../src/components/goat-page-view.tsx", imp
 assert.doesNotMatch(view, /Lien badge|office badge/i);
 assert.match(view, /data-goat-page-layout="full"/);
 assert.doesNotMatch(view, /max-w-6xl|mx-auto/);
-assert.match(view, /minmax\(min\(100%,16rem\),1fr\)/);
-const mailAt = view.indexOf('data-goat-page="mail"');
-const scheduleAt = view.indexOf('data-goat-page="schedule"');
-const intakeAt = view.indexOf('data-goat-page="intake"');
-const todosAt = view.indexOf('data-goat-page="todos"');
-assert.ok(mailAt > 0 && mailAt < scheduleAt && scheduleAt < intakeAt && intakeAt < todosAt);
-assert.match(view, /GOAT Mail/);
-assert.match(view, /Today&apos;s schedule/);
-assert.match(view, /Case snapshot/);
+assert.doesNotMatch(view, /\/goat\?q=/);
+assert.match(view, /onChip\(chip\)/);
+const board = readFileSync(new URL("../../src/lib/goat-board.ts", import.meta.url), "utf8");
+assert.match(board, /GOAT Answers/);
+assert.match(board, /Next open day/);
+assert.match(board, /End of Day Handoff/);
+assert.doesNotMatch(board, /Waiting On/);
+assert.doesNotMatch(board, /Open slots/);
 
 console.log("goat-page-model ok");

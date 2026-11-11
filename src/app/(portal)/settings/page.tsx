@@ -8,6 +8,7 @@ import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState 
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
 import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-panel";
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
+import { GoatPageSettings } from "@/components/goat-page-settings";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
@@ -95,6 +96,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   account: false,
   diagnostics: false,
   goat: false,
+  goatPage: false,
 };
 
 /** Settings tabs. Each tab shows a subset of sections; wrappers listed
@@ -4915,6 +4917,16 @@ export default function SettingsPage() {
             Open G.O.A.T. settings →
           </Link>
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        description="Which boxes are on the GOAT Page, and what each box shows."
+        hidden={!showSection("goatPage")}
+        isOpen={sectionIsOpen("goatPage")}
+        onToggle={() => toggleSection("goatPage")}
+        title="GOAT Page"
+      >
+        <GoatPageSettings canSetOfficeDefault={canEditSettings} />
       </CollapsibleSection>
 
       {/* ── Templates group ──────────────────────────────────────────

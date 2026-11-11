@@ -103,7 +103,7 @@ export const SETTINGS_TABS: { id: SettingsTabId; label: string; keys: SettingsSe
   { id: "office", label: "Office", keys: ["officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories", "adminAccess"] },
   { id: "schedule", label: "Schedule", keys: ["officeSettings", "schedule"] },
   { id: "notes", label: "Notes & Macros", keys: ["macros", "soapMacros", "templates", "documents"] },
-  { id: "goat", label: "G.O.A.T.", keys: ["goat"] },
+  { id: "goat", label: "G.O.A.T.", keys: ["goat", "goatPage"] },
   { id: "reminders", label: "Reminders", keys: ["officeSettings", "dashboard", "templates", "smsTemplates", "textReminders", "emailSettings"] },
   { id: "forms", label: "Forms", keys: ["templates", "forms"] },
   { id: "billing", label: "Billing", keys: ["macros", "billingMacros", "packageBuilder", "admin", "subscription"] },
