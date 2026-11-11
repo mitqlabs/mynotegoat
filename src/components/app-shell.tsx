@@ -97,6 +97,7 @@ function NavBadge({ count, className }: { count: number; className?: string }) {
 }
 
 function buildTitle(pathname: string, items: { href: string; label: string }[]) {
+  if (pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")) return "GOAT Mail";
   const item = items.find((entry) => pathname.startsWith(entry.href));
   return item?.label ?? "My Note Goat";
 }
@@ -258,6 +259,18 @@ export function AppShell({
                         <span aria-hidden>📖</span>
                         <span>Handbook</span>
                       </Link>
+                      <Link
+                        href="/goat-mail"
+                        className={classNames(
+                          "mt-2 flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold transition",
+                          pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "text-[#d5ebf8] hover:bg-white/10",
+                        )}
+                      >
+                        <span aria-hidden>✉️</span>
+                        <span>GOAT Mail</span>
+                      </Link>
                       <GlobalGoatButton className="mt-2 flex w-full items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-[#d5ebf8] transition hover:bg-white/10" />
                     </nav>
 
@@ -331,6 +344,18 @@ export function AppShell({
                         title="Handbook"
                       >
                         📖
+                      </Link>
+                      <Link
+                        href="/goat-mail"
+                        className={classNames(
+                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                          pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "text-[#d5ebf8] hover:bg-white/10",
+                        )}
+                        title="GOAT Mail"
+                      >
+                        ✉️
                       </Link>
                       <GlobalGoatButton compact className="flex h-10 w-10 items-center justify-center rounded-xl transition hover:bg-white/10" />
                     </nav>
@@ -406,6 +431,17 @@ export function AppShell({
                     </Link>
                   );
                 })}
+                <Link
+                  href="/goat-mail"
+                  className={classNames(
+                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
+                    pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
+                      ? "bg-[var(--brand-primary)] text-white"
+                      : "bg-[var(--bg-soft)] text-[var(--text-main)]",
+                  )}
+                >
+                  GOAT Mail
+                </Link>
                 <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
                 {/* Mobile-only sign out, icon at the end of the pill row. The
                     desktop sidebar (which holds Sign Out) is hidden below lg.

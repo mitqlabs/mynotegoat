@@ -73,6 +73,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.goat-untouched.v1": "workspace",
   // GOAT Mail triage answers (which message, which category, which new patient). Union-merged by id.
   "casemate.goat-mail.v1": "workspace",
+  // Folders GOAT Mail reads. The mail API writes this row; Inbox is the default when it is empty.
+  "casemate.goat-mail-folders.v1": "workspace",
   "casemate.duplicate-dismissals.v1": "workspace",
   "casemate.attorney-not-same.v1": "workspace",
   "casemate.team-settings.v1": "workspace",

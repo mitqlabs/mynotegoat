@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
-import { deleteMailConnection, goatMailEnv, goatMailWorkspaceId, loadMailConnection, readMailbox, saveMailConnection } from "@/lib/goat-mail-server";
+import { deleteMailConnection, goatMailEnv, goatMailWorkspaceId, loadMailConnection, loadMailFolderIds, readMailbox, saveMailConnection } from "@/lib/goat-mail-server";
 
 /** Recent messages, read-only. The refresh token stays on the server. */
 export async function GET(request: NextRequest) {
@@ -17,12 +17,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ configured: true, connected: false, needsMigration: true, messages: [] });
   }
   if (!row) return NextResponse.json({ configured: true, connected: false, messages: [] });
-  const read = await readMailbox({ ...env, refreshToken: row.refreshToken });
-  if ("error" in read) return NextResponse.json({ configured: true, connected: true, account: row.email, error: read.error, messages: [] });
+  const folderIds = await loadMailFolderIds(admin, workspaceId);
+  const read = await readMailbox({ ...env, refreshToken: row.refreshToken, folderIds });
+  if ("error" in read) return NextResponse.json({ configured: true, connected: true, account: row.email, error: read.error, messages: [], folders: [], selectedFolderIds: [] });
   if (read.refreshToken !== row.refreshToken) {
     await saveMailConnection(admin, { workspaceId, refreshToken: read.refreshToken, email: read.email || row.email });
   }
-  return NextResponse.json({ configured: true, connected: true, account: read.email || row.email, messages: read.messages });
+  return NextResponse.json({
+    configured: true,
+    connected: true,
+    account: read.email || row.email,
+    messages: read.messages,
+    folders: read.folders,
+    selectedFolderIds: read.selectedFolderIds,
+  });
 }
 
 /** Forget the stored refresh token. This does not change the mailbox. */

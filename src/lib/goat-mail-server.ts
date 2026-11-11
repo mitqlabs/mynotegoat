@@ -8,7 +8,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { GoatMailMessage } from "@/lib/goat-mail";
+import { GOAT_MAIL_FOLDERS_KEY, chosenFolderIds, isSafeFolderId, mergeMailMessages, type GoatMailMessage, type MailFolderChoice } from "@/lib/goat-mail";
 
 const TABLE = "goat_mail_connections";
 const SCOPE = "offline_access Mail.Read User.Read";
@@ -114,12 +114,100 @@ async function mailboxAddress(accessToken: string): Promise<string> {
   return (json.mail || json.userPrincipalName || "").trim();
 }
 
+type GraphFolder = {
+  id?: string;
+  displayName?: string;
+  childFolderCount?: number;
+  wellKnownName?: string;
+};
+
+const FOLDER_SELECT = "id,displayName,childFolderCount,wellKnownName";
+
+function graphHeaders(accessToken: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    Prefer: 'outlook.body-content-type="text"',
+  };
+}
+
+async function graphJson(accessToken: string, pathOrUrl: string): Promise<{ value?: unknown[]; "@odata.nextLink"?: string } | { error: string }> {
+  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `https://graph.microsoft.com/v1.0${pathOrUrl}`;
+  const res = await fetch(url, { headers: graphHeaders(accessToken) });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    return { error: detail.error?.message || "Could not read the mailbox." };
+  }
+  return (await res.json().catch(() => ({}))) as { value?: unknown[]; "@odata.nextLink"?: string };
+}
+
+async function graphPages(accessToken: string, path: string): Promise<GraphFolder[]> {
+  const out: GraphFolder[] = [];
+  let next: string | undefined = path;
+  for (let page = 0; page < 6 && next; page += 1) {
+    const json = await graphJson(accessToken, next);
+    if ("error" in json) break;
+    out.push(...((json.value ?? []) as GraphFolder[]));
+    next = json["@odata.nextLink"];
+  }
+  return out;
+}
+
+/** Every mailbox folder, including nested ones. Read-only. */
+export async function listMailFolders(accessToken: string): Promise<MailFolderChoice[]> {
+  const roots = await graphPages(accessToken, `/me/mailFolders?$top=50&$select=${FOLDER_SELECT}`);
+  const out: MailFolderChoice[] = [];
+  const seen = new Set<string>();
+  const walk = async (folder: GraphFolder, parentPath: string, depth: number) => {
+    if (!folder.id || !isSafeFolderId(folder.id) || seen.has(folder.id) || out.length >= 150) return;
+    seen.add(folder.id);
+    const name = folder.displayName || "Folder";
+    const pathName = parentPath ? `${parentPath} / ${name}` : name;
+    out.push({
+      id: folder.id,
+      name,
+      path: pathName,
+      ...(folder.wellKnownName ? { wellKnownName: folder.wellKnownName } : {}),
+    });
+    if ((folder.childFolderCount ?? 0) > 0 && depth < 4) {
+      const children = await graphPages(accessToken, `/me/mailFolders/${encodeURIComponent(folder.id)}/childFolders?$top=50&$select=${FOLDER_SELECT}`);
+      for (const child of children) await walk(child, pathName, depth + 1);
+    }
+  };
+  for (const root of roots) await walk(root, "", 0);
+  return out;
+}
+
+function toMessages(value: unknown[] | undefined): GoatMailMessage[] {
+  return (value ?? [])
+    .filter((row): row is { id: string; subject?: string; receivedDateTime?: string; bodyPreview?: string; body?: { content?: string }; from?: { emailAddress?: { address?: string; name?: string } } } => {
+      return !!row && typeof row === "object" && typeof (row as { id?: string }).id === "string";
+    })
+    .map((row) => ({
+      id: row.id,
+      subject: row.subject || "",
+      from: row.from?.emailAddress?.address || row.from?.emailAddress?.name || "",
+      receivedAt: row.receivedDateTime || "",
+      body: (row.body?.content || row.bodyPreview || "").slice(0, 6000),
+    }));
+}
+
+async function readFolderMessages(accessToken: string, folderId: string): Promise<GoatMailMessage[] | { error: string }> {
+  if (!isSafeFolderId(folderId)) return [];
+  const json = await graphJson(
+    accessToken,
+    `/me/mailFolders/${encodeURIComponent(folderId)}/messages?$top=25&$select=id,subject,from,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime desc`,
+  );
+  if ("error" in json) return { error: json.error };
+  return toMessages(json.value);
+}
+
 export async function readMailbox(input: {
   tenant: string;
   clientId: string;
   clientSecret: string;
   refreshToken: string;
-}): Promise<{ email: string; refreshToken: string; messages: GoatMailMessage[] } | { error: string }> {
+  folderIds: string[] | null;
+}): Promise<{ email: string; refreshToken: string; messages: GoatMailMessage[]; folders: MailFolderChoice[]; selectedFolderIds: string[] } | { error: string }> {
   const tokens = await tokenRequest(
     input.tenant,
     new URLSearchParams({
@@ -131,39 +219,50 @@ export async function readMailbox(input: {
     }),
   );
   if (!tokens.access_token) return { error: tokens.error || "The mailbox connection expired. Connect it again." };
-  const headers = {
-    Authorization: `Bearer ${tokens.access_token}`,
-    Prefer: 'outlook.body-content-type="text"',
-  };
-  const res = await fetch(
-    "https://graph.microsoft.com/v1.0/me/messages?$top=25&$select=id,subject,from,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime desc",
-    { headers },
-  );
-  if (!res.ok) {
-    const detail = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-    return { error: detail.error?.message || "Could not read the mailbox." };
+  const folders = await listMailFolders(tokens.access_token);
+  const selectedFolderIds = chosenFolderIds(folders, input.folderIds);
+  const ids = selectedFolderIds.length ? selectedFolderIds : ["inbox"];
+  const groups: GoatMailMessage[][] = [];
+  let error = "";
+  for (const id of ids) {
+    const got = await readFolderMessages(tokens.access_token, id);
+    if (!Array.isArray(got)) error = got.error;
+    else groups.push(got);
   }
-  const json = (await res.json().catch(() => ({}))) as {
-    value?: Array<{
-      id?: string;
-      subject?: string;
-      receivedDateTime?: string;
-      bodyPreview?: string;
-      body?: { content?: string };
-      from?: { emailAddress?: { address?: string; name?: string } };
-    }>;
-  };
+  if (!groups.length && error) return { error };
   const email = await mailboxAddress(tokens.access_token);
-  const messages: GoatMailMessage[] = (json.value ?? [])
-    .filter((row) => typeof row.id === "string")
-    .map((row) => ({
-      id: row.id as string,
-      subject: row.subject || "",
-      from: row.from?.emailAddress?.address || row.from?.emailAddress?.name || "",
-      receivedAt: row.receivedDateTime || "",
-      body: (row.body?.content || row.bodyPreview || "").slice(0, 6000),
-    }));
-  return { email, refreshToken: tokens.refresh_token || input.refreshToken, messages };
+  return {
+    email,
+    refreshToken: tokens.refresh_token || input.refreshToken,
+    messages: mergeMailMessages(groups),
+    folders,
+    selectedFolderIds,
+  };
+}
+
+export async function loadMailFolderIds(admin: SupabaseClient, workspaceId: string): Promise<string[] | null> {
+  const { data, error } = await admin.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_FOLDERS_KEY).maybeSingle();
+  if (error || !data) return null;
+  const value = data.value as { folderIds?: unknown };
+  if (!value || !Array.isArray(value.folderIds)) return null;
+  const ids = value.folderIds.filter((id): id is string => typeof id === "string" && isSafeFolderId(id));
+  return ids.length ? ids : null;
+}
+
+export async function saveMailFolderIds(admin: SupabaseClient, workspaceId: string, folderIds: string[]): Promise<{ ok: true } | { error: string }> {
+  const ids = folderIds.filter((id) => isSafeFolderId(id));
+  if (!ids.length) return { error: "Pick at least one folder." };
+  const { error } = await admin.from("workspace_kv").upsert(
+    {
+      workspace_id: workspaceId,
+      key: GOAT_MAIL_FOLDERS_KEY,
+      value: { folderIds: ids },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "workspace_id,key" },
+  );
+  if (error) return { error: "Could not save the folder choice." };
+  return { ok: true };
 }
 
 export async function loadMailConnection(admin: SupabaseClient, workspaceId: string): Promise<{ refreshToken: string; email: string } | null | { missingTable: true }> {
@@ -189,4 +288,5 @@ export async function saveMailConnection(admin: SupabaseClient, row: { workspace
 
 export async function deleteMailConnection(admin: SupabaseClient, workspaceId: string): Promise<void> {
   await admin.from(TABLE).delete().eq("workspace_id", workspaceId);
+  await admin.from("workspace_kv").delete().eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_FOLDERS_KEY);
 }

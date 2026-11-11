@@ -4,7 +4,8 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { triageGoatMail, type GoatMailMessage } from "../../src/lib/goat-mail";
+import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
+import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, mergeMailMessages, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -134,21 +135,46 @@ const board = readFileSync(new URL("../../src/components/goat-mail-board.tsx", i
 const handbook = readFileSync(new URL("../../src/lib/handbook-goat.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../../src/components/goat-page-view.tsx", import.meta.url), "utf8");
 const copy = readFileSync(new URL("../../src/lib/goat-mail.ts", import.meta.url), "utf8");
+const shell = readFileSync(new URL("../../src/components/app-shell.tsx", import.meta.url), "utf8");
 for (const src of [board, handbook, page, copy]) {
   assert.doesNotMatch(src, /Entra|GOAT_MAIL_CLIENT_ID|goat_mail_connections|Register the Microsoft app/);
+  assert.doesNotMatch(src, /coming soon/i);
 }
-assert.match(copy, /GOAT Mail is coming soon/);
+assert.match(copy, /isn't turned on for this office yet/);
 assert.match(copy, /Sign in with your office Outlook to let GOAT read \(never send\) your email\./);
-assert.match(board, /GOAT_MAIL_COMING_SOON/);
+assert.match(board, /GOAT_MAIL_SETUP_LINE/);
 assert.match(board, /GOAT_MAIL_CONNECT_LINE/);
-assert.match(board, /Connect mailbox/);
-assert.match(page, /GOAT Mail is coming soon/);
+assert.match(board, /Connect Outlook/);
+assert.match(board, /href="\/api\/goat-mail\/connect"/);
+assert.match(board, /Open GOAT Mail/);
+assert.match(board, /: "Connect"/);
+assert.match(board, /href="\/goat-mail"/);
+assert.match(shell, /href="\/goat-mail"/);
+assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "GOAT Mail sits with the G.O.A.T. sidebar link");
+assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_FOLDERS_KEY], "workspace");
+
+const folders: MailFolderChoice[] = [
+  { id: "in", name: "Inbox", path: "Inbox", wellKnownName: "inbox" },
+  { id: "ref", name: "Referrals", path: "Inbox / Referrals" },
+  { id: "sent", name: "Sent Items", path: "Sent Items", wellKnownName: "sentitems" },
+];
+assert.deepEqual(chosenFolderIds(folders, null), ["in"]);
+assert.deepEqual(chosenFolderIds(folders, ["missing", "ref"]), ["ref"]);
+assert.deepEqual(chosenFolderIds(folders, []), ["in"]);
+const merged = mergeMailMessages([
+  [{ id: "a", subject: "Older", from: "a@firm.test", receivedAt: "2026-11-01T00:00:00Z", body: "" }, { id: "b", subject: "Shared", from: "b@firm.test", receivedAt: "2026-11-09T12:00:00Z", body: "" }],
+  [{ id: "b", subject: "Shared", from: "b@firm.test", receivedAt: "2026-11-09T12:00:00Z", body: "" }, { id: "c", subject: "Newest", from: "c@firm.test", receivedAt: "2026-11-10T00:00:00Z", body: "" }],
+]);
+assert.deepEqual(merged.map((message) => message.id), ["c", "b", "a"]);
 
 const server = readFileSync(new URL("../../src/lib/goat-mail-server.ts", import.meta.url), "utf8");
 assert.match(server, /offline_access Mail\.Read User\.Read/);
-assert.match(server, /graph\.microsoft\.com\/v1\.0\/me\/messages/);
-assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forward/);
+assert.match(server, /\/me\/mailFolders\//);
+assert.match(server, /childFolders/);
+assert.match(server, /workspace_kv/);
+assert.doesNotMatch(server, /\/me\/messages\?/);
+assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forward|\/move/);
 assert.equal(server.includes('method: "POST"'), true);
-assert.equal((server.match(/graph\.microsoft\.com/g) ?? []).length >= 2, true);
+assert.equal((server.match(/graph\.microsoft\.com/g) ?? []).length >= 1, true);
 
 console.log("goat mail ok");

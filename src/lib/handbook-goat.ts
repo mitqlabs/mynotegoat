@@ -30,8 +30,9 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "GOAT Mail",
       steps: [
-        "Until GOAT Mail is turned on for the office, the page says GOAT Mail is coming soon.",
-        "When it is ready, open GOAT Mail and tap Connect mailbox. Sign in with the office Outlook account. GOAT can read that mailbox. It never sends, deletes, or changes email.",
+        "GOAT Mail is in the sidebar, next to G.O.A.T. Until it is turned on for the office, that page says it isn't turned on yet. GOAT does not read a mailbox.",
+        "When it is turned on, open GOAT Mail and tap Connect Outlook. Sign in with the office Outlook account. Pick which folders GOAT reads. Inbox is already checked. GOAT reads only those folders. It never sends, moves, deletes, or changes email.",
+        "On the GOAT Page, the GOAT Mail box links here: Connect before the mailbox is connected, and Open GOAT Mail after.",
         "Messages sort into New Patient referral, Lien or LOP request (the word is Settings → Office Information → Claim document), R&B / Report & Bill requested, Medicals requested, Specialist/imaging reply, Bounced email, or Other.",
         "A clear new-patient referral is added to New Patient Intake with Quick Fill. Missing fields stay flagged. Unbooked referrals, multi-passenger crashes, and a second crash for someone already in the office are flagged. If two categories fit, or the name is unclear, it goes under GOAT Needs Your Answer instead of guessing.",
       ],

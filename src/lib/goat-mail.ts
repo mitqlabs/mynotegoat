@@ -11,10 +11,43 @@ import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
 export const GOAT_MAIL_KEY = "casemate.goat-mail.v1";
 
 /** Shown when the server has no mailbox app yet. No setup steps. */
-export const GOAT_MAIL_COMING_SOON = "GOAT Mail is coming soon";
+export const GOAT_MAIL_SETUP_LINE = "GOAT Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, GOAT does not read any mailbox.";
 
 /** Shown when the server is ready and this office has not connected a mailbox. */
 export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let GOAT read (never send) your email.";
+
+/** Workspace settings row. The mail API writes it. Inbox is used when it is empty. */
+export const GOAT_MAIL_FOLDERS_KEY = "casemate.goat-mail-folders.v1";
+
+export type MailFolderChoice = {
+  id: string;
+  name: string;
+  path: string;
+  wellKnownName?: string;
+};
+
+/** Graph folder ids are opaque. Reject anything that could change the request path. */
+export function isSafeFolderId(id: string): boolean {
+  return id === "inbox" || /^[A-Za-z0-9=+\/_-]{1,180}$/.test(id);
+}
+
+/** Saved folder ids that still exist, or Inbox when the office has not chosen. */
+export function chosenFolderIds(folders: MailFolderChoice[], saved: string[] | null | undefined): string[] {
+  const known = new Set(folders.map((folder) => folder.id));
+  const kept = (saved ?? []).filter((id) => (known.size > 0 ? known.has(id) : isSafeFolderId(id)));
+  if (kept.length) return kept;
+  const inbox = folders.find((folder) => folder.wellKnownName === "inbox") ?? folders.find((folder) => folder.name.toLowerCase() === "inbox");
+  return inbox ? [inbox.id] : [];
+}
+
+/** Newest first. The same message in two folders is listed once. */
+export function mergeMailMessages(groups: GoatMailMessage[][], limit = 25): GoatMailMessage[] {
+  const byId = new Map<string, GoatMailMessage>();
+  for (const group of groups) {
+    for (const message of group) if (message.id) byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((a, b) => (b.receivedAt || "").localeCompare(a.receivedAt || "")).slice(0, limit);
+}
 
 export type GoatMailCategory = "new-patient" | "lien" | "rb" | "medicals" | "specialist" | "bounced" | "other";
 
