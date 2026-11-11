@@ -73,20 +73,16 @@ export function GoatChatFace({
   onOpen: () => void;
   onRetry: () => void;
 }) {
-  const ring =
+  const halo =
     phase === "saved"
-      ? "border-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.35)]"
+      ? "shadow-[0_0_0_4px_rgba(16,185,129,0.45)]"
       : phase === "saving"
-        ? "border-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.28)]"
+        ? "shadow-[0_0_0_4px_rgba(14,165,233,0.4)]"
         : phase === "error"
-          ? "border-red-500 shadow-[0_0_0_4px_rgba(220,38,38,0.28)]"
-          : "border-transparent shadow-[0_8px_24px_rgba(14,51,78,0.18)]";
+          ? "shadow-[0_0_0_4px_rgba(220,38,38,0.4)]"
+          : "shadow-[0_8px_24px_rgba(14,51,78,0.18)]";
   const pill =
-    phase === "saved"
-      ? "bg-emerald-600"
-      : phase === "saving"
-        ? "bg-sky-600"
-        : "bg-red-600";
+    phase === "saved" ? "bg-emerald-600" : phase === "saving" ? "bg-sky-600" : "bg-red-600";
   return (
     <div className="flex items-center gap-2">
       {phase !== "idle" && (
@@ -100,20 +96,23 @@ export function GoatChatFace({
       )}
       <button
         aria-label="Open G.O.A.T. chat"
-        className={`flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 bg-transparent p-0 transition motion-reduce:transition-none motion-reduce:hover:scale-100 hover:scale-105 ${ring}`}
+        className={`relative h-12 w-12 overflow-hidden rounded-full border-0 bg-transparent p-0 transition motion-reduce:transition-none motion-reduce:hover:scale-100 hover:scale-105 ${halo}`}
         onClick={onOpen}
         title="G.O.A.T. chat"
         type="button"
       >
+        {/* The source art has a little more empty space on the right and bottom.
+            Cover the circle, then nudge that padding so the goat sits in the middle. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           alt=""
-          className="h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full max-w-none"
           draggable={false}
           height={48}
-          sizes="48px"
+          sizes="128px"
           src="/goat-avatar/avatar-128.png"
           srcSet="/goat-avatar/avatar-64.png 64w, /goat-avatar/avatar-128.png 128w"
+          style={{ objectFit: "cover", objectPosition: "center", transform: "translate(2.4%, 2.2%) scale(1.08)" }}
           width={48}
         />
       </button>

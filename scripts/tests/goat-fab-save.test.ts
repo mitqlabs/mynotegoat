@@ -7,9 +7,10 @@ import { readFileSync } from "node:fs";
 import { onSyncStatusChange, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "../../src/lib/storage-sync-interceptor";
 
 const face = readFileSync(new URL("../../src/components/global-goat-button.tsx", import.meta.url), "utf8");
-assert.match(face, /object-cover/);
+assert.match(face, /object-cover|objectFit: "cover"/);
+assert.match(face, /objectPosition: "center"/);
+assert.match(face, /absolute inset-0/);
 assert.match(face, /avatar-128\.png 128w/);
-assert.match(face, /h-full w-full/);
 assert.match(face, /Saving…/);
 assert.match(face, /"Saved"/);
 assert.match(face, /Retry/);
