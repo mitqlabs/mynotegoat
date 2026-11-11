@@ -7,7 +7,7 @@ G.O.A.T. Mail only requests Microsoft Graph delegated **Mail.Read** and **User.R
 1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) with an account that can register applications.
 2. Go to Identity → Applications → App registrations → New registration.
 3. Name it NoteGoat G.O.A.T. Mail. Supported account types: Accounts in any organizational directory and personal Microsoft accounts.
-4. Redirect URI: platform Web, and the exact address `https://<your NoteGoat host>/api/goat-mail/callback` (for this office, `https://mynotegoat.com/api/goat-mail/callback`).
+4. Redirect URI: platform Web, and exactly `https://www.mynotegoat.com/api/goat-mail/callback`. The app always sends that address in production (or `NEXT_PUBLIC_SITE_URL` / `GOAT_MAIL_REDIRECT_ORIGIN` when one of those is set), so www and the bare host cannot disagree.
 5. Open the new app and copy the Application (client) ID.
 6. Certificates & secrets → New client secret. Copy the secret Value right away. It is shown only once.
 7. API permissions → Add a permission → Microsoft Graph → Delegated permissions → Mail.Read and User.Read. Do not add Mail.Send, Mail.ReadWrite, or any permission that can send, delete, or change mail. Grant admin consent if the tenant requires it.

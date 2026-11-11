@@ -28,8 +28,12 @@ export function goatMailWorkspaceId(ownerId: string): string {
   return `${ownerId}:${officeId}`;
 }
 
-export function goatMailRedirectUri(origin: string): string {
-  return `${origin.replace(/\/$/, "")}/api/goat-mail/callback`;
+/** Microsoft must see one redirect address. www and the bare host would otherwise disagree. */
+export function goatMailRedirectUri(requestOrigin: string): string {
+  const fromEnv = (process.env.GOAT_MAIL_REDIRECT_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
+  const production = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  const origin = fromEnv || (production ? "https://www.mynotegoat.com" : requestOrigin.replace(/\/+$/, ""));
+  return `${origin}/api/goat-mail/callback`;
 }
 
 type StatePayload = { state: string; ownerId: string; exp: number };
