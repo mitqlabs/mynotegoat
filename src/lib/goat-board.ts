@@ -276,7 +276,7 @@ export function boxesFromSnapshot(raw: string): BoardBox[] {
 
 /** Saved layouts from before this box was removed. */
 export function dropRetiredBoxes(boxes: BoardBox[]): BoardBox[] {
-  return boxes.filter((box) => box.kind !== "morning-rundown");
+  return boxes.filter((box) => (box.kind as string) !== "morning-rundown");
 }
 
 export function subscribeBoard(onStoreChange: () => void): () => void {
