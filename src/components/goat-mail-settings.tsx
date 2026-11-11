@@ -143,7 +143,7 @@ export function GoatMailSettingsPanel({
     <div className="space-y-4" data-goat-mail-settings>
       <div>
         <h4 className="text-base font-semibold">Mailbox</h4>
-        {!status ? <p className="mt-1 text-sm text-[var(--text-muted)]">Opening GOAT Mail…</p> : null}
+        {!status ? <p className="mt-1 text-sm text-[var(--text-muted)]">Opening G.O.A.T. Mail…</p> : null}
         {status && !ready ? <p className="mt-1 text-sm">{GOAT_MAIL_SETUP_LINE}</p> : null}
         {status && ready && !status.connected ? (
           <div className="mt-1">
@@ -183,7 +183,7 @@ export function GoatMailSettingsPanel({
       <SecretDateField onSave={(iso) => void saveSecret(iso)} value={status?.secretExpiresOn ?? ""} />
       <div>
         <h4 className="text-base font-semibold">Mail buckets</h4>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">GOAT sorts each message into the first buckets whose keywords it finds. Other is the fallback.</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">G.O.A.T. sorts each message into the first buckets whose keywords it finds. Other is the fallback.</p>
         <ul className="mt-3 space-y-3">
           {buckets.map((bucket) => (
             <li className="rounded-xl border border-[var(--line-soft)] p-3" key={bucket.id}>

@@ -44,12 +44,12 @@ export function useGlobalGoatOpen(): boolean {
   );
 }
 
-/** Sidebar / mobile-nav entry. Opens the full GOAT Page, not the chat. */
+/** Sidebar / mobile-nav entry. Opens the full G.O.A.T. Page, not the chat. */
 export function GlobalGoatButton({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
   const { canView } = useWorkspaceAccess();
   if (!canView("patients")) return null;
   return (
-    <Link className={className} href="/goat-page" title="GOAT Page">
+    <Link className={className} href="/goat-page" title="G.O.A.T. Page">
       <GoatAvatar size={compact ? 30 : 28} />
       {!compact && <span>G.O.A.T.</span>}
     </Link>

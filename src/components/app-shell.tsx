@@ -97,7 +97,7 @@ function NavBadge({ count, className }: { count: number; className?: string }) {
 }
 
 function buildTitle(pathname: string, items: { href: string; label: string }[]) {
-  if (pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")) return "GOAT Mail";
+  if (pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")) return "G.O.A.T. Mail";
   const item = items.find((entry) => pathname.startsWith(entry.href));
   return item?.label ?? "My Note Goat";
 }
@@ -269,7 +269,7 @@ export function AppShell({
                         )}
                       >
                         <span aria-hidden>✉️</span>
-                        <span>GOAT Mail</span>
+                        <span>G.O.A.T. Mail</span>
                       </Link>
                       <GlobalGoatButton className="mt-2 flex w-full items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-[#d5ebf8] transition hover:bg-white/10" />
                     </nav>
@@ -353,7 +353,7 @@ export function AppShell({
                             ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
                             : "text-[#d5ebf8] hover:bg-white/10",
                         )}
-                        title="GOAT Mail"
+                        title="G.O.A.T. Mail"
                       >
                         ✉️
                       </Link>
@@ -440,7 +440,7 @@ export function AppShell({
                       : "bg-[var(--bg-soft)] text-[var(--text-main)]",
                   )}
                 >
-                  GOAT Mail
+                  G.O.A.T. Mail
                 </Link>
                 <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
                 {/* Mobile-only sign out, icon at the end of the pill row. The

@@ -1,5 +1,5 @@
 /**
- * GOAT Page briefing board. The layout is a per-person preference and is
+ * G.O.A.T. Page briefing board. The layout is a per-person preference and is
  * mirrored to that person's cloud row (user-prefs-cloud.ts). A browser
  * cache is only the local copy of that account setting.
  */
@@ -70,14 +70,14 @@ export type BoardBox = {
 };
 
 export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = {
-  "goat-mail": "GOAT Mail",
+  "goat-mail": "G.O.A.T. Mail",
   "appointment-check": "Appointment Check",
   "quick-biz": "Quick Biz",
   "case-review": "Case Review",
   schedule: "Today's Schedule",
   "tomorrow-schedule": "Tomorrow's Schedule",
   intake: "New Patient Intake",
-  "goat-answers": "GOAT Answers",
+  "goat-answers": "G.O.A.T. Answers",
   todos: "To-Do's & Alerts",
   "case-snapshot": "Case Snapshot",
   "end-of-day": "End of Day Handoff",

@@ -1,6 +1,6 @@
 /**
- * GOAT Mail triage. Rules only: a message lands in one category, or in
- * "GOAT Needs Your Answer" when two categories fit or the name is unclear.
+ * G.O.A.T. Mail triage. Rules only: a message lands in one category, or in
+ * "G.O.A.T. Needs Your Answer" when two categories fit or the name is unclear.
  * Nothing here talks to Microsoft. The mailbox read stays in the server route.
  */
 import { findDuplicateCases, duplicateDateIso, splitPatientName } from "@/lib/patient-duplicate";
@@ -11,10 +11,10 @@ import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
 export const GOAT_MAIL_KEY = "casemate.goat-mail.v1";
 
 /** Shown when the server has no mailbox app yet. No setup steps. */
-export const GOAT_MAIL_SETUP_LINE = "GOAT Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, GOAT does not read any mailbox.";
+export const GOAT_MAIL_SETUP_LINE = "G.O.A.T. Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, G.O.A.T. does not read any mailbox.";
 
 /** Shown when the server is ready and this office has not connected a mailbox. */
-export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let GOAT read (never send) your email.";
+export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let G.O.A.T. read (never send) your email.";
 
 /** Workspace settings row. The mail API writes it. Inbox is used when it is empty. */
 export const GOAT_MAIL_FOLDERS_KEY = "casemate.goat-mail-folders.v1";
@@ -44,10 +44,10 @@ export function mailSecretDateLabel(iso: string): string {
 }
 
 export function mailSecretAlertText(iso: string): string {
-  return `GOAT Mail's Microsoft secret expires on ${mailSecretDateLabel(iso)}. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.`;
+  return `G.O.A.T. Mail's Microsoft secret expires on ${mailSecretDateLabel(iso)}. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.`;
 }
 
-export const GOAT_MAIL_SECRET_EXPIRED = "GOAT Mail's Microsoft secret has expired. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.";
+export const GOAT_MAIL_SECRET_EXPIRED = "G.O.A.T. Mail's Microsoft secret has expired. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.";
 
 /** True when the date is today, already past, or no more than 30 days away. */
 export function mailSecretDue(expiresOn: string | null | undefined, today: Date): boolean {
@@ -349,7 +349,7 @@ export function triageGoatMail(input: {
       question = "Which is this?";
       choices = [...found].map((id) => ({ id, label: bucketDisplayName(buckets.find((bucket) => bucket.id === id), input.claimDocument) }));
     } else if (needsName) {
-      question = unclearName ? "Which last name should GOAT use?" : "Who is the new patient?";
+      question = unclearName ? "Which last name should G.O.A.T. use?" : "Who is the new patient?";
     } else if (needsWho || needsCrash) {
       question = "Which patient?";
     } else if (needsAnswer) {

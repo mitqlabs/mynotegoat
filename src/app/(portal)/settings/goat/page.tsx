@@ -26,7 +26,7 @@ export default function GoatSettingsPage() {
       </div>
       <h1 className="text-2xl font-semibold">G.O.A.T.</h1>
       <section className="panel-card p-4" id="goat-page">
-        <h2 className="text-xl font-semibold">GOAT Page</h2>
+        <h2 className="text-xl font-semibold">G.O.A.T. Page</h2>
         <p className="text-sm text-[var(--text-muted)]">Which boxes are on the board, and what each box shows.</p>
         <div className="mt-3">
           <GoatPageSettings canSetOfficeDefault={canEdit("settings")} />
@@ -69,8 +69,8 @@ export default function GoatSettingsPage() {
         </div>
       </section>
       <section className="panel-card p-4" id="goat-mail">
-        <h2 className="text-xl font-semibold">GOAT Mail</h2>
-        <p className="text-sm text-[var(--text-muted)]">The office mailbox, the folders GOAT reads, and how messages are sorted. Read-only: GOAT never sends or changes email.</p>
+        <h2 className="text-xl font-semibold">G.O.A.T. Mail</h2>
+        <p className="text-sm text-[var(--text-muted)]">The office mailbox, the folders G.O.A.T. reads, and how messages are sorted. Read-only: G.O.A.T. never sends or changes email.</p>
         <div className="mt-3">
           <GoatMailSettingsPanel />
         </div>

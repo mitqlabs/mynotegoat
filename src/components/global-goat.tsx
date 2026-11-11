@@ -996,7 +996,7 @@ export function GlobalGoatPopup({
   /** Greeting chip tap: drop any waiting step and run the brief directly. */
   const runChip = (chip: string) => {
     flowRef.current = null;
-    if (chip === "GOAT Mail") {
+    if (chip === "G.O.A.T. Mail") {
       formRouter.push("/goat-mail");
       return;
     }
@@ -2502,7 +2502,7 @@ export function GlobalGoatPopup({
               </div>
             </div>
             <Link className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20" href="/goat-page">
-              GOAT Page
+              G.O.A.T. Page
             </Link>
             <button style={{ fontSize: 12 }}
               className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
@@ -3227,7 +3227,7 @@ function todoTitleParts(title: string): { text: string; phone: string } {
   if (!m || title.trim().length - m[0].length < 3 || title.indexOf(m[0]) + m[0].length < title.trim().length - 1) return { text: title, phone: "" };
   return { text: title.slice(0, m.index).replace(/[\s,:-]+$/, ""), phone: m[0] };
 }
-const CHIP_ICONS: Record<string, string> = { "GOAT Mail": "✉️", "Today's Schedule": "🗓️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
+const CHIP_ICONS: Record<string, string> = { "G.O.A.T. Mail": "✉️", "Today's Schedule": "🗓️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
 
 function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["quick"]>; onConfirm: (time?: string) => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";

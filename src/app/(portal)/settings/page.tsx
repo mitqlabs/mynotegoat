@@ -4900,9 +4900,9 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      {/* One G.O.A.T. page: board, chat, and GOAT Mail. Old ?section= links redirect there. */}
+      {/* One G.O.A.T. page: board, chat, and G.O.A.T. Mail. Old ?section= links redirect there. */}
       <CollapsibleSection
-        description="GOAT Page, G.O.A.T. chat, and GOAT Mail."
+        description="G.O.A.T. Page, G.O.A.T. chat, and G.O.A.T. Mail."
         hidden={!showSection("goat") && !showSection("goatPage")}
         isOpen={sectionIsOpen("goat") || sectionIsOpen("goatPage")}
         onToggle={() => toggleSection("goat")}
@@ -4910,7 +4910,7 @@ export default function SettingsPage() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
           <p className="min-w-0 flex-1">
-            One page for the GOAT Page board, the chat (answers, library, words, and note signatures), and GOAT Mail.
+            One page for the G.O.A.T. Page board, the chat (answers, library, words, and note signatures), and G.O.A.T. Mail.
           </p>
           <Link
             className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold hover:opacity-90"

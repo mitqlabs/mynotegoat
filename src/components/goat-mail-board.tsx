@@ -121,7 +121,7 @@ export function useGoatMail(input: {
         attorney: row.draft.attorney,
         address: row.draft.address,
         initialExam: row.draft.initialExam,
-        notes: row.missing.length ? `Added from GOAT Mail. Missing: ${row.missing.join(", ")}.` : "Added from GOAT Mail.",
+        notes: row.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
       });
       creating.delete(row.id);
       if (!created) continue;
@@ -288,7 +288,7 @@ export function GoatMailSecretNotice({
 function MailPageLink({ connected }: { connected: boolean }) {
   return (
     <Link className="mt-2 inline-block text-sm font-semibold text-[var(--brand-primary)] underline" href="/goat-mail">
-      {connected ? "Open GOAT Mail" : "Connect"}
+      {connected ? "Open G.O.A.T. Mail" : "Connect"}
     </Link>
   );
 }
@@ -308,8 +308,8 @@ export function FolderPicker({
   const toggle = (id: string) => setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   return (
     <fieldset className="mt-4">
-      <legend className="text-sm font-semibold">Folders GOAT reads</legend>
-      <p className="mt-1 text-xs text-[var(--text-muted)]">Inbox is the default. GOAT only reads the folders you leave checked.</p>
+      <legend className="text-sm font-semibold">Folders G.O.A.T. reads</legend>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">Inbox is the default. G.O.A.T. only reads the folders you leave checked.</p>
       <ul className="mt-2 max-h-64 space-y-1 overflow-auto">
         {folders.map((folder) => (
           <li key={folder.id}>
@@ -354,7 +354,7 @@ export function GoatMailBoard({
   onSaveSecret?: (iso: string) => void;
 }) {
   const questions = rows.filter((row) => row.needsAnswer);
-  if (!status) return <p className="mt-2 text-sm text-[var(--text-muted)]">Opening GOAT Mail…</p>;
+  if (!status) return <p className="mt-2 text-sm text-[var(--text-muted)]">Opening G.O.A.T. Mail…</p>;
   const ready = Boolean(status.configured && !status.needsMigration);
   const connectButton = (
     <a
@@ -384,7 +384,7 @@ export function GoatMailBoard({
     return (
       <div className="mx-auto max-w-3xl">
         <section className="panel-card p-5">
-          <h1 className="text-xl font-semibold">GOAT Mail</h1>
+          <h1 className="text-xl font-semibold">G.O.A.T. Mail</h1>
           <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
           <p className="mt-2 text-sm">{GOAT_MAIL_SETUP_LINE}</p>
           {onSaveSecret ? <SecretDateField key={status.secretExpiresOn ?? ""} onSave={onSaveSecret} value={status.secretExpiresOn ?? ""} /> : null}
@@ -396,7 +396,7 @@ export function GoatMailBoard({
     return (
       <div className="mx-auto max-w-3xl">
         <section className="panel-card p-5">
-          <h1 className="text-xl font-semibold">GOAT Mail</h1>
+          <h1 className="text-xl font-semibold">G.O.A.T. Mail</h1>
           <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
           <p className="mt-2 text-sm">{GOAT_MAIL_CONNECT_LINE}</p>
           {connectButton}
@@ -411,9 +411,9 @@ export function GoatMailBoard({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <section className="panel-card p-5">
-        <h1 className="text-xl font-semibold">GOAT Mail</h1>
+        <h1 className="text-xl font-semibold">G.O.A.T. Mail</h1>
         <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Read-only. GOAT never sends, moves, deletes, or changes email.</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">Read-only. G.O.A.T. never sends, moves, deletes, or changes email.</p>
         {status.account && <p className="mt-2 text-sm">Connected as {status.account}</p>}
         {status.error && !status.secretExpired && <p className="mt-2 text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p>}
         {onSaveSecret ? <SecretDateField key={status.secretExpiresOn ?? ""} onSave={onSaveSecret} value={status.secretExpiresOn ?? ""} /> : null}

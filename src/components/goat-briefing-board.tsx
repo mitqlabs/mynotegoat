@@ -439,7 +439,7 @@ export function GoatBriefingBoard({
   return (
     <div data-goat-board>
       <div className="mb-3 flex justify-end">
-        <button aria-label="GOAT Page settings" className="btn btn-secondary btn-sm" onClick={() => setPageSettings((open) => !open)} title="GOAT Page settings" type="button">
+        <button aria-label="G.O.A.T. Page settings" className="btn btn-secondary btn-sm" onClick={() => setPageSettings((open) => !open)} title="G.O.A.T. Page settings" type="button">
           ⚙
         </button>
       </div>

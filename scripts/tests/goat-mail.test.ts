@@ -1,5 +1,5 @@
 /**
- * GOAT Mail triage. No network, no mailbox.
+ * G.O.A.T. Mail triage. No network, no mailbox.
  * Run: npx tsx scripts/tests/goat-mail.test.ts
  */
 import assert from "node:assert/strict";
@@ -163,16 +163,16 @@ for (const src of [board, handbook, page, copy]) {
 assert.doesNotMatch(board, /Entra/);
 assert.doesNotMatch(page, /Entra/);
 assert.match(copy, /isn't turned on for this office yet/);
-assert.match(copy, /Sign in with your office Outlook to let GOAT read \(never send\) your email\./);
+assert.match(copy, /Sign in with your office Outlook to let G.O.A.T. read \(never send\) your email\./);
 assert.match(board, /GOAT_MAIL_SETUP_LINE/);
 assert.match(board, /GOAT_MAIL_CONNECT_LINE/);
 assert.match(board, /Connect Outlook/);
 assert.match(board, /href="\/api\/goat-mail\/connect"/);
-assert.match(board, /Open GOAT Mail/);
+assert.match(board, /Open G.O.A.T. Mail/);
 assert.match(board, /: "Connect"/);
 assert.match(board, /href="\/goat-mail"/);
 assert.match(shell, /href="\/goat-mail"/);
-assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "GOAT Mail sits with the G.O.A.T. sidebar link");
+assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "G.O.A.T. Mail sits with the G.O.A.T. sidebar link");
 assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_FOLDERS_KEY], "workspace");
 assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_SECRET_KEY], "workspace");
 assert.match(board, /Microsoft secret expires on/);
@@ -182,7 +182,7 @@ assert.equal(mailSecretDateLabel("2026-06-05"), "June 5, 2026");
 assert.equal(mailSecretDateLabel("2026-05-01"), "May 1, 2026");
 assert.equal(mailSecretDateLabel("2026-07-04"), "July 4, 2026");
 const alert = mailSecretAlertText("2026-12-01");
-assert.equal(alert, "GOAT Mail's Microsoft secret expires on Dec. 1, 2026. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.");
+assert.equal(alert, "G.O.A.T. Mail's Microsoft secret expires on Dec. 1, 2026. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.");
 const secretToday = new Date(2026, 10, 11);
 assert.equal(mailSecretDue("2026-12-11", secretToday), true);
 assert.equal(mailSecretDue("2026-12-12", secretToday), false);
