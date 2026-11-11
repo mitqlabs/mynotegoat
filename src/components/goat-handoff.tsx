@@ -1,6 +1,7 @@
 "use client";
 
 import type { HandoffBullet } from "@/lib/goat-handoff";
+import { printGoatHandoff } from "@/lib/print-goat-handoff";
 
 function Column({ items }: { items: HandoffBullet[] }) {
   return (
@@ -32,24 +33,9 @@ export function GoatHandoff({
 }) {
   return (
     <section className="goat-handoff panel-card p-4" data-goat-page="handoff">
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .goat-handoff, .goat-handoff * { visibility: visible; }
-          .goat-handoff {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            border: none;
-            box-shadow: none;
-          }
-          .goat-handoff-actions { display: none !important; }
-        }
-      `}</style>
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <button className="goat-handoff-actions btn btn-secondary btn-sm" onClick={() => window.print()} type="button">
+        <button className="goat-handoff-actions btn btn-secondary btn-sm" onClick={(event) => printGoatHandoff(event.currentTarget.closest(".goat-handoff"))} type="button">
           Print
         </button>
       </div>

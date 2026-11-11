@@ -1,8 +1,9 @@
+import { goatGreeting } from "@/lib/goat-greeting";
 import { weekdayOccurrence } from "@/lib/goat-howto";
 import type { PipelineKind } from "@/lib/goat-pipeline";
 /**
- * G.O.A.T. office briefs (rules only, read-only): greeting + chips, Morning
- * Rundown, Appointment Check, Quick Biz, and the "/" command menu.
+ * G.O.A.T. office briefs (rules only, read-only): greeting + chips, Today's
+ * Schedule, Appointment Check, Quick Biz, and the "/" command menu.
  * Pure: everything comes in as plain data.
  */
 
@@ -50,8 +51,6 @@ export interface BriefData {
   tasks: BriefTask[];
   locations: BriefLocation[];
   unreadMessages?: number;
-  /** Patient questionnaires received and not reviewed yet (Send form). */
-  questionnaires?: Array<{ patientId: string; patientName: string; formName: string }>;
 }
 export interface BriefLink {
   label: string;
@@ -78,13 +77,13 @@ export interface BriefAnswer {
 export const todoHref = (id: string) => `/patients?view=toDo&task=${encodeURIComponent(id)}`;
 export const TODO_PAGE_HREF = "/patients?view=toDo";
 
-export const CHIPS = ["GOAT Mail", "Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"] as const;
-/** Appointment Check and Quick Biz are for admins (workspace owner/admin). */
+export const CHIPS = ["GOAT Mail", "Today's Schedule", "Appointment Check", "Quick Biz", "Case Review"] as const;
+/** Appointment Check, Quick Biz, and Case Review are for admins (workspace owner/admin). */
 export const ADMIN_BRIEFS = new Set<BriefKind>(["apptCheck", "business"]);
-export type BriefKind = "rundown" | "apptCheck" | "business";
-/** The greeting chips this person sees. GOAT Mail and Morning Rundown are for everyone. */
+export type BriefKind = "schedule" | "apptCheck" | "business";
+/** The greeting chips this person sees. GOAT Mail and Today's Schedule are for everyone. */
 export function chipsFor(isAdmin: boolean): string[] {
-  return isAdmin ? [...CHIPS] : ["GOAT Mail", "Morning Rundown"];
+  return isAdmin ? [...CHIPS] : ["GOAT Mail", "Today's Schedule"];
 }
 export function briefAllowed(kind: BriefKind, isAdmin: boolean): boolean {
   return isAdmin || !ADMIN_BRIEFS.has(kind);
@@ -102,12 +101,10 @@ export function adminStatsGate(roleKnown: boolean, isAdmin: boolean): string | n
 export function isStatsOfficeKind(kind: string | undefined): boolean {
   return kind === "caseCount" || kind === "caseSummary" || kind === "locationStats";
 }
-export const ADMIN_ONLY_REPLY = "Sorry — office numbers (case counts, money, Appointment Check, Quick Biz) are for admins. Ask the office owner or an admin if you need them. I can still give you the Morning Rundown.";
+export const ADMIN_ONLY_REPLY = "Sorry — office numbers (case counts, money, Appointment Check, Quick Biz) are for admins. Ask the office owner or an admin if you need them. I can still give you Today's Schedule.";
 
 export function greetingFor(hour: number): string {
-  if (hour < 12) return "Good morning!";
-  if (hour < 17) return "Good afternoon!";
-  return "Good evening!";
+  return goatGreeting(hour);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -172,7 +169,7 @@ const locName = (data: BriefData, id?: string) => {
 /** Which brief a message asks for (chips and casual wording), or null. */
 export function detectBrief(raw: string): BriefKind | null {
   const q = raw.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim();
-  if (/^(morning )?rundown$|\bmorning (rundown|brief|briefing|report|summary)\b|\b(daily|day's|today's) (rundown|brief|briefing|summary)\b|^(give me|what's|whats) (the )?(rundown|run down)\b|\bhow does (today|my day) look\b|\bwhat's my day( look like)?\b/.test(q)) return "rundown";
+  if (/^(morning )?rundown$|\bmorning (rundown|brief|briefing|report|summary)\b|\b(daily|day's|today's) (rundown|brief|briefing|summary|schedule)\b|^today'?s schedule$|^(give me|what's|whats) (the )?(rundown|run down|schedule)\b|\bhow does (today|my day) look\b|\bwhat's my day( look like)?\b/.test(q)) return "schedule";
   if (/^appointment check$|^appt check$|\bwho (needs|need) (to be )?(scheduled|rebooked|booked)\b|\b(not|isn't|aren't|nothing) (scheduled|booked) (for |past |after )?next week\b|\bno (future|next week) (appts?|appointments)\b|\bneed(s)? (to be )?scheduled\b|\bwho (isn't|is not|aren't|are not) (scheduled|booked)\b/.test(q)) return "apptCheck";
   if (/^quick ?biz$|\bquick (biz|business)( stats| numbers)?\b|^know (your|my|the) business$|\bhow('s| is) (the )?business\b|\bbusiness (stats|numbers|overview|summary)\b|\b(practice|office|clinic) (stats|numbers|overview)\b|\bkpis?\b|\bhow are we doing\b|\bour numbers\b/.test(q)) return "business";
   return null;
@@ -224,38 +221,7 @@ export function appointmentCheck(data: BriefData): BriefAnswer {
   return { text: lines.join("\n"), links: [...noneBooked.map((r) => patientLink(r.patient)), ...runningOut.map((r) => patientLink(r.patient))] };
 }
 
-export function morningRundown(data: BriefData): BriefAnswer {
-  const todays = data.appointments.filter((a) => a.date === data.today && live(a)).sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const multi = data.locations.length > 1;
-  const sched = todays.length
-    ? todays.map((a) => `- ${time12(a.startTime)} ${a.patientName}${a.appointmentType ? ` · ${a.appointmentType}` : ""}${multi && a.location ? ` · ${a.location}` : ""}`).join("\n")
-    : "- Nothing on the schedule.";
-  const open = openTodos(data);
-  const due = open;
-  const unread = data.unreadMessages ?? 0;
-  const forms = data.questionnaires ?? [];
-  return {
-    text: [
-      `Today (${us(data.today)}): ${todays.length} visit${todays.length === 1 ? "" : "s"}`,
-      sched,
-      `\nOpen to-dos: ${due.length}`,
-      ...(open.length ? [] : ["- Nothing open."]),
-    ].join("\n"),
-    todoRows: open.slice(0, 15).map((t) => todoRow(t, data.today)),
-    textAfter: [
-      ...(open.length > 15 ? [`- …and ${open.length - 15} more (/view todo)`] : []),
-      `\nTeam messages: ${unread ? `${unread} unread` : "all caught up"}`,
-      ...(forms.length ? [`\n${forms.length} questionnaire${forms.length === 1 ? "" : "s"} received: ${forms.map((f) => f.patientName).join(", ")}`] : []),
-    ].join("\n"),
-    links: [
-      { label: "Open Schedule", href: `/appointments?date=${data.today}` },
-      ...(unread ? [{ label: "Open Messages", href: "/messages" }] : []),
-      ...forms.slice(0, 5).map((f) => ({ label: `Review ${f.patientName}'s questionnaire`, href: `/patients/${encodeURIComponent(f.patientId)}` })),
-    ],
-  };
-}
-
-/** All open to-dos: overdue first, then by due date, then undated. */
+/** Today's visits only. To-dos live on the To-Do's box and in /view todo. */
 export function openTodos(data: Pick<BriefData, "tasks" | "today">): BriefTask[] {
   const rank = (t: BriefTask) => (!t.dueDate ? 2 : t.dueDate < data.today ? 0 : 1);
   return data.tasks.filter((t) => !t.done).sort((a, b) => rank(a) - rank(b) || (a.dueDate || "").localeCompare(b.dueDate || "") || a.title.localeCompare(b.title));

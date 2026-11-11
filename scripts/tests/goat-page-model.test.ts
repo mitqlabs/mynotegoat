@@ -46,8 +46,8 @@ const model = buildGoatPageModel({
   ],
 });
 
-assert.equal(model.greeting, "Good morning");
-assert.match(model.dateLabel, /Nov/);
+assert.equal(model.greeting, "Good Morning");
+assert.equal(model.dateLabel, "Monday, Nov. 9, 2026");
 assert.equal(model.officeName, "Main Office");
 assert.equal(model.appointments, 3); // canceled excluded from the count
 assert.equal(model.intake.length, 1);
@@ -77,7 +77,7 @@ assert.doesNotMatch(view, /Lien badge|office badge/i);
 assert.match(view, /data-goat-page-layout="full"/);
 assert.doesNotMatch(view, /max-w-6xl|mx-auto/);
 assert.doesNotMatch(view, /\/goat\?q=/);
-assert.match(view, /onChip\(chip\)/);
+assert.doesNotMatch(view, /onChip/);
 const board = readFileSync(new URL("../../src/lib/goat-board.ts", import.meta.url), "utf8");
 assert.match(board, /GOAT Answers/);
 assert.match(board, /Next open day/);

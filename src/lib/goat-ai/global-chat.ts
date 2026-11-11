@@ -140,7 +140,7 @@ export interface ChatMessage {
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
   links?: Array<{ label: string; href: string }>;
-  /** Clickable to-do lines (Morning Rundown, /view todo), then textAfter. */
+  /** Clickable to-do lines (/view todo), then textAfter. */
   todoRows?: Array<{ id: string; href: string; before: string; after: string; patientName?: string; patientHref?: string }>;
   textAfter?: string;
 }

@@ -26,8 +26,12 @@ assert.deepEqual(handoff.right[2].children, ["8:00 AM", "8:15 AM"]);
 assert.match(handoff.right[3].children[0], /Okoro, Amara/);
 
 const view = readFileSync(new URL("../../src/components/goat-handoff.tsx", import.meta.url), "utf8");
-assert.match(view, /window\.print/);
-assert.match(view, /@media print/);
+const printCss = readFileSync(new URL("../../src/lib/print-goat-handoff.ts", import.meta.url), "utf8");
+assert.match(view, /printGoatHandoff/);
+assert.match(printCss, /window\.print/);
+assert.match(printCss, /@media print/);
+assert.match(printCss, /goat-print-root/);
+assert.doesNotMatch(printCss, /visibility:\s*hidden/);
 assert.match(view, /sm:grid-cols-2/);
 
 console.log("goat-handoff ok");

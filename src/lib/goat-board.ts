@@ -15,7 +15,6 @@ export const GOAT_OFFICE_DEFAULT_KEY = "casemate.goat-page-office-default.v1";
 
 export const DEFAULT_BOX_ORDER = [
   "goat-mail",
-  "morning-rundown",
   "appointment-check",
   "quick-biz",
   "case-review",
@@ -72,7 +71,6 @@ export type BoardBox = {
 
 export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = {
   "goat-mail": "GOAT Mail",
-  "morning-rundown": "Morning Rundown",
   "appointment-check": "Appointment Check",
   "quick-biz": "Quick Biz",
   "case-review": "Case Review",
@@ -90,7 +88,6 @@ export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = 
 
 const BOX_SIZE: Record<BuiltinKind, { w: number; h: number }> = {
   "goat-mail": { w: 4, h: 8 },
-  "morning-rundown": { w: 4, h: 8 },
   "appointment-check": { w: 4, h: 8 },
   "quick-biz": { w: 6, h: 7 },
   "case-review": { w: 6, h: 7 },
@@ -247,7 +244,7 @@ export function loadOfficeDefault(): BoardBox[] | null {
 
 export function loadBoard(): BoardBox[] {
   if (typeof window === "undefined") return defaultBoard();
-  return parseBoard(window.localStorage.getItem(GOAT_BOARD_KEY)) ?? loadOfficeDefault() ?? defaultBoard();
+  return dropRetiredBoxes(parseBoard(window.localStorage.getItem(GOAT_BOARD_KEY)) ?? loadOfficeDefault() ?? defaultBoard());
 }
 
 export function saveBoard(boxes: BoardBox[]) {
@@ -274,7 +271,12 @@ export function boxesFromSnapshot(raw: string): BoardBox[] {
   const splitAt = raw.indexOf("\u0000");
   const personal = splitAt === -1 ? raw : raw.slice(0, splitAt);
   const office = splitAt === -1 ? "" : raw.slice(splitAt + 1);
-  return parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard();
+  return dropRetiredBoxes(parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard());
+}
+
+/** Saved layouts from before this box was removed. */
+export function dropRetiredBoxes(boxes: BoardBox[]): BoardBox[] {
+  return boxes.filter((box) => (box.kind as string) !== "morning-rundown");
 }
 
 export function subscribeBoard(onStoreChange: () => void): () => void {
@@ -304,14 +306,14 @@ function examMonth(value: string | undefined): number | null {
   return month >= 0 && month < 12 ? month : null;
 }
 
-export function casesByMonth(patients: Array<{ deleted?: boolean; matrix?: { initialExam?: string } }>): Array<{ month: string; count: number }> {
-  const counts = MONTHS.map(() => 0);
+export function casesByMonth(patients: Array<{ id?: string; fullName?: string; deleted?: boolean; matrix?: { initialExam?: string } }>): Array<{ month: string; count: number; people: Array<{ id: string; name: string }> }> {
+  const groups = MONTHS.map(() => [] as Array<{ id: string; name: string }>);
   for (const patient of patients) {
-    if (patient.deleted) continue;
+    if (patient.deleted || !patient.id) continue;
     const month = examMonth(patient.matrix?.initialExam);
-    if (month !== null) counts[month] += 1;
+    if (month !== null) groups[month].push({ id: patient.id, name: patient.fullName || "Case" });
   }
-  return MONTHS.map((month, index) => ({ month, count: counts[index] }));
+  return MONTHS.map((month, index) => ({ month, count: groups[index].length, people: groups[index] }));
 }
 
 type RefRecord = Record<string, unknown>;
@@ -323,30 +325,38 @@ function studyCount(ref: RefRecord): number {
   return regions.reduce((sum, region) => sum + (laterality[region] === "BL" ? 2 : 1), 0);
 }
 
-export function imagingReferralRows(patients: Array<{ id: string; deleted?: boolean; xrayReferrals?: unknown[]; mriReferrals?: unknown[] }>): Array<{ facility: string; cases: number; xray: number; mri: number; total: number }> {
-  const grouped = new Map<string, { facility: string; cases: Set<string>; xray: number; mri: number }>();
-  const add = (patientId: string, facility: string, type: "xray" | "mri", count: number) => {
+export function imagingReferralRows(patients: Array<{ id: string; fullName?: string; deleted?: boolean; xrayReferrals?: unknown[]; mriReferrals?: unknown[] }>): Array<{ facility: string; cases: number; xray: number; mri: number; total: number; people: Array<{ id: string; name: string }> }> {
+  const grouped = new Map<string, { facility: string; cases: Map<string, string>; xray: number; mri: number }>();
+  const add = (patientId: string, name: string, facility: string, type: "xray" | "mri", count: number) => {
     const key = facility.toLowerCase();
-    const row = grouped.get(key) ?? { facility, cases: new Set<string>(), xray: 0, mri: 0 };
-    row.cases.add(patientId);
+    const row = grouped.get(key) ?? { facility, cases: new Map<string, string>(), xray: 0, mri: 0 };
+    row.cases.set(patientId, name);
     row[type] += count;
     grouped.set(key, row);
   };
   for (const patient of patients) {
     if (patient.deleted) continue;
+    const name = patient.fullName || "Case";
     for (const raw of patient.xrayReferrals ?? []) {
       const ref = raw as RefRecord;
       if (ref.isPrior === true || typeof ref.center !== "string" || !ref.center.trim()) continue;
-      add(patient.id, ref.center.trim(), "xray", studyCount(ref));
+      add(patient.id, name, ref.center.trim(), "xray", studyCount(ref));
     }
     for (const raw of patient.mriReferrals ?? []) {
       const ref = raw as RefRecord;
       if (ref.isPrior === true || typeof ref.center !== "string" || !ref.center.trim()) continue;
-      add(patient.id, ref.center.trim(), "mri", studyCount(ref));
+      add(patient.id, name, ref.center.trim(), "mri", studyCount(ref));
     }
   }
   return [...grouped.values()]
-    .map((row) => ({ facility: row.facility, cases: row.cases.size, xray: row.xray, mri: row.mri, total: row.xray + row.mri }))
+    .map((row) => ({
+      facility: row.facility,
+      cases: row.cases.size,
+      xray: row.xray,
+      mri: row.mri,
+      total: row.xray + row.mri,
+      people: [...row.cases.entries()].map(([id, person]) => ({ id, name: person })),
+    }))
     .sort((a, b) => b.total - a.total);
 }
 
@@ -506,18 +516,25 @@ export function matchesPeriod(
   return specific ? year === Number(specific[1]) : year === todayYear;
 }
 
-export function specialistReferralRows(patients: Array<{ id: string; deleted?: boolean; specialistReferrals?: unknown[] }>): Array<{ specialist: string; cases: number }> {
-  const grouped = new Map<string, { specialist: string; cases: Set<string> }>();
+export function specialistReferralRows(patients: Array<{ id: string; fullName?: string; deleted?: boolean; specialistReferrals?: unknown[] }>): Array<{ specialist: string; cases: number; people: Array<{ id: string; name: string }> }> {
+  const grouped = new Map<string, { specialist: string; cases: Map<string, string> }>();
   for (const patient of patients) {
     if (patient.deleted) continue;
+    const person = patient.fullName || "Case";
     for (const raw of patient.specialistReferrals ?? []) {
       const ref = raw as RefRecord;
       const name = typeof ref.specialist === "string" ? ref.specialist.trim() : "";
       if (!name || name === "-") continue;
-      const row = grouped.get(name.toLowerCase()) ?? { specialist: name, cases: new Set<string>() };
-      row.cases.add(patient.id);
+      const row = grouped.get(name.toLowerCase()) ?? { specialist: name, cases: new Map<string, string>() };
+      row.cases.set(patient.id, person);
       grouped.set(name.toLowerCase(), row);
     }
   }
-  return [...grouped.values()].map((row) => ({ specialist: row.specialist, cases: row.cases.size })).sort((a, b) => b.cases - a.cases);
+  return [...grouped.values()]
+    .map((row) => ({
+      specialist: row.specialist,
+      cases: row.cases.size,
+      people: [...row.cases.entries()].map(([id, name]) => ({ id, name })),
+    }))
+    .sort((a, b) => b.cases - a.cases);
 }

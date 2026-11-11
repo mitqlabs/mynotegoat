@@ -1,5 +1,5 @@
 /**
- * G.O.A.T. briefs (greeting chips, Morning Rundown, Appointment Check, Know Your
+ * G.O.A.T. briefs (greeting chips, Today's Schedule, Appointment Check, Know Your
  * Business) and "/" commands. Mock data only.
  * Run: npx tsx scripts/tests/goat-eval/briefs-slash.test.ts
  */
@@ -7,10 +7,9 @@ import assert from "node:assert/strict";
 import { openTodos, parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos as viewTodosRaw, type BriefAnswer } from "../../../src/lib/goat-briefs";
 import { ACCESS_LOADING_REPLY, adminStatsGate, isStatsOfficeKind } from "../../../src/lib/goat-briefs";
 import { answerOffice } from "../../../src/lib/goat-office";
-import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, morningRundown as morningRundownRaw, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheckGroups, briefAllowed, chipsFor, quickBiz, appointmentCheck, detectBrief, endOfWeek, greetingFor, knowYourBusiness, noteWording, parseSlash, parseTodo, slashMatches, slashQuery, startOfWeek, takeDueDate, type BriefData } from "../../../src/lib/goat-briefs";
 // Rendered like the chat: text, then each clickable to-do line, then textAfter.
 const render = (a: BriefAnswer): BriefAnswer => ({ ...a, text: [a.text, ...(a.todoRows ?? []).map((r) => `- ${r.before}${r.patientName ?? ""}${r.after}`), ...(a.textAfter ? [a.textAfter] : [])].join("\n") });
-const morningRundown = (d: Parameters<typeof morningRundownRaw>[0]) => render(morningRundownRaw(d));
 const viewTodos = (d: Parameters<typeof viewTodosRaw>[0]) => render(viewTodosRaw(d));
 import { emptyDialog, goatTurn, type DialogCtx } from "../../../src/lib/goat-dialog";
 import { getDefaultScheduleSettings } from "../../../src/lib/schedule-settings";
@@ -52,18 +51,19 @@ const data: BriefData = {
 };
 
 // Greeting
-check("greet 7", () => assert.equal(greetingFor(7), "Good morning!"));
-check("greet 0", () => assert.equal(greetingFor(0), "Good morning!"));
-check("greet 12", () => assert.equal(greetingFor(12), "Good afternoon!"));
-check("greet 16", () => assert.equal(greetingFor(16), "Good afternoon!"));
-check("greet 17", () => assert.equal(greetingFor(17), "Good evening!"));
-check("greet 23", () => assert.equal(greetingFor(23), "Good evening!"));
-check("chips", () => assert.deepEqual([...CHIPS], ["GOAT Mail", "Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
-// Roles: admins see the full bar; everyone else gets GOAT Mail and Morning Rundown.
-check("admin chips", () => assert.deepEqual(chipsFor(true), ["GOAT Mail", "Morning Rundown", "Appointment Check", "Quick Biz", "Case Review"]));
-check("staff chips", () => assert.deepEqual(chipsFor(false), ["GOAT Mail", "Morning Rundown"]));
-check("admin allowed all", () => { for (const k of ["rundown", "apptCheck", "business"] as const) assert.ok(briefAllowed(k, true)); });
-check("staff rundown ok", () => assert.ok(briefAllowed("rundown", false)));
+check("greet 7", () => assert.equal(greetingFor(7), "Good Morning"));
+check("greet 0", () => assert.equal(greetingFor(0), "Good Morning"));
+check("greet 11", () => assert.equal(greetingFor(11), "Good Morning"));
+check("greet 12", () => assert.equal(greetingFor(12), "Good Afternoon"));
+check("greet 16", () => assert.equal(greetingFor(16), "Good Afternoon"));
+check("greet 17", () => assert.equal(greetingFor(17), "Good Evening"));
+check("greet 23", () => assert.equal(greetingFor(23), "Good Evening"));
+check("chips", () => assert.deepEqual([...CHIPS], ["GOAT Mail", "Today's Schedule", "Appointment Check", "Quick Biz", "Case Review"]));
+// Roles: admins see the full bar; everyone else gets GOAT Mail and Today's Schedule.
+check("admin chips", () => assert.deepEqual(chipsFor(true), ["GOAT Mail", "Today's Schedule", "Appointment Check", "Quick Biz", "Case Review"]));
+check("staff chips", () => assert.deepEqual(chipsFor(false), ["GOAT Mail", "Today's Schedule"]));
+check("admin allowed all", () => { for (const k of ["schedule", "apptCheck", "business"] as const) assert.ok(briefAllowed(k, true)); });
+check("staff schedule ok", () => assert.ok(briefAllowed("schedule", false)));
 check("staff no apptCheck", () => assert.equal(briefAllowed("apptCheck", false), false));
 check("staff no business", () => assert.equal(briefAllowed("business", false), false));
 for (const q of ["Quick Biz", "how's business", "business numbers", "Appointment Check", "who needs to be scheduled", "know your business"]) {
@@ -73,7 +73,7 @@ for (const q of ["Quick Biz", "how's business", "business numbers", "Appointment
 check("gate loading", () => { assert.equal(adminStatsGate(false, true), ACCESS_LOADING_REPLY); assert.equal(adminStatsGate(false, false), ACCESS_LOADING_REPLY); });
 check("gate staff", () => assert.equal(adminStatsGate(true, false), ADMIN_ONLY_REPLY));
 check("gate admin", () => assert.equal(adminStatsGate(true, true), null));
-check("loading chips = staff chips", () => assert.deepEqual(chipsFor(false && true), ["GOAT Mail", "Morning Rundown"]));
+check("loading chips = staff chips", () => assert.deepEqual(chipsFor(false && true), ["GOAT Mail", "Today's Schedule"]));
 check("stats kinds", () => { assert.ok(isStatsOfficeKind("caseCount")); assert.ok(isStatsOfficeKind("caseSummary")); for (const k of ["schedule", "todo", "contact", undefined]) assert.equal(isStatsOfficeKind(k), false); });
 {
   const od = { today: TODAY, patients: [{ id: "a", fullName: "Mock A", caseStatus: "Submitted", attorney: "Mock Law", listYear: 2026 }, { id: "b", fullName: "Mock B", caseStatus: "Active", attorney: "", listYear: 2026 }], tasks: [], appointments: [], contacts: [] } as never;
@@ -92,8 +92,8 @@ check("week start mon", () => assert.equal(startOfWeek("2026-10-12"), "2026-10-1
 
 // detectBrief phrasings
 const BRIEFS: Array<[string, ReturnType<typeof detectBrief>]> = [
-  ["Morning Rundown", "rundown"], ["morning rundown", "rundown"], ["rundown", "rundown"], ["give me the rundown", "rundown"], ["whats the rundown", "rundown"],
-  ["morning briefing", "rundown"], ["daily summary", "rundown"], ["how does my day look", "rundown"], ["how does today look?", "rundown"], ["what's my day look like", "rundown"],
+  ["Today's Schedule", "schedule"], ["morning rundown", "schedule"], ["rundown", "schedule"], ["give me the rundown", "schedule"], ["whats the rundown", "schedule"],
+  ["morning briefing", "schedule"], ["daily summary", "schedule"], ["how does my day look", "schedule"], ["how does today look?", "schedule"], ["what's my day look like", "schedule"],
   ["Appointment Check", "apptCheck"], ["appt check", "apptCheck"], ["who needs to be scheduled", "apptCheck"], ["who needs scheduled", "apptCheck"],
   ["who isn't scheduled for next week", "apptCheck"], ["who needs to be rebooked", "apptCheck"], ["patients not booked next week", "apptCheck"],
   ["Quick Biz", "business"], ["quick biz", "business"], ["quickbiz", "business"], ["quick business stats", "business"], ["Know Your Business", "business"], ["know my business", "business"], ["how's business", "business"], ["how is business", "business"],
@@ -144,27 +144,18 @@ check("ac none", () => assert.match(appointmentCheck({ ...data, patients: data.p
   check("no running out", () => assert.match(appointmentCheck(d2).text, /Running out this week \(0\)\n- None/));
 }
 
-// Morning Rundown
-const mr = morningRundown(data);
-check("mr visits", () => assert.match(mr.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock · Follow-Up Visit · Mock North/));
-check("mr no-show hidden", () => assert.doesNotMatch(mr.text, /Foxtrot/));
-check("mr todos: all open", () => { assert.match(mr.text, /Open to-dos: 3/); assert.match(mr.text, /Fax records \(overdue, 10\/10\/2026\) · Hannah/); assert.match(mr.text, /Future thing \(due 10\/30\/2026\)/); assert.doesNotMatch(mr.text, /Done thing/); });
+// Today's Schedule (old rundown phrases answer with today's visits; to-dos stay on /view todo)
 {
   const d3 = { ...data, tasks: [...data.tasks, { id: "t5", title: "Undated thing", done: false, dueDate: "" }, { id: "t6", title: "Call Mock Patient", done: false, dueDate: "", patientId: "p1", patientName: "Alpha Mock" }] };
-  const m3 = morningRundown(d3).text;
-  check("mr undated listed", () => { assert.match(m3, /Undated thing \(no due date\)/); assert.match(m3, /Call Mock Patient \(no due date\) · Alpha Mock/); });
   check("todo order", () => assert.deepEqual(openTodos(d3).map((t) => t.id), ["t2", "t1", "t3", "t6", "t5"]));
-  check("mr caps at 15", () => assert.match(morningRundown({ ...data, tasks: Array.from({ length: 20 }, (_, i) => ({ id: `x${i}`, title: `Task ${i}`, done: false, dueDate: "" })) }).text, /…and 5 more \(\/view todo\)/));
   const vt = viewTodos(d3);
   check("view todo all", () => { assert.match(vt.text, /^Open to-dos \(5\):/); assert.match(vt.text, /Undated thing/); });
-  // User 10/15: each to-do line opens that to-do; the patient name links to the patient; no separate link list.
   check("view todo: no separate link list", () => assert.equal(vt.links, undefined));
   check("view todo rows open the to-do", () => assert.deepEqual(vt.todoRows!.map((r) => r.href), ["t2", "t1", "t3", "t6", "t5"].map((id) => `/patients?view=toDo&task=${id}`)));
   check("view todo patient name links patient", () => { const r = vt.todoRows!.find((x) => x.id === "t6")!; assert.equal(r.patientName, "Alpha Mock"); assert.equal(r.patientHref, "/patients/p1"); });
-  check("mr rows clickable", () => assert.equal(morningRundownRaw(d3).todoRows!.length, 5));
   check("view todo empty", () => assert.match(viewTodos({ ...data, tasks: [] }).text, /No open to-dos/));
 }
-check("view schedule", () => { const v = viewSchedule(data); assert.match(v.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock/); assert.ok(v.links?.some((l) => l.href === "/patients/p1")); });
+check("view schedule", () => { const v = viewSchedule(data); assert.match(v.text, /Today \(10\/15\/2026\): 1 visit\n- 10:30 AM Alpha Mock/); assert.ok(v.links?.some((l) => l.href === "/patients/p1")); assert.doesNotMatch(v.text, /Foxtrot/); });
 check("view schedule empty", () => assert.match(viewSchedule({ ...data, appointments: [] }).text, /Nothing on the schedule today/));
 check("view messages", () => { assert.match(viewMessages(data).text, /3 unread/); assert.match(viewMessages({ ...data, unreadMessages: 0 }).text, /caught up/); });
 const VT: Array<[string, string | null]> = [["todo", "todo"], ["todos", "todo"], ["to do", "todo"], ["tasks", "todo"], ["schedule", "schedule"], ["today", "schedule"], ["schedule today", "schedule"], ["messages", "messages"], ["unread", "messages"], ["appointment check", "apptCheck"], ["appt check", "apptCheck"], ["quick biz", "business"], ["quickbiz", "business"], ["business", "business"], ["", null], ["banana", null]];
@@ -173,11 +164,6 @@ check("viewQuery", () => { assert.equal(viewQuery("/view "), ""); assert.equal(v
 check("view menu admin", () => assert.deepEqual(viewTargetsFor(true).map((v) => v.word), ["todo", "schedule", "messages", "appointment check", "quick biz", "case review", "pipeline", "needs mri", "mri results", "reports", "ready to submit", "submitted", "missing"]));
 check("view menu staff", () => assert.deepEqual(viewTargetsFor(false).map((v) => v.word), ["todo", "schedule", "messages"]));
 check("view menu filter", () => { assert.deepEqual(viewMatches("q", true).map((v) => v.target), ["business"]); assert.deepEqual(viewMatches("q", false), []); assert.deepEqual(viewMatches("app", true).map((v) => v.target), ["apptCheck"]); });
-check("mr unread", () => assert.match(mr.text, /3 unread/));
-check("mr caught up", () => assert.match(morningRundown({ ...data, unreadMessages: 0 }).text, /all caught up/));
-check("mr no case counts (moved to Quick Biz)", () => assert.doesNotMatch(mr.text, /active ·|submitted/));
-check("mr links (no Open To-Do list — lines are clickable)", () => assert.deepEqual(mr.links?.map((l) => l.label), ["Open Schedule", "Open Messages"]));
-check("mr empty", () => assert.match(morningRundown({ ...data, appointments: [], tasks: [] }).text, /Nothing on the schedule[\s\S]*Nothing open/));
 
 // Know Your Business
 const kyb = knowYourBusiness(data).text;

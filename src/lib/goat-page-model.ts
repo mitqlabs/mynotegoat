@@ -4,6 +4,7 @@
  * to-dos are passed in later; they start at zero.
  */
 import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { goatGreeting, goatGreetingDate } from "@/lib/goat-greeting";
 import { lienFollowUpStage } from "@/lib/follow-up-queue";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { to12hLabel } from "@/lib/time-12h";
@@ -55,14 +56,8 @@ export type GoatPageModel = {
   };
 };
 
-function greeting(hour: number): string {
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
 export function goatPageDateLabel(date: Date): string {
-  return date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+  return goatGreetingDate(date);
 }
 
 function todayIso(date: Date): string {
@@ -142,7 +137,7 @@ export function buildGoatPageModel(input: {
     (p) => !p.isCashPatient && !closed.has(p.caseStatus.toLowerCase()) && !isInNewPatientIntake(p),
   );
   return {
-    greeting: greeting(input.now.getHours()),
+    greeting: goatGreeting(input.now.getHours()),
     dateLabel: goatPageDateLabel(input.now),
     officeName: input.officeName.trim() || "the office",
     appointments: active.length,

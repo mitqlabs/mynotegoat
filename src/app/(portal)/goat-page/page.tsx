@@ -14,7 +14,6 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useTasks } from "@/hooks/use-tasks";
 import { buildCloseout } from "@/lib/goat-closeout";
-import type { BuiltinKind } from "@/lib/goat-board";
 import { isAdminTier } from "@/lib/admin-access";
 import { buildGoatPageModel } from "@/lib/goat-page-model";
 import {
@@ -76,7 +75,6 @@ export default function GoatPage() {
     claimDocument: officeSettings.claimDocument,
     listVersion,
   });
-  const [focusKind, setFocusKind] = useState<BuiltinKind | null>(null);
   const closeout = useMemo(
     () =>
       buildCloseout({
@@ -88,16 +86,7 @@ export default function GoatPage() {
     [iso, scheduleAppointments, encountersByNewest, scheduleSettings],
   );
   return (
-    <GoatPageView
-      isAdmin={isAdminTier(roleTier)}
-      model={{ ...model, mailNeedingAction: mail.actionCount, questions: mail.questionCount }}
-      onChip={(label) => {
-        const kind = ({ "GOAT Mail": "goat-mail", "Morning Rundown": "morning-rundown", "Appointment Check": "appointment-check", "Quick Biz": "quick-biz", "Case Review": "case-review" } as const)[label];
-        if (!kind) return;
-        window.dispatchEvent(new CustomEvent("goat-board-chip", { detail: kind }));
-        setFocusKind(kind);
-      }}
-    >
+    <GoatPageView model={{ ...model, mailNeedingAction: mail.actionCount, questions: mail.questionCount }}>
       <GoatBriefingBoard
         answers={
           <GoatMailBoard
@@ -115,7 +104,6 @@ export default function GoatPage() {
         caseStatuses={caseStatuses}
         closeout={closeout}
         appointmentTypes={appointmentTypes.map((row) => row.name)}
-        focusKind={focusKind}
         isAdmin={isAdminTier(roleTier)}
         keyDates={keyDates}
         mail={

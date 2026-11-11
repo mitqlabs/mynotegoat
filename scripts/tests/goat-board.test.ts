@@ -9,6 +9,7 @@ import {
   HANDOFF_TODAY_ITEMS,
   VISIT_GROUP_LABELS,
   appointmentVisible,
+  dropRetiredBoxes,
   defaultBoard,
   defaultTypePriority,
   matchesPeriod,
@@ -24,7 +25,6 @@ import { getDefaultScheduleSettings } from "../../src/lib/schedule-settings";
 
 assert.deepEqual([...DEFAULT_BOX_ORDER], [
   "goat-mail",
-  "morning-rundown",
   "appointment-check",
   "quick-biz",
   "case-review",
@@ -37,6 +37,10 @@ assert.deepEqual([...DEFAULT_BOX_ORDER], [
   "end-of-day",
 ]);
 assert.deepEqual(defaultBoard().map((box) => box.kind), [...DEFAULT_BOX_ORDER]);
+assert.deepEqual(
+  dropRetiredBoxes([{ i: "morning-rundown", kind: "morning-rundown" as never, x: 0, y: 0, w: 4, h: 8 }, defaultBoard()[0]]).map((box) => box.kind),
+  ["goat-mail"],
+);
 assert.deepEqual([...VISIT_GROUP_LABELS], ["New Patient", "Seen", "No Show", "Rebook", "Canceled"]);
 assert.deepEqual(HANDOFF_TODAY_ITEMS.map((item) => item.label), [
   "Seen",
@@ -75,17 +79,24 @@ assert.equal(custom.statusName, "Ready to Discharge");
 assert.equal(custom.title, "Texas discharge");
 
 const ui = readFileSync(new URL("../../src/components/goat-briefing-board.tsx", import.meta.url), "utf8");
-assert.match(ui, /This office's case statuses/);
 assert.match(ui, /compactType="vertical"/);
+assert.match(ui, /isDraggable=\{arrange\}/);
+assert.match(ui, /isResizable=\{arrange\}/);
 assert.match(ui, /href=\{`\/patients\/\$\{patient.id\}`\}/);
 assert.match(ui, /nextOpenDayLabel/);
 assert.match(ui, /Tomorrow's Appointments/);
 assert.match(ui, /aria-label="GOAT Page settings"/);
 assert.doesNotMatch(ui, /Waiting On/);
 assert.doesNotMatch(ui, /Open slots|Tomorrow's openings/);
+assert.doesNotMatch(ui, /aria-label=\{`Remove /);
 const settingsUi = readFileSync(new URL("../../src/components/goat-page-settings.tsx", import.meta.url), "utf8");
 assert.match(settingsUi, /data-goat-page-settings/);
 assert.match(settingsUi, /Save as office default/);
+assert.match(settingsUi, /Reset Layout/);
+assert.match(settingsUi, /Boxes On Board/);
+assert.match(settingsUi, /Box By Status/);
+assert.match(settingsUi, /Box By Referrals/);
+assert.match(settingsUi, /case statuses/);
 const registry = readFileSync(new URL("../../src/lib/cloud-key-registry.ts", import.meta.url), "utf8");
 assert.match(registry, /"casemate\.goat-board-layout\.v1": "user"/);
 assert.match(registry, /"casemate\.goat-page-office-default\.v1": "workspace"/);

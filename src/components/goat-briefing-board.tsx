@@ -1,28 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import { ADMIN_ONLY_REPLY, appointmentCheck, morningRundown, quickBiz, type BriefData } from "@/lib/goat-briefs";
-import { BoxOptions } from "@/components/goat-box-options";
+import { ADMIN_ONLY_REPLY, appointmentCheck, quickBiz, type BriefData } from "@/lib/goat-briefs";
 import { GoatPageSettings } from "@/components/goat-page-settings";
 import {
-  BOX_TITLES,
   HANDOFF_TODAY_ITEMS,
   SCHEDULE_ITEMS,
   appointmentVisible,
+  boardSnapshot,
   boxTitle,
+  boxesFromSnapshot,
   casesByMonth,
   clampMaxH,
-  defaultBoard,
   defaultTypePriority,
   imagingReferralRows,
   itemShown,
   matchesPeriod,
-  newBuiltinBox,
-  newStatusBox,
   nextOpenDayLabel,
   nextOpenOfficeDay,
   orderedIds,
@@ -33,13 +30,11 @@ import {
   specialistReferralRows,
   subscribeBoard,
   todayVisitGroups,
-  boardSnapshot,
-  boxesFromSnapshot,
   type BoardBox,
-  type BuiltinKind,
   type RowField,
   type SnapshotPeriod,
 } from "@/lib/goat-board";
+import { printGoatHandoff } from "@/lib/print-goat-handoff";
 import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
 import type { KeyDateRecord } from "@/lib/key-dates";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
@@ -51,24 +46,6 @@ import type { GoatPageModel } from "@/lib/goat-page-model";
 import type { PatientRecord } from "@/lib/mock-data";
 
 const Grid = WidthProvider(Responsive);
-
-const SINGLETONS: Array<Exclude<BuiltinKind, "status-cases">> = [
-  "goat-mail",
-  "morning-rundown",
-  "appointment-check",
-  "quick-biz",
-  "case-review",
-  "schedule",
-  "tomorrow-schedule",
-  "intake",
-  "goat-answers",
-  "todos",
-  "case-snapshot",
-  "end-of-day",
-  "cases-by-month",
-  "imaging-referrals",
-  "specialist-referrals",
-];
 
 type StatusConfig = { name: string; color?: string };
 
@@ -138,8 +115,8 @@ function VisitLines({
   );
 }
 
-function CaseLinks({ patients, empty }: { patients: Array<{ id: string; fullName: string }>; empty: string }) {
-  if (!patients.length) return <p className="text-xs text-[var(--text-muted)]">{empty}</p>;
+function CaseLinks({ patients, empty }: { patients: Array<{ id: string; fullName: string }>; empty?: string }) {
+  if (!patients.length) return empty ? <p className="text-xs text-[var(--text-muted)]">{empty}</p> : null;
   return (
     <ul className="space-y-0.5 text-sm">
       {patients.map((patient) => (
@@ -166,7 +143,6 @@ export function GoatBriefingBoard({
   answers,
   todos,
   onMoveIntake,
-  focusKind,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
@@ -182,34 +158,11 @@ export function GoatBriefingBoard({
   answers: ReactNode;
   todos: ReactNode;
   onMoveIntake?: (id: string) => void;
-  focusKind?: BuiltinKind | null;
 }) {
   const snapshot = useSyncExternalStore(subscribeBoard, boardSnapshot, () => "");
   const boxes = useMemo(() => boxesFromSnapshot(snapshot), [snapshot]);
-  const [adding, setAdding] = useState(false);
-  const [pick, setPick] = useState("");
-  const [rename, setRename] = useState("");
-  const [gearId, setGearId] = useState<string | null>(null);
   const [pageSettings, setPageSettings] = useState(false);
-  useEffect(() => {
-    const onAdd = (event: Event) => {
-      const kind = (event as CustomEvent<BuiltinKind>).detail;
-      if (!kind || kind === "status-cases") return;
-      const prev = boxesFromSnapshot(boardSnapshot());
-      if (prev.some((box) => box.kind === kind)) return;
-      const created = newBuiltinBox(kind, prev);
-      if (!created) return;
-      saveBoard([...prev, created]);
-    };
-    window.addEventListener("goat-board-chip", onAdd);
-    return () => window.removeEventListener("goat-board-chip", onAdd);
-  }, []);
-  useEffect(() => {
-    if (!focusKind) return;
-    const found = boxes.find((box) => box.kind === focusKind);
-    if (!found) return;
-    document.getElementById(`goat-box-${found.i}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [focusKind, boxes]);
+  const [arrange, setArrange] = useState(false);
 
   const commit = (next: BoardBox[]) => {
     saveBoard(next);
@@ -267,7 +220,6 @@ export function GoatBriefingBoard({
       review = "Case review is unavailable right now.";
     }
     return {
-      rundown: morningRundown(data).text,
       check: isAdmin ? appointmentCheck(data).text : ADMIN_ONLY_REPLY,
       biz: isAdmin ? quickBiz(data).text : ADMIN_ONLY_REPLY,
       review: isAdmin ? review : ADMIN_ONLY_REPLY,
@@ -279,25 +231,10 @@ export function GoatBriefingBoard({
   const imaging = useMemo(() => imagingReferralRows(patients), [patients]);
   const specialists = useMemo(() => specialistReferralRows(patients), [patients]);
 
-  const addPicked = () => {
-    if (!pick) return;
-    if (pick.startsWith("status:")) {
-      const statusName = pick.slice("status:".length);
-      commit([...boxes, newStatusBox(statusName, rename, boxes)]);
-    } else {
-      const created = newBuiltinBox(pick as Exclude<BuiltinKind, "status-cases">, boxes);
-      if (created) commit([...boxes, { ...created, title: rename.trim() || undefined }]);
-    }
-    setAdding(false);
-    setPick("");
-    setRename("");
-  };
-
   const body = (box: BoardBox): ReactNode => {
     if (box.kind === "goat-mail") return mail;
     if (box.kind === "goat-answers") return answers;
     if (box.kind === "todos") return todos;
-    if (box.kind === "morning-rundown") return <p className="whitespace-pre-wrap text-sm">{briefs.rundown}</p>;
     if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm">{briefs.check}</p>;
     if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{briefs.biz}</p>;
     if (box.kind === "case-review") return <p className="whitespace-pre-wrap text-sm">{briefs.review}</p>;
@@ -428,16 +365,8 @@ export function GoatBriefingBoard({
       );
       return (
         <div className="goat-handoff">
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              .goat-handoff, .goat-handoff * { visibility: visible; }
-              .goat-handoff { position: absolute; left: 0; top: 0; width: 100%; }
-              .goat-handoff-actions { display: none !important; }
-            }
-          `}</style>
           <div className="goat-handoff-actions mb-2 flex justify-end">
-            <button className="btn btn-secondary btn-sm" onClick={() => window.print()} type="button">Print</button>
+            <button className="btn btn-secondary btn-sm" onClick={(event) => printGoatHandoff(event.currentTarget.closest(".goat-handoff"))} type="button">Print</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <section>
@@ -466,10 +395,14 @@ export function GoatBriefingBoard({
     }
     if (box.kind === "cases-by-month") {
       return (
-        <ul className="space-y-0.5 text-sm">
-          {months.map((row) => (
-            <li className="flex justify-between" key={row.month}><span>{row.month}</span><span className="font-semibold tabular-nums">{row.count}</span></li>
+        <ul className="space-y-2 text-sm">
+          {months.filter((row) => row.count > 0).map((row) => (
+            <li key={row.month}>
+              <p className="flex justify-between"><span>{row.month}</span><span className="font-semibold tabular-nums">{row.count}</span></p>
+              <CaseLinks empty="" patients={row.people.map((person) => ({ id: person.id, fullName: person.name }))} />
+            </li>
           ))}
+          {months.every((row) => row.count === 0) && <li className="text-xs text-[var(--text-muted)]">No initial exams dated yet.</li>}
         </ul>
       );
     }
@@ -478,19 +411,25 @@ export function GoatBriefingBoard({
         <div className="text-xs">
           <p className="mb-1 text-[11px] text-[var(--text-muted)]">Cases = distinct patients. Xrays / MRIs = one per region (a bilateral BL extremity counts as two).</p>
           {imaging.map((row) => (
-            <p className="flex justify-between gap-2 border-t border-[var(--line-soft)] py-1" key={row.facility}>
-              <span className="truncate font-medium">{row.facility}</span>
-              <span className="shrink-0 tabular-nums">{row.cases} · {row.xray} xr · {row.mri} mri</span>
-            </p>
+            <section className="border-t border-[var(--line-soft)] py-1" key={row.facility}>
+              <p className="flex justify-between gap-2">
+                <span className="truncate font-medium">{row.facility}</span>
+                <span className="shrink-0 tabular-nums">{row.cases} · {row.xray} xr · {row.mri} mri</span>
+              </p>
+              <CaseLinks empty="" patients={row.people.map((person) => ({ id: person.id, fullName: person.name }))} />
+            </section>
           ))}
           {imaging.length === 0 && <p className="text-[var(--text-muted)]">No imaging referrals.</p>}
         </div>
       );
     }
     return (
-      <ul className="space-y-0.5 text-sm">
+      <ul className="space-y-2 text-sm">
         {specialists.map((row) => (
-          <li className="flex justify-between gap-2" key={row.specialist}><span className="truncate">{row.specialist}</span><span className="font-semibold tabular-nums">{row.cases}</span></li>
+          <li key={row.specialist}>
+            <p className="flex justify-between gap-2"><span className="truncate">{row.specialist}</span><span className="font-semibold tabular-nums">{row.cases}</span></p>
+            <CaseLinks empty="" patients={row.people.map((person) => ({ id: person.id, fullName: person.name }))} />
+          </li>
         ))}
         {specialists.length === 0 && <li className="text-xs text-[var(--text-muted)]">No specialist referrals.</li>}
       </ul>
@@ -499,60 +438,27 @@ export function GoatBriefingBoard({
 
   return (
     <div data-goat-board>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)} type="button">+ Box</button>
-        <button className="btn btn-secondary btn-sm" onClick={() => commit(defaultBoard())} type="button">Reset layout</button>
+      <div className="mb-3 flex justify-end">
         <button aria-label="GOAT Page settings" className="btn btn-secondary btn-sm" onClick={() => setPageSettings((open) => !open)} title="GOAT Page settings" type="button">
           ⚙
         </button>
       </div>
       {pageSettings && (
         <div className="panel-card mb-3 p-3">
-          <GoatPageSettings canSetOfficeDefault={isAdmin} />
+          <GoatPageSettings arranging={arrange} canSetOfficeDefault={isAdmin} onArrange={setArrange} />
         </div>
-      )}
-      {adding && (
-        <form
-          className="panel-card mb-3 grid gap-2 p-3 sm:grid-cols-[1fr_1fr_auto]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            addPicked();
-          }}
-        >
-          <label className="grid gap-1 text-xs font-semibold text-[var(--text-muted)]">
-            Show
-            <select className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal" onChange={(event) => setPick(event.target.value)} value={pick}>
-              <option value="">Choose a list…</option>
-              <optgroup label="This office's case statuses">
-                {caseStatuses.map((status) => (
-                  <option key={status.name} value={`status:${status.name}`}>{status.name}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Other views">
-                {SINGLETONS.filter((kind) => !boxes.some((box) => box.kind === kind)).map((kind) => (
-                  <option key={kind} value={kind}>{BOX_TITLES[kind]}</option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs font-semibold text-[var(--text-muted)]">
-            Name (optional)
-            <input className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-sm font-normal" onChange={(event) => setRename(event.target.value)} placeholder="Leave blank to use the list name" value={rename} />
-          </label>
-          <div className="flex items-end gap-2">
-            <button className="btn btn-primary btn-sm" disabled={!pick} type="submit">Add</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setAdding(false)} type="button">Cancel</button>
-          </div>
-        </form>
       )}
       <Grid
         breakpoints={{ lg: 1100, md: 800, sm: 0 }}
         cols={{ lg: 12, md: 8, sm: 1 }}
         compactType="vertical"
         draggableHandle=".goat-box-drag"
+        isDraggable={arrange}
+        isResizable={arrange}
         layouts={{ lg: layoutOf(boxes), md: layoutOf(boxes), sm: stack(boxes) }}
         margin={[12, 12]}
         onLayoutChange={(current) => {
+          if (!arrange) return;
           if (typeof window !== "undefined" && window.innerWidth >= 1100) applyLayout(current);
         }}
         rowHeight={32}
@@ -560,40 +466,10 @@ export function GoatBriefingBoard({
         {boxes.map((box) => (
           <div className="h-full" id={`goat-box-${box.i}`} key={box.i}>
             <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white">
-              <header className="goat-box-drag flex cursor-grab items-center justify-between gap-2 border-b border-[var(--line-soft)] px-3 py-2">
+              <header className={`${arrange ? "goat-box-drag cursor-grab" : ""} border-b border-[var(--line-soft)] px-3 py-2`}>
                 <h2 className="truncate text-sm font-semibold">{boxTitle(box)}</h2>
-                <span className="flex shrink-0 items-center gap-2">
-                  <button
-                    aria-label={`Options for ${boxTitle(box)}`}
-                    className="text-xs font-semibold text-[var(--text-muted)]"
-                    onClick={() => setGearId(gearId === box.i ? null : box.i)}
-                    type="button"
-                  >
-                    {gearId === box.i ? "Done" : "⚙"}
-                  </button>
-                  <button
-                    aria-label={`Remove ${boxTitle(box)}`}
-                    className="text-xs font-semibold text-[var(--text-muted)]"
-                    onClick={() => commit(boxes.filter((row) => row.i !== box.i))}
-                    type="button"
-                  >
-                    Remove
-                  </button>
-                </span>
               </header>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                {gearId === box.i ? (
-                  <BoxOptions
-                    appointmentTypes={appointmentTypes}
-                    box={box}
-                    onChange={(next) => commit(boxes.map((row) => (row.i === box.i ? { ...next, h: Math.min(next.h, clampMaxH(next.maxH)) } : row)))}
-                    statusNames={caseStatuses.map((status) => status.name)}
-                    todayYear={Number(todayIso.slice(0, 4))}
-                  />
-                ) : (
-                  body(box)
-                )}
-              </div>
+              <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">{body(box)}</div>
             </article>
           </div>
         ))}

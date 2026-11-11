@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { chipsFor } from "@/lib/goat-briefs";
 import type { GoatPageModel } from "@/lib/goat-page-model";
 
 function plural(n: number, word: string): string {
@@ -10,17 +9,11 @@ function plural(n: number, word: string): string {
 
 export function GoatPageView({
   model,
-  isAdmin,
-  onChip,
   children,
 }: {
   model: GoatPageModel;
-  isAdmin: boolean;
-  /** Pill clicks show that brief on the board. They do not open the chat popup. */
-  onChip: (label: string) => void;
   children: ReactNode;
 }) {
-  const chips = chipsFor(isAdmin);
   return (
     <div className="w-full space-y-4" data-goat-page-layout="full">
       <header className="flex items-center gap-3 rounded-2xl bg-[#7ec8d6] px-4 py-3 text-white">
@@ -52,18 +45,6 @@ export function GoatPageView({
           {" · "}
           {model.questions} question{model.questions === 1 ? "" : "s"} for you
         </p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {chips.map((chip) => (
-            <button
-              className="rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] hover:bg-[var(--brand-primary)] hover:text-white"
-              key={chip}
-              onClick={() => onChip(chip)}
-              type="button"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
       </section>
       {children}
     </div>
