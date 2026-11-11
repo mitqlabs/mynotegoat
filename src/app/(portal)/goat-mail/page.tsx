@@ -27,6 +27,7 @@ export default function GoatMailPage() {
       onDisconnect={() => void mail.disconnect()}
       onResolve={mail.resolve}
       onSaveFolders={(ids) => void mail.saveFolders(ids)}
+      onSaveSecret={(iso) => void mail.saveSecret(iso)}
       rows={mail.rows}
       status={mail.status}
       variant="page"

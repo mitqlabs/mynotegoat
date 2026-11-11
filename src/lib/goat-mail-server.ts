@@ -8,7 +8,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { GOAT_MAIL_FOLDERS_KEY, chosenFolderIds, isSafeFolderId, mergeMailMessages, type GoatMailMessage, type MailFolderChoice } from "@/lib/goat-mail";
+import { GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_KEY, chosenFolderIds, isInvalidClientSecretError, isSafeFolderId, mergeMailMessages, normalizeSecretExpiresOn, type GoatMailMessage, type MailFolderChoice } from "@/lib/goat-mail";
 
 const TABLE = "goat_mail_connections";
 const SCOPE = "offline_access Mail.Read User.Read";
@@ -71,14 +71,17 @@ export function authorizeUrl(input: { tenant: string; clientId: string; redirect
   return url.toString();
 }
 
-async function tokenRequest(tenant: string, body: URLSearchParams): Promise<{ access_token?: string; refresh_token?: string; error?: string }> {
+async function tokenRequest(tenant: string, body: URLSearchParams): Promise<{ access_token?: string; refresh_token?: string; error?: string; secretExpired?: boolean }> {
   const res = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
   const json = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; error?: string; error_description?: string };
-  if (!res.ok) return { error: json.error_description || json.error || "Microsoft did not sign in." };
+  if (!res.ok) {
+    const detail = `${json.error ?? ""} ${json.error_description ?? ""}`.trim();
+    return { error: json.error_description || json.error || "Microsoft did not sign in.", secretExpired: isInvalidClientSecretError(detail) };
+  }
   return json;
 }
 
@@ -207,7 +210,7 @@ export async function readMailbox(input: {
   clientSecret: string;
   refreshToken: string;
   folderIds: string[] | null;
-}): Promise<{ email: string; refreshToken: string; messages: GoatMailMessage[]; folders: MailFolderChoice[]; selectedFolderIds: string[] } | { error: string }> {
+}): Promise<{ email: string; refreshToken: string; messages: GoatMailMessage[]; folders: MailFolderChoice[]; selectedFolderIds: string[] } | { error: string; secretExpired?: boolean }> {
   const tokens = await tokenRequest(
     input.tenant,
     new URLSearchParams({
@@ -218,7 +221,11 @@ export async function readMailbox(input: {
       scope: SCOPE,
     }),
   );
-  if (!tokens.access_token) return { error: tokens.error || "The mailbox connection expired. Connect it again." };
+  if (!tokens.access_token) {
+    return tokens.secretExpired
+      ? { error: tokens.error || "Microsoft rejected the client secret.", secretExpired: true }
+      : { error: tokens.error || "The mailbox connection expired. Connect it again." };
+  }
   const folders = await listMailFolders(tokens.access_token);
   const selectedFolderIds = chosenFolderIds(folders, input.folderIds);
   const ids = selectedFolderIds.length ? selectedFolderIds : ["inbox"];
@@ -238,6 +245,33 @@ export async function readMailbox(input: {
     folders,
     selectedFolderIds,
   };
+}
+
+export async function loadMailSecretExpiresOn(admin: SupabaseClient, workspaceId: string): Promise<string | null> {
+  const { data, error } = await admin.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_SECRET_KEY).maybeSingle();
+  if (error || !data) return null;
+  const value = data.value as { expiresOn?: unknown };
+  return normalizeSecretExpiresOn(value?.expiresOn) || null;
+}
+
+export async function saveMailSecretExpiresOn(admin: SupabaseClient, workspaceId: string, expiresOn: string): Promise<{ ok: true; expiresOn: string } | { error: string }> {
+  const clean = normalizeSecretExpiresOn(expiresOn);
+  if (!expiresOn) {
+    await admin.from("workspace_kv").delete().eq("workspace_id", workspaceId).eq("key", GOAT_MAIL_SECRET_KEY);
+    return { ok: true, expiresOn: "" };
+  }
+  if (!clean) return { error: "Enter a real date." };
+  const { error } = await admin.from("workspace_kv").upsert(
+    {
+      workspace_id: workspaceId,
+      key: GOAT_MAIL_SECRET_KEY,
+      value: { expiresOn: clean },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "workspace_id,key" },
+  );
+  if (error) return { error: "Could not save the date." };
+  return { ok: true, expiresOn: clean };
 }
 
 export async function loadMailFolderIds(admin: SupabaseClient, workspaceId: string): Promise<string[] | null> {

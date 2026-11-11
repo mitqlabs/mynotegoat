@@ -75,6 +75,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.goat-mail.v1": "workspace",
   // Folders GOAT Mail reads. The mail API writes this row; Inbox is the default when it is empty.
   "casemate.goat-mail-folders.v1": "workspace",
+  // Optional Microsoft app-secret expiry for GOAT Mail. The mail API writes this row.
+  "casemate.goat-mail-secret.v1": "workspace",
   "casemate.duplicate-dismissals.v1": "workspace",
   "casemate.attorney-not-same.v1": "workspace",
   "casemate.team-settings.v1": "workspace",

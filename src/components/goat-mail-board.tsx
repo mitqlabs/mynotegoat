@@ -8,9 +8,12 @@ import { createPatientRecord } from "@/lib/mock-data";
 import {
   GOAT_MAIL_CONNECT_LINE,
   GOAT_MAIL_KEY,
+  GOAT_MAIL_SECRET_EXPIRED,
   GOAT_MAIL_SETUP_LINE,
   answerMail,
   loadMailDecisions,
+  mailSecretAlertText,
+  mailSecretDue,
   rememberMailPatient,
   resolveMail,
   saveMailDecisions,
@@ -32,6 +35,8 @@ type Status = {
   messages: GoatMailMessage[];
   folders?: MailFolderChoice[];
   selectedFolderIds?: string[];
+  secretExpiresOn?: string;
+  secretExpired?: boolean;
 };
 
 const creating = new Set<string>();
@@ -166,6 +171,22 @@ export function useGoatMail(input: {
       setFolderNotice("Saved.");
       setReload((value) => value + 1);
     },
+    saveSecret: async (expiresOn: string) => {
+      const headers = await authHeaders();
+      if (!headers) return;
+      const res = await fetch("/api/goat-mail/secret", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresOn }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string; expiresOn?: string } | null;
+      if (!res.ok) {
+        setNotice(json?.error || "Could not save the date.");
+        return;
+      }
+      setNotice("");
+      setStatus((current) => (current ? { ...current, secretExpiresOn: json?.expiresOn ?? "" } : current));
+    },
     disconnect: async () => {
       const headers = await authHeaders();
       if (!headers) return;
@@ -216,6 +237,48 @@ function RowList({ rows, onAnswer, onResolve }: { rows: GoatMailRow[]; onAnswer:
         </li>
       ))}
     </ul>
+  );
+}
+
+function SecretDateField({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
+  const [date, setDate] = useState(value);
+  return (
+    <div className="mt-4">
+      <label className="block text-sm font-semibold" htmlFor="goat-mail-secret-date">
+        Microsoft secret expires on
+      </label>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">Optional. Saved for this office.</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-sm" id="goat-mail-secret-date" onChange={(event) => setDate(event.target.value)} type="date" value={date} />
+        <button className="rounded-xl border border-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)]" onClick={() => onSave(date)} type="button">
+          Save date
+        </button>
+        {value ? (
+          <button className="text-sm font-semibold text-[var(--text-muted)] underline" onClick={() => { setDate(""); onSave(""); }} type="button">
+            Clear
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function GoatMailSecretNotice({
+  expiresOn,
+  secretExpired = false,
+  today = new Date(),
+}: {
+  expiresOn?: string | null;
+  secretExpired?: boolean;
+  today?: Date;
+}) {
+  const due = Boolean(expiresOn && mailSecretDue(expiresOn, today));
+  if (!due && !secretExpired) return null;
+  return (
+    <div className="mb-3 space-y-2">
+      {secretExpired ? <p className="rounded-xl bg-[#fde8e8] px-3 py-2 text-sm text-[#9b1c1c]" role="alert">{GOAT_MAIL_SECRET_EXPIRED}</p> : null}
+      {due && expiresOn ? <p className="rounded-xl bg-[#fff4d6] px-3 py-2 text-sm text-[#7a4b00]" role="alert">{mailSecretAlertText(expiresOn)}</p> : null}
+    </div>
   );
 }
 
@@ -273,6 +336,7 @@ export function GoatMailBoard({
   onAnswer,
   onResolve,
   onSaveFolders,
+  onSaveSecret,
 }: {
   variant: "page" | "triage" | "questions";
   status: Status | null;
@@ -284,6 +348,7 @@ export function GoatMailBoard({
   onAnswer: (id: string, category: GoatMailCategory) => void;
   onResolve: (id: string) => void;
   onSaveFolders?: (ids: string[]) => void;
+  onSaveSecret?: (iso: string) => void;
 }) {
   const questions = rows.filter((row) => row.needsAnswer);
   if (!status) return <p className="mt-2 text-sm text-[var(--text-muted)]">Opening GOAT Mail…</p>;
@@ -317,7 +382,9 @@ export function GoatMailBoard({
       <div className="mx-auto max-w-3xl">
         <section className="panel-card p-5">
           <h1 className="text-xl font-semibold">GOAT Mail</h1>
+          <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
           <p className="mt-2 text-sm">{GOAT_MAIL_SETUP_LINE}</p>
+          {onSaveSecret ? <SecretDateField key={status.secretExpiresOn ?? ""} onSave={onSaveSecret} value={status.secretExpiresOn ?? ""} /> : null}
         </section>
       </div>
     );
@@ -327,9 +394,11 @@ export function GoatMailBoard({
       <div className="mx-auto max-w-3xl">
         <section className="panel-card p-5">
           <h1 className="text-xl font-semibold">GOAT Mail</h1>
+          <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
           <p className="mt-2 text-sm">{GOAT_MAIL_CONNECT_LINE}</p>
           {connectButton}
           {notice && notice !== "disconnected" && <p className="mt-3 text-sm text-[var(--text-muted)]">Could not connect the mailbox. Try again.</p>}
+          {onSaveSecret ? <SecretDateField key={status.secretExpiresOn ?? ""} onSave={onSaveSecret} value={status.secretExpiresOn ?? ""} /> : null}
         </section>
       </div>
     );
@@ -340,9 +409,11 @@ export function GoatMailBoard({
     <div className="mx-auto max-w-3xl space-y-4">
       <section className="panel-card p-5">
         <h1 className="text-xl font-semibold">GOAT Mail</h1>
+        <GoatMailSecretNotice expiresOn={status.secretExpiresOn} secretExpired={status.secretExpired} />
         <p className="mt-1 text-sm text-[var(--text-muted)]">Read-only. GOAT never sends, moves, deletes, or changes email.</p>
         {status.account && <p className="mt-2 text-sm">Connected as {status.account}</p>}
-        {status.error && <p className="mt-2 text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p>}
+        {status.error && !status.secretExpired && <p className="mt-2 text-sm text-[var(--text-muted)]">Could not read the mailbox. Try again in a moment.</p>}
+        {onSaveSecret ? <SecretDateField key={status.secretExpiresOn ?? ""} onSave={onSaveSecret} value={status.secretExpiresOn ?? ""} /> : null}
         {folders.length > 0 && onSaveFolders && <FolderPicker key={selected.join("|")} folders={folders} notice={folderNotice} onSave={onSaveFolders} selected={selected} />}
         <button className="mt-3 block text-sm font-semibold text-[var(--text-muted)] underline" onClick={onDisconnect} type="button">
           Disconnect

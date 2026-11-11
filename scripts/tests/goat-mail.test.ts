@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
-import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, mergeMailMessages, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailMessages, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -136,10 +136,13 @@ const handbook = readFileSync(new URL("../../src/lib/handbook-goat.ts", import.m
 const page = readFileSync(new URL("../../src/components/goat-page-view.tsx", import.meta.url), "utf8");
 const copy = readFileSync(new URL("../../src/lib/goat-mail.ts", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../../src/components/app-shell.tsx", import.meta.url), "utf8");
+const goatPage = readFileSync(new URL("../../src/app/(portal)/goat-page/page.tsx", import.meta.url), "utf8");
 for (const src of [board, handbook, page, copy]) {
-  assert.doesNotMatch(src, /Entra|GOAT_MAIL_CLIENT_ID|goat_mail_connections|Register the Microsoft app/);
+  assert.doesNotMatch(src, /GOAT_MAIL_CLIENT_ID|goat_mail_connections|Register the Microsoft app/);
   assert.doesNotMatch(src, /coming soon/i);
 }
+assert.doesNotMatch(board, /Entra/);
+assert.doesNotMatch(page, /Entra/);
 assert.match(copy, /isn't turned on for this office yet/);
 assert.match(copy, /Sign in with your office Outlook to let GOAT read \(never send\) your email\./);
 assert.match(board, /GOAT_MAIL_SETUP_LINE/);
@@ -152,6 +155,25 @@ assert.match(board, /href="\/goat-mail"/);
 assert.match(shell, /href="\/goat-mail"/);
 assert.ok(shell.indexOf('href="/goat-mail"') < shell.indexOf("<GlobalGoatButton"), "GOAT Mail sits with the G.O.A.T. sidebar link");
 assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_FOLDERS_KEY], "workspace");
+assert.equal(CLOUD_KEY_REGISTRY[GOAT_MAIL_SECRET_KEY], "workspace");
+assert.match(board, /Microsoft secret expires on/);
+assert.match(goatPage, /GoatMailSecretNotice/);
+assert.equal(mailSecretDateLabel("2026-11-11"), "Nov. 11, 2026");
+assert.equal(mailSecretDateLabel("2026-06-05"), "June 5, 2026");
+assert.equal(mailSecretDateLabel("2026-05-01"), "May 1, 2026");
+assert.equal(mailSecretDateLabel("2026-07-04"), "July 4, 2026");
+const alert = mailSecretAlertText("2026-12-01");
+assert.equal(alert, "GOAT Mail's Microsoft secret expires on Dec. 1, 2026. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.");
+const secretToday = new Date(2026, 10, 11);
+assert.equal(mailSecretDue("2026-12-11", secretToday), true);
+assert.equal(mailSecretDue("2026-12-12", secretToday), false);
+assert.equal(mailSecretDue("2026-11-01", secretToday), true);
+assert.equal(mailSecretDue("", secretToday), false);
+assert.equal(isInvalidClientSecretError("AADSTS7000215: Invalid client secret provided."), true);
+assert.equal(isInvalidClientSecretError("AADSTS7000222: The provided client secret keys are expired."), true);
+assert.equal(isInvalidClientSecretError("invalid_client"), true);
+assert.equal(isInvalidClientSecretError("The mailbox connection expired. Connect it again."), false);
+assert.match(GOAT_MAIL_SECRET_EXPIRED, /secret has expired/);
 
 const folders: MailFolderChoice[] = [
   { id: "in", name: "Inbox", path: "Inbox", wellKnownName: "inbox" },
@@ -172,6 +194,8 @@ assert.match(server, /offline_access Mail\.Read User\.Read/);
 assert.match(server, /\/me\/mailFolders\//);
 assert.match(server, /childFolders/);
 assert.match(server, /workspace_kv/);
+assert.match(server, /GOAT_MAIL_SECRET_KEY/);
+assert.match(server, /secretExpired/);
 assert.doesNotMatch(server, /\/me\/messages\?/);
 assert.doesNotMatch(server, /sendMail|Mail\.Send|Mail\.ReadWrite|\/reply|\/forward|\/move/);
 assert.equal(server.includes('method: "POST"'), true);

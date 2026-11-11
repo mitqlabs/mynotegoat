@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GoatBriefingBoard } from "@/components/goat-briefing-board";
-import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
+import { GoatMailBoard, GoatMailSecretNotice, useGoatMail } from "@/components/goat-mail-board";
 import { GoatPageView } from "@/components/goat-page-view";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
@@ -136,14 +136,17 @@ export default function GoatPage() {
         scheduleSettings={scheduleSettings}
         todayIso={iso}
         todos={
-          <UntouchedItems
-            items={untouched}
-            onHandled={(id) => {
-              const next = markHandled(handled, id, "", new Date().toISOString());
-              setHandled(next);
-              void saveHandledMarks(next);
-            }}
-          />
+          <>
+            <GoatMailSecretNotice expiresOn={mail.status?.secretExpiresOn} />
+            <UntouchedItems
+              items={untouched}
+              onHandled={(id) => {
+                const next = markHandled(handled, id, "", new Date().toISOString());
+                setHandled(next);
+                void saveHandledMarks(next);
+              }}
+            />
+          </>
         }
       />
     </GoatPageView>
