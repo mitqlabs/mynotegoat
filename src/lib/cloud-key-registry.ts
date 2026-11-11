@@ -99,6 +99,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.soap-split-height.v1": "user",
   "casemate.soap-split-bottom-height.v1": "user",
   "casemate.soap-split-columns.v1": "user",
+  // Diagnosis box: Suggested from MRI / X-ray collapsed (per person, cloud-mirrored).
+  "casemate.dx-suggestions-collapsed.v1": "user",
   "casemate.quick-glance.open.v1": "user",
   "casemate.files-view-mode": "user",
   "casemate.dashboard.sections-open.v1": "user",

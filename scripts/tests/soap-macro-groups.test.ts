@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupSoapMacros, isBodyRegionMacroName, soapMacroChipClass } from "../../src/lib/soap-macro-groups";
+import { groupSoapMacros, isBodyRegionMacroName, orderComplaintMacros, soapMacroChipClass } from "../../src/lib/soap-macro-groups";
 
 const names = [
   "MVC HX",
@@ -46,10 +46,24 @@ assert.equal(isBodyRegionMacroName("Follow-Up Plan"), false);
 assert.match(soapMacroChipClass(true, false), /text-\[var\(--text-muted\)\]/);
 assert.match(soapMacroChipClass(false, false), /font-semibold/);
 
+const ordered = orderComplaintMacros(
+  ["Knee", "Extra chip", "Headaches", "Cervical", "Ankle/Foot"].map((buttonName) => ({ buttonName })),
+);
+assert.deepEqual(ordered.map((macro) => macro.buttonName), ["Headaches", "Cervical", "Knee", "Ankle/Foot", "Extra chip"]);
+
 const workspace = readFileSync(new URL("../../src/components/encounter-workspace.tsx", import.meta.url), "utf8");
 assert.match(workspace, /groupSoapMacros\(group\.macros\)/);
+assert.match(workspace, /orderComplaintMacros\(group\.macros\)/);
+assert.match(workspace, /Complaints/);
+assert.match(workspace, /xl:grid-cols-8/);
+assert.doesNotMatch(workspace, />HISTORY<|>BODY REGIONS</);
 assert.match(workspace, /soapMacroChipClass\(macroGroup\.quiet/);
-assert.doesNotMatch(workspace, /activeSection === "subjective"\s*\?/);
+
+const dx = readFileSync(new URL("../../src/components/dx-suggestions.tsx", import.meta.url), "utf8");
+assert.match(dx, /casemate\.dx-suggestions-collapsed\.v1/);
+assert.match(dx, /aria-expanded/);
+const registry = readFileSync(new URL("../../src/lib/cloud-key-registry.ts", import.meta.url), "utf8");
+assert.match(registry, /"casemate\.dx-suggestions-collapsed\.v1": "user"/);
 
 const editor = readFileSync(new URL("../../src/components/rich-text-template-editor.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(editor, />\s*Undo\s*</);

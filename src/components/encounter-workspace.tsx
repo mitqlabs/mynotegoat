@@ -5,7 +5,7 @@ import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { toInlineMacroHtml } from "@/lib/macro-inline";
-import { groupSoapMacros, soapMacroChipClass } from "@/lib/soap-macro-groups";
+import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass } from "@/lib/soap-macro-groups";
 import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -4481,12 +4481,17 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            groupSoapMacros(group.macros).map((macroGroup) => (
+                            (activeSection === "subjective"
+                              ? group.macros.length
+                                ? [{ label: "Complaints" as const, quiet: false, macros: orderComplaintMacros(group.macros) }]
+                                : []
+                              : groupSoapMacros(group.macros)
+                            ).map((macroGroup) => (
                             <div className="[&+div]:mt-2" key={macroGroup.label}>
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                                 {macroGroup.label}
                               </p>
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className={activeSection === "subjective" ? "grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8" : "flex flex-wrap gap-1.5"}>
                               {macroGroup.macros.map((macro) => {
                                 // Native HTML5 drag-and-drop. Making the
                                 // button itself `draggable` still lets
@@ -4500,8 +4505,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                     key={macro.id}
                                     draggable
                                     className={`${soapMacroChipClass(macroGroup.quiet, isDragging)} ${
-                                      draggedMacroId && !isDragging ? "cursor-grab" : ""
-                                    }`}
+                                      activeSection === "subjective" ? "w-full truncate text-center" : ""
+                                    } ${draggedMacroId && !isDragging ? "cursor-grab" : ""}`}
                                     onClick={() => handleRunMacroClick(macro)}
                                     onDragStart={(event) => {
                                       setDraggedMacroId(macro.id);

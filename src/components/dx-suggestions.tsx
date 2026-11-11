@@ -1,7 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DxHeldBack, DxSuggestion } from "@/lib/dx-suggest";
+import { onLocalChange } from "@/lib/local-sync";
+
+export const DX_SUGGESTIONS_COLLAPSED_KEY = "casemate.dx-suggestions-collapsed.v1";
+
+function readCollapsedMap(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DX_SUGGESTIONS_COLLAPSED_KEY) ?? "{}") as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
 
 export const DX_DISCLAIMER = "Suggestions only. Confirm against the MRI and documentation before billing.";
 const disclaimer = (kind: "MRI" | "X-ray") => (kind === "MRI" ? DX_DISCLAIMER : "Suggestions only. Confirm against the X-ray and documentation before billing.");
@@ -45,19 +59,43 @@ export function DxSuggestions({
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showAll, setShowAll] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => readCollapsedMap()[kind] === true);
+  useEffect(() => onLocalChange(DX_SUGGESTIONS_COLLAPSED_KEY, () => setCollapsed(readCollapsedMap()[kind] === true)), [kind]);
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    const map = { ...readCollapsedMap(), [kind]: next };
+    window.localStorage.setItem(DX_SUGGESTIONS_COLLAPSED_KEY, JSON.stringify(map));
+    setCollapsed(next);
+  };
   const SHOWN = 5;
   const visible = showAll ? suggestions : suggestions.slice(0, SHOWN);
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <p className="text-sm font-semibold">
-          <span className="mr-1.5 rounded-md bg-[#72bdcf]/20 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#2f7f93]">
+    <div className="grid min-w-0 grid-cols-1 gap-2" data-dx-suggestions={kind}>
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <button
+          aria-expanded={!collapsed}
+          className="flex items-center gap-1.5 text-left text-sm font-semibold"
+          onClick={toggleCollapsed}
+          type="button"
+        >
+          <svg
+            aria-hidden
+            className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${collapsed ? "" : "rotate-90"}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+          >
+            <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="rounded-md bg-[#72bdcf]/20 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#2f7f93]">
             G.O.A.T.
           </span>
           Suggested from {kind}
-        </p>
+        </button>
         <span className="text-[11px] text-[var(--text-muted)]">Nothing is added for you</span>
       </div>
+      {collapsed ? null : (<>
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900" role="note">
         {disclaimer(kind)}
       </p>
@@ -212,6 +250,7 @@ export function DxSuggestions({
           {unreadFiles} uploaded file{unreadFiles === 1 ? " isn't" : "s aren't"} read yet, so {unreadFiles === 1 ? "it isn't" : "they aren't"} included. Use &ldquo;Read files&rdquo; in G.O.A.T.
         </p>
       )}
+      </>)}
     </div>
   );
 }
