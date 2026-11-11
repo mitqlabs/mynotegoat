@@ -330,3 +330,77 @@ export function planNewPatientFirstVisit(
   }
   return { kind: "book", iso, time: t.time, type: type.name, durationMin: type.durationMin, override: false };
 }
+
+/** Fields in the New Patient "+ Case" popup. Dates are MM/DD/YYYY. Time is HH:MM or blank. */
+export interface CasePopupDraft {
+  attorney: string;
+  attorneyPhone: string;
+  dateOfLoss: string;
+  evalDate: string;
+  evalTime: string;
+}
+
+export type CasePopupConflict = {
+  reason: "taken" | "outside";
+  time: string;
+  suggestions: string[];
+  canOverride: boolean;
+};
+
+export type CasePopupReview =
+  | {
+      ok: true;
+      /** ISO date of injury, or "" when left blank. */
+      dateOfLossIso: string;
+      /** ISO Initial Exam date, set only when a visit is booked. */
+      initialExamIso: string;
+      /** A date of injury is the case info that leaves New Patient Intake. */
+      movesToPatientList: boolean;
+      visit: { iso: string; time: string; type: string; durationMin: number; override: boolean } | null;
+    }
+  | { ok: false; message: string; conflict?: CasePopupConflict };
+
+/**
+ * Save on the + Case popup. Every field is optional. A date of injury moves
+ * the chart onto the Patient List. An exam date and time use the same
+ * office-hours and open-slot rules as any new-patient booking, and that
+ * date becomes the Initial Exam.
+ */
+export function reviewCasePopup(
+  draft: CasePopupDraft,
+  input: {
+    bookAnyway?: boolean;
+    appointments: ScheduleAppointmentRecord[];
+    settings: ScheduleSettingsConfig;
+    types: Array<{ name: string; durationMin: number; isDefault?: boolean }>;
+  },
+): CasePopupReview {
+  if (draft.dateOfLoss.trim() && !mdyToIso(draft.dateOfLoss)) {
+    return { ok: false, message: "Date Of Injury must be MM/DD/YYYY (or leave it blank)." };
+  }
+  const dateOfLossIso = mdyToIso(draft.dateOfLoss);
+  const plan = planNewPatientFirstVisit(
+    { dateMdy: draft.evalDate, timeText: draft.evalTime, bookAnyway: input.bookAnyway },
+    input.appointments,
+    input.settings,
+    input.types,
+  );
+  if (plan.kind === "none") {
+    return { ok: true, dateOfLossIso, initialExamIso: "", movesToPatientList: Boolean(dateOfLossIso), visit: null };
+  }
+  if (plan.kind === "error") return { ok: false, message: plan.message };
+  if (plan.kind === "conflict") {
+    return {
+      ok: false,
+      message: plan.message,
+      conflict: { reason: plan.reason, time: plan.time, suggestions: plan.suggestions, canOverride: plan.canOverride },
+    };
+  }
+  return {
+    ok: true,
+    dateOfLossIso,
+    initialExamIso: plan.iso,
+    movesToPatientList: Boolean(dateOfLossIso),
+    visit: { iso: plan.iso, time: plan.time, type: plan.type, durationMin: plan.durationMin, override: plan.override },
+  };
+}

@@ -7,9 +7,11 @@ import type { PatientRecord } from "@/lib/mock-data";
 export function NewPatientIntakeSection({
   patients,
   onMove,
+  onAddCase,
 }: {
   patients: Pick<PatientRecord, "id" | "fullName" | "phone">[];
   onMove: (patientId: string) => void;
+  onAddCase?: (patientId: string) => void;
 }) {
   if (patients.length === 0) return null;
   return (
@@ -19,7 +21,7 @@ export function NewPatientIntakeSection({
         <span className="text-sm text-[var(--text-muted)]">{patients.length} without case info</span>
       </div>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
-        No date of injury yet. They stay here until you move them onto the Patient List.
+        No date of injury yet. + Case adds it and moves them onto the Patient List. Move Patient to Patient List does that without case info.
       </p>
       <ul className="mt-3 divide-y divide-[var(--line-soft)]">
         {patients.map((patient) => (
@@ -28,9 +30,16 @@ export function NewPatientIntakeSection({
               {patient.fullName}
             </Link>
             <span className="text-xs text-[var(--text-muted)]">{patient.phone || "No phone"}</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => onMove(patient.id)} type="button">
-              Move Patient to Patient List
-            </button>
+            <span className="flex flex-wrap items-center gap-2">
+              {onAddCase && (
+                <button className="btn btn-secondary btn-sm" data-testid="intake-add-case" onClick={() => onAddCase(patient.id)} type="button">
+                  + Case
+                </button>
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={() => onMove(patient.id)} type="button">
+                Move Patient to Patient List
+              </button>
+            </span>
           </li>
         ))}
       </ul>
