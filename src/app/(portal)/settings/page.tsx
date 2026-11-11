@@ -8,7 +8,6 @@ import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState 
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
 import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-panel";
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
-import { GoatPageSettings } from "@/components/goat-page-settings";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
@@ -2889,6 +2888,12 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get("section");
+    if (section === "goat") window.location.replace("/settings/goat#chat");
+    if (section === "goatPage") window.location.replace("/settings/goat#goat-page");
+  }, []);
+
+  useEffect(() => {
     setBackupInfo(hasSafetyBackup());
   }, []);
 
@@ -4895,38 +4900,26 @@ export default function SettingsPage() {
         </div>
       </CollapsibleSection>
 
-      {/* G.O.A.T. words & abbreviations: its own page (/settings/goat). */}
+      {/* One G.O.A.T. page: board, chat, and GOAT Mail. Old ?section= links redirect there. */}
       <CollapsibleSection
-        description="G.O.A.T. Library (learned and built-in wording), plus words, abbreviations and synonym groups."
-        hidden={!showSection("goat")}
-        isOpen={sectionIsOpen("goat")}
+        description="GOAT Page, G.O.A.T. chat, and GOAT Mail."
+        hidden={!showSection("goat") && !showSection("goatPage")}
+        isOpen={sectionIsOpen("goat") || sectionIsOpen("goatPage")}
         onToggle={() => toggleSection("goat")}
         title="G.O.A.T."
       >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg-soft)] p-3 text-sm">
           <p className="min-w-0 flex-1">
-            Teach G.O.A.T. your office&apos;s words: ROM = range of motion = flexion = extension, PM = pain
-            management, C/S = cervical = neck, and so on. The G.O.A.T. Library there shows the wording G.O.A.T. learned in your office. Shared by everyone in the office.
+            One page for the GOAT Page board, the chat (answers, library, words, and note signatures), and GOAT Mail.
           </p>
           <Link
             className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold hover:opacity-90"
             href="/settings/goat"
-            // globals.css "a { color: inherit }" outranks Tailwind's layered text-white.
             style={{ color: "#fff" }}
           >
             Open G.O.A.T. settings →
           </Link>
         </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        description="Which boxes are on the GOAT Page, and what each box shows."
-        hidden={!showSection("goatPage")}
-        isOpen={sectionIsOpen("goatPage")}
-        onToggle={() => toggleSection("goatPage")}
-        title="GOAT Page"
-      >
-        <GoatPageSettings canSetOfficeDefault={canEditSettings} />
       </CollapsibleSection>
 
       {/* ── Templates group ──────────────────────────────────────────

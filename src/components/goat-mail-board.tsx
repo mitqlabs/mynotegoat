@@ -23,6 +23,7 @@ import {
   type GoatMailDecision,
   type GoatMailMessage,
   type GoatMailRow,
+  type MailBucket,
   type MailFolderChoice,
 } from "@/lib/goat-mail";
 
@@ -37,6 +38,7 @@ type Status = {
   selectedFolderIds?: string[];
   secretExpiresOn?: string;
   secretExpired?: boolean;
+  buckets?: MailBucket[] | null;
 };
 
 const creating = new Set<string>();
@@ -97,6 +99,7 @@ export function useGoatMail(input: {
         todayIso,
         claimDocument: input.claimDocument,
         decisions,
+        buckets: status?.buckets,
       }),
     [status?.messages, input.patients, input.appointments, input.claimDocument, input.listVersion, decisions, todayIso],
   );
@@ -240,7 +243,7 @@ function RowList({ rows, onAnswer, onResolve }: { rows: GoatMailRow[]; onAnswer:
   );
 }
 
-function SecretDateField({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
+export function SecretDateField({ value, onSave }: { value: string; onSave: (iso: string) => void }) {
   const [date, setDate] = useState(value);
   return (
     <div className="mt-4">
@@ -290,7 +293,7 @@ function MailPageLink({ connected }: { connected: boolean }) {
   );
 }
 
-function FolderPicker({
+export function FolderPicker({
   folders,
   selected,
   notice,

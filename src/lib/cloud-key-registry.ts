@@ -77,6 +77,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.goat-mail-folders.v1": "workspace",
   // Optional Microsoft app-secret expiry for GOAT Mail. The mail API writes this row.
   "casemate.goat-mail-secret.v1": "workspace",
+  // GOAT Mail buckets and keywords. The mail API writes this row. Missing means the built-in buckets.
+  "casemate.goat-mail-buckets.v1": "workspace",
   "casemate.duplicate-dismissals.v1": "workspace",
   "casemate.attorney-not-same.v1": "workspace",
   "casemate.team-settings.v1": "workspace",

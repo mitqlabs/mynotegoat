@@ -341,8 +341,10 @@ export const settingsSearchCatalog: Array<{
   },
 ];
 
-export const GOAT_SETTINGS_PAGE = { key: "goatPage", title: "G.O.A.T. Settings (answers, words)", href: "/settings/goat" } as const;
+export const GOAT_SETTINGS_PAGE = { key: "goat", title: "G.O.A.T.", href: "/settings/goat" } as const;
 
 export function settingsHref(key: SettingsSectionKey): string {
-  return key === "goat" ? "/settings/goat" : `/settings?section=${key}`;
+  if (key === "goat") return "/settings/goat#chat";
+  if (key === "goatPage") return "/settings/goat#goat-page";
+  return `/settings?section=${key}`;
 }

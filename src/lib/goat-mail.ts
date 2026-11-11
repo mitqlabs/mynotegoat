@@ -22,6 +22,9 @@ export const GOAT_MAIL_FOLDERS_KEY = "casemate.goat-mail-folders.v1";
 /** Optional Microsoft app-secret expiry. The mail API writes this row. */
 export const GOAT_MAIL_SECRET_KEY = "casemate.goat-mail-secret.v1";
 
+/** Editable mail buckets. The mail API writes this row. Missing means the built-in buckets. */
+export const GOAT_MAIL_BUCKETS_KEY = "casemate.goat-mail-buckets.v1";
+
 const MAIL_MONTHS = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "June", "July", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."] as const;
 
 export function normalizeSecretExpiresOn(value: unknown): string {
@@ -94,7 +97,7 @@ export function mergeMailMessages(groups: GoatMailMessage[][], limit = 25): Goat
   return [...byId.values()].sort((a, b) => (b.receivedAt || "").localeCompare(a.receivedAt || "")).slice(0, limit);
 }
 
-export type GoatMailCategory = "new-patient" | "lien" | "rb" | "medicals" | "specialist" | "bounced" | "other";
+export type GoatMailCategory = string;
 
 export type GoatMailFlag = "unbooked" | "multi-passenger" | "second-crash";
 
@@ -159,7 +162,7 @@ export function claimDocumentLabel(kind: ClaimDocument): string {
   return kind === "lop" ? "LOP" : "Lien";
 }
 
-export function mailCategoryLabel(category: GoatMailCategory, claim: ClaimDocument): string {
+export function mailCategoryLabel(category: string, claim: ClaimDocument): string {
   switch (category) {
     case "new-patient":
       return "New Patient referral";
@@ -178,23 +181,93 @@ export function mailCategoryLabel(category: GoatMailCategory, claim: ClaimDocume
   }
 }
 
-function signals(text: string, from: string): Set<GoatMailCategory> {
-  const found = new Set<GoatMailCategory>();
-  const bounced =
-    /mailer-daemon|postmaster/i.test(from) ||
-    /\b(undeliverable|delivery status notification|mail delivery failed|returned mail)\b/i.test(text);
-  if (bounced) {
-    found.add("bounced");
-    return found;
+export type MailBucket = {
+  id: string;
+  name: string;
+  keywords: string[];
+  /** Bounced also matches the sender address. */
+  matchFrom?: boolean;
+  /** Lien matches only when the message also asks for something. */
+  requireAction?: boolean;
+  /** Specialist matches only when the message also sounds like a report. */
+  requireReport?: boolean;
+};
+
+const BUCKET_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
+
+/** The buckets and keywords the rules started with. */
+export function defaultMailBuckets(): MailBucket[] {
+  return [
+    { id: "new-patient", name: "New Patient referral", keywords: ["new patient", "patient referral", "referral", "referred", "please schedule", "date of injury", "date of loss", "doi", "dol"] },
+    { id: "lien", name: "Lien / LOP request", keywords: ["lien", "lop", "letter of protection"], requireAction: true },
+    { id: "rb", name: "R&B / Report & Bill requested", keywords: ["r&b", "r & b", "r and b", "report and bill", "reports and bills"] },
+    { id: "medicals", name: "Medicals requested", keywords: ["medical records", "medicals", "records request"] },
+    { id: "specialist", name: "Specialist/imaging reply", keywords: ["mri", "x-ray", "x-rays", "xray", "xrays", "ct scan", "emg", "ncv", "radiology", "imaging"], requireReport: true },
+    { id: "bounced", name: "Bounced email", keywords: ["mailer-daemon", "postmaster", "undeliverable", "delivery status notification", "mail delivery failed", "returned mail"], matchFrom: true },
+    { id: "other", name: "Other", keywords: [] },
+  ];
+}
+
+export function resolveMailBuckets(saved: MailBucket[] | null | undefined): MailBucket[] {
+  return saved?.length ? saved : defaultMailBuckets();
+}
+
+export function normalizeMailBuckets(value: unknown): MailBucket[] | null {
+  if (!Array.isArray(value)) return null;
+  const buckets: MailBucket[] = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Partial<MailBucket>;
+    const id = typeof item.id === "string" ? item.id.trim().toLowerCase() : "";
+    const name = typeof item.name === "string" ? item.name.trim().slice(0, 80) : "";
+    if (!BUCKET_ID.test(id) || !name || seen.has(id)) continue;
+    seen.add(id);
+    const keywords = Array.isArray(item.keywords)
+      ? item.keywords.filter((word): word is string => typeof word === "string").map((word) => word.trim().toLowerCase()).filter(Boolean).slice(0, 40)
+      : [];
+    buckets.push({
+      id,
+      name,
+      keywords,
+      ...(item.matchFrom === true ? { matchFrom: true } : {}),
+      ...(item.requireAction === true ? { requireAction: true } : {}),
+      ...(item.requireReport === true ? { requireReport: true } : {}),
+    });
   }
-  if (/\b(new patient|patient referral|referr(?:al|ed)|please schedule|date of (?:injury|loss)|\bdoi\b|\bdol\b)\b/i.test(text)) found.add("new-patient");
-  if (/\b(lien|lop|letter of protection)\b/i.test(text) && ACTION.test(text)) found.add("lien");
-  if (/\b(r\s*&\s*b|r and b|reports? and bills?)\b/i.test(text)) found.add("rb");
-  if (/\b(medical records|medicals|records request)\b/i.test(text)) found.add("medicals");
-  if (/\b(mri|x-?rays?|xray|ct scan|emg|ncv|radiology|imaging)\b/i.test(text) && /\b(report|results?|findings?|impression|attached|enclosed)\b/i.test(text)) {
-    found.add("specialist");
+  return buckets.length ? buckets : null;
+}
+
+function keywordHit(text: string, keyword: string): boolean {
+  const cleaned = keyword.trim().toLowerCase();
+  if (!cleaned) return false;
+  const pattern = cleaned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\s+/g, "\\s+").replace(/\s+/g, "\\s+");
+  return new RegExp(`(?:^|[^a-z0-9])${pattern}(?:[^a-z0-9]|$)`, "i").test(text);
+}
+
+function bucketMatches(bucket: MailBucket, text: string, from: string): boolean {
+  if (bucket.id === "other" || !bucket.keywords.length) return false;
+  const hay = bucket.matchFrom ? `${from}\n${text}` : text;
+  if (!bucket.keywords.some((keyword) => keywordHit(hay, keyword))) return false;
+  if (bucket.requireAction && !ACTION.test(text)) return false;
+  if (bucket.requireReport && !/\b(report|results?|findings?|impression|attached|enclosed)\b/i.test(text)) return false;
+  return true;
+}
+
+/** Bucket ids this message fits. Bounced wins by itself. */
+export function matchMailBuckets(text: string, from: string, buckets: MailBucket[]): string[] {
+  const bounced = buckets.find((bucket) => bucket.id === "bounced");
+  if (bounced && bucketMatches(bounced, text, from)) return ["bounced"];
+  return buckets.filter((bucket) => bucket.id !== "bounced" && bucketMatches(bucket, text, from)).map((bucket) => bucket.id);
+}
+
+function bucketDisplayName(bucket: MailBucket | undefined, claim: ClaimDocument): string {
+  if (!bucket) return "Other";
+  const original = defaultMailBuckets().find((item) => item.id === bucket.id);
+  if (original && original.name === bucket.name && (bucket.id === "new-patient" || bucket.id === "lien" || bucket.id === "rb" || bucket.id === "medicals" || bucket.id === "specialist" || bucket.id === "bounced" || bucket.id === "other")) {
+    return mailCategoryLabel(bucket.id, claim);
   }
-  return found;
+  return bucket.name;
 }
 
 function patientLineCount(body: string): number {
@@ -238,14 +311,16 @@ export function triageGoatMail(input: {
   todayIso: string;
   claimDocument: ClaimDocument;
   decisions?: GoatMailDecision[];
+  buckets?: MailBucket[] | null;
 }): GoatMailRow[] {
   const decisions = new Map((input.decisions ?? []).map((row) => [row.id, row]));
+  const buckets = resolveMailBuckets(input.buckets);
   const rows: GoatMailRow[] = [];
   for (const message of input.messages) {
     const decision = decisions.get(message.id);
     if (decision?.resolved) continue;
     const text = readable(message.body);
-    const found = signals(readable(`${message.subject}\n${message.body}`).replace(/\s+/g, " "), message.from);
+    const found = new Set(matchMailBuckets(readable(`${message.subject}\n${message.body}`).replace(/\s+/g, " "), message.from, buckets));
     const fill = quickFillFromText(text, { todayIso: input.todayIso });
     const chosen = decision?.category;
     const conflict = !chosen && found.size > 1 && !found.has("bounced");
@@ -272,7 +347,7 @@ export function triageGoatMail(input: {
     let choices: GoatMailChoice[] = [];
     if (conflict) {
       question = "Which is this?";
-      choices = [...found].map((id) => ({ id, label: mailCategoryLabel(id, input.claimDocument) }));
+      choices = [...found].map((id) => ({ id, label: bucketDisplayName(buckets.find((bucket) => bucket.id === id), input.claimDocument) }));
     } else if (needsName) {
       question = unclearName ? "Which last name should GOAT use?" : "Who is the new patient?";
     } else if (needsWho || needsCrash) {
@@ -315,7 +390,7 @@ export function triageGoatMail(input: {
     rows.push({
       id: message.id,
       category,
-      label: needsAnswer && conflict ? "Needs your answer" : mailCategoryLabel(category, input.claimDocument),
+      label: needsAnswer && conflict ? "Needs your answer" : bucketDisplayName(buckets.find((bucket) => bucket.id === category), input.claimDocument),
       subject: message.subject || "(no subject)",
       from: message.from,
       receivedAt: message.receivedAt,
@@ -339,7 +414,7 @@ function normalizeDecisions(value: unknown): GoatMailDecision[] {
     .map((row) => ({
       id: row.id,
       ...(typeof row.patientId === "string" ? { patientId: row.patientId } : {}),
-      ...(row.category === "new-patient" || row.category === "lien" || row.category === "rb" || row.category === "medicals" || row.category === "specialist" || row.category === "bounced" || row.category === "other" ? { category: row.category } : {}),
+      ...(typeof row.category === "string" && BUCKET_ID.test(row.category) ? { category: row.category } : {}),
       ...(row.resolved === true ? { resolved: true } : {}),
       updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
     }));

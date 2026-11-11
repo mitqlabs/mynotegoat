@@ -123,6 +123,25 @@ const answered = triageGoatMail({
 assert.equal(answered.needsAnswer, false);
 assert.equal(answered.category, "new-patient");
 
+const custom = triageGoatMail({
+  messages: [msg({ subject: "Records", body: "Please send the records for the file." })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+  buckets: [{ id: "records", name: "Records ask", keywords: ["records for the file"] }, { id: "other", name: "Other", keywords: [] }],
+})[0];
+assert.equal(custom.category, "records");
+assert.equal(custom.label, "Records ask");
+assert.equal(triageGoatMail({
+  messages: [msg({ body: referral })],
+  patients: [],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+  buckets: null,
+})[0].category, "new-patient");
+
 const steps = readFileSync(new URL("../../docs/goat-mail-setup.md", import.meta.url), "utf8");
 assert.match(steps, /Mail\.Read/);
 assert.match(steps, /GOAT_MAIL_CLIENT_ID/);
