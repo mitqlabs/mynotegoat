@@ -141,7 +141,6 @@ export function GoatBriefingBoard({
   appointmentTypes = [],
   closeout,
   mail,
-  answers,
   todos,
   referrals = [],
   onAddReferral,
@@ -158,7 +157,6 @@ export function GoatBriefingBoard({
   appointmentTypes?: string[];
   closeout: CloseoutModel;
   mail: ReactNode;
-  answers: ReactNode;
   todos: ReactNode;
   referrals?: Array<{ id: string; name: string; phone?: string; dateOfLoss?: string; attorney?: string; missing: string[]; from?: string; canAdd: boolean }>;
   onAddReferral?: (id: string) => void;
@@ -238,7 +236,6 @@ export function GoatBriefingBoard({
 
   const body = (box: BoardBox): ReactNode => {
     if (box.kind === "goat-mail") return mail;
-    if (box.kind === "goat-answers") return answers;
     if (box.kind === "todos") return todos;
     if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm">{briefs.check}</p>;
     if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{briefs.biz}</p>;

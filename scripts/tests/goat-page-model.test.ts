@@ -79,7 +79,7 @@ assert.doesNotMatch(view, /max-w-6xl|mx-auto/);
 assert.doesNotMatch(view, /\/goat\?q=/);
 assert.doesNotMatch(view, /onChip/);
 const board = readFileSync(new URL("../../src/lib/goat-board.ts", import.meta.url), "utf8");
-assert.match(board, /G.O.A.T. Answers/);
+assert.doesNotMatch(board, /"goat-answers":/);
 assert.match(board, /Next open day/);
 assert.match(board, /End of Day Handoff/);
 assert.doesNotMatch(board, /Waiting On/);
