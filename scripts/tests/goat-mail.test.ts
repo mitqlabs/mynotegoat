@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
 import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailDecisions, mergeMailMessages, planMailIntake, rememberMailReferral, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
-import { parseIntakeText } from "../../src/lib/new-patient-intake";
+import { parseIntakeText, referralNameFromSubject } from "../../src/lib/new-patient-intake";
+import { quickFillFromText } from "../../src/lib/quick-fill";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -297,14 +298,20 @@ const edgar = triageGoatMail({
     id: "edgar",
     subject: "RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)",
     from: "vhenao@dtlfightsforyou.com",
-    body: `This is ready to schedule.
+    body: `Please schedule this patient.
 
-Email: vhenao@dtlfightsforyou.com
+Vivian Henao
+Legal Assistant
 The Russo Firm
 1120 Ponce De Leon Blvd
 Coral Gables, FL 33134
+Tel: 305-555-0199
 Fax: 305-395-7810
-Tel: 305-555-0100`,
+Email: vhenao@dtlfightsforyou.com
+www.dtlfightsforyou.com
+
+On Tue, Nov 10, 2026 at 9:00 AM Someone wrote:
+> This is a quoted reply.`,
   })],
   patients: [],
   appointments: [],
@@ -314,7 +321,28 @@ Tel: 305-555-0100`,
 assert.equal(edgar.referral?.firstName, "Edgar");
 assert.equal(edgar.referral?.lastName, "Palma");
 assert.equal(edgar.referral?.phone, undefined);
-assert.equal(edgar.referral?.firstName === "This", false);
+assert.notEqual(edgar.referral?.firstName, "This");
+assert.ok(edgar.missing.includes("phone"));
+assert.deepEqual(
+  referralNameFromSubject("RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)"),
+  { firstName: "Edgar", lastName: "Palma" },
+);
+const edgarBody = `RE: Ready for Scheduling: Edgar Palma - Chiropractic / PT (The Russo Firm)
+Please schedule this patient.
+
+Vivian Henao
+Legal Assistant
+The Russo Firm
+1120 Ponce De Leon Blvd
+Coral Gables, FL 33134
+Fax: 305-395-7810
+Email: vhenao@dtlfightsforyou.com
+www.dtlfightsforyou.com`;
+const filledEdgar = quickFillFromText(edgarBody, { todayIso: today });
+assert.equal(filledEdgar.phone, undefined);
+assert.equal(filledEdgar.addressStreet, undefined);
+assert.equal(filledEdgar.addressCity, undefined);
+assert.equal(filledEdgar.addressZip, undefined);
 assert.doesNotMatch(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /creating\.add/);
 assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /rememberMailReferral/);
 assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /row\.category !== "new-patient"/);

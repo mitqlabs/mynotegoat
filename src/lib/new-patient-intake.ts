@@ -66,7 +66,7 @@ const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s'’-])([a-z])/g
 
 /** Words that are never a patient's first or last name. "This" was saved as a last name. */
 const FILLER_NAMES = new Set(
-  "this that these those patient patients name phone cell email please new referral referred dear hello hi hey thanks thank regards sincerely unknown none attn here there subject".split(" "),
+  "this that these those the patient patients client name phone cell email please new referral referred dear hello hi hey thanks thank regards sincerely unknown none attn here there subject".split(" "),
 );
 
 /** True when either part is a single letter or a filler word such as "This". */
@@ -89,17 +89,36 @@ function pastDate(m: RegExpExecArray, todayIso: string): string {
 const isoToMdy = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
 const addDaysIso = (iso: string, n: number) => { const t = new Date(`${iso}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
+const STREET_LINE = /^\d{1,6}\s+.+\b(?:Blvd|Boulevard|St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Way|Ct|Court)\b/i;
+
 /** Drop quoted replies, signature blocks, and tel: links before a referral is read. */
 export function stripReferralNoise(raw: string): string {
   let text = raw.replace(/tel:[^\s)]+/gi, " ");
-  text = text.replace(/^>.*$/gm, " ");
-  const reply = text.search(/\n(?:On .{0,160} wrote:|-----Original Message-----)/i);
+  text = text.replace(/^>.*$/gm, "");
+  const reply = text.search(/\n(?:On .{0,200} wrote:|-----Original Message-----|From:\s.+\nSent:)/i);
   if (reply > 0) text = text.slice(0, reply);
-  const sig = text.search(/\n(?:thanks|thank you|sincerely|best regards|regards|sent from)\b/i);
-  if (sig > 40) text = text.slice(0, sig);
-  const emailLine = text.search(/\n\s*Email\s*:/i);
-  if (emailLine > 0) text = text.slice(0, emailLine);
-  return text;
+  const lines = text.split(/\n/);
+  let cut = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (/^(thanks|thank you|sincerely|best regards|regards|sent from)\b/i.test(line)) {
+      cut = i;
+      break;
+    }
+    if (/^email\s*:/i.test(line) || /\bwww\.|\bhttps?:\/\//i.test(line) || /^(fax|tel|ext)\b/i.test(line)) {
+      cut = i;
+      break;
+    }
+    if (STREET_LINE.test(line)) {
+      const around = lines.slice(i, i + 6).join("\n");
+      if (/\b(fax|tel|ext|email|www\.)\b/i.test(around)) {
+        cut = i;
+        break;
+      }
+    }
+  }
+  return lines.slice(0, cut).join("\n");
 }
 
 /** "Ready for Scheduling: Edgar Palma - …" and similar subject lines. */
