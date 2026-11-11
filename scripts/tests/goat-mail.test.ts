@@ -316,5 +316,13 @@ assert.equal(edgar.referral?.lastName, "Palma");
 assert.equal(edgar.referral?.phone, undefined);
 assert.equal(edgar.referral?.firstName === "This", false);
 assert.doesNotMatch(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /creating\.add/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /reloadMailDecisions/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /goatMailMessageId: id/);
+assert.deepEqual(planMailIntake({
+  messageId: "m-edgar",
+  draft: { firstName: "Edgar", lastName: "Palma", phone: "305-555-0100" },
+  decisions: [],
+  patients: [{ id: "p-edgar", fullName: "Palma, Edgar", goatMailMessageId: "m-edgar" }],
+}), { action: "link", patientId: "p-edgar" });
 
 console.log("goat mail ok");

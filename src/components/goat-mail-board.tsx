@@ -5,7 +5,7 @@ import Link from "next/link";
 import { appConfirm } from "@/components/app-dialog";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { onLocalChange } from "@/lib/local-sync";
-import { createPatientRecord, patients as livePatients } from "@/lib/mock-data";
+import { createPatientRecord, patients as livePatients, updatePatientRecordById } from "@/lib/mock-data";
 import {
   GOAT_MAIL_CONNECT_LINE,
   GOAT_MAIL_KEY,
@@ -16,6 +16,7 @@ import {
   mailSecretAlertText,
   mailSecretDue,
   planMailIntake,
+  reloadMailDecisions,
   rememberMailPatient,
   resolveMail,
   resolveMailBuckets,
@@ -123,21 +124,33 @@ export function useGoatMail(input: {
         setNotice("That referral is missing a name, so no chart was added.");
         return;
       }
+      const decisions = await reloadMailDecisions();
       const plan = planMailIntake({
         messageId: id,
         draft,
-        decisions: loadMailDecisions(),
-        patients: livePatients,
+        decisions,
+        patients: livePatients.map((patient) => ({
+          id: patient.id,
+          fullName: patient.fullName,
+          dateOfLoss: patient.dateOfLoss,
+          deleted: patient.deleted,
+          phone: patient.phone,
+          dob: patient.dob,
+          goatMailMessageId: patient.matrix?.goatMailMessageId,
+        })),
       });
       const now = new Date().toISOString();
+      if (plan.action === "skip") {
+        setNotice("That email was already added.");
+        return;
+      }
       if (plan.action === "link") {
         const open = await appConfirm("This person is already in the office. Open that chart instead?");
         if (!open) return;
-        save(rememberMailPatient(loadMailDecisions(), id, plan.patientId, now));
+        save(rememberMailPatient(decisions, id, plan.patientId, now));
         window.location.assign(`/patients/${plan.patientId}`);
         return;
       }
-      if (plan.action !== "create") return;
       const created = createPatientRecord({
         firstName: draft.firstName,
         lastName: draft.lastName,
@@ -150,7 +163,8 @@ export function useGoatMail(input: {
         notes: row?.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
       });
       if (!created) return;
-      save(rememberMailPatient(loadMailDecisions(), id, created.id, now));
+      updatePatientRecordById(created.id, { matrix: { goatMailMessageId: id } });
+      save(rememberMailPatient(decisions, id, created.id, now));
     },
     dismissReferral: (id: string) => {
       save(resolveMail(loadMailDecisions(), id, new Date().toISOString()));

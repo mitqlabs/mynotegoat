@@ -152,7 +152,16 @@ export type GoatMailRow = {
   referral?: GoatMailDraft & { from: string };
 };
 
-type PatientLike = { id: string; fullName: string; dateOfLoss?: string; deleted?: boolean; phone?: string; dob?: string };
+type PatientLike = {
+  id: string;
+  fullName: string;
+  dateOfLoss?: string;
+  deleted?: boolean;
+  phone?: string;
+  dob?: string;
+  /** Set when this chart was added from that G.O.A.T. Mail message. */
+  goatMailMessageId?: string;
+};
 
 /** Last 10 digits, so 305-295-7810 and (305) 295-7810 are the same phone. */
 export function mailPhoneKey(phone: string | undefined): string {
@@ -198,6 +207,8 @@ export function planMailIntake(input: {
   patients: PatientLike[];
 }): MailIntakePlan {
   if (input.decisions.some((row) => row.id === input.messageId && row.patientId)) return { action: "skip" };
+  const marked = input.patients.find((patient) => !patient.deleted && patient.goatMailMessageId === input.messageId);
+  if (marked) return { action: "link", patientId: marked.id };
   if (isObviouslyBadPatientName(input.draft.firstName, input.draft.lastName)) return { action: "skip" };
   const match = matchExistingMailPatient(input.patients, input.draft);
   if (match) return { action: "link", patientId: match.id };
@@ -499,6 +510,21 @@ function normalizeDecisions(value: unknown): GoatMailDecision[] {
       ...(row.resolved === true ? { resolved: true } : {}),
       updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
     }));
+}
+
+/** Local decisions merged with the office cloud copy, so two computers see the same message. */
+export async function reloadMailDecisions(): Promise<GoatMailDecision[]> {
+  const local = loadMailDecisions();
+  if (typeof window === "undefined") return local;
+  try {
+    const kv = await import("@/lib/kv-cloud");
+    const remote = await kv.fetchKvValue<unknown>(GOAT_MAIL_KEY).catch(() => null);
+    const merged = mergeMailDecisions(local, remote);
+    window.localStorage.setItem(GOAT_MAIL_KEY, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return local;
+  }
 }
 
 export function loadMailDecisions(): GoatMailDecision[] {
