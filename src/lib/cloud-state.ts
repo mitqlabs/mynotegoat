@@ -26,6 +26,8 @@ export const UNION_MERGE_KEYS = new Set([
   "casemate.dx-suggestion-ignores.v1",
   // Patient Notes log (quick notes): merged by id, newest wins, deletes are tombstones.
   "casemate.case-note-entries.v1",
+  // Patient-folder general notes, to-dos, and person edits. Not case notes.
+  "casemate.patient-folders.v1",
   // Text Reminders → Messages library: merged by id (newest wins), deletes are tombstones.
   "casemate.sms-templates.v1",
 ]);
@@ -985,6 +987,11 @@ async function bootstrapTableBackedEntities() {
     resumeSync();
   }
   console.info(`[Cloud Sync] Loaded ${tableRows.length} patient(s) from table.`);
+  // Folder preview only. The production build inlines this check as false.
+  if (process.env.NEXT_PUBLIC_PATIENT_FOLDERS === "on") {
+    const { installFolderPersonOverlay } = await import("@/lib/patient-folder-runtime");
+    installFolderPersonOverlay();
+  }
 
   // ── Phase 2: schedule appointments ──
   if (isCloudEntityEnabled("scheduleAppointments")) {
@@ -1146,6 +1153,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.case-notes.v1",
           // Patient Notes log (quick notes). Union-merged by id — see UNION_MERGE_KEYS.
           "casemate.case-note-entries.v1",
+          "casemate.patient-folders.v1",
           "casemate.patient-page-prefs.v1",
           "casemate.module-visibility.v1",
           // SMS templates were dual-written to workspace_kv (namespace

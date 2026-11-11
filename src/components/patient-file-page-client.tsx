@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { PatientCaseFile } from "@/components/patient-case-file";
+import { PatientFolderCasePage, PatientFolderRecordPage } from "@/components/patient-folder-live";
 import { getPatientById } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 
 type PatientFilePageClientProps = {
   patientId: string;
 };
 
 export function PatientFilePageClient({ patientId }: PatientFilePageClientProps) {
+  if (patientFoldersEnabled()) {
+    if (patientId.startsWith("pf-")) return <PatientFolderRecordPage folderId={patientId} />;
+    return <PatientFolderCasePage caseId={patientId} />;
+  }
   const patient = getPatientById(patientId);
 
   if (!patient) {

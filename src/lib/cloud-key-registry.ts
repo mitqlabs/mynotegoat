@@ -48,6 +48,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.compliance-options.v1": "workspace", // editable Compliance options (id/label/color), union-merged
   "casemate.case-notes.v1": "workspace",
   "casemate.case-note-entries.v1": "workspace", // patient Notes log (quick notes), union-merged by id
+  // Patient-folder preview: person edits, General Notes, general to-dos. Not case notes.
+  "casemate.patient-folders.v1": "workspace",
   "casemate.treatment-plans.v1": "workspace",
   "casemate.treatment-plan-settings.v1": "workspace",
   "casemate.module-visibility.v1": "workspace",
