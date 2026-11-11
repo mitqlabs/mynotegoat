@@ -57,7 +57,7 @@ import {
   matchesComplianceFilter,
   normalizeCompliance,
 } from "@/lib/compliance";
-import { createPatientRecord, deletePatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { createPatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -1311,9 +1311,6 @@ export default function PatientsPage() {
     () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
     [filteredPatients],
   );
-  const removeIntakePatient = (patientId: string) => {
-    deletePatientRecord(patientId);
-  };
   const returningMatches = useMemo(
     () =>
       findReturningPatients(patients, {
@@ -2211,7 +2208,7 @@ export default function PatientsPage() {
         </div>
       </section>
 
-      <NewPatientIntakeSection patients={intakePatients} onRemove={removeIntakePatient} />
+      <NewPatientIntakeSection patients={intakePatients} />
 
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">
