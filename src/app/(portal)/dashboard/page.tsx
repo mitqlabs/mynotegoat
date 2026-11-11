@@ -1086,9 +1086,8 @@ export default function DashboardPage() {
       </section>
 
       <div className="space-y-5">
-        {/* Four snapshot cards stay a compact 2×2 on a wide window.
-            Stretching them into full-width columns left a lot of empty
-            card interior. Cases By Month sits beside the square. */}
+        {/* Four snapshot cards stay a compact 2×2. Cases By Month,
+            Imaging, and Specialists share the next row. */}
         <section className="flex flex-wrap items-start gap-4">
           <div className="grid w-full max-w-[44rem] grid-cols-1 items-stretch gap-3 sm:grid-cols-2" data-statistics-layout="2x2">
           <article className="panel-card h-full p-3">
@@ -1273,124 +1272,100 @@ export default function DashboardPage() {
             </div>
           </article>
           </div>
+        </section>
 
-          <article className="panel-card w-full shrink-0 p-3 sm:w-72">
-            <h4 className="text-lg font-semibold">Cases By Month</h4>
-            <div className="mt-2 space-y-1 text-sm">
+        <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3" data-statistics-layout="month-referrals">
+          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+            <h4 className="text-sm font-semibold">Cases By Month</h4>
+            <div className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto text-sm">
               {monthCounts.map((entry) => (
                 <div key={entry.month} className="flex items-center justify-between">
                   <span>{entry.month}</span>
-                  <span className="font-semibold">{entry.count}</span>
+                  <span className="font-semibold tabular-nums">{entry.count}</span>
                 </div>
               ))}
               <div className="my-2 border-t border-[var(--line-soft)]" />
               <div className="flex items-center justify-between">
                 <span className="font-semibold">Average / Month</span>
-                <span className="font-bold">{formatAverageCaseCount(averageCasesPerMonth)}</span>
+                <span className="font-bold tabular-nums">{formatAverageCaseCount(averageCasesPerMonth)}</span>
               </div>
             </div>
           </article>
 
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[1.5fr_2fr]">
-          <article className="panel-card overflow-hidden">
-            <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Referral Totals</h4>
-              <p className="text-sm text-[var(--text-muted)]">
-                Imaging: Cases = distinct patients per facility; Xrays / MRIs = one per imaged
-                region (a bilateral BL extremity counts as two). Specialists: case counts only.
-              </p>
-            </div>
-            <div className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Imaging
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                    <th className="px-4 py-3">Facility</th>
-                    <th className="px-4 py-3">Cases</th>
-                    <th className="px-4 py-3">Xrays</th>
-                    <th className="px-4 py-3">MRIs</th>
-                    <th className="px-4 py-3">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {imagingFacilityStats.map((row) => (
-                    <tr
-                      key={row.facility}
-                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
-                      onClick={() =>
-                        setReferralDrill({
-                          kind: "imaging",
-                          title: row.facility,
-                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
-                          patients: row.patients,
-                        })
-                      }
-                    >
-                      {/* Deliberately styled as plain text: the office didn't
-                          want the drill-down advertised on the page. */}
-                      <td className="px-4 py-3 font-semibold">{row.facility}</td>
-                      <td className="px-4 py-3">{row.cases}</td>
-                      <td className="px-4 py-3">{row.xray}</td>
-                      <td className="px-4 py-3">{row.mri}</td>
-                      <td className="px-4 py-3">{row.total}</td>
-                    </tr>
-                  ))}
-                  {imagingFacilityStats.length === 0 && (
-                    <tr className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={5}>
-                        No imaging rows for selected filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="border-t border-[var(--line-soft)] px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Specialists
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                    <th className="px-4 py-3">Specialist</th>
-                    <th className="px-4 py-3">Cases</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {specialistReferralStats.map((row) => (
-                    <tr
-                      key={row.specialist}
-                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
-                      onClick={() =>
-                        setReferralDrill({
-                          kind: "specialist",
-                          title: row.specialist,
-                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
-                          patients: row.patients,
-                        })
-                      }
-                    >
-                      <td className="px-4 py-3 font-semibold">{row.specialist}</td>
-                      <td className="px-4 py-3">{row.cases}</td>
-                    </tr>
-                  ))}
-                  {specialistReferralStats.length === 0 && (
-                    <tr className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={2}>
-                        No specialist rows for selected filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+            <h4 className="text-sm font-semibold">Imaging Referrals</h4>
+            <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+              Cases = distinct patients per facility. Xrays / MRIs = one per imaged region (a bilateral BL extremity counts as two).
+            </p>
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto text-xs">
+              <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 bg-white py-1 font-semibold text-[var(--text-muted)]">
+                <span>Facility</span>
+                <span className="text-right">Cases</span>
+                <span className="text-right">Xrays</span>
+                <span className="text-right">MRIs</span>
+                <span className="text-right">Total</span>
+              </div>
+              {imagingFacilityStats.map((row) => (
+                <button
+                  key={row.facility}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[rgba(13,121,191,0.04)]"
+                  onClick={() =>
+                    setReferralDrill({
+                      kind: "imaging",
+                      title: row.facility,
+                      subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
+                      patients: row.patients,
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="truncate font-semibold">{row.facility}</span>
+                  <span className="text-right tabular-nums">{row.cases}</span>
+                  <span className="text-right tabular-nums">{row.xray}</span>
+                  <span className="text-right tabular-nums">{row.mri}</span>
+                  <span className="text-right tabular-nums">{row.total}</span>
+                </button>
+              ))}
+              {imagingFacilityStats.length === 0 && (
+                <p className="border-t border-[var(--line-soft)] py-3 text-[var(--text-muted)]">No imaging rows for selected filters.</p>
+              )}
             </div>
           </article>
 
+          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+            <h4 className="text-sm font-semibold">Specialist Referrals</h4>
+            <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">Case counts only.</p>
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto text-xs">
+              <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_3rem] gap-x-2 bg-white py-1 font-semibold text-[var(--text-muted)]">
+                <span>Specialist</span>
+                <span className="text-right">Cases</span>
+              </div>
+              {specialistReferralStats.map((row) => (
+                <button
+                  key={row.specialist}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_3rem] gap-x-2 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[rgba(13,121,191,0.04)]"
+                  onClick={() =>
+                    setReferralDrill({
+                      kind: "specialist",
+                      title: row.specialist,
+                      subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
+                      patients: row.patients,
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="truncate font-semibold">{row.specialist}</span>
+                  <span className="text-right tabular-nums">{row.cases}</span>
+                </button>
+              ))}
+              {specialistReferralStats.length === 0 && (
+                <p className="border-t border-[var(--line-soft)] py-3 text-[var(--text-muted)]">No specialist rows for selected filters.</p>
+              )}
+            </div>
+          </article>
+        </section>
+
+        <section>
           <article className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Attorney Performance</h4>

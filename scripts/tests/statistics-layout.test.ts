@@ -27,4 +27,19 @@ assert.equal(src.includes("Cycle Time Averages"), false);
 assert.equal(src.includes("Cash Patients &amp; Packages"), false);
 assert.equal(src.includes("Cash Patients & Packages"), false);
 
+const rowAt = src.indexOf('data-statistics-layout="month-referrals"');
+assert.ok(rowAt > gridAt, "month and referral cards follow the 2x2");
+const rowOpen = src.slice(src.lastIndexOf("<section", rowAt), rowAt);
+assert.match(rowOpen, /grid-cols-1/);
+assert.match(rowOpen, /lg:grid-cols-3/);
+const monthAt = src.indexOf(">Cases By Month<", rowAt);
+const imagingAt = src.indexOf(">Imaging Referrals<", monthAt);
+const specialistAt = src.indexOf(">Specialist Referrals<", imagingAt);
+const attorneyAt = src.indexOf(">Attorney Performance<", specialistAt);
+assert.ok(monthAt > rowAt && imagingAt > monthAt && specialistAt > imagingAt && attorneyAt > specialistAt);
+assert.match(src.slice(imagingAt, specialistAt), /bilateral BL extremity counts as two/);
+assert.match(src.slice(imagingAt, specialistAt), /overflow-y-auto/);
+assert.equal(src.includes("Referral Totals"), false);
+assert.match(src, /data-statistics-layout="2x2"/);
+
 console.log("statistics-layout ok");
