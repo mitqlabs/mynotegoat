@@ -73,7 +73,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients, updatePatientRecordById, type UpdatePatientRecordPatch } from "@/lib/mock-data";
-import { hasSoapContent, mergeNotesByNewest, pickSaltSource, sectionMatchesSource, sectionsSafeToResalt } from "@/lib/salt-source";
+import { hasSoapContent, mergeNotesByNewest, pickSaltSource, sectionMatchesSource } from "@/lib/salt-source";
 import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
@@ -1347,14 +1347,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         // Durable link so a later date/type edit can't orphan this encounter.
         appointmentId: appointment.id,
       });
-      if (newId) {
-        const saltNote = applySaltToNewEncounter(newId, appointment.patientId, dateUs, known);
-        setEncounterSearch(appointment.patientName);
-        setSelectedEncounterId(newId);
-        setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
-      } else {
+      if (!newId) {
         setMessage("Could not start the encounter. Check the appointment details and try again.");
+        return;
       }
+      const createdNow = !known.some((entry) => entry.id === newId);
+      const saltNote = createdNow ? applySaltToNewEncounter(newId, appointment.patientId, dateUs, known) : "";
+      setEncounterSearch(appointment.patientName);
+      setSelectedEncounterId(newId);
+      setMessage(
+        createdNow
+          ? `Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`
+          : `Opened ${dateUs} — ${appointment.appointmentType || "visit"}.`,
+      );
     })();
   }, [
     applySaltToNewEncounter,
@@ -1604,91 +1609,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // Track which encounter we last auto-applied the treatment plan into.
   const autoAppliedPlanRef = useRef<string | null>(null);
 
-  // Auto-Salt: an open, unsigned note that is still blank — or still a verbatim
-  // copy of some prior visit — is filled from the newest prior visit (a closed
-  // Re-Exam included). A section the user changed by hand is left alone.
-  useEffect(() => {
-    if (!autoSalt && !macroLibrary.saltDefaults.enabled) return;
-    if (!selectedEncounter) return;
-    if (selectedEncounter.signed) return;
-    if (!saltSourceEncounter) return;
-
-    const allowed = encounterSections.filter(
-      (section) => macroLibrary.saltDefaults.sections[section] || autoSalt,
-    );
-    const safe = sectionsSafeToResalt(selectedEncounter, priorPatientEncounters, allowed).filter(
-      (section) => !(planWins && section === "plan"),
-    );
-    const stale = safe.filter(
-      (section) =>
-        !sectionMatchesSource(selectedEncounter, saltSourceEncounter, section) &&
-        ((saltSourceEncounter.soap[section] ?? "").trim().length > 0 ||
-          saltSourceEncounter.macroRuns.some((run) => run.section === section)),
-    );
-    if (stale.length === 0) return;
-    const stamp = `${selectedEncounter.id}:${saltSourceEncounter.id}:${stale.join(",")}:${saltSourceEncounter.updatedAt}`;
-    if (autoSaltedRef.current === stamp) return;
-    autoSaltedRef.current = stamp;
-
-    let totalMacros = 0;
-    stale.forEach((section) => {
-      for (const oldRun of selectedEncounter.macroRuns) {
-        if (oldRun.section === section) removeMacroRun(selectedEncounter.id, oldRun.id);
-      }
-      const sourceText = saltSourceEncounter.soap[section].trim();
-      const { html: rewrittenText, idMap } = rewriteMacroRunIds(sourceText);
-      setSoapSection(selectedEncounter.id, section, rewrittenText);
-      idMap.forEach((newId, oldId) => {
-        const sourceRun = saltSourceEncounter.macroRuns.find((entry) => entry.id === oldId);
-        if (!sourceRun) return;
-        addMacroRun(selectedEncounter.id, {
-          id: newId,
-          section,
-          macroId: sourceRun.macroId,
-          macroName: sourceRun.macroName,
-          body: sourceRun.body,
-          answers: { ...sourceRun.answers },
-          generatedText: sourceRun.generatedText.replace(
-            new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
-            `data-macro-run-id="${newId}"`,
-          ),
-        });
-        totalMacros += 1;
-      });
-      saltSourceEncounter.macroRuns.forEach((sourceRun) => {
-        if (sourceRun.section !== section || idMap.has(sourceRun.id)) return;
-        addMacroRun(selectedEncounter.id, {
-          id: createEncounterMacroRunId(),
-          section,
-          macroId: sourceRun.macroId,
-          macroName: sourceRun.macroName,
-          body: sourceRun.body,
-          answers: { ...sourceRun.answers },
-          generatedText: sourceRun.generatedText,
-        });
-        totalMacros += 1;
-      });
-    });
-    const macroSuffix = totalMacros > 0 ? ` (with ${totalMacros} editable macro${totalMacros === 1 ? "" : "s"})` : "";
-    const { added, removed } = reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
-    setMessage(
-      `Copied ${stale.length} section${stale.length === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
-    );
-  }, [
-    autoSalt,
-    macroLibrary.saltDefaults.enabled,
-    macroLibrary.saltDefaults.sections,
-    selectedEncounter,
-    saltSourceEncounter,
-    priorPatientEncounters,
-    setSoapSection,
-    addMacroRun,
-    removeMacroRun,
-    reconcileLinkedCharges,
-    macroLibraryById,
-    planWins,
-  ]);
-
+  // Existing notes are never rewritten on open. Copy From reloads only after confirm.
   const replaceSectionsFromSource = (
     source: NonNullable<typeof saltSourceEncounter>,
     sections: Array<(typeof encounterSections)[number]>,
@@ -1743,28 +1664,24 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   const handleSaltSourceChange = async (nextId: string) => {
     if (!selectedEncounter || selectedEncounter.signed) return;
     const source = priorPatientEncounters.find((entry) => entry.id === nextId);
+    const previousId = resolvedSaltSourceEncounterId;
     setSaltSourceEncounterIdDraft(nextId);
     if (!source) return;
-    const safe = new Set(sectionsSafeToResalt(selectedEncounter, priorPatientEncounters, encounterSections));
-    const edited = encounterSections.some((section) => !safe.has(section));
-    const sections = (edited ? [...encounterSections] : encounterSections.filter((section) => safe.has(section))).filter(
+    const sections = encounterSections.filter(
       (section) =>
         !(planWins && section === "plan") &&
         ((source.soap[section] ?? "").trim().length > 0 || source.macroRuns.some((run) => run.section === section)) &&
         !sectionMatchesSource(selectedEncounter, source, section),
     );
     if (sections.length === 0) return;
-    if (edited) {
-      const confirmed = await appConfirm(
-        `Replace this note with ${source.encounterDate}? Edits you've made will be replaced.`,
-      );
-      if (!confirmed) {
-        setSaltSourceEncounterIdDraft("");
-        return;
-      }
+    const confirmed = await appConfirm(
+      `Replace this note with ${source.encounterDate}? This replaces what is on the note now.`,
+    );
+    if (!confirmed) {
+      setSaltSourceEncounterIdDraft(previousId);
+      return;
     }
     replaceSectionsFromSource(source, sections);
-    autoSaltedRef.current = `${selectedEncounter.id}:${source.id}:${sections.join(",")}:${source.updatedAt}`;
   };
 
   // Auto-Salt Charges: when enabled and a new encounter is selected that has no charges,
@@ -3709,12 +3626,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             appointmentType,
             encounterDate: date,
           });
-          if (newId) {
-            const saltNote = applySaltToNewEncounter(newId, patientId, date);
-            setEncounterSearch(patientName);
-            setSelectedEncounterId(newId);
-            setMessage(`Encounter created for ${date}.${saltNote}`);
-          }
+          if (!newId) return;
+          const createdNow = !encountersByNewest.some((entry) => entry.id === newId);
+          const saltNote = createdNow ? applySaltToNewEncounter(newId, patientId, date) : "";
+          setEncounterSearch(patientName);
+          setSelectedEncounterId(newId);
+          setMessage(createdNow ? `Encounter created for ${date}.${saltNote}` : `Opened ${date}.`);
         }}
         onOpenEncounter={(encounterId, patientName) => {
           setEncounterSearch(patientName);

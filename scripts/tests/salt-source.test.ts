@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   mergeNotesByNewest,
   pickSaltSource,
@@ -83,5 +84,10 @@ assert.deepEqual(sectionsSafeToResalt(edited, [reexam, older], ["subjective", "o
 
 const staleLocal = { ...reexam, updatedAt: "2026-05-07T12:00:00Z", soap: { ...reexam.soap, subjective: "Headaches 9" } };
 assert.equal(mergeNotesByNewest([staleLocal], [reexam])[0].soap.subjective.includes("7"), true);
+
+const workspace = readFileSync(new URL("../../src/components/encounter-workspace.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(workspace, /sectionsSafeToResalt/);
+assert.match(workspace, /Replace this note with \$\{source\.encounterDate\}\? This replaces what is on the note now\./);
+assert.doesNotMatch(workspace, /Auto-Salt: an open/);
 
 console.log("salt-source ok");
