@@ -10,6 +10,9 @@ import {
   VISIT_GROUP_LABELS,
   appointmentVisible,
   dropRetiredBoxes,
+  DEFAULT_MAX_H,
+  MAX_BOX_H,
+  clampMaxH,
   defaultBoard,
   defaultTypePriority,
   matchesPeriod,
@@ -144,5 +147,17 @@ assert.equal(matchesPeriod({ matrix: { initialExam: "2025-03-01" } }, "this-year
 assert.equal(matchesPeriod({ dateOfLoss: "2025-01-02" }, "last-year", "2026-11-11"), true);
 assert.equal(matchesPeriod({}, "this-year", "2026-11-11"), false);
 assert.equal(matchesPeriod({}, "all", "2026-11-11"), true);
+
+assert.equal(DEFAULT_MAX_H, 28);
+assert.equal(MAX_BOX_H, 40);
+assert.equal(clampMaxH(undefined), 28);
+assert.equal(clampMaxH(40), 40);
+assert.equal(clampMaxH(41), 40);
+assert.equal(clampMaxH(16), 16);
+assert.equal(clampMaxH(3), 4);
+const boardSrc = readFileSync(new URL("../../src/components/goat-briefing-board.tsx", import.meta.url), "utf8");
+assert.match(boardSrc, /isResizable=\{arrange\}/);
+assert.match(boardSrc, /touch-pan-y/);
+assert.match(boardSrc, /saveBoard/);
 
 console.log("goat board ok");

@@ -10,6 +10,7 @@ import {
   boardSnapshot,
   boxesFromSnapshot,
   boxTitle,
+  clampMaxH,
   moveId,
   newBuiltinBox,
   newStatusBox,
@@ -163,7 +164,7 @@ export function GoatPageSettings({
                   <button className="text-xs font-semibold text-[var(--text-muted)]" onClick={() => commit(boxes.map((row) => (row.i === box.i ? { ...row, w: Math.max(2, row.w - 1) } : row)))} type="button">Narrower</button>
                   <button className="text-xs font-semibold text-[var(--text-muted)]" onClick={() => commit(boxes.map((row) => (row.i === box.i ? { ...row, w: Math.min(12, row.w + 1) } : row)))} type="button">Wider</button>
                   <button className="text-xs font-semibold text-[var(--text-muted)]" onClick={() => commit(boxes.map((row) => (row.i === box.i ? { ...row, h: Math.max(4, row.h - 1) } : row)))} type="button">Shorter</button>
-                  <button className="text-xs font-semibold text-[var(--text-muted)]" onClick={() => commit(boxes.map((row) => (row.i === box.i ? { ...row, h: Math.min(row.maxH ?? 14, row.h + 1) } : row)))} type="button">Taller</button>
+                  <button className="text-xs font-semibold text-[var(--text-muted)]" onClick={() => commit(boxes.map((row) => (row.i === box.i ? { ...row, h: Math.min(clampMaxH(row.maxH), row.h + 1) } : row)))} type="button">Taller</button>
                   <button className="text-xs font-semibold text-[var(--brand-primary)]" onClick={() => setOpenId(openId === box.i ? null : box.i)} type="button">{openId === box.i ? "Done" : "Options"}</button>
                 </div>
                 {openId === box.i && (

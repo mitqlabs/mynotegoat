@@ -443,9 +443,14 @@ export function sortAppointments<T extends { startTime: string; appointmentType?
   });
 }
 
+/** Rows a box can be dragged to when it has no height limit of its own. Twice the old 14. */
+export const DEFAULT_MAX_H = 28;
+/** Highest row span the height setting or a drag can use. Twice the old 20. */
+export const MAX_BOX_H = 40;
+
 export function clampMaxH(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 14;
-  return Math.max(4, Math.min(20, Math.round(value)));
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_MAX_H;
+  return Math.max(4, Math.min(MAX_BOX_H, Math.round(value)));
 }
 
 export function rowFields(box: Pick<BoardBox, "fields">): RowField[] {
