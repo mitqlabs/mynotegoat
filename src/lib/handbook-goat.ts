@@ -19,7 +19,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "How it works",
       steps: [
-        "The G.O.A.T. button in the sidebar and on a phone opens the GOAT Page, the full day at a glance. The page uses the full width of the content area. On a wide screen, GOAT Mail, today's schedule, intake, and to-dos sit side by side. The chat is the small goat in the bottom-right corner of every page. Tap it for the greeting and chips — or just type.",
+        "The G.O.A.T. button in the sidebar and on a phone opens the GOAT Page, the full day at a glance. The page uses the full width of the content area. On a wide screen, GOAT Mail, today's schedule, intake, and to-dos sit side by side. The chat is the small goat in the bottom-right corner of every page. Its picture is centered and fills the circle. While a save is syncing, a ring spins around the circle and the goat nods. When it lands, the circle flashes green with a check and Saved for a moment. If the save fails, the circle turns red; tap it to retry. Motion stays still when reduced motion is on. Tap it for the greeting and chips — or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
         "Anything that changes data shows ONE confirm card first, with the full text of what will be saved. Tap Confirm and the card says Saving…, then Saved. If it fails, it shows the reason and a Retry. Nothing is saved until you tap Confirm.",
         "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
