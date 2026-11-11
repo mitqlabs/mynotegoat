@@ -36,6 +36,7 @@ import {
   type RowField,
   type SnapshotPeriod,
 } from "@/lib/goat-board";
+import { printGoatHandoff } from "@/lib/print-goat-handoff";
 import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
 import type { KeyDateRecord } from "@/lib/key-dates";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
@@ -389,16 +390,8 @@ export function GoatBriefingBoard({
       );
       return (
         <div className="goat-handoff">
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              .goat-handoff, .goat-handoff * { visibility: visible; }
-              .goat-handoff { position: absolute; left: 0; top: 0; width: 100%; }
-              .goat-handoff-actions { display: none !important; }
-            }
-          `}</style>
           <div className="goat-handoff-actions mb-2 flex justify-end">
-            <button className="btn btn-secondary btn-sm" onClick={() => window.print()} type="button">Print</button>
+            <button className="btn btn-secondary btn-sm" onClick={(event) => printGoatHandoff(event.currentTarget.closest(".goat-handoff"))} type="button">Print</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <section>
