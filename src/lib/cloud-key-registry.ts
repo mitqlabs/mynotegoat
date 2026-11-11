@@ -61,6 +61,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.goat-learned.v1": "workspace",
   // G.O.A.T. opening brief hidden (per person).
   "casemate.goat-brief-hidden.v1": "user",
+  // GOAT Page briefing-board layout (per person, cloud-mirrored).
+  "casemate.goat-board-layout.v1": "user",
+  // Office-wide starting layout for the GOAT Page. A person's own board wins.
+  "casemate.goat-page-office-default.v1": "workspace",
   "casemate.cash-payments.v1": "workspace",
   "casemate.patient-packages.v1": "workspace",
   "casemate.key-date-dismissals.v1": "workspace",

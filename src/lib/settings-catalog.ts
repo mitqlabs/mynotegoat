@@ -48,7 +48,9 @@ export type SettingsSectionKey =
   | "account"
   | "diagnostics"
   // G.O.A.T. words & abbreviations — the editor lives on /settings/goat.
-  | "goat";
+  | "goat"
+  // GOAT Page briefing board: which boxes, and how each one is arranged.
+  | "goatPage";
 
 export const settingsSearchCatalog: Array<{
   key: SettingsSectionKey;
@@ -145,6 +147,12 @@ export const settingsSearchCatalog: Array<{
     title: "G.O.A.T.",
     description: "Words, abbreviations and synonym groups G.O.A.T. uses",
     aliases: ["goat", "g.o.a.t.", "ask", "abbreviation", "abbreviations", "synonym", "synonyms", "words", "terms", "rom", "pm", "pain management"],
+  },
+  {
+    key: "goatPage",
+    title: "GOAT Page",
+    description: "Which boxes are on the GOAT Page, and what each box shows",
+    aliases: ["goat page", "briefing", "board", "boxes", "end of day", "handoff", "tomorrow", "case snapshot"],
   },
   // Macros wrapper + children
   { key: "macros", title: "Macros" },

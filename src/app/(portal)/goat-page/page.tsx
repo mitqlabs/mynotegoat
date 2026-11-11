@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { GoatBriefingBoard } from "@/components/goat-briefing-board";
 import { GoatMailBoard, useGoatMail } from "@/components/goat-mail-board";
 import { GoatPageView } from "@/components/goat-page-view";
-import { GoatCloseout } from "@/components/goat-closeout";
-import { GoatHandoff } from "@/components/goat-handoff";
 import { UntouchedItems } from "@/components/untouched-items";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { useKeyDates } from "@/hooks/use-key-dates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useTasks } from "@/hooks/use-tasks";
 import { buildCloseout } from "@/lib/goat-closeout";
-import { buildHandoff } from "@/lib/goat-handoff";
-import { to12hLabel } from "@/lib/time-12h";
+import type { BuiltinKind } from "@/lib/goat-board";
 import { isAdminTier } from "@/lib/admin-access";
 import { buildGoatPageModel } from "@/lib/goat-page-model";
 import {
@@ -37,6 +37,8 @@ export default function GoatPage() {
   const { tasks } = useTasks();
   const { encountersByNewest } = useEncounterNotes();
   const { scheduleSettings } = useScheduleSettings();
+  const { keyDates } = useKeyDates();
+  const { appointmentTypes } = useScheduleAppointmentTypes();
   const [listVersion, setListVersion] = useState(0);
   const [handled, setHandled] = useState<HandledMark[]>([]);
   useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setListVersion((v) => v + 1)), []);
@@ -74,6 +76,7 @@ export default function GoatPage() {
     claimDocument: officeSettings.claimDocument,
     listVersion,
   });
+  const [focusKind, setFocusKind] = useState<BuiltinKind | null>(null);
   const closeout = useMemo(
     () =>
       buildCloseout({
@@ -88,68 +91,61 @@ export default function GoatPage() {
     <GoatPageView
       isAdmin={isAdminTier(roleTier)}
       model={{ ...model, mailNeedingAction: mail.actionCount, questions: mail.questionCount }}
-      mail={
-        <GoatMailBoard
-          notice={mail.notice}
-          onAnswer={mail.answer}
-          onConnect={() => void mail.connect()}
-          onDisconnect={() => void mail.disconnect()}
-          onResolve={mail.resolve}
-          rows={mail.rows}
-          status={mail.status}
-          variant="triage"
-        />
-      }
-      questions={
-        <GoatMailBoard
-          notice={mail.notice}
-          onAnswer={mail.answer}
-          onConnect={() => void mail.connect()}
-          onDisconnect={() => void mail.disconnect()}
-          onResolve={mail.resolve}
-          rows={mail.rows}
-          status={mail.status}
-          variant="questions"
-        />
-      }
-      onMoveIntake={(id) => updatePatientRecordById(id, { onPatientList: true })}
-      todos={
-        <UntouchedItems
-          items={untouched}
-          onHandled={(id) => {
-            const next = markHandled(handled, id, "", new Date().toISOString());
-            setHandled(next);
-            void saveHandledMarks(next);
-          }}
-        />
-      }
-      closeout={<GoatCloseout model={closeout} />}
-      handoff={
-        <GoatHandoff
-          {...buildHandoff({
-            officeName: model.officeName,
-            dateLabel: model.dateLabel,
-            seen: scheduleAppointments.filter((a) => a.date === iso && a.status === "Check Out").length,
-            noShows: scheduleAppointments
-              .filter((a) => a.date === iso && a.status === "No Show")
-              .map((a) => ({ name: a.patientName })),
-            intake: patients.filter((p) => model.intake.some((row) => row.id === p.id)).map((p) => ({
-              name: p.fullName,
-              missing: [
-                !(p.phone && p.phone !== "-") ? "phone" : "",
-                !p.dateOfLoss ? "date of injury" : "",
-                !(p.attorney && p.attorney !== "Self") ? "attorney" : "",
-              ].filter(Boolean),
-            })),
-            waiting: untouched,
-            openings: closeout.openings,
-            tomorrowClosed: closeout.tomorrowClosed,
-            rebooks: scheduleAppointments
-              .filter((a) => a.status === "Reschedule" && a.date >= iso)
-              .map((a) => ({ name: a.patientName, when: `${a.date} ${to12hLabel(a.startTime)}` })),
-          })}
-        />
-      }
-    />
+      onChip={(label) => {
+        const kind = ({ "GOAT Mail": "goat-mail", "Morning Rundown": "morning-rundown", "Appointment Check": "appointment-check", "Quick Biz": "quick-biz", "Case Review": "case-review" } as const)[label];
+        if (!kind) return;
+        window.dispatchEvent(new CustomEvent("goat-board-chip", { detail: kind }));
+        setFocusKind(kind);
+      }}
+    >
+      <GoatBriefingBoard
+        answers={
+          <GoatMailBoard
+            notice={mail.notice}
+            onAnswer={mail.answer}
+            onConnect={() => void mail.connect()}
+            onDisconnect={() => void mail.disconnect()}
+            onResolve={mail.resolve}
+            rows={mail.rows}
+            status={mail.status}
+            variant="questions"
+          />
+        }
+        appointments={scheduleAppointments}
+        caseStatuses={caseStatuses}
+        closeout={closeout}
+        appointmentTypes={appointmentTypes.map((row) => row.name)}
+        focusKind={focusKind}
+        isAdmin={isAdminTier(roleTier)}
+        keyDates={keyDates}
+        mail={
+          <GoatMailBoard
+            notice={mail.notice}
+            onAnswer={mail.answer}
+            onConnect={() => void mail.connect()}
+            onDisconnect={() => void mail.disconnect()}
+            onResolve={mail.resolve}
+            rows={mail.rows}
+            status={mail.status}
+            variant="triage"
+          />
+        }
+        model={model}
+        onMoveIntake={(id) => updatePatientRecordById(id, { onPatientList: true })}
+        patients={patients}
+        scheduleSettings={scheduleSettings}
+        todayIso={iso}
+        todos={
+          <UntouchedItems
+            items={untouched}
+            onHandled={(id) => {
+              const next = markHandled(handled, id, "", new Date().toISOString());
+              setHandled(next);
+              void saveHandledMarks(next);
+            }}
+          />
+        }
+      />
+    </GoatPageView>
   );
 }
