@@ -22,9 +22,9 @@ const data: BriefData = {
     { id: "T3", title: "Old", done: true, dueDate: "2026-10-01" },
   ],
 };
-assert.equal(dailyBrief(data, 9, true), "Morning! You've got 2 visits today (1 new patient), 1 to-do overdue, 1 to-do due today, and 2 cases waiting on checks.");
-assert.equal(dailyBrief(data, 14, false), "Hi there! You've got 2 visits today (1 new patient), 1 to-do overdue, and 1 to-do due today.", "staff: no office money numbers");
-assert.equal(dailyBrief({ ...data, appointments: [], tasks: [] }, 19, false), "Evening! You've got a clear schedule today.");
+assert.equal(dailyBrief(data, 9, true), "Good Morning. You've got 2 visits today (1 new patient), 1 to-do overdue, 1 to-do due today, and 2 cases waiting on checks.");
+assert.equal(dailyBrief(data, 14, false), "Good Afternoon. You've got 2 visits today (1 new patient), 1 to-do overdue, and 1 to-do due today.", "staff: no office money numbers");
+assert.equal(dailyBrief({ ...data, appointments: [], tasks: [] }, 19, false), "Good Evening. You've got a clear schedule today.");
 
 const people = [
   { id: "P1", fullName: "Mock, John", caseStatus: "Active", attorney: "Mock Law", firstVisit: "2026-10-01" },

@@ -208,7 +208,7 @@ export const handbookChapters: HandbookChapter[] = [
         heading: "Clear task (ignore) — not the same as Done",
         steps: [
           "A row that will never clear on its own (e.g. a Lien task that stays \"needed\"): click Clear task on the row, then OK.",
-          "It stops showing in Case Flow, the Case Flow counts, To-Do, Morning Rundown and /view todo, and it is not created again for that case.",
+          "It stops showing in Case Flow, the Case Flow counts, To-Do and /view todo, and it is not created again for that case.",
           "Nothing is deleted. Show cleared (N) lists every cleared item with who cleared it and when — Restore puts it back.",
           "To-Do has the same Clear task button for open to-dos.",
         ],
@@ -1254,7 +1254,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "When it comes back",
         steps: [
-          "The patient file shows a green \"Questionnaire received\" card with every answer; G.O.A.T.'s Morning Rundown lists it too.",
+          "The patient file shows a green \"Questionnaire received\" card with every answer.",
           "Pick the visit and click Insert into Objective — or open the patient's note: the same card waits above the SOAP macros.",
           "Each macro section fills its own Objective macro through the same path as clicking it, so the wording, the clickable answers and any linked charges are identical. Your own questions go in underneath as plain \"Question: answer\" lines.",
           "Dismiss if you don't want it in a note. The answers stay saved; Show past questionnaires → Review again brings it back.",

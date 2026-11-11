@@ -112,11 +112,11 @@ check("no pending → not a flow", () => assert.equal(step("hello", null), null)
 
 // Live bug 10/15: chips typed/tapped during a waiting step were treated as a patient name.
 for (const [name, prev] of [["/note picker", n0], ["/note text", n2], ["/todo kind", t0], ["/todo text", tp], ["/contact kind", c0], ["/contact add", ca], ["/contact edit pick", ce]] as const) {
-  for (const chip of ["Morning Rundown", "Appointment Check", "Quick Biz", "appointment check", "how's business", "help", "what can you do?", "@hannah call kara", "/todo", "/contact"]) {
+  for (const chip of ["Today's Schedule", "morning rundown", "Appointment Check", "Quick Biz", "appointment check", "how's business", "help", "what can you do?", "@hannah call kara", "/todo", "/contact"]) {
     check(`${name} + "${chip}" breaks out`, () => assert.equal(step(chip, prev), null));
   }
 }
-check("breaksFlow chips", () => { for (const c of ["Morning Rundown", "Appointment Check", "Quick Biz"]) assert.ok(breaksFlow(c)); });
+check("breaksFlow chips", () => { for (const c of ["Today's Schedule", "morning rundown", "Appointment Check", "Quick Biz"]) assert.ok(breaksFlow(c)); });
 check("breaksFlow not names", () => { for (const c of ["john mocksmith", "ann", "spoke to atty", "order supplies friday"]) assert.equal(breaksFlow(c), false); });
 check("breaksFlow pasted list", () => assert.ok(breaksFlow("A Mock Law\n817-555-0001\n1 Main St, Fort Worth, TX 76102\n\nB Mock Law\n817-555-0002")));
 check("tokens never break", () => assert.equal(breaksFlow(`${TOKEN}note-case ann`), false));

@@ -23,7 +23,6 @@ import {
 
 const BOARD_BOXES: Array<Exclude<BuiltinKind, "status-cases" | "cases-by-month" | "imaging-referrals" | "specialist-referrals">> = [
   "goat-mail",
-  "morning-rundown",
   "appointment-check",
   "quick-biz",
   "case-review",

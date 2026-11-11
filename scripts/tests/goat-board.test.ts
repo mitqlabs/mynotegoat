@@ -9,6 +9,7 @@ import {
   HANDOFF_TODAY_ITEMS,
   VISIT_GROUP_LABELS,
   appointmentVisible,
+  dropRetiredBoxes,
   defaultBoard,
   defaultTypePriority,
   matchesPeriod,
@@ -24,7 +25,6 @@ import { getDefaultScheduleSettings } from "../../src/lib/schedule-settings";
 
 assert.deepEqual([...DEFAULT_BOX_ORDER], [
   "goat-mail",
-  "morning-rundown",
   "appointment-check",
   "quick-biz",
   "case-review",
@@ -37,6 +37,10 @@ assert.deepEqual([...DEFAULT_BOX_ORDER], [
   "end-of-day",
 ]);
 assert.deepEqual(defaultBoard().map((box) => box.kind), [...DEFAULT_BOX_ORDER]);
+assert.deepEqual(
+  dropRetiredBoxes([{ i: "morning-rundown", kind: "morning-rundown" as never, x: 0, y: 0, w: 4, h: 8 }, defaultBoard()[0]]).map((box) => box.kind),
+  ["goat-mail"],
+);
 assert.deepEqual([...VISIT_GROUP_LABELS], ["New Patient", "Seen", "No Show", "Rebook", "Canceled"]);
 assert.deepEqual(HANDOFF_TODAY_ITEMS.map((item) => item.label), [
   "Seen",

@@ -15,7 +15,6 @@ export const GOAT_OFFICE_DEFAULT_KEY = "casemate.goat-page-office-default.v1";
 
 export const DEFAULT_BOX_ORDER = [
   "goat-mail",
-  "morning-rundown",
   "appointment-check",
   "quick-biz",
   "case-review",
@@ -72,7 +71,6 @@ export type BoardBox = {
 
 export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = {
   "goat-mail": "GOAT Mail",
-  "morning-rundown": "Morning Rundown",
   "appointment-check": "Appointment Check",
   "quick-biz": "Quick Biz",
   "case-review": "Case Review",
@@ -90,7 +88,6 @@ export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = 
 
 const BOX_SIZE: Record<BuiltinKind, { w: number; h: number }> = {
   "goat-mail": { w: 4, h: 8 },
-  "morning-rundown": { w: 4, h: 8 },
   "appointment-check": { w: 4, h: 8 },
   "quick-biz": { w: 6, h: 7 },
   "case-review": { w: 6, h: 7 },
@@ -247,7 +244,7 @@ export function loadOfficeDefault(): BoardBox[] | null {
 
 export function loadBoard(): BoardBox[] {
   if (typeof window === "undefined") return defaultBoard();
-  return parseBoard(window.localStorage.getItem(GOAT_BOARD_KEY)) ?? loadOfficeDefault() ?? defaultBoard();
+  return dropRetiredBoxes(parseBoard(window.localStorage.getItem(GOAT_BOARD_KEY)) ?? loadOfficeDefault() ?? defaultBoard());
 }
 
 export function saveBoard(boxes: BoardBox[]) {
@@ -274,7 +271,12 @@ export function boxesFromSnapshot(raw: string): BoardBox[] {
   const splitAt = raw.indexOf("\u0000");
   const personal = splitAt === -1 ? raw : raw.slice(0, splitAt);
   const office = splitAt === -1 ? "" : raw.slice(splitAt + 1);
-  return parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard();
+  return dropRetiredBoxes(parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard());
+}
+
+/** Saved layouts from before this box was removed. */
+export function dropRetiredBoxes(boxes: BoardBox[]): BoardBox[] {
+  return boxes.filter((box) => box.kind !== "morning-rundown");
 }
 
 export function subscribeBoard(onStoreChange: () => void): () => void {

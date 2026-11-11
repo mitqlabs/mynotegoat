@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import { ADMIN_ONLY_REPLY, appointmentCheck, morningRundown, quickBiz, type BriefData } from "@/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, appointmentCheck, quickBiz, type BriefData } from "@/lib/goat-briefs";
 import { GoatPageSettings } from "@/components/goat-page-settings";
 import {
   HANDOFF_TODAY_ITEMS,
@@ -20,7 +20,6 @@ import {
   imagingReferralRows,
   itemShown,
   matchesPeriod,
-  newBuiltinBox,
   nextOpenDayLabel,
   nextOpenOfficeDay,
   orderedIds,
@@ -32,7 +31,6 @@ import {
   subscribeBoard,
   todayVisitGroups,
   type BoardBox,
-  type BuiltinKind,
   type RowField,
   type SnapshotPeriod,
 } from "@/lib/goat-board";
@@ -145,7 +143,6 @@ export function GoatBriefingBoard({
   answers,
   todos,
   onMoveIntake,
-  focusKind,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
@@ -161,31 +158,11 @@ export function GoatBriefingBoard({
   answers: ReactNode;
   todos: ReactNode;
   onMoveIntake?: (id: string) => void;
-  focusKind?: BuiltinKind | null;
 }) {
   const snapshot = useSyncExternalStore(subscribeBoard, boardSnapshot, () => "");
   const boxes = useMemo(() => boxesFromSnapshot(snapshot), [snapshot]);
   const [pageSettings, setPageSettings] = useState(false);
   const [arrange, setArrange] = useState(false);
-  useEffect(() => {
-    const onAdd = (event: Event) => {
-      const kind = (event as CustomEvent<BuiltinKind>).detail;
-      if (!kind || kind === "status-cases") return;
-      const prev = boxesFromSnapshot(boardSnapshot());
-      if (prev.some((box) => box.kind === kind)) return;
-      const created = newBuiltinBox(kind, prev);
-      if (!created) return;
-      saveBoard([...prev, created]);
-    };
-    window.addEventListener("goat-board-chip", onAdd);
-    return () => window.removeEventListener("goat-board-chip", onAdd);
-  }, []);
-  useEffect(() => {
-    if (!focusKind) return;
-    const found = boxes.find((box) => box.kind === focusKind);
-    if (!found) return;
-    document.getElementById(`goat-box-${found.i}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [focusKind, boxes]);
 
   const commit = (next: BoardBox[]) => {
     saveBoard(next);
@@ -243,7 +220,6 @@ export function GoatBriefingBoard({
       review = "Case review is unavailable right now.";
     }
     return {
-      rundown: morningRundown(data).text,
       check: isAdmin ? appointmentCheck(data).text : ADMIN_ONLY_REPLY,
       biz: isAdmin ? quickBiz(data).text : ADMIN_ONLY_REPLY,
       review: isAdmin ? review : ADMIN_ONLY_REPLY,
@@ -259,7 +235,6 @@ export function GoatBriefingBoard({
     if (box.kind === "goat-mail") return mail;
     if (box.kind === "goat-answers") return answers;
     if (box.kind === "todos") return todos;
-    if (box.kind === "morning-rundown") return <p className="whitespace-pre-wrap text-sm">{briefs.rundown}</p>;
     if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm">{briefs.check}</p>;
     if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{briefs.biz}</p>;
     if (box.kind === "case-review") return <p className="whitespace-pre-wrap text-sm">{briefs.review}</p>;

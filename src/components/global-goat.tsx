@@ -102,6 +102,7 @@ import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
 import { breaksFlow, naturalCancelTurn, naturalTextTurn, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { goatGreetingDate } from "@/lib/goat-greeting";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
@@ -111,10 +112,9 @@ import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, vi
 import { parseLocationQuestion } from "@/lib/patient-locations";
 import { isOfficeStatsQuestion, parseTimeframeReply } from "@/lib/goat-appt-stats";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
-import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
-import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 
@@ -416,10 +416,9 @@ export function GlobalGoatPopup({
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
-  // Questionnaires received, not reviewed yet (Morning Rundown line).
-  const { rows: receivedForms } = useFormRequests({ awaitingReview: true }, !practiceOverride);
-  // Shown under the greeting until the first message; computed when the popup opens.
-  const [greeting] = useState(() => greetingFor(new Date().getHours()));
+  const [openedAt] = useState(() => new Date());
+  const greeting = greetingFor(openedAt.getHours());
+  const greetingDate = goatGreetingDate(openedAt);
   // Dismissed nudges: this chat session only (nothing saved, so nothing is browser-only).
   // Hidden heads-ups are a cloud-backed user pref (casemate.goat-nudges-dismissed.v1).
   const [dismissedNudges, setDismissedNudges] = useState<string[]>(() => Object.keys(readDismissed()));
@@ -901,13 +900,6 @@ export function GlobalGoatPopup({
       appointments: d.appointments,
       tasks: d.tasks,
       unreadMessages,
-      questionnaires: practiceOverride
-        ? []
-        : receivedForms.map((r) => ({
-            patientId: r.patient_id,
-            patientName: allPatients().find((p) => p.id === r.patient_id)?.fullName ?? "a patient",
-            formName: r.form_name,
-          })),
       locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
       patients: allPatients().map((p) => ({
         id: p.id,
@@ -939,7 +931,7 @@ export function GlobalGoatPopup({
   const runPipeline = (kind: PipelineKind, question: string | null) => {
     if (question !== null) push({ role: "user", text: question, practice: true });
     if (!isGoatAdmin) {
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return;
     }
     const a = pipelineAnswer(kind, pipelineData());
@@ -948,7 +940,7 @@ export function GlobalGoatPopup({
   const runReview = (ask: ReviewAsk, question: string | null) => {
     if (question !== null) push({ role: "user", text: question, practice: true });
     if (!isGoatAdmin) {
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return;
     }
     const d = pipelineData();
@@ -992,7 +984,7 @@ export function GlobalGoatPopup({
       runPipeline(target.slice("pipeline:".length) as PipelineKind, null);
       return;
     }
-    const kind: Record<string, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
+    const kind: Record<string, "schedule" | "apptCheck" | "business"> = { todo: "schedule", schedule: "schedule", messages: "schedule", apptCheck: "apptCheck", business: "business" };
     if (!briefAllowed(kind[target], isGoatAdmin)) {
       push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true });
       return;
@@ -1016,11 +1008,11 @@ export function GlobalGoatPopup({
     if (!kind) return false;
     if (!briefAllowed(kind, isGoatAdmin)) {
       push({ role: "user", text: question, practice: true });
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return true;
     }
     const data = briefData();
-    const a = kind === "rundown" ? morningRundown(data) : kind === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
+    const a = kind === "schedule" ? viewSchedule(data) : kind === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
     push({ role: "user", text: question, practice: true });
     push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
     return true;
@@ -1144,7 +1136,7 @@ export function GlobalGoatPopup({
       return true;
     }
     // A new request ("/", "@", a chip, or another team message) drops the waiting step.
-    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || parseTeamMessage(question) || detectPlainTodo(question)) {
+    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || detectBrief(question) || parseTeamMessage(question) || detectPlainTodo(question)) {
       tellRef.current = null;
       return false;
     }
@@ -2060,7 +2052,7 @@ export function GlobalGoatPopup({
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
-    // "/note", "/todo" and the greeting chips (Morning Rundown, Appointment Check, Quick Biz).
+    // "/note", "/todo" and the greeting chips (Today's Schedule, Appointment Check, Quick Biz).
     if (!opts && isGoatHelpQuestion(question)) {
       push({ role: "user", text: question, practice: true });
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
@@ -2561,7 +2553,7 @@ export function GlobalGoatPopup({
                 <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
                   <p data-goat-brief>
-                    {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span> What can I do for you?</>}
+                    {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span>{` — ${greetingDate}.`} What can I do for you?</>}
                     {opening && !briefHidden && liveNudges.length > 0 && (
                       <button className="ml-1 text-xs font-semibold text-[var(--brand-primary)]" data-goat-headsups onClick={() => setShowNudges((v) => !v)} type="button">
                         {showNudges ? "Hide heads-ups" : `${liveNudges.length} heads-up${liveNudges.length === 1 ? "" : "s"} ›`}
@@ -3235,7 +3227,7 @@ function todoTitleParts(title: string): { text: string; phone: string } {
   if (!m || title.trim().length - m[0].length < 3 || title.indexOf(m[0]) + m[0].length < title.trim().length - 1) return { text: title, phone: "" };
   return { text: title.slice(0, m.index).replace(/[\s,:-]+$/, ""), phone: m[0] };
 }
-const CHIP_ICONS: Record<string, string> = { "GOAT Mail": "✉️", "Morning Rundown": "☀️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
+const CHIP_ICONS: Record<string, string> = { "GOAT Mail": "✉️", "Today's Schedule": "🗓️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
 
 function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["quick"]>; onConfirm: (time?: string) => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
