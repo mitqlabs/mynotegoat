@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
-import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailMessages, planMailIntake, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailDecisions, mergeMailMessages, planMailIntake, rememberMailReferral, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
 import { parseIntakeText } from "../../src/lib/new-patient-intake";
 
 const today = "2026-11-09";
@@ -316,6 +316,14 @@ assert.equal(edgar.referral?.lastName, "Palma");
 assert.equal(edgar.referral?.phone, undefined);
 assert.equal(edgar.referral?.firstName === "This", false);
 assert.doesNotMatch(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /creating\.add/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /rememberMailReferral/);
+assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /row\.category !== "new-patient"/);
+const kept = rememberMailReferral([], "m-keep", { firstName: "Edgar", lastName: "Palma", from: "vhenao@dtlfightsforyou.com" }, "2026-11-11T00:00:00Z");
+assert.equal(kept[0]?.referral?.lastName, "Palma");
+assert.equal(rememberMailReferral([{ id: "m-keep", resolved: true, updatedAt: "2026-11-11T00:00:00Z" }], "m-keep", { firstName: "Edgar", lastName: "Palma" }, "2026-11-11T01:00:00Z")[0]?.resolved, true);
+const roundTrip = mergeMailDecisions([], kept);
+assert.equal(roundTrip[0]?.referral?.firstName, "Edgar");
+assert.equal(roundTrip[0]?.referral?.from, "vhenao@dtlfightsforyou.com");
 assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /reloadMailDecisions/);
 assert.match(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8"), /goatMailMessageId: id/);
 assert.deepEqual(planMailIntake({

@@ -112,12 +112,24 @@ export type GoatMailMessage = {
   body: string;
 };
 
+/** A new-patient email waiting in New Patient Intake. Saved for the office by message id. */
+export type MailReferralSnapshot = {
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  dateOfLoss?: string;
+  attorney?: string;
+  from?: string;
+  missing?: string[];
+};
+
 export type GoatMailDecision = {
   id: string;
   patientId?: string;
   category?: GoatMailCategory;
   resolved?: boolean;
   updatedAt: string;
+  referral?: MailReferralSnapshot;
 };
 
 export type GoatMailDraft = {
@@ -499,17 +511,50 @@ export function triageGoatMail(input: {
   return rows;
 }
 
+function referralSnapshot(value: unknown): MailReferralSnapshot | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<MailReferralSnapshot>;
+  const firstName = typeof row.firstName === "string" ? row.firstName : "";
+  const lastName = typeof row.lastName === "string" ? row.lastName : "";
+  const missing = Array.isArray(row.missing) ? row.missing.filter((item): item is string => typeof item === "string") : undefined;
+  return {
+    firstName,
+    lastName,
+    ...(typeof row.phone === "string" && row.phone ? { phone: row.phone } : {}),
+    ...(typeof row.dateOfLoss === "string" && row.dateOfLoss ? { dateOfLoss: row.dateOfLoss } : {}),
+    ...(typeof row.attorney === "string" && row.attorney ? { attorney: row.attorney } : {}),
+    ...(typeof row.from === "string" && row.from ? { from: row.from } : {}),
+    ...(missing?.length ? { missing } : {}),
+  };
+}
+
 function normalizeDecisions(value: unknown): GoatMailDecision[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((row): row is GoatMailDecision => !!row && typeof row === "object" && typeof (row as GoatMailDecision).id === "string")
-    .map((row) => ({
-      id: row.id,
-      ...(typeof row.patientId === "string" ? { patientId: row.patientId } : {}),
-      ...(typeof row.category === "string" && BUCKET_ID.test(row.category) ? { category: row.category } : {}),
-      ...(row.resolved === true ? { resolved: true } : {}),
-      updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
-    }));
+    .map((row) => {
+      const referral = referralSnapshot(row.referral);
+      return {
+        id: row.id,
+        ...(typeof row.patientId === "string" ? { patientId: row.patientId } : {}),
+        ...(typeof row.category === "string" && BUCKET_ID.test(row.category) ? { category: row.category } : {}),
+        ...(row.resolved === true ? { resolved: true } : {}),
+        ...(referral ? { referral } : {}),
+        updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
+      };
+    });
+}
+
+/** Keep a pending referral for the office, keyed by the email id. A dismissal or a created chart is left as it is. */
+export function rememberMailReferral(
+  records: GoatMailDecision[],
+  id: string,
+  snapshot: MailReferralSnapshot,
+  now: string,
+): GoatMailDecision[] {
+  const prior = records.find((row) => row.id === id);
+  if (prior?.patientId || prior?.resolved) return records;
+  return [...records.filter((row) => row.id !== id), { ...prior, id, category: prior?.category ?? "new-patient", referral: snapshot, updatedAt: now }];
 }
 
 /** Local decisions merged with the office cloud copy, so two computers see the same message. */

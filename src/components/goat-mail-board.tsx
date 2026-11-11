@@ -18,6 +18,7 @@ import {
   planMailIntake,
   reloadMailDecisions,
   rememberMailPatient,
+  rememberMailReferral,
   resolveMail,
   resolveMailBuckets,
   saveMailDecisions,
@@ -106,7 +107,62 @@ export function useGoatMail(input: {
     [status?.messages, input.patients, input.appointments, input.claimDocument, input.listVersion, decisions, todayIso],
   );
 
-  const referrals = rows.filter((row) => row.referral && !decisions.some((item) => item.id === row.id && item.patientId));
+  const mailboxRows = rows.filter((row) => row.needsAnswer || row.category !== "new-patient");
+  const openReferral = (id: string) => !decisions.some((item) => item.id === id && (item.patientId || item.resolved));
+  const liveReferrals = rows.filter((row) => row.category === "new-patient" && row.referral && !row.needsAnswer && openReferral(row.id));
+  const storedReferrals: GoatMailRow[] = decisions
+    .filter((item) => item.referral && !item.patientId && !item.resolved && !liveReferrals.some((row) => row.id === item.id))
+    .map((item) => ({
+      id: item.id,
+      category: "new-patient",
+      label: "New Patient referral",
+      subject: "",
+      from: item.referral?.from ?? "",
+      receivedAt: item.updatedAt,
+      flags: [],
+      missing: item.referral?.missing ?? [],
+      needsAnswer: false,
+      question: "",
+      choices: [],
+      create: Boolean(item.referral?.firstName && item.referral?.lastName),
+      referral: {
+        firstName: item.referral?.firstName ?? "",
+        lastName: item.referral?.lastName ?? "",
+        phone: item.referral?.phone,
+        dateOfLoss: item.referral?.dateOfLoss ?? "",
+        attorney: item.referral?.attorney,
+        from: item.referral?.from ?? "",
+      },
+    }));
+  const referrals = [...liveReferrals, ...storedReferrals];
+
+  useEffect(() => {
+    const pending = liveReferrals.filter((row) => row.referral);
+    if (!pending.length) return;
+    let next = loadMailDecisions();
+    let changed = false;
+    const now = new Date().toISOString();
+    for (const row of pending) {
+      if (!row.referral) continue;
+      const prior = next.find((item) => item.id === row.id);
+      const snapshot = {
+        firstName: row.referral.firstName,
+        lastName: row.referral.lastName,
+        ...(row.referral.phone ? { phone: row.referral.phone } : {}),
+        ...(row.referral.dateOfLoss ? { dateOfLoss: row.referral.dateOfLoss } : {}),
+        ...(row.referral.attorney ? { attorney: row.referral.attorney } : {}),
+        ...(row.referral.from ? { from: row.referral.from } : {}),
+        ...(row.missing.length ? { missing: row.missing } : {}),
+      };
+      if (prior?.referral && JSON.stringify(prior.referral) === JSON.stringify(snapshot)) continue;
+      const saved = rememberMailReferral(next, row.id, snapshot, now);
+      if (saved !== next) {
+        next = saved;
+        changed = true;
+      }
+    }
+    if (changed) void saveMailDecisions(next);
+  }, [liveReferrals]);
 
   const save = (next: GoatMailDecision[]) => {
     setDecisions(next);
@@ -115,10 +171,10 @@ export function useGoatMail(input: {
 
   return {
     status,
-    rows,
+    rows: mailboxRows,
     referrals,
     addReferral: async (id: string) => {
-      const row = rows.find((item) => item.id === id);
+      const row = referrals.find((item) => item.id === id) ?? rows.find((item) => item.id === id);
       const draft = row?.draft ?? row?.referral;
       if (!draft?.firstName || !draft.lastName) {
         setNotice("That referral is missing a name, so no chart was added.");
@@ -167,10 +223,13 @@ export function useGoatMail(input: {
       save(rememberMailPatient(decisions, id, created.id, now));
     },
     dismissReferral: (id: string) => {
-      save(resolveMail(loadMailDecisions(), id, new Date().toISOString()));
+      void (async () => {
+        const current = await reloadMailDecisions();
+        save(resolveMail(current, id, new Date().toISOString()));
+      })();
     },
-    actionCount: rows.length,
-    questionCount: rows.filter((row) => row.needsAnswer).length,
+    actionCount: mailboxRows.length,
+    questionCount: mailboxRows.filter((row) => row.needsAnswer).length,
     notice,
     folderNotice,
     connect: async () => {
