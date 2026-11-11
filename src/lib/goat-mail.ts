@@ -4,6 +4,7 @@
  * Nothing here talks to Microsoft. The mailbox read stays in the server route.
  */
 import { findDuplicateCases, duplicateDateIso, splitPatientName } from "@/lib/patient-duplicate";
+import { isObviouslyBadPatientName } from "@/lib/new-patient-intake";
 import { unionMerge } from "@/lib/kv-merge";
 import { notifyChange } from "@/lib/local-sync";
 import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
@@ -149,7 +150,57 @@ export type GoatMailRow = {
   draft?: GoatMailDraft;
 };
 
-type PatientLike = { id: string; fullName: string; dateOfLoss?: string; deleted?: boolean };
+type PatientLike = { id: string; fullName: string; dateOfLoss?: string; deleted?: boolean; phone?: string; dob?: string };
+
+/** Last 10 digits, so 305-295-7810 and (305) 295-7810 are the same phone. */
+export function mailPhoneKey(phone: string | undefined): string {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/**
+ * An existing chart for this referral: same name, and the same phone or the
+ * same date of birth. Name alone is not a match. A filler name never matches.
+ */
+export function matchExistingMailPatient<T extends PatientLike>(
+  list: T[],
+  input: { firstName: string; lastName: string; phone?: string; dob?: string },
+): T | undefined {
+  if (isObviouslyBadPatientName(input.firstName, input.lastName)) return undefined;
+  const phone = mailPhoneKey(input.phone);
+  const dob = duplicateDateIso(input.dob);
+  if (!phone && !dob) return undefined;
+  return list.find((patient) => {
+    if (patient.deleted || !sameName(patient, input.firstName, input.lastName)) return false;
+    const phoneHit = Boolean(phone) && mailPhoneKey(patient.phone) === phone;
+    const dobHit = Boolean(dob) && duplicateDateIso(patient.dob) === dob;
+    return phoneHit || dobHit;
+  });
+}
+
+export type MailIntakePlan =
+  | { action: "skip" }
+  | { action: "link"; patientId: string }
+  | { action: "create" };
+
+/**
+ * What to do with one email before any chart is created.
+ * The same message id is never created twice. A name+phone or name+DOB
+ * match is linked. A filler name such as "This" is skipped.
+ */
+export function planMailIntake(input: {
+  messageId: string;
+  draft: { firstName: string; lastName: string; phone?: string; dob?: string };
+  decisions: GoatMailDecision[];
+  patients: PatientLike[];
+}): MailIntakePlan {
+  if (input.decisions.some((row) => row.id === input.messageId && row.patientId)) return { action: "skip" };
+  if (isObviouslyBadPatientName(input.draft.firstName, input.draft.lastName)) return { action: "skip" };
+  const match = matchExistingMailPatient(input.patients, input.draft);
+  if (match) return { action: "link", patientId: match.id };
+  return { action: "create" };
+}
 type VisitLike = { patientId: string; date: string; status: string };
 
 const ACTION = /\b(need|needed|request|requested|send|sign|please|attach|attached)\b/i;
@@ -329,7 +380,16 @@ export function triageGoatMail(input: {
     const severalPassengers = multiPassenger(message.body);
     const unclearName = nameUnclear(fill);
     const named = Boolean(fill.firstName && fill.lastName);
-    const live = input.patients.filter((patient) => !patient.deleted && named && sameName(patient, fill.firstName ?? "", fill.lastName ?? ""));
+    const badName = named && isObviouslyBadPatientName(fill.firstName ?? "", fill.lastName ?? "");
+    const linked = named && !badName
+      ? matchExistingMailPatient(input.patients, {
+          firstName: fill.firstName ?? "",
+          lastName: fill.lastName ?? "",
+          phone: fill.phone,
+          dob: fill.dob,
+        })
+      : undefined;
+    const live = input.patients.filter((patient) => !patient.deleted && named && !badName && sameName(patient, fill.firstName ?? "", fill.lastName ?? ""));
     const newDol = duplicateDateIso(fill.dateOfLoss);
     const duplicate = named
       ? findDuplicateCases(live, { firstName: fill.firstName ?? "", lastName: fill.lastName ?? "", dateOfLoss: fill.dateOfLoss })
@@ -339,7 +399,7 @@ export function triageGoatMail(input: {
       return Boolean(existing) && existing !== newDol;
     });
     const blankExisting = named && live.some((patient) => !duplicateDateIso(patient.dateOfLoss));
-    const needsName = category === "new-patient" && (!named || unclearName);
+    const needsName = category === "new-patient" && (!named || unclearName || badName);
     const needsWho = category === "new-patient" && named && live.length > 1 && !secondCrash && duplicate.length === 0;
     const needsCrash = category === "new-patient" && blankExisting && !secondCrash && duplicate.length === 0;
     const needsAnswer = conflict || needsName || needsWho || needsCrash || (severalPassengers && patientLineCount(message.body) >= 2 && !chosen);
@@ -373,6 +433,8 @@ export function triageGoatMail(input: {
       !unclearName &&
       duplicate.length === 0 &&
       !blankExisting &&
+      !badName &&
+      !linked &&
       !decision?.patientId &&
       patientLineCount(message.body) < 2;
     const draft: GoatMailDraft | undefined = canCreate
@@ -399,7 +461,7 @@ export function triageGoatMail(input: {
       needsAnswer,
       question,
       choices,
-      patientId: decision?.patientId ?? (duplicate[0]?.id),
+      patientId: decision?.patientId ?? duplicate[0]?.id ?? linked?.id,
       create: canCreate,
       draft,
     });

@@ -64,6 +64,21 @@ export interface ParsedIntake {
 const NAME_WORD = "[A-Z][a-zA-Z'’-]+";
 const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s'’-])([a-z])/g, (m, a, b) => a + b.toUpperCase());
 
+/** Words that are never a patient's first or last name. "This" was saved as a last name. */
+const FILLER_NAMES = new Set(
+  "this that these those patient patients name phone cell email please new referral referred dear hello hi hey thanks thank regards sincerely unknown none attn here there subject".split(" "),
+);
+
+/** True when either part is a single letter or a filler word such as "This". */
+export function isObviouslyBadPatientName(first: string, last: string): boolean {
+  const bad = (word: string) => {
+    const letters = word.trim().toLowerCase().replace(/[^a-z]/g, "");
+    return letters.length < 2 || FILLER_NAMES.has(letters);
+  };
+  if (!first.trim() || !last.trim()) return true;
+  return bad(first) || bad(last);
+}
+
 function pastDate(m: RegExpExecArray, todayIso: string): string {
   const mo = m[1].padStart(2, "0");
   const da = m[2].padStart(2, "0");
@@ -152,25 +167,32 @@ export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys
   const comma = new RegExp(`^(${NAME_WORD}),\\s*(${NAME_WORD})\\b`).exec(rest);
   const lead = new RegExp(`^(${NAME_WORD})\\s+(${NAME_WORD})(?:\\s+(${NAME_WORD}))?\\b`).exec(rest);
   const lowerLead = /^([a-z][a-z'’-]+)\s+([a-z][a-z'’-]+)\b/.exec(rest);
-  const STOP = /^(she|he|they|the|was|is|in|at|on|and|with|call|calling|called|needs?|wants?|can|has|had|from|for|her|his|rear|accident|wreck|mva|hurt|appt)$/i;
+  const STOP = /^(she|he|they|the|was|is|in|at|on|and|with|call|calling|called|needs?|wants?|can|has|had|from|for|her|his|rear|accident|wreck|mva|hurt|appt|this|that|these|those|patient|patients|name|phone|cell|email|please|new|referral|referred|dear|hello|hi|hey|thanks|thank|regards|sincerely|unknown|none|attn|here|there|subject)$/i;
+  const nameTokenOk = (word: string) => !STOP.test(word) && word.replace(/[^A-Za-z]/g, "").length >= 2;
   let nameUsed = "";
-  if (comma) { d.lastName = titleCase(comma[1]); d.firstName = titleCase(comma[2]); nameUsed = comma[0]; }
+  if (comma && nameTokenOk(comma[1]) && nameTokenOk(comma[2])) { d.lastName = titleCase(comma[1]); d.firstName = titleCase(comma[2]); nameUsed = comma[0]; }
   else if (named && !STOP.test(named[1].split(/\s+/)[0])) {
-    const ws = named[1].split(/\s+/).filter((w) => !STOP.test(w));
+    const ws = named[1].split(/\s+/).filter((w) => nameTokenOk(w));
     if (ws.length >= 2) { d.firstName = titleCase(ws[0]); d.lastName = titleCase(ws[ws.length - 1]); if (ws.length === 3) ask.push(`Is the last name "${titleCase(ws[2])}" or "${titleCase(ws[1])} ${titleCase(ws[2])}"?`); }
     else if (ws.length === 1) { d.firstName = titleCase(ws[0]); ask.push("What's the last name?"); }
     nameUsed = named[0];
-  } else if (lead && !STOP.test(lead[2])) {
+  } else if (lead && nameTokenOk(lead[1]) && !STOP.test(lead[2])) {
     const third = lead[3] && !STOP.test(lead[3]) ? lead[3] : "";
     d.firstName = titleCase(lead[1]);
     d.lastName = titleCase(third || lead[2]);
     if (third) ask.push(`Is the last name "${titleCase(third)}" or "${titleCase(lead[2])} ${titleCase(third)}"?`);
     nameUsed = third ? lead[0] : `${lead[1]} ${lead[2]}`;
-  } else if (lowerLead && !STOP.test(lowerLead[1]) && !STOP.test(lowerLead[2])) {
+  } else if (lowerLead && nameTokenOk(lowerLead[1]) && nameTokenOk(lowerLead[2])) {
     d.firstName = titleCase(lowerLead[1]); d.lastName = titleCase(lowerLead[2]); nameUsed = lowerLead[0];
   }
   const lone = new RegExp(`^(${NAME_WORD})\\b`).exec(rest);
-  if (!d.firstName && lone && !STOP.test(lone[1])) { d.firstName = titleCase(lone[1]); nameUsed = lone[0]; ask.push("What's the last name?"); }
+  if (!d.firstName && lone && nameTokenOk(lone[1])) { d.firstName = titleCase(lone[1]); nameUsed = lone[0]; ask.push("What's the last name?"); }
+  // A filler or a one-letter part is not a name. Ask instead of saving "This, D".
+  if ((d.firstName && !nameTokenOk(d.firstName)) || (d.lastName && !nameTokenOk(d.lastName))) {
+    delete d.firstName;
+    delete d.lastName;
+    for (let i = ask.length - 1; i >= 0; i -= 1) if (/last name/i.test(ask[i])) ask.splice(i, 1);
+  }
   if (!d.firstName || !d.lastName) { if (!ask.includes("What's the last name?")) ask.unshift("What's the patient's name?"); }
 
   // Note: whatever is left (the call details)

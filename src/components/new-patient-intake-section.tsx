@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { appConfirm } from "@/components/app-dialog";
 import type { PatientRecord } from "@/lib/mock-data";
 
 /** Patients with no case info, shown above the Patient List. */
 export function NewPatientIntakeSection({
   patients,
-  onMove,
+  onRemove,
 }: {
   patients: Pick<PatientRecord, "id" | "fullName" | "phone">[];
-  onMove: (patientId: string) => void;
+  onRemove: (patientId: string) => void;
 }) {
   if (patients.length === 0) return null;
   return (
@@ -19,7 +20,7 @@ export function NewPatientIntakeSection({
         <span className="text-sm text-[var(--text-muted)]">{patients.length} without case info</span>
       </div>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
-        No date of injury yet. They stay here until you move them onto the Patient List.
+        No date of injury yet. Adding case info moves them onto the Patient List. Remove hides a chart you don&apos;t want. Restore it from Deleted Patients.
       </p>
       <ul className="mt-3 divide-y divide-[var(--line-soft)]">
         {patients.map((patient) => (
@@ -28,8 +29,17 @@ export function NewPatientIntakeSection({
               {patient.fullName}
             </Link>
             <span className="text-xs text-[var(--text-muted)]">{patient.phone || "No phone"}</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => onMove(patient.id)} type="button">
-              Move Patient to Patient List
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                void (async () => {
+                  const ok = await appConfirm(`Remove ${patient.fullName} from New Patient Intake? They'll be hidden from the lists. Restore them from Deleted Patients.`);
+                  if (ok) onRemove(patient.id);
+                })();
+              }}
+              type="button"
+            >
+              Remove
             </button>
           </li>
         ))}

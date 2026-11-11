@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CLOUD_KEY_REGISTRY } from "../../src/lib/cloud-key-registry";
-import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailMessages, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { chosenFolderIds, GOAT_MAIL_FOLDERS_KEY, GOAT_MAIL_SECRET_EXPIRED, GOAT_MAIL_SECRET_KEY, isInvalidClientSecretError, mailSecretAlertText, mailSecretDateLabel, mailSecretDue, mergeMailMessages, planMailIntake, triageGoatMail, type GoatMailMessage, type MailFolderChoice } from "../../src/lib/goat-mail";
+import { parseIntakeText } from "../../src/lib/new-patient-intake";
 
 const today = "2026-11-09";
 const msg = (over: Partial<GoatMailMessage>): GoatMailMessage => ({
@@ -96,6 +97,62 @@ const second = triageGoatMail({
 assert.equal(second.create, true);
 assert.equal(second.flags.includes("second-crash"), true);
 assert.equal(second.flags.includes("unbooked"), true);
+
+const filler = "New patient referral. Patient: D This. Phone 305-295-7810. Date of injury 01/15/2026.";
+const parsedFiller = parseIntakeText(filler, { todayIso: today });
+assert.equal(parsedFiller.draft.firstName, undefined);
+assert.equal(parsedFiller.draft.lastName, undefined);
+assert.ok(parsedFiller.ask.some((line) => /name/i.test(line)));
+const badName = row(filler);
+assert.equal(badName.create, false);
+assert.equal(badName.needsAnswer, true);
+assert.equal(badName.question, "Who is the new patient?");
+
+const samePhone = triageGoatMail({
+  messages: [msg({ id: "m-phone", subject: "New patient referral", body: referral })],
+  patients: [{ id: "p9", fullName: "Testpatient, Kara", phone: "(818) 555-0142", dateOfLoss: "2026-01-02", dob: "1990-04-04" }],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(samePhone.create, false);
+assert.equal(samePhone.patientId, "p9");
+
+const sameDob = triageGoatMail({
+  messages: [msg({ id: "m-dob", subject: "New patient referral", body: "New patient referral. Patient: Kara Testpatient. DOB 04/04/1990. Date of injury 03/01/2026." })],
+  patients: [{ id: "p8", fullName: "Testpatient, Kara", phone: "818-555-0199", dob: "04/04/1990", dateOfLoss: "2025-01-01" }],
+  appointments: [],
+  todayIso: today,
+  claimDocument: "lien",
+})[0];
+assert.equal(sameDob.create, false);
+assert.equal(sameDob.patientId, "p8");
+
+assert.deepEqual(planMailIntake({
+  messageId: "m1",
+  draft: { firstName: "D", lastName: "This", phone: "305-295-7810" },
+  decisions: [],
+  patients: [],
+}), { action: "skip" });
+assert.deepEqual(planMailIntake({
+  messageId: "m1",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [{ id: "m1", patientId: "p1", updatedAt: "2026-11-09T16:00:00Z" }],
+  patients: [],
+}), { action: "skip" });
+assert.deepEqual(planMailIntake({
+  messageId: "m2",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [{ id: "m1", patientId: "p1", updatedAt: "2026-11-09T16:00:00Z" }],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", phone: "305-295-7810" }],
+}), { action: "create" });
+assert.deepEqual(planMailIntake({
+  messageId: "m2",
+  draft: { firstName: "Kara", lastName: "Testpatient", phone: "818-555-0142" },
+  decisions: [],
+  patients: [{ id: "p1", fullName: "Testpatient, Kara", phone: "818.555.0142" }],
+}), { action: "link", patientId: "p1" });
+assert.equal(readFileSync(new URL("../../src/components/goat-mail-board.tsx", import.meta.url), "utf8").includes("planMailIntake"), true);
 
 const passengers = row(`New patient referral
 Patient: Kara Testpatient

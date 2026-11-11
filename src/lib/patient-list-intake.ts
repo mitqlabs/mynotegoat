@@ -1,8 +1,9 @@
 /**
  * New Patient Intake sits above the Patient List for PI patients who do not
  * have case info yet (no date of injury). Cash patients stay on the list.
- * "Move Patient to Patient List" sets onPatientList, which is stored on the
- * patient row (patients.on_patient_list) so it survives a refresh.
+ * Adding case info (a date of injury) moves them onto the Patient List.
+ * Remove soft-deletes the chart (deleted flag) so it can be restored.
+ * onPatientList is still stored on the patient row (patients.on_patient_list).
  */
 export function lacksCaseInfo(patient: {
   isCashPatient?: boolean;

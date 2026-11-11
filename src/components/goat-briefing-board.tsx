@@ -6,6 +6,7 @@ import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { ADMIN_ONLY_REPLY, appointmentCheck, quickBiz, type BriefData } from "@/lib/goat-briefs";
+import { appConfirm } from "@/components/app-dialog";
 import { GoatPageSettings } from "@/components/goat-page-settings";
 import {
   HANDOFF_TODAY_ITEMS,
@@ -142,7 +143,7 @@ export function GoatBriefingBoard({
   mail,
   answers,
   todos,
-  onMoveIntake,
+  onRemoveIntake,
 }: {
   model: GoatPageModel;
   isAdmin: boolean;
@@ -157,7 +158,7 @@ export function GoatBriefingBoard({
   mail: ReactNode;
   answers: ReactNode;
   todos: ReactNode;
-  onMoveIntake?: (id: string) => void;
+  onRemoveIntake?: (id: string) => void;
 }) {
   const snapshot = useSyncExternalStore(subscribeBoard, boardSnapshot, () => "");
   const boxes = useMemo(() => boxesFromSnapshot(snapshot), [snapshot]);
@@ -270,8 +271,19 @@ export function GoatBriefingBoard({
           {model.intake.map((row) => (
             <li className="flex flex-wrap items-center justify-between gap-2" key={row.id}>
               <Link className="font-medium hover:underline" href={row.href}>{row.name}</Link>
-              {onMoveIntake && (
-                <button className="btn btn-secondary btn-sm" onClick={() => onMoveIntake(row.id)} type="button">Move Patient to Patient List</button>
+              {onRemoveIntake && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await appConfirm(`Remove ${row.name} from New Patient Intake? They'll be hidden from the lists. Restore them from Deleted Patients.`);
+                      if (ok) onRemoveIntake(row.id);
+                    })();
+                  }}
+                  type="button"
+                >
+                  Remove
+                </button>
               )}
             </li>
           ))}

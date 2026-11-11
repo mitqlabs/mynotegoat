@@ -25,7 +25,7 @@ import {
   type HandledMark,
 } from "@/lib/goat-untouched";
 import { onLocalChange } from "@/lib/local-sync";
-import { patients, PATIENTS_STORAGE_KEY, updatePatientRecordById } from "@/lib/mock-data";
+import { deletePatientRecord, patients, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 
 export default function GoatPage() {
@@ -119,7 +119,9 @@ export default function GoatPage() {
           />
         }
         model={model}
-        onMoveIntake={(id) => updatePatientRecordById(id, { onPatientList: true })}
+        onRemoveIntake={(id) => {
+          deletePatientRecord(id);
+        }}
         patients={patients}
         scheduleSettings={scheduleSettings}
         todayIso={iso}

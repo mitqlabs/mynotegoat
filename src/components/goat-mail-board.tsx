@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { onLocalChange } from "@/lib/local-sync";
-import { createPatientRecord } from "@/lib/mock-data";
+import { createPatientRecord, patients as livePatients } from "@/lib/mock-data";
 import {
   GOAT_MAIL_CONNECT_LINE,
   GOAT_MAIL_KEY,
@@ -14,6 +14,7 @@ import {
   loadMailDecisions,
   mailSecretAlertText,
   mailSecretDue,
+  planMailIntake,
   rememberMailPatient,
   resolveMail,
   resolveMailBuckets,
@@ -106,27 +107,40 @@ export function useGoatMail(input: {
   );
 
   useEffect(() => {
-    const pending = rows.filter((row) => row.create && row.draft);
+    const pending = rows.filter((row) => row.create && row.draft && !creating.has(row.id));
     if (!pending.length) return;
+    // Claim every message id before creating, so a second pass of the same
+    // inbox (reload, remount, or another copy of the email) cannot add again.
+    for (const row of pending) creating.add(row.id);
     let next = loadMailDecisions();
     let changed = false;
     for (const row of pending) {
-      if (!row.draft || next.some((item) => item.id === row.id && item.patientId) || creating.has(row.id)) continue;
-      creating.add(row.id);
-      const created = createPatientRecord({
-        firstName: row.draft.firstName,
-        lastName: row.draft.lastName,
-        phone: row.draft.phone,
-        dob: row.draft.dob,
-        dateOfLoss: row.draft.dateOfLoss,
-        attorney: row.draft.attorney,
-        address: row.draft.address,
-        initialExam: row.draft.initialExam,
-        notes: row.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
+      if (!row.draft) continue;
+      const plan = planMailIntake({
+        messageId: row.id,
+        draft: row.draft,
+        decisions: next,
+        patients: livePatients,
       });
-      creating.delete(row.id);
-      if (!created) continue;
-      next = rememberMailPatient(next, row.id, created.id, new Date().toISOString());
+      if (plan.action === "skip") continue;
+      let patientId = plan.action === "link" ? plan.patientId : undefined;
+      if (plan.action === "create") {
+        const created = createPatientRecord({
+          firstName: row.draft.firstName,
+          lastName: row.draft.lastName,
+          phone: row.draft.phone,
+          dob: row.draft.dob,
+          dateOfLoss: row.draft.dateOfLoss,
+          attorney: row.draft.attorney,
+          address: row.draft.address,
+          initialExam: row.draft.initialExam,
+          notes: row.missing.length ? `Added from G.O.A.T. Mail. Missing: ${row.missing.join(", ")}.` : "Added from G.O.A.T. Mail.",
+        });
+        if (!created) continue;
+        patientId = created.id;
+      }
+      if (!patientId) continue;
+      next = rememberMailPatient(next, row.id, patientId, new Date().toISOString());
       changed = true;
     }
     if (!changed) return;
