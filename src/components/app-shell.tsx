@@ -127,6 +127,8 @@ export function AppShell({
     () => getVisiblePortalNavItems(planTier).filter((item) => canView(item.feature)),
     [planTier, canView],
   );
+  const mainNav = navItems.filter((item) => item.href !== "/settings");
+  const settingsItem = navItems.find((item) => item.href === "/settings");
   const unreadMessages = useUnreadMessages();
 
   const toggleSidebar = useCallback(() => {
@@ -228,7 +230,7 @@ export function AppShell({
                     </div>
 
                     <nav className="space-y-2">
-                      {navItems.map((item) => {
+                      {mainNav.map((item) => {
                         const active =
                           pathname === item.href || pathname.startsWith(`${item.href}/`);
                         return (
@@ -250,28 +252,47 @@ export function AppShell({
                       <Link
                         href="/handbook"
                         className={classNames(
-                          "mt-2 flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold transition",
+                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                           pathname === "/handbook"
                             ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
                             : "text-[#d5ebf8] hover:bg-white/10",
                         )}
                       >
-                        <span aria-hidden>📖</span>
                         <span>Handbook</span>
                       </Link>
                       <Link
                         href="/goat-mail"
                         className={classNames(
-                          "mt-2 flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold transition",
+                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                           pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
                             ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
                             : "text-[#d5ebf8] hover:bg-white/10",
                         )}
                       >
-                        <span aria-hidden>✉️</span>
                         <span>G.O.A.T. Mail</span>
                       </Link>
-                      <GlobalGoatButton className="mt-2 flex w-full items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-[#d5ebf8] transition hover:bg-white/10" />
+                      <GlobalGoatButton
+                        textOnly
+                        className={classNames(
+                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
+                          pathname === "/goat-page" || pathname.startsWith("/goat-page/")
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "text-[#d5ebf8] hover:bg-white/10",
+                        )}
+                      />
+                      {settingsItem && (
+                        <Link
+                          href={settingsItem.href}
+                          className={classNames(
+                            "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
+                            pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
+                              ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                              : "text-[#d5ebf8] hover:bg-white/10",
+                          )}
+                        >
+                          <span>{settingsItem.label}</span>
+                        </Link>
+                      )}
                     </nav>
 
                     <div className="mt-8 rounded-xl border border-white/20 bg-white/10 p-3">
@@ -311,7 +332,7 @@ export function AppShell({
                 {sidebarCollapsed && (
                   <>
                     <nav className="space-y-2">
-                      {navItems.map((item) => {
+                      {mainNav.map((item) => {
                         const active =
                           pathname === item.href || pathname.startsWith(`${item.href}/`);
                         return (
@@ -357,7 +378,29 @@ export function AppShell({
                       >
                         ✉️
                       </Link>
-                      <GlobalGoatButton compact className="flex h-10 w-10 items-center justify-center rounded-xl transition hover:bg-white/10" />
+                      <GlobalGoatButton
+                        compact
+                        className={classNames(
+                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                          pathname === "/goat-page" || pathname.startsWith("/goat-page/")
+                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                            : "hover:bg-white/10",
+                        )}
+                      />
+                      {settingsItem && (
+                        <Link
+                          href={settingsItem.href}
+                          className={classNames(
+                            "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
+                            pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
+                              ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
+                              : "text-[#d5ebf8] hover:bg-white/10",
+                          )}
+                          title={settingsItem.label}
+                        >
+                          {navIcons[settingsItem.href] ?? "S"}
+                        </Link>
+                      )}
                     </nav>
 
                     {/* Sign out icon */}
@@ -412,7 +455,7 @@ export function AppShell({
               </header>
 
               <nav className="flex gap-2 overflow-x-auto border-b border-[var(--line-soft)] bg-white/70 px-3 py-3 lg:hidden">
-                {navItems.map((item) => {
+                {mainNav.map((item) => {
                   const active =
                     pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -443,6 +486,19 @@ export function AppShell({
                   G.O.A.T. Mail
                 </Link>
                 <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
+                {settingsItem && (
+                  <Link
+                    href={settingsItem.href}
+                    className={classNames(
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
+                      pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
+                        ? "bg-[var(--brand-primary)] text-white"
+                        : "bg-[var(--bg-soft)] text-[var(--text-main)]",
+                    )}
+                  >
+                    {settingsItem.label}
+                  </Link>
+                )}
                 {/* Mobile-only sign out, icon at the end of the pill row. The
                     desktop sidebar (which holds Sign Out) is hidden below lg.
                     Same handler as the sidebar button. */}
