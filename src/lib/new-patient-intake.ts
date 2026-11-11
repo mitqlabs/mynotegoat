@@ -152,7 +152,7 @@ function phoneFromIntake(text: string): { phone: string; raw: string } | null {
 export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys?: string[]; settings?: ScheduleSettingsConfig }): ParsedIntake {
   const ask: string[] = [];
   const d: Partial<IntakeDraft> = {};
-  let text = stripReferralNoise(raw).replace(/\s+/g, " ").trim()
+  let text = stripReferralNoise(raw).replace(/\bclient details\s*:/gi, " ").replace(/\s+/g, " ").trim()
     .replace(/^\/new\b\s*/i, "")
     .replace(/^(hi|hey|hello)\b[,!.]?\s*/i, "")
     .replace(/^(i|we)\s+(have|got)\s+(a\s+)?new\s+(patient|pt)(\s+for\s+(you|u))?\s*[:,.!-]?\s*/i, "")
@@ -228,7 +228,7 @@ export function parseIntakeText(raw: string, opts: { todayIso: string; attorneys
   const comma = new RegExp(`^(${NAME_WORD}),\\s*(${NAME_WORD})\\b`).exec(rest);
   const lead = new RegExp(`^(${NAME_WORD})\\s+(${NAME_WORD})(?:\\s+(${NAME_WORD}))?\\b`).exec(rest);
   const lowerLead = /^([a-z][a-z'’-]+)\s+([a-z][a-z'’-]+)\b/.exec(rest);
-  const STOP = /^(she|he|they|the|was|is|in|at|on|and|with|call|calling|called|needs?|wants?|can|has|had|from|for|her|his|rear|accident|wreck|mva|hurt|appt|this|that|these|those|patient|patients|name|phone|cell|email|please|new|referral|referred|dear|hello|hi|hey|thanks|thank|regards|sincerely|unknown|none|attn|here|there|subject)$/i;
+  const STOP = /^(she|he|they|the|was|is|in|at|on|and|with|call|calling|called|needs?|wants?|can|has|had|from|for|her|his|rear|accident|wreck|mva|hurt|appt|this|that|these|those|patient|patients|client|details|name|phone|cell|email|please|new|referral|referred|dear|hello|hi|hey|thanks|thank|regards|sincerely|unknown|none|attn|here|there|subject|contact|number|location)$/i;
   const nameTokenOk = (word: string) => !STOP.test(word) && word.replace(/[^A-Za-z]/g, "").length >= 2;
   let nameUsed = "";
   if (labeledName) {

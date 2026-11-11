@@ -127,6 +127,15 @@ check("patient name label keeps a multi-word last name", () => {
   assert.equal(filled.addressCity, "Baytown");
   assert.equal(filled.addressState, "TX");
   assert.equal(filled.addressZip, "77620");
+  for (const label of ["Client Name: Hinigio Sanchez Contreras", "Name: Hinigio Sanchez Contreras"]) {
+    const again = quickFillFromText(`${label}\nDOB: 1-11-1974\nContact Number: 832-360-6376`, { todayIso: TODAY });
+    assert.equal(again.firstName, "Hinigio", label);
+    assert.equal(again.lastName, "Sanchez Contreras", label);
+    assert.equal(again.phone, "832-360-6376", label);
+  }
+  const details = quickFillFromText("Client Details:\nHello there", { todayIso: TODAY });
+  assert.notEqual(details.firstName, "Client");
+  assert.notEqual(details.firstName, "Details");
 });
 for (const q of ["/new Jane Doe", "I have a new patient for you Ana Fake", "new patient: Bo Mock 817-555-0100", "we got a new pt for you"]) check(`new patient request: ${q}`, () => assert.ok(detectNewPatientRequest(q)));
 for (const q of ["how do I add a new patient", "how many new patients this month", "add to-do call new patient jane", "who are my new patients"]) check(`not a new patient request: ${q}`, () => assert.equal(detectNewPatientRequest(q), false));

@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { intakePatientHasNotes } from "../../src/lib/intake-delete";
+import { createPatientRecord, patients, updatePatientRecordById } from "../../src/lib/mock-data";
 import { intakeDeleteReason, isInNewPatientIntake, lacksCaseInfo } from "../../src/lib/patient-list-intake";
 
 const pi = { dateOfLoss: "", isCashPatient: false };
@@ -16,6 +17,20 @@ assert.equal(lacksCaseInfo({ dateOfLoss: "2026-02-11", isCashPatient: false }), 
 assert.equal(isInNewPatientIntake({ dateOfLoss: "", isCashPatient: true }), false);
 assert.equal(isInNewPatientIntake({ dateOfLoss: "", deleted: true }), false);
 assert.equal(isInNewPatientIntake({ dateOfLoss: "", isCashPatient: false, lastUpdate: "2026-11-11" }), true, "a new chart with no case info stays in intake");
+
+const savedWithoutCase = createPatientRecord({
+  firstName: "Kara",
+  lastName: "Testpatient",
+  phone: "818-555-0142",
+  dateOfLoss: "",
+});
+assert.ok(savedWithoutCase);
+assert.equal(savedWithoutCase.onPatientList, undefined);
+assert.equal(isInNewPatientIntake(patients.find((row) => row.id === savedWithoutCase.id)!), true);
+updatePatientRecordById(savedWithoutCase.id, { dateOfLoss: "2026-02-11" });
+assert.equal(isInNewPatientIntake(patients.find((row) => row.id === savedWithoutCase.id)!), false);
+const pageSave = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(pageSave.slice(pageSave.indexOf("const createdPatient"), pageSave.indexOf("const createdPatient") + 800), /onPatientList:\s*true/);
 
 assert.equal(intakeDeleteReason({ inIntake: true, hasNotes: false, appointmentCount: 0 }), null);
 assert.equal(intakeDeleteReason({ inIntake: false, hasNotes: false, appointmentCount: 0 }), "Only an intake chart with no case info can be deleted here.");
