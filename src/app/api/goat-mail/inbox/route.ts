@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
-import { deleteMailConnection, goatMailEnv, goatMailWorkspaceId, loadMailConnection, loadMailFolderIds, loadMailSecretExpiresOn, readMailbox, saveMailConnection } from "@/lib/goat-mail-server";
+import { deleteMailConnection, goatMailEnv, goatMailWorkspaceId, loadMailBuckets, loadMailConnection, loadMailFolderIds, loadMailSecretExpiresOn, readMailbox, saveMailConnection } from "@/lib/goat-mail-server";
 
 /** Recent messages, read-only. The refresh token stays on the server. */
 export async function GET(request: NextRequest) {
@@ -12,12 +12,13 @@ export async function GET(request: NextRequest) {
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const workspaceId = goatMailWorkspaceId(caller.ownerId);
   const secretExpiresOn = (await loadMailSecretExpiresOn(admin, workspaceId)) ?? "";
-  if (!env.configured) return NextResponse.json({ configured: false, connected: false, messages: [], secretExpiresOn });
+  const buckets = await loadMailBuckets(admin, workspaceId);
+  if (!env.configured) return NextResponse.json({ configured: false, connected: false, messages: [], secretExpiresOn, buckets });
   const row = await loadMailConnection(admin, workspaceId);
   if (row && "missingTable" in row) {
-    return NextResponse.json({ configured: true, connected: false, needsMigration: true, messages: [], secretExpiresOn });
+    return NextResponse.json({ configured: true, connected: false, needsMigration: true, messages: [], secretExpiresOn, buckets });
   }
-  if (!row) return NextResponse.json({ configured: true, connected: false, messages: [], secretExpiresOn });
+  if (!row) return NextResponse.json({ configured: true, connected: false, messages: [], secretExpiresOn, buckets });
   const folderIds = await loadMailFolderIds(admin, workspaceId);
   const read = await readMailbox({ ...env, refreshToken: row.refreshToken, folderIds });
   if ("error" in read) {
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
       folders: [],
       selectedFolderIds: [],
       secretExpiresOn,
+      buckets,
     });
   }
   if (read.refreshToken !== row.refreshToken) {
@@ -44,13 +46,14 @@ export async function GET(request: NextRequest) {
     folders: read.folders,
     selectedFolderIds: read.selectedFolderIds,
     secretExpiresOn,
+    buckets,
   });
 }
 
 /** Forget the stored refresh token. This does not change the mailbox. */
 export async function DELETE(request: NextRequest) {
   const env = goatMailEnv();
-  if (!env.configured) return NextResponse.json({ error: "GOAT Mail is not configured yet." }, { status: 404 });
+  if (!env.configured) return NextResponse.json({ error: "G.O.A.T. Mail is not configured yet." }, { status: 404 });
   const cfg = serverConfig();
   if (!cfg) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const admin = adminClient(cfg);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizePermissions } from "@/lib/team-permissions";
+import { resolveTeamWorkspace } from "@/lib/team-workspace";
 
 /**
  * Owner creates a staff (team member) login.
@@ -61,6 +62,20 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const { data: callerMembership, error: callerError } = await admin
+    .from("workspace_members")
+    .select("workspace_owner_id, permissions")
+    .eq("member_user_id", owner.id)
+    .limit(1)
+    .maybeSingle();
+  if (callerError) {
+    return NextResponse.json({ error: callerError.message }, { status: 500 });
+  }
+  const workspace = resolveTeamWorkspace(owner.id, callerMembership);
+  if ("error" in workspace) {
+    return NextResponse.json({ error: workspace.error }, { status: workspace.status });
+  }
+
   // 3. Create the member's auth user (email pre-confirmed).
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email,
@@ -99,7 +114,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { error: memberError } = await admin.from("workspace_members").insert({
-    workspace_owner_id: owner.id,
+    workspace_owner_id: workspace.ownerId,
     member_user_id: memberId,
     email,
     label,

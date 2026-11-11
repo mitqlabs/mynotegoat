@@ -1313,10 +1313,6 @@ export default function PatientsPage() {
     () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
     [filteredPatients],
   );
-  const movePatientToList = (patientId: string) => {
-    updatePatientRecordById(patientId, { onPatientList: true });
-  };
-
   const caseAttorneyOptions: CaseAttorneyOption[] = attorneyContacts.map((contact) => ({
     id: contact.id,
     name: contact.name,
@@ -2366,7 +2362,7 @@ export default function PatientsPage() {
         </div>
       </section>
 
-      <NewPatientIntakeSection onAddCase={(patientId) => openCasePopup({ source: "intake", patientId })} onMove={movePatientToList} patients={intakePatients} />
+      <NewPatientIntakeSection onAddCase={(patientId) => openCasePopup({ source: "intake", patientId })} patients={intakePatients} />
 
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">

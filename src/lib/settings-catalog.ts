@@ -49,7 +49,7 @@ export type SettingsSectionKey =
   | "diagnostics"
   // G.O.A.T. words & abbreviations — the editor lives on /settings/goat.
   | "goat"
-  // GOAT Page briefing board: which boxes, and how each one is arranged.
+  // G.O.A.T. Page briefing board: which boxes, and how each one is arranged.
   | "goatPage";
 
 export const settingsSearchCatalog: Array<{
@@ -150,8 +150,8 @@ export const settingsSearchCatalog: Array<{
   },
   {
     key: "goatPage",
-    title: "GOAT Page",
-    description: "Which boxes are on the GOAT Page, and what each box shows",
+    title: "G.O.A.T. Page",
+    description: "Which boxes are on the G.O.A.T. Page, and what each box shows",
     aliases: ["goat page", "briefing", "board", "boxes", "end of day", "handoff", "tomorrow", "case snapshot"],
   },
   // Macros wrapper + children
@@ -341,8 +341,10 @@ export const settingsSearchCatalog: Array<{
   },
 ];
 
-export const GOAT_SETTINGS_PAGE = { key: "goatPage", title: "G.O.A.T. Settings (answers, words)", href: "/settings/goat" } as const;
+export const GOAT_SETTINGS_PAGE = { key: "goat", title: "G.O.A.T.", href: "/settings/goat" } as const;
 
 export function settingsHref(key: SettingsSectionKey): string {
-  return key === "goat" ? "/settings/goat" : `/settings?section=${key}`;
+  if (key === "goat") return "/settings/goat#chat";
+  if (key === "goatPage") return "/settings/goat#goat-page";
+  return `/settings?section=${key}`;
 }

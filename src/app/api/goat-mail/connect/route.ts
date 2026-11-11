@@ -4,7 +4,7 @@ import { authorizeUrl, goatMailEnv, goatMailRedirectUri, signMailState } from "@
 
 async function beginConnect(request: NextRequest) {
   const env = goatMailEnv();
-  if (!env.configured) return NextResponse.json({ error: "GOAT Mail is not configured yet." }, { status: 404 });
+  if (!env.configured) return NextResponse.json({ error: "G.O.A.T. Mail is not configured yet." }, { status: 404 });
   const cfg = serverConfig();
   if (!cfg) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const admin = adminClient(cfg);

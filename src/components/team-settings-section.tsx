@@ -455,33 +455,31 @@ export function TeamSettingsSection() {
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
           ) : (
             <div className="gap-3 sm:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
-              {/* The account OWNER, shown automatically as Admin — no self
-                  sign-up. Only rendered for the owner themselves, so an
-                  office-admin member never sees the owner's identity here. */}
-              {isOwner && (
-              <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5">
+              {/* The office owner is always the first card. No Remove, and only the owner can change it. */}
+              <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5" data-team-owner>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold">
-                      {doctorName || "Admin"}
+                      {doctorName || "Owner"}
                       <span className="rounded-full bg-[var(--brand-primary)] px-1.5 py-0.5 text-[10px] font-bold text-white">
-                        ADMIN
+                        Owner
                       </span>
-                      <span className="text-[10px] font-semibold text-[var(--text-muted)]">You</span>
+                      {isOwner ? <span className="text-[10px] font-semibold text-[var(--text-muted)]">You</span> : null}
                     </p>
-                    <p className="text-xs text-[var(--text-muted)]">{currentUser.email}</p>
+                    {isOwner && currentUser.email ? <p className="text-xs text-[var(--text-muted)]">{currentUser.email}</p> : null}
                   </div>
-                  <label className="flex shrink-0 items-center gap-1.5" title="Schedule patients under yourself">
-                    <span className="text-[10px] font-semibold text-[var(--text-muted)]">Doctor</span>
-                    <ToggleSwitch
-                      checked={isDoctor(currentUser.id)}
-                      onChange={(on) => setDoctor(currentUser.id, doctorName || currentUser.email || "Admin", on)}
-                      ariaLabel="Admin is a doctor"
-                    />
-                  </label>
+                  {isOwner ? (
+                    <label className="flex shrink-0 items-center gap-1.5" title="Schedule patients under yourself">
+                      <span className="text-[10px] font-semibold text-[var(--text-muted)]">Doctor</span>
+                      <ToggleSwitch
+                        checked={isDoctor(currentUser.id)}
+                        onChange={(on) => setDoctor(currentUser.id, doctorName || currentUser.email || "Owner", on)}
+                        ariaLabel="Owner is a doctor"
+                      />
+                    </label>
+                  ) : null}
                 </div>
               </div>
-              )}
               {members.map((member) => (
                 <div
                   key={member.member_user_id}

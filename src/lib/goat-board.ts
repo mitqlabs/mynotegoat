@@ -1,5 +1,5 @@
 /**
- * GOAT Page briefing board. The layout is a per-person preference and is
+ * G.O.A.T. Page briefing board. The layout is a per-person preference and is
  * mirrored to that person's cloud row (user-prefs-cloud.ts). A browser
  * cache is only the local copy of that account setting.
  */
@@ -70,14 +70,14 @@ export type BoardBox = {
 };
 
 export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = {
-  "goat-mail": "GOAT Mail",
+  "goat-mail": "G.O.A.T. Mail",
   "appointment-check": "Appointment Check",
   "quick-biz": "Quick Biz",
   "case-review": "Case Review",
   schedule: "Today's Schedule",
   "tomorrow-schedule": "Tomorrow's Schedule",
   intake: "New Patient Intake",
-  "goat-answers": "GOAT Answers",
+  "goat-answers": "G.O.A.T. Answers",
   todos: "To-Do's & Alerts",
   "case-snapshot": "Case Snapshot",
   "end-of-day": "End of Day Handoff",
@@ -443,9 +443,14 @@ export function sortAppointments<T extends { startTime: string; appointmentType?
   });
 }
 
+/** Rows a box can be dragged to when it has no height limit of its own. Twice the old 14. */
+export const DEFAULT_MAX_H = 28;
+/** Highest row span the height setting or a drag can use. Twice the old 20. */
+export const MAX_BOX_H = 40;
+
 export function clampMaxH(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 14;
-  return Math.max(4, Math.min(20, Math.round(value)));
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_MAX_H;
+  return Math.max(4, Math.min(MAX_BOX_H, Math.round(value)));
 }
 
 export function rowFields(box: Pick<BoardBox, "fields">): RowField[] {

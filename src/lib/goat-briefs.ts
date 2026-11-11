@@ -77,13 +77,13 @@ export interface BriefAnswer {
 export const todoHref = (id: string) => `/patients?view=toDo&task=${encodeURIComponent(id)}`;
 export const TODO_PAGE_HREF = "/patients?view=toDo";
 
-export const CHIPS = ["GOAT Mail", "Today's Schedule", "Appointment Check", "Quick Biz", "Case Review"] as const;
+export const CHIPS = ["G.O.A.T. Mail", "Today's Schedule", "Appointment Check", "Quick Biz", "Case Review"] as const;
 /** Appointment Check, Quick Biz, and Case Review are for admins (workspace owner/admin). */
 export const ADMIN_BRIEFS = new Set<BriefKind>(["apptCheck", "business"]);
 export type BriefKind = "schedule" | "apptCheck" | "business";
-/** The greeting chips this person sees. GOAT Mail and Today's Schedule are for everyone. */
+/** The greeting chips this person sees. G.O.A.T. Mail and Today's Schedule are for everyone. */
 export function chipsFor(isAdmin: boolean): string[] {
-  return isAdmin ? [...CHIPS] : ["GOAT Mail", "Today's Schedule"];
+  return isAdmin ? [...CHIPS] : ["G.O.A.T. Mail", "Today's Schedule"];
 }
 export function briefAllowed(kind: BriefKind, isAdmin: boolean): boolean {
   return isAdmin || !ADMIN_BRIEFS.has(kind);

@@ -1,5 +1,5 @@
 /**
- * GOAT Page briefing board: default order, visit groups, and office statuses.
+ * G.O.A.T. Page briefing board: default order, visit groups, and office statuses.
  * Run: npx tsx scripts/tests/goat-board.test.ts
  */
 import assert from "node:assert/strict";
@@ -10,6 +10,9 @@ import {
   VISIT_GROUP_LABELS,
   appointmentVisible,
   dropRetiredBoxes,
+  DEFAULT_MAX_H,
+  MAX_BOX_H,
+  clampMaxH,
   defaultBoard,
   defaultTypePriority,
   matchesPeriod,
@@ -85,7 +88,7 @@ assert.match(ui, /isResizable=\{arrange\}/);
 assert.match(ui, /href=\{`\/patients\/\$\{patient.id\}`\}/);
 assert.match(ui, /nextOpenDayLabel/);
 assert.match(ui, /Tomorrow's Appointments/);
-assert.match(ui, /aria-label="GOAT Page settings"/);
+assert.match(ui, /aria-label="G.O.A.T. Page settings"/);
 assert.doesNotMatch(ui, /Waiting On/);
 assert.doesNotMatch(ui, /Open slots|Tomorrow's openings/);
 assert.doesNotMatch(ui, /aria-label=\{`Remove /);
@@ -101,7 +104,10 @@ const registry = readFileSync(new URL("../../src/lib/cloud-key-registry.ts", imp
 assert.match(registry, /"casemate\.goat-board-layout\.v1": "user"/);
 assert.match(registry, /"casemate\.goat-page-office-default\.v1": "workspace"/);
 const settingsPage = readFileSync(new URL("../../src/app/(portal)/settings/page.tsx", import.meta.url), "utf8");
-assert.match(settingsPage, /title="GOAT Page"/);
+assert.match(settingsPage, /href="\/settings\/goat"/);
+const goatSettings = readFileSync(new URL("../../src/app/(portal)/settings/goat/page.tsx", import.meta.url), "utf8");
+assert.match(goatSettings, /G\.O\.A\.T\. Page/);
+assert.match(goatSettings, /G\.O\.A\.T\. Mail/);
 
 const hours = getDefaultScheduleSettings();
 hours.officeHours = hours.officeHours.map((row) => (row.dayOfWeek === 2 ? { ...row, enabled: false } : row));
@@ -141,5 +147,17 @@ assert.equal(matchesPeriod({ matrix: { initialExam: "2025-03-01" } }, "this-year
 assert.equal(matchesPeriod({ dateOfLoss: "2025-01-02" }, "last-year", "2026-11-11"), true);
 assert.equal(matchesPeriod({}, "this-year", "2026-11-11"), false);
 assert.equal(matchesPeriod({}, "all", "2026-11-11"), true);
+
+assert.equal(DEFAULT_MAX_H, 28);
+assert.equal(MAX_BOX_H, 40);
+assert.equal(clampMaxH(undefined), 28);
+assert.equal(clampMaxH(40), 40);
+assert.equal(clampMaxH(41), 40);
+assert.equal(clampMaxH(16), 16);
+assert.equal(clampMaxH(3), 4);
+const boardSrc = readFileSync(new URL("../../src/components/goat-briefing-board.tsx", import.meta.url), "utf8");
+assert.match(boardSrc, /isResizable=\{arrange\}/);
+assert.match(boardSrc, /touch-pan-y/);
+assert.match(boardSrc, /saveBoard/);
 
 console.log("goat board ok");

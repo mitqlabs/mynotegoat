@@ -1,9 +1,10 @@
 /**
- * GOAT Mail triage. Rules only: a message lands in one category, or in
- * "GOAT Needs Your Answer" when two categories fit or the name is unclear.
+ * G.O.A.T. Mail triage. Rules only: a message lands in one category, or in
+ * "G.O.A.T. Needs Your Answer" when two categories fit or the name is unclear.
  * Nothing here talks to Microsoft. The mailbox read stays in the server route.
  */
 import { findDuplicateCases, duplicateDateIso, splitPatientName } from "@/lib/patient-duplicate";
+import { isObviouslyBadPatientName, referralNameFromSubject } from "@/lib/new-patient-intake";
 import { unionMerge } from "@/lib/kv-merge";
 import { notifyChange } from "@/lib/local-sync";
 import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
@@ -11,16 +12,19 @@ import { quickFillFromText, type QuickFillResult } from "@/lib/quick-fill";
 export const GOAT_MAIL_KEY = "casemate.goat-mail.v1";
 
 /** Shown when the server has no mailbox app yet. No setup steps. */
-export const GOAT_MAIL_SETUP_LINE = "GOAT Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, GOAT does not read any mailbox.";
+export const GOAT_MAIL_SETUP_LINE = "G.O.A.T. Mail isn't turned on for this office yet. The person who runs NoteGoat turns it on. Until then, G.O.A.T. does not read any mailbox.";
 
 /** Shown when the server is ready and this office has not connected a mailbox. */
-export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let GOAT read (never send) your email.";
+export const GOAT_MAIL_CONNECT_LINE = "Sign in with your office Outlook to let G.O.A.T. read (never send) your email.";
 
 /** Workspace settings row. The mail API writes it. Inbox is used when it is empty. */
 export const GOAT_MAIL_FOLDERS_KEY = "casemate.goat-mail-folders.v1";
 
 /** Optional Microsoft app-secret expiry. The mail API writes this row. */
 export const GOAT_MAIL_SECRET_KEY = "casemate.goat-mail-secret.v1";
+
+/** Editable mail buckets. The mail API writes this row. Missing means the built-in buckets. */
+export const GOAT_MAIL_BUCKETS_KEY = "casemate.goat-mail-buckets.v1";
 
 const MAIL_MONTHS = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "June", "July", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."] as const;
 
@@ -41,10 +45,10 @@ export function mailSecretDateLabel(iso: string): string {
 }
 
 export function mailSecretAlertText(iso: string): string {
-  return `GOAT Mail's Microsoft secret expires on ${mailSecretDateLabel(iso)}. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.`;
+  return `G.O.A.T. Mail's Microsoft secret expires on ${mailSecretDateLabel(iso)}. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.`;
 }
 
-export const GOAT_MAIL_SECRET_EXPIRED = "GOAT Mail's Microsoft secret has expired. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.";
+export const GOAT_MAIL_SECRET_EXPIRED = "G.O.A.T. Mail's Microsoft secret has expired. Create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel.";
 
 /** True when the date is today, already past, or no more than 30 days away. */
 export function mailSecretDue(expiresOn: string | null | undefined, today: Date): boolean {
@@ -94,7 +98,7 @@ export function mergeMailMessages(groups: GoatMailMessage[][], limit = 25): Goat
   return [...byId.values()].sort((a, b) => (b.receivedAt || "").localeCompare(a.receivedAt || "")).slice(0, limit);
 }
 
-export type GoatMailCategory = "new-patient" | "lien" | "rb" | "medicals" | "specialist" | "bounced" | "other";
+export type GoatMailCategory = string;
 
 export type GoatMailFlag = "unbooked" | "multi-passenger" | "second-crash";
 
@@ -108,12 +112,24 @@ export type GoatMailMessage = {
   body: string;
 };
 
+/** A new-patient email waiting in New Patient Intake. Saved for the office by message id. */
+export type MailReferralSnapshot = {
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  dateOfLoss?: string;
+  attorney?: string;
+  from?: string;
+  missing?: string[];
+};
+
 export type GoatMailDecision = {
   id: string;
   patientId?: string;
   category?: GoatMailCategory;
   resolved?: boolean;
   updatedAt: string;
+  referral?: MailReferralSnapshot;
 };
 
 export type GoatMailDraft = {
@@ -144,9 +160,72 @@ export type GoatMailRow = {
   patientId?: string;
   create: boolean;
   draft?: GoatMailDraft;
+  /** Parsed referral shown in New Patient Intake. Nothing is created until Add patient. */
+  referral?: GoatMailDraft & { from: string };
 };
 
-type PatientLike = { id: string; fullName: string; dateOfLoss?: string; deleted?: boolean };
+type PatientLike = {
+  id: string;
+  fullName: string;
+  dateOfLoss?: string;
+  deleted?: boolean;
+  phone?: string;
+  dob?: string;
+  /** Set when this chart was added from that G.O.A.T. Mail message. */
+  goatMailMessageId?: string;
+};
+
+/** Last 10 digits, so 305-295-7810 and (305) 295-7810 are the same phone. */
+export function mailPhoneKey(phone: string | undefined): string {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/**
+ * An existing chart for this referral: same name, and the same phone or the
+ * same date of birth. Name alone is not a match. A filler name never matches.
+ */
+export function matchExistingMailPatient<T extends PatientLike>(
+  list: T[],
+  input: { firstName: string; lastName: string; phone?: string; dob?: string },
+): T | undefined {
+  if (isObviouslyBadPatientName(input.firstName, input.lastName)) return undefined;
+  const phone = mailPhoneKey(input.phone);
+  const dob = duplicateDateIso(input.dob);
+  if (!phone && !dob) return undefined;
+  return list.find((patient) => {
+    if (patient.deleted || !sameName(patient, input.firstName, input.lastName)) return false;
+    const phoneHit = Boolean(phone) && mailPhoneKey(patient.phone) === phone;
+    const dobHit = Boolean(dob) && duplicateDateIso(patient.dob) === dob;
+    return phoneHit || dobHit;
+  });
+}
+
+export type MailIntakePlan =
+  | { action: "skip" }
+  | { action: "link"; patientId: string }
+  | { action: "create" };
+
+/**
+ * What to do with one email before any chart is created.
+ * The same message id is never created twice. A name+phone or name+DOB
+ * match is linked. A filler name such as "This" is skipped.
+ */
+export function planMailIntake(input: {
+  messageId: string;
+  draft: { firstName: string; lastName: string; phone?: string; dob?: string };
+  decisions: GoatMailDecision[];
+  patients: PatientLike[];
+}): MailIntakePlan {
+  if (input.decisions.some((row) => row.id === input.messageId && row.patientId)) return { action: "skip" };
+  const marked = input.patients.find((patient) => !patient.deleted && patient.goatMailMessageId === input.messageId);
+  if (marked) return { action: "link", patientId: marked.id };
+  if (isObviouslyBadPatientName(input.draft.firstName, input.draft.lastName)) return { action: "skip" };
+  const match = matchExistingMailPatient(input.patients, input.draft);
+  if (match) return { action: "link", patientId: match.id };
+  return { action: "create" };
+}
 type VisitLike = { patientId: string; date: string; status: string };
 
 const ACTION = /\b(need|needed|request|requested|send|sign|please|attach|attached)\b/i;
@@ -159,7 +238,7 @@ export function claimDocumentLabel(kind: ClaimDocument): string {
   return kind === "lop" ? "LOP" : "Lien";
 }
 
-export function mailCategoryLabel(category: GoatMailCategory, claim: ClaimDocument): string {
+export function mailCategoryLabel(category: string, claim: ClaimDocument): string {
   switch (category) {
     case "new-patient":
       return "New Patient referral";
@@ -178,23 +257,93 @@ export function mailCategoryLabel(category: GoatMailCategory, claim: ClaimDocume
   }
 }
 
-function signals(text: string, from: string): Set<GoatMailCategory> {
-  const found = new Set<GoatMailCategory>();
-  const bounced =
-    /mailer-daemon|postmaster/i.test(from) ||
-    /\b(undeliverable|delivery status notification|mail delivery failed|returned mail)\b/i.test(text);
-  if (bounced) {
-    found.add("bounced");
-    return found;
+export type MailBucket = {
+  id: string;
+  name: string;
+  keywords: string[];
+  /** Bounced also matches the sender address. */
+  matchFrom?: boolean;
+  /** Lien matches only when the message also asks for something. */
+  requireAction?: boolean;
+  /** Specialist matches only when the message also sounds like a report. */
+  requireReport?: boolean;
+};
+
+const BUCKET_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
+
+/** The buckets and keywords the rules started with. */
+export function defaultMailBuckets(): MailBucket[] {
+  return [
+    { id: "new-patient", name: "New Patient referral", keywords: ["new patient", "patient referral", "referral", "referred", "please schedule", "date of injury", "date of loss", "doi", "dol"] },
+    { id: "lien", name: "Lien / LOP request", keywords: ["lien", "lop", "letter of protection"], requireAction: true },
+    { id: "rb", name: "R&B / Report & Bill requested", keywords: ["r&b", "r & b", "r and b", "report and bill", "reports and bills"] },
+    { id: "medicals", name: "Medicals requested", keywords: ["medical records", "medicals", "records request"] },
+    { id: "specialist", name: "Specialist/imaging reply", keywords: ["mri", "x-ray", "x-rays", "xray", "xrays", "ct scan", "emg", "ncv", "radiology", "imaging"], requireReport: true },
+    { id: "bounced", name: "Bounced email", keywords: ["mailer-daemon", "postmaster", "undeliverable", "delivery status notification", "mail delivery failed", "returned mail"], matchFrom: true },
+    { id: "other", name: "Other", keywords: [] },
+  ];
+}
+
+export function resolveMailBuckets(saved: MailBucket[] | null | undefined): MailBucket[] {
+  return saved?.length ? saved : defaultMailBuckets();
+}
+
+export function normalizeMailBuckets(value: unknown): MailBucket[] | null {
+  if (!Array.isArray(value)) return null;
+  const buckets: MailBucket[] = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Partial<MailBucket>;
+    const id = typeof item.id === "string" ? item.id.trim().toLowerCase() : "";
+    const name = typeof item.name === "string" ? item.name.trim().slice(0, 80) : "";
+    if (!BUCKET_ID.test(id) || !name || seen.has(id)) continue;
+    seen.add(id);
+    const keywords = Array.isArray(item.keywords)
+      ? item.keywords.filter((word): word is string => typeof word === "string").map((word) => word.trim().toLowerCase()).filter(Boolean).slice(0, 40)
+      : [];
+    buckets.push({
+      id,
+      name,
+      keywords,
+      ...(item.matchFrom === true ? { matchFrom: true } : {}),
+      ...(item.requireAction === true ? { requireAction: true } : {}),
+      ...(item.requireReport === true ? { requireReport: true } : {}),
+    });
   }
-  if (/\b(new patient|patient referral|referr(?:al|ed)|please schedule|date of (?:injury|loss)|\bdoi\b|\bdol\b)\b/i.test(text)) found.add("new-patient");
-  if (/\b(lien|lop|letter of protection)\b/i.test(text) && ACTION.test(text)) found.add("lien");
-  if (/\b(r\s*&\s*b|r and b|reports? and bills?)\b/i.test(text)) found.add("rb");
-  if (/\b(medical records|medicals|records request)\b/i.test(text)) found.add("medicals");
-  if (/\b(mri|x-?rays?|xray|ct scan|emg|ncv|radiology|imaging)\b/i.test(text) && /\b(report|results?|findings?|impression|attached|enclosed)\b/i.test(text)) {
-    found.add("specialist");
+  return buckets.length ? buckets : null;
+}
+
+function keywordHit(text: string, keyword: string): boolean {
+  const cleaned = keyword.trim().toLowerCase();
+  if (!cleaned) return false;
+  const pattern = cleaned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\s+/g, "\\s+").replace(/\s+/g, "\\s+");
+  return new RegExp(`(?:^|[^a-z0-9])${pattern}(?:[^a-z0-9]|$)`, "i").test(text);
+}
+
+function bucketMatches(bucket: MailBucket, text: string, from: string): boolean {
+  if (bucket.id === "other" || !bucket.keywords.length) return false;
+  const hay = bucket.matchFrom ? `${from}\n${text}` : text;
+  if (!bucket.keywords.some((keyword) => keywordHit(hay, keyword))) return false;
+  if (bucket.requireAction && !ACTION.test(text)) return false;
+  if (bucket.requireReport && !/\b(report|results?|findings?|impression|attached|enclosed)\b/i.test(text)) return false;
+  return true;
+}
+
+/** Bucket ids this message fits. Bounced wins by itself. */
+export function matchMailBuckets(text: string, from: string, buckets: MailBucket[]): string[] {
+  const bounced = buckets.find((bucket) => bucket.id === "bounced");
+  if (bounced && bucketMatches(bounced, text, from)) return ["bounced"];
+  return buckets.filter((bucket) => bucket.id !== "bounced" && bucketMatches(bucket, text, from)).map((bucket) => bucket.id);
+}
+
+function bucketDisplayName(bucket: MailBucket | undefined, claim: ClaimDocument): string {
+  if (!bucket) return "Other";
+  const original = defaultMailBuckets().find((item) => item.id === bucket.id);
+  if (original && original.name === bucket.name && (bucket.id === "new-patient" || bucket.id === "lien" || bucket.id === "rb" || bucket.id === "medicals" || bucket.id === "specialist" || bucket.id === "bounced" || bucket.id === "other")) {
+    return mailCategoryLabel(bucket.id, claim);
   }
-  return found;
+  return bucket.name;
 }
 
 function patientLineCount(body: string): number {
@@ -238,15 +387,23 @@ export function triageGoatMail(input: {
   todayIso: string;
   claimDocument: ClaimDocument;
   decisions?: GoatMailDecision[];
+  buckets?: MailBucket[] | null;
 }): GoatMailRow[] {
   const decisions = new Map((input.decisions ?? []).map((row) => [row.id, row]));
+  const buckets = resolveMailBuckets(input.buckets);
   const rows: GoatMailRow[] = [];
   for (const message of input.messages) {
     const decision = decisions.get(message.id);
     if (decision?.resolved) continue;
     const text = readable(message.body);
-    const found = signals(readable(`${message.subject}\n${message.body}`).replace(/\s+/g, " "), message.from);
+    const found = new Set(matchMailBuckets(readable(`${message.subject}\n${message.body}`).replace(/\s+/g, " "), message.from, buckets));
     const fill = quickFillFromText(text, { todayIso: input.todayIso });
+    const fromSubject = referralNameFromSubject(message.subject);
+    if (fromSubject && !found.has("bounced")) found.add("new-patient");
+    if (fromSubject && isObviouslyBadPatientName(fill.firstName ?? "", fill.lastName ?? "")) {
+      fill.firstName = fromSubject.firstName;
+      fill.lastName = fromSubject.lastName;
+    }
     const chosen = decision?.category;
     const conflict = !chosen && found.size > 1 && !found.has("bounced");
     let category: GoatMailCategory = chosen ?? (found.size === 1 ? [...found][0] : "other");
@@ -254,7 +411,16 @@ export function triageGoatMail(input: {
     const severalPassengers = multiPassenger(message.body);
     const unclearName = nameUnclear(fill);
     const named = Boolean(fill.firstName && fill.lastName);
-    const live = input.patients.filter((patient) => !patient.deleted && named && sameName(patient, fill.firstName ?? "", fill.lastName ?? ""));
+    const badName = named && isObviouslyBadPatientName(fill.firstName ?? "", fill.lastName ?? "");
+    const linked = named && !badName
+      ? matchExistingMailPatient(input.patients, {
+          firstName: fill.firstName ?? "",
+          lastName: fill.lastName ?? "",
+          phone: fill.phone,
+          dob: fill.dob,
+        })
+      : undefined;
+    const live = input.patients.filter((patient) => !patient.deleted && named && !badName && sameName(patient, fill.firstName ?? "", fill.lastName ?? ""));
     const newDol = duplicateDateIso(fill.dateOfLoss);
     const duplicate = named
       ? findDuplicateCases(live, { firstName: fill.firstName ?? "", lastName: fill.lastName ?? "", dateOfLoss: fill.dateOfLoss })
@@ -264,7 +430,7 @@ export function triageGoatMail(input: {
       return Boolean(existing) && existing !== newDol;
     });
     const blankExisting = named && live.some((patient) => !duplicateDateIso(patient.dateOfLoss));
-    const needsName = category === "new-patient" && (!named || unclearName);
+    const needsName = category === "new-patient" && (!named || unclearName || badName);
     const needsWho = category === "new-patient" && named && live.length > 1 && !secondCrash && duplicate.length === 0;
     const needsCrash = category === "new-patient" && blankExisting && !secondCrash && duplicate.length === 0;
     const needsAnswer = conflict || needsName || needsWho || needsCrash || (severalPassengers && patientLineCount(message.body) >= 2 && !chosen);
@@ -272,9 +438,9 @@ export function triageGoatMail(input: {
     let choices: GoatMailChoice[] = [];
     if (conflict) {
       question = "Which is this?";
-      choices = [...found].map((id) => ({ id, label: mailCategoryLabel(id, input.claimDocument) }));
+      choices = [...found].map((id) => ({ id, label: bucketDisplayName(buckets.find((bucket) => bucket.id === id), input.claimDocument) }));
     } else if (needsName) {
-      question = unclearName ? "Which last name should GOAT use?" : "Who is the new patient?";
+      question = unclearName ? "Which last name should G.O.A.T. use?" : "Who is the new patient?";
     } else if (needsWho || needsCrash) {
       question = "Which patient?";
     } else if (needsAnswer) {
@@ -298,6 +464,8 @@ export function triageGoatMail(input: {
       !unclearName &&
       duplicate.length === 0 &&
       !blankExisting &&
+      !badName &&
+      !linked &&
       !decision?.patientId &&
       patientLineCount(message.body) < 2;
     const draft: GoatMailDraft | undefined = canCreate
@@ -315,7 +483,7 @@ export function triageGoatMail(input: {
     rows.push({
       id: message.id,
       category,
-      label: needsAnswer && conflict ? "Needs your answer" : mailCategoryLabel(category, input.claimDocument),
+      label: needsAnswer && conflict ? "Needs your answer" : bucketDisplayName(buckets.find((bucket) => bucket.id === category), input.claimDocument),
       subject: message.subject || "(no subject)",
       from: message.from,
       receivedAt: message.receivedAt,
@@ -324,25 +492,84 @@ export function triageGoatMail(input: {
       needsAnswer,
       question,
       choices,
-      patientId: decision?.patientId ?? (duplicate[0]?.id),
+      patientId: decision?.patientId ?? duplicate[0]?.id ?? linked?.id,
       create: canCreate,
+      referral: category === "new-patient"
+        ? {
+            firstName: fill.firstName ?? "",
+            lastName: fill.lastName ?? "",
+            phone: fill.phone,
+            dob: fill.dob,
+            dateOfLoss: fill.dateOfLoss ?? "",
+            attorney: fill.attorney,
+            from: message.from,
+          }
+        : undefined,
       draft,
     });
   }
   return rows;
 }
 
+function referralSnapshot(value: unknown): MailReferralSnapshot | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<MailReferralSnapshot>;
+  const firstName = typeof row.firstName === "string" ? row.firstName : "";
+  const lastName = typeof row.lastName === "string" ? row.lastName : "";
+  const missing = Array.isArray(row.missing) ? row.missing.filter((item): item is string => typeof item === "string") : undefined;
+  return {
+    firstName,
+    lastName,
+    ...(typeof row.phone === "string" && row.phone ? { phone: row.phone } : {}),
+    ...(typeof row.dateOfLoss === "string" && row.dateOfLoss ? { dateOfLoss: row.dateOfLoss } : {}),
+    ...(typeof row.attorney === "string" && row.attorney ? { attorney: row.attorney } : {}),
+    ...(typeof row.from === "string" && row.from ? { from: row.from } : {}),
+    ...(missing?.length ? { missing } : {}),
+  };
+}
+
 function normalizeDecisions(value: unknown): GoatMailDecision[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((row): row is GoatMailDecision => !!row && typeof row === "object" && typeof (row as GoatMailDecision).id === "string")
-    .map((row) => ({
-      id: row.id,
-      ...(typeof row.patientId === "string" ? { patientId: row.patientId } : {}),
-      ...(row.category === "new-patient" || row.category === "lien" || row.category === "rb" || row.category === "medicals" || row.category === "specialist" || row.category === "bounced" || row.category === "other" ? { category: row.category } : {}),
-      ...(row.resolved === true ? { resolved: true } : {}),
-      updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
-    }));
+    .map((row) => {
+      const referral = referralSnapshot(row.referral);
+      return {
+        id: row.id,
+        ...(typeof row.patientId === "string" ? { patientId: row.patientId } : {}),
+        ...(typeof row.category === "string" && BUCKET_ID.test(row.category) ? { category: row.category } : {}),
+        ...(row.resolved === true ? { resolved: true } : {}),
+        ...(referral ? { referral } : {}),
+        updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : "",
+      };
+    });
+}
+
+/** Keep a pending referral for the office, keyed by the email id. A dismissal or a created chart is left as it is. */
+export function rememberMailReferral(
+  records: GoatMailDecision[],
+  id: string,
+  snapshot: MailReferralSnapshot,
+  now: string,
+): GoatMailDecision[] {
+  const prior = records.find((row) => row.id === id);
+  if (prior?.patientId || prior?.resolved) return records;
+  return [...records.filter((row) => row.id !== id), { ...prior, id, category: prior?.category ?? "new-patient", referral: snapshot, updatedAt: now }];
+}
+
+/** Local decisions merged with the office cloud copy, so two computers see the same message. */
+export async function reloadMailDecisions(): Promise<GoatMailDecision[]> {
+  const local = loadMailDecisions();
+  if (typeof window === "undefined") return local;
+  try {
+    const kv = await import("@/lib/kv-cloud");
+    const remote = await kv.fetchKvValue<unknown>(GOAT_MAIL_KEY).catch(() => null);
+    const merged = mergeMailDecisions(local, remote);
+    window.localStorage.setItem(GOAT_MAIL_KEY, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return local;
+  }
 }
 
 export function loadMailDecisions(): GoatMailDecision[] {

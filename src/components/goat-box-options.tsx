@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import {
   ROW_FIELDS,
   clampMaxH,
+  MAX_BOX_H,
   defaultTypePriority,
   groupsFor,
   itemShown,
@@ -204,7 +205,7 @@ export function BoxOptions({
             Max height
             <input
               className="w-24 rounded-lg border border-[var(--line-soft)] px-2 py-1 text-sm font-normal"
-              max={20}
+              max={MAX_BOX_H}
               min={4}
               onChange={(event) => onChange({ ...box, maxH: clampMaxH(Number(event.target.value)) })}
               type="number"

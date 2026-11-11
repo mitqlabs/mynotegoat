@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/tests/goat-greeting.test.ts
  */
 import assert from "node:assert/strict";
-import { GOAT_MONTHS, goatGreeting, goatGreetingDate } from "../../src/lib/goat-greeting";
+import { GOAT_MONTHS, goatGreeting, goatGreetingDate, goatWelcomeLine } from "../../src/lib/goat-greeting";
 
 assert.deepEqual(
   [...GOAT_MONTHS],
@@ -27,6 +27,10 @@ for (let month = 0; month < 12; month++) {
 }
 assert.equal(goatGreetingDate(new Date(2026, 10, 11)), "Wednesday, Nov. 11, 2026");
 assert.equal(goatGreetingDate(new Date(2026, 5, 5)), "Friday, June 5, 2026");
+assert.equal(goatWelcomeLine(new Date(2026, 10, 11, 9, 0)), "Good Morning! ☀️ Happy Wednesday, Nov. 11, 2026");
+assert.equal(goatWelcomeLine(new Date(2026, 10, 11, 13, 0)), "Good Afternoon! 🌤️ Happy Wednesday, Nov. 11, 2026");
+assert.equal(goatWelcomeLine(new Date(2026, 10, 11, 18, 0)), "Good Evening! 🌙 Happy Wednesday, Nov. 11, 2026");
+assert.equal(goatWelcomeLine(new Date(2026, 5, 5, 10, 0)), "Good Morning! ☀️ Happy Friday, June 5, 2026");
 assert.equal(goatGreeting(new Date(2026, 5, 5, 11, 59).getHours()), "Good Morning");
 assert.equal(goatGreeting(new Date(2026, 5, 5, 12, 0).getHours()), "Good Afternoon");
 assert.equal(goatGreeting(new Date(2026, 5, 5, 16, 59).getHours()), "Good Afternoon");

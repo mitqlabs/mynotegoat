@@ -4,7 +4,7 @@
  * The form applies the result onto the same draft, so the duplicate check
  * (name + date of loss) runs on its own.
  */
-import { parseIntakeText, type ParsedIntake } from "@/lib/new-patient-intake";
+import { parseIntakeText, stripReferralNoise, type ParsedIntake } from "@/lib/new-patient-intake";
 import { to12hLabel } from "@/lib/time-12h";
 
 export type QuickFillResult = {
@@ -38,7 +38,8 @@ export function quickFillFromText(
   raw: string,
   opts: { todayIso: string; attorneys?: string[] },
 ): QuickFillResult {
-  const parsed: ParsedIntake = parseIntakeText(raw, opts);
+  const cleaned = stripReferralNoise(raw);
+  const parsed: ParsedIntake = parseIntakeText(cleaned, opts);
   const d = parsed.draft;
   const out: QuickFillResult = { ask: [...parsed.ask] };
   if (d.firstName) out.firstName = d.firstName;
@@ -49,21 +50,21 @@ export function quickFillFromText(
   if (d.apptDate) out.evalDate = isoToMdy(d.apptDate);
   if (d.apptTime) out.evalTime = to12hLabel(d.apptTime);
   if (!out.evalDate) {
-    const visit = /\b(?:first visit|initial(?:\s+(?:exam|eval|evaluation))?|new patient (?:eval|visit))\b[^0-9]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})(?:[^0-9]{0,16}(\d{1,2}(?::\d{2})?\s*(?:am|pm)))?/i.exec(raw);
+    const visit = /\b(?:first visit|initial(?:\s+(?:exam|eval|evaluation))?|new patient (?:eval|visit))\b[^0-9]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})(?:[^0-9]{0,16}(\d{1,2}(?::\d{2})?\s*(?:am|pm)))?/i.exec(cleaned);
     if (visit) {
       out.evalDate = padDate(visit[1]);
       if (visit[2]) out.evalTime = visit[2].replace(/\s+/g, " ").trim().toUpperCase();
     }
   }
 
-  const dob = /\b(?:dob|d\.o\.b\.|date of birth|born)\b[^0-9]{0,12}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/i.exec(raw);
+  const dob = /\b(?:dob|d\.o\.b\.|date of birth|born)\b[^0-9]{0,12}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/i.exec(cleaned);
   if (dob) out.dob = padDate(dob[1]);
 
-  const street = /\b(\d{1,6}\s+[A-Za-z0-9.'’\- ]{2,40}?\s(?:Blvd|Boulevard|St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Way|Ct|Court))\b/i.exec(raw);
+  const street = /\b(\d{1,6}\s+[A-Za-z0-9.'’\- ]{2,40}?\s(?:Blvd|Boulevard|St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Way|Ct|Court))\b/i.exec(cleaned);
   if (street) out.addressStreet = street[1].replace(/\s+/g, " ").trim();
-  const unit = /\b(?:apt|apartment|unit|ste|suite|#)\s*([A-Za-z0-9\-]+)\b/i.exec(raw);
+  const unit = /\b(?:apt|apartment|unit|ste|suite|#)\s*([A-Za-z0-9\-]+)\b/i.exec(cleaned);
   if (unit) out.addressUnit = unit[1];
-  const city = /\b([A-Za-z][A-Za-z .'-]{1,30}),\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b/.exec(raw);
+  const city = /\b([A-Za-z][A-Za-z .'-]{1,30}),\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b/.exec(cleaned);
   if (city) {
     out.addressCity = city[1].trim();
     out.addressState = city[2];
