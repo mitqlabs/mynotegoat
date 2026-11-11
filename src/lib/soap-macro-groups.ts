@@ -1,8 +1,41 @@
 /**
- * SOAP macro chips, option A: question-style chips (MVC HX, Vitals…) sit
- * under "History", body-part chips under "Body regions". History stays
- * visually quieter so the region the doctor reaches for reads first.
+ * SOAP macro chips. Subjective is one "Complaints" group (Headaches, then
+ * the body regions, then any chips the office added). Other sections still
+ * split question-style chips under "History" and body-part chips under
+ * "Body regions". History stays visually quieter.
  */
+
+/** Subjective chip order. Anything else the office adds follows these. */
+export const COMPLAINT_CHIP_ORDER = [
+  "Headaches",
+  "Cervical",
+  "Thoracic",
+  "Lumbar",
+  "Chest",
+  "Shoulder",
+  "Arm/Forearm",
+  "Elbow",
+  "Wrist/Hand",
+  "Hip",
+  "Thigh",
+  "Knee",
+  "Lower Leg",
+  "Ankle/Foot",
+];
+
+function complaintKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+const COMPLAINT_RANK = new Map(COMPLAINT_CHIP_ORDER.map((name, index) => [complaintKey(name), index]));
+
+/** Headaches and the body-region chips first; office-added chips keep their order after that. */
+export function orderComplaintMacros<T extends { buttonName: string }>(macros: T[]): T[] {
+  return macros
+    .map((macro, index) => ({ macro, index, rank: COMPLAINT_RANK.get(complaintKey(macro.buttonName)) ?? 1000 }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((row) => row.macro);
+}
 
 const BODY_REGION_WORDS = new Set([
   "head",
@@ -50,7 +83,7 @@ export function isBodyRegionMacroName(name: string): boolean {
 }
 
 export type SoapMacroGroup<T> = {
-  label: "History" | "Body regions";
+  label: "History" | "Body regions" | "Complaints";
   /** History chips are lighter so they don't compete with the region row. */
   quiet: boolean;
   macros: T[];
