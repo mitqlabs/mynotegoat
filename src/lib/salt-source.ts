@@ -58,7 +58,7 @@ export function hasSoapContent(e: SaltCandidate, sections?: readonly string[]): 
   return (e.macroRuns ?? []).some((run) => !sections || sections.includes(run.section));
 }
 
-/** Default Copy From / SALT source: newest prior visit that has content. */
+/** Default prior note shown under the editor: newest prior visit that has content. */
 export function pickSaltSource<T extends SaltCandidate>(
   encounters: readonly T[],
   patientId: string,

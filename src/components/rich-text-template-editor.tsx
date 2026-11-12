@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from "react";
 import { writeDraft } from "@/lib/draft-recovery";
+import { collapseMirroredHtml } from "@/lib/macro-run-list";
 
 export interface RichTextTemplateEditorHandle {
   focus: () => void;
@@ -271,6 +272,13 @@ export const RichTextTemplateEditor = forwardRef<
     }
     // Crash-safe draft, debounced. The CURRENT html is captured
     // immediately so the pending flush always has the latest value.
+    // A doubled insert is the same markup twice. Collapse it in the DOM
+    // before React state (and the chip list) can record both copies.
+    const rawHtml = editor.innerHTML;
+    const collapsed = collapseMirroredHtml(rawHtml);
+    if (collapsed !== rawHtml.trim() && collapsed !== rawHtml) {
+      editor.innerHTML = collapsed;
+    }
     const raw = editor.innerHTML;
     pendingDraftHtmlRef.current = raw;
     if (draftDebounceRef.current) {
