@@ -59,6 +59,8 @@ import {
   normalizeCompliance,
 } from "@/lib/compliance";
 import { createPatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { PatientFolderListPage } from "@/components/patient-folder-live";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -566,6 +568,13 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"], discharge
 }
 
 export default function PatientsPage() {
+  // Folder preview replaces this list with one row per person. The switch
+  // defaults off, so production still renders the case list below.
+  if (patientFoldersEnabled()) return <PatientFolderListPage />;
+  return <LegacyPatientsPage />;
+}
+
+export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | "cases" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // When a patient page navigates here via Save & Close, it appends
@@ -2010,6 +2019,8 @@ export default function PatientsPage() {
     return `${fmt(today)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
   }, []);
 
+  const openHref = (id: string) => (mode === "cases" ? `/cases/${id}` : `/patients/${id}`);
+
   return (
     <div className="space-y-5">
       {printPickerFor && (
@@ -2093,13 +2104,20 @@ export default function PatientsPage() {
       )}
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">All Patients Workspace</h3>
+          <div>
+            <h3 className="text-xl font-semibold">{mode === "cases" ? "Case List" : "All Patients Workspace"}</h3>
+            {mode === "cases" && (
+              <p className="mt-1 max-w-3xl text-sm text-[var(--text-muted)]">
+                Same as today&apos;s Patient List, one row per case. Clicking the name opens that case. Phone and address still come from the patient.
+              </p>
+            )}
+          </div>
           <button
             className="btn btn-primary"
             onClick={openNewPatientModal}
             type="button"
           >
-            New Patient
+            {mode === "cases" ? "New Case" : "New Patient"}
           </button>
         </div>
 
@@ -2435,7 +2453,7 @@ export default function PatientsPage() {
                           <td key={colId} className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <Link
-                                href={`/patients/${patient.id}`}
+                                href={openHref(patient.id)}
                                 className={`min-w-0 font-semibold text-[var(--brand-primary)] underline ${
                                   multiLocation ? "block w-40 shrink-0 truncate sm:w-56" : ""
                                 }`}
@@ -2748,7 +2766,7 @@ export default function PatientsPage() {
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <Link href={`/patients/${item.patientId}`} className="font-semibold text-[var(--brand-primary)] underline">
+                            <Link href={openHref(item.patientId)} className="font-semibold text-[var(--brand-primary)] underline">
                               {item.patientName}
                             </Link>
                             {item.note && <p className="text-xs text-[var(--text-muted)]">{item.note}</p>}
@@ -3054,7 +3072,7 @@ export default function PatientsPage() {
                       <div className="min-w-0 flex-1">
                         <Link
                           className="text-base font-bold text-[var(--brand-primary)] hover:underline"
-                          href={`/patients/${entry.id}`}
+                          href={openHref(entry.id)}
                         >
                           {entry.fullName}
                         </Link>
@@ -3355,7 +3373,7 @@ export default function PatientsPage() {
               {newPatientBookingIssue && (
                 <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
                   {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
-                  <Link className="text-[var(--brand-primary)] underline" href={`/patients/${newPatientBookingIssue.patientId}`}>Open patient</Link>
+                  <Link className="text-[var(--brand-primary)] underline" href={openHref(newPatientBookingIssue.patientId)}>Open patient</Link>
                 </div>
               )}
               {newPatientMessage && <p className="text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>}

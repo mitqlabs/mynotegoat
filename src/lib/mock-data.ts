@@ -1,4 +1,6 @@
 import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { splitPersonPatch } from "@/lib/patient-folder-guard";
 import { caseNumberStampFor } from "@/lib/case-number";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { complianceLabel, loadComplianceOptions, normalizeCompliance, type ComplianceField } from "@/lib/compliance";
@@ -793,6 +795,30 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
   const existingPatient = patients.find((entry) => entry.id === normalizedPatientId);
   if (!existingPatient) {
     return null;
+  }
+
+  // Folder preview: person fields are saved on the patient folder, not copied
+  // onto this case row. With the switch off, splitPersonPatch returns the
+  // patch unchanged.
+  if (patientFoldersEnabled()) {
+    const split = splitPersonPatch(patch);
+    if (split.hasPerson) {
+      const person = split.person;
+      void import("@/lib/patient-folder-runtime").then((mod) =>
+        mod.savePersonForCase(normalizedPatientId, {
+          fullName: typeof person.fullName === "string" ? person.fullName : existingPatient.fullName,
+          dob: typeof person.dob === "string" ? person.dob : existingPatient.dob,
+          phone: typeof person.phone === "string" ? person.phone : existingPatient.phone,
+          email: typeof person.email === "string" ? person.email : (existingPatient.email ?? ""),
+          address: typeof person.address === "string" ? person.address : (existingPatient.address ?? ""),
+          sex: typeof person.sex === "string" ? person.sex : (existingPatient.sex ?? ""),
+          maritalStatus: typeof person.maritalStatus === "string" ? person.maritalStatus : (existingPatient.maritalStatus ?? ""),
+          alerts: Array.isArray(person.alerts) ? person.alerts.filter((item): item is string => typeof item === "string") : (existingPatient.alerts ?? []),
+        }),
+      );
+      if (Object.keys(split.casePatch).length === 0) return existingPatient;
+      patch = split.casePatch as UpdatePatientRecordPatch;
+    }
   }
 
   const nextPatient: PatientRecord = {
