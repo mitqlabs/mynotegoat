@@ -85,9 +85,15 @@ assert.match(page, /initialExam: newPatientDraft\.isCashPatient \? "" : reviewed
 assert.match(page, /data-testid="new-patient-add-case"/);
 assert.match(page, /intake-add-case|onAddCase/);
 assert.match(intake, /data-testid="intake-add-case"/);
-for (const id of ["case-attorney", "case-attorney-phone", "case-doi", "case-number", "case-exam-date", "case-exam-time", "case-popup-save"]) {
+for (const id of ["case-attorney-phone", "case-doi", "case-number", "case-exam-date", "case-exam-time", "case-popup-save"]) {
   assert.ok(popup.includes(`data-testid="${id}"`), id);
 }
+assert.match(popup, /selectTestId="case-attorney"/);
+assert.match(popup, /nameTestId="case-attorney-name"/);
 assert.match(popup, /formatUsPhoneInput\(match\.phone\)/);
+assert.match(popup, /SELF_ATTORNEY_VALUE/);
+const picker = readFileSync(new URL("../../src/components/attorney-firm-select.tsx", import.meta.url), "utf8");
+assert.match(picker, /data-testid=\{selectTestId\}/);
+assert.match(picker, /SELF \(self-represented\)|SELF_ATTORNEY_LABEL/);
 
 console.log("case-popup ok");

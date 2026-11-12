@@ -39,6 +39,8 @@ import {
 import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { AttorneyEmailCopy } from "@/components/attorney-email-copy";
+import { AttorneyFirmSelect } from "@/components/attorney-firm-select";
+import { compareAttorneyPickerNames, isSelfRepresentedAttorney, SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import { ContactEmailLine, findEmailContact } from "@/components/contact-email-line";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
 import { useCaseNotesText } from "@/hooks/use-case-note-entries";
@@ -1574,7 +1576,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () =>
       contacts
         .filter((contact) => normalizeLookupValue(contact.category) === "attorney")
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((a, b) => compareAttorneyPickerNames(a.name, b.name)),
     [contacts],
   );
   const imagingCenterContacts = useMemo(
@@ -3021,10 +3023,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // patient-page rollup no longer renders.
 
   const matchedAttorneyContact = useMemo(
-    () =>
-      attorneyContacts.find(
-        (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(attorney),
-      ) ?? null,
+    () => {
+      // SELF is not a firm. A contact named "Self" must not fill the phone.
+      if (isSelfRepresentedAttorney(attorney)) return null;
+      return (
+        attorneyContacts.find(
+          (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(attorney),
+        ) ?? null
+      );
+    },
     [attorney, attorneyContacts],
   );
   const specialistReferralTemplate = useMemo(
@@ -3191,7 +3198,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleAttorneyChange = (nextValue: string) => {
-    setAttorney(nextValue);
+    setAttorney(isSelfRepresentedAttorney(nextValue) ? SELF_ATTORNEY_VALUE : nextValue);
     setAttorneyModalError("");
     if (showAddAttorneyPrompt || showAddAttorneyForm) {
       setShowAddAttorneyPrompt(false);
@@ -3201,15 +3208,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
   };
 
-  const handleAttorneyBlur = () => {
-    const trimmed = attorney.trim();
+  const handleAttorneyBlur = (raw?: string) => {
+    const trimmed = (raw ?? attorney).trim();
     if (!trimmed) {
       return;
     }
-    if (normalizeLookupValue(trimmed) === "self") {
+    if (isSelfRepresentedAttorney(trimmed)) {
+      if (attorney !== SELF_ATTORNEY_VALUE) setAttorney(SELF_ATTORNEY_VALUE);
       return;
     }
-    if (matchedAttorneyContact) {
+    const knownFirm = attorneyContacts.some(
+      (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(trimmed),
+    );
+    if (knownFirm) {
       return;
     }
     const isDismissed = dismissedAttorneyDrafts.some(
@@ -5703,13 +5714,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {!isCashPatient && showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                list="attorney-contacts"
-                ref={attorneyInputRef}
-                onBlur={handleAttorneyBlur}
-                onChange={(event) => handleAttorneyChange(event.target.value)}
-                value={attorney}
+              <AttorneyFirmSelect
+                attorney={attorney}
+                attorneys={attorneyContacts}
+                nameInputRef={attorneyInputRef}
+                nameTestId="patient-attorney-name"
+                onCustomBlur={handleAttorneyBlur}
+                onCustomName={handleAttorneyChange}
+                onSelect={(choice) => {
+                  if (choice.type === "firm") handleAttorneyChange(choice.name);
+                  else if (choice.type === "self") handleAttorneyChange(SELF_ATTORNEY_VALUE);
+                  else handleAttorneyChange("");
+                }}
+                selectTestId="patient-attorney"
               />
             </label>
           )}
@@ -9996,12 +10013,6 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           </div>
         </div>
       )}
-
-      <datalist id="attorney-contacts">
-        {attorneyContacts.map((contact) => (
-          <option key={contact.id} value={contact.name} />
-        ))}
-      </datalist>
 
       {showAddDxModal && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
