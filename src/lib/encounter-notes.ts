@@ -631,11 +631,10 @@ export async function forceSaveAllEncountersToCloud(
   saveEncounterNoteRecords(records);
 
   // 2. Bulk-upsert everything to cloud, WITH visible status signals so the
-  // user gets the familiar blue "Saving to cloud..." pill during the
-  // write and the green "Cloud Saved ✓" pill when it succeeds. Without
-  // these signals the Save Encounters button looked silent even when
-  // the save was working — terrifying for a user who's worried their
-  // data isn't persisting.
+  // circular G.O.A.T. button shows Saving during the write and Saved when
+  // it succeeds. Without these signals the Save Encounters button looked
+  // silent even when the save was working — terrifying for a user who's
+  // worried their data isn't persisting.
   const { reportCloudWriteStart, reportCloudWriteSuccess, reportCloudWriteError } =
     await import("@/lib/storage-sync-interceptor");
   try {
