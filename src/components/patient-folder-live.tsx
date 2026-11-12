@@ -23,7 +23,7 @@ import {
   type FolderGeneralNote,
   type FolderGeneralTodo,
 } from "@/lib/patient-folder-store";
-import { saveFolderPerson } from "@/lib/patient-folder-runtime";
+import { saveFolderPerson, savePatientPhoto } from "@/lib/patient-folder-runtime";
 import {
   PatientFolderCaseView,
   PatientFolderListView,
@@ -102,11 +102,13 @@ export function PatientFolderListPage() {
     return grouping.folders
       .map((folder) => {
         const members = folder.caseIds.map((id) => byId.get(id)).filter((row): row is PatientRecord => Boolean(row));
+        const cloud = loadFolderCloud();
         return {
           id: folder.id,
           name: folder.person.fullName,
           dob: folder.person.dob,
           phone: folder.person.phone,
+          photo: cloud.people[folder.id]?.photoDataUrl || undefined,
           active: members.filter((row) => row.caseStatus === "Active").length,
           submitted: members.filter((row) => row.caseStatus === "Submitted").length,
           paid: members.filter((row) => row.caseStatus === "Paid").length,
@@ -175,6 +177,7 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
     email: person.email,
     address: person.address,
     alerts: person.alerts,
+    photo: override?.photoDataUrl || undefined,
     todos,
     notes,
     cases: folder.caseIds
@@ -242,6 +245,18 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
           if (created) window.location.assign(`/cases/${created.id}`);
         }}
         onOpenCase={(caseId) => window.location.assign(`/cases/${caseId}`)}
+        onSavePhoto={(dataUrl) => {
+          void savePatientPhoto(folder.id, dataUrl, {
+            fullName: folder.name,
+            dob: folder.dob,
+            phone: folder.phone,
+            email: folder.email,
+            address: folder.address,
+            sex: folder.sex,
+            maritalStatus: folder.maritalStatus,
+            alerts: folder.alerts,
+          });
+        }}
         onSavePerson={(next) => {
           void saveFolderPerson(folder.id, {
             fullName: `${next.lastName.trim()}, ${next.firstName.trim()}`,
@@ -280,13 +295,14 @@ export function PatientFolderCasePage({ caseId }: { caseId: string }) {
     text: entry.text,
   }));
   const person = found.folder.person;
+  const photo = loadFolderCloud().people[found.folder.id]?.photoDataUrl || undefined;
   return (
     <div className="bg-[#e7f2f8] p-4 lg:p-6">
       <PatientFolderCaseView
         onBack={() => window.location.assign("/cases")}
         onViewPatient={() => window.location.assign(`/patients/${found.folder!.id}`)}
         patientName={person.fullName}
-        person={{ dob: person.dob, phone: person.phone, email: person.email, address: person.address }}
+        person={{ dob: person.dob, phone: person.phone, email: person.email, address: person.address, photo }}
         row={row}
       />
     </div>

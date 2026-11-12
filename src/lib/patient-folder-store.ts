@@ -11,6 +11,7 @@
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
 import { unionMerge } from "@/lib/kv-merge";
+import { isPatientPhotoDataUrl, isPatientPhotoPath } from "@/lib/patient-photo";
 
 export const PATIENT_FOLDERS_KEY = "casemate.patient-folders.v1";
 
@@ -24,6 +25,10 @@ export type FolderPersonRecord = {
   sex: string;
   maritalStatus: string;
   alerts: string[];
+  /** Cropped square JPEG. Shared by every case. Empty when no photo is set. */
+  photoDataUrl?: string;
+  /** Optional storage object path. Empty until the patient-photos bucket exists. */
+  photoPath?: string;
   updatedAt: string;
 };
 
@@ -87,6 +92,8 @@ export function normalizeFolderCloud(value: unknown): PatientFolderCloud {
         sex: typeof person.sex === "string" ? person.sex : "",
         maritalStatus: typeof person.maritalStatus === "string" ? person.maritalStatus : "",
         alerts: Array.isArray(person.alerts) ? person.alerts.filter((item): item is string => typeof item === "string") : [],
+        photoDataUrl: typeof person.photoDataUrl === "string" && isPatientPhotoDataUrl(person.photoDataUrl) ? person.photoDataUrl : "",
+        photoPath: typeof person.photoPath === "string" && isPatientPhotoPath(person.photoPath) ? person.photoPath : "",
         updatedAt: typeof person.updatedAt === "string" ? person.updatedAt : "",
       };
     }

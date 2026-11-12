@@ -19,6 +19,8 @@ import {
   proveFolderNumbers,
   resolveCaseMoney,
 } from "../../src/lib/patient-folders";
+import { clampSquareCrop, initialSquareCrop, isPatientPhotoDataUrl, isPatientPhotoPath, moveSquareCrop } from "../../src/lib/patient-photo";
+import { normalizeFolderCloud } from "../../src/lib/patient-folder-store";
 import type { PatientRecord } from "../../src/lib/mock-data";
 
 const envKey = "NEXT_PUBLIC_PATIENT_FOLDERS";
@@ -188,5 +190,50 @@ const smithPaid = 0 + 0 + 9800 + 7150;
 assert.equal(smithBilled, 37550);
 assert.equal(smithPaid, 16950);
 assert.equal(smithBilled - smithPaid, 20600);
+
+const idCard = initialSquareCrop(1000, 600);
+assert.equal(idCard.size, idCard.size);
+assert.equal(idCard.x + idCard.size <= 1000 && idCard.y + idCard.size <= 600, true);
+assert.equal(idCard.size, Math.round(600 * 0.62));
+const moved = moveSquareCrop(1000, 600, idCard, -5000, -5000, 1);
+assert.equal(moved.x, 0);
+assert.equal(moved.y, 0);
+assert.equal(moved.size, idCard.size);
+const tiny = clampSquareCrop(30, 30, { x: -10, y: 80, size: 5 });
+assert.equal(tiny.size, 30);
+assert.equal(tiny.x, 0);
+assert.equal(tiny.y, 0);
+
+const jpeg = "data:image/jpeg;base64," + "a".repeat(40);
+assert.equal(isPatientPhotoDataUrl(jpeg), true);
+assert.equal(isPatientPhotoDataUrl("data:text/plain;base64,aaaa"), false);
+assert.equal(isPatientPhotoPath("user/patient-photos/pf-smith.jpg"), true);
+assert.equal(isPatientPhotoPath("../secret"), false);
+
+const stored = normalizeFolderCloud({
+  people: {
+    "pf-1": {
+      folderId: "pf-1",
+      fullName: "Smith, John",
+      dob: "03/14/1980",
+      phone: "",
+      email: "",
+      address: "",
+      sex: "",
+      maritalStatus: "",
+      alerts: [],
+      photoDataUrl: jpeg,
+      photoPath: "user/patient-photos/pf-1.jpg",
+      updatedAt: "2026-11-12T00:00:00.000Z",
+    },
+  },
+  notes: [],
+  todos: [],
+});
+assert.equal(stored.people["pf-1"].photoDataUrl, jpeg);
+assert.equal(stored.people["pf-1"].photoPath, "user/patient-photos/pf-1.jpg");
+assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /capture="environment"/);
+assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload ID/);
+assert.match(readFileSync("supabase/patient_photos_bucket.sql", "utf8"), /DO NOT run this on the production project/);
 
 console.log("patient folders OK");

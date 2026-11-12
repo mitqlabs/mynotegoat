@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ageOn } from "@/lib/age";
+import { PatientPhotoControl } from "@/components/patient-photo-cropper";
 import { formatDobDisplay, formatFolderMoney, formatPhoneDisplay, splitFullName } from "@/lib/patient-folders";
 
 export type FolderListRow = {
@@ -13,6 +14,7 @@ export type FolderListRow = {
   submitted: number;
   paid: number;
   total: number;
+  photo?: string;
 };
 
 export type FolderNote = { id: string; date: string; author: string; text: string };
@@ -53,6 +55,7 @@ export type FolderDetail = {
   todos: FolderTodo[];
   notes: FolderNote[];
   cases: FolderCaseRow[];
+  photo?: string;
 };
 
 const FIELD = "w-full rounded-xl border border-[#d5e4ef] bg-white px-3 py-2 text-sm text-[#172a3a] outline-none focus:border-[#0d79bf]";
@@ -82,13 +85,6 @@ function CountBubble({ n, tone }: { n: number; tone: "green" | "amber" | "blue" 
           ? "bg-amber-100 text-amber-700"
           : "bg-sky-100 text-sky-700";
   return <span className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${color}`}>{n}</span>;
-}
-
-function initials(name: string): string {
-  const { firstName, lastName } = splitFullName(name);
-  const a = (firstName[0] || lastName[0] || "").toUpperCase();
-  const b = (lastName[0] || "").toUpperCase();
-  return firstName ? `${a}${b}` : a;
 }
 
 function moneyTone(kind: "billed" | "paid" | "owed"): string {
@@ -197,7 +193,11 @@ export function PatientFolderListView({
               {shown.map((row) => (
                 <tr className="border-t border-[#e6f0f6]" key={row.id}>
                   <td className="px-4 py-3">
-                    <button className="font-semibold text-[#0d79bf]" onClick={() => onOpen(row.id)} type="button">
+                    <button className="inline-flex items-center gap-2 font-semibold text-[#0d79bf]" onClick={() => onOpen(row.id)} type="button">
+                      {row.photo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img alt="" className="h-7 w-7 rounded-md object-cover" src={row.photo} />
+                      ) : null}
                       {row.name}
                     </button>
                   </td>
@@ -232,6 +232,7 @@ export function PatientFolderPageView({
   onSavePerson,
   onAddNote,
   onAddTodo,
+  onSavePhoto,
 }: {
   folder: FolderDetail;
   onBack: () => void;
@@ -240,6 +241,7 @@ export function PatientFolderPageView({
   onSavePerson: (next: { firstName: string; lastName: string; dob: string; phone: string; sex: string; maritalStatus: string; email: string; address: string }) => void;
   onAddNote: (text: string) => void;
   onAddTodo: (title: string, due: string) => void;
+  onSavePhoto: (dataUrl: string) => void;
 }) {
   const parts = splitFullName(folder.name);
   const [person, setPerson] = useState({
@@ -267,7 +269,7 @@ export function PatientFolderPageView({
       </button>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0d79bf] text-sm font-semibold text-white">{initials(folder.name)}</div>
+          <PatientPhotoControl name={folder.name} onSave={onSavePhoto} photo={folder.photo} />
           <div>
             <h2 className="text-2xl font-semibold text-[#172a3a]">{folder.name}</h2>
             <p className="text-sm text-[#6b8496]">
@@ -481,7 +483,7 @@ export function PatientFolderCaseView({
   onBack,
 }: {
   patientName: string;
-  person: { dob: string; phone: string; email: string; address: string };
+  person: { dob: string; phone: string; email: string; address: string; photo?: string };
   row: FolderCaseRow;
   onViewPatient: () => void;
   onBack: () => void;
@@ -508,7 +510,12 @@ export function PatientFolderCaseView({
       </div>
 
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-[#b7cfe0] bg-[#f7fbfe] px-4 py-3">
-        <div>
+        <div className="flex items-start gap-3">
+          {person.photo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="" className="h-12 w-12 rounded-xl object-cover" src={person.photo} />
+          ) : null}
+          <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[#6b8496]">From the patient page</p>
           <p className="mt-1 text-sm text-[#172a3a]">
             <span className="font-semibold">DOB</span> {formatDobDisplay(person.dob)}
@@ -520,6 +527,7 @@ export function PatientFolderCaseView({
           <p className="text-sm text-[#172a3a]">
             <span className="font-semibold">Address</span> {person.address || "—"}
           </p>
+          </div>
         </div>
         <button className="rounded-full border border-[#d5e4ef] bg-white px-4 py-2 text-sm font-semibold text-[#0d79bf]" onClick={onViewPatient} type="button">
           Edit on patient page

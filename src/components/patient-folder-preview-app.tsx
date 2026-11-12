@@ -181,7 +181,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
       ...counts(folder.cases),
     }));
     return [
-      { id: smith.id, name: smith.name, dob: smith.dob, phone: smith.phone, ...smithCounts },
+      { id: smith.id, name: smith.name, dob: smith.dob, phone: smith.phone, photo: smith.photo, ...smithCounts },
       ...OTHER_ROWS,
       ...created,
     ];
@@ -341,6 +341,9 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
                 setScreen({ name: "case", id: caseId });
               }
             }}
+            onSavePhoto={(dataUrl) => {
+              updateFolder(activeFolder.id, (folder) => ({ ...folder, photo: dataUrl }));
+            }}
             onSavePerson={(next) => {
               updateFolder(activeFolder.id, (folder) => ({
                 ...folder,
@@ -361,7 +364,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
             onBack={() => setScreen({ name: "cases" })}
             onViewPatient={() => setScreen({ name: "patient", id: smith.id })}
             patientName={smith.name}
-            person={{ dob: smith.dob, phone: smith.phone, email: smith.email, address: smith.address }}
+            person={{ dob: smith.dob, phone: smith.phone, email: smith.email, address: smith.address, photo: smith.photo }}
             row={activeCase}
           />
         )}

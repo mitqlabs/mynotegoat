@@ -103,12 +103,29 @@ export async function savePersonForCase(
 export async function saveFolderPerson(folderId: string, person: Omit<FolderPersonRecord, "folderId" | "updatedAt">): Promise<void> {
   if (!patientFoldersEnabled()) return;
   const cloud = loadFolderCloud();
+  const previous = cloud.people[folderId];
   cloud.people[folderId] = {
     ...person,
     folderId,
     alerts: [...person.alerts],
+    photoDataUrl: person.photoDataUrl !== undefined ? person.photoDataUrl : (previous?.photoDataUrl ?? ""),
+    photoPath: person.photoPath !== undefined ? person.photoPath : (previous?.photoPath ?? ""),
     updatedAt: new Date().toISOString(),
   };
   await saveFolderCloud(cloud);
   installFolderPersonOverlay();
+}
+
+/** Save the cropped square on the person. Every case for this folder reads it. */
+export async function savePatientPhoto(
+  folderId: string,
+  dataUrl: string,
+  person: Omit<FolderPersonRecord, "folderId" | "updatedAt" | "photoDataUrl" | "photoPath">,
+): Promise<void> {
+  if (!patientFoldersEnabled()) return;
+  const { isPatientPhotoDataUrl } = await import("@/lib/patient-photo");
+  if (!isPatientPhotoDataUrl(dataUrl)) return;
+  const { uploadPatientPhoto } = await import("@/lib/patient-photo-storage");
+  const photoPath = await uploadPatientPhoto(folderId, dataUrl);
+  await saveFolderPerson(folderId, { ...person, photoDataUrl: dataUrl, ...(photoPath ? { photoPath } : {}) });
 }
