@@ -31,7 +31,7 @@ const names = [
 
 const groups = groupSoapMacros(names.map((buttonName, index) => ({ id: String(index), buttonName })));
 assert.deepEqual(groups.map((group) => group.label), ["History", "Body regions"]);
-assert.equal(groups[0].quiet, true);
+assert.equal(groups[0].quiet, false);
 assert.equal(groups[1].quiet, false);
 assert.deepEqual(
   groups[0].macros.map((macro) => macro.buttonName),
@@ -43,8 +43,10 @@ assert.deepEqual(
 );
 assert.equal(isBodyRegionMacroName("Pain Intake"), false);
 assert.equal(isBodyRegionMacroName("Follow-Up Plan"), false);
-assert.match(soapMacroChipClass(true, false), /text-\[var\(--text-muted\)\]/);
+assert.equal(soapMacroChipClass(true, false), soapMacroChipClass(false, false));
 assert.match(soapMacroChipClass(false, false), /font-semibold/);
+assert.doesNotMatch(soapMacroChipClass(true, false), /text-\[var\(--text-muted\)\]/);
+assert.match(soapMacroChipClass(true, true), /opacity-40/);
 
 const ordered = orderComplaintMacros(
   ["Knee", "Extra chip", "Headaches", "Cervical", "Ankle/Foot"].map((buttonName) => ({ buttonName })),

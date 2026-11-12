@@ -969,7 +969,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "An older visit is missing from the Encounters list",
         steps: [
-          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the Copy From dropdown.",
+          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the View prior dropdown.",
           "If a visit still shows + Enc., wait a second or two for the patient's notes to load before clicking it.",
           "Do not start a second note for it. The note is not lost: older notes are simply not kept on this computer, and they load when you pick the patient.",
         ],
@@ -980,7 +980,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Change the type on the appointment (Edit Appointment, the Appointments page, or the type menu in the Encounters table).",
           "The note for that visit follows automatically, so a New Patient visit no longer carries an Office Visit note.",
-          "Copy From shows each visit with its appointment's type.",
+          "View prior shows each visit with its appointment's type.",
         ],
         watchOut: "If two notes exist for the same day, NoteGoat leaves them alone rather than guess which one to rename.",
       },
@@ -991,13 +991,13 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Type straight into the box, use macros, or mix both.",
           "A macro that asks questions opens a popup titled with just the macro's name (for example Medical & Family HX). Fill in the answers and save.",
           "In Plan, one-paragraph macros run together: tap Begin Decompression, then a second-region macro, and the second text follows on the same paragraph after one space.",
-          "Copy From pulls a previous visit's section across when today is much the same.",
+          "To reuse a previous visit, pick it under View prior (that only shows it underneath), then click Copy and the section name, or Copy SOAP. NoteGoat asks before it replaces text already on the note.",
         ],
       },
       {
         heading: "Read the last visit while you write",
         steps: [
-          "Pick a previous visit in Copy From.",
+          "Pick a previous visit under View prior. That only changes the note shown underneath. It does not change the note you are writing.",
           "The whole of that note appears underneath in four columns — Subjective, Objective, Assessment, Plan — with the one you're typing outlined.",
           "Drag the grey divider between the two to give whichever half you need the room.",
         ],
