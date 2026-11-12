@@ -67,8 +67,8 @@ export function resumeSync() {
 
 // Sync status callback for UI indicator.
 // Callbacks now receive an optional detail payload (error message or a
-// "saved-at" timestamp) so the UI can show the actual reason for a failure
-// and flash a green "Cloud Saved!" confirmation after a successful push.
+// "saved-at" timestamp) so the UI can show the actual reason for a failure.
+// A successful push is what turns the circular G.O.A.T. button green.
 export type SyncStatus = "syncing" | "synced" | "error";
 export interface SyncStatusDetail {
   /** Source that reported the status — used for log correlation. */
@@ -120,12 +120,12 @@ export function reportCloudWriteError(source: string, error: unknown) {
 
 /**
  * Companion to reportCloudWriteError for cloud-table write SUCCESSES. Flips
- * the UI indicator to "synced" so the green "Cloud Saved ✓" pill flashes.
+ * the UI indicator to "synced" so the circular G.O.A.T. button flashes Saved.
  * Without this, dedicated-table dual-writes (patients, appointments,
  * encounter-notes) succeeded silently — the user had no positive signal
  * that their save actually made it to the cloud. That's scary when you
  * just hit "Save Encounters" and the button just returns a plain message
- * without the familiar confirmation pill.
+ * without the goat flashing Saved.
  */
 export function reportCloudWriteSuccess(source: string, opts: { force?: boolean } = {}) {
   if (!opts.force) {
@@ -141,7 +141,7 @@ export function reportCloudWriteSuccess(source: string, opts: { force?: boolean 
 /**
  * Flip the indicator to "syncing" for dedicated-table writes — mirrors
  * what the blob autosave path already does. Call this right before the
- * cloud op starts so the user sees the blue "Saving to cloud..." pill
+ * cloud op starts so the circular G.O.A.T. button shows Saving
  * while the write is in flight.
  */
 export function reportCloudWriteStart(source: string) {

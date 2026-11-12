@@ -5,31 +5,53 @@ import { getSaveQueueState, subscribeSaveQueue, type SaveQueueState } from "@/li
 
 const SERVER_STATE: SaveQueueState = { waiting: 0, offline: false };
 
+export type SaveBadgeInput = {
+  status: "synced" | "syncing" | "error";
+  unsyncedNotes: number;
+  errorDismissed: boolean;
+};
+
+/** What the corner badge should say. Saving and Saved are not here — the circular button shows those. */
+export type SaveBadgeView =
+  | { kind: "waiting"; offline: boolean }
+  | { kind: "offline" }
+  | { kind: "error" }
+  | null;
+
+export function saveBadgeView(props: SaveBadgeInput, queue: SaveQueueState): SaveBadgeView {
+  const pending = queue.waiting + props.unsyncedNotes;
+  if (pending > 0 || (queue.offline && props.status === "error")) {
+    return { kind: "waiting", offline: queue.offline };
+  }
+  if (queue.offline) return { kind: "offline" };
+  if (props.status === "error" && !props.errorDismissed) return { kind: "error" };
+  return null;
+}
+
 /**
- * The ONE save indicator for the whole app (bottom-right):
- *   Saving…  →  Saved ✓  (fades)   ·   Waiting to sync (offline / retrying)
- *   ·   Couldn't save (real error, with Retry + details).
+ * Problem-only save indicator, sitting above the circular G.O.A.T. button.
+ * Saving and Saved already show on that button, so this badge stays quiet
+ * for those. It speaks up when a sync is not done:
+ *   Waiting to sync (queued writes / notes that failed a cloud check)
+ *   Offline
+ *   Couldn't save (real error, with Retry + details)
  * Individual screens no longer show their own "Saving / Saved" text.
  */
-export function SaveBadge(props: {
-  status: "synced" | "syncing" | "error";
-  savedFlash: boolean;
-  unsyncedNotes: number;
+export function SaveBadge(props: SaveBadgeInput & {
   errorMessage: string | null;
-  errorDismissed: boolean;
   retrying: boolean;
   onRetry: () => void | Promise<void>;
   onDismissError: () => void;
 }) {
   const q = useSyncExternalStore(subscribeSaveQueue, getSaveQueueState, () => SERVER_STATE);
   const [showDetail, setShowDetail] = useState(false);
-  const pending = q.waiting + props.unsyncedNotes;
+  const view = saveBadgeView(props, q);
 
   const base =
     "pointer-events-auto inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition-colors";
 
   let body: React.ReactNode = null;
-  if (pending > 0 || (q.offline && props.status === "error")) {
+  if (view?.kind === "waiting") {
     body = (
       <div
         className={`${base} bg-amber-500`}
@@ -37,8 +59,8 @@ export function SaveBadge(props: {
         title="Your changes are kept on this computer and will sync automatically when the connection is back. Keep this tab open."
       >
         <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-        <span>Waiting to sync{q.offline ? " · offline" : ""}</span>
-        {!q.offline && (
+        <span>Waiting to sync{view.offline ? " · offline" : ""}</span>
+        {!view.offline && (
           <button
             className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] hover:bg-white/30 disabled:opacity-50"
             disabled={props.retrying}
@@ -50,13 +72,13 @@ export function SaveBadge(props: {
         )}
       </div>
     );
-  } else if (q.offline) {
+  } else if (view?.kind === "offline") {
     body = (
       <div className={`${base} bg-slate-500`} title="No internet connection. Changes will sync when you're back online.">
         Offline
       </div>
     );
-  } else if (props.status === "error" && !props.errorDismissed) {
+  } else if (view?.kind === "error") {
     body = (
       <div className="pointer-events-auto max-w-sm rounded-2xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
         <div className="flex items-center gap-2">
@@ -91,11 +113,9 @@ export function SaveBadge(props: {
         )}
       </div>
     );
-  } else if (props.status === "syncing") {
-    body = <div className={`${base} bg-blue-600`}>Saving…</div>;
-  } else if (props.savedFlash) {
-    body = <div className={`${base} bg-emerald-600`}>Saved ✓</div>;
   }
+
+  if (!body) return null;
 
   return (
     <div
