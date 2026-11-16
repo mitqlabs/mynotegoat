@@ -89,12 +89,6 @@ function CountBubble({ n, tone }: { n: number; tone: "green" | "amber" | "blue" 
   return <span className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${color}`}>{n}</span>;
 }
 
-function moneyTone(kind: "billed" | "paid" | "owed"): string {
-  if (kind === "paid") return "text-emerald-700";
-  if (kind === "owed") return "text-[#0d79bf]";
-  return "text-[#172a3a]";
-}
-
 export function PatientFolderListView({
   rows,
   onOpen,
@@ -267,10 +261,19 @@ export function PatientFolderPageView({
   const [note, setNote] = useState("");
   const [addingCase, setAddingCase] = useState(false);
   const [caseDraft, setCaseDraft] = useState({ attorney: "", dateOfInjury: "" });
-  const billed = folder.cases.reduce((sum, row) => sum + row.billed, 0);
-  const paid = folder.cases.reduce((sum, row) => sum + row.paid, 0);
-  const owed = billed - paid;
   const age = ageOn(folder.dob, "2026-11-11");
+  const caseMoney = folder.cases.map((row) => {
+    const balance = row.billed - row.paid;
+    const settled = row.status === "Paid";
+    return { reduced: settled ? balance : null, outstanding: settled ? null : balance };
+  });
+  const moneyTotals = { billed: 0, paid: 0, reduced: 0, outstanding: 0 };
+  folder.cases.forEach((row, index) => {
+    moneyTotals.billed += row.billed;
+    moneyTotals.paid += row.paid;
+    moneyTotals.reduced += caseMoney[index].reduced ?? 0;
+    moneyTotals.outstanding += caseMoney[index].outstanding ?? 0;
+  });
   return (
     <div className="space-y-5">
       <button className="text-sm font-semibold text-[var(--text-muted)]" onClick={onBack} type="button">
@@ -339,12 +342,6 @@ export function PatientFolderPageView({
           </div>
         </form>
       )}
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <Stat label="Total billed" value={formatFolderMoney(billed)} tone="billed" />
-        <Stat label="Total paid" value={formatFolderMoney(paid)} tone="paid" />
-        <Stat label="Total owed" value={formatFolderMoney(owed)} tone="owed" />
-      </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <section className="panel-card p-4">
@@ -426,11 +423,12 @@ export function PatientFolderPageView({
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Billed</th>
                 <th className="px-4 py-3 text-right">Paid</th>
-                <th className="px-4 py-3 text-right">Owed</th>
+                <th className="px-4 py-3 text-right">Reduced</th>
+                <th className="px-4 py-3 text-right">Outstanding</th>
               </tr>
             </thead>
             <tbody>
-              {folder.cases.map((row) => (
+              {folder.cases.map((row, index) => (
                 <tr className="border-t border-[var(--line-soft)]" key={row.id}>
                   <td className="px-4 py-3">
                     <button className="font-semibold text-[var(--brand-primary)] underline" onClick={() => onOpenCase(row.id)} type="button">
@@ -443,9 +441,21 @@ export function PatientFolderPageView({
                   <td className="px-4 py-3"><StatusPill status={row.status} /></td>
                   <td className="px-4 py-3 text-right">{formatFolderMoney(row.billed)}</td>
                   <td className="px-4 py-3 text-right">{formatFolderMoney(row.paid)}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${moneyTone("owed")}`}>{formatFolderMoney(row.owed)}</td>
+                  <td className="px-4 py-3 text-right">{caseMoney[index].reduced === null ? "" : formatFolderMoney(caseMoney[index].reduced)}</td>
+                  <td className="px-4 py-3 text-right">{caseMoney[index].outstanding === null ? "" : formatFolderMoney(caseMoney[index].outstanding)}</td>
                 </tr>
               ))}
+              <tr className="border-t border-[var(--line-soft)] font-semibold">
+                <td className="px-4 py-3">Totals</td>
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.billed)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.paid)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.reduced)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.outstanding)}</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -457,15 +467,6 @@ export function PatientFolderPageView({
         }))}
       />
     </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone: "billed" | "paid" | "owed" }) {
-  return (
-    <section className="panel-card px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-[#6b8496]">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${moneyTone(tone)}`}>{value}</p>
-    </section>
   );
 }
 
