@@ -352,7 +352,7 @@ The patient page, from top to bottom in `patient-case-file.tsx`, is the list bel
 | Quick Glance, including the Appointments box | The same counts as the chips | The Appointments panel is hidden |
 | X-Ray referrals: center, regions, laterality, flex/ext, sent / done / received / reviewed dates, patient refused, prior study, and the findings text typed on that row | The typed findings for the region they asked about. An uploaded report is not opened unless they say yes. | `patients` view is off |
 | MRI / CT referrals: the same dates and regions, the CT checkbox, and the findings text typed on that row | The typed results first. See Imaging results below. | `patients` view is off. A file is read only after they agree, and only if they can see Patient Files. |
-| Specialist referrals: who, dates, recommendations, refused, whether imaging findings were included | The referral in sentences | `patients` view is off |
+| Specialist referrals, including Pain Management: the specialist name, sent / scheduled / completed / report received / report reviewed dates, the Recommendations box, and refused | Recommendations typed on that row. A report file is not opened unless they say yes. | `patients` view is off |
 | Appointments / Encounters list, linked note signed or not, charges on those encounters | Visit rows and whether a note is signed. Charge amounts only with billing figures. | The Appointments panel is hidden. SOAP text is not in this list. |
 | Appointment chips | Per type: Scheduled / Checked In / Checked Out / Canceled. No Show is added only when that count is above zero, which is how the chip is drawn. `Reschedule` is not one of those four numbers. If any exist, say that count in its own sentence. Example: "Lumbar Spinal Decompression is 10 scheduled, 0 checked in, 0 checked out, and 2 canceled." | The Appointments panel is hidden |
 | Case Flow / To-Do | Open follow-ups and to-dos for this patient | The Case Flow & To-Do panel is hidden |
@@ -367,15 +367,31 @@ The patient page, from top to bottom in `patient-case-file.tsx`, is the list bel
 | Questionnaires received | The form cards on the chart | `patients` view is off |
 | SOAP note text | Read-only, from `goat_get_soap`, and only when the office SOAP switch is on and this person can view Encounters | Otherwise say a note exists, with the date and whether it is signed, and do not quote it |
 
-### Imaging results
+### Results: imaging and specialists
 
-"What were the MRI results for Zhora?" is answered from the patient page first.
+X-ray, MRI, CT, Pain Management, and every other specialist use one results pattern. The answer is always two labeled parts.
 
-1. Read the findings the office typed on the MRI section. That is the findings text on each MRI row (`referral.findings`). CT is the same panel with **CT instead of MRI** checked, so a CT question uses those rows. If a row's findings box is empty, use the older MRI / CT findings field on the page when `usableLegacyMriFindings` still treats it as real findings. A facility name stored in that old field is not a result. Split the text by the region headers the page writes, such as "Cervical:" or "Left Knee:", and answer for the region they asked about. Quote that stored text in a full sentence: "Zhora's MRI of the cervical spine showed disc herniation at C5-6." if those words are what was typed. Do not add a finding from another region, and do not open a file when this typed text exists.
-2. If nothing is typed, look only at file names in Patient Files. Do not read the PDF yet. If a file looks like an MRI report, say exactly: "There are no updated results on the patient page. Would you like me to check the patient files?" Wait. On yes, and only if this person can view My Files and the Patient Files panel, read that file the way an upload is already read (PDF text, or OCR for a scan). Summarize it in full sentences and label the source: "From the uploaded file MRI Report.pdf, Zhora's cervical MRI showed…" Then offer the download from **Download a file**. On no, stop. The file text is not written back into the MRI findings box. Saving it onto the page would be a separate preview and a separate yes. This read never does that.
-3. If nothing is typed and no report file is there, say so: "There are no MRI results on Zhora's chart, and no MRI report in the patient files."
+**Patient Page:** the words typed on the chart, quoted. If that box is empty, this part says nothing is typed on the patient page.
 
-X-ray uses the same three steps. Typed text is the findings on each X-ray row, then the older X-ray findings field if the rows are empty. The file question uses the same words. A left-knee X-ray whose typed text says there was no fracture or subluxation is "Zhora's X-ray of the left knee showed no fracture or subluxation." CT uses the MRI panel rows that are marked CT, then a CT file only after the same yes.
+**Patient Files:** a summary of the uploaded report, and only after the person agrees to check the files. Before that yes, this part does not quote the PDF. If a matching file is sitting there, ask exactly: "There are no updated results on the patient page. Would you like me to check the patient files?" If no file is there, this part says no report is in the patient files.
+
+When both the typed text and a file exist, still show both labels. Patient Page has the quote. Patient Files asks, and after yes it has the summary, labeled as coming from that file, plus the download. When the person asks to see both, use the same two labels. A missing side is stated under its label. It is not left blank and it is not invented.
+
+Do not open the file on the first answer. On yes, and only if this person can view My Files and the Patient Files panel, read it the way an upload is already read (PDF text, or OCR for a scan). Offer the download from **Download a file**. Do not write that file text back into the findings or recommendations box. Putting it on the page is a separate preview and a separate yes. This read never does that.
+
+Where the typed words live:
+
+- **MRI.** `findings` on each MRI row. CT is the same panel with **CT instead of MRI** checked, so a CT question uses those rows. If the row is empty, the older MRI / CT findings field counts when `usableLegacyMriFindings` still treats it as real findings. A facility name in that old field is not a result. Split by the region headers the page writes, such as "Cervical:" or "Left Knee:".
+- **X-ray.** `findings` on each X-ray row, then the older X-ray findings field if those rows are empty. A left-knee note that says there was no fracture or subluxation is quoted as "Zhora's X-ray of the left knee showed no fracture or subluxation."
+- **Pain Management and other specialists.** There is no separate findings field. Pain Management is a Specialist contact subcategory, and the row stores the provider in `specialist` and the typed note in `recommendations` (the Recommendations box). The same box is used for orthopedics, neurology, and every other specialist. Dates on that row are sent, scheduled, completed, report received, and report reviewed. If the row's recommendations are empty, the older `matrix.specialistRecommendations` field on the page is the fallback. A Pain Management question uses the rows whose contact is in that subcategory, or whose name the person used.
+
+A complete answer looks like this:
+
+Patient Page: "Zhora's MRI of the cervical spine showed disc herniation at C5-6."
+
+Patient Files: "From the uploaded file MRI Report.pdf, the report describes a disc herniation at C5-6."
+
+If the page is empty and they have not said yes yet, Patient Page says nothing is typed there, and Patient Files is the question about checking the files. If neither the page nor a file has anything, both labels say so.
 
 **`goat_appointment_check`**, **`goat_quick_biz`**, **`goat_case_review`**, **`goat_case_snapshot`**, **`goat_end_of_day`**
 
@@ -540,8 +556,9 @@ These are acceptance examples. Each answer names the location scope. The words a
 | How many visits has Mike completed? | `goat_visits` kind `completed` | The `Check Out` count, with the first and last of those dates. |
 | How many no-shows does Mike have? | `goat_visits` kind `missed` | The `No Show` count and those dates. |
 | What appointments does Mike have from 11/1/2026 to 11/30/2026? | `goat_visits` kind `range` | Those visits in date order, each with its status, in complete sentences. |
-| What were the MRI results for Zhora? | `goat_case_read` imaging results | The typed MRI findings, in a full sentence, per region. If none are typed and a report file exists, ask before opening it: "There are no updated results on the patient page. Would you like me to check the patient files?" |
-| What did Zhora's left knee X-ray show? | `goat_case_read` imaging results | "Zhora's X-ray of the left knee showed no fracture or subluxation." Only when that is the typed findings. The same ask-before-file rule applies. |
+| What were the MRI results for Zhora? | `goat_case_read` results | Two labels. Patient Page quotes the typed findings. Patient Files is filled only after they agree to check the files. |
+| What did Zhora's left knee X-ray show? | `goat_case_read` results | Patient Page: "Zhora's X-ray of the left knee showed no fracture or subluxation." when that text is typed. Patient Files says whether a report is there, and summarizes it only after yes. |
+| What did pain management recommend for Zhora? | `goat_case_read` results | Patient Page quotes the Recommendations box on that specialist row. Patient Files waits for yes before reading an uploaded PM report. |
 | How do Zhora's lumbar decompression appointments break down? | `goat_case_read` appointments chip | "Lumbar Spinal Decompression is 10 scheduled, 0 checked in, 0 checked out, and 2 canceled." |
 | Download the MRI referral for Zhora. | `goat_download_file` | The saved PDF as a download. If none is saved, ask before generating one. It is not emailed or faxed. |
 | Who hasn't been seen in 30 days? | `goat_list_cases` mode `not_seen_in_days` | Name, last kept visit, location. |
@@ -670,7 +687,7 @@ Phase 1 questions
 - "How many visits has Mike completed?" counts `Check Out` only. "How many no-shows" counts `No Show` only.
 - A reply that is only "3 left, last 11/28" fails the sentence check.
 - A case read for a Staff login with billing hidden includes the X-ray sentence and the appointment chip, and does not include a balance. A hidden Notes panel does not return general notes. SOAP text is absent while the office SOAP switch is off.
-- "What were the MRI results?" with typed cervical findings quotes that text and does not open a file. With an empty findings box and an uploaded MRI PDF, the first reply is the question about checking patient files, and the PDF is not read. A yes summarizes it as from the uploaded file and offers the download. The findings box is unchanged. X-ray and CT follow the same steps.
+- "What were the MRI results?" with typed cervical findings quotes that text under Patient Page and does not open a file. With an empty findings box and an uploaded MRI PDF, Patient Files asks before reading, and the PDF is not read. A yes summarizes it as from the uploaded file and offers the download. The findings box is unchanged. X-ray, CT, Pain Management, and other specialists follow the same two labels. Pain Management text is the specialist row's `recommendations` field.
 - "Download the MRI referral for Zhora" returns a resource for a file in that patient's folder. A second patient with the same name asks. No saved PDF does not generate one until confirm, and no email or fax is sent. The audit row has the file id and not the signed link.
 
 Phase 2
