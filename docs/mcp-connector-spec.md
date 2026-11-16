@@ -12,8 +12,8 @@ Web G.O.A.T. and AI G.O.A.T. stay separate. Web G.O.A.T. is the page, the briefi
 2. The connector exposes chosen actions and chosen fields. It never returns source code, the git repo, environment variables, secrets, service-role keys, delete-password hashes, mail refresh tokens, or another person's session.
 3. Each person signs in with their own NoteGoat login. The connector sees only what that person's role and office membership already allow inside NoteGoat.
 4. Reads and writes run as that person. Row Level Security applies. The service-role key is not a back door. The one existing exception is called out under G.O.A.T. Mail.
-5. Phase 1 is read-only. Phase 2 writes are create-patient and add-case only. Both reuse the functions the app already uses. Both stop and wait for an explicit yes. Nothing is created on a guess.
-6. The connector never edits an existing SOAP note. It never sends mail, deletes mail, or marks mail read.
+5. Phase 1 is read-only. Phase 2 writes are create-patient, add-case, and an MRI referral. All three reuse the functions the app already uses. All three stop and wait for an explicit yes. Nothing is created on a guess.
+6. The connector never edits an existing SOAP note. It never sends mail, deletes mail, or marks mail read. "Send an MRI" means fill the referral and save the PDF on the chart. It never emails or faxes that PDF. The person sends it themselves.
 7. The feature ships off. An office owner turns it on for that office. Until both switches are on, the route does not exist for that office.
 8. Web G.O.A.T. and AI G.O.A.T. stay separate. NoteGoat does not grow an AI chat box. Morning, end-of-day, Monday, and Friday routines run on a schedule inside the office's own AI app. NoteGoat does not run those clocks and does not call a model when they fire.
 
@@ -29,7 +29,7 @@ The MCP handshake includes server instructions, a persona prompt, and a short of
 
 Put this in the MCP `instructions` field. Keep it short enough that clients actually send it.
 
-> You are G.O.A.T., the personal assistant for this NoteGoat office. Speak in plain English. Use the name G.O.A.T. with the dots. Answer only from tool results. If a tool says the person cannot see that area, say so and stop. Do not invent patients, dates, balances, or attorneys. Today follows the office timezone returned by goat_whoami. When the office has more than one location, ask or accept "all locations" versus one location, and say which scope you used. Reads are immediate. Writes are not. To create a patient or add a case, call the prepare tool, show the preview in your own words, and wait. Call confirm only after the person clearly agrees. A vague "ok" after a different question is not agreement. Never claim you edited a SOAP note, sent email, or marked email read. You cannot see source code, passwords, or other offices.
+> You are G.O.A.T., the personal assistant for this NoteGoat office. Speak in plain English. Use the name G.O.A.T. with the dots. Answer only from tool results. If a tool says the person cannot see that area, say so and stop. Do not invent patients, dates, balances, or attorneys. Today follows the office timezone returned by goat_whoami. When the office has more than one location, ask or accept "all locations" versus one location, and say which scope you used. Reads are immediate. Writes are not. To create a patient, add a case, or prepare an MRI referral, call the prepare tool, show the preview in your own words, and wait. Call confirm only after the person clearly agrees. A vague "ok" after a different question is not agreement. "Send an MRI" saves a PDF on the chart. It does not email or fax anyone. Never claim you edited a SOAP note, sent email, faxed a referral, or marked email read. You cannot see source code, passwords, or other offices.
 
 ### Prompt and resources
 
@@ -356,11 +356,11 @@ Handbook content is not PHI. A later tiny tool can point at a handbook topic. It
 
 ## Phase 2 writes
 
-Two workflows. Each is prepare, then confirm. The prepare tool writes nothing. The confirm tool writes once, and only with a live preview id the person just accepted.
+Three workflows. Each is prepare, then confirm. The prepare tool writes nothing. The confirm tool writes once, and only with a live preview id the person just accepted.
 
 The AI shows the preview in words and waits. "Yes, create that patient" is a yes. "Yes" in reply to a different question is not. The confirm call includes `preview_id` and `confirmed: true`. The preview expires in 10 minutes, works once, and only for the same user who prepared it.
 
-Both workflows call the existing helpers. They do not reimplement them.
+The patient and case workflows call the existing helpers. They do not reimplement them. The MRI workflow below does the same with the imaging form.
 
 | Step | Existing behavior to reuse |
 | --- | --- |
@@ -388,7 +388,40 @@ Both workflows call the existing helpers. They do not reimplement them.
 - For a chart that already exists, usually someone still in New Patient Intake. Inputs name the patient and the + Case fields. The same duplicate, attorney, case-number, and slot rules apply. Adding a case does not create a second patient and does not touch SOAP notes.
 - A second injury on someone who already has a case (related case, extra date of injury) is not this tool. That stays a later decision.
 
-Out of Phase 2 even if the person can do them in the app: editing a chart, editing or signing SOAP, deleting, billing edits, sending texts, scheduling except the first exam that create-patient already books, and any mail change.
+### MRI referral
+
+People will say "send MRI for Zhora to Insight cervical lumbar" or "send MRI for Zhora to Insight CL R shoulder." The word **send** here is the same word as the chart button **Add MRI / CT Sent**. It means write the referral on the chart and save the filled PDF into that patient's files. The connector never emails it, never faxes it, and never calls an outside delivery API. The fax and email on the imaging center's contact may be printed on the PDF, because the office template already prints them. They are not used to transmit anything.
+
+This needs edit access to patients and to My Files, and the patient-files section must be visible to this person. Without both, prepare refuses and confirm writes nothing. A half-saved referral with no PDF, or a PDF with no referral row, is not allowed.
+
+**`goat_prepare_mri_referral`**
+
+- Inputs: the person's words, or structured fields (`patient`, `center`, `regions`, optional `sent_date`, optional answers to an open question).
+- Output: `preview_id`, the patient, the center, the regions with laterality, the sent date, any open MRI referrals already on that chart, the file name the PDF will get, and every question still open. `ready: false` until the patient, the center, and at least one region are settled. Writes nothing.
+
+**`goat_confirm_mri_referral`**
+
+- Inputs: `preview_id`, `confirmed: true`.
+- Output: the new referral id, the file id, and the file name. One new row on `mriReferrals`, `matrix.mriSent` set to the sent date, and one PDF in the patient's folder.
+
+Resolve in this order. Stop and ask when a step is ambiguous. Do not guess.
+
+1. **Patient.** Same name match as the other tools. "Zhora" with two charts returns the short list and does not pick one. A deleted chart is not a match.
+2. **Imaging center.** Match Contacts whose category is Imaging Center, case-insensitive, the way the chart's center dropdown does. "Insight" may resolve to "Insight Imaging" when that is the only center whose name contains those words. Two Insights, or no close match, is a question. The form also allows a typed name that is not a contact. The preview may keep a typed name, and it asks the same question the chart asks: this center is not in Contacts yet, add them? Adding the contact is its own yes. Declining still allows the referral to keep the typed name. The connector does not invent a center and does not add a contact silently.
+3. **Regions.** Use the MRI checklist on the chart, not a new list. MRI regions are Brain, Cervical, Thoracic, Lumbar, Chest, Sacrum, Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, and Foot. Humerus, Forearm, Femur, and Tibia/Fibula are X-ray only. An MRI command that names one of those is refused for that region and the preview says so. Laterality (`L`, `R`, `BL`) is stored only where the form allows it: Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, Foot. Cervical, Thoracic, and Lumbar do not take a side.
+4. **Shorthand.** Map the words onto that checklist. Reuse `src/lib/goat-regions.ts` where it already knows a word (`cervical`, `c-spine`, `neck`, `lumbar`, `l-spine`, `low back`, `thoracic`, `shoulder`, `knee`, and the rest of that file). Add the office shorthand the form's word list does not spell out, without letting a spinal level get eaten:
+   - `CL` or `C/L` means Cervical and Lumbar.
+   - A lone `C`, `T`, or `L` next to the MRI wording means Cervical, Thoracic, or Lumbar.
+   - `C5`, `C5-6`, `L4-5`, and `L5-S1` stay levels. The level picks the region (C → Cervical, T → Thoracic, L → Lumbar). The form stores the region, not the disc level. The preview can mention the level in words. It does not invent a new region field.
+   - `R shoulder` is Shoulder with laterality R. `L knee` is Knee with L. `BL knee` is Knee with BL. A side sticks to the body part beside it. In "CL R shoulder", the L inside CL is Lumbar, and the R belongs to the shoulder.
+   - Knee, shoulder, and the other sided regions with no side stated are a question. Spine regions never ask for a side.
+5. **MRI, not CT, not a prior study.** "Send MRI" sets `isCt` false and `modalityLabel` MRI. CT only when they said CT. `isPrior` stays off. A prior study does not write `matrix.mriSent` and does not move Case Flow, so this command must not create one.
+6. **Sent date.** The chart requires a sent date. The preview defaults it to today in the office timezone and shows it. They can change it before confirm.
+7. **What confirm writes.** The same shape as **Add MRI / CT Sent**: id, modality, sent date, center, regions, laterality, and empty scheduled, done, received, reviewed, and findings. `matrix.mriSent` is that sent date. That is what takes the chart off Case Flow's MRI "Needs Referral" stage under the office's existing rules (`mriAppearMode`, the day count from the initial exam, cleared-by, and patient-refused). Do not clear a referral by hand. Do not change X-ray or specialist rows.
+8. **The PDF.** Reuse the active Imaging Request template (`scope: imagingRequest`), the same token fill as `generateImagingRequestPdf`, and `buildDocumentTitle` for the name. Regions print the way the chart summarizes them, such as `Cervical, Lumbar, Shoulder (R)`. The center's phone, fax, email, and address come from the Imaging Center contact when this person can view Contacts. If they cannot view Contacts, those tokens stay blank. The center name they already said can still appear. If the template or its header has `[[prompt]]` tokens, the preview asks for each one and confirm waits. If the office has no Imaging Request template, the preview says "NO PDF. Create Template?" and confirm does nothing. Today the chart opens a print dialog and the person chooses Save as PDF. The connector does not open that dialog. It renders that same document to a PDF and saves it in the patient's system folder in My Files, through the same file bucket an upload uses. The file name is the document title, for example `071826SMJO Smith, John - Imaging Request - MRI.pdf`, and it is not prefixed a second time. The tool result returns the file id and name. It does not return the PDF bytes.
+9. **Suggested from MRI stays a diagnosis helper.** `src/lib/dx-suggest.ts` reads MRI findings that are already on the chart and suggests ICD-10 codes. Nothing is added unless someone clicks Add on the chart. Preparing an MRI referral does not run that suggester, does not add a diagnosis, and does not write findings. There is no separate engine that picks cervical or lumbar for the patient. The regions come from the person's words, mapped as above. The preview can mention an open "Needs Referral" Case Flow row so they see why this chart was waiting. It does not order regions the person did not name.
+
+Out of Phase 2 even if the person can do them in the app: editing a chart, editing or signing SOAP, deleting, billing edits, sending texts, scheduling except the first exam that create-patient already books, any mail change, X-ray referrals, specialist referrals, and emailing or faxing an MRI referral.
 
 ## Example questions
 
@@ -406,6 +439,8 @@ These are acceptance examples. Each answer names the location scope.
 | Discharged cases that owe more than $5,000, by attorney. | `discharged_owed_over` with `5000` | Sorted by attorney, then amount. |
 | What needs my attention today? | `goat_attention_today` | The short list from the boxes this user can see. |
 | Any new patients waiting in the mail? | `goat_mail_intake_pending` | Parsed referrals not yet made into charts. Creating one is a Phase 2 confirm. |
+| Send MRI for Zhora to Insight cervical lumbar. | `goat_prepare_mri_referral` | Preview: one patient, Insight Imaging if that is the only match, Cervical and Lumbar, sent date today, file name. Nothing saved until confirm. |
+| Send MRI for Zhora to Insight CL R shoulder. | `goat_prepare_mri_referral` | Cervical, Lumbar, and Shoulder (R). The L in CL is Lumbar. |
 
 "All locations" and "just the Dallas office" are the `location` argument on these tools. Nicknames match the location nicknames in Office settings.
 
@@ -434,7 +469,7 @@ Every call appends to the existing `audit_log`, including refusals.
 
 The row does not store the tool's answer, SOAP text, phone numbers, note text, or the pasted referral. The activity screen already lets the owner and admins read the log, and a manager still cannot read owner or admin rows. Clearing the log keeps the existing protection for "who cleared the log" entries. MCP rows follow that same screen. They are not a second, hidden log.
 
-Phase 2 confirm also writes the normal "created patient" activity row, so the Dashboard story matches a patient created from the form.
+Phase 2 confirm also writes the normal activity row the app writes for that action, so the Dashboard story matches a patient created from the form or a file saved on the chart. The MRI audit row records the patient id, the file id, and that nothing was emailed or faxed. It does not store the PDF.
 
 ## HIPAA
 
@@ -477,7 +512,7 @@ Rollout:
 4. One pilot office. Owner only. Read-only. Walk the example questions across all locations and one location. Open the G.O.A.T. Connector page and confirm it has tips and no chat box.
 5. Admins in that office, then a Manager and a Staff login. Confirm billing, SOAP, Quick Biz, and Settings refuse exactly where the screen refuses.
 6. SOAP switch stays off through that pilot. Turn it on only after the owner says the AI vendor's agreement is in place.
-7. Phase 2 for the pilot: pasted referral, compound last name question, duplicate date-of-injury block, `Self`, case number, slot conflict, and a confirm that creates one test patient the office expects.
+7. Phase 2 for the pilot: pasted referral, compound last name question, duplicate date-of-injury block, `Self`, case number, slot conflict, a confirm that creates one test patient the office expects, and one MRI referral whose PDF lands in that patient's files and is not emailed or faxed.
 8. More offices only after the pilot's audit log looks right and the owner says so.
 
 Turning either switch off stops new calls immediately. It does not delete charts that were created while it was on.
@@ -530,6 +565,16 @@ Phase 2
 - Expired preview does not write.
 - No path updates `encounter_notes`.
 
+MRI referral
+
+- "Send MRI for Zhora to Insight cervical lumbar" resolves one patient, one Imaging Center contact, and regions Cervical and Lumbar. Prepare writes nothing.
+- "CL R shoulder" is Cervical, Lumbar, and Shoulder with laterality R. The L inside CL is not Left.
+- Two patients named Zhora, or two centers named Insight, return a question and do not pick.
+- A region that is X-ray only, such as Humerus, is left off and named in the preview.
+- Confirm writes one `mriReferrals` row, sets `matrix.mriSent`, and saves one PDF in the patient's folder under the Imaging Request title. It does not add a diagnosis from Suggested from MRI.
+- No email is sent and no fax is sent. A missing Imaging Request template saves nothing.
+- A login that cannot edit patients or My Files is refused before any row or file is written.
+
 G.O.A.T. Connector page
 
 - The page renders the five starter tips as copy text and has no chat input.
@@ -559,7 +604,7 @@ Audit and limits
 - Any change to production data, production Supabase, or environment variables in this spec's pull request.
 - NoteGoat calling OpenAI, Anthropic, xAI, or any other model.
 - A service-role query path for chart data.
-- Editing SOAP notes, sending or modifying mail, and silent creates.
+- Editing SOAP notes, sending or modifying mail, silent creates, and emailing or faxing an MRI referral. The PDF is saved on the chart. The person sends it.
 - Publishing the repo, env files, or internal keys to the client.
 - Replacing web G.O.A.T. The G.O.A.T. Page and its chat stay. AI G.O.A.T. stays in the office's own AI app. No AI chat box is added inside NoteGoat.
 - Running morning, end-of-day, Monday, or Friday routines on NoteGoat's servers or on a NoteGoat clock. Those schedules belong to the AI app.
