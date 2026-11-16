@@ -85,6 +85,14 @@ test("audit: every catalog section is on at least one tab, and non-wrapper secti
   console.log("   not on any tab (nothing renders them):", orphan.join(", ") || "none");
   assert.deepEqual(multi, []);
 });
+test("Themes is searchable and lives on the Office tab", () => {
+  assert.ok(computeSettingsSearch("themes", [])!.extras.has("themes"));
+  assert.ok(computeSettingsSearch("dark mode", [])!.extras.has("themes"));
+  assert.ok(computeSettingsSearch("sunset", [])!.extras.has("themes"));
+  assert.equal(showExtraSection("themes", "office", null), true);
+  assert.equal(showExtraSection("themes", "all", null), true);
+  assert.equal(showExtraSection("themes", "account", null), false);
+});
 test("Case number format & Compliance live under the Office tab", () => {
   const office = SETTINGS_TABS.find((t) => t.id === "office")!;
   assert.ok(office.keys.includes("office"));       // Office Information → Case number format

@@ -12,6 +12,7 @@ import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
+import ThemesSection from "@/components/themes-section";
 import { AdminAccessSection } from "@/components/admin-access-section";
 import { DeletePasswordField } from "@/components/delete-password-field";
 import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
@@ -2435,7 +2436,7 @@ function TrashSubsection() {
                     onClick={() => setTab(key)}
                     className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-colors ${
                       tab === key
-                        ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                        ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--btn-ink)]"
                         : "border-[var(--border-subtle)] bg-[var(--surface-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                     }`}
                   >
@@ -3347,7 +3348,7 @@ export default function SettingsPage() {
                 aria-selected={selected}
                 className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   selected
-                    ? "bg-[var(--brand-primary)] text-white shadow-sm"
+                    ? "bg-[var(--brand-primary)] text-[var(--btn-ink)] shadow-sm"
                     : "text-[var(--text-muted)] hover:bg-[var(--bg-soft,#f1f5f9)] hover:text-[var(--text-main,inherit)]"
                 }`}
                 key={tab.id}
@@ -3372,6 +3373,8 @@ export default function SettingsPage() {
           Settings scroll. Office Information was previously inside
           Admin — it now lives here at the top of the wrapper since
           it's not really an admin-y tool. */}
+      {showExtra("themes") && <ThemesSection />}
+
       <CollapsibleSection
         description="Office information, schedule, reminders, case statuses, and patient page defaults."
         hidden={!showSection("officeSettings")}
@@ -4686,7 +4689,7 @@ export default function SettingsPage() {
                       aria-pressed={active}
                       className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                         active
-                          ? "bg-[var(--brand-primary)] text-white shadow-sm"
+                          ? "bg-[var(--brand-primary)] text-[var(--btn-ink)] shadow-sm"
                           : "text-[var(--text-main)] hover:bg-white"
                       }`}
                       key={label}

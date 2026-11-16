@@ -16,6 +16,8 @@ export type CloudBacking = "workspace" | "table" | "user" | "system";
 export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // workspace_kv rows
   "casemate.office-settings.v1": "workspace",
+  // Office theme + each person's Light/Dark (modes), one workspace_kv row.
+  "casemate.brand.v1": "workspace",
   "casemate.key-dates.v1": "workspace",
   "casemate.schedule-settings.v1": "workspace",
   "casemate.sms-templates.v1": "workspace",

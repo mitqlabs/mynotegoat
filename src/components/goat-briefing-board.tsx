@@ -482,8 +482,8 @@ export function GoatBriefingBoard({
       >
         {boxes.map((box) => (
           <div className="h-full" id={`goat-box-${box.i}`} key={box.i}>
-            <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white">
-              <header className={`${arrange ? "goat-box-drag cursor-grab" : ""} border-b border-[var(--line-soft)] px-3 py-2`}>
+            <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)]">
+              <header className={`goat-box-header ${arrange ? "goat-box-drag cursor-grab" : ""} px-3 py-2`}>
                 <h2 className="truncate text-sm font-semibold">{boxTitle(box)}</h2>
               </header>
               <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">{body(box)}</div>

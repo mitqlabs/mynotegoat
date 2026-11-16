@@ -5,7 +5,7 @@ import { settingsSearchCatalog, type SettingsSectionKey } from "@/lib/settings-c
  * Marketing, Treatment Plan Settings) are indexed here so they match by title, description and aliases
  * exactly like catalog sections, and each lives on ONE tab (plus Everything).
  */
-export type ExtraSectionId = "team" | "modules" | "marketing" | "treatmentPlan";
+export type ExtraSectionId = "team" | "modules" | "marketing" | "treatmentPlan" | "themes";
 
 export interface ExtraSection {
   id: ExtraSectionId;
@@ -17,6 +17,13 @@ export interface ExtraSection {
 }
 
 export const EXTRA_SECTIONS: ExtraSection[] = [
+  {
+    id: "themes",
+    title: "Themes",
+    description: "Office theme and your own Light or Dark. NoteGoat Blue, Sunset, Evergreen, Plum, Harbor, or My Theme.",
+    aliases: ["theme", "themes", "dark", "dark mode", "light", "light mode", "colors", "colour", "appearance", "brand", "sunset", "my theme"],
+    tab: "office",
+  },
   {
     id: "team",
     title: "Team Members",

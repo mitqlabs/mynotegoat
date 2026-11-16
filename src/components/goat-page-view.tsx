@@ -16,7 +16,13 @@ export function GoatPageView({
 }) {
   return (
     <div className="w-full space-y-4" data-goat-page-layout="full">
-      <header className="flex items-center gap-4 rounded-3xl bg-gradient-to-br from-[#ffe7a3] via-[#ffc48a] to-[#8fd4e2] px-5 py-5 text-[#3b2a16] shadow-sm">
+      <header
+        className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-sm"
+        style={{
+          backgroundImage: "linear-gradient(to bottom right, var(--goat-from), var(--goat-via), var(--goat-to))",
+          color: "var(--goat-text)",
+        }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt="" className="h-16 w-16 shrink-0 rounded-full border-4 border-white object-cover shadow-md" src="/goat-avatar/tablet-128.png" />
         <div className="min-w-0">

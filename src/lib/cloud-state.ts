@@ -1134,6 +1134,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.dashboard-workspace-settings.v1",
           "casemate.quick-stats-settings.v1",
           "casemate.office-settings.v1",
+          // Office theme and each person's Light / Dark.
+          "casemate.brand.v1",
           "casemate.email-settings.v1",
           "casemate.case-statuses.v1",
           "casemate.compliance-options.v1",
@@ -1339,6 +1341,30 @@ async function bootstrapTableBackedEntities() {
               }
               // Office settings: newer copy wins (savedAt), never the
               // bigger one. Size let a stale copy (or the logo) decide.
+              // Theme row: newer savedAt wins. A key-count comparison would keep a
+              // stale copy that merely has an extra My Theme field.
+              if (key === "casemate.brand.v1" && localRaw) {
+                let localParsed: unknown = null;
+                try {
+                  localParsed = JSON.parse(localRaw);
+                } catch {
+                  localParsed = null;
+                }
+                const savedAt = (row: unknown) =>
+                  row && typeof row === "object" && typeof (row as { savedAt?: unknown }).savedAt === "number"
+                    ? (row as { savedAt: number }).savedAt
+                    : 0;
+                if (savedAt(localParsed) > savedAt(value)) {
+                  console.warn("[Cloud Sync] Theme: this device has the newer copy; re-saving it to the cloud.");
+                  skippedLocalIsBigger += 1;
+                  if (localTrusted) {
+                    void upsertKvValue(key, localParsed).catch((uploadErr: unknown) =>
+                      console.error("[Cloud Sync] Re-saving theme failed:", uploadErr),
+                    );
+                  }
+                  continue;
+                }
+              }
               if (key === "casemate.office-settings.v1" && localRaw) {
                 let localParsed: unknown = null;
                 try {
