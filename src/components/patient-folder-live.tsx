@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { useTasks } from "@/hooks/use-tasks";
 import { currentAuthor } from "@/hooks/use-case-note-entries";
-import { formatEntryDate } from "@/lib/case-note-entries";
+import { formatEntryDate, CASE_NOTE_ENTRIES_KEY, entriesForPatient, loadCaseNoteEntries } from "@/lib/case-note-entries";
+import { getCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { caseNumberOf } from "@/lib/follow-up-queue";
 import { PATIENTS_STORAGE_KEY, createPatientRecord, patients, type PatientRecord } from "@/lib/mock-data";
 import { onLocalChange } from "@/lib/local-sync";
@@ -82,9 +83,13 @@ function useFolderTick(): number {
     const bump = () => setTick((value) => value + 1);
     const stopCloud = subscribeFolderCloud(bump);
     const stopPatients = onLocalChange(PATIENTS_STORAGE_KEY, bump);
+    const stopNotes = onLocalChange(CASE_NOTE_ENTRIES_KEY, bump);
+    const stopEarlier = onLocalChange(STORAGE_KEY_CASE_NOTES, bump);
     return () => {
       stopCloud();
       stopPatients();
+      stopNotes();
+      stopEarlier();
     };
   }, []);
   return tick;
@@ -179,7 +184,20 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
     cases: folder.caseIds
       .map((id) => byId.get(id))
       .filter((row): row is PatientRecord => Boolean(row))
-      .map((patient) => caseRow(patient, getRecord(patient.id))),
+      .map((patient) => {
+        const row = caseRow(patient, getRecord(patient.id));
+        const log = loadCaseNoteEntries();
+        row.notes = entriesForPatient(log, patient.id).map((entry) => ({
+          id: entry.id,
+          date: formatEntryDate(entry.date),
+          author: entry.author,
+          text: entry.text,
+        }));
+        const stored = getCaseNote(patient.id);
+        const earlier = stored !== null ? stored : (patient.matrix?.notes ?? "");
+        row.earlierNotes = earlier.trim();
+        return row;
+      }),
   };
 }
 

@@ -40,11 +40,14 @@ export function PatientTodoList({
   items,
   onToggle,
   onAdd,
+  compact = false,
 }: {
   items: PatientTodoItem[];
   onToggle: (id: string) => void;
   onAdd?: (draft: PatientTodoDraft) => string;
+  compact?: boolean;
 }) {
+  const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [dueDate, setDueDate] = useState("");
@@ -66,56 +69,40 @@ export function PatientTodoList({
     setPriority("Medium");
     setDueDate("");
     setMessage("");
+    setAdding(false);
   };
 
   return (
     <div>
-      {items.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
-      ) : (
-        <ul className="mt-1 grid gap-2">
-          {items.map((task) => (
-            <li
-              className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-              key={task.id}
-            >
-              <input checked={task.done} className="mt-1" onChange={() => onToggle(task.id)} type="checkbox" />
-              <div className="flex-1">
-                <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>{task.title}</div>
-                {(task.dueDate || task.priority || task.caseLabel) && (
-                  <div className="text-xs text-[var(--text-muted)]">
-                    {task.priority}
-                    {task.dueDate ? ` • Due ${task.dueDate}` : ""}
-                    {task.caseLabel ? ` • ${task.caseLabel}` : ""}
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
       {onAdd && (
+        <div className="mb-1 flex justify-end">
+          <button className="text-xs font-semibold text-[var(--brand-primary)]" onClick={() => setAdding((open) => !open)} type="button">
+            {adding ? "Cancel" : "+ Add"}
+          </button>
+        </div>
+      )}
+      {onAdd && adding && (
         <form
-          className="mt-3"
+          className="mb-2"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
           }}
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1 md:col-span-2">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Task</span>
+          <div className="grid gap-2">
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Task</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Task title"
                 value={title}
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Priority</span>
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Priority</span>
               <select
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 onChange={(event) => setPriority(event.target.value as TaskPriority)}
                 value={priority}
               >
@@ -126,9 +113,9 @@ export function PatientTodoList({
               </select>
             </label>
             <label className="grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Due Date (optional)</span>
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Due Date (optional)</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
                 inputMode="numeric"
                 maxLength={10}
                 onChange={(event) => setDueDate(formatUsDateInput(event.target.value))}
@@ -137,14 +124,40 @@ export function PatientTodoList({
               />
             </label>
           </div>
-          {message && <p className="mt-3 text-sm font-semibold text-[#b43b34]">{message}</p>}
-          <div className="mt-4 flex justify-end">
+          {message && <p className="mt-2 text-xs font-semibold text-[#b43b34]">{message}</p>}
+          <div className="mt-2 flex justify-end">
             <button className="btn btn-primary btn-sm" type="submit">
               Add To Do
             </button>
           </div>
         </form>
       )}
+      <div className={compact ? "max-h-36 overflow-y-auto" : undefined}>
+        {items.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
+        ) : (
+          <ul className="grid gap-2">
+            {items.map((task) => (
+              <li
+                className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                key={task.id}
+              >
+                <input checked={task.done} className="mt-1" onChange={() => onToggle(task.id)} type="checkbox" />
+                <div className="flex-1">
+                  <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>{task.title}</div>
+                  {(task.dueDate || task.priority || task.caseLabel) && (
+                    <div className="text-xs text-[var(--text-muted)]">
+                      {task.priority}
+                      {task.dueDate ? ` • Due ${task.dueDate}` : ""}
+                      {task.caseLabel ? ` • ${task.caseLabel}` : ""}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

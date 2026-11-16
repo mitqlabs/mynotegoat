@@ -42,6 +42,8 @@ export type FolderCaseRow = {
   paidDate: string;
   owed: number;
   notes: FolderNote[];
+  /** Older free-form case note, shown read-only. Not a separate stored type. */
+  earlierNotes?: string;
 };
 
 export type FolderDetail = {
@@ -259,6 +261,7 @@ export function PatientFolderPageView({
     address: folder.address,
   });
   const [note, setNote] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
   const [addingCase, setAddingCase] = useState(false);
   const [caseDraft, setCaseDraft] = useState({ attorney: "", dateOfInjury: "" });
   const age = ageOn(folder.dob, "2026-11-11");
@@ -342,68 +345,114 @@ export function PatientFolderPageView({
         </form>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section className="panel-card p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-semibold">Alerts</h3>
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-semibold text-rose-700">{folder.alerts.length}</span>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+        <section className="panel-card flex min-w-0 flex-col p-3">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h3 className="font-semibold">Notes</h3>
+            <button className="text-xs font-semibold text-[var(--brand-primary)]" onClick={() => setAddingNote((open) => !open)} type="button">
+              {addingNote ? "Cancel" : "+ Add"}
+            </button>
           </div>
-          <ul className="divide-y divide-[#e6f0f6]">
+          {addingNote && (
+            <form
+              className="mb-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!note.trim()) return;
+                onAddNote(note.trim());
+                setNote("");
+                setAddingNote(false);
+              }}
+            >
+              <textarea
+                className={`${FIELD} min-h-[64px]`}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Type a note…"
+                value={note}
+              />
+              <div className="mt-2 flex justify-end">
+                <button className="btn btn-primary btn-sm" disabled={!note.trim()} type="submit">
+                  Add note
+                </button>
+              </div>
+            </form>
+          )}
+          <div className="max-h-36 overflow-y-auto text-sm">
+            {folder.notes.map((entry) => (
+              <div className="border-b border-[var(--line-soft)] py-1.5 last:border-0" key={entry.id}>
+                <p>
+                  <span className="font-semibold">{entry.date}</span>
+                  {entry.author && <span className="ml-2 font-semibold text-[var(--brand-primary)]">{entry.author}</span>}
+                </p>
+                <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+              </div>
+            ))}
+            {folder.cases.length > 1
+              ? folder.cases.map((row) => {
+                  const hasNotes = row.notes.length > 0 || Boolean(row.earlierNotes?.trim());
+                  if (!hasNotes) return null;
+                  return (
+                    <div className="pt-2" key={row.id}>
+                      <p className="text-xs font-semibold text-[var(--text-muted)]">{row.caseNumber}</p>
+                      {row.notes.map((entry) => (
+                        <div className="border-b border-[var(--line-soft)] py-1.5 last:border-0" key={entry.id}>
+                          <p>
+                            <span className="font-semibold">{entry.date}</span>
+                            {entry.author && <span className="ml-2 font-semibold text-[var(--brand-primary)]">{entry.author}</span>}
+                          </p>
+                          <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+                        </div>
+                      ))}
+                      {row.earlierNotes?.trim() ? (
+                        <p className="whitespace-pre-wrap break-words py-1.5 text-[var(--text-muted)]">{row.earlierNotes}</p>
+                      ) : null}
+                    </div>
+                  );
+                })
+              : folder.cases.map((row) => (
+                  <div key={row.id}>
+                    {row.notes.map((entry) => (
+                      <div className="border-b border-[var(--line-soft)] py-1.5 last:border-0" key={entry.id}>
+                        <p>
+                          <span className="font-semibold">{entry.date}</span>
+                          {entry.author && <span className="ml-2 font-semibold text-[var(--brand-primary)]">{entry.author}</span>}
+                        </p>
+                        <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+                      </div>
+                    ))}
+                    {row.earlierNotes?.trim() ? (
+                      <p className="whitespace-pre-wrap break-words py-1.5 text-[var(--text-muted)]">{row.earlierNotes}</p>
+                    ) : null}
+                  </div>
+                ))}
+            {folder.notes.length === 0 && folder.cases.every((row) => row.notes.length === 0 && !row.earlierNotes?.trim()) && (
+              <p className="py-1 text-[var(--text-muted)]">No notes.</p>
+            )}
+          </div>
+        </section>
+        <section className="panel-card min-w-0 p-3">
+          <h3 className="mb-1 font-semibold">To-Do</h3>
+          <PatientTodoList compact items={todoItems} onAdd={onAddTodo} onToggle={onToggleTodo} />
+        </section>
+        <section className="panel-card min-w-0 p-3">
+          <h3 className="mb-1 font-semibold">Alerts</h3>
+          <ul className="max-h-36 overflow-y-auto">
             {folder.alerts.map((alert) => (
-              <li className="flex items-center gap-2 py-2 text-sm" key={alert}>
-                <span className="h-2 w-2 rounded-full bg-rose-500" />
+              <li className="flex items-center gap-2 border-b border-[var(--line-soft)] py-1.5 text-sm last:border-0" key={alert}>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" />
                 {alert}
               </li>
             ))}
-            {folder.alerts.length === 0 && <li className="py-2 text-sm text-[#6b8496]">No alerts.</li>}
+            {folder.alerts.length === 0 && <li className="py-1 text-sm text-[var(--text-muted)]">No alerts.</li>}
           </ul>
         </section>
-        <section className="panel-card p-4">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">To-Do</h3>
-          </div>
-          <PatientTodoList items={todoItems} onAdd={onAddTodo} onToggle={onToggleTodo} />
-        </section>
+        <PatientFolderFiles
+          cases={folder.cases.map((row) => ({
+            id: row.id,
+            label: row.caseNumber,
+          }))}
+        />
       </div>
-
-      <section className="panel-card p-4">
-        <div className="mb-2">
-          <h3 className="font-semibold">General Notes</h3>
-        </div>
-        <ul className="divide-y divide-[#e6f0f6]">
-          {folder.notes.map((entry) => (
-            <li className="py-2" key={entry.id}>
-              <p className="text-sm">
-                <span className="font-semibold">{entry.date}</span>
-                {entry.author && <span className="ml-2 font-semibold text-[#0d79bf]">{entry.author}</span>}
-              </p>
-              <p className="text-sm text-[#172a3a]">{entry.text}</p>
-            </li>
-          ))}
-          {folder.notes.length === 0 && <li className="py-2 text-sm text-[#6b8496]">No general notes yet.</li>}
-        </ul>
-        <form
-          className="mt-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!note.trim()) return;
-            onAddNote(note.trim());
-            setNote("");
-          }}
-        >
-          <textarea
-            className={`${FIELD} min-h-[72px]`}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Type a note and press Enter…"
-            value={note}
-          />
-          <div className="mt-2 flex justify-end">
-            <button className="rounded-full bg-[#0d79bf] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40" disabled={!note.trim()} type="submit">
-              Add note
-            </button>
-          </div>
-        </form>
-      </section>
 
       <section className="panel-card overflow-hidden">
         <div className="border-b border-[var(--line-soft)] px-4 py-2.5">
@@ -457,12 +506,6 @@ export function PatientFolderPageView({
           </table>
         </div>
       </section>
-      <PatientFolderFiles
-        cases={folder.cases.map((row) => ({
-          id: row.id,
-          label: [row.caseNumber, row.dateOfInjury && row.dateOfInjury !== "—" ? row.dateOfInjury : ""].filter(Boolean).join(" · "),
-        }))}
-      />
     </div>
   );
 }
