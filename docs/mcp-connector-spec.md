@@ -4,7 +4,7 @@ This is a design only. It adds no app code, no database change, no environment v
 
 NoteGoat is the Next.js app on Vercel, with Supabase underneath. This spec describes a remote MCP server on that same app so each office can connect **its own** AI (Claude, ChatGPT, a Grok bot, or another MCP client) and use NoteGoat as a personal assistant. The connected AI becomes that office's **G.O.A.T.** The name is always written with the dots.
 
-G.O.A.T. already lives inside NoteGoat as a page, a chat, and a set of briefing boxes. The connector does not replace that. It lets the office's own AI wear the same name, read the same records that person can already open, and later prepare a new patient or a case only after the person confirms.
+Web G.O.A.T. and AI G.O.A.T. stay separate. Web G.O.A.T. is the page, the briefing boxes, and the chat that already live inside NoteGoat. AI G.O.A.T. is the office's own assistant, running in Claude, ChatGPT, a Grok bot, or another app they connect. This connector does not replace web G.O.A.T., and it does not add an AI chat box inside NoteGoat. People keep talking to their AI in that AI's app. NoteGoat gives them a settings and help page, a sign-in, and the records their login can already see.
 
 ## Hard rules
 
@@ -15,6 +15,7 @@ G.O.A.T. already lives inside NoteGoat as a page, a chat, and a set of briefing 
 5. Phase 1 is read-only. Phase 2 writes are create-patient and add-case only. Both reuse the functions the app already uses. Both stop and wait for an explicit yes. Nothing is created on a guess.
 6. The connector never edits an existing SOAP note. It never sends mail, deletes mail, or marks mail read.
 7. The feature ships off. An office owner turns it on for that office. Until both switches are on, the route does not exist for that office.
+8. Web G.O.A.T. and AI G.O.A.T. stay separate. NoteGoat does not grow an AI chat box. Morning, end-of-day, Monday, and Friday routines run on a schedule inside the office's own AI app. NoteGoat does not run those clocks and does not call a model when they fire.
 
 ## What the connected AI is
 
@@ -105,7 +106,7 @@ People already sign in to NoteGoat with email and password through Supabase Auth
 
 1. The AI app sends the person to NoteGoat.
 2. They sign in on the normal NoteGoat login if they are not already signed in.
-3. A consent screen names the AI app and says, in plain language, that G.O.A.T. will see whatever this login can already see, that SOAP text is included only when the office turned that on, and that creating a patient still requires a second yes inside the chat.
+3. A consent screen names the AI app and says, in plain language, that G.O.A.T. will see whatever this login can already see, that SOAP text is included only when the office turned that on, and that creating a patient still requires a second yes in that AI app. The consent screen is not a chat.
 4. NoteGoat stores a connector session for that user and that client, and returns the usual OAuth authorization code. The code exchange uses PKCE.
 5. Later calls send the connector access token. The server loads the matching NoteGoat user, refreshes that user's own Supabase session with the public anon key, and queries with that user's JWT. Row Level Security then sees the same `auth.uid()` the app sees.
 
@@ -117,7 +118,7 @@ Token storage:
 
 Revocation:
 
-- The person can disconnect a client from a Connected assistants screen.
+- The person can disconnect their own client from the G.O.A.T. Connector page.
 - The owner, and an admin, can disconnect anyone in the office.
 - Turning the office switch off revokes every connection in that workspace.
 - Disabling the member, or suspending the account, makes the next call fail even if the token has not expired.
@@ -131,6 +132,66 @@ Owner switch:
 - A second owner switch, SOAP text, defaults off. It can be on only when the connector itself is on.
 
 Clients should be registered NoteGoat knows about (Claude, ChatGPT, Grok, and a local test client). Dynamic registration of arbitrary clients stays off until the owner asks for it.
+
+## G.O.A.T. Connector page
+
+NoteGoat gets one new page named **G.O.A.T. Connector**. It is a settings and help page. It has a switch, a short explanation, a connect button, and a list of prompts the person can copy. It has no message box, no send button, and no streaming reply. Typing a question to an AI stays in the AI's own app.
+
+Web G.O.A.T. keeps its own page and its own chat. Those screens are not wired to Claude, ChatGPT, or Grok. The Connector page does not sit inside that chat and does not reuse its composer.
+
+Who can open it:
+
+- Any active member can open the help and the tips, because each person connects their own login. Settings in NoteGoat is otherwise owner and admin only, so this page is its own route, linked from the G.O.A.T. Page and from Settings → G.O.A.T. for people who can open Settings.
+- The on/off switch, the office timezone, the SOAP-text switch, and "disconnect everyone" are on that same page and visible only to the owner.
+- An admin can open the help and can disconnect a connection, and cannot flip the office switch.
+- When the owner has not turned the office on, members see one line: ask the owner to turn on G.O.A.T. Connector. They do not see a chat.
+
+What the page is for:
+
+- Explain that AI G.O.A.T. runs in the office's AI app, on that app's account, and that NoteGoat never calls a model.
+- Explain that a routine ("every morning at 8:00") is a schedule the person sets in Claude, ChatGPT, or their Grok bot. NoteGoat does not store that schedule and does not fire it.
+- Show how to connect, which is the OAuth sign-in already described. The person comes back to this page already connected. They can disconnect themselves here.
+- Show **Tips: things to tell your AI.** Each tip is a prompt they copy and paste into their AI, then set that AI's own reminder or scheduled task if they want it to repeat.
+
+Each tip respects the person looking at the page, and the connector enforces that again when the prompt actually runs.
+
+- The Friday billing tip is shown only when this login can see Billing. Everyone else sees a line that billing routines are hidden for their role. The Monday tip stays visible and is labeled owner and admin, because the words are still useful and the connector will refuse the numbers if this login cannot see them.
+- A tip that mixes areas still runs after they paste it. Any part their role cannot see comes back as a refusal for that part only. The morning briefing does not start returning Quick Biz to Staff just because the words were copied from this page.
+- The copied words tell the AI to use the signed-in person's permissions, to say which locations it used, and to wait for a yes before creating a patient.
+
+These are the starter tips. The page shows them as copy blocks, in this order.
+
+**Every working morning**
+
+> Every working business morning at 8:00, give me my G.O.A.T. briefing: today's schedule per location, who's new, re-exams due, pending New Patient Intake from G.O.A.T. Mail, to-dos and alerts.
+
+Shown to anyone who can view the schedule or the patient list. G.O.A.T. Mail is included because mail is one of the boxes everyone with the page can use. The 8:00 clock is the AI app's schedule, in the office timezone from `goat_whoami`. "Who's new" means today's new-patient visits. "Re-exams due" means saved re-exam dates and re-exam visits, the same definition as `reexam_this_week`.
+
+**End of day**
+
+> End of day: who didn't check in, unsigned or unfinished notes, cases discharged but not submitted, tomorrow's first patients.
+
+This is the End of Day Handoff, asked from the AI app. "Who didn't check in" is still Scheduled today. Unsigned notes are returned only when this person can view Encounters. Discharged but not submitted is case status Discharged. Tomorrow's first patients are the next open office day's first visits.
+
+**Every Monday**
+
+> Every Monday: open cases per attorney and anything not seen in 30 days.
+
+Shown with the note that office case counts and Appointment Check are for the owner and admins in NoteGoat today. A manager or staff member who pastes it anyway gets the same refusal web G.O.A.T. already gives for office numbers, and can still ask for Today's Schedule. The Monday clock is the AI app's schedule.
+
+**Every Friday**
+
+> Every Friday: billing totals owed by attorney.
+
+Owner and admin, or anyone else whose role can view Billing and billing figures. Hidden from everyone else. Owed uses the patient-page billed-minus-paid rule. `Self` is left out unless they ask for no-attorney cases. The Friday clock is the AI app's schedule.
+
+**When a referral or an ID photo shows up**
+
+> When I paste a referral or ID photo, prepare the new patient and wait for my OK.
+
+Shown to anyone who can edit patients, and labeled so they know a chart is created only after Phase 2 writes are on and they confirm. They paste the referral text or the photo into their AI app. That app reads the image on the office's own AI account. NoteGoat does not run OCR and does not call a model to read the photo. The AI then calls `goat_prepare_create_patient` with the text or the fields it read. NoteGoat still has no patient-photo column. The prepare step does not save the photo into the chart. Saving the patient waits for confirm, and a duplicate date of injury still blocks the save.
+
+The page can later hold more tips the owner writes for the office. Those extra tips are plain text on the office settings bag, editable by the owner only, and they do not bypass permissions. The five starters above ship with the page. They are not a hidden prompt sent to a model by NoteGoat.
 
 ## Scoping on every call
 
@@ -413,7 +474,7 @@ Rollout:
 1. This spec. No behavior change.
 2. Build the route dark. Automated tests use fixtures, not production.
 3. Turn the server flag on in a preview deployment. The owner switch stays off.
-4. One pilot office. Owner only. Read-only. Walk the example questions across all locations and one location.
+4. One pilot office. Owner only. Read-only. Walk the example questions across all locations and one location. Open the G.O.A.T. Connector page and confirm it has tips and no chat box.
 5. Admins in that office, then a Manager and a Staff login. Confirm billing, SOAP, Quick Biz, and Settings refuse exactly where the screen refuses.
 6. SOAP switch stays off through that pilot. Turn it on only after the owner says the AI vendor's agreement is in place.
 7. Phase 2 for the pilot: pasted referral, compound last name question, duplicate date-of-injury block, `Self`, case number, slot conflict, and a confirm that creates one test patient the office expects.
@@ -469,6 +530,13 @@ Phase 2
 - Expired preview does not write.
 - No path updates `encounter_notes`.
 
+G.O.A.T. Connector page
+
+- The page renders the five starter tips as copy text and has no chat input.
+- A Staff session does not show the Friday billing tip. An owner session does.
+- The Monday tip is labeled for owner and admin. Pasting it as Staff still returns the office-numbers refusal.
+- Nothing on the page calls a model, and nothing on the page stores an 8:00, end-of-day, Monday, or Friday schedule.
+
 Audit and limits
 
 - Every tool, including a refusal, writes one audit row without the answer body.
@@ -493,4 +561,5 @@ Audit and limits
 - A service-role query path for chart data.
 - Editing SOAP notes, sending or modifying mail, and silent creates.
 - Publishing the repo, env files, or internal keys to the client.
-- Replacing the in-app G.O.A.T. Page. The page stays. The connector mirrors it for the office's own AI.
+- Replacing web G.O.A.T. The G.O.A.T. Page and its chat stay. AI G.O.A.T. stays in the office's own AI app. No AI chat box is added inside NoteGoat.
+- Running morning, end-of-day, Monday, or Friday routines on NoteGoat's servers or on a NoteGoat clock. Those schedules belong to the AI app.
