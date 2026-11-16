@@ -305,9 +305,8 @@ export function PatientFolderPageView({
       </div>
 
       <section className="panel-card p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3">
           <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
-          <p className="text-xs text-[#6b8496]">Shared by every case · change it here, and it updates everywhere</p>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <label className={LABEL}>Last Name<input className={FIELD} value={person.lastName} onChange={(event) => setPerson({ ...person, lastName: event.target.value })} /></label>
@@ -368,9 +367,8 @@ export function PatientFolderPageView({
       </div>
 
       <section className="panel-card p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-2">
           <h3 className="font-semibold">General Notes</h3>
-          <p className="text-xs text-[#6b8496]">Belongs to this patient, not to a case</p>
         </div>
         <ul className="divide-y divide-[#e6f0f6]">
           {folder.notes.map((entry) => (
@@ -408,9 +406,8 @@ export function PatientFolderPageView({
       </section>
 
       <section className="panel-card overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line-soft)] px-4 py-2.5">
+        <div className="border-b border-[var(--line-soft)] px-4 py-2.5">
           <h3 className="font-semibold">Cases</h3>
-          <p className="text-xs text-[var(--text-muted)]">Each case keeps its own Additional Details, billing, and notes</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
@@ -530,9 +527,8 @@ export function PatientFolderCaseView({
       </section>
 
       <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <h3 className="font-semibold">Case Info</h3>
-          <p className="text-xs text-[#6b8496]">This case only</p>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <ReadOnly label="Attorney" value={row.attorney} />
@@ -546,9 +542,8 @@ export function PatientFolderCaseView({
       </section>
 
       <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <h3 className="font-semibold">Additional Details</h3>
-          <p className="text-xs text-[#6b8496]">This case only</p>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <ReadOnly label="Review" value={show(row.review)} />
@@ -564,9 +559,8 @@ export function PatientFolderCaseView({
 
       <div className="grid gap-3 lg:grid-cols-2">
         <section className="panel-card p-4">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2">
             <h3 className="font-semibold">Notes</h3>
-            <p className="text-xs text-[#6b8496]">This case only</p>
           </div>
           <ul className="divide-y divide-[#e6f0f6]">
             {row.notes.map((entry) => (
@@ -582,9 +576,8 @@ export function PatientFolderCaseView({
           </ul>
         </section>
         <section className="panel-card p-4">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2">
             <h3 className="font-semibold">Billing for this case</h3>
-            <p className="text-xs text-[#6b8496]">Does not mix with other cases</p>
           </div>
           <dl className="divide-y divide-[#e6f0f6] text-sm">
             <div className="flex justify-between py-2"><dt>Total billed</dt><dd className="font-semibold">{formatFolderMoney(row.billed)}</dd></div>
@@ -642,9 +635,6 @@ export function CaseListPreviewView({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-[#172a3a]">Case List</h2>
-          <p className="mt-1 max-w-3xl text-sm text-[#6b8496]">
-            Same as today&apos;s Patient List, one row per case. Clicking the name opens that case. Phone and address still come from the patient.
-          </p>
         </div>
         <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white" type="button">
           New Case

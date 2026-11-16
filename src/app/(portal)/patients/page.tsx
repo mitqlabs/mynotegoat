@@ -2106,11 +2106,6 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold">{mode === "cases" ? "Case List" : "All Patients Workspace"}</h3>
-            {mode === "cases" && (
-              <p className="mt-1 max-w-3xl text-sm text-[var(--text-muted)]">
-                Same as today&apos;s Patient List, one row per case. Clicking the name opens that case. Phone and address still come from the patient.
-              </p>
-            )}
           </div>
           <button
             className="btn btn-primary"
