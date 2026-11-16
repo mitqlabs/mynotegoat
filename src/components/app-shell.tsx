@@ -12,6 +12,7 @@ import { getVisiblePortalNavItems, type PlanTier } from "@/lib/plan-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ReadOnlyContentGuard } from "@/components/read-only-content-guard";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
+import { ThemeModeSwitch } from "@/components/theme-mode-switch";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -188,16 +189,16 @@ export function AppShell({
   // The G.O.A.T. home-screen app (/goat): only the chat, full screen — no sidebar or top nav.
   if (isGoatAppPath(pathname)) {
     return (
-      <div className="min-h-[100dvh] bg-white">
+      <div className="min-h-[100dvh] bg-[var(--shell-bg)]">
         <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[var(--shell-bg)]">
       <div className="mx-auto px-0">
-        <div className="min-h-screen border-white/70 bg-white">
+        <div className="min-h-screen border-[var(--shell-border)] bg-[var(--shell-bg)]">
           <div
             className={classNames(
               "grid min-h-screen",
@@ -207,7 +208,7 @@ export function AppShell({
             )}
             style={{ transition: "grid-template-columns 0.2s ease" }}
           >
-            <aside className="sticky top-0 hidden max-h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-sidebar)] text-[#e4f4ff] lg:block">
+            <aside className="sticky top-0 hidden max-h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-sidebar)] text-[var(--sidebar-text)] lg:block">
               <div className={sidebarCollapsed ? "p-2" : "p-6"}>
                 {!sidebarCollapsed && (
                   <>
@@ -226,7 +227,7 @@ export function AppShell({
                           </div>
                         )}
                       </div>
-                      <p className="mt-2 text-sm text-[#aad0e4]">Secure office workspace</p>
+                      <p className="mt-2 text-sm text-[var(--sidebar-muted)]">Secure office workspace</p>
                     </div>
 
                     <nav className="space-y-2">
@@ -240,8 +241,8 @@ export function AppShell({
                             className={classNames(
                               "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                               active
-                                ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                                : "text-[#d5ebf8] hover:bg-white/10",
+                                ? "nav-link-active"
+                                : "nav-link",
                             )}
                           >
                             <span>{item.label}</span>
@@ -254,8 +255,8 @@ export function AppShell({
                         className={classNames(
                           "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                           pathname === "/handbook"
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "text-[#d5ebf8] hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                       >
                         <span>Handbook</span>
@@ -265,8 +266,8 @@ export function AppShell({
                         className={classNames(
                           "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                           pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "text-[#d5ebf8] hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                       >
                         <span>G.O.A.T. Mail</span>
@@ -276,8 +277,8 @@ export function AppShell({
                         className={classNames(
                           "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                           pathname === "/goat-page" || pathname.startsWith("/goat-page/")
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "text-[#d5ebf8] hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                       />
                       {settingsItem && (
@@ -286,8 +287,8 @@ export function AppShell({
                           className={classNames(
                             "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
                             pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                              ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                              : "text-[#d5ebf8] hover:bg-white/10",
+                              ? "nav-link-active"
+                              : "nav-link",
                           )}
                         >
                           <span>{settingsItem.label}</span>
@@ -342,8 +343,8 @@ export function AppShell({
                             className={classNames(
                               "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
                               active
-                                ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                                : "text-[#d5ebf8] hover:bg-white/10",
+                                ? "nav-link-active"
+                                : "nav-link",
                             )}
                             title={item.label}
                           >
@@ -359,8 +360,8 @@ export function AppShell({
                         className={classNames(
                           "flex h-10 w-10 items-center justify-center rounded-xl transition",
                           pathname === "/handbook"
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "text-[#d5ebf8] hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                         title="Handbook"
                       >
@@ -371,8 +372,8 @@ export function AppShell({
                         className={classNames(
                           "flex h-10 w-10 items-center justify-center rounded-xl transition",
                           pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "text-[#d5ebf8] hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                         title="G.O.A.T. Mail"
                       >
@@ -383,8 +384,8 @@ export function AppShell({
                         className={classNames(
                           "flex h-10 w-10 items-center justify-center rounded-xl transition",
                           pathname === "/goat-page" || pathname.startsWith("/goat-page/")
-                            ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                            : "hover:bg-white/10",
+                            ? "nav-link-active"
+                            : "nav-link",
                         )}
                       />
                       {settingsItem && (
@@ -393,8 +394,8 @@ export function AppShell({
                           className={classNames(
                             "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
                             pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                              ? "bg-gradient-to-r from-[#157bbf] to-[#1a9ba9] text-white"
-                              : "text-[#d5ebf8] hover:bg-white/10",
+                              ? "nav-link-active"
+                              : "nav-link",
                           )}
                           title={settingsItem.label}
                         >
@@ -440,7 +441,7 @@ export function AppShell({
             </aside>
 
             <section className="min-w-0">
-              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] bg-white/70 px-4 py-4 lg:px-7 lg:py-5">
+              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] bg-[var(--header-bg)] px-4 py-4 lg:px-7 lg:py-5">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
                     My Note Goat
@@ -449,12 +450,15 @@ export function AppShell({
                     {buildTitle(pathname, navItems)}
                   </h1>
                 </div>
-                <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
-                  {userEmail || "Secure cloud mode"}
+                <div className="flex flex-wrap items-center gap-2">
+                  <ThemeModeSwitch />
+                  <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
+                    {userEmail || "Secure cloud mode"}
+                  </div>
                 </div>
               </header>
 
-              <nav className="flex gap-2 overflow-x-auto border-b border-[var(--line-soft)] bg-white/70 px-3 py-3 lg:hidden">
+              <nav className="flex gap-2 overflow-x-auto border-b border-[var(--line-soft)] bg-[var(--header-bg)] px-3 py-3 lg:hidden">
                 {mainNav.map((item) => {
                   const active =
                     pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -465,7 +469,7 @@ export function AppShell({
                       className={classNames(
                         "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
                         active
-                          ? "bg-[var(--brand-primary)] text-white"
+                          ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
                           : "bg-[var(--bg-soft)] text-[var(--text-main)]",
                       )}
                     >
@@ -479,7 +483,7 @@ export function AppShell({
                   className={classNames(
                     "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
                     pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                      ? "bg-[var(--brand-primary)] text-white"
+                      ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
                       : "bg-[var(--bg-soft)] text-[var(--text-main)]",
                   )}
                 >
@@ -492,7 +496,7 @@ export function AppShell({
                     className={classNames(
                       "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
                       pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                        ? "bg-[var(--brand-primary)] text-white"
+                        ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
                         : "bg-[var(--bg-soft)] text-[var(--text-main)]",
                     )}
                   >
