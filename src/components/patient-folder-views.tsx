@@ -307,21 +307,75 @@ export function PatientFolderPageView({
         </div>
       </div>
 
-      <section className="panel-card p-4">
-        <div className="mb-3">
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+      <section className="panel-card p-3">
+        <div className="mb-2">
           <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
         </div>
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2">
           <label className={LABEL}>Last Name<input className={FIELD} value={person.lastName} onChange={(event) => setPerson({ ...person, lastName: event.target.value })} /></label>
           <label className={LABEL}>First Name<input className={FIELD} value={person.firstName} onChange={(event) => setPerson({ ...person, firstName: event.target.value })} /></label>
           <label className={LABEL}>DOB<input className={FIELD} value={person.dob} onChange={(event) => setPerson({ ...person, dob: event.target.value })} /></label>
           <label className={LABEL}>Phone<input className={FIELD} value={person.phone} onChange={(event) => setPerson({ ...person, phone: event.target.value })} /></label>
           <label className={LABEL}>Sex<input className={FIELD} value={person.sex} onChange={(event) => setPerson({ ...person, sex: event.target.value })} /></label>
           <label className={LABEL}>Marital Status<input className={FIELD} value={person.maritalStatus} onChange={(event) => setPerson({ ...person, maritalStatus: event.target.value })} /></label>
-          <label className={`${LABEL} md:col-span-2`}>Email<input className={FIELD} value={person.email} onChange={(event) => setPerson({ ...person, email: event.target.value })} /></label>
-          <label className={`${LABEL} md:col-span-2`}>Address<input className={FIELD} value={person.address} onChange={(event) => setPerson({ ...person, address: event.target.value })} /></label>
+          <label className={LABEL}>Email<input className={FIELD} value={person.email} onChange={(event) => setPerson({ ...person, email: event.target.value })} /></label>
+          <label className={LABEL}>Address<input className={FIELD} value={person.address} onChange={(event) => setPerson({ ...person, address: event.target.value })} /></label>
         </div>
       </section>
+      <section className="panel-card min-w-0 overflow-hidden">
+        <div className="border-b border-[var(--line-soft)] px-4 py-2.5">
+          <h3 className="font-semibold">Cases</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse">
+            <thead>
+              <tr className="bg-[var(--bg-soft)] text-left text-sm">
+                <th className="px-4 py-3">Case #</th>
+                <th className="px-4 py-3">Date of injury</th>
+                <th className="px-4 py-3">Attorney</th>
+                <th className="px-4 py-3">Initial exam</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Billed</th>
+                <th className="px-4 py-3 text-right">Paid</th>
+                <th className="px-4 py-3 text-right">Reduced</th>
+                <th className="px-4 py-3 text-right">Outstanding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {folder.cases.map((row, index) => (
+                <tr className="border-t border-[var(--line-soft)]" key={row.id}>
+                  <td className="px-4 py-3">
+                    <button className="font-semibold text-[var(--brand-primary)] underline" onClick={() => onOpenCase(row.id)} type="button">
+                      {row.caseNumber}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">{row.dateOfInjury}</td>
+                  <td className="px-4 py-3">{row.attorney}</td>
+                  <td className="px-4 py-3">{row.initialExam}</td>
+                  <td className="px-4 py-3"><StatusPill status={row.status} /></td>
+                  <td className="px-4 py-3 text-right">{formatFolderMoney(row.billed)}</td>
+                  <td className="px-4 py-3 text-right">{formatFolderMoney(row.paid)}</td>
+                  <td className="px-4 py-3 text-right">{caseMoney[index].reduced === null ? "" : formatFolderMoney(caseMoney[index].reduced)}</td>
+                  <td className="px-4 py-3 text-right">{caseMoney[index].outstanding === null ? "" : formatFolderMoney(caseMoney[index].outstanding)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-[var(--line-soft)] font-semibold">
+                <td className="px-4 py-3">Totals</td>
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.billed)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.paid)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.reduced)}</td>
+                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.outstanding)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      </div>
 
       {addingCase && (
         <form
@@ -453,59 +507,6 @@ export function PatientFolderPageView({
           }))}
         />
       </div>
-
-      <section className="panel-card overflow-hidden">
-        <div className="border-b border-[var(--line-soft)] px-4 py-2.5">
-          <h3 className="font-semibold">Cases</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                <th className="px-4 py-3">Case #</th>
-                <th className="px-4 py-3">Date of injury</th>
-                <th className="px-4 py-3">Attorney</th>
-                <th className="px-4 py-3">Initial exam</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Billed</th>
-                <th className="px-4 py-3 text-right">Paid</th>
-                <th className="px-4 py-3 text-right">Reduced</th>
-                <th className="px-4 py-3 text-right">Outstanding</th>
-              </tr>
-            </thead>
-            <tbody>
-              {folder.cases.map((row, index) => (
-                <tr className="border-t border-[var(--line-soft)]" key={row.id}>
-                  <td className="px-4 py-3">
-                    <button className="font-semibold text-[var(--brand-primary)] underline" onClick={() => onOpenCase(row.id)} type="button">
-                      {row.caseNumber}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3">{row.dateOfInjury}</td>
-                  <td className="px-4 py-3">{row.attorney}</td>
-                  <td className="px-4 py-3">{row.initialExam}</td>
-                  <td className="px-4 py-3"><StatusPill status={row.status} /></td>
-                  <td className="px-4 py-3 text-right">{formatFolderMoney(row.billed)}</td>
-                  <td className="px-4 py-3 text-right">{formatFolderMoney(row.paid)}</td>
-                  <td className="px-4 py-3 text-right">{caseMoney[index].reduced === null ? "" : formatFolderMoney(caseMoney[index].reduced)}</td>
-                  <td className="px-4 py-3 text-right">{caseMoney[index].outstanding === null ? "" : formatFolderMoney(caseMoney[index].outstanding)}</td>
-                </tr>
-              ))}
-              <tr className="border-t border-[var(--line-soft)] font-semibold">
-                <td className="px-4 py-3">Totals</td>
-                <td className="px-4 py-3" />
-                <td className="px-4 py-3" />
-                <td className="px-4 py-3" />
-                <td className="px-4 py-3" />
-                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.billed)}</td>
-                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.paid)}</td>
-                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.reduced)}</td>
-                <td className="px-4 py-3 text-right">{formatFolderMoney(moneyTotals.outstanding)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
     </div>
   );
 }
