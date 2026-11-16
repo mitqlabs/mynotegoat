@@ -423,7 +423,7 @@ How a match is chosen:
 
 - Search the patient's saved files by the words they used and by the document title. "MRI referral" matches a file whose name is the Imaging Request title, such as `071826SMJO Smith, John - Imaging Request - MRI.pdf`.
 - One match returns that file. Several matches are listed in sentences and the person picks. No match for an X-ray report, a notes PDF, or an intake document says the file is not in the chart. Those are not generated on the spot.
-- No saved MRI referral PDF is the one exception. The tool says none is saved and asks whether to create it. A yes reuses `goat_prepare_mri_referral` and `goat_confirm_mri_referral`: preview first, then the PDF is saved on the chart, then the new file is returned. Phase 2 writes have to be on. If they are off, the answer stops at "that PDF is not in the chart yet."
+- No saved MRI referral PDF is the one exception. The tool says none is saved and asks whether to create it. A yes reuses the MRI panel flow: preview first, then Add MRI / CT Sent, then Generate PDF. The new file is saved and handed back with the same embedded resource and 15-minute link. Phase 2 writes have to be on. If they are off, the answer stops at "that PDF is not in the chart yet."
 
 How the file comes back:
 
@@ -432,7 +432,7 @@ How the file comes back:
 - Every file also gets a short-lived signed link, created the same way the app already does (`createSignedUrl` on the `user-files` bucket) but for 15 minutes. The app's own preview link lasts an hour. The connector link is shorter because it will sit in an outside chat. When it expires, a new call can sign a new link. The old one stops working.
 - The signed link is not copied into the audit log. The log records the user, the patient id, the file id, the file name, and whether a new MRI PDF was created. It does not record the file bytes or the link.
 
-The spoken line is a sentence, for example "Here is Zhora's MRI referral, saved on the chart as 071826SMJO Garcia, Zhora - Imaging Request - MRI.pdf." The download itself is the resource, not a paragraph of the PDF's text.
+The spoken line is a sentence, for example "Here is Zhora's MRI referral. Tap the file to save it on this device." The AI app shows the embedded file or the link. The person taps or clicks to save it on the phone, laptop, or desktop they are using. The download itself is the resource, not a paragraph of the PDF's text. A PDF just created by Generate PDF uses this same handoff.
 
 **`goat_list_messages`**
 
@@ -492,36 +492,29 @@ The patient and case workflows call the existing helpers. They do not reimplemen
 
 ### MRI referral
 
-People will say "send MRI for Zhora to Insight cervical lumbar" or "send MRI for Zhora to Insight CL R shoulder." The word **send** here is the same word as the chart button **Add MRI / CT Sent**. It means write the referral on the chart and save the filled PDF into that patient's files. The connector never emails it, never faxes it, and never calls an outside delivery API. The fax and email on the imaging center's contact may be printed on the PDF, because the office template already prints them. They are not used to transmit anything.
+People will say "send MRI for Zhora to Insight cervical lumbar" or "send MRI for Zhora to Insight CL R shoulder." This follows the MRI panel on the chart, in the same order, through the same save and the same Generate PDF path. The word **send** is the chart button **Add MRI / CT Sent**. It does not email, fax, or call a delivery API. Phone, fax, and email from the imaging center may be printed on the PDF because the template already prints them. They are not used to transmit anything.
 
-This needs edit access to patients and to My Files, and the patient-files section must be visible to this person. Without both, prepare refuses and confirm writes nothing. A half-saved referral with no PDF, or a PDF with no referral row, is not allowed.
+This needs edit access to patients and to My Files, and the Patient Files panel must be visible. Without both, prepare refuses and confirm writes nothing. A referral row without its PDF, or a PDF without the row, is not allowed.
 
-**`goat_prepare_mri_referral`**
+**`goat_prepare_mri_referral`** fills the panel and writes nothing. `ready` stays false until the patient, the center, the sent date, and at least one region are settled. Two patients with the same name are a question.
 
-- Inputs: the person's words, or structured fields (`patient`, `center`, `regions`, optional `sent_date`, optional answers to an open question).
-- Output: `preview_id`, the patient, the center, the regions with laterality, the sent date, any open MRI referrals already on that chart, the file name the PDF will get, and every question still open. `ready: false` until the patient, the center, and at least one region are settled. Writes nothing.
+**`goat_confirm_mri_referral`** runs only after the person accepts that preview. It does steps 5 and 6 below, then hands the PDF back as a download.
 
-**`goat_confirm_mri_referral`**
+The panel fields, in order:
 
-- Inputs: `preview_id`, `confirmed: true`.
-- Output: the new referral id, the file id, and the file name. One new row on `mriReferrals`, `matrix.mriSent` set to the sent date, and one PDF in the patient's folder.
+1. **CT instead of MRI.** The checkbox stays off. `isCt` is false and the label is MRI. Check it only when the person said CT. This is not a prior or outside study. `isPrior` stays off, because a prior study does not write the sent date and does not move Case Flow.
+2. **Sent Date.** Fill it. The default is today in the office timezone, as MM/DD/YYYY, the same format as the Sent Date box. If the person names a date, use that date instead. The preview shows the date. Confirm does not leave Sent blank.
+3. **Imaging Center.** The same dropdown as the panel: saved Contacts in the Imaging Center category. "Insight" matches "Insight Imaging Center" when that is the only center whose name contains those words. Two matches, or none, is a question. A typed name that is not a contact is allowed, the way "Someone else" is allowed on the chart, and the preview asks whether to add that contact. Adding the contact is its own yes. The referral can still keep the typed name if they decline.
+4. **Regions.** The MRI region list and nothing else: Brain, Cervical, Thoracic, Lumbar, Chest, Sacrum, Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, Foot. Humerus, Forearm, Femur, and Tibia/Fibula are X-ray only, so they are named and left off. Laterality is stored only for Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, and Foot. `CL` or `C/L` is Cervical and Lumbar. A lone `C`, `T`, or `L` beside the MRI wording is Cervical, Thoracic, or Lumbar. `R shoulder` is Shoulder with R. In "CL R shoulder" the L inside CL is Lumbar, and the R belongs to the shoulder. A sided region with no side is a question. Spine regions do not ask for a side. `C5-6` or `L4-5` picks the spine region and is not stored as its own region.
 
-Resolve in this order. Stop and ask when a step is ambiguous. Do not guess.
+The preview shows those four fields in sentences, plus any open MRI row already on the chart. Nothing is saved yet.
 
-1. **Patient.** Same name match as the other tools. "Zhora" with two charts returns the short list and does not pick one. A deleted chart is not a match.
-2. **Imaging center.** Match Contacts whose category is Imaging Center, case-insensitive, the way the chart's center dropdown does. "Insight" may resolve to "Insight Imaging" when that is the only center whose name contains those words. Two Insights, or no close match, is a question. The form also allows a typed name that is not a contact. The preview may keep a typed name, and it asks the same question the chart asks: this center is not in Contacts yet, add them? Adding the contact is its own yes. Declining still allows the referral to keep the typed name. The connector does not invent a center and does not add a contact silently.
-3. **Regions.** Use the MRI checklist on the chart, not a new list. MRI regions are Brain, Cervical, Thoracic, Lumbar, Chest, Sacrum, Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, and Foot. Humerus, Forearm, Femur, and Tibia/Fibula are X-ray only. An MRI command that names one of those is refused for that region and the preview says so. Laterality (`L`, `R`, `BL`) is stored only where the form allows it: Shoulder, Elbow, Wrist, Hand, Hip, Knee, Ankle, Foot. Cervical, Thoracic, and Lumbar do not take a side.
-4. **Shorthand.** Map the words onto that checklist. Reuse `src/lib/goat-regions.ts` where it already knows a word (`cervical`, `c-spine`, `neck`, `lumbar`, `l-spine`, `low back`, `thoracic`, `shoulder`, `knee`, and the rest of that file). Add the office shorthand the form's word list does not spell out, without letting a spinal level get eaten:
-   - `CL` or `C/L` means Cervical and Lumbar.
-   - A lone `C`, `T`, or `L` next to the MRI wording means Cervical, Thoracic, or Lumbar.
-   - `C5`, `C5-6`, `L4-5`, and `L5-S1` stay levels. The level picks the region (C → Cervical, T → Thoracic, L → Lumbar). The form stores the region, not the disc level. The preview can mention the level in words. It does not invent a new region field.
-   - `R shoulder` is Shoulder with laterality R. `L knee` is Knee with L. `BL knee` is Knee with BL. A side sticks to the body part beside it. In "CL R shoulder", the L inside CL is Lumbar, and the R belongs to the shoulder.
-   - Knee, shoulder, and the other sided regions with no side stated are a question. Spine regions never ask for a side.
-5. **MRI, not CT, not a prior study.** "Send MRI" sets `isCt` false and `modalityLabel` MRI. CT only when they said CT. `isPrior` stays off. A prior study does not write `matrix.mriSent` and does not move Case Flow, so this command must not create one.
-6. **Sent date.** The chart requires a sent date. The preview defaults it to today in the office timezone and shows it. They can change it before confirm.
-7. **What confirm writes.** The same shape as **Add MRI / CT Sent**: id, modality, sent date, center, regions, laterality, and empty scheduled, done, received, reviewed, and findings. `matrix.mriSent` is that sent date. That is what takes the chart off Case Flow's MRI "Needs Referral" stage under the office's existing rules (`mriAppearMode`, the day count from the initial exam, cleared-by, and patient-refused). Do not clear a referral by hand. Do not change X-ray or specialist rows.
-8. **The PDF.** Reuse the active Imaging Request template (`scope: imagingRequest`), the same token fill as `generateImagingRequestPdf`, and `buildDocumentTitle` for the name. Regions print the way the chart summarizes them, such as `Cervical, Lumbar, Shoulder (R)`. The center's phone, fax, email, and address come from the Imaging Center contact when this person can view Contacts. If they cannot view Contacts, those tokens stay blank. The center name they already said can still appear. If the template or its header has `[[prompt]]` tokens, the preview asks for each one and confirm waits. If the office has no Imaging Request template, the preview says "NO PDF. Create Template?" and confirm does nothing. Today the chart opens a print dialog and the person chooses Save as PDF. The connector does not open that dialog. It renders that same document to a PDF and saves it in the patient's system folder in My Files, through the same file bucket an upload uses. The file name is the document title, for example `071826SMJO Smith, John - Imaging Request - MRI.pdf`, and it is not prefixed a second time. The tool result returns the file id and name. It does not return the PDF bytes.
-9. **Suggested from MRI stays a diagnosis helper.** `src/lib/dx-suggest.ts` reads MRI findings that are already on the chart and suggests ICD-10 codes. Nothing is added unless someone clicks Add on the chart. Preparing an MRI referral does not run that suggester, does not add a diagnosis, and does not write findings. There is no separate engine that picks cervical or lumbar for the patient. The regions come from the person's words, mapped as above. The preview can mention an open "Needs Referral" Case Flow row so they see why this chart was waiting. It does not order regions the person did not name.
+5. **Add MRI / CT Sent.** Confirm calls the same save as that button. The new row is modality MRI (or CT if the box was checked), the center, the regions and laterality, the sent date, and empty scheduled, completed, received, reviewed, and findings. `matrix.mriSent` is that sent date, which is what moves Case Flow off MRI "Needs Referral" under the office's existing rules. The row reads the way the panel reads it: "MRI — Insight Imaging Center", then "Regions: Cervical, Lumbar, Shoulder (R)", then "Sent: 11/16/2026 | Scheduled: - | Completed: - | Received: - | Reviewed: -".
+6. **Generate PDF.** Confirm then uses the Generate PDF button on that new row: `generateImagingRequestPdf` for the MRI entry, the active Imaging Request template, and `buildDocumentTitle` for the file name. The chart opens a print dialog here. The connector does not. It renders that same document and saves the PDF in the patient's folder. If the template has `[[prompt]]` tokens, those questions are in the preview and confirm waits. If there is no Imaging Request template, nothing is saved and the answer is "NO PDF. Create Template?"
+
+**Hand the PDF back.** As soon as that file is saved, the confirm result also returns it with the download method in **Download a file**: an MCP resource `goat://file/{file_id}`, the bytes embedded when the PDF is about 5 MB or less, and a 15-minute signed link created with this user's login. The AI app shows that file or that link. The person taps or clicks it to save the PDF on the phone, laptop, or desktop they are using. The connector does not push the file onto the device by itself, and it does not email or fax it. The audit row stores the patient id and the file id. It does not store the link or the PDF bytes.
+
+Suggested from MRI stays a diagnosis helper. This action does not run it and does not add a diagnosis code.
 
 Out of Phase 2 even if the person can do them in the app: editing a chart, editing or signing SOAP, deleting, billing edits, sending texts, scheduling except the first exam that create-patient already books, any mail change, X-ray referrals, specialist referrals, and emailing or faxing an MRI referral.
 
@@ -551,7 +544,7 @@ These are acceptance examples. Each answer names the location scope. The words a
 | Discharged cases that owe more than $5,000, by attorney. | `discharged_owed_over` with `5000` | Sorted by attorney, then amount. |
 | What needs my attention today? | `goat_attention_today` | The short list from the boxes this user can see. |
 | Any new patients waiting in the mail? | `goat_mail_intake_pending` | Parsed referrals not yet made into charts. Creating one is a Phase 2 confirm. |
-| Send MRI for Zhora to Insight cervical lumbar. | `goat_prepare_mri_referral` | Preview: one patient, Insight Imaging if that is the only match, Cervical and Lumbar, sent date today, file name. Nothing saved until confirm. |
+| Send MRI for Zhora to Insight cervical lumbar. | `goat_prepare_mri_referral` | Preview with CT off, Sent Date today, the matched center, and Cervical and Lumbar. After confirm, the row is added, the PDF is saved, and the same download is shown for the person to tap or click. |
 | Send MRI for Zhora to Insight CL R shoulder. | `goat_prepare_mri_referral` | Cervical, Lumbar, and Shoulder (R). The L in CL is Lumbar. |
 
 "All locations" and "just the Dallas office" are the `location` argument on these tools. Nicknames match the location nicknames in Office settings.
@@ -689,8 +682,9 @@ MRI referral
 - "CL R shoulder" is Cervical, Lumbar, and Shoulder with laterality R. The L inside CL is not Left.
 - Two patients named Zhora, or two centers named Insight, return a question and do not pick.
 - A region that is X-ray only, such as Humerus, is left off and named in the preview.
+- The preview has CT off unless the person said CT, and Sent Date filled as today in MM/DD/YYYY unless they named another date.
 - Confirm writes one `mriReferrals` row, sets `matrix.mriSent`, and saves one PDF in the patient's folder under the Imaging Request title. It does not add a diagnosis from Suggested from MRI.
-- No email is sent and no fax is sent. A missing Imaging Request template saves nothing.
+- That confirm also returns the PDF as an embedded resource and a 15-minute signed link. The AI app shows it. The person taps or clicks to save it. No email is sent and no fax is sent. A missing Imaging Request template saves nothing.
 - A login that cannot edit patients or My Files is refused before any row or file is written.
 
 G.O.A.T. Connector page
