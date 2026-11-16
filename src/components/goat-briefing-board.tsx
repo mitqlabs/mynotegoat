@@ -21,6 +21,7 @@ import {
   imagingReferralRows,
   itemShown,
   matchesPeriod,
+  snapshotStatusesToShow,
   nextOpenDayLabel,
   nextOpenOfficeDay,
   orderedIds,
@@ -318,27 +319,46 @@ export function GoatBriefingBoard({
       const period = box.period ?? "this-year";
       const inPeriod = casePatients.filter((patient) => matchesPeriod(patient, period, todayIso));
       const order = orderedIds(caseStatuses.map((status) => `status:${status.name}`), box.itemOrder);
+      const onlyStatus = snapshotStatusesToShow(box.snapshotStatus, caseStatuses.map((status) => status.name));
+      const shownIds = onlyStatus ? [`status:${onlyStatus}`] : order;
       return (
         <div className="space-y-3">
-          <label className="grid gap-1 text-xs font-semibold text-[var(--text-muted)]">
-            Period
-            <select
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
-              onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, period: event.target.value as SnapshotPeriod } : row)))}
-              value={period}
-            >
-              <option value="this-year">This Year</option>
-              <option value="last-year">Last Year</option>
-              {Array.from({ length: 8 }, (_, index) => Number(todayIso.slice(0, 4)) - index)
-                .filter((year) => year !== Number(todayIso.slice(0, 4)) && year !== Number(todayIso.slice(0, 4)) - 1)
-                .map((year) => (
-                  <option key={year} value={`year:${year}`}>{year}</option>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-[var(--text-muted)]">
+              Period
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
+                data-testid="case-snapshot-period"
+                onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, period: event.target.value as SnapshotPeriod } : row)))}
+                value={period}
+              >
+                <option value="this-year">This Year</option>
+                <option value="last-year">Last Year</option>
+                {Array.from({ length: 8 }, (_, index) => Number(todayIso.slice(0, 4)) - index)
+                  .filter((year) => year !== Number(todayIso.slice(0, 4)) && year !== Number(todayIso.slice(0, 4)) - 1)
+                  .map((year) => (
+                    <option key={year} value={`year:${year}`}>{year}</option>
+                  ))}
+                <option value="all">All Time</option>
+              </select>
+            </label>
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-[var(--text-muted)]">
+              Status
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
+                data-testid="case-snapshot-status"
+                onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, snapshotStatus: event.target.value } : row)))}
+                value={onlyStatus ?? "all"}
+              >
+                <option value="all">All statuses</option>
+                {caseStatuses.map((status) => (
+                  <option key={status.name} value={status.name}>{status.name}</option>
                 ))}
-              <option value="all">All Time</option>
-            </select>
-          </label>
-          {order.map((id) => {
-            if (!itemShown(box.hiddenItems, id)) return null;
+              </select>
+            </label>
+          </div>
+          {shownIds.map((id) => {
+            if (!onlyStatus && !itemShown(box.hiddenItems, id)) return null;
             const status = caseStatuses.find((row) => `status:${row.name}` === id);
             if (!status) return null;
             const list = patientsInStatus(inPeriod, status.name);
