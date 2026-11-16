@@ -540,7 +540,35 @@ The preview shows those four fields in sentences, plus any open MRI row already 
 
 Suggested from MRI stays a diagnosis helper. This action does not run it and does not add a diagnosis code.
 
-Out of Phase 2 even if the person can do them in the app: editing a chart, editing or signing SOAP, deleting, billing edits, sending texts, scheduling except the first exam that create-patient already books, any mail change, X-ray referrals, specialist referrals, and emailing or faxing an MRI referral.
+### Notes, to-dos, and alerts
+
+These follow the buttons on the patient page. Find the patient first. Two matches are a question. The preview shows the exact text, the place it will be saved, the author name, and the date. Nothing is written until a clear yes. The reply after save is a full sentence.
+
+**Add a note.** "Add note to Mike Galstyan: spoke to the attorney." The default place is General Notes, which is the Notes box on the patient page. That box is a list of entries in `casemate.case-note-entries.v1`, not the older free-form blob. Confirm calls the same add as the Add note button: `makeEntry` and `addEntry`. The entry stores `text`, `date` (today, YYYY-MM-DD), `author` and `authorUserId` from `currentAuthor` / `authorDisplayName` for the signed-in person, plus `createdAt` and `updatedAt`. A doctor is stamped "Dr. Mike". Everyone else is first name plus last initial, "Hannah M.". The author is that real person. It is not "Mike (AI)". The activity row is `case_note.added`, the same action the Notes box writes. The Notes panel must be visible, and this person must be able to edit patients. A hidden Notes panel refuses the write.
+
+There is no second note log called a case note. If they say "case note", it is this same Notes box. The older text in `casemate.case-notes.v1` and `matrix.notes` is Earlier notes. New notes are not appended there.
+
+If they name an Additional Details field, the preview is that one field, not a free note. Those fields are discharge, R&B sent, billed, paid, and paid date. Billed, paid, and paid date also need the billing-figures edit. A sentence with no field name asks which field. It is not stored as a note.
+
+**Add a to-do.** "Add a to-do for Mike: call the attorney Friday." Confirm calls `addTask`. The row is a `TaskRecord`: `title`, `priority` (Medium when they do not name one), `dueDate` (YYYY-MM-DD, empty when they do not name one), `done: false`, `patientId`, `patientName`, optional `assignee` (the label the To-Do box already stores), `createdAt`, and `updatedAt`. The activity row is `task.created`. To-dos have no author column. The signed-in person is recorded only on the activity row.
+
+**Mark a to-do done.** Confirm calls `toggleTaskDone` on that id, sets `done` true, updates `updatedAt`, and writes `task.completed`. If more than one open to-do matches the words, the preview lists them and waits.
+
+**Add an alert.** The header box stores `patients.alerts` as a list of strings, uppercased, the way the + Alert button does. Confirm appends one string on the patient row. It does not replace the list. The activity row is `alert.added`, because that button does not already write its own log line. The connector still records it.
+
+Existing notes, to-dos, and alerts are not edited or deleted unless the person asks for that change and confirms a second preview. Editing a note uses `updateEntry` and `case_note.edited`, and only when `canEditEntryText` would allow it on the page. Deleting a note is the tombstone (`deleted: true`), not a hard delete. SOAP notes are never created, edited, or deleted by these tools.
+
+### Activity log for every connector write
+
+Every write the connector confirms, including a new patient, an MRI PDF, a note, a to-do, and an alert, is one row in the existing `audit_log`, under the signed-in user. `actor_user_id`, `actor_email`, `actor_label`, and `actor_role` are that person, the same values `logActivity` already stores. The note's `author` and `authorUserId` stay that real name. They do not gain an "(AI)" suffix.
+
+The minimal change:
+
+- Add a text column `source` on `public.audit_log`, default `''`. Connector rows set it to `mcp`. Rows written from the app stay blank, so old rows need no backfill. `details` may repeat `"source": "mcp"` for readers that already look at JSON. The column is what the screen filters on.
+- `logActivity` accepts an optional source. The connector passes `mcp`. The app does not.
+- The Activity Log table (`activity-log-panel.tsx`) shows the name as `Mike (AI)` when `source` is `mcp`. The stored `actor_label` stays `Mike`. The "(AI)" is only display. A manager still cannot read owner or admin rows. The row does not store the note body beyond the short summary the Notes box already logs, and it does not store file bytes or signed links.
+
+Out of Phase 2 even if the person can do them in the app: editing SOAP, deleting patients or files, billing edits other than a named Additional Details field they confirmed, sending texts, scheduling except the first exam that create-patient already books, any mail change, X-ray referrals, specialist referrals, and emailing or faxing an MRI referral.
 
 ## Example questions
 
@@ -559,6 +587,8 @@ These are acceptance examples. Each answer names the location scope. The words a
 | What were the MRI results for Zhora? | `goat_case_read` results | Two labels. Patient Page quotes the typed findings. Patient Files is filled only after they agree to check the files. |
 | What did Zhora's left knee X-ray show? | `goat_case_read` results | Patient Page: "Zhora's X-ray of the left knee showed no fracture or subluxation." when that text is typed. Patient Files says whether a report is there, and summarizes it only after yes. |
 | What did pain management recommend for Zhora? | `goat_case_read` results | Patient Page quotes the Recommendations box on that specialist row. Patient Files waits for yes before reading an uploaded PM report. |
+| Add note to Mike Galstyan: spoke to the attorney. | `goat_prepare_note` | Preview of the Notes entry, with today's date and his real author name. After yes: "Added that note to Mike Galstyan's Notes." The activity line shows Mike (AI). |
+| Add a to-do for Mike: call the attorney Friday. | `goat_prepare_todo` | Preview with the title, due date, and assignee if they named one. Saved only after yes. |
 | How do Zhora's lumbar decompression appointments break down? | `goat_case_read` appointments chip | "Lumbar Spinal Decompression is 10 scheduled, 0 checked in, 0 checked out, and 2 canceled." |
 | Download the MRI referral for Zhora. | `goat_download_file` | The saved PDF as a download. If none is saved, ask before generating one. It is not emailed or faxed. |
 | Who hasn't been seen in 30 days? | `goat_list_cases` mode `not_seen_in_days` | Name, last kept visit, location. |
@@ -688,6 +718,8 @@ Phase 1 questions
 - A reply that is only "3 left, last 11/28" fails the sentence check.
 - A case read for a Staff login with billing hidden includes the X-ray sentence and the appointment chip, and does not include a balance. A hidden Notes panel does not return general notes. SOAP text is absent while the office SOAP switch is off.
 - "What were the MRI results?" with typed cervical findings quotes that text under Patient Page and does not open a file. With an empty findings box and an uploaded MRI PDF, Patient Files asks before reading, and the PDF is not read. A yes summarizes it as from the uploaded file and offers the download. The findings box is unchanged. X-ray, CT, Pain Management, and other specialists follow the same two labels. Pain Management text is the specialist row's `recommendations` field.
+- "Add note to Mike Galstyan" previews one new Notes entry and writes nothing until yes. The stored author is the signed-in person. The activity row has source `mcp` and the screen shows that name with (AI). An existing note is not changed. SOAP is not changed.
+- "Add a to-do for Mike" creates one open task with the due date they named. "Mark it done" sets `done` on that task only after a second yes.
 - "Download the MRI referral for Zhora" returns a resource for a file in that patient's folder. A second patient with the same name asks. No saved PDF does not generate one until confirm, and no email or fax is sent. The audit row has the file id and not the signed link.
 
 Phase 2
