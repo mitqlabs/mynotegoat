@@ -14,6 +14,7 @@ import {
   countImagingStudies,
   dashboardNumbersFromCases,
   dobKey,
+  folderForCase,
   groupPatientCases,
   phoneKey,
   proveFolderNumbers,
@@ -63,6 +64,7 @@ assert.equal(grouped.folders.length, 1, "same name and DOB, matching phone and a
 assert.equal(grouped.conflicts.length, 0);
 assert.equal(grouped.closeMatches.length, 0);
 assert.deepEqual(grouped.folders[0].caseIds, ["c1", "c2"]);
+assert.deepEqual(folderForCase("c2", [base, second]), { id: "pf-c1", name: "Smith, John" });
 
 const conflict = groupPatientCases([
   base,

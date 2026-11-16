@@ -570,11 +570,10 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"], discharge
 export default function PatientsPage() {
   // Folder preview replaces this list with one row per person. The switch
   // defaults off, so production still renders the case list below.
-  if (patientFoldersEnabled()) return <PatientFolderListPage />;
-  return <LegacyPatientsPage />;
+  return <LegacyPatientsPage folderList={patientFoldersEnabled()} />;
 }
 
-export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | "cases" }) {
+export function LegacyPatientsPage({ mode = "patients", folderList = false }: { mode?: "patients" | "cases"; folderList?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // When a patient page navigates here via Save & Close, it appends
@@ -742,7 +741,8 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
-  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string }>(null);
+  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }>(null);
+  const [addCasePatientId, setAddCasePatientId] = useState("");
   const [caseMessage, setCaseMessage] = useState("");
   const [caseConflict, setCaseConflict] = useState<CasePopupConflict | null>(null);
   const [newPatientMessage, setNewPatientMessage] = useState("");
@@ -1328,15 +1328,20 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
     phone: contact.phone,
   }));
 
-  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string }) => {
+  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }) => {
     setCaseMessage("");
     setCaseConflict(null);
+    if (next.source === "add") setAddCasePatientId("");
     setCasePopup(next);
   };
 
   const casePopupNames = () => {
     if (casePopup?.source === "intake") {
       const patient = patients.find((row) => row.id === casePopup.patientId);
+      return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
+    }
+    if (casePopup?.source === "add") {
+      const patient = patients.find((row) => row.id === addCasePatientId);
       return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
     }
     return { firstName: newPatientDraft.firstName, lastName: newPatientDraft.lastName };
@@ -1471,6 +1476,93 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
       }
     }
     setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
+  };
+
+  const addCasePeople = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; name: string; dob: string }[] = [];
+    for (const patient of patients) {
+      if (patient.deleted) continue;
+      const key = `${patient.fullName.trim().toLowerCase()}|${patient.dob ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: patient.id, name: patient.fullName, dob: patient.dob ?? "" });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [listVersion]);
+
+  const saveAddedCase = (draft: CasePopupDraft, bookAnyway: boolean) => {
+    const base = patients.find((row) => row.id === addCasePatientId);
+    if (!base) {
+      setCaseMessage("Choose a patient.");
+      return;
+    }
+    const locationId = base.locationId || "";
+    const reviewed = reviewCasePopup(draft, {
+      bookAnyway,
+      appointments: scheduleAppointments,
+      settings: settingsForLocation(locationId),
+      types: appointmentTypes,
+    });
+    if (!reviewed.ok) {
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      return;
+    }
+    if (!rememberAttorney(draft.attorney, draft.attorneyPhone)) {
+      setCaseMessage("Could not save that attorney.");
+      return;
+    }
+    const names = splitFullName(base.fullName);
+    const created = createPatientRecord({
+      firstName: names.firstName,
+      lastName: names.lastName,
+      dob: base.dob,
+      sex: base.sex,
+      maritalStatus: base.maritalStatus,
+      phone: base.phone,
+      email: base.email,
+      address: base.address,
+      attorney: cleanAttorneyLabel(draft.attorney || base.attorney || "Self") || "Self",
+      dateOfLoss: draft.dateOfLoss,
+      initialExam: reviewed.initialExamIso,
+      isCashPatient: base.isCashPatient,
+      locationId,
+    });
+    if (!created) {
+      setCaseMessage("Could not add that case.");
+      return;
+    }
+    if (reviewed.visit) {
+      const office = loadOfficeSettings();
+      try {
+        addAppointments([
+          {
+            id: createAppointmentId(),
+            patientId: created.id,
+            patientName: created.fullName,
+            provider: office.doctorName?.trim() ?? "",
+            location: office.officeName?.trim() ?? "",
+            appointmentType: reviewed.visit.type,
+            caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, created.fullName),
+            room: "",
+            date: reviewed.visit.iso,
+            startTime: reviewed.visit.time,
+            durationMin: reviewed.visit.durationMin,
+            status: "Scheduled",
+            note: "",
+            overrideOfficeHours: reviewed.visit.override,
+          },
+        ]);
+      } catch (error) {
+        setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+        return;
+      }
+    }
+    setCasePopup(null);
+    setAddCasePatientId("");
     setCaseMessage("");
     setCaseConflict(null);
   };
@@ -2023,6 +2115,10 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
 
   return (
     <div className="space-y-5">
+      {folderList ? (
+        <PatientFolderListPage onNewPatient={openNewPatientModal} />
+      ) : (
+      <>
       {printPickerFor && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
@@ -2103,16 +2199,18 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
         </div>
       )}
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className={`flex flex-wrap items-center gap-3 ${mode === "cases" ? "justify-end" : "justify-between"}`}>
+          {mode !== "cases" && (
           <div>
-            <h3 className="text-xl font-semibold">{mode === "cases" ? "Case List" : "All Patients Workspace"}</h3>
+            <h3 className="text-xl font-semibold">All Patients Workspace</h3>
           </div>
+          )}
           <button
             className="btn btn-primary"
-            onClick={openNewPatientModal}
+            onClick={mode === "cases" ? () => openCasePopup({ source: "add" }) : openNewPatientModal}
             type="button"
           >
-            {mode === "cases" ? "New Case" : "New Patient"}
+            {mode === "cases" ? "Add Case" : "New Patient"}
           </button>
         </div>
 
@@ -3102,6 +3200,9 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
         </div>
       )}
 
+      </>
+      )}
+
       {showNewPatientModal && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
@@ -3391,7 +3492,7 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
           attorneys={caseAttorneyOptions}
           conflict={caseConflict}
           initial={casePopupInitial()}
-          key={casePopup.source === "intake" ? casePopup.patientId : "new"}
+          key={casePopup.source === "intake" ? casePopup.patientId : casePopup.source}
           message={caseMessage}
           onCaseNumber={(dateOfLoss) => {
             const names = casePopupNames();
@@ -3399,6 +3500,7 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
           }}
           onClose={() => {
             setCasePopup(null);
+            setAddCasePatientId("");
             setCaseMessage("");
             setCaseConflict(null);
           }}
@@ -3406,8 +3508,13 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
             setCaseMessage("");
             setCaseConflict(null);
           }}
-          onSave={saveCasePopup}
-          purpose={casePopup.source}
+          onSave={casePopup.source === "add" ? saveAddedCase : saveCasePopup}
+          purpose={casePopup.source === "intake" ? "intake" : "new"}
+          showPatientPicker={casePopup.source === "add"}
+          people={addCasePeople}
+          attachedId={addCasePatientId}
+          onAttach={setAddCasePatientId}
+          onNewPatient={openNewPatientModal}
         />
       )}
 

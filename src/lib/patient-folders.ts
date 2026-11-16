@@ -413,6 +413,16 @@ export function groupPatientCases(cases: readonly FolderCaseInput[]): FolderGrou
   return { folders, conflicts, closeMatches, sharedPhones };
 }
 
+/** Folder page for one case. Null when that case is not in the list. */
+export function folderForCase(caseId: string, cases: readonly FolderCaseInput[]): { id: string; name: string } | null {
+  if (!caseId) return null;
+  const folder = groupPatientCases(cases).folders.find((item) => item.caseIds.includes(caseId));
+  if (!folder) return null;
+  const parts = splitFullName(folder.person.fullName);
+  const name = parts.lastName && parts.firstName ? `${parts.lastName}, ${parts.firstName}` : folder.person.fullName.trim();
+  return { id: folder.id, name: name || "Patient" };
+}
+
 export type DashboardCaseNumbers = {
   cases: number;
   byStatus: Record<string, number>;

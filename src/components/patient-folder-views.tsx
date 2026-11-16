@@ -6,6 +6,14 @@ import { PatientPhotoControl } from "@/components/patient-photo-cropper";
 import { formatDobDisplay, formatFolderMoney, formatPhoneDisplay, splitFullName } from "@/lib/patient-folders";
 import { PatientFolderFiles } from "@/components/patient-folder-files";
 import { PatientTodoList, type PatientTodoDraft, type PatientTodoItem } from "@/components/patient-todo-list";
+import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
+import {
+  PatientPersonFields,
+  isoToUsDate,
+  type PatientPersonDraft,
+  type PatientSexValue,
+} from "@/components/patient-person-fields";
+import { formatUsPhoneInput } from "@/lib/phone-format";
 
 export type FolderListRow = {
   id: string;
@@ -56,6 +64,8 @@ export type FolderDetail = {
   email: string;
   address: string;
   alerts: string[];
+  /** Same per-person flag the case page stores as textRemindersOff. */
+  textRemindersOff?: boolean;
   todos: FolderTodo[];
   notes: FolderNote[];
   cases: FolderCaseRow[];
@@ -94,15 +104,13 @@ function CountBubble({ n, tone }: { n: number; tone: "green" | "amber" | "blue" 
 export function PatientFolderListView({
   rows,
   onOpen,
-  onCreate,
+  onNewPatient,
 }: {
   rows: FolderListRow[];
   onOpen: (id: string) => void;
-  onCreate: (draft: { firstName: string; lastName: string; dob: string; phone: string; openCase: boolean }) => void;
+  onNewPatient: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ firstName: "", lastName: "", dob: "", phone: "", openCase: false });
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
@@ -113,52 +121,10 @@ export function PatientFolderListView({
     <div className="space-y-5">
       <section className="panel-card p-4">
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <button className="btn btn-primary" onClick={() => setCreating(true)} type="button">
+          <button className="btn btn-primary" onClick={onNewPatient} type="button">
             New Patient
           </button>
         </div>
-        {creating && (
-          <form
-            className="mt-4 grid gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3 md:grid-cols-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!draft.firstName.trim() || !draft.lastName.trim()) return;
-              onCreate(draft);
-              setDraft({ firstName: "", lastName: "", dob: "", phone: "", openCase: false });
-              setCreating(false);
-            }}
-          >
-            <p className="md:col-span-2 text-sm font-semibold">New patient — person info only. A case is optional and starts empty.</p>
-            <label className={LABEL}>
-              First name
-              <input className={FIELD} value={draft.firstName} onChange={(event) => setDraft({ ...draft, firstName: event.target.value })} />
-            </label>
-            <label className={LABEL}>
-              Last name
-              <input className={FIELD} value={draft.lastName} onChange={(event) => setDraft({ ...draft, lastName: event.target.value })} />
-            </label>
-            <label className={LABEL}>
-              DOB
-              <input className={FIELD} placeholder="MM/DD/YYYY" value={draft.dob} onChange={(event) => setDraft({ ...draft, dob: event.target.value })} />
-            </label>
-            <label className={LABEL}>
-              Phone
-              <input className={FIELD} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} />
-            </label>
-            <label className="flex items-center gap-2 text-sm md:col-span-2">
-              <input checked={draft.openCase} onChange={(event) => setDraft({ ...draft, openCase: event.target.checked })} type="checkbox" />
-              Also open a blank case (no attorney, billing, or notes copied)
-            </label>
-            <div className="flex gap-2 md:col-span-2">
-              <button className="btn btn-primary" type="submit">
-                Save patient
-              </button>
-              <button className="rounded-lg bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold" onClick={() => setCreating(false)} type="button">
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
@@ -230,7 +196,7 @@ export function PatientFolderPageView({
   folder,
   onBack,
   onOpenCase,
-  onNewCase,
+  onAddCase,
   onSavePerson,
   onAddNote,
   todoItems,
@@ -241,8 +207,8 @@ export function PatientFolderPageView({
   folder: FolderDetail;
   onBack: () => void;
   onOpenCase: (caseId: string) => void;
-  onNewCase: (draft: { attorney: string; dateOfInjury: string }) => void;
-  onSavePerson: (next: { firstName: string; lastName: string; dob: string; phone: string; sex: string; maritalStatus: string; email: string; address: string }) => void;
+  onAddCase: () => void;
+  onSavePerson: (next: PatientPersonDraft) => void;
   onAddNote: (text: string) => void;
   todoItems: PatientTodoItem[];
   onToggleTodo: (id: string) => void;
@@ -250,20 +216,22 @@ export function PatientFolderPageView({
   onSavePhoto: (dataUrl: string) => void;
 }) {
   const parts = splitFullName(folder.name);
-  const [person, setPerson] = useState({
+  const sex: PatientSexValue =
+    folder.sex === "Male" || folder.sex === "Female" || folder.sex === "Other" ? folder.sex : "";
+  const marital = normalizeMaritalStatus(folder.maritalStatus) ?? "";
+  const [person, setPerson] = useState<PatientPersonDraft>({
     firstName: parts.firstName,
     lastName: parts.lastName,
-    dob: formatDobDisplay(folder.dob),
-    phone: formatPhoneDisplay(folder.phone),
-    sex: folder.sex,
-    maritalStatus: folder.maritalStatus,
+    dob: isoToUsDate(folder.dob),
+    phone: formatUsPhoneInput(folder.phone),
+    sex,
+    maritalStatus: marital as MaritalStatus | "",
     email: folder.email,
     address: folder.address,
+    textRemindersOff: folder.textRemindersOff === true,
   });
   const [note, setNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
-  const [addingCase, setAddingCase] = useState(false);
-  const [caseDraft, setCaseDraft] = useState({ attorney: "", dateOfInjury: "" });
   const age = ageOn(folder.dob, "2026-11-11");
   const caseMoney = folder.cases.map((row) => {
     const balance = row.billed - row.paid;
@@ -293,35 +261,24 @@ export function PatientFolderPageView({
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <button className="btn btn-primary" onClick={onAddCase} type="button">
+          Add Case
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+      <section className="panel-card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
           <button
             className="rounded-full border border-[#d5e4ef] bg-white px-4 py-2 text-sm font-semibold text-[#172a3a]"
             onClick={() => onSavePerson(person)}
             type="button"
           >
-            Edit Patient Info
-          </button>
-          <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white" onClick={() => setAddingCase(true)} type="button">
-            + New Case
+            Save Patient Info
           </button>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
-      <section className="panel-card p-3">
-        <div className="mb-2">
-          <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className={LABEL}>Last Name<input className={FIELD} value={person.lastName} onChange={(event) => setPerson({ ...person, lastName: event.target.value })} /></label>
-          <label className={LABEL}>First Name<input className={FIELD} value={person.firstName} onChange={(event) => setPerson({ ...person, firstName: event.target.value })} /></label>
-          <label className={LABEL}>DOB<input className={FIELD} value={person.dob} onChange={(event) => setPerson({ ...person, dob: event.target.value })} /></label>
-          <label className={LABEL}>Phone<input className={FIELD} value={person.phone} onChange={(event) => setPerson({ ...person, phone: event.target.value })} /></label>
-          <label className={LABEL}>Sex<input className={FIELD} value={person.sex} onChange={(event) => setPerson({ ...person, sex: event.target.value })} /></label>
-          <label className={LABEL}>Marital Status<input className={FIELD} value={person.maritalStatus} onChange={(event) => setPerson({ ...person, maritalStatus: event.target.value })} /></label>
-          <label className={LABEL}>Email<input className={FIELD} value={person.email} onChange={(event) => setPerson({ ...person, email: event.target.value })} /></label>
-          <label className={LABEL}>Address<input className={FIELD} value={person.address} onChange={(event) => setPerson({ ...person, address: event.target.value })} /></label>
-        </div>
+        <PatientPersonFields onChange={setPerson} value={person} />
       </section>
       <section className="panel-card min-w-0 overflow-hidden">
         <div className="border-b border-[var(--line-soft)] px-4 py-2.5">
@@ -376,28 +333,6 @@ export function PatientFolderPageView({
         </div>
       </section>
       </div>
-
-      {addingCase && (
-        <form
-          className="panel-card grid gap-3 p-4 md:grid-cols-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onNewCase(caseDraft);
-            setCaseDraft({ attorney: "", dateOfInjury: "" });
-            setAddingCase(false);
-          }}
-        >
-          <p className="md:col-span-2 text-sm text-[#172a3a]">
-            Person info stays on the patient. This case does not copy attorney, billing, or notes from the other cases.
-          </p>
-          <label className={LABEL}>Attorney<input className={FIELD} value={caseDraft.attorney} onChange={(event) => setCaseDraft({ ...caseDraft, attorney: event.target.value })} /></label>
-          <label className={LABEL}>Date of injury<input className={FIELD} placeholder="MM/DD/YYYY" value={caseDraft.dateOfInjury} onChange={(event) => setCaseDraft({ ...caseDraft, dateOfInjury: event.target.value })} /></label>
-          <div className="flex gap-2 md:col-span-2">
-            <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white" type="submit">Add case</button>
-            <button className="rounded-full bg-[#e4f0f7] px-4 py-2 text-sm font-semibold" onClick={() => setAddingCase(false)} type="button">Cancel</button>
-          </div>
-        </form>
-      )}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
         <section className="panel-card flex min-w-0 flex-col p-3">
@@ -486,7 +421,13 @@ export function PatientFolderPageView({
         </section>
         <section className="panel-card min-w-0 p-3">
           <h3 className="mb-1 font-semibold">To-Do</h3>
-          <PatientTodoList compact items={todoItems} onAdd={onAddTodo} onToggle={onToggleTodo} />
+          <PatientTodoList
+            cases={folder.cases.map((row) => ({ id: row.id, caseNumber: row.caseNumber }))}
+            compact
+            items={todoItems}
+            onAdd={onAddTodo}
+            onToggle={onToggleTodo}
+          />
         </section>
         <section className="panel-card min-w-0 p-3">
           <h3 className="mb-1 font-semibold">Alerts</h3>

@@ -1,19 +1,31 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { NewPatientCasePopup, type CaseAttorneyOption } from "@/components/new-patient-case-popup";
+import { reviewCasePopup, scheduleCaseLabel, type CasePopupConflict, type CasePopupDraft } from "@/lib/new-patient-intake";
+import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
+import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
+import { useScheduleSettings } from "@/hooks/use-schedule-settings";
+import { createAppointmentId } from "@/lib/schedule-appointments";
+import { loadOfficeSettings } from "@/lib/office-settings";
+import { caseNumberStampFor, renderCaseNumber } from "@/lib/case-number";
+import { formatUsPhoneInput } from "@/lib/phone-format";
+import { usDateToIso } from "@/components/patient-person-fields";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { useTasks } from "@/hooks/use-tasks";
 import { currentAuthor } from "@/hooks/use-case-note-entries";
 import { formatEntryDate, CASE_NOTE_ENTRIES_KEY, entriesForPatient, loadCaseNoteEntries } from "@/lib/case-note-entries";
 import { getCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { caseNumberOf } from "@/lib/follow-up-queue";
-import { PATIENTS_STORAGE_KEY, createPatientRecord, patients, type PatientRecord } from "@/lib/mock-data";
+import { PATIENTS_STORAGE_KEY, createPatientRecord, patients, updatePatientRecordById, type PatientRecord } from "@/lib/mock-data";
 import { onLocalChange } from "@/lib/local-sync";
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 import {
   formatDobDisplay,
   groupPatientCases,
   resolveCaseMoney,
+  splitFullName,
   type FolderCaseInput,
 } from "@/lib/patient-folders";
 import {
@@ -95,7 +107,7 @@ function useFolderTick(): number {
   return tick;
 }
 
-export function PatientFolderListPage() {
+export function PatientFolderListPage({ onNewPatient }: { onNewPatient: () => void }) {
   const { getRecord } = usePatientBilling();
   const tick = useFolderTick();
   const rows: FolderListRow[] = useMemo(() => {
@@ -126,16 +138,7 @@ export function PatientFolderListPage() {
 
   return (
     <PatientFolderListView
-      onCreate={(draft) => {
-        const created = createPatientRecord({
-          firstName: draft.firstName,
-          lastName: draft.lastName,
-          dob: draft.dob,
-          phone: draft.phone,
-          dateOfLoss: draft.openCase ? "" : "",
-        });
-        if (created) window.location.assign(`/patients/pf-${created.id}`);
-      }}
+      onNewPatient={onNewPatient}
       onOpen={(id) => window.location.assign(`/patients/${id}`)}
       rows={rows}
     />
@@ -162,6 +165,7 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
       }
     : folder.person;
   const byId = new Map(patients.map((patient) => [patient.id, patient]));
+  const members = folder.caseIds.map((id) => byId.get(id)).filter((row): row is PatientRecord => Boolean(row));
   const notes = cloud.notes
     .filter((note) => note.folderId === folder.id && !note.deleted)
     .map((note) => ({ id: note.id, date: formatEntryDate(note.date), author: note.author, text: note.text }));
@@ -178,6 +182,7 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
     email: person.email,
     address: person.address,
     alerts: person.alerts,
+    textRemindersOff: members[0]?.textRemindersOff === true,
     photo: override?.photoDataUrl || undefined,
     todos,
     notes,
@@ -204,6 +209,13 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
 export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
   const { getRecord } = usePatientBilling();
   const { tasks, addTask, toggleTaskDone } = useTasks();
+  const { contacts } = useContactDirectory();
+  const { scheduleAppointments, addAppointments } = useScheduleAppointments();
+  const { scheduleSettings } = useScheduleSettings();
+  const { appointmentTypes } = useScheduleAppointmentTypes();
+  const [addingCase, setAddingCase] = useState(false);
+  const [caseMessage, setCaseMessage] = useState("");
+  const [caseConflict, setCaseConflict] = useState<CasePopupConflict | null>(null);
   const tick = useFolderTick();
   const folder = useMemo(() => {
     void tick;
@@ -231,7 +243,20 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
   if (!folder) {
     return <p className="p-6 text-sm">That patient folder is not in this office.</p>;
   }
+  const names = splitFullName(folder.name);
+  const attorneyName = folder.cases.find((row) => row.attorney && row.attorney !== "—" && row.attorney.toLowerCase() !== "self")?.attorney ?? "";
+  const attorneys: CaseAttorneyOption[] = [];
+  const seenAttorney = new Set<string>();
+  for (const contact of contacts) {
+    if (contact.category.toLowerCase() !== "attorney") continue;
+    const key = contact.name.trim().toLowerCase();
+    if (!key || seenAttorney.has(key)) continue;
+    seenAttorney.add(key);
+    attorneys.push({ id: contact.id, name: contact.name, phone: contact.phone });
+  }
+  const matched = attorneys.find((contact) => contact.name.trim().toLowerCase() === attorneyName.trim().toLowerCase());
   return (
+    <>
     <PatientFolderPageView
         folder={folder}
         onAddNote={(text) => {
@@ -251,31 +276,21 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
           void saveFolderCloud({ ...cloud, notes: [note, ...cloud.notes] });
         }}
         onAddTodo={(draft) => {
+          const attached = draft.caseId ? patients.find((row) => row.id === draft.caseId) : undefined;
+          if (draft.caseId && !attached) return "That case is not on this patient.";
           const result = addTask({
             title: draft.title,
             priority: draft.priority,
             dueDate: draft.dueDate,
-            patientName: folder.name,
+            patientName: attached?.fullName || folder.name,
+            ...(attached ? { patientId: attached.id } : {}),
           });
           return result.added ? "" : result.reason;
         }}
         onToggleTodo={toggleTaskDone}
         todoItems={todoItems}
         onBack={() => window.location.assign("/patients")}
-        onNewCase={(draft) => {
-          const [lastName, firstName] = folder.name.split(",").map((part) => part.trim());
-          const created = createPatientRecord({
-            firstName: firstName || folder.name,
-            lastName: lastName || folder.name,
-            dob: folder.dob,
-            phone: folder.phone,
-            email: folder.email,
-            address: folder.address,
-            attorney: draft.attorney,
-            dateOfLoss: draft.dateOfInjury,
-          });
-          if (created) window.location.assign(`/patients/${created.id}`);
-        }}
+        onAddCase={() => setAddingCase(true)}
         onOpenCase={(caseId) => window.location.assign(`/patients/${caseId}`)}
         onSavePhoto={(dataUrl) => {
           void savePatientPhoto(folder.id, dataUrl, {
@@ -290,18 +305,136 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
           });
         }}
         onSavePerson={(next) => {
+          const firstName = next.firstName.trim();
+          const lastName = next.lastName.trim();
+          const fullName =
+            firstName || lastName
+              ? `${lastName || names.lastName}, ${firstName || names.firstName}`
+              : folder.name;
+          const typedDob = usDateToIso(next.dob);
           void saveFolderPerson(folder.id, {
-            fullName: `${next.lastName.trim()}, ${next.firstName.trim()}`,
-            dob: next.dob,
-            phone: next.phone,
-            email: next.email,
-            address: next.address,
+            fullName,
+            dob: typedDob || (next.dob.trim() ? folder.dob : ""),
+            phone: formatUsPhoneInput(next.phone) || "-",
+            email: next.email.trim(),
+            address: next.address.trim(),
             sex: next.sex,
             maritalStatus: next.maritalStatus,
             alerts: folder.alerts,
           });
+          if (next.textRemindersOff !== (folder.textRemindersOff === true)) {
+            for (const row of folder.cases) {
+              updatePatientRecordById(row.id, { textRemindersOff: next.textRemindersOff });
+            }
+          }
         }}
     />
+    {addingCase && (
+      <NewPatientCasePopup
+        attorneys={attorneys}
+        conflict={caseConflict}
+        initial={{
+          attorney: matched?.name ?? attorneyName,
+          attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : "",
+          dateOfLoss: "",
+          evalDate: "",
+          evalTime: "",
+        }}
+        message={caseMessage}
+        onCaseNumber={(dateOfLoss) => caseNumberPreview(dateOfLoss, names.lastName, names.firstName)}
+        onClose={() => {
+          setAddingCase(false);
+          setCaseMessage("");
+          setCaseConflict(null);
+        }}
+        onDismissIssue={() => {
+          setCaseMessage("");
+          setCaseConflict(null);
+        }}
+        onSave={(draft, bookAnyway) => {
+          const reviewed = reviewCasePopup(draft, {
+            bookAnyway,
+            appointments: scheduleAppointments,
+            settings: scheduleSettings,
+            types: appointmentTypes,
+          });
+          if (!reviewed.ok) {
+            setCaseMessage(reviewed.message);
+            setCaseConflict(reviewed.conflict ?? null);
+            return;
+          }
+          const created = createPatientRecord({
+            firstName: names.firstName || folder.name,
+            lastName: names.lastName || folder.name,
+            dob: folder.dob,
+            phone: folder.phone,
+            email: folder.email,
+            address: folder.address,
+            sex: folder.sex === "Male" || folder.sex === "Female" || folder.sex === "Other" ? folder.sex : undefined,
+            maritalStatus: folder.maritalStatus === "Single" || folder.maritalStatus === "Married" || folder.maritalStatus === "Divorced" || folder.maritalStatus === "Widowed" ? folder.maritalStatus : undefined,
+            attorney: draft.attorney || "Self",
+            dateOfLoss: draft.dateOfLoss,
+            initialExam: reviewed.initialExamIso,
+          });
+          if (!created) {
+            setCaseMessage("Could not add that case.");
+            return;
+          }
+          if (reviewed.visit) {
+            const office = loadOfficeSettings();
+            try {
+              addAppointments([
+                {
+                  id: createAppointmentId(),
+                  patientId: created.id,
+                  patientName: created.fullName,
+                  provider: office.doctorName?.trim() ?? "",
+                  location: office.officeName?.trim() ?? "",
+                  appointmentType: reviewed.visit.type,
+                  caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, created.fullName),
+                  room: "",
+                  date: reviewed.visit.iso,
+                  startTime: reviewed.visit.time,
+                  durationMin: reviewed.visit.durationMin,
+                  status: "Scheduled",
+                  note: "",
+                  overrideOfficeHours: reviewed.visit.override,
+                },
+              ]);
+            } catch (error) {
+              setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+              return;
+            }
+          }
+          setAddingCase(false);
+          window.location.assign(`/patients/${created.id}`);
+        }}
+        purpose="intake"
+      />
+    )}
+    </>
   );
+}
+
+function caseNumberPreview(dateOfLoss: string, lastName: string, firstName: string) {
+  const dateDigits = dateOfLoss.replace(/\D/g, "");
+  if (dateDigits.length < 8) return "";
+  const stamp = caseNumberStampFor(
+    loadOfficeSettings().caseNumberFormat,
+    patients.map((existing) => existing.matrix?.caseSeq),
+  );
+  if (stamp.caseNumberFormat) {
+    return renderCaseNumber(stamp.caseNumberFormat, {
+      mm: dateDigits.slice(0, 2),
+      dd: dateDigits.slice(2, 4),
+      yyyy: dateDigits.slice(4, 8),
+      lastName,
+      firstName,
+      seq: parseInt(stamp.caseSeq ?? "", 10) || undefined,
+    });
+  }
+  const lastInitials = lastName.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2);
+  const firstInitials = firstName.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2);
+  return `${dateDigits.slice(0, 2)}${dateDigits.slice(2, 4)}${dateDigits.slice(6, 8)}${lastInitials}${firstInitials}`;
 }
 

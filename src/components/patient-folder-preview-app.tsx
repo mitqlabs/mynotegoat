@@ -256,47 +256,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
       <main className="min-w-0 flex-1 px-4 py-5 md:px-8">
         {screen.name === "list" && (
           <PatientFolderListView
-            onCreate={(draft) => {
-              const id = `pf-new-${Date.now()}`;
-              const folder: FolderDetail = {
-                id,
-                name: `${draft.lastName.trim()}, ${draft.firstName.trim()}`,
-                dob: draft.dob,
-                phone: draft.phone,
-                sex: "",
-                maritalStatus: "",
-                email: "",
-                address: "",
-                alerts: [],
-                todos: [],
-                notes: [],
-                cases: draft.openCase
-                  ? [
-                      {
-                        id: `case-new-${Date.now()}`,
-                        caseNumber: "#new",
-                        dateOfInjury: "",
-                        initialExam: "",
-                        attorney: "",
-                        attorneyPhone: "",
-                        location: "",
-                        status: "Active",
-                        review: "",
-                        lop: "",
-                        priorCare: "",
-                        discharge: "",
-                        billed: 0,
-                        paid: 0,
-                        paidDate: "",
-                        owed: 0,
-                        notes: [],
-                      },
-                    ]
-                  : [],
-              };
-              setExtras((current) => [...current, folder]);
-              setScreen({ name: "patient", id });
-            }}
+            onNewPatient={() => {}}
             onOpen={openFolder}
             rows={listRows}
           />
@@ -323,28 +283,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
               dueDate: item.due,
             }))}
             onBack={() => setScreen({ name: "list" })}
-            onNewCase={(draft) => {
-              const row: FolderCaseRow = {
-                id: `case-new-${Date.now()}`,
-                caseNumber: "#new",
-                dateOfInjury: draft.dateOfInjury,
-                initialExam: "",
-                attorney: draft.attorney,
-                attorneyPhone: "",
-                location: "",
-                status: "Active",
-                review: "",
-                lop: "",
-                priorCare: "",
-                discharge: "",
-                billed: 0,
-                paid: 0,
-                paidDate: "",
-                owed: 0,
-                notes: [],
-              };
-              updateFolder(activeFolder.id, (folder) => ({ ...folder, cases: [row, ...folder.cases] }));
-            }}
+            onAddCase={() => {}}
             onOpenCase={(caseId) => {
               if (smith.cases.some((row) => row.id === caseId) || activeFolder.cases.some((row) => row.id === caseId)) {
                 setScreen({ name: "case", id: caseId });

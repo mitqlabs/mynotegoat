@@ -14,10 +14,14 @@ export type PatientTodoItem = {
   caseLabel?: string;
 };
 
+export type PatientTodoCaseChoice = { id: string; caseNumber: string };
+
 export type PatientTodoDraft = {
   title: string;
   priority: TaskPriority;
   dueDate: string;
+  /** Set only when the to-do is attached to one case. Empty means general. */
+  caseId?: string;
 };
 
 function toIsoDateFromUsDate(value: string): string {
@@ -40,17 +44,21 @@ export function PatientTodoList({
   items,
   onToggle,
   onAdd,
+  cases,
   compact = false,
 }: {
   items: PatientTodoItem[];
   onToggle: (id: string) => void;
   onAdd?: (draft: PatientTodoDraft) => string;
+  /** When set, the add form can attach the to-do to one of these cases. */
+  cases?: PatientTodoCaseChoice[];
   compact?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("Medium");
   const [dueDate, setDueDate] = useState("");
+  const [caseId, setCaseId] = useState("");
   const [message, setMessage] = useState("");
 
   const submit = () => {
@@ -60,7 +68,7 @@ export function PatientTodoList({
       setMessage("Enter due date as MM/DD/YYYY.");
       return;
     }
-    const reason = onAdd({ title, priority, dueDate: dueDateIso });
+    const reason = onAdd({ title, priority, dueDate: dueDateIso, caseId: caseId || undefined });
     if (reason) {
       setMessage(reason);
       return;
@@ -68,6 +76,7 @@ export function PatientTodoList({
     setTitle("");
     setPriority("Medium");
     setDueDate("");
+    setCaseId("");
     setMessage("");
     setAdding(false);
   };
@@ -112,6 +121,23 @@ export function PatientTodoList({
                 <option value="Urgent">Urgent</option>
               </select>
             </label>
+            {cases && (
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Case</span>
+                <select
+                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setCaseId(event.target.value)}
+                  value={caseId}
+                >
+                  <option value="">General (no case)</option>
+                  {cases.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.caseNumber}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="grid gap-1">
               <span className="text-xs font-semibold text-[var(--text-muted)]">Due Date (optional)</span>
               <input
