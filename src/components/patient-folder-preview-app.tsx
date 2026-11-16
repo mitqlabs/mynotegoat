@@ -265,9 +265,19 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
           <PatientFolderPageView
             key={activeFolder.id}
             folder={activeFolder}
-            onAddNote={(text) => {
-              const entry: FolderNote = { id: `gn-${Date.now()}`, date: "11/11/26", author: "Dr. Mike", text };
+            onAddNote={(draft) => {
+              const entry: FolderNote = { id: `gn-${Date.now()}`, date: "11/11/26", author: "Dr. Mike", text: draft.text };
+              if (draft.caseId) {
+                updateFolder(activeFolder.id, (folder) => ({
+                  ...folder,
+                  cases: folder.cases.map((row) => (row.id === draft.caseId ? { ...row, notes: [entry, ...row.notes] } : row)),
+                }));
+                return;
+              }
               updateFolder(activeFolder.id, (folder) => ({ ...folder, notes: [entry, ...folder.notes] }));
+            }}
+            onAddAlert={(text) => {
+              updateFolder(activeFolder.id, (folder) => ({ ...folder, alerts: [...folder.alerts, text] }));
             }}
             onAddTodo={(draft) => {
               const entry: FolderTodo = { id: `td-${Date.now()}`, title: draft.title, due: draft.dueDate };

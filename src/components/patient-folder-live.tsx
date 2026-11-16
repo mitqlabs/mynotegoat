@@ -15,11 +15,12 @@ import { usDateToIso } from "@/components/patient-person-fields";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { useTasks } from "@/hooks/use-tasks";
 import { currentAuthor } from "@/hooks/use-case-note-entries";
-import { formatEntryDate, CASE_NOTE_ENTRIES_KEY, entriesForPatient, loadCaseNoteEntries } from "@/lib/case-note-entries";
+import { formatEntryDate, CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, loadCaseNoteEntries, makeEntry, saveCaseNoteEntries } from "@/lib/case-note-entries";
+import { logActivity } from "@/lib/activity-log";
 import { getCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { caseNumberOf } from "@/lib/follow-up-queue";
 import { PATIENTS_STORAGE_KEY, createPatientRecord, patients, updatePatientRecordById, type PatientRecord } from "@/lib/mock-data";
-import { onLocalChange } from "@/lib/local-sync";
+import { notifyChange, onLocalChange } from "@/lib/local-sync";
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 import {
   formatDobDisplay,
@@ -259,14 +260,31 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
     <>
     <PatientFolderPageView
         folder={folder}
-        onAddNote={(text) => {
+        onAddNote={(draft) => {
           const { author, userId } = currentAuthor();
+          if (draft.caseId) {
+            const patient = patients.find((row) => row.id === draft.caseId);
+            if (!patient) return;
+            const entry = makeEntry({ patientId: patient.id, text: draft.text, author, authorUserId: userId });
+            if (!entry) return;
+            void saveCaseNoteEntries(addEntry(loadCaseNoteEntries(), entry));
+            notifyChange(CASE_NOTE_ENTRIES_KEY);
+            logActivity({
+              category: "notes",
+              action: "case_note.added",
+              summary: "Added a note to Notes",
+              patientId: patient.id,
+              patientName: patient.fullName,
+              details: { text: entry.text },
+            });
+            return;
+          }
           const cloud = loadFolderCloud();
           const now = new Date().toISOString();
           const note: FolderGeneralNote = {
             id: newFolderNoteId(),
             folderId,
-            text,
+            text: draft.text,
             date: now.slice(0, 10),
             author,
             authorUserId: userId,
@@ -274,6 +292,11 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
             updatedAt: now,
           };
           void saveFolderCloud({ ...cloud, notes: [note, ...cloud.notes] });
+        }}
+        onAddAlert={(text) => {
+          const caseId = folder.cases[0]?.id;
+          if (!caseId) return;
+          updatePatientRecordById(caseId, { alerts: [...folder.alerts, text] });
         }}
         onAddTodo={(draft) => {
           const attached = draft.caseId ? patients.find((row) => row.id === draft.caseId) : undefined;
