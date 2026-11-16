@@ -4,14 +4,14 @@
  * Plain JavaScript with no imports so the no-flash script can run this file
  * before the page paints, and so tests can load it directly.
  *
- * What is chosen is an office setting (workspace_kv "casemate.brand.v1").
+ * What is chosen is an office setting (workspace_kv "notegoat.theme.v1").
  * Light or Dark is each person's own, stored on that same row under modes,
  * keyed by their login id, so it follows them to any computer. Nothing here
  * is kept only in the browser — localStorage is the cache the rest of the
  * app already keeps for workspace settings.
  */
 
-export const BRAND_KEY = "casemate.brand.v1";
+export const BRAND_KEY = "notegoat.theme.v1";
 
 export const THEME_IDS = ["blue", "sunset", "evergreen", "plum", "harbor", "mine"];
 

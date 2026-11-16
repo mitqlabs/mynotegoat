@@ -4,7 +4,7 @@
  */
 import * as math from "./brand-math.js";
 
-export const BRAND_KEY = math.BRAND_KEY as "casemate.brand.v1";
+export const BRAND_KEY = math.BRAND_KEY as "notegoat.theme.v1";
 export const THEME_IDS = math.THEME_IDS as unknown as readonly ["blue", "sunset", "evergreen", "plum", "harbor", "mine"];
 export type ThemeId = (typeof THEME_IDS)[number];
 export const MODES = math.MODES as unknown as readonly ["light", "dark"];

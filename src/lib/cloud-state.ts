@@ -1135,7 +1135,7 @@ async function bootstrapTableBackedEntities() {
           "casemate.quick-stats-settings.v1",
           "casemate.office-settings.v1",
           // Office theme and each person's Light / Dark.
-          "casemate.brand.v1",
+          "notegoat.theme.v1",
           "casemate.email-settings.v1",
           "casemate.case-statuses.v1",
           "casemate.compliance-options.v1",
@@ -1343,7 +1343,7 @@ async function bootstrapTableBackedEntities() {
               // bigger one. Size let a stale copy (or the logo) decide.
               // Theme row: newer savedAt wins. A key-count comparison would keep a
               // stale copy that merely has an extra My Theme field.
-              if (key === "casemate.brand.v1" && localRaw) {
+              if (key === "notegoat.theme.v1" && localRaw) {
                 let localParsed: unknown = null;
                 try {
                   localParsed = JSON.parse(localRaw);

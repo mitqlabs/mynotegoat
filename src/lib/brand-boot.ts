@@ -12,7 +12,7 @@ const math = readFileSync(join(process.cwd(), "src/lib/brand-math.js"), "utf8").
 const apply = `
 try {
   var raw = null;
-  try { raw = JSON.parse(localStorage.getItem("casemate.brand.v1") || "null"); } catch (e) { raw = null; }
+  try { raw = JSON.parse(localStorage.getItem("notegoat.theme.v1") || "null"); } catch (e) { raw = null; }
   var userId = null;
   try {
     for (var i = 0; i < localStorage.length; i++) {

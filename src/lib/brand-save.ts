@@ -4,7 +4,7 @@
  * Did a look change really reach the database?
  *
  * The theme and each person's Light / Dark live in the existing workspace
- * settings row (casemate.brand.v1). Save must not say "Saved" because a
+ * settings row (notegoat.theme.v1). Save must not say "Saved" because a
  * request went out: it writes, reads the row back, and checks it matches.
  * There is no new table and no migration.
  */
