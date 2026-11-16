@@ -448,17 +448,23 @@ export type CasePopupReview =
       dateOfLossIso: string;
       /** ISO Initial Exam date, set only when a visit is booked. */
       initialExamIso: string;
-      /** A date of injury is the case info that leaves New Patient Intake. */
+      /**
+       * This save books the New Patient visit (and stores that date as the
+       * Initial Exam). A date of injury does not. The list itself also
+       * requires an attorney; create and + Case store "Self" when that box
+       * is left blank, and Self counts.
+       */
       movesToPatientList: boolean;
       visit: { iso: string; time: string; type: string; durationMin: number; override: boolean } | null;
     }
   | { ok: false; message: string; conflict?: CasePopupConflict };
 
 /**
- * Save on the + Case popup. Every field is optional. A date of injury moves
- * the chart onto the Patient List. An exam date and time use the same
- * office-hours and open-slot rules as any new-patient booking, and that
- * date becomes the Initial Exam.
+ * Save on the + Case popup. Every field is optional. An exam date and time
+ * use the same office-hours and open-slot rules as any new-patient booking,
+ * and that date becomes the Initial Exam. Booking that visit is what can
+ * move the chart onto the Patient List (the attorney box is stored as Self
+ * when left blank). A date of injury by itself does not.
  */
 export function reviewCasePopup(
   draft: CasePopupDraft,
@@ -480,7 +486,7 @@ export function reviewCasePopup(
     input.types,
   );
   if (plan.kind === "none") {
-    return { ok: true, dateOfLossIso, initialExamIso: "", movesToPatientList: Boolean(dateOfLossIso), visit: null };
+    return { ok: true, dateOfLossIso, initialExamIso: "", movesToPatientList: false, visit: null };
   }
   if (plan.kind === "error") return { ok: false, message: plan.message };
   if (plan.kind === "conflict") {
@@ -494,7 +500,7 @@ export function reviewCasePopup(
     ok: true,
     dateOfLossIso,
     initialExamIso: plan.iso,
-    movesToPatientList: Boolean(dateOfLossIso),
+    movesToPatientList: true,
     visit: { iso: plan.iso, time: plan.time, type: plan.type, durationMin: plan.durationMin, override: plan.override },
   };
 }

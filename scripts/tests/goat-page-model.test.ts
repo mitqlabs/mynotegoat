@@ -32,9 +32,11 @@ const model = buildGoatPageModel({
   closedStatuses: ["Dropped", "Paid"],
   patients: [
     { id: "in1", fullName: "New, Nora", caseStatus: "Active", dateOfLoss: "", phone: "818-555-0101" },
-    { id: "open1", fullName: "Open, Omar", caseStatus: "Active", dateOfLoss: "2026-01-02", matrix: { lien: "" } },
-    { id: "rb", fullName: "Done, Dana", caseStatus: "Discharged", dateOfLoss: "2026-02-02", matrix: { lien: "Received" } },
-    { id: "paid", fullName: "Paid, Pat", caseStatus: "Paid", dateOfLoss: "2025-01-01" },
+    { id: "atty", fullName: "Atty, Ann", caseStatus: "Active", attorney: "Ward Law", dateOfLoss: "2026-03-01", phone: "818-555-0199" },
+    { id: "booked", fullName: "Booked, Bea", caseStatus: "Active", attorney: "SELF", dateOfLoss: "", matrix: { lien: "Received" } },
+    { id: "open1", fullName: "Open, Omar", caseStatus: "Active", attorney: "Sample Law", dateOfLoss: "2026-01-02", matrix: { lien: "", initialExam: "01/15/2026" } },
+    { id: "rb", fullName: "Done, Dana", caseStatus: "Discharged", attorney: "Sample Law", dateOfLoss: "2026-02-02", matrix: { lien: "Received", initialExam: "02/10/2026" } },
+    { id: "paid", fullName: "Paid, Pat", caseStatus: "Paid", attorney: "Self", dateOfLoss: "2025-01-01", matrix: { initialExam: "02/01/2025" } },
     { id: "cash", fullName: "Cash, Cam", caseStatus: "Active", dateOfLoss: "", isCashPatient: true },
   ],
   appointments: [
@@ -43,6 +45,7 @@ const model = buildGoatPageModel({
     appt({ id: "ns", startTime: "13:00", status: "No Show", patientName: "Brooks, Marcus" }),
     appt({ id: "cx", startTime: "15:00", status: "Canceled", patientName: "Okoro, Amara" }),
     appt({ id: "otherday", date: "2026-11-10", startTime: "09:00" }),
+    appt({ id: "bea", patientId: "booked", patientName: "Booked, Bea", appointmentType: "Personal Injury New Patient", date: "2026-11-12", startTime: "09:00" }),
   ],
 });
 
@@ -50,16 +53,16 @@ assert.equal(model.greeting, "Good Morning");
 assert.equal(model.dateLabel, "Monday, Nov. 9, 2026");
 assert.equal(model.officeName, "Main Office");
 assert.equal(model.appointments, 3); // canceled excluded from the count
-assert.equal(model.intake.length, 1);
-assert.equal(model.intake[0].name, "New, Nora");
+assert.equal(model.intake.length, 2);
+assert.deepEqual(model.intake.map((row) => row.name).sort(), ["Atty, Ann", "New, Nora"]);
 assert.equal(model.schedule.checkedIn, 1);
 assert.equal(model.schedule.noShow, 1);
 assert.equal(model.schedule.newPatients, 1);
 assert.equal(model.schedule.rows.find((r) => r.id === "next")?.badge, "Arriving soon");
 assert.equal(model.schedule.rows.find((r) => r.id === "cx")?.badge, "Canceled");
 assert.equal(model.schedule.rows.some((r) => r.id === "otherday"), false);
-assert.equal(model.snapshot.inIntake, 1);
-assert.equal(model.snapshot.openCases, 2); // Omar + Dana; Nora is intake, Pat closed, Cam cash
+assert.equal(model.snapshot.inIntake, 2);
+assert.equal(model.snapshot.openCases, 3); // Omar + Dana + Bea (booked); Nora and Ann are intake, Pat closed, Cam cash
 assert.equal(model.snapshot.awaitingRb, 1);
 assert.equal(model.snapshot.missingLien, 1);
 

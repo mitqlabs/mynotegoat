@@ -24,6 +24,7 @@ import { useCashPayments } from "@/hooks/use-cash-payments";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -577,6 +578,8 @@ export default function DashboardPage() {
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
       if (patient.deleted) return false; // Trash never counts.
+      // Still in New Patient Intake (no attorney, or never seen). Not a case yet.
+      if (isInNewPatientIntake(patient, initialExamIndex)) return false;
       const matchesYear =
         year === "ALL" ||
         (parseFlexibleDate(patient.dateOfLoss)?.year.toString() === year);
@@ -589,7 +592,12 @@ export default function DashboardPage() {
 
       return matchesYear && matchesAttorney && matchesStatus;
     });
-  }, [attorney, status, year]);
+  }, [attorney, initialExamIndex, status, year]);
+
+  const locationPatients = useMemo(
+    () => patients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
+    [initialExamIndex],
+  );
 
   // Billing data from Additional Details → $ Billed, $ Paid Amount.
   // Prefer the live patient-billing record (canonical post-rollout
@@ -878,9 +886,9 @@ export default function DashboardPage() {
   // of a specialist's patients the Year filter (by Date of Loss) is hiding.
   const specialistAllYears = useMemo(() => {
     if (year === "ALL") return null;
-    const list = patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status));
+    const list = patients.filter((p) => !p.deleted && !isInNewPatientIntake(p, initialExamIndex) && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status));
     return new Map(buildSpecialistStats(list).map((r) => [r.specialist.toLowerCase(), r.cases]));
-  }, [attorney, buildSpecialistStats, status, year]);
+  }, [attorney, buildSpecialistStats, initialExamIndex, status, year]);
 
   const attorneyStats = useMemo(() => {
     const grouped: Record<
@@ -1431,7 +1439,12 @@ export default function DashboardPage() {
       </DashboardSection>
       )}
 
-      {visibleSections > 0 && <PatientsByLocationCard patients={patients} statuses={statusFilterOptions} />}
+      {visibleSections > 0 && (
+        <PatientsByLocationCard
+          patients={locationPatients}
+          statuses={statusFilterOptions}
+        />
+      )}
 
       {referralDrill && (
         <div
@@ -1568,7 +1581,7 @@ export default function DashboardPage() {
                       className="font-semibold text-[var(--brand-primary)] hover:underline"
                       onClick={() => {
                         setYear("ALL");
-                        const row = buildSpecialistStats(patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status))).find((r) => r.specialist.toLowerCase() === referralDrill.title.toLowerCase());
+                        const row = buildSpecialistStats(patients.filter((p) => !p.deleted && !isInNewPatientIntake(p, initialExamIndex) && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status))).find((r) => r.specialist.toLowerCase() === referralDrill.title.toLowerCase());
                         if (row) setReferralDrill({ ...referralDrill, subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`, patients: row.patients });
                       }}
                       type="button"

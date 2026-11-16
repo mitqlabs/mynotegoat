@@ -36,7 +36,8 @@ import {
   type SnapshotPeriod,
 } from "@/lib/goat-board";
 import { printGoatHandoff } from "@/lib/print-goat-handoff";
-import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { buildInitialExamIndex, isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import type { KeyDateRecord } from "@/lib/key-dates";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { caseReviewAnswer } from "@/lib/goat-pipeline";
@@ -232,9 +233,26 @@ export function GoatBriefingBoard({
   }, [appointments, isAdmin, patients, todayIso]);
 
   const officeDay = useMemo(() => nextOpenOfficeDay(todayIso, scheduleSettings, keyDates), [keyDates, scheduleSettings, todayIso]);
-  const months = useMemo(() => casesByMonth(patients), [patients]);
-  const imaging = useMemo(() => imagingReferralRows(patients), [patients]);
-  const specialists = useMemo(() => specialistReferralRows(patients), [patients]);
+  const intakeIndex = useMemo(
+    () =>
+      buildInitialExamIndex(
+        appointments.map((visit) => ({
+          patientId: visit.patientId,
+          patientName: visit.patientName,
+          appointmentType: visit.appointmentType ?? "",
+          status: visit.status,
+          date: visit.date,
+        })),
+      ),
+    [appointments],
+  );
+  const casePatients = useMemo(
+    () => patients.filter((patient) => !isInNewPatientIntake(patient, intakeIndex)),
+    [intakeIndex, patients],
+  );
+  const months = useMemo(() => casesByMonth(casePatients), [casePatients]);
+  const imaging = useMemo(() => imagingReferralRows(casePatients), [casePatients]);
+  const specialists = useMemo(() => specialistReferralRows(casePatients), [casePatients]);
 
   const body = (box: BoardBox): ReactNode => {
     if (box.kind === "goat-mail") return mail;
@@ -298,7 +316,7 @@ export function GoatBriefingBoard({
     }
     if (box.kind === "case-snapshot") {
       const period = box.period ?? "this-year";
-      const inPeriod = patients.filter((patient) => matchesPeriod(patient, period, todayIso));
+      const inPeriod = casePatients.filter((patient) => matchesPeriod(patient, period, todayIso));
       const order = orderedIds(caseStatuses.map((status) => `status:${status.name}`), box.itemOrder);
       return (
         <div className="space-y-3">
@@ -338,7 +356,7 @@ export function GoatBriefingBoard({
       );
     }
     if (box.kind === "status-cases") {
-      const list = patientsInStatus(patients, box.statusName ?? "");
+      const list = patientsInStatus(casePatients, box.statusName ?? "");
       return <CaseLinks empty={`No ${box.statusName ?? "matching"} cases.`} patients={list} />;
     }
     if (box.kind === "end-of-day") {

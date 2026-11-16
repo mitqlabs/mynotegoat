@@ -1,6 +1,6 @@
 /**
- * + Case popup: optional fields, a date of injury leaves intake, an exam books
- * a New Patient visit and becomes the Initial Exam date.
+ * + Case popup: optional fields. A date of injury does not leave intake.
+ * Booking the exam does. That date becomes the Initial Exam.
  * Run: npx tsx scripts/tests/case-popup.test.ts
  */
 import assert from "node:assert/strict";
@@ -28,9 +28,12 @@ const doiOnly = reviewCasePopup({ ...base, dateOfLoss: "02/11/2026", attorney: "
 assert.equal(doiOnly.ok, true);
 if (doiOnly.ok) {
   assert.equal(doiOnly.dateOfLossIso, "2026-02-11");
-  assert.equal(doiOnly.movesToPatientList, true);
+  assert.equal(doiOnly.movesToPatientList, false, "attorney and a date of injury, with no exam, stay in New Patient");
   assert.equal(doiOnly.visit, null);
-  assert.equal(isInNewPatientIntake({ dateOfLoss: doiOnly.dateOfLossIso, isCashPatient: false }), false);
+  assert.equal(
+    isInNewPatientIntake({ id: "p", fullName: "Doe, Jane", attorney: "Ward Law", dateOfLoss: doiOnly.dateOfLossIso, isCashPatient: false }),
+    true,
+  );
 }
 
 const booked = reviewCasePopup(
