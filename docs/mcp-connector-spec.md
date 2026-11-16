@@ -336,6 +336,39 @@ When the last visit is canceled, a no-show, or rescheduled, also say the most re
 
 **Range.** `date_from` and `date_to` are inclusive. Return every status in that range, ordered by date, then time. Speak them as sentences. A long range gives the counts by status first, then the visits in order, and says how many were left off after the first 15.
 
+### Full case read
+
+**`goat_case_read`** answers questions about one chart: everything on that patient's page that this login can already see. A hidden panel comes back empty, the same way in-app G.O.A.T. passes it as null. The answer is full sentences. It quotes findings. It does not invent a reading that is not in the stored text.
+
+Inputs: `patient` (name or id), optional `sections` (names from the table below), optional `region` (for an X-ray or MRI question), `location`. Two patients with the same name are a question.
+
+The patient page, from top to bottom in `patient-case-file.tsx`, is the list below. Each row is what the connector may return, and which permission or hide switch blocks it.
+
+| What is on the page | Read it as | Hidden when |
+| --- | --- | --- |
+| Name, sex, marital status, DOB, phone, email, address, text-reminders flag, alerts, compliance if the office turned it on, Non-PI badge | Case header | `patients` view is off |
+| Case #, attorney, attorney phone and email, date of injury, extra injury dates, Initial Exam, case status, Lien or LOP, Review, Prior Care, location | Case details. `Self` is said as no attorney. Case # uses the stamp on the patient. | `patients` view is off. Cash / non-PI charts do not have the PI case fields. |
+| Notes (the Case Notes log, seeded from the old general-notes field) | General Notes, as written | The Notes panel is hidden for this person |
+| Quick Glance, including the Appointments box | The same counts as the chips | The Appointments panel is hidden |
+| X-Ray referrals: center, regions, laterality, flex/ext, sent / done / received / reviewed dates, patient refused, prior study, and the findings text | Findings for the region they asked about | `patients` view is off |
+| MRI / CT referrals: the same dates and regions, CT versus MRI, findings, and report text already saved on the referral or in a file G.O.A.T. has read | Imaging status and the report wording | `patients` view is off. File text also needs My Files and the Patient Files panel. |
+| Specialist referrals: who, dates, recommendations, refused, whether imaging findings were included | The referral in sentences | `patients` view is off |
+| Appointments / Encounters list, linked note signed or not, charges on those encounters | Visit rows and whether a note is signed. Charge amounts only with billing figures. | The Appointments panel is hidden. SOAP text is not in this list. |
+| Appointment chips | Per type: Scheduled / Checked In / Checked Out / Canceled. No Show is added only when that count is above zero, which is how the chip is drawn. `Reschedule` is not one of those four numbers. If any exist, say that count in its own sentence. Example: "Lumbar Spinal Decompression is 10 scheduled, 0 checked in, 0 checked out, and 2 canceled." | The Appointments panel is hidden |
+| Case Flow / To-Do | Open follow-ups and to-dos for this patient | The Case Flow & To-Do panel is hidden |
+| Related Cases | The linked charts | The Related Cases panel is hidden |
+| Letters | Which letter templates exist for this office. Generating one is not this read. | Letters are hidden, or the plan is not Complete |
+| Diagnosis Codes, including Suggested from MRI and Suggested from X-ray | Codes already on the chart. Suggestions are named as suggestions. They are not added. | The Diagnosis panel is hidden |
+| Reports | Which report templates exist. Generating one is not this read. | Reports are hidden, or the plan is not Complete |
+| Treatment Plan | The plan dates, days, and regions, in sentences. This is not a count of booked visits. | The Treatment Plan panel is hidden |
+| Patient Files | File name, date, and type. Bytes are the download action below. | My Files is off, or the Patient Files panel is hidden |
+| Additional Details | Discharge, R&B sent, and the day counts between those dates | The Additional Details panel is hidden |
+| Billed, paid, adjustments, balance, percent paid, cash payments, treatment packages | Money, only the figures the page shows | Billing is off, or the billing-figures half is hidden. A person can hear the discharge date and still not hear the balance. |
+| Questionnaires received | The form cards on the chart | `patients` view is off |
+| SOAP note text | Read-only, from `goat_get_soap`, and only when the office SOAP switch is on and this person can view Encounters | Otherwise say a note exists, with the date and whether it is signed, and do not quote it |
+
+An X-ray question uses the findings text stored for that region, including the side. "Left Knee" is the header the chart writes. If that text says there was no fracture or subluxation, the sentence is "Zhora's X-ray of the left knee showed no fracture or subluxation." If the region has no findings yet, say that. Do not fill in a result from another region.
+
 **`goat_appointment_check`**, **`goat_quick_biz`**, **`goat_case_review`**, **`goat_case_snapshot`**, **`goat_end_of_day`**
 
 - Inputs: `location`, and for case review an optional patient or category, and for snapshot an optional year.
@@ -376,7 +409,30 @@ When the last visit is canceled, a no-show, or rescheduled, also say the most re
 **`goat_list_files`**
 
 - Inputs: `patient_id` optional, `query`.
-- Output: metadata only.
+- Output: metadata only. The download is `goat_download_file`.
+
+### Download a file
+
+**`goat_download_file`** is how the person, inside Claude, ChatGPT, or their Grok bot, says "download the MRI referral for Zhora" and receives that file. It also covers an X-ray report, a notes PDF, an intake or questionnaire file, and any other document already saved in that patient's files.
+
+It never emails the file, never faxes it, and never sends it anywhere except back to this signed-in session. The fax number and email printed on a referral are not used.
+
+Who can get it: this person can view My Files, and the Patient Files panel is not hidden for them. The file has to sit in that patient's folder. Another patient's file, and another office's file, are refused. The lookup runs with the user's own login. The service role is not used to sign the link.
+
+How a match is chosen:
+
+- Search the patient's saved files by the words they used and by the document title. "MRI referral" matches a file whose name is the Imaging Request title, such as `071826SMJO Smith, John - Imaging Request - MRI.pdf`.
+- One match returns that file. Several matches are listed in sentences and the person picks. No match for an X-ray report, a notes PDF, or an intake document says the file is not in the chart. Those are not generated on the spot.
+- No saved MRI referral PDF is the one exception. The tool says none is saved and asks whether to create it. A yes reuses `goat_prepare_mri_referral` and `goat_confirm_mri_referral`: preview first, then the PDF is saved on the chart, then the new file is returned. Phase 2 writes have to be on. If they are off, the answer stops at "that PDF is not in the chart yet."
+
+How the file comes back:
+
+- The MCP result includes a resource named `goat://file/{file_id}` with the file name and the media type.
+- A file of about 5 MB or less is also embedded in that resource so the AI app can offer a download without a second hop.
+- Every file also gets a short-lived signed link, created the same way the app already does (`createSignedUrl` on the `user-files` bucket) but for 15 minutes. The app's own preview link lasts an hour. The connector link is shorter because it will sit in an outside chat. When it expires, a new call can sign a new link. The old one stops working.
+- The signed link is not copied into the audit log. The log records the user, the patient id, the file id, the file name, and whether a new MRI PDF was created. It does not record the file bytes or the link.
+
+The spoken line is a sentence, for example "Here is Zhora's MRI referral, saved on the chart as 071826SMJO Garcia, Zhora - Imaging Request - MRI.pdf." The download itself is the resource, not a paragraph of the PDF's text.
 
 **`goat_list_messages`**
 
@@ -483,6 +539,9 @@ These are acceptance examples. Each answer names the location scope. The words a
 | How many visits has Mike completed? | `goat_visits` kind `completed` | The `Check Out` count, with the first and last of those dates. |
 | How many no-shows does Mike have? | `goat_visits` kind `missed` | The `No Show` count and those dates. |
 | What appointments does Mike have from 11/1/2026 to 11/30/2026? | `goat_visits` kind `range` | Those visits in date order, each with its status, in complete sentences. |
+| What did Zhora's left knee X-ray show? | `goat_case_read` section X-ray | "Zhora's X-ray of the left knee showed no fracture or subluxation." Only when that is the stored findings text. |
+| How do Zhora's lumbar decompression appointments break down? | `goat_case_read` appointments chip | "Lumbar Spinal Decompression is 10 scheduled, 0 checked in, 0 checked out, and 2 canceled." |
+| Download the MRI referral for Zhora. | `goat_download_file` | The saved PDF as a download. If none is saved, ask before generating one. It is not emailed or faxed. |
 | Who hasn't been seen in 30 days? | `goat_list_cases` mode `not_seen_in_days` | Name, last kept visit, location. |
 | Which re-exams are due this week? | `goat_list_cases` mode `reexam_this_week` | Saved re-exam dates and re-exam visits this week. Say that a computed interval is not in the product. |
 | Who is this patient's attorney, and what's the DOI? | `goat_get_patient` or `attorney_and_doi` | Attorney, or "no attorney" when the value is `Self`, and the injury date. |
@@ -608,6 +667,8 @@ Phase 1 questions
 - "When was Mike's last appointment?" uses the latest date before today and states the stored status in a sentence. A past `Scheduled` row is "never checked in". A `Check Out` row is "checked out". A `Canceled` or `Reschedule` row also names the latest `Check Out`. "Rescheduled to 11/20/2026" is said only when one later same-type `Scheduled` visit is the clear new row. The old row has no pointer to it.
 - "How many visits has Mike completed?" counts `Check Out` only. "How many no-shows" counts `No Show` only.
 - A reply that is only "3 left, last 11/28" fails the sentence check.
+- A case read for a Staff login with billing hidden includes the X-ray sentence and the appointment chip, and does not include a balance. A hidden Notes panel does not return general notes. SOAP text is absent while the office SOAP switch is off.
+- "Download the MRI referral for Zhora" returns a resource for a file in that patient's folder. A second patient with the same name asks. No saved PDF does not generate one until confirm, and no email or fax is sent. The audit row has the file id and not the signed link.
 
 Phase 2
 
