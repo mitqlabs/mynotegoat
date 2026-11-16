@@ -43,7 +43,7 @@ The persona resource includes the greeting rule the page already uses: Good Morn
 
 ### How answers are spoken
 
-The words the person hears are plain, complete sentences. A tool may return counts and dates as structured fields. The AI turns those fields into sentences. It does not read the field names out loud, and it does not answer with a fragment such as "3 left, last one on 11/28/2026". One fact can be its own sentence. Two related facts can share a sentence when that still reads naturally. Use he or she only when the chart's sex is Male or Female. When sex is blank, repeat the patient's name.
+The words the person hears are plain, complete sentences. A tool may return counts and dates as structured fields. The AI turns those fields into sentences. It does not read the field names out loud, and it does not answer with a fragment such as "3 left, last one on 11/28/2026". One fact can be its own sentence. Two related facts can share a sentence when that still reads naturally. Use he or she only when the chart's sex is Male or Female. When sex is blank, repeat the patient's name. A visit answer names what happened to that visit, in the same sentence or the next one.
 
 ## How an office is really stored
 
@@ -294,16 +294,47 @@ Most list tools accept:
 - Inputs: `date` (default today in the office timezone), `location`, `unchecked_in_only`.
 - Output: time, patient, type, status, location, provider. "Who hasn't checked in" is status Scheduled for that day. Checked In, Checked Out, Canceled, No Show, and Reschedule are not that list.
 
-**`goat_appointments_left`**
+### Visit questions
 
-- Inputs: `patient` (name or id), optional `type_query` (for example "cervical decompression"), `location`.
-- This reads **scheduled appointments only**. It does not read treatment plans, and it does not read packages. A plan that says decompression three times a week does not add visits. A package that still has visits on it does not add visits. Encounter notes are not a second copy of the schedule.
-- A visit counts as left when its date is today or later in the office timezone and its stored status is Scheduled. Canceled and No Show are left out. Checked In, Checked Out, and Reschedule are left out too: those are not still-booked visits. A past row that is still marked Scheduled is not left. It can be named in one extra sentence so nobody thinks it was forgotten. It is not part of the count.
-- Type matching reuses `typesAsked`, `isDecompression`, and `decompRegions` in `src/lib/goat-appointments.ts`. "Cervical decompression" matches a booked type such as "Spinal Decompression - C/S". "Lumbar decompression" matches "Spinal Decompression - L/S". Rows are grouped by the type name stored on the visit. They are not merged just because two types share a word.
-- Each type returns a count, the next date (soonest), the last date (latest), and the visits in date order, then by time. Types are ordered by their next date.
-- When the question names one type, that type comes first. Other remaining types whose next visit is after that type's last visit follow it, in date order. If another type is mixed in before that last date, it gets its own sentence with its next and last dates. Do not say "after that" for a visit that is not after that.
-- Schedule permission is required. If this person cannot view appointments, the tool refuses and does not fill the gap from a plan or a package. The location filter applies to the visit's location. Two patients with the same name are a question, not a guess.
-- The spoken answer is complete sentences. For a male patient named Zhora with 3 cervical visits whose last one is 11/28/2026, and 10 lumbar visits all after that date, the answer is: "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." The next date of each type is in the tool result so the sentence can include it when the person asked, or when naming it makes the answer clearer.
+**`goat_visits`** answers questions about one patient's appointments. It reads schedule rows only. It does not read treatment plans, and it does not read packages. A plan that says three visits a week does not add visits. A package balance does not add visits. Encounter notes are not a second schedule.
+
+Schedule permission is required. If this person cannot view appointments, the tool refuses. The location filter applies to the visit's location. Two patients with the same name are a question, not a guess. Every spoken answer is a complete sentence, and it names the status in ordinary words.
+
+The schedule stores exactly these statuses. The screen says "Checked In" and "Checked Out". The stored words stay "Check In" and "Check Out". The reschedule screen says "Rescheduled". The stored word is "Reschedule".
+
+| Stored status | Say it as |
+| --- | --- |
+| `Scheduled` | scheduled. On a past date: never checked in. |
+| `Check In` | checked in. |
+| `Check Out` | checked out. This is an attended visit. |
+| `Canceled` | canceled. |
+| `No Show` | a no-show. |
+| `Reschedule` | rescheduled. |
+
+Inputs: `patient` (name or id), `kind`, optional `type_query`, optional `date_from` and `date_to`, `location`.
+
+`kind` is one of `left`, `last`, `next`, `completed`, `missed`, or `range`.
+
+**Left.** "How many appointments does Mike have left?" and "How many cervical decompression are left for Zhora?" A visit is left when its date is today or later and its stored status is `Scheduled`. Canceled, No Show, Check In, Check Out, and Reschedule are not left. A past row still marked Scheduled is not left. Name it in one extra sentence if it exists. It is not part of the count. Group by the type name stored on the visit. Reuse `typesAsked`, `isDecompression`, and `decompRegions` in `src/lib/goat-appointments.ts`, so "cervical decompression" matches a type such as "Spinal Decompression - C/S" and "lumbar decompression" matches "Spinal Decompression - L/S". Each type returns the count, the next date, the last date, and the visits in date order, then by time. Types are ordered by their next date. When the question names one type, that type comes first. Other remaining types whose next visit is after that type's last visit follow it. If another type starts before that last date, give it its own sentence with its next and last dates. Do not say "after that" unless those visits really are after that. A male patient named Zhora, with 3 cervical visits ending 11/28/2026 and 10 lumbar visits all after that date, is answered: "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." "How many appointments does Mike have left?" uses the same shape for every type he still has booked, each with its next date and its last date.
+
+**Last.** The last appointment is the most recent visit whose date is before today, whatever its status. Always say that status. A visit dated today is not the last appointment. If there is a visit today, add one sentence for it and its status, so this morning is not hidden.
+
+- Checked out: "Mike's last appointment was 11/17/2026, and he was checked out."
+- Still Scheduled on a past date: "Mike's last appointment was 11/17/2026, and he was never checked in."
+- Check In and not Check Out: "Mike's last appointment was 11/17/2026, and he was checked in."
+- Canceled: "Mike's last appointment was 11/17/2026, and it was canceled."
+- No Show: "Mike's last appointment was 11/17/2026, and it was a no-show."
+- Reschedule: the old row is marked `Reschedule`, and the chart creates a new row. There is no field that points from the old row to the new one. When one later visit for that patient has the same type and is still `Scheduled`, the sentence may name that date: "Mike's last appointment was 11/17/2026, and it was rescheduled to 11/20/2026." When several later booked visits could be the new one, say it was rescheduled, then give the next booked visit as its own sentence. Do not invent a link the schedule does not store.
+
+When the last visit is canceled, a no-show, or rescheduled, also say the most recent attended visit. Attended means stored status `Check Out`. "His last checked-out visit was 11/10/2026." If none exists, say he has no checked-out visit on file.
+
+**Next.** The soonest visit dated today or later whose status is `Scheduled`. "Mike's next appointment is 11/20/2026 at 10:00 AM, and it is a cervical decompression." If none is booked, say so in a sentence. A Reschedule row is not the next appointment.
+
+**Completed.** Visits completed so far are rows stored as `Check Out`, ordered by date. "Mike has 12 visits checked out, from 9/2/2026 through 11/17/2026." Check In rows that were never checked out are a separate sentence. They are not added into the completed count.
+
+**Missed.** No-show count is rows stored as `No Show`. "Mike has 2 no-shows, on 10/3/2026 and 10/21/2026." If the person says "missed", also say the canceled count in the same answer, with the word canceled, so the two are not added into one silent total.
+
+**Range.** `date_from` and `date_to` are inclusive. Return every status in that range, ordered by date, then time. Speak them as sentences. A long range gives the counts by status first, then the visits in order, and says how many were left off after the first 15.
 
 **`goat_appointment_check`**, **`goat_quick_biz`**, **`goat_case_review`**, **`goat_case_snapshot`**, **`goat_end_of_day`**
 
@@ -445,7 +476,13 @@ These are acceptance examples. Each answer names the location scope. The words a
 | Question | Tool | Shape of the answer |
 | --- | --- | --- |
 | What's today's schedule, and who hasn't checked in? | `goat_schedule_day` | Times and names, then the Scheduled rows, spoken in complete sentences. |
-| How many cervical decompression are left for Zhora? | `goat_appointments_left` | "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." Booked visits only. No package balance and no treatment-plan count. |
+| How many appointments does Mike have left? | `goat_visits` kind `left` | One sentence per booked type, with the count, the next date, and the last date. |
+| How many cervical decompression are left for Zhora? | `goat_visits` kind `left` | "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." Booked `Scheduled` rows only. |
+| When was Mike's last appointment? | `goat_visits` kind `last` | "Mike's last appointment was 11/17/2026, and he was checked out." The same question uses "he was never checked in", "it was canceled", "it was a no-show", or "it was rescheduled to 11/20/2026" when that is the stored status. Canceled, no-show, and rescheduled also name the last checked-out visit. |
+| When is Mike's next appointment? | `goat_visits` kind `next` | The soonest future `Scheduled` visit, with the date, time, and type. |
+| How many visits has Mike completed? | `goat_visits` kind `completed` | The `Check Out` count, with the first and last of those dates. |
+| How many no-shows does Mike have? | `goat_visits` kind `missed` | The `No Show` count and those dates. |
+| What appointments does Mike have from 11/1/2026 to 11/30/2026? | `goat_visits` kind `range` | Those visits in date order, each with its status, in complete sentences. |
 | Who hasn't been seen in 30 days? | `goat_list_cases` mode `not_seen_in_days` | Name, last kept visit, location. |
 | Which re-exams are due this week? | `goat_list_cases` mode `reexam_this_week` | Saved re-exam dates and re-exam visits this week. Say that a computed interval is not in the product. |
 | Who is this patient's attorney, and what's the DOI? | `goat_get_patient` or `attorney_and_doi` | Attorney, or "no attorney" when the value is `Self`, and the injury date. |
@@ -567,7 +604,9 @@ Briefing
 Phase 1 questions
 
 - The reporting questions in the table, plus attention and mail, against a fixture set with known totals.
-- "How many cervical decompression are left for Zhora?" counts only future Scheduled visits. Canceled, no-show, checked-out, and reschedule rows are not in the count. A treatment plan and a package with visits remaining do not change the number. The spoken answer is the two full sentences in the table, and each type includes a next date and a last date in the tool result.
+- "How many cervical decompression are left for Zhora?" counts only future rows stored as `Scheduled`. Canceled, No Show, Check In, Check Out, and Reschedule are not in that count. A treatment plan and a package with visits remaining do not change the number. The spoken answer is the two full sentences in the table, and each type includes a next date and a last date.
+- "When was Mike's last appointment?" uses the latest date before today and states the stored status in a sentence. A past `Scheduled` row is "never checked in". A `Check Out` row is "checked out". A `Canceled` or `Reschedule` row also names the latest `Check Out`. "Rescheduled to 11/20/2026" is said only when one later same-type `Scheduled` visit is the clear new row. The old row has no pointer to it.
+- "How many visits has Mike completed?" counts `Check Out` only. "How many no-shows" counts `No Show` only.
 - A reply that is only "3 left, last 11/28" fails the sentence check.
 
 Phase 2
