@@ -25,6 +25,7 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
+import { paidCaseMissingLabel, paidCasePercent, type PaidCaseMoney } from "@/lib/paid-case-percent";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -242,6 +243,13 @@ function parseDollar(value: string | undefined): number {
   const cleaned = value.replace(/[^0-9.\-]/g, "");
   const num = parseFloat(cleaned);
   return Number.isFinite(num) ? num : 0;
+}
+
+/** Live billing amount when one was entered, otherwise the saved field. 0 means blank. */
+function enteredDollar(live: number | undefined, saved: string | undefined): number {
+  if (typeof live === "number" && live > 0) return live;
+  const parsed = parseDollar(saved);
+  return parsed > 0 ? parsed : 0;
 }
 
 function parseMatrixDate(value: string | undefined): Date | null {
@@ -611,35 +619,33 @@ export default function DashboardPage() {
   const billingData = useMemo(() => {
     let billedTotal = 0;
     let paidTotal = 0;
-    let billedPaidCases = 0;
-    let paidPaidCases = 0;
     let billedCaseCount = 0; // patients with billed > 0
     let paidCaseCount = 0; // patients with paid > 0
+    const paidCaseMoney: PaidCaseMoney[] = [];
 
     filteredPatients.forEach((patient) => {
       const billing = getPatientBillingRecord(patient.id);
-      const billed = billing && billing.billedAmount > 0
-        ? billing.billedAmount
-        : parseDollar(patient.matrix?.billed);
-      const paid = billing && billing.paidAmount > 0
-        ? billing.paidAmount
-        : parseDollar(patient.matrix?.paidAmount);
+      const billed = enteredDollar(billing?.billedAmount, patient.matrix?.billed);
+      const paid = enteredDollar(billing?.paidAmount, patient.matrix?.paidAmount);
       billedTotal += billed;
       paidTotal += paid;
       if (billed > 0) billedCaseCount += 1;
       if (paid > 0) paidCaseCount += 1;
-
-      if (paid > 0 || patient.caseStatus === "Paid") {
-        billedPaidCases += billed;
-        paidPaidCases += paid;
-      }
+      paidCaseMoney.push({ caseStatus: patient.caseStatus, billed, paid });
     });
 
-    const paidRate = billedPaidCases === 0 ? 0 : (paidPaidCases / billedPaidCases) * 100;
+    const paidCases = paidCasePercent(paidCaseMoney);
     const avgBilled = billedCaseCount ? billedTotal / billedCaseCount : 0;
     const avgPaid = paidCaseCount ? paidTotal / paidCaseCount : 0;
 
-    return { billedTotal, paidTotal, paidRate, avgBilled, avgPaid };
+    return {
+      billedTotal,
+      paidTotal,
+      paidRate: paidCases.percent,
+      paidMissingAmount: paidCases.missingAmount,
+      avgBilled,
+      avgPaid,
+    };
   }, [filteredPatients, getPatientBillingRecord]);
 
   const statusCounts = useMemo(() => {
@@ -904,6 +910,7 @@ export default function DashboardPage() {
         paid: number;
         billed: number;
         collected: number;
+        paidCaseMoney: PaidCaseMoney[];
         timeToRbValues: number[];
         timeToPaidValues: number[];
       }
@@ -923,6 +930,7 @@ export default function DashboardPage() {
           paid: 0,
           billed: 0,
           collected: 0,
+          paidCaseMoney: [],
           timeToRbValues: [],
           timeToPaidValues: [],
         };
@@ -942,12 +950,11 @@ export default function DashboardPage() {
       // reasoning as the Billing Snapshot above: the matrix mirror can
       // be stale while the billing record holds the user-entered value.
       const billing = getPatientBillingRecord(patient.id);
-      row.billed += billing && billing.billedAmount > 0
-        ? billing.billedAmount
-        : parseDollar(patient.matrix?.billed);
-      row.collected += billing && billing.paidAmount > 0
-        ? billing.paidAmount
-        : parseDollar(patient.matrix?.paidAmount);
+      const billed = enteredDollar(billing?.billedAmount, patient.matrix?.billed);
+      const paid = enteredDollar(billing?.paidAmount, patient.matrix?.paidAmount);
+      row.billed += billed;
+      row.collected += paid;
+      row.paidCaseMoney.push({ caseStatus: patient.caseStatus, billed, paid });
 
       // Timeline from the saved milestone dates (completed spans only).
       const dtr = daysBetween(patientDischargeIso(patient, dischargeIndex), patient.matrix?.rbSent);
@@ -959,12 +966,13 @@ export default function DashboardPage() {
     return Object.values(grouped).map((row) => {
       const avgTimeToRb = average(row.timeToRbValues);
       const avgTimeToPaid = average(row.timeToPaidValues);
-      const percentPaid = row.billed ? (row.collected / row.billed) * 100 : 0;
+      const paidCases = paidCasePercent(row.paidCaseMoney);
       return {
         ...row,
         avgTimeToRb,
         avgTimeToPaid,
-        percentPaid,
+        percentPaid: paidCases.percent,
+        paidMissingAmount: paidCases.missingAmount,
       };
     });
   }, [dischargeIndex, filteredPatients, getPatientBillingRecord]);
@@ -986,9 +994,9 @@ export default function DashboardPage() {
       let cmp: number;
       if (column === "attorney") {
         cmp = a.attorney.localeCompare(b.attorney);
-      } else if (column === "avgTimeToRb" || column === "avgTimeToPaid") {
-        // Rows with no timing data (value === 0, displayed as "N/A") always
-        // sort to the bottom regardless of direction.
+      } else if (column === "avgTimeToRb" || column === "avgTimeToPaid" || column === "percentPaid") {
+        // Rows with no timing data, or no Paid cases (displayed as "N/A"),
+        // always sort to the bottom regardless of direction.
         const av = a[column];
         const bv = b[column];
         if (!av && !bv) cmp = 0;
@@ -1167,10 +1175,15 @@ export default function DashboardPage() {
                 </p>
                 <p className="flex items-center justify-between">
                   <span className="text-[var(--text-muted)]">% Paid (Paid Cases)</span>
-                  <span className="font-bold">{billingData.paidRate.toFixed(1)}%</span>
+                  <span className="font-bold tabular-nums">{billingData.paidRate === null ? "N/A" : `${billingData.paidRate.toFixed(1)}%`}</span>
                 </p>
+                {billingData.paidMissingAmount > 0 && (
+                  <p className="text-[11px] text-[var(--text-muted)]" title="These Paid cases have no paid amount, so they are left out of the percent.">
+                    {paidCaseMissingLabel(billingData.paidMissingAmount)}
+                  </p>
+                )}
                 <p className="text-xs text-[var(--text-muted)]">
-                  Uses only cases with payments or Paid status for percentage.
+                  Paid cases only. A Paid case with no paid amount is left out.
                 </p>
                 <div className="my-2 border-t border-[var(--line-soft)]" />
                 <p className="flex items-center justify-between">
@@ -1419,7 +1432,14 @@ export default function DashboardPage() {
                     <td className="px-4 py-3">{row.paid}</td>
                     <td className="px-4 py-3">{formatMonthsFromDays(row.avgTimeToRb)}</td>
                     <td className="px-4 py-3">{formatMonthsFromDays(row.avgTimeToPaid)}</td>
-                    <td className="px-4 py-3">{row.percentPaid.toFixed(2)}%</td>
+                    <td className="px-4 py-3">
+                      <div className="tabular-nums">{row.percentPaid === null ? "N/A" : `${row.percentPaid.toFixed(2)}%`}</div>
+                      {row.paidMissingAmount > 0 && (
+                        <div className="text-[11px] text-[var(--text-muted)]" title="These Paid cases have no paid amount, so they are left out of the percent.">
+                          {paidCaseMissingLabel(row.paidMissingAmount)}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {sortedAttorneyStats.length === 0 && (
