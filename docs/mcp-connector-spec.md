@@ -29,17 +29,21 @@ The MCP handshake includes server instructions, a persona prompt, and a short of
 
 Put this in the MCP `instructions` field. Keep it short enough that clients actually send it.
 
-> You are G.O.A.T., the personal assistant for this NoteGoat office. Speak in plain English. Use the name G.O.A.T. with the dots. Answer only from tool results. If a tool says the person cannot see that area, say so and stop. Do not invent patients, dates, balances, or attorneys. Today follows the office timezone returned by goat_whoami. When the office has more than one location, ask or accept "all locations" versus one location, and say which scope you used. Reads are immediate. Writes are not. To create a patient, add a case, or prepare an MRI referral, call the prepare tool, show the preview in your own words, and wait. Call confirm only after the person clearly agrees. A vague "ok" after a different question is not agreement. "Send an MRI" saves a PDF on the chart. It does not email or fax anyone. Never claim you edited a SOAP note, sent email, faxed a referral, or marked email read. You cannot see source code, passwords, or other offices.
+> You are G.O.A.T., the personal assistant for this NoteGoat office. Speak in plain English, in complete sentences. Use the name G.O.A.T. with the dots. Answer only from tool results. Do not answer with a clipped label such as "3 left, last 11/28". If a tool says the person cannot see that area, say so and stop. Do not invent patients, dates, balances, or attorneys. Today follows the office timezone returned by goat_whoami. When the office has more than one location, ask or accept "all locations" versus one location, and say which scope you used. Reads are immediate. Writes are not. To create a patient, add a case, or prepare an MRI referral, call the prepare tool, show the preview in your own words, and wait. Call confirm only after the person clearly agrees. A vague "ok" after a different question is not agreement. "Send an MRI" saves a PDF on the chart. It does not email or fax anyone. Never claim you edited a SOAP note, sent email, faxed a referral, or marked email read. You cannot see source code, passwords, or other offices.
 
 ### Prompt and resources
 
 | Name | Kind | What it gives the AI |
 | --- | --- | --- |
-| `goat-persona` | MCP prompt | The voice and the habits: greet with the time of day, lead with what needs attention, name the location scope, cite the patient and the date you used, ask a follow-up only when a tool returned an open question (compound last name, missing phone, which attorney). |
+| `goat-persona` | MCP prompt | The voice and the habits: greet with the time of day, lead with what needs attention, name the location scope, cite the patient and the date you used, ask a follow-up only when a tool returned an open question (compound last name, missing phone, which attorney). Every reply is plain, complete sentences. |
 | `goat://persona` | Resource, `text/plain` | The same persona, so a client that ignores prompts can still read it. |
 | `goat://office-guide` | Resource, `text/plain` | A plain-language map of this office: office name, locations, what this user can open, whether SOAP text is shared, the word the office uses (Lien or LOP), and how a case number is built. Built per request from records this user can see. No raw settings blob. |
 
 The persona resource includes the greeting rule the page already uses: Good Morning before noon, Good Afternoon from noon until 5:00 PM, Good Evening from 5:00 PM on, then "Happy" and the date, in the office timezone.
+
+### How answers are spoken
+
+The words the person hears are plain, complete sentences. A tool may return counts and dates as structured fields. The AI turns those fields into sentences. It does not read the field names out loud, and it does not answer with a fragment such as "3 left, last one on 11/28/2026". One fact can be its own sentence. Two related facts can share a sentence when that still reads naturally. Use he or she only when the chart's sex is Male or Female. When sex is blank, repeat the patient's name.
 
 ## How an office is really stored
 
@@ -290,6 +294,17 @@ Most list tools accept:
 - Inputs: `date` (default today in the office timezone), `location`, `unchecked_in_only`.
 - Output: time, patient, type, status, location, provider. "Who hasn't checked in" is status Scheduled for that day. Checked In, Checked Out, Canceled, No Show, and Reschedule are not that list.
 
+**`goat_appointments_left`**
+
+- Inputs: `patient` (name or id), optional `type_query` (for example "cervical decompression"), `location`.
+- This reads **scheduled appointments only**. It does not read treatment plans, and it does not read packages. A plan that says decompression three times a week does not add visits. A package that still has visits on it does not add visits. Encounter notes are not a second copy of the schedule.
+- A visit counts as left when its date is today or later in the office timezone and its stored status is Scheduled. Canceled and No Show are left out. Checked In, Checked Out, and Reschedule are left out too: those are not still-booked visits. A past row that is still marked Scheduled is not left. It can be named in one extra sentence so nobody thinks it was forgotten. It is not part of the count.
+- Type matching reuses `typesAsked`, `isDecompression`, and `decompRegions` in `src/lib/goat-appointments.ts`. "Cervical decompression" matches a booked type such as "Spinal Decompression - C/S". "Lumbar decompression" matches "Spinal Decompression - L/S". Rows are grouped by the type name stored on the visit. They are not merged just because two types share a word.
+- Each type returns a count, the next date (soonest), the last date (latest), and the visits in date order, then by time. Types are ordered by their next date.
+- When the question names one type, that type comes first. Other remaining types whose next visit is after that type's last visit follow it, in date order. If another type is mixed in before that last date, it gets its own sentence with its next and last dates. Do not say "after that" for a visit that is not after that.
+- Schedule permission is required. If this person cannot view appointments, the tool refuses and does not fill the gap from a plan or a package. The location filter applies to the visit's location. Two patients with the same name are a question, not a guess.
+- The spoken answer is complete sentences. For a male patient named Zhora with 3 cervical visits whose last one is 11/28/2026, and 10 lumbar visits all after that date, the answer is: "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." The next date of each type is in the tool result so the sentence can include it when the person asked, or when naming it makes the answer clearer.
+
 **`goat_appointment_check`**, **`goat_quick_biz`**, **`goat_case_review`**, **`goat_case_snapshot`**, **`goat_end_of_day`**
 
 - Inputs: `location`, and for case review an optional patient or category, and for snapshot an optional year.
@@ -425,11 +440,12 @@ Out of Phase 2 even if the person can do them in the app: editing a chart, editi
 
 ## Example questions
 
-These are acceptance examples. Each answer names the location scope.
+These are acceptance examples. Each answer names the location scope. The words are complete sentences, as in "How answers are spoken" above.
 
 | Question | Tool | Shape of the answer |
 | --- | --- | --- |
-| What's today's schedule, and who hasn't checked in? | `goat_schedule_day` | Times and names, then the Scheduled rows. |
+| What's today's schedule, and who hasn't checked in? | `goat_schedule_day` | Times and names, then the Scheduled rows, spoken in complete sentences. |
+| How many cervical decompression are left for Zhora? | `goat_appointments_left` | "Zhora has 3 cervical decompression visits left, and the last one is on 11/28/2026. After that, he has 10 lumbar decompression visits scheduled." Booked visits only. No package balance and no treatment-plan count. |
 | Who hasn't been seen in 30 days? | `goat_list_cases` mode `not_seen_in_days` | Name, last kept visit, location. |
 | Which re-exams are due this week? | `goat_list_cases` mode `reexam_this_week` | Saved re-exam dates and re-exam visits this week. Say that a computed interval is not in the product. |
 | Who is this patient's attorney, and what's the DOI? | `goat_get_patient` or `attorney_and_doi` | Attorney, or "no attorney" when the value is `Self`, and the injury date. |
@@ -550,7 +566,9 @@ Briefing
 
 Phase 1 questions
 
-- The eight reporting questions in the table, plus attention and mail, against a fixture set with known totals.
+- The reporting questions in the table, plus attention and mail, against a fixture set with known totals.
+- "How many cervical decompression are left for Zhora?" counts only future Scheduled visits. Canceled, no-show, checked-out, and reschedule rows are not in the count. A treatment plan and a package with visits remaining do not change the number. The spoken answer is the two full sentences in the table, and each type includes a next date and a last date in the tool result.
+- A reply that is only "3 left, last 11/28" fails the sentence check.
 
 Phase 2
 
