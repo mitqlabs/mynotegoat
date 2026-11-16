@@ -79,6 +79,7 @@ import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
+import { PatientTodoList } from "@/components/patient-todo-list";
 import { softPillStyle } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
@@ -7398,36 +7399,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                   To-Do
                 </div>
-                {patientTasks.length === 0 ? (
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
-                ) : (
-                  <ul className="mt-1 grid gap-2">
-                    {patientTasks.map((task) => (
-                      <li
-                        key={task.id}
-                        className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      >
-                        <input
-                          checked={task.done}
-                          className="mt-1"
-                          onChange={() => toggleTaskDone(task.id)}
-                          type="checkbox"
-                        />
-                        <div className="flex-1">
-                          <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>
-                            {task.title}
-                          </div>
-                          {(task.dueDate || task.priority) && (
-                            <div className="text-xs text-[var(--text-muted)]">
-                              {task.priority}
-                              {task.dueDate ? ` • Due ${task.dueDate}` : ""}
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <PatientTodoList
+                  items={patientTasks.map((task) => ({
+                    id: task.id,
+                    title: task.title,
+                    done: task.done,
+                    priority: task.priority,
+                    dueDate: task.dueDate,
+                  }))}
+                  onToggle={toggleTaskDone}
+                />
               </div>
             </div>
           )}

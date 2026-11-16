@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { PatientCaseFile } from "@/components/patient-case-file";
-import { PatientFolderCasePage, PatientFolderRecordPage } from "@/components/patient-folder-live";
+import { PatientFolderRecordPage } from "@/components/patient-folder-live";
 import { getPatientById } from "@/lib/mock-data";
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 
@@ -11,9 +11,10 @@ type PatientFilePageClientProps = {
 };
 
 export function PatientFilePageClient({ patientId }: PatientFilePageClientProps) {
-  if (patientFoldersEnabled()) {
-    if (patientId.startsWith("pf-")) return <PatientFolderRecordPage folderId={patientId} />;
-    return <PatientFolderCasePage caseId={patientId} />;
+  // Folder ids (pf-…) open the person page. A real case id always opens the
+  // existing full case file. The folder preview does not replace that page.
+  if (patientFoldersEnabled() && patientId.startsWith("pf-")) {
+    return <PatientFolderRecordPage folderId={patientId} />;
   }
   const patient = getPatientById(patientId);
 

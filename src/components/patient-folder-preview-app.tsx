@@ -309,10 +309,19 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
               const entry: FolderNote = { id: `gn-${Date.now()}`, date: "11/11/26", author: "Dr. Mike", text };
               updateFolder(activeFolder.id, (folder) => ({ ...folder, notes: [entry, ...folder.notes] }));
             }}
-            onAddTodo={(title, due) => {
-              const entry: FolderTodo = { id: `td-${Date.now()}`, title, due };
+            onAddTodo={(draft) => {
+              const entry: FolderTodo = { id: `td-${Date.now()}`, title: draft.title, due: draft.dueDate };
               updateFolder(activeFolder.id, (folder) => ({ ...folder, todos: [...folder.todos, entry] }));
+              return "";
             }}
+            onToggleTodo={() => {}}
+            todoItems={activeFolder.todos.map((item) => ({
+              id: item.id,
+              title: item.title,
+              done: false,
+              priority: "Medium",
+              dueDate: item.due,
+            }))}
             onBack={() => setScreen({ name: "list" })}
             onNewCase={(draft) => {
               const row: FolderCaseRow = {

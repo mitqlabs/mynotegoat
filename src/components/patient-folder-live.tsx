@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
-import { useCaseNoteEntries } from "@/hooks/use-case-note-entries";
+import { useTasks } from "@/hooks/use-tasks";
 import { currentAuthor } from "@/hooks/use-case-note-entries";
 import { formatEntryDate } from "@/lib/case-note-entries";
 import { caseNumberOf } from "@/lib/follow-up-queue";
@@ -21,11 +21,9 @@ import {
   saveFolderCloud,
   subscribeFolderCloud,
   type FolderGeneralNote,
-  type FolderGeneralTodo,
 } from "@/lib/patient-folder-store";
 import { saveFolderPerson, savePatientPhoto } from "@/lib/patient-folder-runtime";
 import {
-  PatientFolderCaseView,
   PatientFolderListView,
   PatientFolderPageView,
   type FolderCaseRow,
@@ -122,22 +120,20 @@ export function PatientFolderListPage() {
   if (!patientFoldersEnabled()) return null;
 
   return (
-    <div className="bg-[#e7f2f8] p-4 lg:p-6">
-      <PatientFolderListView
-        onCreate={(draft) => {
-          const created = createPatientRecord({
-            firstName: draft.firstName,
-            lastName: draft.lastName,
-            dob: draft.dob,
-            phone: draft.phone,
-            dateOfLoss: draft.openCase ? "" : "",
-          });
-          if (created) window.location.assign(`/patients/pf-${created.id}`);
-        }}
-        onOpen={(id) => window.location.assign(`/patients/${id}`)}
-        rows={rows}
-      />
-    </div>
+    <PatientFolderListView
+      onCreate={(draft) => {
+        const created = createPatientRecord({
+          firstName: draft.firstName,
+          lastName: draft.lastName,
+          dob: draft.dob,
+          phone: draft.phone,
+          dateOfLoss: draft.openCase ? "" : "",
+        });
+        if (created) window.location.assign(`/patients/pf-${created.id}`);
+      }}
+      onOpen={(id) => window.location.assign(`/patients/${id}`)}
+      rows={rows}
+    />
   );
 }
 
@@ -189,17 +185,36 @@ function folderDetail(folderId: string, getRecord: (id: string) => { billedAmoun
 
 export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
   const { getRecord } = usePatientBilling();
+  const { tasks, addTask, toggleTaskDone } = useTasks();
   const tick = useFolderTick();
   const folder = useMemo(() => {
     void tick;
     return folderDetail(folderId, getRecord);
   }, [folderId, getRecord, tick]);
+  const todoItems = useMemo(() => {
+    if (!folder) return [];
+    const caseIds = new Set(folder.cases.map((row) => row.id));
+    const caseLabel = new Map(folder.cases.map((row) => [row.id, row.caseNumber]));
+    const person = folder.name.trim().toLowerCase();
+    return tasks
+      .filter((task) => {
+        if (task.patientId && caseIds.has(task.patientId)) return true;
+        return !task.patientId && person.length > 0 && (task.patientName ?? "").trim().toLowerCase() === person;
+      })
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        done: task.done,
+        priority: task.priority,
+        dueDate: task.dueDate,
+        caseLabel: task.patientId ? caseLabel.get(task.patientId) : undefined,
+      }));
+  }, [folder, tasks]);
   if (!folder) {
     return <p className="p-6 text-sm">That patient folder is not in this office.</p>;
   }
   return (
-    <div className="bg-[#e7f2f8] p-4 lg:p-6">
-      <PatientFolderPageView
+    <PatientFolderPageView
         folder={folder}
         onAddNote={(text) => {
           const { author, userId } = currentAuthor();
@@ -217,18 +232,17 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
           };
           void saveFolderCloud({ ...cloud, notes: [note, ...cloud.notes] });
         }}
-        onAddTodo={(title, due) => {
-          const cloud = loadFolderCloud();
-          const todo: FolderGeneralTodo = {
-            id: newFolderNoteId(),
-            folderId,
-            title,
-            dueDate: due,
-            done: false,
-            updatedAt: new Date().toISOString(),
-          };
-          void saveFolderCloud({ ...cloud, todos: [...cloud.todos, todo] });
+        onAddTodo={(draft) => {
+          const result = addTask({
+            title: draft.title,
+            priority: draft.priority,
+            dueDate: draft.dueDate,
+            patientName: folder.name,
+          });
+          return result.added ? "" : result.reason;
         }}
+        onToggleTodo={toggleTaskDone}
+        todoItems={todoItems}
         onBack={() => window.location.assign("/patients")}
         onNewCase={(draft) => {
           const [lastName, firstName] = folder.name.split(",").map((part) => part.trim());
@@ -242,9 +256,9 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
             attorney: draft.attorney,
             dateOfLoss: draft.dateOfInjury,
           });
-          if (created) window.location.assign(`/cases/${created.id}`);
+          if (created) window.location.assign(`/patients/${created.id}`);
         }}
-        onOpenCase={(caseId) => window.location.assign(`/cases/${caseId}`)}
+        onOpenCase={(caseId) => window.location.assign(`/patients/${caseId}`)}
         onSavePhoto={(dataUrl) => {
           void savePatientPhoto(folder.id, dataUrl, {
             fullName: folder.name,
@@ -269,42 +283,7 @@ export function PatientFolderRecordPage({ folderId }: { folderId: string }) {
             alerts: folder.alerts,
           });
         }}
-      />
-    </div>
+    />
   );
 }
 
-export function PatientFolderCasePage({ caseId }: { caseId: string }) {
-  const { getRecord } = usePatientBilling();
-  const tick = useFolderTick();
-  const { entries } = useCaseNoteEntries(caseId);
-  const found = useMemo(() => {
-    void tick;
-    const patient = patients.find((row) => row.id === caseId && !row.deleted);
-    if (!patient) return null;
-    const grouping = groupPatientCases(caseInputs(getRecord));
-    const folder = grouping.folders.find((item) => item.caseIds.includes(caseId));
-    return { patient, folder };
-  }, [caseId, getRecord, tick]);
-  if (!found || !found.folder) return <p className="p-6 text-sm">That case is not in this office.</p>;
-  const row = caseRow(found.patient, getRecord(caseId));
-  row.notes = entries.map((entry) => ({
-    id: entry.id,
-    date: formatEntryDate(entry.date),
-    author: entry.author,
-    text: entry.text,
-  }));
-  const person = found.folder.person;
-  const photo = loadFolderCloud().people[found.folder.id]?.photoDataUrl || undefined;
-  return (
-    <div className="bg-[#e7f2f8] p-4 lg:p-6">
-      <PatientFolderCaseView
-        onBack={() => window.location.assign("/cases")}
-        onViewPatient={() => window.location.assign(`/patients/${found.folder!.id}`)}
-        patientName={person.fullName}
-        person={{ dob: person.dob, phone: person.phone, email: person.email, address: person.address, photo }}
-        row={row}
-      />
-    </div>
-  );
-}

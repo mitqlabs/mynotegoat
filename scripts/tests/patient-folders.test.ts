@@ -232,8 +232,11 @@ const stored = normalizeFolderCloud({
 });
 assert.equal(stored.people["pf-1"].photoDataUrl, jpeg);
 assert.equal(stored.people["pf-1"].photoPath, "user/patient-photos/pf-1.jpg");
-assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /capture="environment"/);
-assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload ID/);
+assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload Photo/);
+assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Choose Photo/);
+assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload ID/);
+assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Take photo/);
+assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /capture="environment"/);
 assert.match(readFileSync("supabase/patient_photos_bucket.sql", "utf8"), /DO NOT run this on the production project/);
 
 console.log("patient folders OK");

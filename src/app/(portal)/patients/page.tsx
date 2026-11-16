@@ -2019,7 +2019,7 @@ export function LegacyPatientsPage({ mode = "patients" }: { mode?: "patients" | 
     return `${fmt(today)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
   }, []);
 
-  const openHref = (id: string) => (mode === "cases" ? `/cases/${id}` : `/patients/${id}`);
+  const openHref = (id: string) => `/patients/${id}`;
 
   return (
     <div className="space-y-5">

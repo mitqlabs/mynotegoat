@@ -1,6 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { onLocalChange } from "@/lib/local-sync";
+import {
+  getFilesInFolder,
+  getFoldersInParent,
+  loadFileManagerState,
+  type FileRecord,
+} from "@/lib/file-manager";
+import { getSignedUrl } from "@/lib/file-storage";
 import { splitFullName } from "@/lib/patient-folders";
 import {
   cropImageToJpeg,
@@ -155,28 +163,91 @@ function photoInitials(name: string): string {
   return `${first}${last}`;
 }
 
-/** Square patient photo, or a placeholder, plus Upload ID / Take photo / Choose photo. */
+function isImageFile(file: FileRecord): boolean {
+  if (file.mimeType.startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(file.name);
+}
+
+function filesForCases(caseIds: string[]): FileRecord[] {
+  const state = loadFileManagerState();
+  const roots = state.folders.filter(
+    (folder) => folder.patientId && caseIds.includes(folder.patientId) && folder.isSystemFolder && !folder.deleted,
+  );
+  const seen = new Set<string>();
+  const out: FileRecord[] = [];
+  const walk = (folderId: string) => {
+    if (seen.has(folderId)) return;
+    seen.add(folderId);
+    for (const file of getFilesInFolder(state, folderId)) {
+      if (isImageFile(file)) out.push(file);
+    }
+    for (const child of getFoldersInParent(state, folderId)) walk(child.id);
+  };
+  for (const root of roots) walk(root.id);
+  out.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.name.localeCompare(b.name));
+  return out;
+}
+
+/** Square patient photo. Upload Photo uses the device picker. Choose Photo uses this patient's files. */
 export function PatientPhotoControl({
   name,
   photo,
   onSave,
+  caseIds = [],
 }: {
   name: string;
   photo?: string;
   onSave: (dataUrl: string) => void;
+  caseIds?: string[];
 }) {
   const [menu, setMenu] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [library, setLibrary] = useState<FileRecord[]>([]);
   const [source, setSource] = useState<{ url: string } | null>(null);
+  const [pickError, setPickError] = useState("");
+
+  useEffect(() => {
+    if (!choosing) return;
+    const reload = () => setLibrary(filesForCases(caseIds));
+    reload();
+    return onLocalChange("casemate.files.v1", reload);
+  }, [choosing, caseIds]);
 
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const next = event.target.files?.[0];
     event.target.value = "";
     if (!next || !next.type.startsWith("image/")) return;
     setMenu(false);
+    setChoosing(false);
     setSource((current) => {
       if (current) URL.revokeObjectURL(current.url);
       return { url: URL.createObjectURL(next) };
     });
+  };
+
+  const chooseExisting = async (file: FileRecord) => {
+    setPickError("");
+    const { url, error } = await getSignedUrl(file.storagePath);
+    if (error || !url) {
+      setPickError("Could not open that file.");
+      return;
+    }
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        setPickError("Could not open that file.");
+        return;
+      }
+      const blob = await response.blob();
+      setMenu(false);
+      setChoosing(false);
+      setSource((current) => {
+        if (current) URL.revokeObjectURL(current.url);
+        return { url: URL.createObjectURL(blob) };
+      });
+    } catch {
+      setPickError("Could not open that file.");
+    }
   };
 
   const closeCrop = () => {
@@ -205,19 +276,41 @@ export function PatientPhotoControl({
       </button>
       <p className="mt-1 text-[11px] font-semibold text-[#0d79bf]">{photo ? "Change photo" : "Add photo"}</p>
       {menu && (
-        <div className="absolute left-0 top-16 z-20 w-44 rounded-xl border border-[#d5e4ef] bg-white p-1 shadow-lg">
+        <div className="absolute left-0 top-16 z-20 w-56 rounded-xl border border-[#d5e4ef] bg-white p-1 shadow-lg">
           <label className="block cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[#e7f2f8]">
-            Upload ID
+            Upload Photo
             <input accept="image/*" className="sr-only" onChange={pick} type="file" />
           </label>
-          <label className="block cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[#e7f2f8]">
-            Take photo
-            <input accept="image/*" capture="environment" className="sr-only" onChange={pick} type="file" />
-          </label>
-          <label className="block cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[#e7f2f8]">
-            Choose photo
-            <input accept="image/*" className="sr-only" onChange={pick} type="file" />
-          </label>
+          <button
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[#e7f2f8]"
+            onClick={() => {
+              setChoosing(true);
+              setLibrary(filesForCases(caseIds));
+              setPickError("");
+            }}
+            type="button"
+          >
+            Choose Photo
+          </button>
+          {choosing && (
+            <div className="max-h-48 overflow-auto border-t border-[#d5e4ef] px-1 py-1">
+              {library.length === 0 ? (
+                <p className="px-2 py-2 text-xs text-[#6b8496]">No photos in this patient&apos;s files.</p>
+              ) : (
+                library.map((file) => (
+                  <button
+                    className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#e7f2f8]"
+                    key={file.id}
+                    onClick={() => void chooseExisting(file)}
+                    type="button"
+                  >
+                    {file.name}
+                  </button>
+                ))
+              )}
+              {pickError && <p className="px-2 py-1 text-xs font-semibold text-[#c9423a]">{pickError}</p>}
+            </div>
+          )}
         </div>
       )}
       {source && (

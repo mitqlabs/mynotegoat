@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { ageOn } from "@/lib/age";
 import { PatientPhotoControl } from "@/components/patient-photo-cropper";
 import { formatDobDisplay, formatFolderMoney, formatPhoneDisplay, splitFullName } from "@/lib/patient-folders";
+import { PatientFolderFiles } from "@/components/patient-folder-files";
+import { PatientTodoList, type PatientTodoDraft, type PatientTodoItem } from "@/components/patient-todo-list";
 
 export type FolderListRow = {
   id: string;
@@ -112,74 +114,78 @@ export function PatientFolderListView({
   }, [query, rows]);
   const caseTotal = rows.reduce((sum, row) => sum + row.total, 0);
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-[#172a3a]">Patient List</h2>
-          <p className="mt-1 text-sm text-[#6b8496]">One row per person. Click a patient to open their page and all of their cases.</p>
+    <div className="space-y-5">
+      <section className="panel-card p-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <button className="btn btn-primary" onClick={() => setCreating(true)} type="button">
+            New Patient
+          </button>
         </div>
-        <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)} type="button">
-          + New Patient
-        </button>
-      </div>
-      {creating && (
-        <form
-          className="grid gap-3 rounded-2xl border border-[#d5e4ef] bg-white p-4 md:grid-cols-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!draft.firstName.trim() || !draft.lastName.trim()) return;
-            onCreate(draft);
-            setDraft({ firstName: "", lastName: "", dob: "", phone: "", openCase: false });
-            setCreating(false);
-          }}
-        >
-          <p className="md:col-span-2 text-sm font-semibold text-[#172a3a]">New patient — person info only. A case is optional and starts empty.</p>
-          <label className={LABEL}>
-            First name
-            <input className={FIELD} value={draft.firstName} onChange={(event) => setDraft({ ...draft, firstName: event.target.value })} />
+        {creating && (
+          <form
+            className="mt-4 grid gap-3 rounded-xl border border-[var(--line-soft)] bg-white p-3 md:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!draft.firstName.trim() || !draft.lastName.trim()) return;
+              onCreate(draft);
+              setDraft({ firstName: "", lastName: "", dob: "", phone: "", openCase: false });
+              setCreating(false);
+            }}
+          >
+            <p className="md:col-span-2 text-sm font-semibold">New patient — person info only. A case is optional and starts empty.</p>
+            <label className={LABEL}>
+              First name
+              <input className={FIELD} value={draft.firstName} onChange={(event) => setDraft({ ...draft, firstName: event.target.value })} />
+            </label>
+            <label className={LABEL}>
+              Last name
+              <input className={FIELD} value={draft.lastName} onChange={(event) => setDraft({ ...draft, lastName: event.target.value })} />
+            </label>
+            <label className={LABEL}>
+              DOB
+              <input className={FIELD} placeholder="MM/DD/YYYY" value={draft.dob} onChange={(event) => setDraft({ ...draft, dob: event.target.value })} />
+            </label>
+            <label className={LABEL}>
+              Phone
+              <input className={FIELD} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} />
+            </label>
+            <label className="flex items-center gap-2 text-sm md:col-span-2">
+              <input checked={draft.openCase} onChange={(event) => setDraft({ ...draft, openCase: event.target.checked })} type="checkbox" />
+              Also open a blank case (no attorney, billing, or notes copied)
+            </label>
+            <div className="flex gap-2 md:col-span-2">
+              <button className="btn btn-primary" type="submit">
+                Save patient
+              </button>
+              <button className="rounded-lg bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold" onClick={() => setCreating(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
+            <input
+              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search patient or attorney..."
+              value={query}
+            />
           </label>
-          <label className={LABEL}>
-            Last name
-            <input className={FIELD} value={draft.lastName} onChange={(event) => setDraft({ ...draft, lastName: event.target.value })} />
-          </label>
-          <label className={LABEL}>
-            DOB
-            <input className={FIELD} placeholder="MM/DD/YYYY" value={draft.dob} onChange={(event) => setDraft({ ...draft, dob: event.target.value })} />
-          </label>
-          <label className={LABEL}>
-            Phone
-            <input className={FIELD} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} />
-          </label>
-          <label className="flex items-center gap-2 text-sm md:col-span-2">
-            <input checked={draft.openCase} onChange={(event) => setDraft({ ...draft, openCase: event.target.checked })} type="checkbox" />
-            Also open a blank case (no attorney, billing, or notes copied)
-          </label>
-          <div className="flex gap-2 md:col-span-2">
-            <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white" type="submit">
-              Save patient
-            </button>
-            <button className="rounded-full bg-[#e4f0f7] px-4 py-2 text-sm font-semibold" onClick={() => setCreating(false)} type="button">
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-      <div className="rounded-2xl border border-[#d5e4ef] bg-white">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#e6f0f6] px-4 py-3">
-          <input
-            className="min-w-[16rem] flex-1 rounded-full border border-[#d5e4ef] px-4 py-2 text-sm outline-none focus:border-[#0d79bf]"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search patients by name, DOB or phone..."
-            value={query}
-          />
-          <p className="text-sm text-[#6b8496]">
-            {shown.length} patients · {caseTotal} cases
-          </p>
+        </div>
+      </section>
+      <section className="panel-card overflow-hidden">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--line-soft)] px-4 py-2.5 text-sm">
+          <span className="font-semibold">
+            {shown.length} patient{shown.length === 1 ? "" : "s"}
+          </span>
+          <span className="text-[var(--text-muted)]">{caseTotal} case{caseTotal === 1 ? "" : "s"}</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[#f4f9fc] text-xs font-semibold uppercase tracking-wide text-[#6b8496]">
-              <tr>
+          <table className="min-w-full border-collapse">
+            <thead>
+              <tr className="bg-[var(--bg-soft)] text-left text-sm">
                 <th className="px-4 py-3">Patient</th>
                 <th className="px-4 py-3">DOB</th>
                 <th className="px-4 py-3">Phone</th>
@@ -191,9 +197,9 @@ export function PatientFolderListView({
             </thead>
             <tbody>
               {shown.map((row) => (
-                <tr className="border-t border-[#e6f0f6]" key={row.id}>
+                <tr className="border-t border-[var(--line-soft)]" key={row.id}>
                   <td className="px-4 py-3">
-                    <button className="inline-flex items-center gap-2 font-semibold text-[#0d79bf]" onClick={() => onOpen(row.id)} type="button">
+                    <button className="inline-flex items-center gap-2 font-semibold text-[var(--brand-primary)] underline" onClick={() => onOpen(row.id)} type="button">
                       {row.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img alt="" className="h-7 w-7 rounded-md object-cover" src={row.photo} />
@@ -201,8 +207,8 @@ export function PatientFolderListView({
                       {row.name}
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-[#172a3a]">{formatDobDisplay(row.dob)}</td>
-                  <td className="px-4 py-3 text-[#172a3a]">{formatPhoneDisplay(row.phone)}</td>
+                  <td className="px-4 py-3">{formatDobDisplay(row.dob)}</td>
+                  <td className="px-4 py-3">{formatPhoneDisplay(row.phone)}</td>
                   <td className="px-4 py-3 text-center"><CountBubble n={row.active} tone="green" /></td>
                   <td className="px-4 py-3 text-center"><CountBubble n={row.submitted} tone="amber" /></td>
                   <td className="px-4 py-3 text-center"><CountBubble n={row.paid} tone="blue" /></td>
@@ -210,8 +216,8 @@ export function PatientFolderListView({
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr>
-                  <td className="px-4 py-8 text-center text-[#6b8496]" colSpan={7}>
+                <tr className="border-t border-[var(--line-soft)]">
+                  <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={7}>
                     No patients match that search.
                   </td>
                 </tr>
@@ -219,7 +225,7 @@ export function PatientFolderListView({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -231,6 +237,8 @@ export function PatientFolderPageView({
   onNewCase,
   onSavePerson,
   onAddNote,
+  todoItems,
+  onToggleTodo,
   onAddTodo,
   onSavePhoto,
 }: {
@@ -240,7 +248,9 @@ export function PatientFolderPageView({
   onNewCase: (draft: { attorney: string; dateOfInjury: string }) => void;
   onSavePerson: (next: { firstName: string; lastName: string; dob: string; phone: string; sex: string; maritalStatus: string; email: string; address: string }) => void;
   onAddNote: (text: string) => void;
-  onAddTodo: (title: string, due: string) => void;
+  todoItems: PatientTodoItem[];
+  onToggleTodo: (id: string) => void;
+  onAddTodo: (draft: PatientTodoDraft) => string;
   onSavePhoto: (dataUrl: string) => void;
 }) {
   const parts = splitFullName(folder.name);
@@ -255,7 +265,6 @@ export function PatientFolderPageView({
     address: folder.address,
   });
   const [note, setNote] = useState("");
-  const [todo, setTodo] = useState({ title: "", due: "" });
   const [addingCase, setAddingCase] = useState(false);
   const [caseDraft, setCaseDraft] = useState({ attorney: "", dateOfInjury: "" });
   const billed = folder.cases.reduce((sum, row) => sum + row.billed, 0);
@@ -263,13 +272,13 @@ export function PatientFolderPageView({
   const owed = billed - paid;
   const age = ageOn(folder.dob, "2026-11-11");
   return (
-    <div className="space-y-4">
-      <button className="text-sm font-semibold text-[#6b8496]" onClick={onBack} type="button">
+    <div className="space-y-5">
+      <button className="text-sm font-semibold text-[var(--text-muted)]" onClick={onBack} type="button">
         Patient List
       </button>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <PatientPhotoControl name={folder.name} onSave={onSavePhoto} photo={folder.photo} />
+          <PatientPhotoControl caseIds={folder.cases.map((row) => row.id)} name={folder.name} onSave={onSavePhoto} photo={folder.photo} />
           <div>
             <h2 className="text-2xl font-semibold text-[#172a3a]">{folder.name}</h2>
             <p className="text-sm text-[#6b8496]">
@@ -292,7 +301,7 @@ export function PatientFolderPageView({
         </div>
       </div>
 
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+      <section className="panel-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
           <p className="text-xs text-[#6b8496]">Shared by every case · change it here, and it updates everywhere</p>
@@ -311,7 +320,7 @@ export function PatientFolderPageView({
 
       {addingCase && (
         <form
-          className="grid gap-3 rounded-2xl border border-dashed border-[#0d79bf] bg-white p-4 md:grid-cols-2"
+          className="panel-card grid gap-3 p-4 md:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             onNewCase(caseDraft);
@@ -338,7 +347,7 @@ export function PatientFolderPageView({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+        <section className="panel-card p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="font-semibold">Alerts</h3>
             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-semibold text-rose-700">{folder.alerts.length}</span>
@@ -353,36 +362,15 @@ export function PatientFolderPageView({
             {folder.alerts.length === 0 && <li className="py-2 text-sm text-[#6b8496]">No alerts.</li>}
           </ul>
         </section>
-        <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+        <section className="panel-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="font-semibold">General To-Dos</h3>
-            <p className="text-xs text-[#6b8496]">Not tied to a case</p>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">To-Do</h3>
           </div>
-          <ul className="divide-y divide-[#e6f0f6]">
-            {folder.todos.map((item) => (
-              <li className="flex items-center justify-between gap-3 py-2 text-sm" key={item.id}>
-                <span>{item.title}</span>
-                <span className="text-[#6b8496]">Due {item.due}</span>
-              </li>
-            ))}
-          </ul>
-          <form
-            className="mt-3 flex flex-wrap gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!todo.title.trim()) return;
-              onAddTodo(todo.title.trim(), todo.due.trim());
-              setTodo({ title: "", due: "" });
-            }}
-          >
-            <input className={`${FIELD} min-w-[12rem] flex-1`} placeholder="Add a to-do for this patient" value={todo.title} onChange={(event) => setTodo({ ...todo, title: event.target.value })} />
-            <input className={`${FIELD} w-28`} placeholder="Due" value={todo.due} onChange={(event) => setTodo({ ...todo, due: event.target.value })} />
-            <button className="rounded-full bg-[#e4f0f7] px-3 py-2 text-xs font-semibold" type="submit">Add</button>
-          </form>
+          <PatientTodoList items={todoItems} onAdd={onAddTodo} onToggle={onToggleTodo} />
         </section>
       </div>
 
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+      <section className="panel-card p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="font-semibold">General Notes</h3>
           <p className="text-xs text-[#6b8496]">Belongs to this patient, not to a case</p>
@@ -422,15 +410,15 @@ export function PatientFolderPageView({
         </form>
       </section>
 
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+      <section className="panel-card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line-soft)] px-4 py-2.5">
           <h3 className="font-semibold">Cases</h3>
-          <p className="text-xs text-[#6b8496]">Each case keeps its own Additional Details, billing, and notes</p>
+          <p className="text-xs text-[var(--text-muted)]">Each case keeps its own Additional Details, billing, and notes</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[#f4f9fc] text-xs font-semibold uppercase tracking-wide text-[#6b8496]">
-              <tr>
+          <table className="min-w-full border-collapse">
+            <thead>
+              <tr className="bg-[var(--bg-soft)] text-left text-sm">
                 <th className="px-4 py-3">Case #</th>
                 <th className="px-4 py-3">Date of injury</th>
                 <th className="px-4 py-3">Attorney</th>
@@ -443,9 +431,9 @@ export function PatientFolderPageView({
             </thead>
             <tbody>
               {folder.cases.map((row) => (
-                <tr className="border-t border-[#e6f0f6]" key={row.id}>
+                <tr className="border-t border-[var(--line-soft)]" key={row.id}>
                   <td className="px-4 py-3">
-                    <button className="font-semibold text-[#0d79bf]" onClick={() => onOpenCase(row.id)} type="button">
+                    <button className="font-semibold text-[var(--brand-primary)] underline" onClick={() => onOpenCase(row.id)} type="button">
                       {row.caseNumber}
                     </button>
                   </td>
@@ -462,13 +450,19 @@ export function PatientFolderPageView({
           </table>
         </div>
       </section>
+      <PatientFolderFiles
+        cases={folder.cases.map((row) => ({
+          id: row.id,
+          label: [row.caseNumber, row.dateOfInjury && row.dateOfInjury !== "—" ? row.dateOfInjury : ""].filter(Boolean).join(" · "),
+        }))}
+      />
     </div>
   );
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone: "billed" | "paid" | "owed" }) {
   return (
-    <section className="rounded-2xl border border-[#d5e4ef] bg-white px-4 py-3">
+    <section className="panel-card px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#6b8496]">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${moneyTone(tone)}`}>{value}</p>
     </section>
@@ -568,7 +562,7 @@ export function PatientFolderCaseView({
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+        <section className="panel-card p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="font-semibold">Notes</h3>
             <p className="text-xs text-[#6b8496]">This case only</p>
@@ -586,7 +580,7 @@ export function PatientFolderCaseView({
             {row.notes.length === 0 && <li className="py-2 text-sm text-[#6b8496]">No notes on this case.</li>}
           </ul>
         </section>
-        <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+        <section className="panel-card p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="font-semibold">Billing for this case</h3>
             <p className="text-xs text-[#6b8496]">Does not mix with other cases</p>
