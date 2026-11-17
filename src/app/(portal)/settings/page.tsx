@@ -3369,7 +3369,6 @@ export default function SettingsPage() {
       {/* Contact Categories moved into the Templates wrapper below. */}
 
       <CollapsibleSection
-        description="The office theme, and Light or Dark for you."
         hidden={!showSection("themes")}
         id="themes"
         isOpen={sectionIsOpen("themes")}

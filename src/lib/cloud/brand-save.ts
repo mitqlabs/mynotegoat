@@ -45,14 +45,26 @@ function reasonFrom(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function saveOfficeBrand(next: BrandSettings): Promise<SaveResult> {
+/** Paint a theme on this computer immediately. The cloud write is separate. */
+export function publishBrandLocal(next: BrandSettings): Record<string, unknown> {
   const payload = brandPayload(next);
-  try {
+  markLocalWrite(BRAND_STORAGE_KEY);
+  window.localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify(payload));
+  notifyChange(BRAND_STORAGE_KEY);
+  return payload;
+}
+
+export async function saveOfficeBrand(next: BrandSettings, opts?: { writeLocal?: boolean }): Promise<SaveResult> {
+  let payload: Record<string, unknown>;
+  if (opts?.writeLocal !== false) {
+    try {
+      payload = publishBrandLocal(next);
+    } catch (error) {
+      return { ok: false, reason: reasonFrom(error, "This browser could not store the theme.") };
+    }
+  } else {
     markLocalWrite(BRAND_STORAGE_KEY);
-    window.localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify(payload));
-    notifyChange(BRAND_STORAGE_KEY);
-  } catch (error) {
-    return { ok: false, reason: reasonFrom(error, "This browser could not store the theme.") };
+    payload = brandPayload(next);
   }
 
   try {
