@@ -8,7 +8,7 @@ ORIGIN = "https://www.mynotegoat.com"
 OBJ = "\ufffc"
 # One call hands out this many texts. The shortcut asks again until the
 # server says send=no, so a killed run only leases one small batch.
-BATCH = 8
+BATCH = 5
 LOOPS = 8
 
 def U(): return str(uuid.uuid4()).upper()

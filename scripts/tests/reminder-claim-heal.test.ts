@@ -147,8 +147,8 @@ const built = spawnSync("python3", ["tools/build-shortcuts.py", "send"], { encod
 assert.equal(built.status, 0, built.stderr || built.stdout);
 
 for (const [file, wfName, urlPart] of [
-  ["Send-Reminders.shortcut", "Send Reminders", "format=shortcut&batch=8"],
-  ["Send-Reminders-Now.shortcut", "Send Reminders Now", "format=shortcut&force=1&batch=8"],
+  ["Send-Reminders.shortcut", "Send Reminders", "format=shortcut&batch=5"],
+  ["Send-Reminders-Now.shortcut", "Send Reminders Now", "format=shortcut&force=1&batch=5"],
 ] as const) {
   const raw = spawnSync("python3", ["-c", `
 import json, plistlib, sys

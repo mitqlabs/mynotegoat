@@ -444,7 +444,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Set up automatic reminders on the iPhone (3 steps)",
         steps: [
-          "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the setup code, then add the Send Reminders shortcut as shown under iPhone setup (Shortcuts app). If an older shortcut is already on the phone, delete it first and add this one. It sends a few texts, then asks for the next few.",
+          "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the setup code, then add the Send Reminders shortcut as shown under iPhone setup (Shortcuts app). If an older shortcut is already on the phone, delete it first and add this one. It sends 5 texts, then asks for the next 5.",
           "Step 2 (REQUIRED): create three automations. The shortcut does NOT run by itself. iOS can't put a schedule inside a shortcut, so you set the timers once, by hand. Steps are below.",
           "Step 3: check Send reminders automatically in Text Reminders. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Tomorrow morning check Recent sends to see it ran.",
           "On the Text Reminders page, check \u201cI made the 8:00 AM, 8:30 AM and 9:00 AM automations\u201d when Step 2 is done. The card turns green.",

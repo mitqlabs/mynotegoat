@@ -486,7 +486,7 @@ export function TextRemindersSettingsPanel() {
             Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
-            <b>Send Reminders</b> (iPhone shortcut) texts a few patients, then asks for the next few, so a long morning does not get cut off. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, only after you
+            <b>Send Reminders</b> (iPhone shortcut) texts 5 patients, then asks for the next 5, so a long morning does not get cut off. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, only after you
             make the automations (Step 2 above). The later runs do nothing if everything already went out.
           </li>
           <li>
@@ -585,7 +585,7 @@ export function TextRemindersSettingsPanel() {
             <li>
               If <b>Send Reminders</b> is already on the iPhone, delete that shortcut first (long-press it → <b>Delete</b>). Then tap{" "}
               <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-              {" "}→ <b>Add Shortcut</b>. If it shows the steps first, scroll down and tap <b>Add Shortcut</b>. Paste your setup code when it asks. This file sends a few texts at a time and then asks for the next few.
+              {" "}→ <b>Add Shortcut</b>. If it shows the steps first, scroll down and tap <b>Add Shortcut</b>. Paste your setup code when it asks. This file sends 5 texts at a time and then asks for the next 5.
             </li>
             <li>
               Delete any old <b>Send Reminders Now</b> the same way, then get{" "}
@@ -599,7 +599,7 @@ export function TextRemindersSettingsPanel() {
         </div>
         <InnerFold testId="iphone-steps-manual" title="Only if the download did not work: build the shortcut by hand">
           <p className="text-[var(--text-muted)]">
-            The downloaded shortcut is the one to use. It sends a few texts, then asks for the next few. These hand-built steps do one pass. The later automations in Step 2 still send anything that was missed.
+            The downloaded shortcut is the one to use. It sends 5 texts, then asks for the next 5. These hand-built steps do one pass. The later automations in Step 2 still send anything that was missed.
           </p>
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>.</li>

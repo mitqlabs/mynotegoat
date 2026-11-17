@@ -50,7 +50,7 @@ export const dynamic = "force-dynamic";
  *   ?preview=1   list even on a non-run day (device must not send)
  *   ?format=shortcut  iPhone-friendly reply: `items` is non-empty ONLY when
  *                the phone should send right now; dry runs are logged here.
- *   ?batch=8     with format=shortcut, hand out at most this many texts and
+ *   ?batch=5     with format=shortcut, hand out at most this many texts and
  *                claim only those. The shortcut asks again until send=no.
  *                Omitted = no limit (shortcuts installed before batching).
  *
