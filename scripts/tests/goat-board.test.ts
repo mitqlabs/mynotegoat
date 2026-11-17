@@ -16,6 +16,8 @@ import {
   defaultBoard,
   defaultTypePriority,
   matchesPeriod,
+  parseBoard,
+  snapshotStatusesToShow,
   newStatusBox,
   nextOpenDayLabel,
   nextOpenOfficeDay,
@@ -155,6 +157,19 @@ assert.equal(matchesPeriod({ dateOfLoss: "2025-01-02" }, "last-year", "2026-11-1
 assert.equal(matchesPeriod({}, "this-year", "2026-11-11"), false);
 assert.equal(matchesPeriod({}, "all", "2026-11-11"), true);
 
+const statuses = ["Active", "Discharged", "Ready to Submit"];
+assert.equal(snapshotStatusesToShow(undefined, statuses), null, "missing status keeps every group");
+assert.equal(snapshotStatusesToShow("all", statuses), null);
+assert.equal(snapshotStatusesToShow("All statuses", statuses), null);
+assert.equal(snapshotStatusesToShow("Discharged", statuses), "Discharged");
+assert.equal(snapshotStatusesToShow("discharged", statuses), "Discharged");
+assert.equal(snapshotStatusesToShow("Dropped", statuses), null, "a status the office no longer has falls back to every group");
+const saved = parseBoard(JSON.stringify([
+  { i: "case-snapshot", kind: "case-snapshot", x: 0, y: 0, w: 6, h: 10, period: "this-year", snapshotStatus: "Active" },
+]));
+assert.equal(saved?.[0].period, "this-year");
+assert.equal(saved?.[0].snapshotStatus, "Active", "status is stored on the board with period");
+
 assert.equal(DEFAULT_MAX_H, 28);
 assert.equal(MAX_BOX_H, 40);
 assert.equal(clampMaxH(undefined), 28);
@@ -170,5 +185,10 @@ assert.match(boardSrc, /font-bold text-\[var\(--brand-primary\)\]/);
 assert.match(boardSrc, /isResizable=\{arrange\}/);
 assert.match(boardSrc, /touch-pan-y/);
 assert.match(boardSrc, /saveBoard/);
+assert.match(boardSrc, /data-testid="case-snapshot-period"/);
+assert.match(boardSrc, /data-testid="case-snapshot-status"/);
+assert.match(boardSrc, /All statuses/);
+assert.match(boardSrc, /snapshotStatus: event\.target\.value/);
+assert.match(boardSrc, /grid-cols-2/);
 
 console.log("goat board ok");

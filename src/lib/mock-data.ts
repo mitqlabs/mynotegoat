@@ -92,9 +92,10 @@ export interface PatientRecord {
    */
   textRemindersOff?: boolean;
   /**
-   * Staff moved this patient out of New Patient Intake onto the Patient List
-   * even though case info (date of injury) is still blank. Persisted on
-   * patients.on_patient_list.
+   * Older rows may still have this set from when a chart could be forced
+   * onto the Patient List. The lists no longer read it. New Patient Intake
+   * is decided at display time (attorney, plus an Initial Exam date or a
+   * booked New Patient visit). Persisted on patients.on_patient_list.
    */
   onPatientList?: boolean;
   /**

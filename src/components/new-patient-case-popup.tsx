@@ -18,8 +18,9 @@ const emptyDraft: CasePopupDraft = { attorney: "", attorneyPhone: "", dateOfLoss
  * New Patient "+ Case". Attorney, date of injury, and the first exam are
  * all optional. Picking a firm fills the phone. SELF is self-represented:
  * the attorney is SELF and the phone stays blank. A date of injury fills
- * the case number. Save is the parent's job (book the visit, store the exam
- * date, and move the chart once a date of injury exists).
+ * the case number. Save is the parent's job (book the visit and store the
+ * exam date). The chart leaves New Patient Intake only when an attorney is
+ * set (SELF counts) and that exam is booked or an Initial Exam date is saved.
  */
 export function NewPatientCasePopup({
   initial,
@@ -159,8 +160,8 @@ export function NewPatientCasePopup({
         <div className="grid gap-2 px-5 pb-4">
           <p className="text-xs text-[var(--text-muted)]">
             {purpose === "intake"
-              ? "Save writes this onto the chart. A date of injury moves them onto the Patient List. An exam date and time book a New Patient visit and set the Initial Exam date."
-              : "Save keeps this with the new patient. Create Patient books the visit. A date of injury puts them on the Patient List instead of New Patient Intake, and the exam date is saved as the Initial Exam."}
+              ? "Save writes this onto the chart. An exam date and time book a New Patient visit and set the Initial Exam date. They leave New Patient Intake only when an attorney is set (Self counts) and that exam is booked or an Initial Exam date is saved. Attorney alone keeps them here."
+              : "Save keeps this with the new patient. Create Patient books the visit. They stay in New Patient Intake until an attorney is set (Self counts) and an Initial Exam date is saved or a New Patient visit is booked. The exam date is saved as the Initial Exam."}
           </p>
           {message && !conflict && (
             <p className="text-sm font-semibold text-[#b43b34]" role="alert">{message}</p>
