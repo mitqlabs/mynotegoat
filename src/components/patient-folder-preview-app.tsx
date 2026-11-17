@@ -247,7 +247,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
   const navActive = screen.name === "cases" ? "Case List" : screen.name === "list" ? "Patient List" : screen.name === "patient" ? "Patient List" : "Case List";
 
   return (
-    <div className="flex min-h-screen bg-[#e7f2f8] text-[#172a3a]">
+    <div className="flex min-h-screen bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] text-[#172a3a]">
       <aside className="sticky top-0 hidden h-screen w-[220px] shrink-0 flex-col bg-[#0e2944] px-4 py-5 text-[#d7ebf8] md:flex">
         <div className="mb-6 rounded-2xl bg-[#163654] px-3 py-3 text-center text-lg font-semibold text-white">NoteGoat</div>
         <nav className="grid gap-1 text-sm font-semibold">

@@ -743,7 +743,7 @@ export default function KeyDatesPage() {
                           ? "bg-[rgba(201,66,58,0.15)] text-[#b43b34]"
                           : row.officeStatus === "Open"
                             ? "bg-[rgba(46,155,93,0.14)] text-[#257a49]"
-                            : "bg-[rgba(13,121,191,0.12)] text-[#0d79bf]"
+                            : "bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-ink)]"
                       }`}
                     >
                       {row.officeStatus}
@@ -894,7 +894,7 @@ export default function KeyDatesPage() {
         </div>
 
         {focusedKeyDate && (
-          <div className="flex flex-wrap items-center gap-3 border-b border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] px-4 py-2 text-sm font-semibold">
+          <div className="flex flex-wrap items-center gap-3 border-b border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] px-4 py-2 text-sm font-semibold">
             <span>
               Showing {formatKeyDateRangeShort(focusedKeyDate)}
               {focusedKeyDate.reason ? ` (${focusedKeyDate.reason})` : ""} only

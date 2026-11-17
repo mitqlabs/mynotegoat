@@ -15,7 +15,7 @@ import {
   type AttorneyPick,
 } from "@/lib/attorney-picker";
 
-const fieldClass = "w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2";
+const fieldClass = "w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-main)]";
 
 /**
  * Office attorney dropdown. Placeholder first, SELF under it, firms A–Z

@@ -33,7 +33,7 @@ export function TextCard({ d, today, onChange, onSend, onCancel }: {
   const canSend = d.state === "open" && n > 0 && len > 0 && !tooLong;
   return (
     <div className="mt-2 space-y-2 text-xs" data-goat-text-card>
-      <div className="rounded-lg bg-[#eef8fb] px-2.5 py-2">
+      <div className="rounded-lg bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-2">
         <div className="text-[11px] font-bold tracking-wide text-[#2f7f93]">TEXT TO: {who.toUpperCase()}</div>
         <div className="mt-0.5 text-[13px] font-semibold">
           {n === 0 ? "Nobody to text" : `${n} ${n === 1 ? "patient" : "patients"} will get this`}
@@ -65,7 +65,7 @@ export function TextCard({ d, today, onChange, onSend, onCancel }: {
         <span className="mb-0.5 block text-[11px] font-semibold text-[var(--text-muted)]">Message</span>
         <textarea
           aria-label="Text message"
-          className="w-full rounded-xl border border-[#72bdcf] bg-white px-2.5 py-1.5 text-[13px]"
+          className="w-full rounded-xl border border-[var(--brand-primary)] bg-white px-2.5 py-1.5 text-[13px]"
           disabled={busy}
           maxLength={BROADCAST_MAX + 200}
           onChange={(e) => onChange(e.target.value)}

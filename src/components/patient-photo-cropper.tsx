@@ -152,7 +152,7 @@ export function PatientPhotoCropper({
                   {CROP_HANDLES.map((handle) => (
                     <button
                       aria-label={handle.label}
-                      className={`absolute h-9 w-9 touch-none rounded-md border-2 border-white bg-[#0d79bf] ${handle.className}`}
+                      className={`absolute h-9 w-9 touch-none rounded-md border-2 border-white bg-[var(--btn-bg,var(--brand-primary))] ${handle.className}`}
                       key={handle.edge}
                       onPointerDown={(event) => onPointerDown(event, handle.edge)}
                       onPointerMove={onPointerMove}
@@ -168,10 +168,10 @@ export function PatientPhotoCropper({
         </div>
         {error && <p className="px-4 pt-2 text-sm font-semibold text-[#c9423a]">{error}</p>}
         <div className="flex justify-end gap-2 px-4 py-3">
-          <button className="rounded-full bg-[#e4f0f7] px-4 py-2 text-sm font-semibold" onClick={onCancel} type="button">
+          <button className="rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold" onClick={onCancel} type="button">
             Cancel
           </button>
-          <button className="rounded-full bg-[#0d79bf] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!crop} onClick={save} type="button">
+          <button className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={!crop} onClick={save} type="button">
             Save photo
           </button>
         </div>
@@ -348,20 +348,20 @@ export function PatientPhotoControl({
           // eslint-disable-next-line @next/next/no-img-element
           <img alt="" className="h-16 w-16 object-cover" src={photo} />
         ) : (
-          <span className="flex h-16 w-16 items-center justify-center border border-dashed border-[#8fb4cc] bg-[#e7f2f8] text-sm font-semibold text-[#0d79bf]">
+          <span className="flex h-16 w-16 items-center justify-center border border-dashed border-[#8fb4cc] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] text-sm font-semibold text-[var(--brand-ink)]">
             {photoInitials(name)}
           </span>
         )}
       </button>
-      <p className="mt-1 text-[11px] font-semibold text-[#0d79bf]">{photo ? "Change photo" : "Add photo"}</p>
+      <p className="mt-1 text-[11px] font-semibold text-[var(--brand-ink)]">{photo ? "Change photo" : "Add photo"}</p>
       {menu && (
         <div className="absolute left-0 top-16 z-20 w-56 rounded-xl border border-[#d5e4ef] bg-white p-1 shadow-lg">
-          <label className="block cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[#e7f2f8]">
+          <label className="block cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]">
             Upload Photo
             <input accept="image/*" className="sr-only" onChange={pick} type="file" />
           </label>
           <button
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[#e7f2f8]"
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]"
             onClick={() => {
               setChoosing(true);
               setLibrary(filesForCases(caseIds));
@@ -378,7 +378,7 @@ export function PatientPhotoControl({
               ) : (
                 library.map((file) => (
                   <button
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#e7f2f8]"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]"
                     key={file.id}
                     onClick={() => void chooseExisting(file)}
                     type="button"
@@ -387,7 +387,7 @@ export function PatientPhotoControl({
                       // eslint-disable-next-line @next/next/no-img-element
                       <img alt="" className="h-10 w-10 shrink-0 rounded object-cover" src={thumbs[file.id]} />
                     ) : (
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#e7f2f8] text-[10px] font-semibold text-[#6b8496]">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] text-[10px] font-semibold text-[#6b8496]">
                         {isPdfFile(file) ? "PDF" : "…"}
                       </span>
                     )}

@@ -189,7 +189,7 @@ export function QuickGlance({
   return (
     <article className="panel-card p-3">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={toggleOpen}
         type="button"
       >
@@ -283,7 +283,7 @@ export function QuickGlance({
                       <span className="whitespace-nowrap">
                         <span className="text-[var(--text-muted)]">Reviewed </span>
                         {row.reviewed ? (
-                          <span className="font-semibold text-[#0d79bf]">✓ {row.reviewed}</span>
+                          <span className="font-semibold text-[var(--brand-ink)]">✓ {row.reviewed}</span>
                         ) : (
                           dash
                         )}
@@ -343,7 +343,7 @@ function StatusCounts({
     <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
       <span className="text-[#111]">{counts.scheduled}</span>
       <span className="text-[var(--text-muted)]"> / </span>
-      <span className="text-[#0d79bf]">{counts.checkedIn}</span>
+      <span className="text-[var(--brand-ink)]">{counts.checkedIn}</span>
       <span className="text-[var(--text-muted)]"> / </span>
       <span className="text-[#047857]">{counts.checkedOut}</span>
       <span className="text-[var(--text-muted)]"> / </span>

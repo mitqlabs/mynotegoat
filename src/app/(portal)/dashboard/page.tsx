@@ -373,7 +373,7 @@ function DashboardSection({
   return (
     <section className="panel-card p-4">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={toggle}
         type="button"
       >
@@ -1327,7 +1327,7 @@ export default function DashboardPage() {
               {imagingFacilityStats.map((row) => (
                 <button
                   key={row.facility}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[rgba(13,121,191,0.04)]"
+                  className="grid w-full grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
                   onClick={() =>
                     setReferralDrill({
                       kind: "imaging",
@@ -1361,7 +1361,7 @@ export default function DashboardPage() {
               {specialistReferralStats.map((row) => (
                 <button
                   key={row.specialist}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_3rem] gap-x-2 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[rgba(13,121,191,0.04)]"
+                  className="grid w-full grid-cols-[minmax(0,1fr)_3rem] gap-x-2 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
                   onClick={() =>
                     setReferralDrill({
                       kind: "specialist",

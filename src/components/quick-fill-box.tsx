@@ -26,7 +26,7 @@ export function QuickFillBox({
 
   return (
     <label
-      className="block rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3"
+      className="block rounded-xl border border-dashed border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_5%,transparent)] p-3"
       data-quick-fill
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {

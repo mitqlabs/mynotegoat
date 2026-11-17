@@ -119,7 +119,7 @@ export function ColorPillMenu({
         >
           <button
             aria-selected={value === ""}
-            className="flex items-center justify-between gap-3 rounded-lg px-1 py-0.5 text-left hover:bg-[rgba(13,121,191,0.06)]"
+            className="flex items-center justify-between gap-3 rounded-lg px-1 py-0.5 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
             onClick={() => pick("")}
             role="option"
             type="button"
@@ -130,7 +130,7 @@ export function ColorPillMenu({
           {choices.map((choice) => (
             <button
               aria-selected={choice.id === value}
-              className="flex items-center justify-between gap-3 rounded-lg px-1 py-0.5 text-left hover:bg-[rgba(13,121,191,0.06)]"
+              className="flex items-center justify-between gap-3 rounded-lg px-1 py-0.5 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
               key={choice.id}
               onClick={() => pick(choice.id)}
               role="option"

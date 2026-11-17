@@ -585,7 +585,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               const chip = (on: boolean) =>
                                 `rounded-full border px-2 py-0.5 text-xs ${
                                   on
-                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                                     : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                 }`;
                               if (!usingSides) {
@@ -666,7 +666,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             key={opt}
                                             className={`rounded-full border px-2 py-0.5 text-xs ${
                                               on
-                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                                                 : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                             }`}
                                             onClick={() =>
@@ -709,7 +709,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                     <button
                                       className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${
                                         usingSides
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
                                       }`}
                                       onClick={() => {
@@ -800,7 +800,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         const chip = (on: boolean) =>
                           `rounded-full border px-2 py-0.5 text-xs ${
                             on
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                           }`;
                         const decompOpen = expandedDecompIds.has(plan.id);

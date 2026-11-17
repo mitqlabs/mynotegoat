@@ -105,7 +105,7 @@ const pill = `inline-flex w-[8.5rem] max-w-full shrink-0 items-center justify-be
         >
           {officeMenuChoices(locations).map((c) => (
             <button
-              className={`whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-[rgba(13,121,191,0.06)] ${
+              className={`whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] ${
                 (locationId ?? "") === c.id || (!c.id && !assigned) ? "font-semibold text-[var(--brand-primary)]" : "text-[var(--text-main)]"
               }`}
               key={c.id || "none"}

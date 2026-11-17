@@ -88,7 +88,7 @@ export function DxSuggestions({
           >
             <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="rounded-md bg-[#72bdcf]/20 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#2f7f93]">
+          <span className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_20%,transparent)] px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[var(--brand-ink)]">
             G.O.A.T.
           </span>
           Suggested from {kind}

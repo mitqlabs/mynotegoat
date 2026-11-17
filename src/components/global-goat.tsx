@@ -307,7 +307,7 @@ const AddBoxIcon = () => (
 /** Small, dismissible "put G.O.A.T. on your Home Screen" hint at the top of the chat. */
 function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | "android"; onDismiss: () => void; onInstall: () => void; onGoatPage: boolean }) {
   return (
-    <div className="flex items-start gap-2 border-b border-[var(--line-soft)] bg-[#eef8fb] px-3 py-2 text-xs text-[var(--text-main)]" data-goat-install={kind} role="note">
+    <div className="flex items-start gap-2 border-b border-[var(--line-soft)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-2 text-xs text-[var(--text-main)]" data-goat-install={kind} role="note">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img alt="" className="h-8 w-8 shrink-0 rounded-lg" height={32} src="/goat-app/icon-192.png" width={32} />
       <div className="min-w-0 flex-1 leading-snug">
@@ -2481,7 +2481,7 @@ export function GlobalGoatPopup({
           data-goat-panel
           data-goat-section="global-goat"
         >
-          <header className={`flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white ${fullScreen ? "pt-[max(0.5rem,env(safe-area-inset-top))]" : ""}`}>
+          <header className={`flex items-center gap-2.5 section-bar px-3 py-2 text-white ${fullScreen ? "pt-[max(0.5rem,env(safe-area-inset-top))]" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="G.O.A.T." className={`shrink-0 rounded-full bg-white/80 object-cover ${fullScreen ? "h-[46px] w-[46px] ring-2 ring-white/55" : "h-11 w-11"}`} height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
@@ -2546,7 +2546,7 @@ export function GlobalGoatPopup({
             />
           )}
 
-          <div ref={listRef} className={`flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[#e4f0f7]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
+          <div ref={listRef} className={`flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[var(--bg-soft)]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
@@ -2583,8 +2583,8 @@ export function GlobalGoatPopup({
                       <button
                         className={
                           fullScreen
-                            ? "flex items-center gap-2 rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-main)] active:bg-[#dff1f6]"
-                            : "rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white"
+                            ? "flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-main)] active:bg-[#dff1f6]"
+                            : "rounded-full border border-[var(--brand-primary)]/40 bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white"
                         }
                         data-goat-chip
                         key={c}
@@ -2671,7 +2671,7 @@ export function GlobalGoatPopup({
                                 ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
                                 : m.picked
                                   ? "border-[var(--line-soft)] bg-white text-[var(--text-muted)] opacity-60"
-                                  : "border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6] disabled:opacity-50"
+                                  : "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] hover:bg-[#dff1f6] disabled:opacity-50"
                             }`}
                             disabled={Boolean(job) || practiceBusy || Boolean(m.picked)}
                             onClick={() => pick(m, c.patientId, c.question, c.showMore)}
@@ -2688,7 +2688,7 @@ export function GlobalGoatPopup({
                         <p className="font-semibold">Sorry — what did you mean?</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {GOAT_ACTIONS.filter((a) => a.id !== "message").map((a) => (
-                            <button className="rounded-full border border-[#72bdcf] bg-white px-2 py-0.5 text-[11px] font-semibold hover:bg-[#eef8fb]" key={a.id} onClick={() => pickMeant(m, a.id)} type="button">{a.label}</button>
+                            <button className="rounded-full border border-[var(--brand-primary)] bg-white px-2 py-0.5 text-[11px] font-semibold hover:bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]" key={a.id} onClick={() => pickMeant(m, a.id)} type="button">{a.label}</button>
                           ))}
                           <button className="rounded-full border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] text-[var(--text-muted)]" onClick={() => pickMeant(m, "none")} type="button">Something else</button>
                         </div>
@@ -2928,7 +2928,7 @@ function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: 
       {booking.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {booking.suggestions.map((t) => (
-            <button key={t} className={`${btn} border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6]`} disabled={busy} onClick={() => onTime(t)} style={{ fontSize: 12 }} type="button">
+            <button key={t} className={`${btn} border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] hover:bg-[#dff1f6]`} disabled={busy} onClick={() => onTime(t)} style={{ fontSize: 12 }} type="button">
               {to12hLabel(t)}
             </button>
           ))}
@@ -3239,7 +3239,7 @@ function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["qui
       {q.options && q.options.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {q.options.map((t) => (
-            <button className={`${btn} border-[#72bdcf] bg-[#eef8fb]`} key={t} onClick={() => onConfirm(t)} type="button">{to12hLabel(t)}</button>
+            <button className={`${btn} border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]`} key={t} onClick={() => onConfirm(t)} type="button">{to12hLabel(t)}</button>
           ))}
         </div>
       )}
@@ -3266,7 +3266,7 @@ function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessa
   }
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-todo>
-      <div className="rounded-lg bg-[#eef8fb] px-2.5 py-2 text-[13px] leading-snug">
+      <div className="rounded-lg bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-2 text-[13px] leading-snug">
         <span className="block font-semibold">{todoTitleParts(draft.title).text}</span>
         {todoTitleParts(draft.title).phone && <span className="font-semibold text-[var(--brand-primary)]">{todoTitleParts(draft.title).phone}</span>}
       </div>
@@ -3300,7 +3300,7 @@ function FlowPatientPicker({ picker, patients, disabled, onPick }: { picker: Non
       <input
         autoFocus
         aria-label="Search patients by name, case number or phone"
-        className="w-full rounded-xl border border-[#72bdcf] bg-white px-2.5 py-1.5 text-xs"
+        className="w-full rounded-xl border border-[var(--brand-primary)] bg-white px-2.5 py-1.5 text-xs"
         disabled={disabled}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Name, case #, or phone"
@@ -3310,7 +3310,7 @@ function FlowPatientPicker({ picker, patients, disabled, onPick }: { picker: Non
       {q.trim() && !hits.length && <div className="text-xs text-[var(--text-muted)]">No patient matches “{q.trim()}”.</div>}
       {hits.map((p) => (
         <button
-          className="block w-full rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
+          className="block w-full rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
           disabled={disabled}
           key={p.id}
           onClick={() => onPick(p)}
@@ -3332,7 +3332,7 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
   if (draft.state === "saved") {
     return (
       <div className="mt-1.5 text-xs">
-        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.saved}</p>
+        <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{draft.saved}</p>
         <p className="mt-1 font-semibold text-emerald-700">
           ✓ Saved ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
@@ -3347,7 +3347,7 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
   if (draft.state === "error") {
     return (
       <div className="mt-1.5 space-y-1.5">
-        <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1 text-xs">{line}</p>
+        <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1 text-xs">{line}</p>
         <p className="text-xs text-red-700">{draft.saveError || "Could not save the note."}</p>
         <button className="rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white" disabled={busy} onClick={() => onSave(line)} type="button">Retry</button>
       </div>
@@ -3356,7 +3356,7 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
     <div className="mt-2 space-y-1.5" data-goat-note>
-      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1 text-xs">{line}</p>
+      <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1 text-xs">{line}</p>
       {signer && <p className="text-[11px] text-[var(--text-muted)]">Signed as {signatureFor(signer).slice(1)} (your login)</p>}
       <div className="flex flex-wrap gap-1.5">
         <button
@@ -3384,7 +3384,7 @@ function NoteEditCard({ edit, onConfirm, onCancel }: { edit: NonNullable<ChatMes
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-note-edit>
       <p className="rounded-md bg-[#f6f6f6] px-2 py-1 text-[var(--text-muted)] line-through">{edit.oldLine}</p>
-      {edit.newLine && <p className="rounded-md bg-[#eef8fb] px-2 py-1">{edit.newLine}</p>}
+      {edit.newLine && <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{edit.newLine}</p>}
       <div className="flex flex-wrap gap-1.5">
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">
           Confirm
@@ -3421,7 +3421,7 @@ function MessageCard(props: { draft: NonNullable<ChatMessage["msgDraft"]>; onSen
   if (draft.state === "sent") {
     return (
       <div className="mt-1.5 text-xs">
-        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.sent}</p>
+        <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{draft.sent}</p>
         {draft.patientId && draft.caseLabel && (
           <p className="mt-1">
             Case:{" "}
@@ -3469,7 +3469,7 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
           draft.caseLabel ?? "None (general message)"
         )}
       </p>
-      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1">{body}</p>
+      <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{body}</p>
       <p className="text-[11px] text-[var(--text-muted)]">From: {sig ? sig.slice(1) : "you"}</p>
       {all.filter((p) => !p.userId).map((p) => <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800" key={p.label}>{p.label} isn&apos;t linked to a login, so they won&apos;t get a notification. It still shows in Messages.</p>)}
       {error && <p className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-800">{error}</p>}
@@ -3527,7 +3527,7 @@ function TodoRows({ rows }: { rows: NonNullable<ChatMessage["todoRows"]> }) {
     <ul className="mt-0.5 grid gap-0.5">
       {rows.map((r) => (
         <li
-          className="cursor-pointer rounded-md px-1 leading-snug hover:bg-[rgba(13,121,191,0.08)]"
+          className="cursor-pointer rounded-md px-1 leading-snug hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
           key={r.id}
           onClick={() => router.push(r.href)}
           onKeyDown={(e) => { if (e.key === "Enter") router.push(r.href); }}

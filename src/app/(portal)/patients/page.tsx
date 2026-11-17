@@ -473,7 +473,7 @@ function composePatientAddress(street: string, unit: string, city: string, state
 
 function getFollowUpBadgeClass(category: FollowUpCategory) {
   if (category === "X-Ray") {
-    return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+    return "bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] text-[var(--brand-ink)]";
   }
   if (category === "MRI / CT") {
     return "bg-[rgba(97,73,179,0.14)] text-[#4d3d8f]";
@@ -534,7 +534,7 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
   if (days >= 0) {
     return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
   }
-  return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+  return "bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] text-[var(--brand-ink)]";
 }
 
 function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string, initialExam: string) {
@@ -2522,7 +2522,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
               ) : null;
             })()}
             <button
-              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
               onClick={() => setPrintPickerFor("list")}
               title="Print this list — same filters, sort and columns, every matching patient"
               type="button"
@@ -2533,11 +2533,11 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className="bg-[var(--bg-soft)] text-left text-sm">
+                <tr className="bg-[var(--bg-soft)] text-left text-sm text-[var(--text-main)]">
                   {visibleColumns.map((colId) => (
                     <th
                       key={colId}
-                      className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)] ${dragColumnId === colId ? "opacity-50" : ""}`}
+                      className={`cursor-pointer select-none px-4 py-3 text-[var(--text-main)] transition-colors hover:bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] ${sortColumn === colId ? "bg-[color-mix(in_srgb,var(--brand-primary)_22%,var(--bg-soft))]" : ""} ${dragColumnId === colId ? "opacity-50" : ""}`}
                       draggable
                       onClick={() => toggleSort(colId)}
                       onDragEnd={handleColumnDragEnd}
@@ -2558,9 +2558,10 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                 {listedPatients.map((patient) => (
                   <tr key={patient.id} className="border-t border-[var(--line-soft)]">
                     {visibleColumns.map((colId) => {
+                      const sortedCell = sortColumn === colId ? "bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]" : "";
                       if (colId === "patient") {
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <div className="flex items-center gap-2">
                               <Link
                                 href={openHref(patient.id)}
@@ -2598,17 +2599,17 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                         );
                       }
                       if (colId === "initialExam") {
-                        return <td key={colId} className="px-4 py-3">{formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-")}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-")}</td>;
                       }
                       if (colId === "dateOfLoss") {
-                        return <td key={colId} className="px-4 py-3">{formatUsDateDisplay(patient.dateOfLoss)}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{formatUsDateDisplay(patient.dateOfLoss)}</td>;
                       }
                       if (colId === "attorney") {
-                        return <td key={colId} className="px-4 py-3">{cleanAttorneyLabel(patient.attorney)}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{cleanAttorneyLabel(patient.attorney)}</td>;
                       }
                       if (colId === "status") {
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <span
                               className="status-pill"
                               style={softPillStyle(statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf")}
@@ -2624,7 +2625,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                         // Options switched off in Settings are no longer offered, but a patient that has one still shows it.
                         const rowOptions = shown.option && !shown.option.show ? [...complianceShownOptions, shown.option] : complianceShownOptions;
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <ColorPillMenu
                               ariaLabel={`Compliance for ${patient.fullName}`}
                               choices={rowOptions}
@@ -2644,7 +2645,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                         const tone = reviewStatusTone(current);
                         const options = reviewSelectOptionsFor(current);
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <select
                               className={`rounded-full border px-2.5 py-1 text-sm font-semibold ${tone}`}
                               onChange={(event) => handleListReviewChange(patient, event.target.value)}
@@ -2736,7 +2737,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
               </div>
               <div className="grid justify-items-end gap-1 text-right text-sm">
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
                   onClick={() => setPrintPickerFor("caseFlow")}
                   title="Print the Case Flow rows shown — same categories, sort and columns"
                   type="button"
@@ -2828,7 +2829,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                 <div className="ml-24">
                   <button
                     type="button"
-                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
                     onClick={addCfSortLevel}
                   >
                     + Add sort level

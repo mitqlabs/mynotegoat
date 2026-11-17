@@ -259,6 +259,18 @@ test("Themes is a Settings section on the Office tab, with no explainer subtitle
   assert.ok(section.includes("saveOfficeBrand"));
   assert.ok(section.includes("COLOR_SAVE_MS"));
   assert.ok(section.includes('aria-label="Light or Dark"'));
+  assert.equal(section.includes("Hex"), false);
+  assert.equal(section.includes("Live Preview"), false);
+  assert.match(section, /Case List/);
+  assert.match(section, /Patient Page/);
+  assert.match(section, /Encounter/);
+  const css = readFileSync("src/app/globals.css", "utf8");
+  assert.match(css, /\.section-bar \{/);
+  assert.match(css, /\.tint-panel \{/);
+  const patient = readFileSync("src/components/patient-case-file.tsx", "utf8");
+  assert.match(patient, /section-bar/);
+  assert.match(patient, /tint-panel/);
+  assert.equal(patient.includes("bg-[#72bdcf]"), false);
 
   const shell = readFileSync("src/components/app-shell.tsx", "utf8");
   assert.equal(shell.includes("ThemeModeSwitch"), false);
