@@ -441,6 +441,28 @@ export function mineColors(b: BrandSettings, mode: Mode): MyTheme {
   return b.mineDark ?? (b.mine ? deriveDark(light) : THEMES[5].dark);
 }
 
+/**
+ * My Theme with one colour changed. Light edits keep a Dark the office
+ * already set. Dark edits store their own four, so a later Light change
+ * does not move them. Null when the value is not a colour.
+ */
+export function editMyThemeColor(brand: BrandSettings, mode: Mode, key: keyof MyTheme, value: string): BrandSettings | null {
+  const hex = normalizeHex(value);
+  if (!hex) return null;
+  const light = mineColors(brand, "light");
+  const dark = mineColors(brand, "dark");
+  return brandFrom({
+    theme: "mine",
+    mine: mode === "light" ? { ...light, [key]: hex } : light,
+    mineDark: mode === "dark" ? { ...dark, [key]: hex } : brand.mineDark,
+  });
+}
+
+/** Both Light and Dark of My Theme can be read. */
+export function myThemeReadable(brand: BrandSettings): boolean {
+  return checkMyTheme(mineColors(brand, "light")).ok && checkMyTheme(mineColors(brand, "dark")).ok;
+}
+
 export interface ThemeLook {
   id: ThemeId;
   dark: boolean;

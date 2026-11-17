@@ -14,7 +14,9 @@ import {
   checkMyTheme,
   contrast,
   deriveDark,
+  editMyThemeColor,
   mineColors,
+  myThemeReadable,
   mix,
   sameTheme,
   screenPairs,
@@ -216,13 +218,51 @@ test("the no-flash script sets data-brand and data-tone, and only reads the old 
   assert.equal(locked.attrs["data-tone"], "dark");
 });
 
-test("Themes is a Settings section on the Office tab", () => {
+test("editing a My Theme color is a real change and can be saved", () => {
+  const saved = brandFrom({ theme: "mine", mine: THEMES[5].light });
+  const edited = editMyThemeColor(saved, "light", "accent", "#0a5c96");
+  assert.ok(edited);
+  assert.equal(edited.theme, "mine");
+  assert.equal(edited.mine?.accent, "#0a5c96");
+  assert.equal(edited.mineDark, undefined);
+  assert.equal(sameTheme(saved, edited), false);
+  assert.equal(myThemeReadable(edited), true);
+
+  const dark = editMyThemeColor(saved, "dark", "background", "#101820");
+  assert.ok(dark?.mineDark);
+  assert.equal(dark.mineDark.background, "#101820");
+  assert.equal(sameTheme(saved, dark), false);
+  assert.equal(dark.mine?.accent, saved.mine?.accent);
+  assert.equal(editMyThemeColor(saved, "light", "accent", "nope"), null);
+});
+
+test("Themes is a Settings section on the Office tab, with no explainer subtitle", () => {
   const entry = settingsSearchCatalog.find((item) => item.key === "themes");
   assert.equal(entry?.title, "Themes");
+  assert.equal(entry?.description, undefined);
   const office = SETTINGS_TABS.find((tab) => tab.id === "office");
   assert.ok(office?.keys.includes("themes"));
   const elsewhere = SETTINGS_TABS.filter((tab) => tab.id !== "office" && tab.id !== "all" && tab.keys.includes("themes"));
   assert.deepEqual(elsewhere, []);
+
+  const page = readFileSync("src/app/(portal)/settings/page.tsx", "utf8");
+  const at = page.indexOf('id="themes"');
+  assert.ok(at > 0);
+  const themesBlock = page.slice(Math.max(0, at - 250), at + 80);
+  assert.equal(themesBlock.includes("description="), false);
+
+  const section = readFileSync("src/components/themes-section.tsx", "utf8");
+  assert.equal(section.includes("Your Mode"), false);
+  assert.equal(section.includes("Save Theme"), false);
+  assert.equal(section.includes("Previewing"), false);
+  assert.ok(section.includes("savePersonTone"));
+  assert.ok(section.includes("saveOfficeBrand"));
+  assert.ok(section.includes("COLOR_SAVE_MS"));
+  assert.ok(section.includes('aria-label="Light or Dark"'));
+
+  const shell = readFileSync("src/components/app-shell.tsx", "utf8");
+  assert.equal(shell.includes("ThemeModeSwitch"), false);
+  assert.equal(readFileSync("src/lib/cloud/brand-save.ts", "utf8").includes("fetchKvValue(BRAND_STORAGE_KEY)"), true);
 });
 
 console.log(`\n${passed} passed`);

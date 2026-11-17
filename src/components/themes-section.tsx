@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BRAND_STORAGE_KEY,
   brandFrom,
   checkMyTheme,
+  editMyThemeColor,
   lookOf,
   mineColors,
+  myThemeReadable,
   normalizeHex,
   sameTheme,
   THEMES,
@@ -15,26 +17,30 @@ import {
   type MyTheme,
   type ThemeId,
 } from "@/lib/brand";
-import { saveOfficeBrand, savePersonTone, type SaveResult } from "@/lib/cloud/brand-save";
+import { publishBrandLocal, saveOfficeBrand, savePersonTone, type SaveResult } from "@/lib/cloud/brand-save";
 import { onLocalChange } from "@/lib/local-sync";
 import { usePersonTone } from "@/lib/theme";
 
 /**
  * Settings → Themes.
  *
- * Light or Dark is the signed-in person's own. Which theme the office wears
- * follows the Settings permission (owner and admin). Both say Saved only
- * after the database has been read back and matches.
+ * Light or Dark is the signed-in person's own, on the same cloud key as
+ * before. The office theme is everyone else's look, and only someone who can
+ * edit Settings changes it. A choice paints immediately, then says Saved
+ * only after the database has been read back and matches.
  */
 
 type Status = { state: "idle" } | { state: "saving" } | { state: "saved" } | { state: "failed"; reason: string };
 
-const COLOR_LABELS: { key: keyof MyTheme; label: string; help: string }[] = [
-  { key: "accent", label: "Accent", help: "Buttons and highlights" },
-  { key: "background", label: "Background", help: "The page behind the cards" },
-  { key: "surface", label: "Surface", help: "Cards and panels" },
-  { key: "text", label: "Text", help: "Words and numbers" },
+const COLOR_LABELS: { key: keyof MyTheme; label: string }[] = [
+  { key: "accent", label: "Accent" },
+  { key: "background", label: "Background" },
+  { key: "surface", label: "Surface" },
+  { key: "text", label: "Text" },
 ];
+
+/** Colour drags fire continuously. The cloud write waits until they pause. */
+const COLOR_SAVE_MS = 500;
 
 function loadBrand(): BrandSettings {
   if (typeof window === "undefined") return { theme: "blue" };
@@ -132,161 +138,171 @@ export function ThemesSection({ canEditOffice }: { canEditOffice: boolean }) {
   const [saved, setSaved] = useState<BrandSettings>(() => loadBrand());
   useEffect(() => onLocalChange(BRAND_STORAGE_KEY, () => setSaved(loadBrand())), []);
 
-  return (
-    <div className="space-y-4">
-      <ModeCard tone={tone} saved={saved} />
-      <OfficeThemeCard saved={saved} tone={tone} canEdit={canEditOffice} />
-    </div>
-  );
-}
-
-function ModeCard({ tone, saved }: { tone: Mode; saved: BrandSettings }) {
-  const [status, setStatus] = useState<Status>({ state: "idle" });
-  const [last, setLast] = useState<Mode | null>(null);
-
-  const run = async (mode: Mode) => {
-    setStatus({ state: "saving" });
-    const result: SaveResult = await savePersonTone(mode);
-    setStatus(result.ok ? { state: "saved" } : { state: "failed", reason: result.reason });
-  };
-
-  return (
-    <div className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">Your Mode</h3>
-        <SaveNote status={status} onRetry={() => last && void run(last)} />
-      </div>
-      <p className="mb-4 text-sm text-[var(--text-muted)]">
-        Light or Dark, for you alone. It is saved to your login, so it follows you to any computer, and nobody else&apos;s screen changes.
-      </p>
-      <div role="radiogroup" aria-label="Your Mode" className="grid gap-3 sm:grid-cols-2">
-        {(["light", "dark"] as Mode[]).map((mode) => {
-          const active = tone === mode;
-          return (
-            <button
-              key={mode}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => {
-                setLast(mode);
-                void run(mode);
-              }}
-              className={`rounded-2xl border p-3 text-left ${active ? "border-[var(--brand-primary)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)]"}`}
-            >
-              <span className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold">{mode === "light" ? "Light" : "Dark"}</span>
-                {active && <span className="rounded-full bg-[var(--brand-primary)] px-2 py-0.5 text-[10px] font-semibold text-[var(--on-brand)]">In Use</span>}
-              </span>
-              <ThemePreview brand={saved} mode={mode} compact />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <OfficeThemeCard saved={saved} tone={tone} canEdit={canEditOffice} />;
 }
 
 function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone: Mode; canEdit: boolean }) {
   const [override, setOverride] = useState<BrandSettings | null>(null);
-  const [view, setView] = useState<Mode>(tone);
   const [status, setStatus] = useState<Status>({ state: "idle" });
-  const [last, setLast] = useState<BrandSettings | null>(null);
-  // Drop the draft once the database copy matches it, so a later cloud
+  const [modeStatus, setModeStatus] = useState<Status>({ state: "idle" });
+  const [lastBrand, setLastBrand] = useState<BrandSettings | null>(null);
+  const [lastMode, setLastMode] = useState<Mode | null>(null);
+  const latest = useRef<BrandSettings | null>(null);
+  const timer = useRef<number | null>(null);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const mounted = useRef(true);
+  // Drop the draft once the painted copy matches it, so a later cloud
   // update can show through without an effect.
   if (override && sameTheme(override, saved)) setOverride(null);
 
   const theme = override?.theme ?? saved.theme;
   const mine = override ? override.mine : saved.mine;
   const mineDark = override ? override.mineDark : saved.mineDark;
-  const draft: BrandSettings = brandFrom({
+  const shown: BrandSettings = brandFrom({
     theme: theme === "mine" && !mine ? "blue" : theme,
     mine,
     mineDark,
   });
-  const dirty = !sameTheme(draft, saved);
-  const lightColors = mineColors({ ...draft, theme: "mine", mine: mine ?? mineColors(saved, "light") }, "light");
+  const lightColors = mineColors({ ...shown, theme: "mine", mine: mine ?? mineColors(saved, "light") }, "light");
   const darkColors = mineColors({ theme: "mine", mine: mine ?? lightColors, mineDark }, "dark");
   const lightCheck = checkMyTheme(lightColors);
   const darkCheck = checkMyTheme(darkColors);
-  const editing = view === "light" ? lightColors : darkColors;
-  const check = view === "light" ? lightCheck : darkCheck;
-  const blocked = theme === "mine" && !(lightCheck.ok && darkCheck.ok);
+  const editing = tone === "light" ? lightColors : darkColors;
+  const check = tone === "light" ? lightCheck : darkCheck;
 
-  const remember = (next: BrandSettings) => {
-    setOverride(next);
-    setStatus({ state: "idle" });
+  const enqueue = (next: BrandSettings) => {
+    queue.current = queue.current
+      .then(async () => {
+        if (!latest.current || !sameTheme(latest.current, next)) return;
+        if (mounted.current) setStatus({ state: "saving" });
+        const result = await saveOfficeBrand(next, { writeLocal: false });
+        if (!mounted.current || !latest.current || !sameTheme(latest.current, next)) return;
+        setLastBrand(next);
+        setStatus(result.ok ? { state: "saved" } : { state: "failed", reason: result.reason });
+      })
+      .catch(() => {
+        if (!mounted.current) return;
+        setStatus({ state: "failed", reason: "The database did not confirm the save." });
+      });
+  };
+
+  const stage = (next: BrandSettings, delay: number, force = false) => {
+    if (!canEdit) return;
+    latest.current = next;
+    try {
+      publishBrandLocal(next);
+    } catch (error) {
+      setLastBrand(next);
+      setStatus({
+        state: "failed",
+        reason: error instanceof Error && error.message ? error.message : "This browser could not store the theme.",
+      });
+      return;
+    }
+    // The paint already matches this choice. Leave a pending cloud write
+    // alone — clearing it would keep the theme only in this browser.
+    if (!force && sameTheme(next, saved)) return;
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+    if (delay <= 0) {
+      enqueue(next);
+      return;
+    }
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      enqueue(next);
+    }, delay);
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (!timer.current) return;
+      window.clearTimeout(timer.current);
+      timer.current = null;
+      const pending = latest.current;
+      if (!pending) return;
+      queue.current = queue.current.then(() => saveOfficeBrand(pending, { writeLocal: false }).then(() => undefined));
+    };
+  }, []);
+
+  const chooseMode = async (mode: Mode) => {
+    if (mode === tone && modeStatus.state !== "failed") return;
+    setLastMode(mode);
+    setModeStatus({ state: "saving" });
+    const result: SaveResult = await savePersonTone(mode);
+    setModeStatus(result.ok ? { state: "saved" } : { state: "failed", reason: result.reason });
   };
 
   const pick = (id: ThemeId) => {
-    remember(brandFrom({
+    if (!canEdit) return;
+    const next = brandFrom({
       theme: id,
       mine: id === "mine" && !mine ? mineColors(saved, "light") : mine,
       mineDark,
-    }));
+    });
+    if (id === "mine" && !myThemeReadable(next)) {
+      setOverride(next);
+      return;
+    }
+    if (sameTheme(next, saved) && !override) return;
+    setOverride(next);
+    stage(next, 0);
   };
 
   const setColor = (key: keyof MyTheme, value: string) => {
-    const hex = normalizeHex(value);
-    if (!hex) return;
-    remember(brandFrom({
-      theme,
-      mine: view === "light" ? { ...lightColors, [key]: hex } : mine ?? lightColors,
-      mineDark: view === "dark" ? { ...darkColors, [key]: hex } : mineDark,
-    }));
+    if (!canEdit) return;
+    const next = editMyThemeColor(brandFrom({ theme: "mine", mine: mine ?? lightColors, mineDark }), tone, key, value);
+    if (!next) return;
+    setOverride(next);
+    if (!myThemeReadable(next)) return;
+    stage(next, COLOR_SAVE_MS);
   };
 
-  const run = async (next: BrandSettings) => {
-    setStatus({ state: "saving" });
-    const result = await saveOfficeBrand(next);
-    setStatus(result.ok ? { state: "saved" } : { state: "failed", reason: result.reason });
+  const resetMine = () => {
+    const next = brandFrom({ theme: "mine", mine: mineColors({ theme: "mine" }, "light") });
+    setOverride(next);
+    stage(next, 0);
   };
 
-  const save = () => {
-    if (blocked || !canEdit) return;
-    const next = brandFrom({
-      theme,
-      mine: theme === "mine" ? lightColors : mine,
-      mineDark,
-    });
-    setLast(next);
-    void run(next);
+  const resetDark = () => {
+    const next = brandFrom({ theme: "mine", mine: mine ?? lightColors });
+    setOverride(next);
+    stage(next, 0);
   };
 
   return (
     <div className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-base font-semibold">Office Theme</h3>
         <div className="flex flex-wrap items-center gap-3">
-          <SaveNote status={status} onRetry={() => last && void run(last)} />
-          {canEdit && (
-            <button type="button" className="btn btn-primary" onClick={save} disabled={!dirty || blocked || status.state === "saving"}>
-              {status.state === "saving" ? "Saving…" : "Save Theme"}
-            </button>
-          )}
+          <div role="radiogroup" aria-label="Light or Dark" className="inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] p-0.5">
+            {(["light", "dark"] as Mode[]).map((mode) => {
+              const on = tone === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => void chooseMode(mode)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    on ? "bg-[var(--brand-primary)] text-[var(--on-brand)]" : "text-[var(--text-muted)]"
+                  }`}
+                >
+                  {mode === "light" ? "Light" : "Dark"}
+                </button>
+              );
+            })}
+          </div>
+          <SaveNote status={modeStatus} onRetry={() => lastMode && void chooseMode(lastMode)} />
+          <SaveNote status={status} onRetry={() => lastBrand && stage(lastBrand, 0, true)} />
         </div>
       </div>
-      <p className="mb-4 text-sm text-[var(--text-muted)]">
-        The look everyone in the office sees. Every theme has a Light and a Dark version. Each person picks their own above.
-        {!canEdit && " Your role can look at the themes but not change the office's."}
-      </p>
-
-      <div className="mb-3 flex items-center gap-2 text-sm">
-        <span className="text-[var(--text-muted)]">Previewing</span>
-        {(["light", "dark"] as Mode[]).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setView(m)}
-            aria-pressed={view === m}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-              view === m ? "border-[var(--brand-primary)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)] text-[var(--text-muted)]"
-            }`}
-          >
-            {m === "light" ? "Light" : "Dark"}
-          </button>
-        ))}
-      </div>
+      {!canEdit && (
+        <p className="mb-3 text-sm text-[var(--text-muted)]">Your role can look at the themes but not change the office&apos;s.</p>
+      )}
 
       <fieldset disabled={!canEdit} className="m-0 min-w-0 border-0 p-0 disabled:opacity-80">
         <div role="radiogroup" aria-label="Office Theme" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -299,7 +315,7 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
                 : unset
                   ? { theme: "mine", mine: mineColors(saved, "light") }
                   : { theme: "mine", mine: lightColors, mineDark };
-            const swatch = t.id === "mine" ? (view === "light" ? lightColors : darkColors) : view === "light" ? t.light : t.dark;
+            const swatch = t.id === "mine" ? (tone === "light" ? lightColors : darkColors) : tone === "light" ? t.light : t.dark;
             return (
               <button
                 key={t.id}
@@ -316,7 +332,7 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
                   </span>
                   {chosenNow && <span className="rounded-full bg-[var(--brand-primary)] px-2 py-0.5 text-[10px] font-semibold text-[var(--on-brand)]">In Use</span>}
                 </span>
-                <ThemePreview compact mode={view} brand={previewBrand} />
+                <ThemePreview compact mode={tone} brand={previewBrand} />
                 <Swatches colors={swatch} />
               </button>
             );
@@ -326,45 +342,33 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
         {theme === "mine" && (
           <div className="mt-5 grid gap-5 border-t border-[var(--line-soft)] pt-5 lg:grid-cols-2">
             <div>
-              <h3 className="mb-1 text-sm font-semibold">My Theme — {view === "light" ? "Light" : "Dark"} Colors</h3>
-              <p className="mb-3 text-xs text-[var(--text-muted)]">
-                Pick four colors. NoteGoat works out every other shade. Light and Dark each have their own four.
-                {view === "dark" && !mineDark && " Dark starts from your Light colors until you change it."}
-              </p>
+              <h3 className="mb-3 text-sm font-semibold">My Theme — {tone === "light" ? "Light" : "Dark"} Colors</h3>
               <div className="space-y-2.5">
-                {COLOR_LABELS.map(({ key, label, help }) => (
-                  <ColorRow key={`${view}-${key}`} label={label} help={help} value={editing[key]} onChange={(v) => setColor(key, v)} />
+                {COLOR_LABELS.map(({ key, label }) => (
+                  <ColorRow key={`${tone}-${key}`} label={label} value={editing[key]} onChange={(v) => setColor(key, v)} />
                 ))}
               </div>
-              {view === "dark" && mineDark && (
-                <button
-                  type="button"
-                  className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline"
-                  onClick={() => remember(brandFrom({ theme: "mine", mine: mine ?? lightColors }))}
-                >
+              {tone === "dark" && mineDark && (
+                <button type="button" className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline" onClick={resetDark}>
                   Start Dark Over From My Light Colors
                 </button>
               )}
-              {view === "light" && (
-                <button
-                  type="button"
-                  className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline"
-                  onClick={() => remember(brandFrom({ theme: "mine", mine: mineColors({ theme: "mine" }, "light") }))}
-                >
+              {tone === "light" && (
+                <button type="button" className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline" onClick={resetMine}>
                   Reset My Theme
                 </button>
               )}
               {check.problems.map((p) => (
                 <p key={p} className="mt-3 text-sm text-[var(--status-alert,#8f251f)]">
-                  {view === "light" ? "Light: " : "Dark: "}
+                  {tone === "light" ? "Light: " : "Dark: "}
                   {p}
                 </p>
               ))}
-              {view === "light" && !darkCheck.ok && (
-                <p className="mt-3 text-sm text-[var(--status-alert,#8f251f)]">Dark has a problem too. Switch Previewing to Dark to fix it.</p>
+              {tone === "light" && !darkCheck.ok && (
+                <p className="mt-3 text-sm text-[var(--status-alert,#8f251f)]">Dark has a problem too. Switch to Dark to fix it.</p>
               )}
-              {view === "dark" && !lightCheck.ok && (
-                <p className="mt-3 text-sm text-[var(--status-alert,#8f251f)]">Light has a problem too. Switch Previewing to Light to fix it.</p>
+              {tone === "dark" && !lightCheck.ok && (
+                <p className="mt-3 text-sm text-[var(--status-alert,#8f251f)]">Light has a problem too. Switch to Light to fix it.</p>
               )}
               {check.notes.map((n) => (
                 <p key={n} className="mt-2 text-xs text-[var(--text-muted)]">
@@ -374,10 +378,8 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
             </div>
             <div>
               <h3 className="mb-2 text-sm font-semibold">Live Preview</h3>
-              <ThemePreview brand={{ theme: "mine", mine: lightColors, mineDark }} mode={view} />
-              <p className="mt-2 text-xs text-[var(--text-muted)]">
-                Text contrast {check.textContrast.toFixed(1)}:1 (needs 4.5). Nothing is saved until you press Save Theme.
-              </p>
+              <ThemePreview brand={{ theme: "mine", mine: lightColors, mineDark }} mode={tone} />
+              <p className="mt-2 text-xs text-[var(--text-muted)]">Text contrast {check.textContrast.toFixed(1)}:1 (needs 4.5).</p>
             </div>
           </div>
         )}
@@ -386,7 +388,7 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
   );
 }
 
-function ColorRow({ label, help, value, onChange }: { label: string; help: string; value: string; onChange: (hex: string) => void }) {
+function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (hex: string) => void }) {
   const [text, setText] = useState(value);
   const [seen, setSeen] = useState(value);
   if (seen !== value) {
@@ -402,10 +404,7 @@ function ColorRow({ label, help, value, onChange }: { label: string; help: strin
         aria-label={`${label} Color`}
         className="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-[var(--line-soft)] bg-transparent p-0.5"
       />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="block text-xs text-[var(--text-muted)]">{help}</span>
-      </span>
+      <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
       <input
         value={text}
         onChange={(e) => {

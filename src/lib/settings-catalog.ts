@@ -154,7 +154,6 @@ export const settingsSearchCatalog: Array<{
   {
     key: "themes",
     title: "Themes",
-    description: "Office theme and your own Light or Dark",
     aliases: [
       "theme",
       "themes",

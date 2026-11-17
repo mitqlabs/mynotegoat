@@ -12,7 +12,6 @@ import { getVisiblePortalNavItems, type PlanTier } from "@/lib/plan-access";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ReadOnlyContentGuard } from "@/components/read-only-content-guard";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
-import { ThemeModeSwitch } from "@/components/theme-mode-switch";
 import { useSidebarOrder } from "@/hooks/use-sidebar-order";
 import { applySidebarOrder, visibleSidebarPages, type SidebarPage } from "@/lib/sidebar-order";
 import { SidebarIconView } from "@/components/sidebar-icons";
@@ -373,11 +372,8 @@ export function AppShell({
                     {buildTitle(pathname, navItems)}
                   </h1>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <ThemeModeSwitch />
-                  <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
-                    {userEmail || "Secure cloud mode"}
-                  </div>
+                <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
+                  {userEmail || "Secure cloud mode"}
                 </div>
               </header>
 
