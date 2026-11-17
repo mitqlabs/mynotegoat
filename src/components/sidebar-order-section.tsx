@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { savePersonPref, type SaveResult } from "@/lib/cloud/brand-save";
 import { useSidebarOrder } from "@/hooks/use-sidebar-order";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -17,6 +17,23 @@ import {
 
 type Status = { state: "idle" } | { state: "saving" } | { state: "saved" } | { state: "failed"; reason: string };
 
+const DRAG_SLOP_PX = 4;
+
+function rowIdAt(list: HTMLElement | null, clientY: number): string | null {
+  if (!list) return null;
+  const rows = [...list.querySelectorAll<HTMLElement>("[data-sidebar-id]")];
+  if (rows.length === 0) return null;
+  const first = rows[0].getBoundingClientRect();
+  const last = rows[rows.length - 1].getBoundingClientRect();
+  if (clientY <= first.top) return rows[0].dataset.sidebarId ?? null;
+  if (clientY >= last.bottom) return rows[rows.length - 1].dataset.sidebarId ?? null;
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) return row.dataset.sidebarId ?? null;
+  }
+  return null;
+}
+
 /**
  * Settings → Sidebar. Each person arranges their own pages. Settings stays
  * last. Saved appears only after the cloud row is read back.
@@ -32,8 +49,12 @@ export function SidebarOrderSection() {
   const [override, setOverride] = useState<string[] | null>(null);
   const [status, setStatus] = useState<Status>({ state: "idle" });
   const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const stopDrag = useRef<(() => void) | null>(null);
   if (override && sameSidebarOrder(override, base)) setOverride(null);
   const draft = override ?? base;
+  useEffect(() => () => stopDrag.current?.(), []);
   const labels = new Map(pages.map((page) => [page.id, page.label]));
   const settings = pages.find((page) => page.id === SETTINGS_ID);
   const dirty = !sameSidebarOrder(draft, base);
@@ -55,6 +76,63 @@ export function SidebarOrderSection() {
     void run(next);
   };
 
+  // Pointer events, not HTML5 drag. Safari on Mac does not drag an <li draggable>
+  // that contains buttons, so the drop never fires.
+  const onPointerDown = (event: React.PointerEvent<HTMLUListElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest("button")) return;
+    const id = target.closest<HTMLElement>("[data-sidebar-id]")?.dataset.sidebarId;
+    if (!id) return;
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const startY = event.clientY;
+    let active = false;
+    let over: string | null = null;
+
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (!active) {
+        if (Math.abs(ev.clientY - startY) < DRAG_SLOP_PX) return;
+        active = true;
+        setDragId(id);
+      }
+      const hit = rowIdAt(listRef.current, ev.clientY);
+      const next = hit && hit !== id ? hit : null;
+      if (next === over) return;
+      over = next;
+      setOverId(next);
+    };
+
+    const end = (ev: PointerEvent, commit: boolean) => {
+      if (ev.pointerId !== pointerId) return;
+      stop();
+      const hit = rowIdAt(listRef.current, ev.clientY);
+      setDragId(null);
+      setOverId(null);
+      if (commit && active && hit && hit !== id) {
+        setOverride(reorderSidebarId(draft, id, hit));
+        setStatus({ state: "idle" });
+      }
+    };
+
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      stopDrag.current = null;
+    };
+    const up = (ev: PointerEvent) => end(ev, true);
+    const cancel = (ev: PointerEvent) => end(ev, false);
+    stopDrag.current?.();
+    stopDrag.current = stop;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  };
+
+  const fromIndex = dragId ? draft.indexOf(dragId) : -1;
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
@@ -75,30 +153,28 @@ export function SidebarOrderSection() {
           {status.state === "saving" ? "Saving…" : "Save Order"}
         </button>
       </div>
-      <ul className="divide-y divide-[var(--line-soft)]">
+      <ul
+        className={`divide-y divide-[var(--line-soft)] touch-none ${dragId ? "cursor-grabbing select-none [&_button]:pointer-events-none" : ""}`}
+        onPointerDown={onPointerDown}
+        ref={listRef}
+      >
         {draft.map((id, index) => {
           const label = labels.get(id) ?? id;
+          const placeAfter = overId === id && fromIndex > -1 && fromIndex < index;
+          const showDrop = overId === id && dragId !== id;
           return (
             <li
               key={id}
-              draggable
-              onDragStart={(event) => {
-                setDragId(id);
-                event.dataTransfer.setData("text/plain", id);
-                event.dataTransfer.effectAllowed = "move";
-              }}
-              onDragEnd={() => setDragId(null)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const from = event.dataTransfer.getData("text/plain") || dragId;
-                if (!from) return;
-                setOverride(reorderSidebarId(draft, from, id));
-                setStatus({ state: "idle" });
-                setDragId(null);
-              }}
-              className={`flex items-center gap-2 py-2 ${dragId === id ? "opacity-50" : ""}`}
+              data-sidebar-id={id}
+              className={`relative flex items-center gap-2 py-2 ${dragId === id ? "opacity-50" : ""} ${showDrop ? "bg-[var(--bg-soft)]" : ""}`}
             >
+              {showDrop && (
+                <span
+                  aria-hidden
+                  data-drop-indicator={placeAfter ? "after" : "before"}
+                  className={`pointer-events-none absolute inset-x-0 z-10 h-1 bg-[var(--brand-primary)] ${placeAfter ? "bottom-0" : "top-0"}`}
+                />
+              )}
               <span aria-hidden className="cursor-grab px-1 text-[var(--text-muted)] select-none">
                 ⋮⋮
               </span>
@@ -132,7 +208,9 @@ export function SidebarOrderSection() {
         })}
       </ul>
       {settings && (
-        <div className="border-t border-[var(--line-soft)] py-2 pl-7 text-sm font-semibold">{settings.label}</div>
+        <div className="border-t border-[var(--line-soft)] py-2 pl-7 text-sm font-semibold" data-sidebar-fixed="settings">
+          {settings.label}
+        </div>
       )}
     </div>
   );

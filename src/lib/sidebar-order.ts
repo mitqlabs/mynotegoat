@@ -178,10 +178,17 @@ export function moveSidebarId(ids: readonly string[], id: string, delta: -1 | 1)
   return next;
 }
 
+/** Lands `fromId` on `toId`'s index: after that row when dragging down, before it when dragging up. */
 export function reorderSidebarId(ids: readonly string[], fromId: string, toId: string): string[] {
-  if (fromId === toId || !ids.includes(fromId) || !ids.includes(toId)) return [...ids];
-  const next = ids.filter((id) => id !== fromId);
-  next.splice(next.indexOf(toId), 0, fromId);
+  const from = ids.indexOf(fromId);
+  const to = ids.indexOf(toId);
+  if (from < 0 || to < 0 || from === to) return [...ids];
+  const next = [...ids];
+  const [item] = next.splice(from, 1);
+  // `to` is the target's original index. After a downward removal the target
+  // shifts left, so inserting there sits just after it. Inserting before the
+  // target puts a downward move onto the next row back where it started.
+  next.splice(to, 0, item);
   return next;
 }
 
