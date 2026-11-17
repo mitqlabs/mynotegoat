@@ -89,6 +89,33 @@ test("up, down, and drag stay inside the list", () => {
   assert.deepEqual(reorderSidebarId(start, "appointments", "patients"), ["appointments", "patients", "contacts"]);
 });
 
+test("dragging down lands on the target index, including the next row", () => {
+  const start = ["patients", "contacts", "appointments", "encounters"];
+  const downOne = reorderSidebarId(start, "patients", "contacts");
+  assert.deepEqual(downOne, ["contacts", "patients", "appointments", "encounters"]);
+  assert.equal(downOne.indexOf("patients"), start.indexOf("contacts"));
+  const downFurther = reorderSidebarId(start, "patients", "encounters");
+  assert.deepEqual(downFurther, ["contacts", "appointments", "encounters", "patients"]);
+  assert.equal(downFurther.indexOf("patients"), start.indexOf("encounters"));
+  const downLast = reorderSidebarId(start, "appointments", "encounters");
+  assert.deepEqual(downLast, ["patients", "contacts", "encounters", "appointments"]);
+  assert.equal(downLast.indexOf("appointments"), start.indexOf("encounters"));
+});
+
+test("dragging up lands on the target index", () => {
+  const start = ["patients", "contacts", "appointments", "encounters"];
+  const upOne = reorderSidebarId(start, "contacts", "patients");
+  assert.deepEqual(upOne, ["contacts", "patients", "appointments", "encounters"]);
+  assert.equal(upOne.indexOf("contacts"), start.indexOf("patients"));
+  const upFurther = reorderSidebarId(start, "encounters", "contacts");
+  assert.deepEqual(upFurther, ["patients", "encounters", "contacts", "appointments"]);
+  assert.equal(upFurther.indexOf("encounters"), start.indexOf("contacts"));
+  assert.deepEqual(reorderSidebarId(start, "patients", "patients"), [...start]);
+  assert.deepEqual(reorderSidebarId(start, "missing", "contacts"), [...start]);
+  assert.deepEqual(reorderSidebarId(start, "patients", "missing"), [...start]);
+  assert.deepEqual(start, ["patients", "contacts", "appointments", "encounters"]);
+});
+
 test("Sidebar is a Settings section on one tab and has no subtitle", () => {
   const entry = settingsSearchCatalog.find((item) => item.key === "sidebar");
   assert.equal(entry?.title, "Sidebar");
