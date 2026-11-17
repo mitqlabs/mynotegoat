@@ -21,7 +21,7 @@ import {
   proveFolderNumbers,
   resolveCaseMoney,
 } from "../../src/lib/patient-folders";
-import { clampSquareCrop, initialSquareCrop, isPatientPhotoDataUrl, isPatientPhotoPath, moveSquareCrop } from "../../src/lib/patient-photo";
+import { clampSquareCrop, initialPortraitCrop, initialSquareCrop, isPatientPhotoDataUrl, isPatientPhotoPath, movePhotoCrop, moveSquareCrop, resizePhotoCrop } from "../../src/lib/patient-photo";
 import { normalizeFolderCloud } from "../../src/lib/patient-folder-store";
 import type { PatientRecord } from "../../src/lib/mock-data";
 
@@ -206,6 +206,22 @@ const tiny = clampSquareCrop(30, 30, { x: -10, y: 80, size: 5 });
 assert.equal(tiny.size, 30);
 assert.equal(tiny.x, 0);
 assert.equal(tiny.y, 0);
+
+const portrait = initialPortraitCrop(1200, 800);
+assert.equal(Math.round((portrait.w / portrait.h) * 100), 75);
+assert.equal(portrait.x >= 0 && portrait.y >= 0, true);
+assert.equal(portrait.x + portrait.w <= 1200 && portrait.y + portrait.h <= 800, true);
+const dragged = movePhotoCrop(1200, 800, portrait, 5000, 5000, 1);
+assert.equal(dragged.w, portrait.w);
+assert.equal(dragged.h, portrait.h);
+assert.equal(dragged.x + dragged.w, 1200);
+assert.equal(dragged.y + dragged.h, 800);
+const fromLeft = resizePhotoCrop(1200, 800, portrait, "w", -4000, 0, 1);
+assert.equal(fromLeft.x, 0);
+assert.equal(fromLeft.x + fromLeft.w, portrait.x + portrait.w);
+const tooSmall = resizePhotoCrop(1200, 800, portrait, "e", -5000, 0, 1);
+assert.equal(tooSmall.w, 48);
+assert.equal(tooSmall.x, portrait.x);
 
 const jpeg = "data:image/jpeg;base64," + "a".repeat(40);
 assert.equal(isPatientPhotoDataUrl(jpeg), true);

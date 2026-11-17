@@ -13,14 +13,26 @@ import { isChoosableIdFile } from "@/lib/id-file-name";
 import { splitFullName } from "@/lib/patient-folders";
 import {
   cropImageToJpeg,
-  initialSquareCrop,
-  moveSquareCrop,
-  resizeSquareCrop,
-  type SquareCrop,
+  initialPortraitCrop,
+  movePhotoCrop,
+  resizePhotoCrop,
+  type CropEdge,
+  type PhotoCrop,
 } from "@/lib/patient-photo";
 
+const CROP_HANDLES: { edge: CropEdge; label: string; className: string }[] = [
+  { edge: "n", label: "Resize top", className: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize" },
+  { edge: "s", label: "Resize bottom", className: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 cursor-ns-resize" },
+  { edge: "e", label: "Resize right", className: "right-0 top-1/2 -translate-y-1/2 translate-x-1/2 cursor-ew-resize" },
+  { edge: "w", label: "Resize left", className: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize" },
+  { edge: "nw", label: "Resize top left", className: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize" },
+  { edge: "ne", label: "Resize top right", className: "right-0 top-0 -translate-y-1/2 translate-x-1/2 cursor-nesw-resize" },
+  { edge: "sw", label: "Resize bottom left", className: "bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize" },
+  { edge: "se", label: "Resize bottom right", className: "bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize" },
+];
+
 /**
- * Square crop. Drag the box to move it. Drag the corner to resize it.
+ * Free crop. Drag inside the box to move it. Drag any edge or corner to resize.
  * Pointer events cover a mouse and a finger, including an iPhone.
  */
 export function PatientPhotoCropper({
@@ -34,10 +46,10 @@ export function PatientPhotoCropper({
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
-  const [crop, setCrop] = useState<SquareCrop | null>(null);
+  const [crop, setCrop] = useState<PhotoCrop | null>(null);
   const [shownScale, setShownScale] = useState(1);
   const [error, setError] = useState("");
-  const drag = useRef<{ mode: "move" | "resize"; x: number; y: number; crop: SquareCrop } | null>(null);
+  const drag = useRef<{ mode: "move" | CropEdge; x: number; y: number; crop: PhotoCrop } | null>(null);
 
   const scale = () => {
     const img = imgRef.current;
@@ -49,11 +61,17 @@ export function PatientPhotoCropper({
     const img = imgRef.current;
     if (!img) return;
     setNatural({ w: img.naturalWidth, h: img.naturalHeight });
-    setCrop(initialSquareCrop(img.naturalWidth, img.naturalHeight));
+    setCrop(initialPortraitCrop(img.naturalWidth, img.naturalHeight));
     setShownScale(img.clientWidth / img.naturalWidth || 1);
   };
 
-  const onPointerDown = (event: React.PointerEvent, mode: "move" | "resize") => {
+  useEffect(() => {
+    const refresh = () => setShownScale(scale());
+    window.addEventListener("resize", refresh);
+    return () => window.removeEventListener("resize", refresh);
+  }, []);
+
+  const onPointerDown = (event: React.PointerEvent, mode: "move" | CropEdge) => {
     if (!crop) return;
     event.preventDefault();
     event.stopPropagation();
@@ -68,8 +86,8 @@ export function PatientPhotoCropper({
     const dy = event.clientY - active.y;
     const next =
       active.mode === "move"
-        ? moveSquareCrop(natural.w, natural.h, active.crop, dx, dy, scale())
-        : resizeSquareCrop(natural.w, natural.h, active.crop, dx, dy, scale());
+        ? movePhotoCrop(natural.w, natural.h, active.crop, dx, dy, scale())
+        : resizePhotoCrop(natural.w, natural.h, active.crop, active.mode, dx, dy, scale());
     setCrop(next);
   };
 
@@ -89,7 +107,7 @@ export function PatientPhotoCropper({
   };
 
   const box = crop
-    ? { left: crop.x * shownScale, top: crop.y * shownScale, size: crop.size * shownScale }
+    ? { left: crop.x * shownScale, top: crop.y * shownScale, width: crop.w * shownScale, height: crop.h * shownScale }
     : null;
 
   return (
@@ -97,8 +115,8 @@ export function PatientPhotoCropper({
       <div className="flex max-h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white sm:rounded-2xl">
         <div className="flex items-start justify-between gap-3 px-4 py-3">
           <div>
-            <h3 className="text-base font-semibold text-[#172a3a]" id="patient-photo-title">Crop a square</h3>
-            <p className="text-xs text-[#6b8496]">Drag the box over the face. Drag the corner to resize. It does not have to be a perfect ID scan.</p>
+            <h3 className="text-base font-semibold text-[#172a3a]" id="patient-photo-title">Crop photo</h3>
+            <p className="text-xs text-[#6b8496]">Drag inside the box to move it. Drag any edge or corner to resize.</p>
           </div>
           <button className="rounded-full px-2 py-1 text-sm font-semibold text-[#6b8496]" onClick={onCancel} type="button">
             Cancel
@@ -122,7 +140,8 @@ export function PatientPhotoCropper({
                   onPointerDown={(event) => onPointerDown(event, "move")}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
-                  style={{ left: box.left, top: box.top, width: box.size, height: box.size }}
+                  onPointerCancel={onPointerUp}
+                  style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
                 >
                   <div className="pointer-events-none absolute inset-0">
                     <div className="absolute left-1/3 top-0 h-full w-px bg-white/50" />
@@ -130,14 +149,18 @@ export function PatientPhotoCropper({
                     <div className="absolute left-0 top-1/3 h-px w-full bg-white/50" />
                     <div className="absolute left-0 top-2/3 h-px w-full bg-white/50" />
                   </div>
-                  <button
-                    aria-label="Resize crop"
-                    className="absolute -bottom-3 -right-3 h-11 w-11 cursor-nwse-resize rounded-full border-2 border-white bg-[#0d79bf]"
-                    onPointerDown={(event) => onPointerDown(event, "resize")}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerUp}
-                    type="button"
-                  />
+                  {CROP_HANDLES.map((handle) => (
+                    <button
+                      aria-label={handle.label}
+                      className={`absolute h-9 w-9 touch-none rounded-md border-2 border-white bg-[#0d79bf] ${handle.className}`}
+                      key={handle.edge}
+                      onPointerDown={(event) => onPointerDown(event, handle.edge)}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerUp}
+                      type="button"
+                    />
+                  ))}
                 </div>
               )}
             </div>
