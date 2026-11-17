@@ -87,7 +87,11 @@ assert.equal(mergeNotesByNewest([staleLocal], [reexam])[0].soap.subjective.inclu
 
 const workspace = readFileSync(new URL("../../src/components/encounter-workspace.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(workspace, /sectionsSafeToResalt/);
-assert.match(workspace, /Replace this note with \$\{source\.encounterDate\}\? This replaces what is on the note now\./);
+assert.doesNotMatch(workspace, /Replace this note with \$\{source\.encounterDate\}\? This replaces what is on the note now\./);
+assert.match(workspace, /selectPriorEncounter/);
+assert.match(workspace, /aria-label="View prior encounter"/);
+assert.match(workspace, /Replace current \$\{sectionLabels\[activeSection\]\} text with the selected prior encounter note\?/);
+assert.match(workspace, /Replace ALL current SOAP sections with the notes from/);
 assert.doesNotMatch(workspace, /Auto-Salt: an open/);
 
 console.log("salt-source ok");

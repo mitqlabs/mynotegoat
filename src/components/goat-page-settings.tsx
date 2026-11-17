@@ -30,7 +30,6 @@ const BOARD_BOXES: Array<Exclude<BuiltinKind, "status-cases" | "cases-by-month" 
   "schedule",
   "tomorrow-schedule",
   "intake",
-  "goat-answers",
   "todos",
   "case-snapshot",
   "end-of-day",
