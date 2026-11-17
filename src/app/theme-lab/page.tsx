@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { PRESET_IDS, type Mode, type PresetId } from "@/lib/brand";
+import { PRESET_IDS, type Mode, type PresetId, type ThemeId } from "@/lib/brand";
+import { ThemePageSamples, ThemeSampleBody } from "@/components/theme-page-samples";
+import { ThemeColorRowsPreview } from "@/components/themes-section";
 
 /**
  * Sample screens for a theme, with no office data and no database writes.
@@ -22,7 +24,22 @@ function Lab() {
   const params = useSearchParams();
   const theme = (PRESET_IDS.includes(params.get("theme") as PresetId) ? params.get("theme") : "sunset") as PresetId;
   const tone: Mode = params.get("tone") === "dark" ? "dark" : "light";
+  const shot = params.get("shot");
   const href = (nextTone: Mode) => `/theme-lab?theme=${theme}&tone=${nextTone}`;
+
+  if (shot === "patient" || shot === "theme" || shot === "colors") {
+    return (
+      <div className="min-h-screen bg-[var(--shell-bg)] p-4 text-[var(--text-main)]">
+        {shot === "patient" ? (
+          <ThemeSampleBody id="patient" />
+        ) : shot === "colors" ? (
+          <ThemeColorRowsPreview />
+        ) : (
+          <ThemePageSamples brand={{ theme: theme as ThemeId }} mode={tone} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--shell-bg)] text-[var(--text-main)]">

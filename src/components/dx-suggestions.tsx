@@ -96,11 +96,11 @@ export function DxSuggestions({
         <span className="text-[11px] text-[var(--text-muted)]">Nothing is added for you</span>
       </div>
       {collapsed ? null : (<>
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900" role="note">
+      <p className="tone-warn rounded-lg border px-2.5 py-1.5 text-xs font-semibold" role="note">
         {disclaimer(kind)}
       </p>
       {suggestions.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)]">
+        <p className="theme-surface rounded-xl border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]">
           {kind === "X-ray"
             ? hasMriText
               ? "No new codes to suggest. The X-ray findings are covered by codes already on this patient, or they don't name a mapped finding."
@@ -115,7 +115,7 @@ export function DxSuggestions({
             const open = Boolean(expanded[s.code]);
             const first = s.evidence[0];
             return (
-              <li className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2" key={s.code}>
+              <li className="theme-surface min-w-0 rounded-xl border border-[var(--line-soft)] px-3 py-2" key={s.code}>
                 <div className="flex items-start gap-3">
                   <span className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{s.code}</span>
                   <div className="min-w-0 flex-1">

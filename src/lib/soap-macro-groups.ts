@@ -102,7 +102,7 @@ export function groupSoapMacros<T extends { buttonName: string }>(macros: T[]): 
 /** Shared chip chrome. History and body regions look equally clickable. */
 export function soapMacroChipClass(_quiet: boolean, dragging: boolean): string {
   return [
-    "rounded-full border border-[#b7c9d6] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] transition-opacity",
+    "rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] transition-opacity",
     dragging ? "opacity-40" : "",
   ]
     .filter(Boolean)

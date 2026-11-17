@@ -261,9 +261,13 @@ test("Themes is a Settings section on the Office tab, with no explainer subtitle
   assert.ok(section.includes('aria-label="Light or Dark"'));
   assert.equal(section.includes("Hex"), false);
   assert.equal(section.includes("Live Preview"), false);
-  assert.match(section, /Case List/);
-  assert.match(section, /Patient Page/);
-  assert.match(section, /Encounter/);
+  assert.match(section, /ThemePageSamples/);
+  const samples = readFileSync("src/components/theme-page-samples.tsx", "utf8");
+  assert.match(samples, /Patient Page/);
+  assert.match(samples, /Encounter/);
+  assert.match(samples, /Case List/);
+  assert.match(samples, /Patient List/);
+  assert.match(samples, /Jane Sample/);
   const css = readFileSync("src/app/globals.css", "utf8");
   assert.match(css, /\.section-bar \{/);
   assert.match(css, /\.tint-panel \{/);

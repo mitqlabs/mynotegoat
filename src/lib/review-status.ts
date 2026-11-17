@@ -56,13 +56,13 @@ export function isReadyToRequestReview(caseStatus: string, review: string | null
 export function reviewStatusTone(review: string | null | undefined): string {
   switch (normalizeReviewStatus(review)) {
     case REVIEW_REQUESTED:
-      return "border-amber-300 bg-amber-50 text-amber-800";
+      return "tone-warn border";
     case REVIEW_RECEIVED:
-      return "border-emerald-300 bg-emerald-50 text-emerald-700";
+      return "tone-ok border";
     case REVIEW_REFRAIN:
-      return "border-slate-300 bg-slate-100 text-slate-500";
+      return "tone-neutral border";
     default:
-      return "border-[var(--line-soft)] bg-white text-[var(--text-muted)]";
+      return "border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-muted)]";
   }
 }
 

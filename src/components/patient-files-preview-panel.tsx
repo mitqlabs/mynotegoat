@@ -80,7 +80,7 @@ export function PatientFilesPreviewPanel({ patientId }: { patientId: string }) {
   }, [state, rootFolder]);
 
   return (
-    <section className="mt-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+    <section className="theme-surface mt-3 rounded-xl border border-[var(--line-soft)] p-3">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold">Patient Files</h4>
         <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">

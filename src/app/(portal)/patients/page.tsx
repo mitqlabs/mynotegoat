@@ -473,15 +473,15 @@ function composePatientAddress(street: string, unit: string, city: string, state
 
 function getFollowUpBadgeClass(category: FollowUpCategory) {
   if (category === "X-Ray") {
-    return "bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] text-[var(--brand-ink)]";
+    return "bg-[color-mix(in_srgb,var(--brand-primary)_16%,var(--bg-panel))] text-[var(--text-main)]";
   }
   if (category === "MRI / CT") {
-    return "bg-[rgba(97,73,179,0.14)] text-[#4d3d8f]";
+    return "bg-[color-mix(in_srgb,#6149b3_20%,var(--bg-panel))] text-[var(--text-main)]";
   }
   if (category === "Lien / LOP") {
-    return "bg-[rgba(90,119,168,0.16)] text-[#35537b]";
+    return "bg-[color-mix(in_srgb,#5a77a8_20%,var(--bg-panel))] text-[var(--text-main)]";
   }
-  return "bg-[rgba(238,139,42,0.16)] text-[#9a5a00]";
+  return "tone-warn";
 }
 
 // Extra columns the Print "Include" picker can add (even if not on screen).
@@ -526,15 +526,15 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
     return "bg-[var(--bg-soft)] text-[var(--text-muted)]";
   }
   if (days >= staleDaysThreshold) {
-    return "bg-[rgba(201,66,58,0.15)] text-[#b43b34]";
+    return "tone-alert";
   }
   if (days >= warningThreshold) {
-    return "bg-[rgba(238,139,42,0.16)] text-[#9a5a00]";
+    return "tone-warn";
   }
   if (days >= 0) {
-    return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
+    return "tone-ok";
   }
-  return "bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] text-[var(--brand-ink)]";
+  return "bg-[color-mix(in_srgb,var(--brand-primary)_16%,var(--bg-panel))] text-[var(--text-main)]";
 }
 
 function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string, initialExam: string) {
@@ -1970,10 +1970,10 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
   }
 
   function priorityBadgeClass(priority: TaskPriority) {
-    if (priority === "Urgent") return "bg-[rgba(201,66,58,0.14)] text-[#b43b34]";
-    if (priority === "High") return "bg-[rgba(238,139,42,0.18)] text-[#9a5a00]";
-    if (priority === "Medium") return "bg-[rgba(21,123,191,0.14)] text-[#0b5c93]";
-    return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
+    if (priority === "Urgent") return "tone-alert";
+    if (priority === "High") return "tone-warn";
+    if (priority === "Medium") return "tone-info";
+    return "tone-ok";
   }
 
   const handleAddTask = () => {
@@ -2204,7 +2204,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
       )}
       {savedBanner && (
         <div
-          className="flex items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-sm"
+          className="tone-ok flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm"
           role="status"
         >
           <span className="text-lg">✓</span>
@@ -2317,7 +2317,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
           )}
         </div>
 
-        <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+        <div className="theme-surface mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] p-3">
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
             <input
@@ -3049,8 +3049,8 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Tasks</h4>
               <div className="flex items-center gap-3 text-sm">
-                <span className="rounded-full bg-[rgba(21,123,191,0.12)] px-3 py-1 font-semibold text-[#0b5c93]">{taskOpenCount} Open</span>
-                <span className="rounded-full bg-[rgba(25,109,58,0.12)] px-3 py-1 font-semibold text-[#196d3a]">{taskDoneCount} Done</span>
+                <span className="tone-info rounded-full px-3 py-1 font-semibold">{taskOpenCount} Open</span>
+                <span className="tone-ok rounded-full px-3 py-1 font-semibold">{taskDoneCount} Done</span>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-12">
@@ -3078,7 +3078,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
 
             <div className="mt-4 space-y-2">
               {filteredTasks.map((task) => (
-                <article className={`rounded-xl border px-3 py-3 ${task.done ? "border-[var(--line-soft)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)] bg-white"} ${highlightTaskId === task.id ? "ring-2 ring-[var(--brand-primary)]" : ""}`} id={`task-${task.id}`} key={task.id}>
+                <article className={`rounded-xl border border-[var(--line-soft)] px-3 py-3 ${task.done ? "bg-[var(--bg-soft)]" : "theme-surface"} ${highlightTaskId === task.id ? "ring-2 ring-[var(--brand-primary)]" : ""}`} id={`task-${task.id}`} key={task.id}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-start gap-3">
                       <input checked={task.done} className="mt-1" onChange={() => toggleTaskDone(task.id)} type="checkbox" />
@@ -3134,7 +3134,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                 </article>
               ))}
               {filteredTasks.length === 0 && (
-                <p className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-4 text-sm text-[var(--text-muted)]">No tasks found.</p>
+                <p className="theme-surface rounded-xl border border-[var(--line-soft)] px-3 py-4 text-sm text-[var(--text-muted)]">No tasks found.</p>
               )}
             </div>
           </section>
@@ -3174,7 +3174,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                     className={`panel-card overflow-hidden ${entry.isToday ? "ring-2 ring-amber-400" : ""}`}
                   >
                     {entry.isToday && (
-                      <div className="bg-amber-400 px-3 py-1 text-center text-xs font-bold text-amber-900">
+                      <div className="tone-warn px-3 py-1 text-center text-xs font-bold">
                         🎉 Today!
                       </div>
                     )}
@@ -3280,7 +3280,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                 todayIso={new Date().toISOString().slice(0, 10)}
               />
               {newPatientAsk.length > 0 && (
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
+                <div className="tone-warn rounded-lg px-3 py-2 text-sm" data-testid="new-patient-ask">
                   <p className="font-semibold">Filled in by G.O.A.T. — please check:</p>
                   <ul className="ml-4 list-disc">{newPatientAsk.map((q) => <li key={q}>{q}</li>)}</ul>
                 </div>
@@ -3503,7 +3503,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
               )}
 
               {newPatientBookingIssue && (
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
+                <div className="tone-warn rounded-lg px-3 py-2 text-sm font-semibold" role="alert">
                   {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
                   <Link className="text-[var(--brand-primary)] underline" href={openHref(newPatientBookingIssue.patientId)}>Open patient</Link>
                 </div>

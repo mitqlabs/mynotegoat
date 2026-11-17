@@ -206,7 +206,7 @@ assert.equal(patientToRow(mock({ compliance: "c-abc" }), "ws-mock").compliance, 
   const gone = removeComplianceOption(o, "Non-Compliant", T);
   for (const stored of [undefined, "", "   ", "no-such-option", "Non-Compliant"]) {
     const style = compliancePillStyle(resolveComplianceOption(stored, stored === "Non-Compliant" ? gone : o));
-    assert.deepEqual(style, { backgroundColor: "#eef1f4", color: "#475569" }, `unset-like value ${JSON.stringify(stored)} is neutral`);
+    assert.deepEqual(style, { backgroundColor: "var(--bg-soft)", color: "var(--text-muted)" }, `unset-like value ${JSON.stringify(stored)} is neutral`);
   }
   // what the list shows: never an empty label
   assert.deepEqual(complianceDisplay(undefined, o).label, "Not set");

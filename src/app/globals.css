@@ -928,26 +928,38 @@ html[data-brand="cedar"] .bg-white,
 html[data-brand="mine"] .bg-white {
   background-color: var(--bg-panel);
 }
+html[data-tone="dark"] .bg-white\/50,
 html[data-tone="dark"] .bg-white\/60,
 html[data-tone="dark"] .bg-white\/70,
-html[data-tone="dark"] .bg-white\/80 {
+html[data-tone="dark"] .bg-white\/80,
+html[data-tone="dark"] .bg-white\/90 {
   background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
 }
+html[data-brand="sunset"] .bg-white\/50,
 html[data-brand="sunset"] .bg-white\/60,
 html[data-brand="sunset"] .bg-white\/70,
 html[data-brand="sunset"] .bg-white\/80,
+html[data-brand="sunset"] .bg-white\/90,
+html[data-brand="harbor"] .bg-white\/50,
 html[data-brand="harbor"] .bg-white\/60,
 html[data-brand="harbor"] .bg-white\/70,
 html[data-brand="harbor"] .bg-white\/80,
+html[data-brand="harbor"] .bg-white\/90,
+html[data-brand="grove"] .bg-white\/50,
 html[data-brand="grove"] .bg-white\/60,
 html[data-brand="grove"] .bg-white\/70,
 html[data-brand="grove"] .bg-white\/80,
+html[data-brand="grove"] .bg-white\/90,
+html[data-brand="cedar"] .bg-white\/50,
 html[data-brand="cedar"] .bg-white\/60,
 html[data-brand="cedar"] .bg-white\/70,
 html[data-brand="cedar"] .bg-white\/80,
+html[data-brand="cedar"] .bg-white\/90,
+html[data-brand="mine"] .bg-white\/50,
 html[data-brand="mine"] .bg-white\/60,
 html[data-brand="mine"] .bg-white\/70,
-html[data-brand="mine"] .bg-white\/80 {
+html[data-brand="mine"] .bg-white\/80,
+html[data-brand="mine"] .bg-white\/90 {
   background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
 }
 
@@ -1021,4 +1033,56 @@ button.bg-white {
 [data-brand] {
   --row-tint-checked-in: color-mix(in srgb, var(--brand-primary) 16%, transparent);
   --row-edge-checked-in: var(--brand-primary);
+}
+
+/* Read-only fields and saved-entry surfaces. background (not background-color)
+   so a gradient field fill still paints. */
+.theme-field {
+  background: var(--field-bg);
+  color: var(--text-main);
+}
+.theme-surface {
+  background-color: var(--bg-panel);
+  color: var(--text-main);
+}
+
+/* Semantic accents mixed into the theme surface, with theme text so they
+   stay readable in Light, Dark, Sunset, Harbor, and My Theme. */
+.tone-warn {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 22%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-warning, #f0a43f) 55%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-warn-badge {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 34%, var(--bg-panel));
+  color: var(--text-main);
+}
+.tone-warn-text {
+  color: color-mix(in srgb, var(--status-warning, #f0a43f) 62%, var(--text-main));
+}
+.tone-ok {
+  background-color: color-mix(in srgb, var(--status-active, #1f9d60) 18%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-active, #1f9d60) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-alert {
+  background-color: color-mix(in srgb, var(--status-alert, #c9423a) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-alert, #c9423a) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-info {
+  background-color: color-mix(in srgb, var(--brand-primary) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-neutral {
+  background-color: var(--bg-soft);
+  border-color: var(--line-soft);
+  color: var(--text-muted);
+}
+
+/* Status pills compute a dark ink for a pale tint on white. On a dark
+   theme that ink disappears, so the theme text wins. The tint stays. */
+[data-tone="dark"] .status-pill {
+  color: var(--text-main) !important;
 }
