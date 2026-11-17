@@ -38,33 +38,47 @@ const roundTrip = normalizeSmsReminderSettings(saved);
 assert.equal(roundTrip.rules?.length, 2);
 assert.equal(roundTrip.birthdayHour, 9);
 
-// 8:00 and 9:00 share 9:00 (the 8:00 catch-up). It is asked once.
+// 8:00 and 9:00, plus one catch-up an hour after the last. No half hours.
 const clocks = automationClocks(saved.rules!);
-assert.deepEqual(clocks.map((c) => clockWords(c.hour, c.minute)), ["8:00 AM", "8:30 AM", "9:00 AM", "9:30 AM", "10:00 AM"]);
+assert.deepEqual(clocks.map((c) => clockWords(c.hour, c.minute)), ["8:00 AM", "9:00 AM", "10:00 AM"]);
+assert.equal(clocks.length <= 3, true);
 const same = automationClocks([
   { id: "a", templateId: "rem", on: true, kind: "day-before", hour: 8 },
   { id: "b", templateId: "bday", on: true, kind: "birthday", hour: 8 },
 ]);
-assert.deepEqual(same.map((c) => clockWords(c.hour, c.minute)), ["8:00 AM", "8:30 AM", "9:00 AM"]);
+assert.deepEqual(same.map((c) => clockWords(c.hour, c.minute)), ["8:00 AM", "9:00 AM"]);
+const many = automationClocks([
+  { id: "a", templateId: "rem", on: true, kind: "day-before", hour: 7 },
+  { id: "b", templateId: "bday", on: true, kind: "birthday", hour: 9 },
+  { id: "c", templateId: "rem", on: true, kind: "open-day", hour: 11 },
+  { id: "d", templateId: "rem", on: true, kind: "hours-before", hour: 15 },
+]);
+assert.deepEqual(many.map((c) => clockWords(c.hour, c.minute)), ["7:00 AM", "3:00 PM", "4:00 PM"]);
+assert.equal(many.length, 3, "never more than 3 time automations");
 
-const steps = phoneStepsForClocks(clocks).map((step) => step.text.replace(/\*\*/g, ""));
+const built = phoneStepsForClocks(clocks);
+const steps = built.map((step) => step.text.replace(/\*\*/g, ""));
 assert.equal(steps[0], "Tap Add to this iPhone.");
 assert.equal(steps[1], "Tap Add Shortcut.");
-assert.match(steps[2], /Set 8:00 AM/);
-assert.match(steps[2], /Tap Automation/);
-assert.match(steps[2], /Tap Time of Day/);
-assert.match(steps[2], /Tap Every Day/);
-assert.match(steps[2], /Tap Run Immediately/);
-assert.match(steps[2], /Turn Notify When Run off/);
-assert.match(steps[2], /Tap NoteGoat/);
-assert.equal(steps[3], "Do that again for 8:30 AM.");
-assert.equal(steps[4], "Do that again for 9:00 AM.");
-assert.equal(steps[5], "Do that again for 9:30 AM.");
-assert.equal(steps[6], "Do that again for 10:00 AM.");
-assert.match(steps[7], /Type STOP/);
-assert.match(steps[7], /Shortcut Input/);
-assert.equal(steps[8], "Tap Test.");
-assert.equal(steps.length, 9);
+assert.deepEqual(built[2].lines, [
+  "Open **Shortcuts**.",
+  "Tap **Automation**.",
+  "Tap **+**.",
+  "Tap **Time of Day**.",
+  "Set **8:00 AM**.",
+  "Tap **Every Day**.",
+  "Tap **Run Immediately**.",
+  "Turn **Notify When Run** off.",
+  "Tap **Next**.",
+  "Tap **NoteGoat**.",
+  "Tap **Done**.",
+]);
+assert.equal(steps[3], "Same as step 3, but set 9:00 AM.");
+assert.equal(steps[4], "Same as step 3, but set 10:00 AM.");
+assert.ok(built[5].lines?.includes("Type **STOP**."));
+assert.equal(steps[6], "Tap Test.");
+assert.equal(steps.length, 7);
+assert.equal(steps.some((step) => step.includes("8:30")), false);
 
 // Friday 8:00 AM Pacific, office closed Fridays, not a Key Date.
 const friday8 = new Date("2026-11-20T16:00:00Z");

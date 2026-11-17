@@ -76,19 +76,21 @@ export function withRules(settings: SmsReminderSettings, rules: TextRule[]): Sms
   };
 }
 
-/** Send time plus 30 and 60 minutes later, once per clock time. */
+/**
+ * One alarm per send time, plus one shared catch-up an hour after the last.
+ * 8:00 and 9:00 become 8:00, 9:00, and 10:00. Never more than three.
+ * The catch-up run is the same shortcut, so anything still unsent that day
+ * is offered again once its claim expires.
+ */
 export function automationClocks(rules: TextRule[]): { hour: number; minute: number }[] {
-  const mins = new Set<number>();
-  for (const rule of rules) {
-    if (!rule.on) continue;
-    const start = rule.hour * 60;
-    mins.add(start);
-    mins.add(start + 30);
-    mins.add(start + 60);
-  }
-  return [...mins]
-    .sort((a, b) => a - b)
-    .map((total) => ({ hour: Math.floor(total / 60) % 24, minute: total % 60 }));
+  const hours = [...new Set(rules.filter((rule) => rule.on).map((rule) => rule.hour))].sort((a, b) => a - b);
+  if (!hours.length) return [];
+  const catchUp = (hours[hours.length - 1] + 1) % 24;
+  const extra = hours.includes(catchUp) ? 0 : 1;
+  const send = hours.length + extra > 3 ? [hours[0], hours[hours.length - 1]].filter((hour, index, list) => list.indexOf(hour) === index) : hours;
+  const start = send[0];
+  const ordered = [...new Set([...send, catchUp])].sort((a, b) => ((a - start + 24) % 24) - ((b - start + 24) % 24));
+  return ordered.slice(0, 3).map((hour) => ({ hour, minute: 0 }));
 }
 
 export interface DueScope {

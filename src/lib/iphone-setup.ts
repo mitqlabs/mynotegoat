@@ -9,6 +9,8 @@ import { clockWords } from "@/lib/text-rules";
 export interface SetupStep {
   icon: string;
   text: string;
+  /** One action per line. **these** are the words on the screen. */
+  lines?: string[];
 }
 
 /** Exact words the office follows. **these** are the words on the iPhone screen. */
@@ -33,26 +35,51 @@ export function iphoneSetupSteps(sendHour: number): SetupStep[] {
  * The first time lists every button. Later times say to do that again.
  * A time that is already in the list is not asked twice.
  */
+function step(lines: string[]): SetupStep {
+  return { icon: String(lines.length), text: lines.join(" "), lines };
+}
+
+/** The time steps, once in full. Later times point back at that step. */
 export function phoneStepsForClocks(clocks: { hour: number; minute: number }[]): SetupStep[] {
+  if (!clocks.length) return [];
+  const first = clockWords(clocks[0].hour, clocks[0].minute);
   const steps: SetupStep[] = [
-    { icon: "1", text: "Tap **Add to this iPhone**." },
-    { icon: "2", text: "Tap **Add Shortcut**." },
+    step(["Tap **Add to this iPhone**."]),
+    step(["Tap **Add Shortcut**."]),
+    step([
+      "Open **Shortcuts**.",
+      "Tap **Automation**.",
+      "Tap **+**.",
+      "Tap **Time of Day**.",
+      `Set **${first}**.`,
+      "Tap **Every Day**.",
+      "Tap **Run Immediately**.",
+      "Turn **Notify When Run** off.",
+      "Tap **Next**.",
+      "Tap **NoteGoat**.",
+      "Tap **Done**.",
+    ]),
   ];
-  clocks.forEach((clock, index) => {
+  clocks.slice(1).forEach((clock) => {
     const time = clockWords(clock.hour, clock.minute);
-    steps.push({
-      icon: String(steps.length + 1),
-      text:
-        index === 0
-          ? `Set **${time}**. Open **Shortcuts**. Tap **Automation**. Tap **+**. Tap **Time of Day**. Set **${time}**. Tap **Every Day**. Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**. Tap **NoteGoat**. Tap **Done**.`
-          : `Do that again for **${time}**.`,
-    });
+    steps.push(step([`Same as step 3, but set **${time}**.`]));
   });
-  steps.push({
-    icon: String(steps.length + 1),
-    text: "Tap **+**. Tap **Message**. Tap **Message Contains**. Type **STOP**. Tap **Done**. Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**. Tap **NoteGoat**. If you see **Shortcut Input**, tap it. Tap **Done**.",
-  });
-  steps.push({ icon: String(steps.length + 1), text: "Tap **Test**." });
+  steps.push(
+    step([
+      "Tap **+**.",
+      "Tap **Message**.",
+      "Tap **Message Contains**.",
+      "Type **STOP**.",
+      "Tap **Done**.",
+      "Tap **Run Immediately**.",
+      "Turn **Notify When Run** off.",
+      "Tap **Next**.",
+      "Tap **NoteGoat**.",
+      "If you see **Shortcut Input**, tap it.",
+      "Tap **Done**.",
+    ]),
+  );
+  steps.push(step(["Tap **Test**."]));
   return steps;
 }
 

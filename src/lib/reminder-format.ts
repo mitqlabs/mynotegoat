@@ -128,7 +128,7 @@ export type CardStatus = "done" | "todo" | "optional" | "info";
 /** Sending devices card: not done until a device is added; the summary names what is connected. */
 export function devicesStatus(devices: Array<DeviceLike & { name: string; is_primary: boolean | null }>, timeZone = "America/Los_Angeles"): { status: CardStatus; summary: string } {
   const active = devices.filter((d) => !d.revoked_at);
-  if (!active.length) return { status: "todo", summary: "No device yet. Click + Add iPhone to start." };
+  if (!active.length) return { status: "todo", summary: "No phone yet. Tap Add to this iPhone." };
   const seen = active.map((d) => d.last_seen_at).filter((t): t is string => Boolean(t)).sort().pop();
   const names = active.length === 1 ? active[0].name : `${active.length} devices`;
   return { status: seen ? "done" : "todo", summary: `${names} · ${lastCheckedText(seen, timeZone)}` };

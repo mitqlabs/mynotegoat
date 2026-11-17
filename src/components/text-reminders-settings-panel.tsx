@@ -82,8 +82,8 @@ type LogRow = { id: number; visit_date: string; phone_last4: string; status: str
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
-const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
-const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold";
+const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-[var(--text-main)]";
+const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]";
 
 export function TextRemindersSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
@@ -398,9 +398,7 @@ export function TextRemindersSettingsPanel() {
           settings={settings}
           update={update}
           workspaceId={workspaceId}
-        />
-      </div>
-
+        >
       <div data-testid="section-phones">
       <SetupCard
         actions={
@@ -472,7 +470,7 @@ export function TextRemindersSettingsPanel() {
                     <button className={rowBtn} onClick={() => void newCode(d.id)} type="button">
                       Get new setup code
                     </button>
-                    <button className={`${rowBtn} text-red-700`} onClick={() => void revokeDevice(d.id)} type="button">
+                    <button className={rowBtn} onClick={() => void revokeDevice(d.id)} type="button">
                       Remove
                     </button>
                   </div>
@@ -481,8 +479,10 @@ export function TextRemindersSettingsPanel() {
             })}
           </ul>
         )}
-        {message && <p className="font-semibold text-red-700">{message}</p>}
+        {message && <p className="font-semibold text-[var(--text-main)]">{message}</p>}
       </SetupCard>
+      </div>
+        </TextRuleWizard>
       </div>
 
       <CollapsibleSection
@@ -510,7 +510,7 @@ export function TextRemindersSettingsPanel() {
             Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
-            <b>NoteGoat</b> on the iPhone texts 5 patients, then asks for the next 5. It also catches a reply of STOP. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, after the steps at the top. The later runs do nothing if everything already went out.
+            <b>NoteGoat</b> on the iPhone texts 5 patients, then asks for the next 5. It also catches a reply of STOP. It runs at each time in the steps, and once more an hour after the last one. That later run sends anything still waiting.
           </li>
           <li>
             <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed

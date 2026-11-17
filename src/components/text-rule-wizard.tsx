@@ -5,7 +5,7 @@
  * The phone steps are only the times those texts need.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { phoneStepsForClocks } from "@/lib/iphone-setup";
 import type { SmsTemplate } from "@/lib/sms-template-core";
@@ -39,6 +39,7 @@ export function TextRuleWizard({
   onConfirm,
   hasMac,
   startAt = "list",
+  children,
 }: {
   settings: SmsReminderSettings;
   update: (patch: Partial<SmsReminderSettings>) => void;
@@ -50,6 +51,8 @@ export function TextRuleWizard({
   hasMac: boolean;
   /** Preview only. The real page starts on the list. */
   startAt?: "list" | "message" | "when" | "time";
+  /** Shown after the saved texts and before the phone steps. */
+  children?: ReactNode;
 }) {
   const saved = messages.filter((message) => !message.deleted);
   const rules = settings.rules ?? legacyRules(settings);
@@ -192,6 +195,7 @@ export function TextRuleWizard({
       <button className={primary} data-testid="add-a-text" onClick={begin} type="button">
         {saved.length === 0 ? "Write a message" : "Add a text"}
       </button>
+      {children}
       {clocks.length > 0 && (
         <ReminderSetupChecklist
           devices={devices}

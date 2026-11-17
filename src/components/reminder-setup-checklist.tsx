@@ -25,9 +25,21 @@ function onThisIphone(): boolean {
 function StepWords({ text }: { text: string }) {
   const parts = text.split(/\*\*/);
   return (
-    <p className="font-semibold">
+    <>
       {parts.map((part, i) => (i % 2 === 1 ? <b key={i}>{part}</b> : <span key={i}>{part}</span>))}
-    </p>
+    </>
+  );
+}
+
+function StepLines({ lines }: { lines: string[] }) {
+  return (
+    <div className="grid gap-4">
+      {lines.map((line, index) => (
+        <p className="text-lg font-semibold leading-relaxed text-[var(--text-main)]" key={`${index}-${line}`}>
+          <StepWords text={line} />
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -204,7 +216,7 @@ export function ReminderSetupChecklist({
 
   const body = (
     <>
-      <ol className="grid gap-4" data-testid="iphone-setup-steps">
+      <ol className="grid gap-8" data-testid="iphone-setup-steps">
         {steps.map((step, index) => {
           const isAdd = index === 0;
           const isTest = index === steps.length - 1;
@@ -235,7 +247,7 @@ export function ReminderSetupChecklist({
                     {report.ok ? <span className="mt-1 block text-sm font-semibold">{report.fix}</span> : null}
                   </button>
                 ) : (
-                  <StepWords text={step.text} />
+                  <StepLines lines={step.lines?.length ? step.lines : [step.text]} />
                 )}
               </div>
             </li>

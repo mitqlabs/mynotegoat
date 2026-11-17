@@ -152,7 +152,7 @@ const named = (o: Partial<{ name: string; kind: string; is_primary: boolean; rev
   name: "Office iPhone", kind: "iphone", is_primary: true, revoked_at: null, last_seen_at: null, last_run_at: null, ...o,
 });
 assert.equal(devicesStatus([]).status, "todo");
-assert.match(devicesStatus([]).summary, /Add iPhone/);
+assert.match(devicesStatus([]).summary, /Add to this iPhone/);
 assert.equal(devicesStatus([named({})]).status, "todo", "added but never checked in");
 const seenDev = named({ last_seen_at: "2026-10-28T17:41:00Z" });
 assert.deepEqual(devicesStatus([seenDev], "America/Los_Angeles"), { status: "done", summary: "Office iPhone · Last checked 10/28/26 10:41 AM" });
