@@ -41,6 +41,7 @@ import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
 import { notifyChange } from "@/lib/local-sync";
 import {
   createKeyDateId,
+  findClosedKeyDateForDate,
   normalizeKeyDateTime,
   normalizeKeyDates,
   type KeyDateOfficeStatus,
@@ -172,6 +173,17 @@ export async function addKeyDatesToCloud(
 /** Single-day CLOSED key dates — see addKeyDatesToCloud. */
 export function addClosedKeyDatesToCloud(entries: { date: string; reason: string }[]) {
   return addKeyDatesToCloud(entries.map((entry) => ({ ...entry, officeStatus: "Closed" as const })));
+}
+
+/**
+ * One full closed day, the same row the Key Dates page writes.
+ * Already closed (a full-day Closed row, not a partial-hours day) → no second row.
+ */
+export async function addClosedDayIfMissing(date: string, reason: string): Promise<"added" | "already"> {
+  const current = await fetchKeyDatesFromCloud();
+  if (findClosedKeyDateForDate(current, date)) return "already";
+  await addClosedKeyDatesToCloud([{ date, reason }]);
+  return "added";
 }
 
 export const cloudKeyDatesQueryKey = QUERY_KEY;

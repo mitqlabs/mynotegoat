@@ -109,6 +109,18 @@ export interface ChatMessage {
   todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saving" | "saved" | "canceled" | "error"; saveError?: string };
   /** "/note" and "/todo": the patient type-ahead (name / case # / phone). `picked` once a patient is chosen. */
   flowPicker?: { next: "note" | "todo" | "text"; prefill?: string; allowNone?: boolean; picked?: string };
+  /**
+   * A Key Dates closed day waiting for Confirm. Nothing is written until that tap.
+   * When a textDraft is on the same message, that card's Send marks the day and queues the text together.
+   */
+  closedDay?: {
+    iso: string;
+    /** "Thursday, Nov 19" */
+    label: string;
+    reason: string;
+    state: "open" | "saving" | "done" | "canceled" | "error";
+    result?: string;
+  };
   /** "/text": who gets it, the message, and the Send card. Nothing is queued until the user taps Send. Names only — never phone numbers. */
   textDraft?: {
     audience: import("@/lib/goat-text").TextAudience;
