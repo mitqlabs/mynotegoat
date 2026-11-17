@@ -12,6 +12,7 @@
  */
 
 import {
+  getDefaultPortalPath,
   getVisiblePortalNavItems,
   type PlanTier,
   type PortalFeature,
@@ -194,4 +195,29 @@ export function reorderSidebarId(ids: readonly string[], fromId: string, toId: s
 
 export function sameSidebarOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+/**
+ * Where the app opens: the page at the top of this person's sidebar.
+ *
+ * Saved order is applied first, then anything the plan or their access
+ * hides is left out, so a hidden first page is skipped and the next
+ * visible one opens. No saved order keeps today's default (Patient List).
+ * If that default is hidden too, or nothing they saved can be opened,
+ * the first page they can see is used so a blocked page never flashes.
+ */
+export function sidebarLandingHref(
+  planTier: PlanTier,
+  canView: (feature: PortalFeature) => boolean,
+  saved: unknown,
+): string {
+  const fallback = getDefaultPortalPath(planTier);
+  const visible = visibleSidebarPages(planTier, canView);
+  const order = sidebarOrderFrom(saved);
+  const top = applySidebarOrder(visible, order)[0];
+  const fallbackOpen = visible.some((page) => page.href === fallback);
+  if (!order) return fallbackOpen ? fallback : (top?.href ?? fallback);
+  const savedStillVisible = order.some((id) => visible.some((page) => page.id === id));
+  if (!savedStillVisible) return fallbackOpen ? fallback : (top?.href ?? fallback);
+  return top?.href ?? fallback;
 }

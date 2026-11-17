@@ -25,6 +25,8 @@ async function main() {
   const placed = order.applySidebarOrder(visible, saved).map((page) => page.id);
   assert.equal(placed[placed.indexOf("patients") + 1], order.CASE_LIST_ID);
   assert.deepEqual(order.sidebarOrderFrom(["caseList", "patients"]), ["caseList", "patients"]);
+  assert.equal(order.sidebarLandingHref("complete", () => true, ["caseList", "patients"]), "/cases");
+  assert.equal(order.sidebarLandingHref("complete", () => true, null), "/patients");
   console.log("ok - Case List is a movable sidebar page with the folder switch on");
 }
 
