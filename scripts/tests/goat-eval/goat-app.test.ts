@@ -62,7 +62,7 @@ check("app shell: no nav on /goat", () => assert.match(read("src/components/app-
 const goat = read("src/components/global-goat.tsx");
 check("popup: install tip + beforeinstallprompt", () => { assert.ok(goat.includes('"beforeinstallprompt"')); assert.ok(goat.includes("Add G.O.A.T. to your Home Screen:")); assert.ok(goat.includes("data-goat-install")); assert.ok(goat.includes("GOAT_INSTALL_TIP_KEY")); });
 check("popup: ?q= prefill and full-screen mode", () => { assert.ok(goat.includes("goatQueryPrefill(window.location.search)")); assert.ok(goat.includes("const open = popupOpen || fullScreen;")); });
-check("login returns to /goat", () => { assert.match(read("src/app/(portal)/layout.tsx"), /\/auth\/login\?next=/); assert.match(read("src/app/auth/login/login-client.tsx"), /router\.replace\(next \?\? "\/patients"\)/); assert.match(read("src/app/auth/login/page.tsx"), /safeNextPath\(nextRaw\)/); });
+check("login returns to /goat", () => { assert.match(read("src/app/(portal)/layout.tsx"), /\/auth\/login\?next=/); assert.match(read("src/app/auth/login/login-client.tsx"), /router\.replace\(next \?\? "\/"\)/); assert.match(read("src/app/auth/login/page.tsx"), /safeNextPath\(nextRaw\)/); });
 check("handbook: home-screen app", () => { const hb = read("src/lib/handbook-goat.ts"); for (const t of ["home-screen app", "Add to Home Screen", "Install", "APK"]) assert.ok(hb.includes(t), t); });
 
 console.log(`goat-app: ${pass}/${pass + fail} passed`);

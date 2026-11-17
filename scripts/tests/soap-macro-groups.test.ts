@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupSoapMacros, isBodyRegionMacroName, orderComplaintMacros, soapMacroChipClass } from "../../src/lib/soap-macro-groups";
+import { groupSoapMacros, isBodyRegionMacroName, orderComplaintMacros, soapMacroChipClass, soapNonRegionLabel } from "../../src/lib/soap-macro-groups";
 
 const names = [
   "MVC HX",
@@ -29,8 +29,27 @@ const names = [
   "Ankle/Foot",
 ];
 
-const groups = groupSoapMacros(names.map((buttonName, index) => ({ id: String(index), buttonName })));
+const chipMacros = names.map((buttonName, index) => ({ id: String(index), buttonName }));
+const groups = groupSoapMacros(chipMacros);
 assert.deepEqual(groups.map((group) => group.label), ["History", "Body regions"]);
+assert.deepEqual(groupSoapMacros(chipMacros, "Exam").map((group) => group.label), ["Exam", "Body regions"]);
+assert.equal(soapNonRegionLabel("subjective"), "History");
+assert.equal(soapNonRegionLabel("objective"), "Exam");
+assert.equal(soapNonRegionLabel("assessment"), "Assessment");
+assert.equal(soapNonRegionLabel("plan"), "Plan");
+assert.equal(soapNonRegionLabel("plan", "Treatments"), "Treatments");
+assert.equal(soapNonRegionLabel("objective", "  "), "Exam");
+assert.equal(soapNonRegionLabel("plan", "Special Studies"), "Special Studies");
+assert.deepEqual(
+  groupSoapMacros(
+    ["Exercises", "Spinal Decompression", "Cervical"].map((buttonName) => ({ buttonName })),
+    soapNonRegionLabel("plan", "Treatments"),
+  ).map((group) => ({ label: group.label, names: group.macros.map((macro) => macro.buttonName) })),
+  [
+    { label: "Treatments", names: ["Exercises", "Spinal Decompression"] },
+    { label: "Body regions", names: ["Cervical"] },
+  ],
+);
 assert.equal(groups[0].quiet, false);
 assert.equal(groups[1].quiet, false);
 assert.deepEqual(
@@ -54,7 +73,8 @@ const ordered = orderComplaintMacros(
 assert.deepEqual(ordered.map((macro) => macro.buttonName), ["Headaches", "Cervical", "Knee", "Ankle/Foot", "Extra chip"]);
 
 const workspace = readFileSync(new URL("../../src/components/encounter-workspace.tsx", import.meta.url), "utf8");
-assert.match(workspace, /groupSoapMacros\(group\.macros\)/);
+assert.match(workspace, /groupSoapMacros\(group\.macros, soapNonRegionLabel\(activeSection, group\.folder\)\)/);
+assert.match(workspace, /soapNonRegionLabel/);
 assert.match(workspace, /orderComplaintMacros\(group\.macros\)/);
 assert.match(workspace, /Complaints/);
 assert.match(workspace, /xl:grid-cols-8/);

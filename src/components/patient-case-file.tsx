@@ -49,6 +49,7 @@ import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { mergePatientCloudNotes } from "@/lib/encounter-merge";
+import { buildSoapPrintFragment, SOAP_PRINT_CSS } from "@/lib/print-soap";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
@@ -1024,17 +1025,16 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
          Use "all: initial" to completely isolate from the narrative
          document's CSS (its global p, *, body rules were leaking in
          and causing visible paragraph-indent / tab artefacts).
-         After the reset we re-declare every style the encounter print
-         needs — this is an EXACT copy of the standalone encounter
-         print CSS from encounter-workspace.tsx.                       */
+         The note layout itself lives in src/lib/print-soap.ts so this
+         attachment and Print Encounters break the same way.          */
       .soap-pages {
         all: initial !important;
         display: block !important;
         box-sizing: border-box !important;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
         font-size: 12px !important;
-        line-height: 1.4 !important;
-        color: #1a1a1a !important;
+        line-height: 1.45 !important;
+        color: #111 !important;
         white-space: normal !important;
         background: #fff !important;
       }
@@ -1050,112 +1050,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         line-height: inherit;
         color: inherit;
       }
-      /* Re-declare every style exactly matching the standalone encounter print */
-      .soap-pages .letterhead {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #0d79bf;
-        margin-bottom: 10px;
-      }
-      .soap-pages .logo {
-        height: 70px;
-        width: auto;
-        max-width: 200px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-        margin: 0;
-        padding: 0;
-      }
-      .soap-pages .office-info { flex: 1; text-align: right; margin: 0; padding: 0; }
-      .soap-pages .office-name-lh { font-size: 15px; font-weight: 700; color: #0d79bf; margin: 0; padding: 0; line-height: 1.2; }
-      .soap-pages .office-detail { font-size: 11px; color: #444; line-height: 1.5; margin: 0; }
-      .soap-pages p { display: block; margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; }
-      .soap-pages strong, .soap-pages b { font-weight: 700; }
-      .soap-pages em, .soap-pages i { font-style: italic; }
-      .soap-pages u { text-decoration: underline; }
-      .soap-pages s, .soap-pages strike, .soap-pages del { text-decoration: line-through; }
-      .soap-pages sub { vertical-align: sub; font-size: smaller; }
-      .soap-pages sup { vertical-align: super; font-size: smaller; }
-      .soap-pages br { display: block; }
-      .soap-pages img { display: inline; }
-      .soap-pages .patient-banner {
-        background: #f0f6fb;
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        padding: 6px 10px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .patient-banner .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #5a7a8f; }
-      .soap-pages .patient-banner .name { font-size: 14px; font-weight: 700; color: #13293d; }
-      .soap-pages .patient-banner .doc-title { font-size: 11px; font-weight: 600; color: #0d79bf; }
-      .soap-pages .encounter {
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        display: block;
-      }
-      .soap-pages .encounter-header {
-        background: #0d79bf;
-        color: #fff;
-        padding: 4px 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .encounter-date { font-size: 12px; font-weight: 700; color: #fff; }
-      .soap-pages .encounter-type { font-size: 11px; opacity: 0.9; color: #fff; }
-      .soap-pages .encounter-meta {
-        background: #f7fafc;
-        padding: 3px 10px;
-        border-bottom: 1px solid #e2eaf0;
-        font-size: 10px;
-        color: #5a7a8f;
-        display: flex;
-        gap: 16px;
-      }
-      .soap-pages .soap-section {
-        padding: 4px 10px;
-        border-bottom: 1px solid #eef2f6;
-        display: block;
-      }
-      .soap-pages .soap-section:last-child { border-bottom: none; }
-      .soap-pages .soap-label {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0d79bf;
-        margin-bottom: 2px;
-        display: block;
-      }
-      .soap-pages .soap-content {
-        font-size: 12px;
-        line-height: 1.45;
-        color: #1a1a1a;
-        word-break: break-word;
-        display: block;
-      }
-      .soap-pages .soap-content p { margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content div { margin: 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content span { font-size: inherit; color: inherit; }
-      .soap-pages .soap-content b, .soap-pages .soap-content strong { font-weight: 700; }
-      .soap-pages .soap-content em, .soap-pages .soap-content i { font-style: italic; }
-      .soap-pages .soap-content u { text-decoration: underline; }
-      .soap-pages .print-footer {
-        margin-top: 14px;
-        padding-top: 6px;
-        border-top: 1px solid #d0dfe9;
-        font-size: 9px;
-        color: #8899a6;
-        text-align: center;
-        display: block;
-      }
+      ${SOAP_PRINT_CSS}
 
       /* ── Attached Billing Statement pages ── */
       .billing-pages {
@@ -1228,10 +1123,6 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         size: Letter;
         margin: 0.55in;
       }
-      @media print {
-        .soap-pages * { break-inside: auto !important; break-before: auto !important; break-after: auto !important; }
-        .encounter { page-break-inside: auto !important; }
-      }
     </style>
   </head>
   <body>
@@ -1247,9 +1138,8 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
 }
 
 /**
- * Build a full standalone SOAP-notes HTML document — identical styling to the
- * encounter workspace print. Returns a complete `<!doctype html>…</html>`
- * string that can be concatenated before the narrative document.
+ * SOAP pages printed ahead of a narrative. Same visit-per-page layout as
+ * Print Encounters.
  */
 function buildSoapPrintHtmlForNarrative(config: {
   officeName: string;
@@ -1267,83 +1157,7 @@ function buildSoapPrintHtmlForNarrative(config: {
     soap: Record<string, string>;
   }>;
 }) {
-  if (!config.encounters.length) return "";
-
-  const formatSoapText = (text: string) => {
-    let cleaned = text.trim();
-    if (!cleaned) return "-";
-    // Nuclear fix: strip ALL inline style attributes from the HTML.
-    // The editor saves style="..." on <p>, <div>, <span> etc. with
-    // text-indent, padding, margins, white-space that cause visible
-    // tab/indent artefacts when embedded inside the narrative document.
-    // The print CSS handles all visual styling — inline styles only hurt.
-    cleaned = cleaned
-      .replace(/\s*style\s*=\s*"[^"]*"/gi, "")
-      .replace(/\s*style\s*=\s*'[^']*'/gi, "")
-      .replace(/\t/g, "")
-      .replace(/&(emsp|ensp|Tab|#9|#x9);/gi, "")
-      .replace(/^[ \t]+/gm, "");
-    return cleaned;
-  };
-
-  const logoMarkup = config.logoDataUrl.trim()
-    ? `<img alt="Office Logo" src="${escapeHtml(config.logoDataUrl)}" class="logo" />`
-    : "";
-
-  const encounterMarkup = config.encounters
-    .map(
-      (encounter) => `<section class="encounter">
-  <div class="encounter-header">
-    <div class="encounter-date">${escapeHtml(encounter.encounterDate)}</div>
-    <div class="encounter-type">${escapeHtml(encounter.appointmentType)}</div>
-  </div>
-  <div class="encounter-meta">
-    <span>Provider: <strong>${escapeHtml(encounter.provider)}</strong></span>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Subjective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.subjective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Objective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.objective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Assessment</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.assessment ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Plan</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.plan ?? "")}</div>
-  </div>
-</section>`,
-    )
-    .join("");
-
-  return `<div class="soap-pages" style="page-break-after: always;">
-    <header class="letterhead">
-      ${logoMarkup}
-      <div class="office-info">
-        <p class="office-name-lh">${escapeHtml(config.officeName)}</p>
-        <p class="office-detail">
-          ${escapeHtml(config.officeAddress)}<br />
-          T: ${escapeHtml(config.officePhone)}${config.officeFax.trim() ? ` &nbsp;|&nbsp; F: ${escapeHtml(config.officeFax)}` : ""}<br />
-          ${escapeHtml(config.officeEmail)}
-        </p>
-      </div>
-    </header>
-    <div class="patient-banner">
-      <div>
-        <p class="label">Patient</p>
-        <p class="name">${escapeHtml(config.patientName)}</p>
-      </div>
-      <div class="doc-title">Clinical SOAP Notes</div>
-    </div>
-    ${encounterMarkup}
-    <div class="print-footer">
-      ${escapeHtml(config.officeName)} &bull; Confidential Medical Record
-    </div>
-  </div>`;
+  return buildSoapPrintFragment(config);
 }
 
 /**
@@ -5464,7 +5278,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {isCashPatient && (
-                <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                <span className="tone-ok inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider">
                   Non-PI Patient
                 </span>
               )}
@@ -5522,11 +5336,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             {patientAlerts.map((alert, index) => (
               <span
                 key={`alert-${index}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] shadow-sm"
+                className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
               >
                 ⚠ {alert}
                 <button
-                  className="ml-1 rounded-full text-[#92400e]/60 transition hover:text-[#b43b34]"
+                  className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
                   onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
                   title="Remove alert"
                   type="button"
@@ -5571,8 +5385,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       {!isCashPatient && caseInfoMissing && !caseFieldsOpen && (
         // Added before the case details (e.g. quick add from a text): a gentle
         // nudge, never a blocker. Fields are right below (Case info).
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
-          <span className="font-semibold text-[#8a5a00]">Case info missing</span>
+        <div className="tone-warn flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm" data-testid="case-info-missing">
+          <span className="font-semibold">Case info missing</span>
           <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
           <button
             className="btn btn-primary btn-sm ml-auto"
@@ -5795,7 +5609,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </span>
               )}
               {initialExamInfo.source === "manual" && initialExamInfo.differsFromVisit && initialExamInfo.visit && (
-                <span className="text-xs text-[#9a5b00]" data-initial-exam-mismatch>
+                <span className="tone-warn-text text-xs" data-initial-exam-mismatch>
                   The Initial Exam box says {initialExamInfo.date} but the first New Patient visit was{" "}
                   {initialExamInfo.visit.date} ({initialExamInfo.visit.status}).{" "}
                   <button
@@ -6074,7 +5888,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {xray.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6082,7 +5896,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {xray.regions.map((region) => (
                           <span
                             key={`xray-region-${region}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, xray.lateralityByRegion)}
                             {xray.flexExtRegions.includes(region) && (
@@ -6145,7 +5959,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.xray ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6163,23 +5977,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {xrayReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6296,7 +6106,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {mri.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6304,7 +6114,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {mri.regions.map((region) => (
                           <span
                             key={`mri-region-${region}`}
-                            className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, mri.lateralityByRegion)}
                           </span>
@@ -6362,7 +6172,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6386,23 +6196,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {mriReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6575,7 +6381,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.specialist ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6593,16 +6399,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {specialistReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{entry.specialist}</p>
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6633,7 +6435,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                             active
                               ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+                              : "tone-neutral border text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                           }`}
                           key={opt.value}
                           onClick={() => {
@@ -6725,7 +6527,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {sectionPanelsOpen.appointments && (
           <>
             {blockedAppointments.length > 0 && (
-              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="tone-alert mt-2 rounded-xl border px-3 py-2 text-sm">
                 <span className="font-semibold">
                   ⚠ {blockedAppointments.length} scheduled appointment
                   {blockedAppointments.length === 1 ? "" : "s"} on a now-CLOSED date:
@@ -6749,7 +6551,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   >
                     {type}:{" "}
                     <span className="font-semibold tabular-nums">
-                      <span className="text-[#111]">{c.scheduled}</span>
+                      <span className="text-[var(--text-main)]">{c.scheduled}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
                       <span className="text-[var(--brand-ink)]">{c.checkedIn}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
@@ -6776,8 +6578,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <button
                     className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${
                       appointmentsLocked
-                        ? "border border-amber-300 bg-amber-50 text-amber-800"
-                        : "border border-emerald-300 bg-emerald-50 text-emerald-800"
+                        ? "tone-warn border"
+                        : "tone-ok border"
                     }`}
                     onClick={() => setAppointmentsUnlocked((v) => !v)}
                     title={appointmentsLocked ? "Unlock to edit this closed case" : "Re-lock this closed case"}
@@ -6824,7 +6626,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 especially useful inside the new 2-col patient-page
                 layout where this section is already half-width. */}
             <div className="mt-3">
-              <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+              <article className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                 <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full table-fixed border-collapse text-sm">
@@ -7101,7 +6903,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     return (
                                       <span className="mt-1 flex items-center gap-1">
                                         <span
-                                          className="max-w-[110px] truncate rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                          className="tone-ok max-w-[110px] truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                                           title={appliedPkg.snapshot.name}
                                         >
                                           {appliedPkg.snapshot.name}
@@ -7218,7 +7020,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="px-2 py-2 text-right">
                               {appointment ? (
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                                   onClick={() => void handleDeleteAppointment(appointment)}
                                   title="Delete appointment"
                                   type="button"
@@ -7245,7 +7047,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 // schedule + "+ Encounter" on the
                                 // check-in row.
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                                   onClick={async () => {
                                     const chargeCount = linkedEncounter.charges.length;
                                     const status = linkedEncounter.signed ? " (CLOSED)" : "";
@@ -7616,7 +7418,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {diagnosisMessage && <p className="mt-3 text-sm font-semibold text-[var(--brand-primary)]">{diagnosisMessage}</p>}
 
-            <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)] bg-white">
+            <div className="theme-surface mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-[var(--bg-soft)] text-left">
@@ -7741,7 +7543,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {checkedOutOpenNoteVisits.length > 0 && (
               <div
-                className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                className="tone-warn mt-3 rounded-xl border px-3 py-2 text-sm"
                 data-open-note-warning
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7762,7 +7564,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <ul className="mt-2 grid gap-1">
                     {checkedOutOpenNoteVisits.map((visit) => (
                       <li
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1"
+                        className="theme-surface flex flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-1"
                         key={visit.noteId}
                       >
                         <span className="text-xs">
@@ -8138,7 +7940,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             )}
                             {/* Delete */}
                             <button
-                              className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 transition-colors"
+                              className="rounded-lg p-1.5 text-red-500 hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                               onClick={() => handlePatientFileDelete(file)}
                               title="Delete"
                               type="button"
@@ -8291,7 +8093,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     onChange={(event) => setDischargeDate(formatUsDateInput(event.target.value))}
                     placeholder="MM/DD/YYYY"
                     // Inline: global input styles out-rank Tailwind's text colour utilities.
-                    style={dischargeInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
+                    style={dischargeInfo.source === "visit" ? { color: "var(--brand-ink)" } : undefined}
                     title={
                       dischargeInfo.source === "visit"
                         ? `From the Discharge visit (${dischargeInfo.visit?.status ?? "Checked Out"})`
@@ -8306,7 +8108,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </span>
                 )}
                 {dischargeInfo.source === "manual" && dischargeInfo.differsFromVisit && dischargeInfo.visit && (
-                  <span className="text-xs text-[#9a5b00]">
+                  <span className="tone-warn-text text-xs">
                     The Discharge box says {dischargeInfo.date} but the Discharge visit was {dischargeInfo.visit.date} (
                     {dischargeInfo.visit.status}).{" "}
                     <button
@@ -8439,7 +8241,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <div className="panel-card flex flex-wrap items-center justify-between gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
-            className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 active:scale-[0.97] active:shadow-inner"
+            className="tone-alert rounded-lg border bg-[var(--bg-panel)] px-2.5 py-1 text-xs font-semibold transition-all hover:brightness-95 active:scale-[0.97] active:shadow-inner"
             onClick={() => { setShowDeleteModal(true); setDeletePasswordInput(""); setDeleteError(""); }}
             type="button"
           >
@@ -8452,7 +8254,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               This spot only speaks up when something actually failed. */}
           {saveStatus === "error" && saveMessage && (
             <span
-              className="inline-flex items-center gap-2 rounded-full border-2 border-red-400 bg-red-50 px-3 py-1 text-sm font-semibold text-red-800 shadow-sm"
+              className="tone-alert inline-flex items-center gap-2 rounded-full border-2 px-3 py-1 text-sm font-semibold shadow-sm"
               role="alert"
             >
               ⚠
@@ -8754,7 +8556,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           {enc.appointmentType && (
                             <span className="text-xs text-[var(--text-muted)]">• {enc.appointmentType}</span>
                           )}
-                          <span className={`text-xs ${enc.signed ? "text-emerald-600" : "text-amber-600"}`}>
+                          <span className={`text-xs ${enc.signed ? "text-[var(--status-active)]" : "tone-warn-text"}`}>
                             {enc.signed ? "Signed" : "Open"}
                           </span>
                         </label>

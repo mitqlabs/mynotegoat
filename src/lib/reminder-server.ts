@@ -5,7 +5,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, splitPatientName, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { expandTokens } from "@/lib/sms-render";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsTemplates } from "@/lib/sms-template-core";
 import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
@@ -294,11 +295,11 @@ export async function loadBroadcastQueue(
   const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
   if (!ids.length) return [];
   // Chunked: an all-active broadcast can hold hundreds of ids (URL length).
-  const pts: { id: unknown; phone: unknown; text_reminders_off: unknown }[] = [];
+  const pts: { id: unknown; phone: unknown; full_name: unknown; text_reminders_off: unknown }[] = [];
   for (let i = 0; i < ids.length; i += 100) {
     const { data: part } = await admin
       .from("patients")
-      .select("id, phone, text_reminders_off")
+      .select("id, full_name, phone, text_reminders_off")
       .eq("workspace_id", device.workspace_id)
       .in("id", ids.slice(i, i + 100));
     pts.push(...(part ?? []));
@@ -306,6 +307,7 @@ export async function loadBroadcastQueue(
   const phoneById = new Map(
     pts.filter((p) => p.text_reminders_off !== true).map((p) => [p.id as string, String(p.phone ?? "")]),
   );
+  const nameById = new Map(pts.map((p) => [p.id as string, String(p.full_name ?? "")]));
   // Visit times, so a text never goes to a visit that already passed (or
   // one outside the chosen window).
   const apptIds = Array.from(new Set(rows.map((r) => r.appointment_id).filter((v): v is string => Boolean(v))));
@@ -334,7 +336,11 @@ export async function loadBroadcastQueue(
     const digits = (phoneById.get(r.patient_id) ?? "").replace(/\D/g, "");
     const phone = digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : "";
     if (!b?.message?.trim() || !phone) continue;
-    out.push({ recipientId: r.id, phone, text: withOptOutLine(b.message.trim(), optOut), createdAt: new Date(b.created_at) });
+    const who = splitPatientName(nameById.get(r.patient_id) ?? "");
+    const body = expandTokens(b.message.trim(), {
+      patient: { firstName: who.firstName, lastName: who.lastName, fullName: nameById.get(r.patient_id) ?? "" },
+    });
+    out.push({ recipientId: r.id, phone, text: withOptOutLine(body, optOut), createdAt: new Date(b.created_at) });
   }
   return out;
 }

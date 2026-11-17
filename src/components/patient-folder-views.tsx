@@ -77,17 +77,17 @@ export type FolderDetail = {
   photo?: string;
 };
 
-const FIELD = "w-full rounded-xl border border-[#d5e4ef] bg-white px-3 py-2 text-sm text-[#172a3a] outline-none focus:border-[var(--brand-primary)]";
-const LABEL = "grid gap-1 text-xs font-semibold text-[#6b8496]";
+const FIELD = "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--brand-primary)]";
+const LABEL = "grid gap-1 text-xs font-semibold text-[var(--text-muted)]";
 
 export function statusPillClass(status: string): string {
-  if (status === "Active") return "bg-emerald-100 text-emerald-800";
-  if (status === "Submitted") return "bg-amber-100 text-amber-800";
-  if (status === "Paid") return "bg-sky-100 text-sky-800";
-  if (status === "Dropped") return "bg-rose-100 text-rose-800";
-  if (status === "Ready To Submit") return "bg-orange-100 text-orange-800";
-  if (status === "Discharged") return "bg-indigo-100 text-indigo-800";
-  return "bg-slate-100 text-slate-700";
+  if (status === "Active") return "tone-ok";
+  if (status === "Submitted") return "tone-warn";
+  if (status === "Paid") return "tone-info";
+  if (status === "Dropped") return "tone-alert";
+  if (status === "Ready To Submit") return "tone-warn";
+  if (status === "Discharged") return "tone-info";
+  return "tone-neutral";
 }
 
 export function StatusPill({ status }: { status: string }) {
@@ -98,7 +98,7 @@ function CountBubble({ n, color }: { n: number; color: string }) {
   const tinted = n > 0 ? softPillStyle(color) : undefined;
   return (
     <span
-      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${tinted ? "" : "bg-slate-100 text-slate-400"}`}
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${tinted ? "" : "bg-[var(--bg-soft)] text-[var(--text-muted)]"}`}
       style={tinted}
     >
       {n}
@@ -127,12 +127,12 @@ export function PatientFolderListView({
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
-        <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+        <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="grid min-w-[12rem] flex-1 gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search patient or attorney..."
                 value={query}
@@ -289,8 +289,8 @@ export function PatientFolderPageView({
         <div className="flex items-center gap-3">
           <PatientPhotoControl caseIds={folder.cases.map((row) => row.id)} name={folder.name} onSave={onSavePhoto} photo={folder.photo} />
           <div>
-            <h2 className="text-2xl font-semibold text-[#172a3a]">{folder.name}</h2>
-            <p className="text-sm text-[#6b8496]">
+            <h2 className="text-2xl font-semibold text-[var(--text-main)]">{folder.name}</h2>
+            <p className="text-sm text-[var(--text-muted)]">
               Patient · {folder.cases.length} case{folder.cases.length === 1 ? "" : "s"} · DOB {formatDobDisplay(folder.dob)}
               {age !== null ? ` · Age ${age}` : ""}
             </p>
@@ -304,9 +304,9 @@ export function PatientFolderPageView({
       <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
       <section className="panel-card p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="font-semibold text-[#172a3a]">Patient Info</h3>
+          <h3 className="font-semibold text-[var(--text-main)]">Patient Info</h3>
           <button
-            className="rounded-full border border-[#d5e4ef] bg-white px-4 py-2 text-sm font-semibold text-[#172a3a]"
+            className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]"
             onClick={() => onSavePerson(person)}
             type="button"
           >
@@ -396,7 +396,7 @@ export function PatientFolderPageView({
               <label className="grid gap-1">
                 <span className="text-xs font-semibold text-[var(--text-muted)]">Case</span>
                 <select
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+                  className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-sm"
                   onChange={(event) => setNoteCaseId(event.target.value)}
                   value={noteCaseId}
                 >
@@ -465,12 +465,12 @@ export function PatientFolderPageView({
               }}
             >
               <input
-                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm"
                 onChange={(event) => setAlertDraft(event.target.value)}
                 placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
                 value={alertDraft}
               />
-              <button className="rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] transition hover:bg-[#fdf2c5]" type="submit">
+              <button className="tone-warn rounded-lg border px-3 py-1.5 text-sm font-bold" type="submit">
                 + Alert
               </button>
             </form>
@@ -478,7 +478,7 @@ export function PatientFolderPageView({
           <ul className="max-h-36 overflow-y-auto">
             {folder.alerts.map((alert, index) => (
               <li className="py-1" key={`${alert}-${index}`}>
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8b931] bg-[#fef9e7] px-2 py-1 text-sm font-bold text-[#92400e]">
+                <span className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-sm font-bold">
                   ⚠ {alert}
                 </span>
               </li>
@@ -514,7 +514,7 @@ export function PatientFolderCaseView({
   const show = (value: string) => value.trim() || "—";
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[#6b8496]">
+      <p className="text-sm text-[var(--text-muted)]">
         <button className="font-semibold" onClick={onBack} type="button">Patient List</button>
         <span> · </span>
         <button className="font-semibold text-[var(--brand-ink)]" onClick={onViewPatient} type="button">{patientName}</button>
@@ -522,42 +522,42 @@ export function PatientFolderCaseView({
       </p>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-[#172a3a]">{patientName}</h2>
-          <p className="text-sm text-[#6b8496]">
+          <h2 className="text-2xl font-semibold text-[var(--text-main)]">{patientName}</h2>
+          <p className="text-sm text-[var(--text-muted)]">
             Case {row.caseNumber} · {row.status} · Date of injury {row.dateOfInjury} · Initial exam {row.initialExam}
           </p>
         </div>
-        <button className="rounded-full border border-[#d5e4ef] bg-white px-4 py-2 text-sm font-semibold" onClick={onViewPatient} type="button">
+        <button className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-semibold" onClick={onViewPatient} type="button">
           View Patient
         </button>
       </div>
 
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-[#b7cfe0] bg-[#f7fbfe] px-4 py-3">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3">
         <div className="flex items-start gap-3">
           {person.photo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img alt="" className="h-12 w-12 rounded-xl object-cover" src={person.photo} />
           ) : null}
           <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6b8496]">From the patient page</p>
-          <p className="mt-1 text-sm text-[#172a3a]">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">From the patient page</p>
+          <p className="mt-1 text-sm text-[var(--text-main)]">
             <span className="font-semibold">DOB</span> {formatDobDisplay(person.dob)}
             <span> · </span>
             <span className="font-semibold">Phone</span> {formatPhoneDisplay(person.phone)}
             <span> · </span>
             <span className="font-semibold">Email</span> {person.email || "—"}
           </p>
-          <p className="text-sm text-[#172a3a]">
+          <p className="text-sm text-[var(--text-main)]">
             <span className="font-semibold">Address</span> {person.address || "—"}
           </p>
           </div>
         </div>
-        <button className="rounded-full border border-[#d5e4ef] bg-white px-4 py-2 text-sm font-semibold text-[var(--brand-ink)]" onClick={onViewPatient} type="button">
+        <button className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-semibold text-[var(--brand-ink)]" onClick={onViewPatient} type="button">
           Edit on patient page
         </button>
       </section>
 
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+      <section className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
         <div className="mb-3">
           <h3 className="font-semibold">Case Info</h3>
         </div>
@@ -572,7 +572,7 @@ export function PatientFolderCaseView({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+      <section className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
         <div className="mb-3">
           <h3 className="font-semibold">Additional Details</h3>
         </div>
@@ -593,7 +593,7 @@ export function PatientFolderCaseView({
           <div className="mb-2">
             <h3 className="font-semibold">Notes</h3>
           </div>
-          <ul className="divide-y divide-[#e6f0f6]">
+          <ul className="divide-y divide-[var(--line-soft)]">
             {row.notes.map((entry) => (
               <li className="py-2" key={entry.id}>
                 <p className="text-sm">
@@ -603,14 +603,14 @@ export function PatientFolderCaseView({
                 <p className="text-sm">{entry.text}</p>
               </li>
             ))}
-            {row.notes.length === 0 && <li className="py-2 text-sm text-[#6b8496]">No notes on this case.</li>}
+            {row.notes.length === 0 && <li className="py-2 text-sm text-[var(--text-muted)]">No notes on this case.</li>}
           </ul>
         </section>
         <section className="panel-card p-4">
           <div className="mb-2">
             <h3 className="font-semibold">Billing for this case</h3>
           </div>
-          <dl className="divide-y divide-[#e6f0f6] text-sm">
+          <dl className="divide-y divide-[var(--line-soft)] text-sm">
             <div className="flex justify-between py-2"><dt>Total billed</dt><dd className="font-semibold">{formatFolderMoney(row.billed)}</dd></div>
             <div className="flex justify-between py-2"><dt>Total paid</dt><dd className="font-semibold">{formatFolderMoney(row.paid)}</dd></div>
             <div className="flex justify-between py-2"><dt>Balance</dt><dd className="font-semibold text-[var(--brand-ink)]">{formatFolderMoney(row.owed)}</dd></div>
@@ -625,7 +625,7 @@ function ReadOnly({ label, value }: { label: string; value: string }) {
   return (
     <label className={LABEL}>
       {label}
-      <div className={`${FIELD} bg-[#f8fbfd]`}>{value || "—"}</div>
+      <div className={`${FIELD} theme-field`}>{value || "—"}</div>
     </label>
   );
 }
@@ -665,13 +665,13 @@ export function CaseListPreviewView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-[#172a3a]">Case List</h2>
+          <h2 className="text-2xl font-semibold text-[var(--text-main)]">Case List</h2>
         </div>
         <button className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-4 py-2 text-sm font-semibold text-white" type="button">
           New Case
         </button>
       </div>
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white p-4">
+      <section className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -681,7 +681,7 @@ export function CaseListPreviewView({
             ] as const
           ).map(([id, label]) => (
             <button
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${section === id ? "bg-[var(--btn-bg,var(--brand-primary))] text-white" : "bg-[var(--bg-soft)] text-[#172a3a]"}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${section === id ? "bg-[var(--btn-bg,var(--brand-primary))] text-white" : "bg-[var(--bg-soft)] text-[var(--text-main)]"}`}
               key={id}
               onClick={() => setSection(id)}
               type="button"
@@ -701,17 +701,17 @@ export function CaseListPreviewView({
           <ReadOnly label="Review" value="All" />
         </div>
       </section>
-      <section className="rounded-2xl border border-[#d5e4ef] bg-white">
+      <section className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)]">
         <div className="flex items-center justify-between px-4 py-3">
           <p className="text-sm font-semibold">{section === "todo" ? "To-Do lives on the patient" : `${shown.length} cases`}</p>
-          <span className="rounded-full border border-[#d5e4ef] px-3 py-1 text-xs font-semibold text-[#6b8496]">Print</span>
+          <span className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs font-semibold text-[var(--text-muted)]">Print</span>
         </div>
         {section === "todo" ? (
-          <p className="px-4 pb-4 text-sm text-[#6b8496]">General to-dos are on the patient page. They are not tied to a case, and they are not mixed into case notes.</p>
+          <p className="px-4 pb-4 text-sm text-[var(--text-muted)]">General to-dos are on the patient page. They are not tied to a case, and they are not mixed into case notes.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-[#f4f9fc] text-xs font-semibold uppercase tracking-wide text-[#6b8496]">
+              <thead className="bg-[var(--bg-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 <tr>
                   <th className="px-4 py-3">Patient</th>
                   <th className="px-4 py-3">Date of injury</th>
@@ -723,10 +723,10 @@ export function CaseListPreviewView({
               </thead>
               <tbody>
                 {shown.map((row) => (
-                  <tr className="border-t border-[#e6f0f6]" key={row.id}>
+                  <tr className="border-t border-[var(--line-soft)]" key={row.id}>
                     <td className="px-4 py-3">
                       <button className="font-semibold text-[var(--brand-ink)]" onClick={() => onOpen(row)} type="button">{row.name}</button>
-                      <p className="text-xs text-[#6b8496]">{formatPhoneDisplay(row.phone)}</p>
+                      <p className="text-xs text-[var(--text-muted)]">{formatPhoneDisplay(row.phone)}</p>
                     </td>
                     <td className="px-4 py-3">{row.dateOfInjury}</td>
                     <td className="px-4 py-3">{row.initialExam}</td>
@@ -737,7 +737,7 @@ export function CaseListPreviewView({
                 ))}
                 {shown.length === 0 && (
                   <tr>
-                    <td className="px-4 py-8 text-center text-[#6b8496]" colSpan={6}>No cases in this view.</td>
+                    <td className="px-4 py-8 text-center text-[var(--text-muted)]" colSpan={6}>No cases in this view.</td>
                   </tr>
                 )}
               </tbody>

@@ -207,11 +207,12 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Key Dates: Closed vs Covered, and reminders",
       steps: [
-        "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. It never changes a date.",
+        "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. A question never changes a date.",
+        "To mark a day closed, say it in plain words: \"we will be closed Thursday the 19th\". G.O.A.T. shows that day and waits. Nothing is written until you tap Confirm. To also tell active patients, add \"send all active patients a message\". G.O.A.T. shows the text, how many people get it, and who is left out. It queues the text only after you tap Send. It never sends a text on its own.",
         "Closed = office shut: a visit booked on that day is still saved and marked Canceled, and a popup tells you. Text reminders do not go out for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
         "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, every row shows its appointment count (like \"18 appointments \u00b7 10 canceled\"; \u2014 means none); click it to list that date's appointments at the bottom (a bar says \"Showing 10/29/26 only\", with Show all). A red \"N still booked\" also appears on upcoming Closed days that still have patients Scheduled or set to Reschedule. Old and cleared items are behind \"Show past & cleared\".",
       ],
-      why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. Nothing is changed.",
+      why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. A question changes nothing. Marking a day closed uses the same Key Dates save, and only after Confirm.",
     },
     {
       heading: "iMac says \"Not Opened\" when setting up text reminders",

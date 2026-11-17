@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { PRESET_IDS, type Mode, type PresetId } from "@/lib/brand";
+import { normalizeHex, PRESET_IDS, type BrandSettings, type Mode, type PresetId, type ThemeId } from "@/lib/brand";
+import { ThemePageSamples, ThemeSampleBody } from "@/components/theme-page-samples";
+import { ThemeColorRowsPreview } from "@/components/themes-section";
 
 /**
  * Sample screens for a theme, with no office data and no database writes.
@@ -18,11 +20,45 @@ const THEME_NAMES: Record<PresetId, string> = {
   cedar: "Cedar",
 };
 
+function sampleTab(value: string | null): "patient" | "encounter" | "cases" | "patients" | "contacts" {
+  if (value === "encounter" || value === "cases" || value === "patients" || value === "contacts") return value;
+  return "patient";
+}
+
+function mineBrand(params: { get: (key: string) => string | null }): BrandSettings | null {
+  if (params.get("theme") !== "mine") return null;
+  const accent = normalizeHex(params.get("accent"));
+  const background = normalizeHex(params.get("background"));
+  const surface = normalizeHex(params.get("surface"));
+  const text = normalizeHex(params.get("text"));
+  if (!accent || !background || !surface || !text) return null;
+  return { theme: "mine", mine: { accent, background, surface, text } };
+}
+
 function Lab() {
   const params = useSearchParams();
   const theme = (PRESET_IDS.includes(params.get("theme") as PresetId) ? params.get("theme") : "sunset") as PresetId;
   const tone: Mode = params.get("tone") === "dark" ? "dark" : "light";
+  const shot = params.get("shot");
   const href = (nextTone: Mode) => `/theme-lab?theme=${theme}&tone=${nextTone}`;
+
+  if (shot === "patient" || shot === "theme" || shot === "colors") {
+    return (
+      <div className="min-h-screen bg-[var(--shell-bg)] p-4 text-[var(--text-main)]">
+        {shot === "patient" ? (
+          <ThemeSampleBody id="patient" />
+        ) : shot === "colors" ? (
+          <ThemeColorRowsPreview />
+        ) : (
+          <ThemePageSamples
+            brand={mineBrand(params) ?? { theme: theme as ThemeId }}
+            initial={sampleTab(params.get("tab"))}
+            mode={tone}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--shell-bg)] text-[var(--text-main)]">

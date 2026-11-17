@@ -190,13 +190,13 @@ export function NoteOpenTag({
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 ${compact ? "" : "mt-1"}`} data-note-open-tag>
       <span
-        className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+        className="tone-warn whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
         title="This visit is Checked Out but its note isn't closed, so reports treat it as open."
       >
         Note open
       </span>
       <button
-        className="whitespace-nowrap rounded-full border border-emerald-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+        className="tone-ok whitespace-nowrap rounded-full border bg-[var(--bg-panel)] px-2 py-0.5 text-[10px] font-semibold disabled:opacity-60"
         disabled={busy}
         onClick={async (event) => {
           event.stopPropagation();

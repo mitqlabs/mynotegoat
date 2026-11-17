@@ -30,7 +30,14 @@
   --row-tint-checked-in: rgba(13, 121, 191, 0.1);
   --row-edge-checked-in: #0d79bf;
   --text-main: #172a3a;
+  --text: var(--text-main);
   --text-muted: #57758b;
+  --link: var(--brand-ink, #0d79bf);
+  --heading: var(--btn-bg, var(--brand-primary));
+  --heading-ink: var(--on-brand, #ffffff);
+  --badge-bg: color-mix(in srgb, var(--brand-primary) 18%, var(--bg-panel));
+  --badge-ink: var(--text-main);
+  --danger: var(--status-alert);
   --font-body:
     "Avenir Next",
     "Avenir",
@@ -91,7 +98,7 @@ body {
      is solid white, which is the page you see today. Tailwind's bg-[] helper
      can only set background-color, so the sky lives here. */
   background: var(--shell-bg);
-  color: var(--text-main);
+  color: var(--text);
   font-family: var(--font-body);
   line-height: 1.45;
   text-rendering: optimizeLegibility;
@@ -878,17 +885,24 @@ a {
 
 [data-brand="mine"] {
   --brand-primary: var(--my-accent-ink, var(--my-accent, #0d79bf));
-  --btn-bg: var(--my-accent, #0d79bf);
-  --brand-ink: var(--my-accent-ink, var(--my-accent, #0d79bf));
-  --on-brand: var(--my-btn-ink, #ffffff);
+  --btn-bg: var(--my-button, var(--my-accent, #0d79bf));
+  --brand-ink: var(--my-link, var(--my-accent-ink, var(--my-accent, #0d79bf)));
+  --link: var(--brand-ink);
+  --on-brand: var(--my-button-text, var(--my-btn-ink, #ffffff));
   --bg-canvas: var(--my-bg, #eef6fb);
   --bg-panel: var(--my-surface, #fdfefe);
   --text-main: var(--my-text, #172a3a);
-  --text-primary: var(--my-text, #172a3a);
-  --text-muted: color-mix(in srgb, var(--my-text, #172a3a) 68%, var(--my-bg, #eef6fb));
+  --text: var(--text-main);
+  --text-primary: var(--text);
+  --text-muted: var(--my-muted, color-mix(in srgb, var(--my-text, #172a3a) 72%, var(--my-surface, #fdfefe)));
+  --heading: var(--my-heading, var(--btn-bg));
+  --heading-ink: var(--my-heading-ink, var(--on-brand));
   --bg-soft: color-mix(in srgb, var(--my-accent, #0d79bf) 12%, var(--my-surface, #fdfefe));
   --surface-muted: var(--bg-soft);
-  --line-soft: color-mix(in srgb, var(--my-text, #172a3a) 18%, var(--my-surface, #fdfefe));
+  --line-soft: var(--my-line, color-mix(in srgb, var(--my-text, #172a3a) 18%, var(--my-surface, #fdfefe)));
+  --badge-bg: var(--my-badge, color-mix(in srgb, var(--my-accent, #0d79bf) 16%, var(--my-surface, #fdfefe)));
+  --badge-ink: var(--my-badge-ink, var(--text));
+  --danger: var(--my-danger, var(--status-alert));
   --field-border: var(--line-soft);
   --field-bg: var(--my-surface, #fdfefe);
   --placeholder: var(--text-muted);
@@ -928,26 +942,38 @@ html[data-brand="cedar"] .bg-white,
 html[data-brand="mine"] .bg-white {
   background-color: var(--bg-panel);
 }
+html[data-tone="dark"] .bg-white\/50,
 html[data-tone="dark"] .bg-white\/60,
 html[data-tone="dark"] .bg-white\/70,
-html[data-tone="dark"] .bg-white\/80 {
+html[data-tone="dark"] .bg-white\/80,
+html[data-tone="dark"] .bg-white\/90 {
   background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
 }
+html[data-brand="sunset"] .bg-white\/50,
 html[data-brand="sunset"] .bg-white\/60,
 html[data-brand="sunset"] .bg-white\/70,
 html[data-brand="sunset"] .bg-white\/80,
+html[data-brand="sunset"] .bg-white\/90,
+html[data-brand="harbor"] .bg-white\/50,
 html[data-brand="harbor"] .bg-white\/60,
 html[data-brand="harbor"] .bg-white\/70,
 html[data-brand="harbor"] .bg-white\/80,
+html[data-brand="harbor"] .bg-white\/90,
+html[data-brand="grove"] .bg-white\/50,
 html[data-brand="grove"] .bg-white\/60,
 html[data-brand="grove"] .bg-white\/70,
 html[data-brand="grove"] .bg-white\/80,
+html[data-brand="grove"] .bg-white\/90,
+html[data-brand="cedar"] .bg-white\/50,
 html[data-brand="cedar"] .bg-white\/60,
 html[data-brand="cedar"] .bg-white\/70,
 html[data-brand="cedar"] .bg-white\/80,
+html[data-brand="cedar"] .bg-white\/90,
+html[data-brand="mine"] .bg-white\/50,
 html[data-brand="mine"] .bg-white\/60,
 html[data-brand="mine"] .bg-white\/70,
-html[data-brand="mine"] .bg-white\/80 {
+html[data-brand="mine"] .bg-white\/80,
+html[data-brand="mine"] .bg-white\/90 {
   background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
 }
 
@@ -970,8 +996,18 @@ html[data-tone="dark"] .time12-field:focus-within {
 
 /* Title bars that were locked to NoteGoat sky. The logo image is not this class. */
 .section-bar {
-  background: var(--btn-bg, var(--brand-primary));
-  color: var(--on-brand);
+  background: var(--heading, var(--btn-bg, var(--brand-primary)));
+  color: var(--heading-ink, var(--on-brand));
+}
+.theme-badge {
+  background: var(--badge-bg);
+  color: var(--badge-ink);
+}
+.text-link {
+  color: var(--link);
+}
+.text-danger {
+  color: var(--danger);
 }
 .bg-blue-50,
 .bg-sky-100,
@@ -1021,4 +1057,143 @@ button.bg-white {
 [data-brand] {
   --row-tint-checked-in: color-mix(in srgb, var(--brand-primary) 16%, transparent);
   --row-edge-checked-in: var(--brand-primary);
+  --text: var(--text-main);
+  --link: var(--brand-ink);
+  --heading: var(--btn-bg, var(--brand-primary));
+  --heading-ink: var(--on-brand);
+  --badge-bg: color-mix(in srgb, var(--brand-primary) 18%, var(--bg-panel));
+  --badge-ink: var(--text);
+  --danger: var(--status-alert);
+}
+
+/* Body and secondary ink that used to be locked to a light-theme gray. */
+.text-\[\#1f2937\],
+.text-\[\#334155\],
+.text-\[\#111827\],
+.text-\[\#0f172a\],
+.text-\[\#172a3a\],
+.text-slate-800,
+.text-slate-900,
+.text-gray-800,
+.text-gray-900,
+.text-zinc-800,
+.text-zinc-900,
+.text-neutral-800,
+.text-neutral-900,
+.text-black {
+  color: var(--text) !important;
+}
+.text-\[\#64748b\],
+.text-\[\#475569\],
+.text-\[\#6b7280\],
+.text-\[\#9aa5b1\],
+.text-\[\#7b8794\],
+.text-\[\#6b8496\],
+.text-\[\#94a3b8\],
+.text-\[\#cbd5e1\],
+.text-slate-400,
+.text-slate-500,
+.text-slate-600,
+.text-gray-400,
+.text-gray-500,
+.text-gray-600,
+.text-zinc-400,
+.text-zinc-500 {
+  color: var(--text-muted) !important;
+}
+.text-\[\#b43b34\],
+.text-\[\#8f251f\],
+.text-\[\#7a2412\],
+.text-\[\#9b1c1c\],
+.text-red-700,
+.text-red-800,
+.text-red-900 {
+  color: var(--danger) !important;
+}
+
+/* Required / warning / note boxes that used a fixed cream or amber fill.
+   The fill follows the surface, with a warning edge and theme text.
+   Solid amber bars (bg-amber-400 and darker) are left alone. */
+.callout,
+.bg-amber-50,
+.bg-amber-50\/40,
+.bg-amber-50\/50,
+.bg-amber-50\/60,
+.bg-amber-100,
+.bg-amber-200,
+.bg-yellow-50,
+.bg-yellow-100,
+.bg-\[\#fef9e7\],
+.bg-\[\#fff8ea\],
+.bg-\[\#fffbe6\],
+.bg-\[\#fff4d6\],
+.bg-\[\#fff8e8\],
+.bg-\[\#fef3c7\],
+.bg-\[\#fff7e6\],
+.bg-\[\#fdf2c5\] {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 20%, var(--bg-panel)) !important;
+  color: var(--text) !important;
+  border-color: color-mix(in srgb, var(--status-warning, #f0a43f) 55%, var(--line-soft)) !important;
+}
+.callout :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950, .text-yellow-800, .text-yellow-900),
+.bg-amber-50 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950, .text-yellow-800, .text-yellow-900),
+.bg-amber-100 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950),
+.bg-amber-200 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950),
+.bg-yellow-50 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-yellow-800, .text-yellow-900),
+.bg-\[\#fef9e7\] :is(.text-\[\#92400e\], .text-amber-900),
+.bg-\[\#fff8ea\] :is(.text-\[\#8a5a00\], .text-amber-900),
+.bg-\[\#fff4d6\] :is(.text-\[\#7a4b00\], .text-amber-900) {
+  color: var(--text) !important;
+}
+
+/* Read-only fields and saved-entry surfaces. background (not background-color)
+   so a gradient field fill still paints. */
+.theme-field {
+  background: var(--field-bg);
+  color: var(--text-main);
+}
+.theme-surface {
+  background-color: var(--bg-panel);
+  color: var(--text-main);
+}
+
+/* Semantic accents mixed into the theme surface, with theme text so they
+   stay readable in Light, Dark, Sunset, Harbor, and My Theme. */
+.tone-warn {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 22%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-warning, #f0a43f) 55%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-warn-badge {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 34%, var(--bg-panel));
+  color: var(--text-main);
+}
+.tone-warn-text {
+  color: color-mix(in srgb, var(--status-warning, #f0a43f) 62%, var(--text-main));
+}
+.tone-ok {
+  background-color: color-mix(in srgb, var(--status-active, #1f9d60) 18%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-active, #1f9d60) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-alert {
+  background-color: color-mix(in srgb, var(--status-alert, #c9423a) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-alert, #c9423a) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-info {
+  background-color: color-mix(in srgb, var(--brand-primary) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-neutral {
+  background-color: var(--bg-soft);
+  border-color: var(--line-soft);
+  color: var(--text-muted);
+}
+
+/* Status pills compute a dark ink for a pale tint on white. On a dark
+   theme that ink disappears, so the theme text wins. The tint stays. */
+[data-tone="dark"] .status-pill {
+  color: var(--text-main) !important;
 }
