@@ -25,8 +25,9 @@ test("legacy saved multi-pick still renders unchanged", () => {
   assert.match(out, /L4-L5.*L5-S1/);
 });
 test("UIs replace instead of toggling for single-pick prompts", () => {
-  const enc = readFileSync("src/components/encounter-workspace.tsx", "utf8");
+  const enc = readFileSync("src/components/macro-prompt-question.tsx", "utf8");
   assert.match(enc, /singlePick \? \(\s*<input[\s\S]*?\[question\.id\]: \[option\]/);
+  assert.match(readFileSync("src/components/encounter-workspace.tsx", "utf8"), /MacroPromptQuestion/);
   const plan = readFileSync("src/components/treatment-plan-section.tsx", "utf8");
   assert.match(plan, /treatments: cur\.includes\(t\) && cur\.length === 1 \? \[\] : \[t\]/);
   assert.match(plan, /\{decompDef\.treatmentsLabel\} \(pick one\)/);
