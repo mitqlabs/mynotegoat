@@ -417,12 +417,6 @@ export default function ContactsPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold">Contact Directory</h3>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Manage attorneys and referral contacts used across patient workflow.
-            </p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Manage category names in Settings → Contact Categories.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-end gap-2">

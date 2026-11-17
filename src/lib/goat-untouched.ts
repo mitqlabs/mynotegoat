@@ -37,11 +37,12 @@ type PatientLike = {
   id: string;
   fullName: string;
   caseStatus: string;
+  attorney?: string;
   dateOfLoss?: string;
   isCashPatient?: boolean;
   deleted?: boolean;
   onPatientList?: boolean;
-  matrix?: { lien?: string; rbSent?: string };
+  matrix?: { lien?: string; rbSent?: string; initialExam?: string };
 };
 
 function isoStamp(iso: string): number {
@@ -78,7 +79,7 @@ export function listUntouchedItems(input: {
   for (const patient of input.patients) {
     if (patient.deleted) continue;
     const href = `/patients/${patient.id}`;
-    if (isInNewPatientIntake(patient) && !hasFutureVisit(patient.id, input.appointments, input.todayIso)) {
+    if (isInNewPatientIntake(patient, input.appointments) && !hasFutureVisit(patient.id, input.appointments, input.todayIso)) {
       push({
         id: `unbooked:${patient.id}`,
         kind: "unbooked",

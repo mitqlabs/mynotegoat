@@ -63,6 +63,11 @@ export type BoardBox = {
   typePriority?: string[];
   /** Case Snapshot window. Missing means This Year. */
   period?: SnapshotPeriod;
+  /**
+   * Case Snapshot status filter. Missing or "all" shows every status group.
+   * A case-status name shows only that group. Saved on the board with period.
+   */
+  snapshotStatus?: string;
   /** Appointment row fields. Missing means time, name, type, and status. */
   fields?: RowField[];
   /** Tallest this box is allowed to grow, in grid rows. */
@@ -503,6 +508,17 @@ function yearOf(value: string | undefined): number | null {
 /** Initial exam year, otherwise the date-of-loss year. Undated cases have no year. */
 export function caseYear(patient: { matrix?: { initialExam?: string }; dateOfLoss?: string }): number | null {
   return yearOf(patient.matrix?.initialExam) ?? yearOf(patient.dateOfLoss);
+}
+
+/**
+ * The one case status a Case Snapshot should show, or null for every group.
+ * A blank, "all", or a name that is not on the office list means every group.
+ */
+export function snapshotStatusesToShow(saved: string | undefined, statusNames: string[]): string | null {
+  const name = (saved ?? "").trim();
+  if (!name || /^all(\s+statuses)?$/i.test(name)) return null;
+  const match = statusNames.find((status) => status.trim().toLowerCase() === name.toLowerCase());
+  return match ?? null;
 }
 
 export function matchesPeriod(

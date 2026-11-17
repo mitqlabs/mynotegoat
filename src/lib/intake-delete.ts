@@ -1,6 +1,6 @@
 /**
  * Permanent delete from New Patient Intake. Refuses unless the chart is
- * intake-only and has no case info, notes, or appointments.
+ * still on the New Patient list and has no notes or appointments.
  */
 import { entriesForPatient, loadCaseNoteEntries } from "@/lib/case-note-entries";
 import { getCaseNote } from "@/lib/case-notes";
@@ -28,9 +28,10 @@ export function intakePatientHasNotes(patientId: string, matrixNotes?: string): 
 /** Tooltip text when Delete must stay off, or null when it is allowed. */
 export function intakeDeleteBlock(patientId: string): string | null {
   const patient = getPatientById(patientId);
-  const appointmentCount = loadScheduleAppointments().filter((visit) => visit.patientId === patientId).length;
+  const appointments = loadScheduleAppointments();
+  const appointmentCount = appointments.filter((visit) => visit.patientId === patientId).length;
   return intakeDeleteReason({
-    inIntake: Boolean(patient && isInNewPatientIntake(patient)),
+    inIntake: Boolean(patient && isInNewPatientIntake(patient, appointments)),
     hasNotes: intakePatientHasNotes(patientId, patient?.matrix?.notes),
     appointmentCount,
   });

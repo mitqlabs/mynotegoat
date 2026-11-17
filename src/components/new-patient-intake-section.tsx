@@ -47,10 +47,10 @@ export function NewPatientIntakeSection({
     <section className="panel-card p-4" data-new-patient-intake>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-base font-semibold">New Patient Intake</h3>
-        <span className="text-sm text-[var(--text-muted)]">{patients.length} without case info</span>
+        <span className="text-sm text-[var(--text-muted)]">{patients.length} still new</span>
       </div>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
-        No date of injury yet. + Case adds it and moves them onto the Patient List. Delete permanently removes a chart that has no notes and no appointments.
+        They stay here until two things are done: an attorney is set (Self counts), and an Initial Exam date or a booked New Patient visit exists. An attorney with no exam means they were never seen, so they stay here. Delete permanently removes a chart that has no notes and no appointments.
       </p>
       <ul className="mt-3 divide-y divide-[var(--line-soft)]">
         {patients.map((patient) => (

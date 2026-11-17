@@ -1315,12 +1315,12 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
   }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides, listVersion]);
 
   const intakePatients = useMemo(
-    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient)),
-    [filteredPatients],
+    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
   );
   const listedPatients = useMemo(
-    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
-    [filteredPatients],
+    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
   );
   const caseAttorneyOptions: CaseAttorneyOption[] = attorneyContacts.map((contact) => ({
     id: contact.id,
@@ -2675,7 +2675,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                   <th className="w-[220px] border-r border-[var(--line-soft)] px-4 py-3 text-left">
                     Patient
                   </th>
-                  {filteredPatients.map((patient) => (
+                  {listedPatients.map((patient) => (
                     <th key={`name-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3 text-left">
                       {patient.fullName}
                     </th>
@@ -2686,14 +2686,14 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                     <td className="border-r border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3 font-semibold">
                       {row.label}
                     </td>
-                    {filteredPatients.map((patient) => (
+                    {listedPatients.map((patient) => (
                       <td key={`${row.label}-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3">
                         {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex), initialExamOf(patient, initialExamIndex))}
                       </td>
                     ))}
                   </tr>
                 ))}
-                {filteredPatients.length === 0 && (
+                {listedPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={2}>
                       No patients match the selected filters.
