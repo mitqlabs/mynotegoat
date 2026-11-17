@@ -7,6 +7,7 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { mdyToIso, reviewCasePopup, scheduleCaseLabel, takeNewPatientPrefill, type CasePopupConflict, type CasePopupDraft } from "@/lib/new-patient-intake";
 import { NewPatientCasePopup, type CaseAttorneyOption } from "@/components/new-patient-case-popup";
+import { isSelfRepresentedAttorney, SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import { isoToUsDate } from "@/components/us-date-input";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { findDuplicateCases } from "@/lib/patient-duplicate";
@@ -918,7 +919,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     const attorneyPhone = newPatientDraft.isCashPatient
       ? ""
       : formatUsPhoneInput(newPatientDraft.attorneyPhone);
-    if (!newPatientDraft.isCashPatient && normalizeAttorneyKey(attorneyName) !== "self" && attorneyPhone) {
+    if (!newPatientDraft.isCashPatient && !isSelfRepresentedAttorney(attorneyName) && attorneyPhone) {
       const attorneyExists = contacts.some(
         (contact) =>
           normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -1325,11 +1326,15 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
     [filteredPatients, initialExamIndex],
   );
-  const caseAttorneyOptions: CaseAttorneyOption[] = attorneyContacts.map((contact) => ({
-    id: contact.id,
-    name: contact.name,
-    phone: contact.phone,
-  }));
+  const caseAttorneyOptions = useMemo<CaseAttorneyOption[]>(
+    () =>
+      attorneyContacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+      })),
+    [attorneyContacts],
+  );
 
   const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }) => {
     setCaseMessage("");
@@ -1353,8 +1358,12 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
   const casePopupInitial = (): CasePopupDraft => {
     if (casePopup?.source === "intake") {
       const patient = patients.find((row) => row.id === casePopup.patientId);
-      const attorney = patient && normalizeAttorneyKey(patient.attorney) !== "self" ? patient.attorney : "";
-      const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney));
+      // "Self" / "pro se" stay on the draft so the dropdown selects SELF
+      // instead of looking blank or like a name someone typed.
+      const attorney = patient?.attorney ?? "";
+      const matched = !isSelfRepresentedAttorney(attorney)
+        ? attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney))
+        : undefined;
       const doi = patient?.dateOfLoss ?? "";
       return {
         attorney,
@@ -1366,7 +1375,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     }
     return {
       attorney: newPatientDraft.attorney,
-      attorneyPhone: newPatientDraft.attorneyPhone,
+      attorneyPhone: isSelfRepresentedAttorney(newPatientDraft.attorney) ? "" : newPatientDraft.attorneyPhone,
       dateOfLoss: newPatientDraft.dateOfLoss,
       evalDate: newPatientDraft.evalDate,
       evalTime: newPatientDraft.evalTime,
@@ -1376,7 +1385,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
   const rememberAttorney = (name: string, phone: string) => {
     const attorneyName = cleanAttorneyLabel(name);
     const attorneyPhone = formatUsPhoneInput(phone);
-    if (!attorneyName || normalizeAttorneyKey(attorneyName) === "self" || !attorneyPhone) return true;
+    if (!attorneyName || isSelfRepresentedAttorney(attorneyName) || !attorneyPhone) return true;
     const attorneyExists = contacts.some(
       (contact) =>
         normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -1440,7 +1449,9 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
       setCaseMessage("Could not save that attorney.");
       return;
     }
-    const attorneyName = cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
+    const attorneyName = isSelfRepresentedAttorney(draft.attorney)
+      ? SELF_ATTORNEY_VALUE
+      : cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
     updatePatientRecordById(intakeId, {
       attorney: attorneyName || "Self",
       dateOfLoss: reviewed.dateOfLossIso,
@@ -1802,7 +1813,9 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     if (!patient) return "-";
     if (id === "attorneyPhone") {
       const key = normalizeAttorneyKey(patient.attorney);
-      const contact = key && key !== "self" ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key) : undefined;
+      const contact = key && !isSelfRepresentedAttorney(patient.attorney)
+        ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key)
+        : undefined;
       return contact?.phone || "-";
     }
     if (id === "discharge") {

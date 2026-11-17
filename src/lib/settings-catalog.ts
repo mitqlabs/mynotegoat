@@ -50,7 +50,11 @@ export type SettingsSectionKey =
   // G.O.A.T. words & abbreviations — the editor lives on /settings/goat.
   | "goat"
   // G.O.A.T. Page briefing board: which boxes, and how each one is arranged.
-  | "goatPage";
+  | "goatPage"
+  // Office theme. Light or Dark is each person's own, on the same screen.
+  | "themes"
+  // This person's sidebar page order. Settings stays last.
+  | "sidebar";
 
 export const settingsSearchCatalog: Array<{
   key: SettingsSectionKey;
@@ -141,6 +145,30 @@ export const settingsSearchCatalog: Array<{
       "section",
     ],
     parent: "officeSettings",
+  },
+  {
+    key: "sidebar",
+    title: "Sidebar",
+    aliases: ["sidebar", "menu", "order", "rearrange", "navigation", "nav", "drag"],
+  },
+  {
+    key: "themes",
+    title: "Themes",
+    description: "Office theme and your own Light or Dark",
+    aliases: [
+      "theme",
+      "themes",
+      "color",
+      "colors",
+      "colour",
+      "dark",
+      "light",
+      "dark mode",
+      "appearance",
+      "sunset",
+      "brand",
+      "notegoat blue",
+    ],
   },
   {
     key: "goat",

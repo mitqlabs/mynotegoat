@@ -12,6 +12,8 @@ import { MacroSettingsPanel } from "@/components/macro-settings-panel";
 import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-section";
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
+import { ThemesSection } from "@/components/themes-section";
+import { SidebarOrderSection } from "@/components/sidebar-order-section";
 import { AdminAccessSection } from "@/components/admin-access-section";
 import { DeletePasswordField } from "@/components/delete-password-field";
 import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
@@ -96,6 +98,8 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   diagnostics: false,
   goat: false,
   goatPage: false,
+  themes: false,
+  sidebar: false,
 };
 
 /** Settings tabs. Each tab shows a subset of sections; wrappers listed
@@ -3363,6 +3367,27 @@ export default function SettingsPage() {
       )}
 
       {/* Contact Categories moved into the Templates wrapper below. */}
+
+      <CollapsibleSection
+        description="The office theme, and Light or Dark for you."
+        hidden={!showSection("themes")}
+        id="themes"
+        isOpen={sectionIsOpen("themes")}
+        onToggle={() => toggleSection("themes")}
+        title="Themes"
+      >
+        <ThemesSection canEditOffice={canEditSettings} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hidden={!showSection("sidebar")}
+        id="sidebar"
+        isOpen={sectionIsOpen("sidebar")}
+        onToggle={() => toggleSection("sidebar")}
+        title="Sidebar"
+      >
+        <SidebarOrderSection />
+      </CollapsibleSection>
 
       {/* ── Office Settings group ───────────────────────────────────
           Office Information, Schedule, Reminders, Case Status

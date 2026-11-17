@@ -218,7 +218,7 @@ export function OfficeLocationsDoctorsSection() {
       <div className="order-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
         <div className="flex items-start justify-between gap-2">
           <h5 className="text-sm font-semibold text-[var(--text-main)]">Office Locations</h5>
-          {/* Saving… / Saved ✓ show in the ONE global badge; only failures show here. */}
+          {/* Saving… / Saved show on the circular G.O.A.T. button; only failures show here. */}
           {saveState === "error" && (
             <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                 <button

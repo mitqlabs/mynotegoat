@@ -16,6 +16,8 @@ export type CloudBacking = "workspace" | "table" | "user" | "system";
 export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // workspace_kv rows
   "casemate.office-settings.v1": "workspace",
+  // Office theme (NoteGoat Blue, Sunset, …). Light/Dark is per person, below.
+  "casemate.brand.v1": "workspace",
   "casemate.key-dates.v1": "workspace",
   "casemate.schedule-settings.v1": "workspace",
   "casemate.sms-templates.v1": "workspace",
@@ -103,6 +105,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.referral-drill-sort.v1": "user",
   "casemate.dashboard.location-mode.v1": "user",
   "casemate.sidebar-collapsed": "user",
+  // Light or Dark for this person. The old per-device keys are read-only fallbacks.
+  "casemate.theme-tone.v1": "user",
+  // This person's sidebar page order. Settings is not stored; it stays last.
+  "casemate.sidebar-order.v1": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
   "casemate.goat-install-tip.v1": "user",
   // G.O.A.T. memory: last patient/action, and hidden heads-ups (follow you to every device).
@@ -162,6 +168,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.new-appointment-prefill.v1": "system",
   "casemate.cache.v1.": "system",
   "casemate.feature-flag.": "system",
+  "casemate.theme": "system", // legacy Light/Dark, read only, never written
+  "notegoat.theme": "system", // legacy Light/Dark, read only, never written
   "casemate.user-prefs-mirror.v1": "system",
   "notegoat.unsynced-notes.v1": "system",
   // the cloud rows themselves (realtime may echo them into localStorage)

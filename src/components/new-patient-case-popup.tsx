@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AttorneyFirmSelect } from "@/components/attorney-firm-select";
 import { ScrollLock } from "@/components/scroll-lock";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { UsDateInput } from "@/components/us-date-input";
+import { SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import type { CasePopupConflict, CasePopupDraft } from "@/lib/new-patient-intake";
 import { formatDobDisplay } from "@/lib/patient-folders";
 import { nameSearchMatches } from "@/lib/patient-name-match";
@@ -16,16 +18,13 @@ export type CasePatientChoice = { id: string; name: string; dob: string };
 
 const emptyDraft: CasePopupDraft = { attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" };
 
-function attorneyKey(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 /**
  * New Patient "+ Case". Attorney, date of injury, and the first exam are
- * all optional. Picking an attorney fills the phone. A date of injury fills
+ * all optional. Picking a firm fills the phone. SELF is self-represented:
+ * the attorney is SELF and the phone stays blank. A date of injury fills
  * the case number. Save is the parent's job (book the visit and store the
  * exam date). The chart leaves New Patient Intake only when an attorney is
- * set (Self counts) and that exam is booked or an Initial Exam date is saved.
+ * set (SELF counts) and that exam is booked or an Initial Exam date is saved.
  */
 export function NewPatientCasePopup({
   initial,
@@ -63,26 +62,12 @@ export function NewPatientCasePopup({
   const [bookAnyway, setBookAnyway] = useState(false);
   const [finder, setFinder] = useState("");
   const [needPatient, setNeedPatient] = useState("");
-  const [typingNew, setTypingNew] = useState(
-    () => Boolean(initial?.attorney) && !attorneys.some((contact) => attorneyKey(contact.name) === attorneyKey(initial?.attorney ?? "")),
-  );
-  const known = attorneys.find((contact) => attorneyKey(contact.name) === attorneyKey(draft.attorney));
   const matches = useMemo(() => {
     const q = finder.trim();
     if (!q) return [];
     return people.filter((person) => nameSearchMatches(person.name, q)).slice(0, 8);
   }, [finder, people]);
   const attached = people.find((person) => person.id === attachedId);
-
-  const pickAttorney = (name: string) => {
-    const match = attorneys.find((contact) => attorneyKey(contact.name) === attorneyKey(name));
-    setTypingNew(false);
-    setDraft((current) => ({
-      ...current,
-      attorney: name,
-      attorneyPhone: match ? formatUsPhoneInput(match.phone) : "",
-    }));
-  };
 
   const changeWhen = (patch: Partial<CasePopupDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -170,40 +155,30 @@ export function NewPatientCasePopup({
           )}
           <label className="grid min-w-0 gap-1 sm:col-span-2">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-            <select
-              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              data-testid="case-attorney"
-              onChange={(event) => {
-                if (event.target.value === "__custom__") {
-                  setTypingNew(true);
-                  setDraft((current) => ({ ...current, attorney: "", attorneyPhone: "" }));
+            <AttorneyFirmSelect
+              attorney={draft.attorney}
+              attorneys={attorneys}
+              nameTestId="case-attorney-name"
+              onCustomName={(name) => setDraft((current) => ({ ...current, attorney: name }))}
+              onSelect={(choice) => {
+                if (choice.type === "firm") {
+                  const match = choice;
+                  setDraft((current) => ({
+                    ...current,
+                    attorney: match.name,
+                    attorneyPhone: formatUsPhoneInput(match.phone),
+                  }));
                   return;
                 }
-                pickAttorney(event.target.value);
+                setDraft((current) => ({
+                  ...current,
+                  attorney: choice.type === "self" ? SELF_ATTORNEY_VALUE : "",
+                  attorneyPhone: "",
+                }));
               }}
-              value={known ? known.name : typingNew ? "__custom__" : ""}
-            >
-              <option value="">Select attorney…</option>
-              {attorneys.map((contact) => (
-                <option key={contact.id} value={contact.name}>
-                  {contact.name}
-                </option>
-              ))}
-              <option value="__custom__">Type a new attorney…</option>
-            </select>
+              selectTestId="case-attorney"
+            />
           </label>
-          {typingNew && (
-            <label className="grid min-w-0 gap-1 sm:col-span-2">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney name</span>
-              <input
-                className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                data-testid="case-attorney-name"
-                onChange={(event) => setDraft((current) => ({ ...current, attorney: event.target.value }))}
-                placeholder="Law firm"
-                value={draft.attorney}
-              />
-            </label>
-          )}
           <label className="grid min-w-0 gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
             <input

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 // Patient Phone: Text and Add to Contacts are icon buttons with names for hover + screen readers.
-const src = readFileSync("src/components/patient-case-file.tsx", "utf8");
+// The phone row now lives in the shared patient fields used by the case page and the patient folder.
+const src = readFileSync("src/components/patient-case-file.tsx", "utf8") + readFileSync("src/components/patient-person-fields.tsx", "utf8");
 assert.ok(src.includes('ariaLabel="Text this patient"'), "Text icon has a label");
 assert.ok(src.includes('aria-label="Add to Contacts"'), "Add to Contacts icon has a label");
 assert.ok(!src.includes('label="Text"'), "no text-only Text button");
