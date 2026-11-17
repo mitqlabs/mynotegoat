@@ -224,10 +224,8 @@ function Answerer({ job, onDone, context, files }: AnswererProps & { context: Go
     started.current = job.id;
     void (async () => {
       try {
-        // Give the Patient Files reader a moment to pull already-extracted text (cache) before answering.
-        const t0 = Date.now();
-        await new Promise((r) => setTimeout(r, 400));
-        while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
+        // Answer from text already read. A file still downloading or waiting on OCR is named in the
+        // answer; it does not hold Send.
         const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
         // "when was his XR and what were the findings?": answer each part, then one reply with every part.
         const parts = splitPatientQuestion(job.question);
@@ -2904,7 +2902,7 @@ export function GlobalGoatPopup({
             >
               <div className="relative min-w-0 flex-1">
                 <input
-                  aria-label="Ask G.O.A.T."
+                  aria-label="Message G.O.A.T."
                   aria-autocomplete="list"
                   aria-expanded={mentionMatches.length > 0}
                   // 16px in the phone app: iOS zooms the page on focus for anything smaller.

@@ -36,6 +36,19 @@ import {
 
 export type GoatFileStatus = "read" | "unread" | "reading" | "needsOcr" | "failed" | "unsupported";
 
+/** Files that are not in the answer yet: never read, still reading, or waiting on OCR. */
+export function pendingFilesNote(files: Array<{ status: string }> | null | undefined): string | null {
+  const pending = (files ?? []).filter((f) => f.status === "unread" || f.status === "needsOcr" || f.status === "reading");
+  if (!pending.length) return null;
+  const scanned = pending.filter((f) => f.status === "needsOcr").length;
+  const reading = pending.filter((f) => f.status === "reading").length;
+  const scannedBit = scanned
+    ? ` (${scanned === pending.length ? (pending.length === 1 ? "it's a scan" : "scans") : `${scanned} scanned`})`
+    : "";
+  const readingBit = reading ? (reading === 1 ? " One is still being read." : ` ${reading} are still being read.`) : "";
+  return `${pending.length} file${pending.length === 1 ? " isn't" : "s aren't"} read yet${scannedBit}, so ${pending.length === 1 ? "it isn't" : "they aren't"} in this answer.${readingBit} Use Read files to include ${pending.length === 1 ? "it" : "them"}.`;
+}
+
 export interface GoatFile {
   id: string;
   name: string;
@@ -981,7 +994,8 @@ export function answerFromFiles(files: GoatFile[], q: FilesQuery): GoatFilesResu
   }
   // Questions that aren't about files ("next visit?") only get a files card when a file matches.
   const aboutFiles = hasWho || topics.length > 0 || imagingMode || /\b(files?|pdfs?|documents?|reports?|records?)\b/i.test(q.question);
-  if (!withLines.length && (!aboutFiles || !notes.length)) return null;
+  // Unread / still-scanning files are a note, not a reason to return nothing.
+  if (!withLines.length && !notes.length) return null;
   const MAX_FILES = 5;
   return {
     notes,
