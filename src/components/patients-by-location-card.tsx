@@ -84,7 +84,7 @@ export function PatientsByLocationCard({ patients, statuses }: { patients: Locat
   const segBtn = (m: LocationMode, label: string) => (
     <button
       aria-pressed={mode === m}
-      className={`rounded-lg px-[18px] py-1.5 text-sm font-semibold ${mode === m ? "bg-[#0d79bf] text-white" : "text-[#57758b]"}`}
+      className={`rounded-lg px-[18px] py-1.5 text-sm font-semibold ${mode === m ? "bg-[var(--btn-bg,var(--brand-primary))] text-white" : "text-[#57758b]"}`}
       onClick={() => setMode(m)}
       type="button"
     >
@@ -96,7 +96,7 @@ export function PatientsByLocationCard({ patients, statuses }: { patients: Locat
     <section className="panel-card p-6" id="patients-by-location">
       <div className="flex flex-wrap items-center gap-3.5">
         <h4 className="flex-1 text-xl font-bold">Patients by Location</h4>
-        <div className="flex rounded-[10px] bg-[#e4f0f7] p-[3px]">
+        <div className="flex rounded-[10px] bg-[var(--bg-soft)] p-[3px]">
           {segBtn("city", "City")}
           {segBtn("zip", "ZIP")}
         </div>

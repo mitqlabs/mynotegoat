@@ -259,7 +259,7 @@ function FilesStatus({ files }: { files: GoatFilesController }) {
       {reader.running && (
         <>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
-            <div className="h-full rounded-full bg-[#72bdcf] transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+            <div className="h-full rounded-full section-bar transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
           </div>
           <div className="mt-1 truncate">
             {progress} {reader.total > 1 && `(${Math.min(reader.done + 1, reader.total)} of ${reader.total})`}
@@ -400,7 +400,7 @@ export function GoatPanel({
   return (
     <article className="panel-card p-3" data-goat-section="goat">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
@@ -408,7 +408,7 @@ export function GoatPanel({
           <GoatAvatar className="bg-white/80" size={32} />
           <span className="flex flex-col items-start leading-tight">
             <span>G.O.A.T.</span>
-            <GoatStatusLine className="font-medium text-white/95" status={status} />
+            <GoatStatusLine className="font-medium opacity-90" status={status} />
           </span>
         </span>
         <span className="text-xl">{open ? "−" : "+"}</span>

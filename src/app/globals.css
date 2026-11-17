@@ -147,7 +147,7 @@ select:focus,
 textarea:focus {
   border-color: var(--field-focus-border, #7cb0d3);
   box-shadow: var(--field-shadow-focus);
-  background: #ffffff;
+  background: var(--field-bg);
   outline: none;
 }
 
@@ -177,12 +177,12 @@ textarea.resize-x {
 
 select {
   color: var(--text-main);
-  background-color: #fff;
+  background-color: var(--field-bg);
 }
 
 select option {
   color: var(--text-main);
-  background-color: #fff;
+  background-color: var(--bg-panel);
 }
 
 select option:checked {
@@ -198,7 +198,16 @@ a {
   border: 1px solid var(--line-soft);
   background: var(--bg-panel);
   border-radius: 18px;
-  box-shadow: 0 14px 28px rgba(14, 51, 78, 0.05);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-primary) 22%, transparent),
+    0 14px 28px color-mix(in srgb, var(--brand-primary) 8%, transparent);
+}
+
+/* Imaging / case boxes that used a fixed light-blue wash. */
+.tint-panel {
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 42%, var(--line-soft));
+  background: color-mix(in srgb, var(--brand-primary) 14%, var(--bg-panel));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary) 28%, transparent);
 }
 
 .rich-text-editor:empty::before {
@@ -413,7 +422,7 @@ a {
 .time12-field:focus-within {
   border-color: var(--field-focus-border, #7cb0d3);
   box-shadow: var(--field-shadow-focus);
-  background: #ffffff;
+  background: var(--field-bg);
 }
 .time12-field.time12-field input.time12-text.time12-text,
 .time12-field.time12-field select.time12-ampm.time12-ampm,
@@ -957,4 +966,59 @@ html[data-tone="dark"] textarea:focus,
 html[data-tone="dark"] .time12-field:focus-within {
   background: var(--bg-panel);
   border-color: var(--field-focus-border);
+}
+
+/* Title bars that were locked to NoteGoat sky. The logo image is not this class. */
+.section-bar {
+  background: var(--btn-bg, var(--brand-primary));
+  color: var(--on-brand);
+}
+.bg-blue-50,
+.bg-sky-100,
+.bg-\[\#ecf4fa\],
+.bg-\[\#e9f4fb\],
+.bg-\[\#eef8fb\],
+.bg-\[\#e7f2f8\],
+.bg-\[\#e4f0f7\],
+.bg-\[\#f2f8fc\],
+.bg-\[\#d8e7f2\],
+.bg-\[\#cfe0ec\],
+.bg-\[\#dae6f0\] {
+  background-color: color-mix(in srgb, var(--brand-primary) 14%, var(--bg-panel)) !important;
+}
+.border-blue-300,
+.border-\[\#bfd2e0\],
+.border-\[\#b7ccdc\],
+.border-\[\#9ab8cc\],
+.border-\[\#9cc9e3\],
+.border-\[\#72bdcf\],
+.border-\[\#0d79bf\] {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line-soft)) !important;
+}
+.text-blue-600,
+.text-blue-700,
+.text-sky-800,
+.text-sky-900,
+.text-\[\#0d79bf\],
+.text-\[\#35566f\],
+.text-\[\#2f7f93\],
+.text-\[\#0f5d92\] {
+  color: var(--brand-ink) !important;
+}
+.btn-secondary {
+  background: var(--btn-secondary-bg, var(--bg-panel)) !important;
+  color: var(--text-main) !important;
+  border-color: var(--line-soft) !important;
+}
+.btn-secondary:not(:disabled):hover {
+  background: var(--bg-soft) !important;
+}
+a.bg-white,
+button.bg-white {
+  background-color: var(--btn-secondary-bg, var(--bg-panel)) !important;
+  color: var(--text-main) !important;
+}
+[data-brand] {
+  --row-tint-checked-in: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  --row-edge-checked-in: var(--brand-primary);
 }

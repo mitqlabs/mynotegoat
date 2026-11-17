@@ -3794,7 +3794,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 key={apt.id}
                                 className={`border-t border-[var(--line-soft)] ${
                                   isLinkedToSelected
-                                    ? "bg-[rgba(13,121,191,0.08)]"
+                                    ? "bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                                     : ""
                                 }`}
                               >
@@ -3917,7 +3917,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                     <button
                                       className={`rounded-lg border px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] ${
                                         resolvedEncounterId === linked.id
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white"
                                       }`}
                                       onClick={() => setSelectedEncounterId(linked.id)}
@@ -4270,7 +4270,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                      className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                       onClick={handleGoToNextEncounter}
                       title={`Open the next non-cancelled appointment for ${selectedEncounter.patientName} (starts it if needed)`}
                       type="button"
@@ -4335,7 +4335,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     Copy {sectionLabels[activeSection]}
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                    className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                     disabled={selectedEncounter.signed || !saltSourceEncounter}
                     onClick={handleCopyAllSoapFromSelected}
                     title={
@@ -4377,7 +4377,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
                     {activeSection === "objective" && (
                       <button
-                        className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                        className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                         onClick={() => {
                           setImportText("");
                           setImportPlan(null);
@@ -4605,7 +4605,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 <div
                                   className={`border-b px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ${
                                     isActive
-                                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
+                                      ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] text-[var(--brand-primary)]"
                                       : "border-[var(--line-soft)] text-[var(--text-muted)]"
                                   }`}
                                 >
@@ -4779,7 +4779,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           {filteredActiveTreatments.map((entry) => (
                             <button
                               key={entry.id}
-                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.08)]"
+                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                               disabled={selectedEncounter.signed}
                               onClick={() => { addChargeFromTreatment(entry.id); setChargeSearch(""); }}
                               type="button"
@@ -5059,10 +5059,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   Hidden when editing a single non-specialist prompt. */}
               {runMacroAnswers.__specialist_referred__ !== undefined &&
                 (!editingMacroPromptId || editingMacroPromptId === "__specialist_referred__") && (
-                <div className="rounded-xl border-2 border-[#0d79bf] bg-[#e9f4fb] p-3">
+                <div className="rounded-xl border-2 border-[var(--brand-primary)] bg-[var(--bg-soft)] p-3">
                   <p className="text-sm font-semibold">
                     Referring Specialist
-                    <span className="ml-2 rounded-full bg-[#0d79bf] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    <span className="ml-2 rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       From Contacts
                     </span>
                   </p>

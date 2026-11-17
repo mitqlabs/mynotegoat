@@ -456,7 +456,7 @@ export function TeamSettingsSection() {
           ) : (
             <div className="gap-3 sm:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
               {/* The office owner is always the first card. No Remove, and only the owner can change it. */}
-              <div className="rounded-xl border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] p-2.5" data-team-owner>
+              <div className="rounded-xl border border-[color-mix(in_srgb,var(--brand-primary)_35%,transparent)] bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] p-2.5" data-team-owner>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold">
@@ -678,7 +678,7 @@ export function TeamSettingsSection() {
                       </label>
                     )}
 
-                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(13,121,191,0.35)] bg-[rgba(13,121,191,0.06)] px-2 py-1.5">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_35%,transparent)] bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] px-2 py-1.5">
                       <span className="text-xs font-semibold">
                         Role{" "}
                         <span className="font-normal text-[var(--text-muted)]">

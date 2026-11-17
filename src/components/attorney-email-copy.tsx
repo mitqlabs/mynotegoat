@@ -24,7 +24,7 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
     <div className="flex min-w-0 items-center gap-1.5" data-testid="attorney-email">
       <select
         aria-label="Attorney email"
-        className="min-w-0 flex-1 truncate rounded-xl border border-[var(--line-soft)] bg-white px-2 py-2"
+        className="min-w-0 flex-1 truncate rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-2 py-2 text-[var(--text-main)]"
         onChange={(event) => {
           setPicked(event.target.value);
           setCopied(false);

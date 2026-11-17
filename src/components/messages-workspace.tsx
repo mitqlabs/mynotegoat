@@ -814,7 +814,7 @@ export function MessagesWorkspace() {
                                   <div className="mt-1.5 flex flex-wrap gap-1">
                                     {m.mentions.map((mn) => (
                                       <span
-                                        className="rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-xs font-semibold text-[#0d79bf]"
+                                        className="rounded-full bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-ink)]"
                                         key={mn.userId}
                                       >
                                         @{mn.label}

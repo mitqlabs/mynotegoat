@@ -16,7 +16,7 @@ export function ReturningPatientBanner({
   const one = matches.length === 1 ? matches[0] : null;
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-3 py-2 text-sm"
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-2 text-sm"
       data-returning-patient
     >
       {one ? (

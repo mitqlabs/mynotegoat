@@ -81,7 +81,7 @@ export function CaseNotesLog({
         <div className="flex items-center justify-between gap-2 px-1 pt-1">
           <span className="text-[11px] text-[var(--text-muted)]">Enter to add · Shift+Enter for a new line</span>
           <button
-            className="rounded-full bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+            className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-3 py-1 text-xs font-semibold text-[var(--on-brand)] disabled:opacity-40"
             disabled={!draft.trim()}
             onClick={submit}
             type="button"

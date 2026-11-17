@@ -5470,7 +5470,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               )}
               {isFeatureEnabled("encounters") && (
                 <Link
-                  className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                  className="btn btn-secondary btn-sm"
                   href={`/encounters?patientId=${patient.id}`}
                 >
                   Open Encounters For This Patient
@@ -5552,7 +5552,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             value={alertDraft}
           />
           <button
-            className="rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] transition hover:bg-[#fdf2c5]"
+            className="btn btn-secondary btn-sm"
             onClick={() => {
               if (alertDraft.trim()) {
                 setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
@@ -5627,7 +5627,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-main)]"
                 placeholder="MMDDYYLASTFIRST"
                 readOnly
                 value={caseNumber}
@@ -5661,7 +5661,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-main)]"
                 readOnly
                 placeholder="(000) 000-0000"
                 value={attorneyPhone}
@@ -5695,7 +5695,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </button>
               </div>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-main)]"
                 id="patient-doi-input"
                 inputMode="numeric"
                 maxLength={10}
@@ -5771,18 +5771,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     (lib/initial-exam-date). A date entered here wins. */}
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
                 <input
-                  className={`rounded-xl border px-3 py-2 ${
+                  className={`rounded-xl border px-3 py-2 text-[var(--text-main)] ${
                     initialExamInfo.source === "visit"
-                      ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
-                      : "border-[var(--line-soft)] bg-white"
+                      ? "border-[color-mix(in_srgb,var(--brand-primary)_45%,var(--line-soft))] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--field-bg))] font-semibold text-[var(--brand-ink)]"
+                      : "border-[var(--line-soft)] bg-[var(--field-bg)]"
                   }`}
                   data-initial-exam-source={initialExamInfo.source}
                   inputMode="numeric"
                   maxLength={10}
                   onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
                   placeholder="MM/DD/YYYY"
-                  // Inline: global input styles out-rank Tailwind's text colour utilities.
-                  style={initialExamInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
                   title={
                     initialExamInfo.source === "visit"
                       ? `From the first New Patient visit (${initialExamInfo.visit?.status ?? "Checked Out"})`
@@ -5983,7 +5981,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <div className="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
         <section className="panel-card p-4" style={hiddenStyle("notes")} data-goat-section="notes">
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("notes")}
             type="button"
           >
@@ -6023,9 +6021,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           stack on smaller widths. Each panel keeps its own toggle
           state via imagingPanelsOpen.* */}
       <section className="grid items-start gap-5 xl:grid-cols-3">
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="xray">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="xray">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("xray")}
               type="button"
             >
@@ -6066,7 +6064,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Regions</span>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[#ecf4fa]"
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--bg-soft)]"
                       onClick={(event) => {
                         setRegionModalAnchor(getPopupAnchorFromEvent(event));
                         setActiveRegionModal("xray");
@@ -6076,7 +6074,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[#b7ccdc] bg-white/90 px-2 py-1.5">
+                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
                     {xray.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6084,11 +6082,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {xray.regions.map((region) => (
                           <span
                             key={`xray-region-${region}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#9ab8cc] bg-[#ecf4fa] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
                           >
                             {formatRegionLabel(region, xray.lateralityByRegion)}
                             {xray.flexExtRegions.includes(region) && (
-                              <span className="rounded-full bg-[#0d79bf] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                              <span className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                                 F/E
                               </span>
                             )}
@@ -6233,9 +6231,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="mri">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="mri">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("mri")}
               type="button"
             >
@@ -6288,7 +6286,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Regions</span>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[#ecf4fa]"
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--bg-soft)]"
                       onClick={(event) => {
                         setRegionModalAnchor(getPopupAnchorFromEvent(event));
                         setActiveRegionModal("mri");
@@ -6298,7 +6296,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[#b7ccdc] bg-white/90 px-2 py-1.5">
+                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
                     {mri.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6306,7 +6304,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {mri.regions.map((region) => (
                           <span
                             key={`mri-region-${region}`}
-                            className="inline-flex items-center rounded-full border border-[#9ab8cc] bg-[#ecf4fa] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
                           >
                             {formatRegionLabel(region, mri.lateralityByRegion)}
                           </span>
@@ -6457,9 +6455,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="specialist">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="specialist">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("specialist")}
               type="button"
             >
@@ -6703,7 +6701,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <section className="grid gap-4 xl:grid-cols-6 items-start">
         <section className="panel-card p-4 order-4 xl:col-span-2" style={hiddenStyle("appointments")} data-goat-section="appointments">
         <button
-          className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+          className="flex w-full items-center justify-between gap-3 rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
           type="button"
         >
@@ -6753,7 +6751,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     <span className="font-semibold tabular-nums">
                       <span className="text-[#111]">{c.scheduled}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
-                      <span className="text-[#0d79bf]">{c.checkedIn}</span>
+                      <span className="text-[var(--brand-ink)]">{c.checkedIn}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
                       <span className="text-[#047857]">{c.checkedOut}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
@@ -7172,7 +7170,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                       if (!targets.length) return null;
                                       return (
                                         <select
-                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                                           onChange={(event) => {
                                             const target = targets.find(
                                               (r) => r.appointment!.id === event.target.value,
@@ -7297,7 +7295,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
         <article className="panel-card p-4 order-1 xl:col-span-2" style={hiddenStyle("reExam")}>
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("reExam")}
             type="button"
           >
@@ -7353,7 +7351,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </article>
         <article className="panel-card p-4 order-2 xl:col-span-2" style={hiddenStyle("relatedCases")}>
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("relatedCases")}
             type="button"
           >
@@ -7449,7 +7447,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </article>
         <section className="panel-card p-4 order-3 xl:col-span-2" style={hiddenStyle("letters")}>
         <button
-          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "section-bar" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("letters")}
           type="button"
         >
@@ -7520,7 +7518,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           // even one is added, the bar reverts to the regular teal so
           // the warning quiets down.
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${
-            patientDiagnoses.length === 0 ? "bg-[#c93b1d]" : "bg-[#72bdcf]"
+            patientDiagnoses.length === 0 ? "bg-[#c93b1d]" : "section-bar"
           }`}
           onClick={() => toggleSectionPanel("diagnosis")}
           type="button"
@@ -7724,7 +7722,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
       <section className="panel-card p-4 order-8 xl:col-span-2" style={hiddenStyle("narrative")}>
         <button
-          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "section-bar" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("narrative")}
           type="button"
         >
@@ -7930,7 +7928,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <section className="panel-card p-4 order-6 xl:col-span-2" style={hiddenStyle("patientFiles")}>
         <button
-          className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
+          className="flex w-full items-center justify-between rounded-2xl section-bar px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
           onClick={() => toggleSectionPanel("patientFiles")}
           type="button"
         >
@@ -8167,7 +8165,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           if (isCashPatient) {
             return (
               <button
-                className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
+                className="flex w-full items-center justify-between rounded-2xl section-bar px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
                 onClick={() => toggleSectionPanel("additionalDetails")}
                 type="button"
               >
@@ -8203,14 +8201,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           // header colour or badge either.
           const showsMoney = !hiddenStyle("billingFigures");
           const headerColor = !showsMoney
-            ? "bg-[#6db5c8]"
+            ? "section-bar"
             : isPaidFilled(paidDate, paidAmount)
             ? PAID_GREEN.header // money green — Paid Date and $ Paid Amount both in
             : billingMissing
             ? "bg-[#c93b1d]" // red — billing not yet complete
             : paidMissing
               ? "bg-[#d4a017]" // amber/yellow — billed but unpaid
-              : "bg-[#6db5c8]"; // teal — fully closed out
+              : "section-bar"; // teal — fully closed out
           const statusBadge = !showsMoney
             ? null
             : isPaidFilled(paidDate, paidAmount)
@@ -8284,7 +8282,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <input
                     className={`rounded-xl border px-3 py-2 ${
                       dischargeInfo.source === "visit"
-                        ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
+                        ? "border-[color-mix(in_srgb,var(--brand-primary)_45%,var(--line-soft))] bg-[var(--field-bg)] font-semibold"
                         : "border-[var(--line-soft)] bg-white"
                     }`}
                     data-discharge-source={dischargeInfo.source}
@@ -8588,7 +8586,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               <button
                                 className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
                                   checked
-                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                                     : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                                 }`}
                                 key={`${prompt.id}-${option}`}
@@ -8913,7 +8911,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       aria-pressed={checked}
                       className={`flex min-h-12 w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
                         checked
-                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                           : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                       }`}
                       onClick={() => {
@@ -8962,7 +8960,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           !checked
                             ? "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-70"
                             : flexExt
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                         }`}
                         disabled={!checked}

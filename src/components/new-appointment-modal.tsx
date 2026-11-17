@@ -1451,7 +1451,7 @@ export function NewAppointmentModal({
                   filteredPatientSuggestions.map((patient) => (
                     <button
                       key={`new-appointment-patient-${patient.id}`}
-                      className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
+                      className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => handleSelectPatient(patient)}
                       type="button"
@@ -1470,7 +1470,7 @@ export function NewAppointmentModal({
           </label>
 
           {showQuickNewPatient && !lockedPatientId && (
-            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 sm:col-span-2 lg:order-1 lg:col-span-3">
+            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_5%,transparent)] p-3 sm:col-span-2 lg:order-1 lg:col-span-3">
               <div className="flex items-center justify-between gap-2">
                 <h5 className="text-sm font-semibold">Quick New Patient</h5>
                 <span className="text-xs text-[var(--text-muted)]">
@@ -1702,7 +1702,7 @@ export function NewAppointmentModal({
           <button
             className={`rounded-xl border px-4 py-3 text-left font-semibold ${
               !draft.isRecurring
-                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                 : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
             }`}
             onClick={() => setDraft((current) => ({ ...current, isRecurring: false }))}
@@ -1713,7 +1713,7 @@ export function NewAppointmentModal({
           <button
             className={`rounded-xl border px-4 py-3 text-left font-semibold ${
               draft.isRecurring
-                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                 : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
             }`}
             onClick={() =>

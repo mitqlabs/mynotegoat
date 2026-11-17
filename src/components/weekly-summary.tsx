@@ -187,7 +187,7 @@ export function WeeklySummary() {
         <h4 className="mb-2 text-sm font-semibold text-[var(--text-muted)]">Visits</h4>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label="Checked out" tone="text-[#047857]" value={stats.completed} />
-          <Tile label="Checked in (note open)" tone="text-[#0d79bf]" value={stats.checkedIn} />
+          <Tile label="Checked in (note open)" tone="text-[var(--brand-ink)]" value={stats.checkedIn} />
           <Tile label="Canceled" tone="text-[#b43b34]" value={stats.canceled} />
           <Tile label="No show" tone="text-[#7b3a91]" value={stats.noShow} />
           <Tile label="Still scheduled" value={stats.scheduled} />
