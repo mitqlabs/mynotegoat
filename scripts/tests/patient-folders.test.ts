@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { patientToRow } from "../../src/lib/patients-cloud";
+import { isChoosableIdFile, isIdDocumentName } from "../../src/lib/id-file-name";
 import { frozenPersonColumns, rememberOriginalPerson, resetFrozenPeople, splitPersonPatch } from "../../src/lib/patient-folder-guard";
 import { patientFoldersEnabled } from "../../src/lib/patient-folder-flag";
 import { PATIENT_FOLDERS_KEY } from "../../src/lib/patient-folder-store";
@@ -240,5 +241,14 @@ assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "ut
 assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Take photo/);
 assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /capture="environment"/);
 assert.match(readFileSync("supabase/patient_photos_bucket.sql", "utf8"), /DO NOT run this on the production project/);
+assert.equal(isIdDocumentName("ID.pdf"), true);
+assert.equal(isIdDocumentName("drivers license front.jpg"), true);
+assert.equal(isIdDocumentName("Patient Identification Card.png"), true);
+assert.equal(isIdDocumentName("DL_scan.pdf"), true);
+assert.equal(isIdDocumentName("Video.mp4"), false);
+assert.equal(isIdDocumentName("Handle notes.txt"), false);
+assert.equal(isChoosableIdFile({ name: "ID.pdf", mimeType: "application/pdf" }), true);
+assert.equal(isChoosableIdFile({ name: "Video of ID card.mp4", mimeType: "video/mp4" }), false);
+assert.equal(isChoosableIdFile({ name: "notes.txt", mimeType: "text/plain" }), false);
 
 console.log("patient folders OK");

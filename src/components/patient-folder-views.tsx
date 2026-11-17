@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ageOn } from "@/lib/age";
 import { PatientPhotoControl } from "@/components/patient-photo-cropper";
 import { formatDobDisplay, formatFolderMoney, formatPhoneDisplay, splitFullName } from "@/lib/patient-folders";
@@ -52,6 +53,8 @@ export type FolderCaseRow = {
   notes: FolderNote[];
   /** Older free-form case note, shown read-only. Not a separate stored type. */
   earlierNotes?: string;
+  /** ISO date used to pick the latest case. Date of injury, else when the case was created. */
+  openedOn?: string;
 };
 
 export type FolderDetail = {
@@ -120,21 +123,21 @@ export function PatientFolderListView({
   return (
     <div className="space-y-5">
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <button className="btn btn-primary" onClick={onNewPatient} type="button">
-            New Patient
-          </button>
-        </div>
-        <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search patient or attorney..."
-              value={query}
-            />
-          </label>
+        <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid min-w-[12rem] flex-1 gap-1">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
+              <input
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search patient or attorney..."
+                value={query}
+              />
+            </label>
+            <button className="btn btn-primary" onClick={onNewPatient} type="button">
+              New Patient
+            </button>
+          </div>
         </div>
       </section>
       <section className="panel-card overflow-hidden">
@@ -337,7 +340,11 @@ export function PatientFolderPageView({
                   <td className="px-4 py-3">{row.attorney}</td>
                   <td className="px-4 py-3">{row.initialExam}</td>
                   <td className="px-4 py-3"><StatusPill status={row.status} /></td>
-                  <td className="px-4 py-3 text-right">{formatFolderMoney(row.billed)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Link className="font-semibold text-[var(--brand-primary)] underline" href={`/billing?patient=${encodeURIComponent(row.id)}`}>
+                      {formatFolderMoney(row.billed)}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 text-right">{formatFolderMoney(row.paid)}</td>
                   <td className="px-4 py-3 text-right">{caseMoney[index].reduced === null ? "" : formatFolderMoney(caseMoney[index].reduced)}</td>
                   <td className="px-4 py-3 text-right">{caseMoney[index].outstanding === null ? "" : formatFolderMoney(caseMoney[index].outstanding)}</td>
@@ -477,6 +484,7 @@ export function PatientFolderPageView({
           cases={folder.cases.map((row) => ({
             id: row.id,
             label: row.caseNumber,
+            sortAt: row.openedOn ?? "",
           }))}
         />
       </div>

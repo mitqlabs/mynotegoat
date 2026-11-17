@@ -24,7 +24,7 @@ const NAV = [
   "G.O.A.T. Page",
   "Patient List",
   "Case List",
-  "Dashboard",
+  "Statistics",
   "Contacts",
   "Schedule",
   "Encounters",

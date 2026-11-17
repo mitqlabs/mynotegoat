@@ -1024,7 +1024,7 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {visibleSections === 0 && (
         <section className="panel-card p-4 text-sm text-[var(--text-muted)]">
-          Your role doesn&apos;t include any Dashboard sections. An admin can change that in Settings → Roles & Permissions.
+          Your role doesn&apos;t include any Statistics sections. An admin can change that in Settings → Roles & Permissions.
         </section>
       )}
       {canSee("weeklySummary") && (

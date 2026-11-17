@@ -9,6 +9,7 @@ import {
   type FileRecord,
 } from "@/lib/file-manager";
 import { getSignedUrl } from "@/lib/file-storage";
+import { isChoosableIdFile } from "@/lib/id-file-name";
 import { splitFullName } from "@/lib/patient-folders";
 import {
   cropImageToJpeg,
@@ -163,9 +164,32 @@ function photoInitials(name: string): string {
   return `${first}${last}`;
 }
 
-function isImageFile(file: FileRecord): boolean {
-  if (file.mimeType.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(file.name);
+function isPdfFile(file: FileRecord): boolean {
+  return file.mimeType === "application/pdf" || /\.pdf$/i.test(file.name);
+}
+
+async function pdfFirstPageUrl(bytes: ArrayBuffer): Promise<string> {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = "/goat/pdf.worker.min.mjs";
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas unavailable");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+    page.cleanup();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) throw new Error("Could not render that PDF.");
+    return URL.createObjectURL(blob);
+  } finally {
+    doc.cleanup();
+  }
 }
 
 function filesForCases(caseIds: string[]): FileRecord[] {
@@ -179,7 +203,7 @@ function filesForCases(caseIds: string[]): FileRecord[] {
     if (seen.has(folderId)) return;
     seen.add(folderId);
     for (const file of getFilesInFolder(state, folderId)) {
-      if (isImageFile(file)) out.push(file);
+      if (isChoosableIdFile(file)) out.push(file);
     }
     for (const child of getFoldersInParent(state, folderId)) walk(child.id);
   };
@@ -203,6 +227,7 @@ export function PatientPhotoControl({
   const [menu, setMenu] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [library, setLibrary] = useState<FileRecord[]>([]);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [source, setSource] = useState<{ url: string } | null>(null);
   const [pickError, setPickError] = useState("");
 
@@ -212,6 +237,37 @@ export function PatientPhotoControl({
     reload();
     return onLocalChange("casemate.files.v1", reload);
   }, [choosing, caseIds]);
+
+  useEffect(() => {
+    if (!choosing || library.length === 0) return;
+    let cancelled = false;
+    const created: string[] = [];
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const file of library) {
+        const { url, error } = await getSignedUrl(file.storagePath);
+        if (cancelled || error || !url) continue;
+        try {
+          const response = await fetch(url);
+          if (!response.ok) continue;
+          if (isPdfFile(file)) {
+            const pageUrl = await pdfFirstPageUrl(await response.arrayBuffer());
+            created.push(pageUrl);
+            next[file.id] = pageUrl;
+          } else {
+            next[file.id] = url;
+          }
+        } catch {
+          /* skip a file that cannot be previewed */
+        }
+        if (!cancelled) setThumbs({ ...next });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      for (const url of created) URL.revokeObjectURL(url);
+    };
+  }, [choosing, library]);
 
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const next = event.target.files?.[0];
@@ -238,12 +294,12 @@ export function PatientPhotoControl({
         setPickError("Could not open that file.");
         return;
       }
-      const blob = await response.blob();
+      const imageUrl = isPdfFile(file) ? await pdfFirstPageUrl(await response.arrayBuffer()) : URL.createObjectURL(await response.blob());
       setMenu(false);
       setChoosing(false);
       setSource((current) => {
         if (current) URL.revokeObjectURL(current.url);
-        return { url: URL.createObjectURL(blob) };
+        return { url: imageUrl };
       });
     } catch {
       setPickError("Could not open that file.");
@@ -295,16 +351,24 @@ export function PatientPhotoControl({
           {choosing && (
             <div className="max-h-48 overflow-auto border-t border-[#d5e4ef] px-1 py-1">
               {library.length === 0 ? (
-                <p className="px-2 py-2 text-xs text-[#6b8496]">No photos in this patient&apos;s files.</p>
+                <p className="px-2 py-2 text-xs text-[#6b8496]">No ID, license, or identification files in this patient&apos;s files.</p>
               ) : (
                 library.map((file) => (
                   <button
-                    className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#e7f2f8]"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#e7f2f8]"
                     key={file.id}
                     onClick={() => void chooseExisting(file)}
                     type="button"
                   >
-                    {file.name}
+                    {thumbs[file.id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img alt="" className="h-10 w-10 shrink-0 rounded object-cover" src={thumbs[file.id]} />
+                    ) : (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#e7f2f8] text-[10px] font-semibold text-[#6b8496]">
+                        {isPdfFile(file) ? "PDF" : "…"}
+                      </span>
+                    )}
+                    <span className="min-w-0 truncate">{file.name}</span>
                   </button>
                 ))
               )}

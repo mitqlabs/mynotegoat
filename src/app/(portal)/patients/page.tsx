@@ -741,6 +741,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
+  const [newPatientFromAddCase, setNewPatientFromAddCase] = useState(false);
   const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }>(null);
   const [addCasePatientId, setAddCasePatientId] = useState("");
   const [caseMessage, setCaseMessage] = useState("");
@@ -801,7 +802,8 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     });
   };
 
-  const openNewPatientModal = () => {
+  const openNewPatientModal = (fromAddCase = false) => {
+    setNewPatientFromAddCase(fromAddCase === true);
     setNewPatientMessage("");
     setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
@@ -843,6 +845,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
 
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
+    setNewPatientFromAddCase(false);
     setNewPatientMessage("");
     setNewPatientBookAnyway("");
   };
@@ -2199,22 +2202,18 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
         </div>
       )}
       <section className="panel-card p-4">
-        <div className={`flex flex-wrap items-center gap-3 ${mode === "cases" ? "justify-end" : "justify-between"}`}>
-          {mode !== "cases" && (
+        {mode !== "cases" && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold">All Patients Workspace</h3>
           </div>
-          )}
-          <button
-            className="btn btn-primary"
-            onClick={mode === "cases" ? () => openCasePopup({ source: "add" }) : openNewPatientModal}
-            type="button"
-          >
-            {mode === "cases" ? "Add Case" : "New Patient"}
+          <button className="btn btn-primary" onClick={() => openNewPatientModal()} type="button">
+            New Patient
           </button>
         </div>
+        )}
 
-        <div className="mt-4 space-y-2">
+        <div className={`${mode === "cases" ? "" : "mt-4"} space-y-2`}>
           {/* Top row: patient type */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -2245,6 +2244,11 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
               <span className="text-base leading-none">&#127874;</span>
               Birthdays
             </button>
+            {mode === "cases" && (
+              <button className="btn btn-primary ml-auto" onClick={() => openCasePopup({ source: "add" })} type="button">
+                Add Case
+              </button>
+            )}
           </div>
           {/* PI sub-tabs (only in the Personal Injury section) */}
           {section === "pi" && (
@@ -3211,6 +3215,24 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
           <form className="panel-card mx-auto w-full max-w-3xl overflow-hidden p-0" data-testid="new-patient-modal" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
             <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
               <div>
+                {newPatientFromAddCase && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <button
+                      className="rounded-full bg-[var(--bg-soft)] px-4 py-1.5 text-sm font-semibold"
+                      onClick={() => {
+                        setShowNewPatientModal(false);
+                        setNewPatientFromAddCase(false);
+                        setCasePopup({ source: "add" });
+                      }}
+                      type="button"
+                    >
+                      Existing
+                    </button>
+                    <button className="rounded-full bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white" type="button">
+                      New
+                    </button>
+                  </div>
+                )}
                 <h3 className="text-xl font-semibold">New Patient</h3>
                 <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. + Case adds the attorney, date of injury, and first exam.</p>
               </div>
@@ -3514,7 +3536,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
           people={addCasePeople}
           attachedId={addCasePatientId}
           onAttach={setAddCasePatientId}
-          onNewPatient={openNewPatientModal}
+          onNewPatient={() => openNewPatientModal(true)}
         />
       )}
 

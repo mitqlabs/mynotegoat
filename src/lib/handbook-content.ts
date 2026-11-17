@@ -548,7 +548,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
   },
   {
     id: "dashboard",
-    title: "Dashboard",
+    title: "Statistics",
     summary: "The weekly picture, review follow-up, and who did what.",
     audience: "manager",
     feature: "statistics",
@@ -556,7 +556,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Weekly Summary",
         steps: [
-          "Dashboard → Weekly Summary.",
+          "Statistics → Weekly Summary.",
           "‹ and › step through weeks; Back to this week resets.",
           "Visits: checked out, checked in (note still open), canceled, no show, still scheduled.",
         ],
@@ -566,7 +566,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Activity Log — who did what",
         steps: [
-          "Dashboard → Activity Log.",
+          "Statistics → Activity Log.",
           "Category pills narrow it (Billing only, Notes only…). Period defaults to the last 7 days.",
           "Person and the search box narrow it further; the search matches a patient name or the action text.",
           "Person lists your whole team — including someone with no activity yet — plus anyone who appears in the log. Pick one to see what they did AND what was done to them (for example \u201cchanged main location\u201d on their own login).",
@@ -578,7 +578,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "See which patients went to a referral place",
         steps: [
-          "Dashboard → Statistics → Referral Totals.",
+          "Statistics → Statistics → Referral Totals.",
           "Click the facility or specialist name — the row looks like plain text, but it opens.",
           "You get every patient sent there: name (click to open them), date sent, XR and MR counts, case status.",
           "Tick a patient off as you work the list — the row turns green.",
@@ -589,7 +589,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Patients by Location — where your patients live",
         steps: [
-          "Dashboard (Statistics) → Patients by Location.",
+          "Statistics → Patients by Location.",
           "City lists every city (grouped by city and state, spelling and capitals cleaned up); ZIP lists every ZIP code as \u201cZIP · City\u201d. Most patients first, with a bar, the count and the percent.",
           "The status menu narrows it to Active, Discharged or any other case status. The Total line shows how many patients are counted.",
           "Click any row to list those patients; click a name to open them.",
@@ -643,7 +643,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Pages: per role, No access / View only / Full.",
           "Actions inside a page: for example Contacts → add contacts, edit contacts (Managers can edit contacts by default; Staff can add but not edit).",
           "Deleting: per role and per kind — Not allowed / With password / Allowed.",
-          "Dashboard sections a Manager sees.",
+          "Statistics sections a Manager sees.",
           "Each person follows their role. If someone has been given something different on their own card in Team Members, they show a \u201cCustom access\u201d tag and a Reset to role defaults button.",
         ],
         why: "Only the owner can change the grid, unless the owner switches on \u201cLet Admins change roles\u201d. Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
@@ -701,7 +701,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
           "Team Members (Office tab) — logins, roles, doctor flag, Main location, per-person patient-page sections.",
-          "Roles & Permissions (Office tab, right after Team Members) — what Staff, Managers and Admins can open, add, edit and delete, which Dashboard sections Managers see, the delete password.",
+          "Roles & Permissions (Office tab, right after Team Members) — what Staff, Managers and Admins can open, add, edit and delete, which Statistics sections Managers see, the delete password.",
           "Marketing — the Our Reps list (who does marketing visits), the visit types, and which case statuses count as active.",
           "Admin — Diagnostics, Backup & Restore, Data Recovery, Security Baseline, Subscription.",
         ],

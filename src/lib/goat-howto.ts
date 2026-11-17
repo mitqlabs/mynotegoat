@@ -60,7 +60,7 @@ export const APP_HOWTO: HowToEntry[] = [
 /** Sidebar pages (names from plan-access.ts). */
 const PAGES: Array<{ label: string; href: string; words: string[] }> = [
   { label: "Patient List", href: "/patients", words: ["patient list", "patients page"] },
-  { label: "Dashboard", href: "/dashboard", words: ["dashboard"] },
+  { label: "Statistics", href: "/dashboard", words: ["dashboard", "statistics"] },
   { label: "Contacts", href: "/contacts", words: ["contacts"] },
   { label: "Schedule", href: "/appointments", words: ["schedule", "calendar"] },
   { label: "Encounters", href: "/encounters", words: ["encounters"] },

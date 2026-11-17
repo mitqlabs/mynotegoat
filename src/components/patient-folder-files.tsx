@@ -26,7 +26,14 @@ const DocumentScannerModal = dynamic(
 type CaseGroup = {
   id: string;
   label: string;
+  /** ISO day. The newest one is the default and receives uploads while All is selected. */
+  sortAt?: string;
 };
+
+function latestCaseId(cases: CaseGroup[]): string {
+  const ranked = [...cases].sort((a, b) => (b.sortAt || "").localeCompare(a.sortAt || "") || b.id.localeCompare(a.id));
+  return ranked[0]?.id ?? "";
+}
 
 const FILES_KEY = "casemate.files.v1";
 const FILE_ACCEPT = "image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt";
@@ -68,7 +75,7 @@ function childFolders(state: FileManagerState, parentId: string): { id: string; 
  */
 export function PatientFolderFiles({ cases }: { cases: CaseGroup[] }) {
   const [state, setState] = useState<FileManagerState>({ folders: [], files: [] });
-  const [caseId, setCaseId] = useState(cases[0]?.id ?? "");
+  const [filter, setFilter] = useState(() => latestCaseId(cases));
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -81,8 +88,10 @@ export function PatientFolderFiles({ cases }: { cases: CaseGroup[] }) {
   }, []);
 
   useEffect(() => {
-    if (!cases.some((item) => item.id === caseId)) setCaseId(cases[0]?.id ?? "");
-  }, [cases, caseId]);
+    if (filter !== "all" && !cases.some((item) => item.id === filter)) setFilter(latestCaseId(cases));
+  }, [cases, filter]);
+  const uploadCaseId = filter === "all" ? latestCaseId(cases) : filter;
+  const latestLabel = cases.find((item) => item.id === latestCaseId(cases))?.label ?? "";
 
   const groups = useMemo(() => {
     return cases.map((item) => {
@@ -123,10 +132,10 @@ export function PatientFolderFiles({ cases }: { cases: CaseGroup[] }) {
 
   const uploadFiles = async (list: FileList | File[] | null) => {
     const files = list ? Array.from(list) : [];
-    if (!caseId || files.length === 0) return;
+    if (!uploadCaseId || files.length === 0) return;
     setUploading(true);
     setMessage("");
-    const folderId = ensureFolder(caseId);
+    const folderId = ensureFolder(uploadCaseId);
     if (!folderId) {
       setMessage("That case has no file folder yet.");
       setUploading(false);
@@ -184,12 +193,13 @@ export function PatientFolderFiles({ cases }: { cases: CaseGroup[] }) {
     >
       <h3 className="font-semibold">Patient Files</h3>
       <label className="mt-2 grid gap-1">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">Case</span>
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Show</span>
         <select
           className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-          onChange={(event) => setCaseId(event.target.value)}
-          value={caseId}
+          onChange={(event) => setFilter(event.target.value)}
+          value={filter}
         >
+          <option value="all">All</option>
           {cases.map((item) => (
             <option key={item.id} value={item.id}>
               {item.label}
@@ -198,19 +208,23 @@ export function PatientFolderFiles({ cases }: { cases: CaseGroup[] }) {
         </select>
       </label>
       <div className="mt-2 flex flex-wrap gap-2">
-        <button className="btn btn-primary btn-sm" disabled={uploading || !caseId} onClick={pickFiles} type="button">
+        <button className="btn btn-primary btn-sm" disabled={uploading || !uploadCaseId} onClick={pickFiles} type="button">
           {uploading ? "Uploading..." : "Upload"}
         </button>
-        <button className="btn btn-secondary btn-sm" disabled={uploading || !caseId} onClick={() => setScannerOpen(true)} type="button">
+        <button className="btn btn-secondary btn-sm" disabled={uploading || !uploadCaseId} onClick={() => setScannerOpen(true)} type="button">
           Scan
         </button>
       </div>
       <p className={`mt-2 rounded-xl border-2 border-dashed px-2 py-2 text-center text-xs ${dragOver ? "border-[var(--brand-primary)] text-[var(--brand-primary)]" : "border-[var(--line-soft)] text-[var(--text-muted)]"}`}>
-        {dragOver ? "Drop files here to upload" : "Drag and drop files here. They go into the case selected above."}
+        {dragOver
+          ? "Drop files here to upload"
+          : filter === "all"
+            ? `Drag and drop files here. They go into the latest case${latestLabel ? ` (${latestLabel})` : ""}.`
+            : "Drag and drop files here. They go into the case selected above."}
       </p>
       {message && <p className="mt-1 text-xs font-semibold text-[#b43b34]">{message}</p>}
       <div className="mt-2 max-h-64 overflow-y-auto text-sm">
-        {groups.map((group) => (
+        {(filter === "all" ? groups : groups.filter((group) => group.id === filter)).map((group) => (
           <div className="border-t border-[var(--line-soft)] pt-1" key={group.id}>
             <p className="text-xs font-semibold text-[var(--text-muted)]">{group.label}</p>
             {group.rootFiles.length === 0 && group.folders.length === 0 && (

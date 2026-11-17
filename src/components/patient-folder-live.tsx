@@ -67,12 +67,26 @@ function caseInputs(getBilling: (id: string) => { billedAmount: number; paidAmou
     });
 }
 
+function caseOpenedOn(patient: PatientRecord): string {
+  const doi = patient.dateOfLoss?.trim() ?? "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(doi)) return doi.slice(0, 10);
+  const us = doi.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (us) return `${us[3]}-${us[1]}-${us[2]}`;
+  const stamp = patient.id.match(/^PT-(\d{10,})/);
+  if (stamp) {
+    const date = new Date(Number(stamp[1]));
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+  return "";
+}
+
 function caseRow(patient: PatientRecord, billing: { billedAmount: number; paidAmount: number; paidDate?: string } | null): FolderCaseRow {
   const money = resolveCaseMoney(billing, patient.matrix);
   return {
     id: patient.id,
     caseNumber: caseNumberOf(patient) || patient.id,
     dateOfInjury: formatDobDisplay(patient.dateOfLoss) || patient.dateOfLoss || "—",
+    openedOn: caseOpenedOn(patient),
     initialExam: formatDobDisplay(patient.matrix?.initialExam ?? "") || patient.matrix?.initialExam || "—",
     attorney: patient.attorney || "—",
     attorneyPhone: "",
