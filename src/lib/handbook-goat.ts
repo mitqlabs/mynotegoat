@@ -160,8 +160,8 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Text reminders didn't send / set up 8 AM reminders",
       steps: [
         "Ask: \"reminders didn't send\", \"why didn't my texts go out\", \"how do I set up 8 AM reminders\". G.O.A.T. gives the exact steps and links to Text Reminders.",
-        "The key point it always makes: the Send-Reminders shortcut does NOT run by itself. You must also create the 8 AM automation in the iPhone's Shortcuts → Automation tab (Time of Day, Every Day, Run Immediately, Run Shortcut → Send-Reminders). That is Step 2 on the Text Reminders page.",
-        "It uses your office's own send hour, so it says 7 AM or 9 AM if you changed it. Text Reminders shows a red warning if the phone hasn't sent by itself for two expected days.",
+        "The key point it always makes: the Send Reminders shortcut does NOT run by itself. You must also create three automations in the iPhone's Shortcuts → Automation tab (Time of Day, Every Day, Run Immediately, Run Shortcut → Send Reminders): the send time, 30 minutes later, and 60 minutes later. That is Step 2 on the Text Reminders page.",
+        "It uses your office's own send hour, so it says 7 AM or 9 AM if you changed it. Text Reminders shows a red warning if the phone hasn't sent by itself for two expected days. The same morning, a red line at the top of NoteGoat says to tap Send Reminders Now.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",
     },
@@ -227,7 +227,7 @@ export const goatHandbookChapter: HandbookChapter = {
       steps: [
         "Ask: \"do we text patients happy birthday\", \"how do I turn on birthday texts\", \"who gets a birthday text\". G.O.A.T. answers from the Handbook and links to Settings \u2192 Text Reminders. It never changes the setting.",
         "It is a switch in Settings \u2192 Text Reminders \u2192 Auto Texts \u2192 Birthday (off until you turn it on) with a menu to pick which saved message it sends. Write messages in Settings \u2192 Templates \u2192 SMS / Text Templates; {first name} becomes the patient's first name. If nothing is picked it uses \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
-        "It rides the daily 8 AM reminder run, so the iPhone shortcut needs no change. Every patient with a date of birth and a phone, whatever the case status, on the day of their birthday (Feb 29 \u2192 Feb 28 in non-leap years). Never \"no text reminders\" or STOP patients. Once per patient per year, remembered in the cloud. Test mode applies.",
+        "It rides the daily 8 AM reminder run, so the iPhone shortcut needs no change. Every patient with a date of birth and a phone, whatever the case status, on the day of their birthday (Feb 29 \u2192 Feb 28 in non-leap years). Never \"no text reminders\" or STOP patients. Once per patient per year, remembered in the cloud. If the phone fetches it and does not send it, the same day is tried again. It is not sent late. Test mode applies.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI, and no patient names or birthdays go to any outside service. Nothing is changed.",
     },

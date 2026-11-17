@@ -8,6 +8,7 @@
 
 import type { ReactNode } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
+import { catchUpClockLabels } from "@/lib/reminder-automation";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
 
@@ -73,6 +74,7 @@ export function ReminderSetupChecklist({
   onToggle: (next: boolean) => void;
 }) {
   const time = hourLabel(settings.sendHour);
+  const [atSend, atHalf, atNext] = catchUpClockLabels(settings.sendHour);
   const confirmed = settings.automationConfirmed;
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   return (
@@ -82,7 +84,7 @@ export function ReminderSetupChecklist({
       status={confirmed ? "done" : "todo"}
       summary={
         confirmed
-          ? `Done. You made the ${time} automation${confirmedOn ? ` on ${confirmedOn}` : ""}.`
+          ? `Done. You made the ${time} automations${confirmedOn ? ` on ${confirmedOn}` : ""}.`
           : `Step 2 is required. Without it the iPhone never sends by itself.`
       }
       testId="reminder-setup-checklist"
@@ -105,10 +107,10 @@ export function ReminderSetupChecklist({
           <StepNumber done={confirmed} n={2} />
           <div className="grid min-w-0 flex-1 gap-2">
             <p className="font-semibold">
-              Make the {time} automation <Badge tone={confirmed ? "done" : "required"}>{confirmed ? "Done" : "Required"}</Badge>
+              Make the {time} automations <Badge tone={confirmed ? "done" : "required"}>{confirmed ? "Done" : "Required"}</Badge>
             </p>
             <p className="font-semibold text-amber-900">
-              The shortcut does not start by itself. You set the alarm once, on the phone. It takes about 30 seconds.
+              The shortcut does not start by itself. You set three alarms once, on the phone.
             </p>
             <ol className="list-decimal space-y-1.5 pl-5">
               <li>
@@ -118,27 +120,31 @@ export function ReminderSetupChecklist({
                 Tap <b>Automation</b>, then <b>+</b>, then <b>Time of Day</b>.
               </li>
               <li>
-                Set the time to <b>{time}</b> and <b>Repeat: Every Day</b>. Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off.
+                Set the time to <b>{atSend}</b> and <b>Repeat: Every Day</b>. Choose <b>Run Immediately</b>. If you see <b>Ask Before Running</b>, change it. Turn <b>Notify When Run</b> off.
               </li>
               <li>
-                Search <b>Run Shortcut</b> and tap it. Tap the blue <b>Shortcut</b> word and pick <b>Send-Reminders</b>. Leave <b>Input</b> empty.
+                Search <b>Run Shortcut</b> and tap it. Tap the blue <b>Shortcut</b> word and pick <b>Send Reminders</b>. Leave <b>Input</b> empty.
               </li>
               <li>
-                Name it (for example <b>{time.replace(":00", "")} Reminders</b>) and go back to save it.
+                Name it <b>{atSend} Reminders</b> and go back to save it.
+              </li>
+              <li>
+                Do the same two more times, at <b>{atHalf}</b> and <b>{atNext}</b>, both running <b>Send Reminders</b>.
               </li>
               <li>
                 If iOS asks permission the first time it texts, tap <b>Always Allow</b>.
               </li>
             </ol>
             <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-              <li>Every day is fine. NoteGoat only sends when reminders are due, and never texts anyone twice.</li>
-              <li>Keep just one of these automations. Delete any copy.</li>
+              <li>The {atHalf} and {atNext} runs send anything the first one missed. If everything already went out, they do nothing.</li>
+              <li>Leave the iPhone on, charged, and unlocked. If it was locked at {atSend}, the later runs send what is still waiting.</li>
+              <li>Keep these three. Delete any other Time of Day automation that runs Send Reminders.</li>
               <li>Shortcut list empty? Use the <b>Run Shortcut</b> search, or close Shortcuts completely and try again.</li>
               <li>Using only the iMac? Skip this step.</li>
             </ul>
             <label className="mt-1 inline-flex items-center gap-2 font-semibold" data-testid="automation-confirm">
               <input checked={confirmed} className="h-4 w-4" onChange={(e) => onConfirm(e.target.checked)} type="checkbox" />
-              I made the {time} automation
+              I made the {atSend}, {atHalf} and {atNext} automations
               {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(checked {confirmedOn})</span>}
             </label>
           </div>

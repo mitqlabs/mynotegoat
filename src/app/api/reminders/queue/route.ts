@@ -12,6 +12,7 @@ import {
   planCatchUp,
   planReminderRun,
   planScheduledRun,
+  shortcutBatchSize,
   withoutClosedDates,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
@@ -49,6 +50,9 @@ export const dynamic = "force-dynamic";
  *   ?preview=1   list even on a non-run day (device must not send)
  *   ?format=shortcut  iPhone-friendly reply: `items` is non-empty ONLY when
  *                the phone should send right now; dry runs are logged here.
+ *   ?batch=8     with format=shortcut, hand out at most this many texts and
+ *                claim only those. The shortcut asks again until send=no.
+ *                Omitted = no limit (shortcuts installed before batching).
  *
  * Every call (outside quiet hours) also hands out queued "Message patients"
  * texts. Item ids: plain = appointment on `visitDate`; "r:<date>:<id>" =
@@ -176,7 +180,13 @@ export async function GET(request: NextRequest) {
   const localToday = localNow(now, settings.timeZone);
   let birthdays: BirthdayQueueRow[] =
     !quiet && localToday.hour >= settings.sendHour
-      ? await loadBirthdayQueue(admin, device, todayIso, settings, { retryDryRun: willSend || preview, body: config.birthdayBody, office: config.office })
+      ? await loadBirthdayQueue(admin, device, todayIso, settings, {
+          retryDryRun: willSend || preview,
+          reofferClaims: willSend,
+          now,
+          body: config.birthdayBody,
+          office: config.office,
+        })
       : [];
   let held = false;
   const isBackup = willSend ? await otherPrimaryExists(admin, device) : false;
@@ -210,6 +220,37 @@ export async function GET(request: NextRequest) {
     const before = broadcasts.length;
     broadcasts = broadcasts.filter((b) => !broadcastBackupHold(b.createdAt, now, selfForced));
     if (broadcasts.length < before) held = true;
+  }
+
+  // A shortcut that passes batch= only leases what this call returns. The
+  // rest stay unclaimed, so a run that dies after the GET does not stick
+  // the whole morning. The next call (the shortcut's loop, or a later
+  // automation) picks them up. Claims still expire, so a batch that was
+  // leased and never acked comes back too.
+  let truncated = false;
+  const batchLimit = willSend && shortcut ? shortcutBatchSize(params.get("batch")) : 0;
+  if (batchLimit > 0) {
+    type Piece =
+      | { kind: "bday"; row: BirthdayQueueRow }
+      | { kind: "rem"; date: string; item: DeviceQueueItem }
+      | { kind: "cast"; row: (typeof broadcasts)[number] };
+    const pieces: Piece[] = [];
+    for (const row of birthdays) pieces.push({ kind: "bday", row });
+    for (const [date, list] of byDate) for (const item of list) pieces.push({ kind: "rem", date, item });
+    for (const row of broadcasts) pieces.push({ kind: "cast", row });
+    truncated = pieces.length > batchLimit;
+    const kept = pieces.slice(0, batchLimit);
+    birthdays = kept.flatMap((p) => (p.kind === "bday" ? [p.row] : []));
+    const nextDates = new Map<string, DeviceQueueItem[]>();
+    for (const p of kept) {
+      if (p.kind !== "rem") continue;
+      const list = nextDates.get(p.date) ?? [];
+      list.push(p.item);
+      nextDates.set(p.date, list);
+    }
+    byDate.clear();
+    for (const [date, list] of nextDates) byDate.set(date, list);
+    broadcasts = kept.flatMap((p) => (p.kind === "cast" ? [p.row] : []));
   }
 
   // Claims: each device only gets what it leased.
@@ -254,7 +295,7 @@ export async function GET(request: NextRequest) {
       .update({ last_run_at: now.toISOString(), last_run_summary: summary, run_requested_until: null })
       .eq("id", device.id);
   };
-  if (reminderRun && !preview && reminderItems.length === 0 && !held) {
+  if (reminderRun && !preview && reminderItems.length === 0 && !held && !truncated) {
     // Keep the day's real totals ("10/29/26: 14 sent") instead of overwriting them.
     await finishRun(summaryAfterEmptyRun(device.last_run_summary, visitDate));
   }

@@ -14,7 +14,8 @@
  *   * no phone number on file, or no first name = no text.
  */
 
-import { splitPatientName, withOptOutLine } from "@/lib/reminder-automation";
+import { CLAIM_MINUTES, localNow, splitPatientName, withOptOutLine } from "@/lib/reminder-automation";
+import { plainResult } from "@/lib/reminder-format";
 import { expandTokens } from "@/lib/sms-render";
 import { BIRTHDAY_MESSAGE_MAX, DEFAULT_BIRTHDAY_MESSAGE } from "@/lib/sms-reminders";
 
@@ -123,6 +124,53 @@ export function birthdayPhone(phone: string): string {
  * Everyone who should get a birthday text today: any case status, not opted out, birthday
  * today, a usable phone and a first name. Sorted by name so the list is stable.
  */
+/**
+ * Written on a claimed birthday row when the birthday day has passed and the
+ * phone never answered. It is not a failed send, and it is never tried again.
+ */
+export const BIRTHDAY_EXPIRED_ERROR = "Not sent. Birthday texts are not sent late.";
+
+/**
+ * What to do with a birthday row that is still "claimed" (handed to a phone,
+ * never acked). Same calendar day, after the claim window: hand it out again.
+ * An earlier day: do not send a belated birthday. A claim still inside its
+ * window stays with the phone that has it, so a run that is still texting
+ * cannot be handed out twice.
+ */
+export function birthdayClaimDecision(input: {
+  claimedAt: string;
+  todayIso: string;
+  now: Date;
+  timeZone: string;
+  claimMinutes?: number;
+}): "hold" | "reoffer" | "expire" {
+  const at = new Date(input.claimedAt);
+  if (Number.isNaN(at.getTime())) return "hold";
+  const day = localNow(at, input.timeZone).iso;
+  if (day < input.todayIso) return "expire";
+  if (day > input.todayIso) return "hold";
+  const minutes = input.claimMinutes ?? CLAIM_MINUTES;
+  return input.now.getTime() - at.getTime() >= minutes * 60_000 ? "reoffer" : "hold";
+}
+
+/** Recent-birthday-texts cell. Old unacked claims read as not sent, not as waiting. */
+export function birthdayLogLabel(
+  status: string,
+  error: string | null,
+  claimedAt: string | null,
+  todayIso: string,
+  timeZone: string,
+): string {
+  if (error === BIRTHDAY_EXPIRED_ERROR) return "Not sent (too late)";
+  if (status === "claimed") {
+    const at = claimedAt ? new Date(claimedAt) : null;
+    if (at && !Number.isNaN(at.getTime()) && localNow(at, timeZone).iso < todayIso) return "Not sent (too late)";
+    return "Handed to the phone, no answer yet";
+  }
+  const base = plainResult(status);
+  return error ? `${base} — ${error}` : base;
+}
+
 export function pickBirthdayRecipients(
   patients: BirthdayPatient[],
   todayIso: string,

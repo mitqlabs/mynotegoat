@@ -6,6 +6,10 @@ import plistlib, uuid, pathlib, sys
 
 ORIGIN = "https://www.mynotegoat.com"
 OBJ = "\ufffc"
+# One call hands out this many texts. The shortcut asks again until the
+# server says send=no, so a killed run only leases one small batch.
+BATCH = 8
+LOOPS = 8
 
 def U(): return str(uuid.uuid4()).upper()
 def act(ident, **p): return {"WFWorkflowActionIdentifier": ident, "WFWorkflowActionParameters": p}
@@ -26,26 +30,43 @@ def fields(items):
         "WFSerializationType": "WFDictionaryFieldValue"}
 
 def build(name, query):
+    """Fetch a small batch, text it, ack each one, then ask again.
+
+    Stops as soon as the server says send=no, so a catch-up run with nothing
+    left is a no-op. Send Message has Show When Run off so the automation
+    does not sit on a Messages prompt. An empty queue exits quietly; a batch
+    that actually sends shows one notification.
+    """
     auth = [("Authorization", tstr("Bearer ", var("Token")))]
-    q, d1, d2, rep, txt, ph, msg, tk = (U() for _ in range(8))
+    loop, iff, rep = U(), U(), U()
+    tk, q, d_visit, d_msg, d_send, d_items, txt, ph = (U() for _ in range(8))
     acts = [
         act("is.workflow.actions.gettext", UUID=tk, WFTextActionText=""),  # index 0 = import question
         act("is.workflow.actions.setvariable", WFVariableName="Token",
             WFInput=att(out(tk, "Text"))),
+        act("is.workflow.actions.repeat.count", GroupingIdentifier=loop, WFControlFlowMode=0, WFRepeatCount=LOOPS),
         act("is.workflow.actions.downloadurl", UUID=q, WFURL=f"{ORIGIN}/api/reminders/queue?{query}",
             WFHTTPMethod="GET", ShowHeaders=True, WFHTTPHeaders=fields(auth)),
         act("is.workflow.actions.setvariable", WFVariableName="Queue",
             WFInput=att(out(q, "Contents of URL"))),
-        act("is.workflow.actions.getvalueforkey", UUID=d1, WFDictionaryKey="visitDate",
+        act("is.workflow.actions.getvalueforkey", UUID=d_visit, WFDictionaryKey="visitDate",
             WFInput=att(var("Queue"))),
         act("is.workflow.actions.setvariable", WFVariableName="VisitDate",
-            WFInput=att(out(d1, "Dictionary Value"))),
-        act("is.workflow.actions.getvalueforkey", UUID=msg, WFDictionaryKey="message",
+            WFInput=att(out(d_visit, "Dictionary Value"))),
+        act("is.workflow.actions.getvalueforkey", UUID=d_msg, WFDictionaryKey="message",
             WFInput=att(var("Queue"))),
-        act("is.workflow.actions.getvalueforkey", UUID=d2, WFDictionaryKey="items",
+        act("is.workflow.actions.setvariable", WFVariableName="Message",
+            WFInput=att(out(d_msg, "Dictionary Value"))),
+        act("is.workflow.actions.getvalueforkey", UUID=d_send, WFDictionaryKey="send",
+            WFInput=att(var("Queue"))),
+        # send == "yes" → there is a batch to text. Anything else: stop.
+        act("is.workflow.actions.conditional", GroupingIdentifier=iff, WFControlFlowMode=0,
+            WFCondition=4, WFConditionalActionString="yes",
+            WFInput=att(out(d_send, "Dictionary Value"))),
+        act("is.workflow.actions.getvalueforkey", UUID=d_items, WFDictionaryKey="items",
             WFInput=att(var("Queue"))),
         act("is.workflow.actions.repeat.each", GroupingIdentifier=rep, WFControlFlowMode=0,
-            WFInput=att(out(d2, "Dictionary Value"))),
+            WFInput=att(out(d_items, "Dictionary Value"))),
         act("is.workflow.actions.getvalueforkey", UUID=txt, WFDictionaryKey="text",
             WFInput=att(var("Repeat Item"))),
         act("is.workflow.actions.getvalueforkey", UUID=ph, WFDictionaryKey="phone",
@@ -58,10 +79,14 @@ def build(name, query):
             WFJSONValues=fields([("visitDate", tstr("", var("VisitDate"))),
                                  ("id", tstr("", var("Repeat Item", "id"))),
                                  ("status", tstr("sent"))])),
-        act("is.workflow.actions.delay", WFDelayTime=5),
+        act("is.workflow.actions.delay", WFDelayTime=2),
         act("is.workflow.actions.repeat.each", GroupingIdentifier=rep, WFControlFlowMode=2, UUID=U()),
         act("is.workflow.actions.notification", WFNotificationActionTitle="NoteGoat",
-            WFNotificationActionBody=tstr("", out(msg, "Dictionary Value"))),
+            WFNotificationActionBody=tstr("", var("Message"))),
+        act("is.workflow.actions.conditional", GroupingIdentifier=iff, WFControlFlowMode=1),
+        act("is.workflow.actions.exit"),
+        act("is.workflow.actions.conditional", GroupingIdentifier=iff, WFControlFlowMode=2),
+        act("is.workflow.actions.repeat.count", GroupingIdentifier=loop, WFControlFlowMode=2, UUID=U()),
     ]
     wf = {
         "WFWorkflowName": name,
@@ -114,8 +139,8 @@ def build_opt_out():
 only = set(sys.argv[1:]) or {"send", "opt-out"}
 d = pathlib.Path(__file__).resolve().parent.parent / "public" / "shortcuts"
 d.mkdir(parents=True, exist_ok=True)
-for fname, name, query in [("Send-Reminders.shortcut", "Send Reminders", "format=shortcut"),
-                           ("Send-Reminders-Now.shortcut", "Send Reminders Now", "format=shortcut&force=1")]:
+for fname, name, query in [("Send-Reminders.shortcut", "Send Reminders", f"format=shortcut&batch={BATCH}"),
+                           ("Send-Reminders-Now.shortcut", "Send Reminders Now", f"format=shortcut&force=1&batch={BATCH}")]:
     if "send" not in only: continue
     (d / fname).write_bytes(plistlib.dumps(build(name, query), fmt=plistlib.FMT_BINARY))
     print("wrote", d / fname)

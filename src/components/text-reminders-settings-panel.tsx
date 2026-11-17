@@ -27,6 +27,7 @@ import {
   effectiveRunDays,
   generateDeviceToken,
   hashDeviceToken,
+  localNow,
   WEEKDAY_SHORT,
 } from "@/lib/reminder-automation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -38,6 +39,7 @@ import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPref
 import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
+import { birthdayLogLabel } from "@/lib/birthday-texts";
 import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
@@ -70,7 +72,7 @@ type DeviceRow = {
   revoked_at: string | null;
 };
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
-type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; created_at: string };
+type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; claimed_at: string | null; created_at: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
@@ -170,10 +172,10 @@ export function TextRemindersSettingsPanel() {
     // Recent birthday texts (last 4 digits only). Missing table = nothing yet.
     const { data: bd } = await client
       .from("birthday_text_log")
-      .select("id, year, phone_last4, status, error, created_at")
+      .select("id, year, phone_last4, status, error, claimed_at, created_at")
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(30);
     setBirthdayLog((bd as BirthdayLogRow[] | null) ?? []);
     // Patients who replied STOP (latest action per patient, still opted out).
     const { data: o } = await client
@@ -484,8 +486,8 @@ export function TextRemindersSettingsPanel() {
             Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
-            <b>Send-Reminders</b> (iPhone shortcut) texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you
-            make the automation (Step 2 above).
+            <b>Send Reminders</b> (iPhone shortcut) texts a few patients, then asks for the next few, so a long morning does not get cut off. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, only after you
+            make the automations (Step 2 above). The later runs do nothing if everything already went out.
           </li>
           <li>
             <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
@@ -581,21 +583,24 @@ export function TextRemindersSettingsPanel() {
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>. It is a long line of letters and numbers. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
             <li>
-              On the office iPhone, open this page and tap{" "}
+              If <b>Send Reminders</b> is already on the iPhone, delete that shortcut first (long-press it → <b>Delete</b>). Then tap{" "}
               <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-              {" "}→ <b>Add Shortcut</b>. Paste your setup code when it asks.
+              {" "}→ <b>Add Shortcut</b>. If it shows the steps first, scroll down and tap <b>Add Shortcut</b>. Paste your setup code when it asks. This file sends a few texts at a time and then asks for the next few.
             </li>
             <li>
-              Get{" "}
+              Delete any old <b>Send Reminders Now</b> the same way, then get{" "}
               <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
-              {" "}the same way. It is the backup for days the phone missed {hourLabel(settings.sendHour)}. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
+              . Long-press it → <b>Share</b> → <b>Add to Home Screen</b>. Use it when the morning run did not finish.
             </li>
             <li>
-              <b>Last step, required:</b> make the {hourLabel(settings.sendHour)} automation. Do <b>Step 2</b> in the box at the top of Set up.
+              <b>Last step, required:</b> make the three automations. Do <b>Step 2</b> in the box at the top of Set up.
             </li>
           </ol>
         </div>
         <InnerFold testId="iphone-steps-manual" title="Only if the download did not work: build the shortcut by hand">
+          <p className="text-[var(--text-muted)]">
+            The downloaded shortcut is the one to use. It sends a few texts, then asks for the next few. These hand-built steps do one pass. The later automations in Step 2 still send anything that was missed.
+          </p>
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>.</li>
             <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
@@ -638,7 +643,7 @@ export function TextRemindersSettingsPanel() {
               <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Nobody gets two texts.
             </li>
             <li>
-              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the {hourLabel(settings.sendHour)} automation.
+              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the three automations.
             </li>
           </ol>
         </InnerFold>
@@ -781,10 +786,15 @@ export function TextRemindersSettingsPanel() {
           <li>It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.</li>
           <li>Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
           <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
-          <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
+          <li>If the phone fetches a birthday text and does not send it, the same day is tried again the next time Send Reminders runs. A birthday from an earlier day is not sent late.</li>
           <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>
         </ul>
       </details>
+          {birthdayLog.some((row) => birthdayLogLabel(row.status, row.error, row.claimed_at, localNow(new Date(), settings.timeZone).iso, settings.timeZone) === "Not sent (too late)") ? (
+            <p className="text-sm font-semibold text-red-800" data-testid="birthday-late">
+              Some birthday texts were not sent (too late).
+            </p>
+          ) : null}
           <details className="rounded-lg border border-[var(--line-soft)] bg-white" data-testid="birthday-log">
             <summary className="cursor-pointer px-3 py-2 font-semibold">Recent birthday texts</summary>
             {birthdayLog.length === 0 ? (
@@ -804,8 +814,7 @@ export function TextRemindersSettingsPanel() {
                       <td className="px-3 py-1">{fmtDateTime(row.created_at, settings.timeZone)}</td>
                       <td className="px-3 py-1">{row.phone_last4}</td>
                       <td className="px-3 py-1">
-                        {row.status === "claimed" ? "Handed to the phone, no answer yet" : plainResult(row.status)}
-                        {row.error ? ` — ${row.error}` : ""}
+                        {birthdayLogLabel(row.status, row.error, row.claimed_at, localNow(new Date(), settings.timeZone).iso, settings.timeZone)}
                       </td>
                     </tr>
                   ))}

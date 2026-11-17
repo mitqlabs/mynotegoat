@@ -234,6 +234,50 @@ export function generateDeviceToken(): string {
 export const BACKUP_DELAY_MIN = 30;
 /** How long a device holds the reminders it was handed. */
 export const CLAIM_MINUTES = 15;
+/** Largest batch= the shortcut queue will hand out in one call. */
+export const SHORTCUT_BATCH_MAX = 40;
+
+/**
+ * `batch` on GET /api/reminders/queue. 0 means no limit (the shortcut
+ * installed before batching). A positive integer is capped.
+ */
+export function shortcutBatchSize(raw: string | null): number {
+  if (raw == null || raw.trim() === "") return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return 0;
+  return Math.min(SHORTCUT_BATCH_MAX, n);
+}
+
+/**
+ * May this device take a reminder or broadcast lease? Free, expired, or
+ * already this device's. A live lease belonging to someone else stays put,
+ * so two phones never text the same person. Ack is what makes it permanent:
+ * an expired lease with no ack is handed out again.
+ */
+export function leaseCanTake(
+  claimedBy: string | null | undefined,
+  claimedUntil: string | null | undefined,
+  deviceId: string,
+  now: Date,
+): boolean {
+  if (!claimedUntil) return true;
+  if (claimedBy && claimedBy === deviceId) return true;
+  const until = new Date(claimedUntil).getTime();
+  return !Number.isFinite(until) || until < now.getTime();
+}
+
+/** Clock labels for the send run and the two catch-up runs (30 and 60 minutes later). */
+export function catchUpClockLabels(sendHour: number): [string, string, string] {
+  const label = (totalMin: number) => {
+    const h = Math.floor(totalMin / 60) % 24;
+    const m = totalMin % 60;
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour = h % 12 === 0 ? 12 : h % 12;
+    return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+  };
+  const start = sendHour * 60;
+  return [label(start), label(start + 30), label(start + 60)];
+}
 
 /**
  * May a BACKUP device send now? Only after the primary has had its chance:

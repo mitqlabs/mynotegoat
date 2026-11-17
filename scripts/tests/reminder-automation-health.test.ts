@@ -80,7 +80,7 @@ for (const q of [
     assert.ok(r, "no answer");
     assert.match(r!.text, /does NOT run by itself/);
     assert.match(r!.text, /Time of Day/);
-    assert.match(r!.text, /Send-Reminders/);
+    assert.match(r!.text, /Send Reminders/);
     assert.match(r!.links[0].href, /chapter-text-reminders/);
   });
 }
@@ -108,7 +108,7 @@ check("handbook says the shortcut does not run by itself", () => { assert.match(
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8") + readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
 check("panel has the required step, checkbox and warning", () => {
   assert.match(panel, /does not start by itself/);
-  assert.match(panel, /I made the \{time\} automation/);
+  assert.match(panel, /I made the \{atSend\}, \{atHalf\} and \{atNext\} automations/);
   assert.match(panel, /may not be set up — see Step 2/);
 });
 
