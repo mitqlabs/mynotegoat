@@ -49,6 +49,7 @@ import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { mergePatientCloudNotes } from "@/lib/encounter-merge";
+import { buildSoapPrintFragment, SOAP_PRINT_CSS } from "@/lib/print-soap";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
@@ -1024,17 +1025,16 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
          Use "all: initial" to completely isolate from the narrative
          document's CSS (its global p, *, body rules were leaking in
          and causing visible paragraph-indent / tab artefacts).
-         After the reset we re-declare every style the encounter print
-         needs — this is an EXACT copy of the standalone encounter
-         print CSS from encounter-workspace.tsx.                       */
+         The note layout itself lives in src/lib/print-soap.ts so this
+         attachment and Print Encounters break the same way.          */
       .soap-pages {
         all: initial !important;
         display: block !important;
         box-sizing: border-box !important;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
         font-size: 12px !important;
-        line-height: 1.4 !important;
-        color: #1a1a1a !important;
+        line-height: 1.45 !important;
+        color: #111 !important;
         white-space: normal !important;
         background: #fff !important;
       }
@@ -1050,112 +1050,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         line-height: inherit;
         color: inherit;
       }
-      /* Re-declare every style exactly matching the standalone encounter print */
-      .soap-pages .letterhead {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #0d79bf;
-        margin-bottom: 10px;
-      }
-      .soap-pages .logo {
-        height: 70px;
-        width: auto;
-        max-width: 200px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-        margin: 0;
-        padding: 0;
-      }
-      .soap-pages .office-info { flex: 1; text-align: right; margin: 0; padding: 0; }
-      .soap-pages .office-name-lh { font-size: 15px; font-weight: 700; color: #0d79bf; margin: 0; padding: 0; line-height: 1.2; }
-      .soap-pages .office-detail { font-size: 11px; color: #444; line-height: 1.5; margin: 0; }
-      .soap-pages p { display: block; margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; }
-      .soap-pages strong, .soap-pages b { font-weight: 700; }
-      .soap-pages em, .soap-pages i { font-style: italic; }
-      .soap-pages u { text-decoration: underline; }
-      .soap-pages s, .soap-pages strike, .soap-pages del { text-decoration: line-through; }
-      .soap-pages sub { vertical-align: sub; font-size: smaller; }
-      .soap-pages sup { vertical-align: super; font-size: smaller; }
-      .soap-pages br { display: block; }
-      .soap-pages img { display: inline; }
-      .soap-pages .patient-banner {
-        background: #f0f6fb;
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        padding: 6px 10px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .patient-banner .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #5a7a8f; }
-      .soap-pages .patient-banner .name { font-size: 14px; font-weight: 700; color: #13293d; }
-      .soap-pages .patient-banner .doc-title { font-size: 11px; font-weight: 600; color: #0d79bf; }
-      .soap-pages .encounter {
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        display: block;
-      }
-      .soap-pages .encounter-header {
-        background: #0d79bf;
-        color: #fff;
-        padding: 4px 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .encounter-date { font-size: 12px; font-weight: 700; color: #fff; }
-      .soap-pages .encounter-type { font-size: 11px; opacity: 0.9; color: #fff; }
-      .soap-pages .encounter-meta {
-        background: #f7fafc;
-        padding: 3px 10px;
-        border-bottom: 1px solid #e2eaf0;
-        font-size: 10px;
-        color: #5a7a8f;
-        display: flex;
-        gap: 16px;
-      }
-      .soap-pages .soap-section {
-        padding: 4px 10px;
-        border-bottom: 1px solid #eef2f6;
-        display: block;
-      }
-      .soap-pages .soap-section:last-child { border-bottom: none; }
-      .soap-pages .soap-label {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0d79bf;
-        margin-bottom: 2px;
-        display: block;
-      }
-      .soap-pages .soap-content {
-        font-size: 12px;
-        line-height: 1.45;
-        color: #1a1a1a;
-        word-break: break-word;
-        display: block;
-      }
-      .soap-pages .soap-content p { margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content div { margin: 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content span { font-size: inherit; color: inherit; }
-      .soap-pages .soap-content b, .soap-pages .soap-content strong { font-weight: 700; }
-      .soap-pages .soap-content em, .soap-pages .soap-content i { font-style: italic; }
-      .soap-pages .soap-content u { text-decoration: underline; }
-      .soap-pages .print-footer {
-        margin-top: 14px;
-        padding-top: 6px;
-        border-top: 1px solid #d0dfe9;
-        font-size: 9px;
-        color: #8899a6;
-        text-align: center;
-        display: block;
-      }
+      ${SOAP_PRINT_CSS}
 
       /* ── Attached Billing Statement pages ── */
       .billing-pages {
@@ -1228,10 +1123,6 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         size: Letter;
         margin: 0.55in;
       }
-      @media print {
-        .soap-pages * { break-inside: auto !important; break-before: auto !important; break-after: auto !important; }
-        .encounter { page-break-inside: auto !important; }
-      }
     </style>
   </head>
   <body>
@@ -1247,9 +1138,8 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
 }
 
 /**
- * Build a full standalone SOAP-notes HTML document — identical styling to the
- * encounter workspace print. Returns a complete `<!doctype html>…</html>`
- * string that can be concatenated before the narrative document.
+ * SOAP pages printed ahead of a narrative. Same visit-per-page layout as
+ * Print Encounters.
  */
 function buildSoapPrintHtmlForNarrative(config: {
   officeName: string;
@@ -1267,83 +1157,7 @@ function buildSoapPrintHtmlForNarrative(config: {
     soap: Record<string, string>;
   }>;
 }) {
-  if (!config.encounters.length) return "";
-
-  const formatSoapText = (text: string) => {
-    let cleaned = text.trim();
-    if (!cleaned) return "-";
-    // Nuclear fix: strip ALL inline style attributes from the HTML.
-    // The editor saves style="..." on <p>, <div>, <span> etc. with
-    // text-indent, padding, margins, white-space that cause visible
-    // tab/indent artefacts when embedded inside the narrative document.
-    // The print CSS handles all visual styling — inline styles only hurt.
-    cleaned = cleaned
-      .replace(/\s*style\s*=\s*"[^"]*"/gi, "")
-      .replace(/\s*style\s*=\s*'[^']*'/gi, "")
-      .replace(/\t/g, "")
-      .replace(/&(emsp|ensp|Tab|#9|#x9);/gi, "")
-      .replace(/^[ \t]+/gm, "");
-    return cleaned;
-  };
-
-  const logoMarkup = config.logoDataUrl.trim()
-    ? `<img alt="Office Logo" src="${escapeHtml(config.logoDataUrl)}" class="logo" />`
-    : "";
-
-  const encounterMarkup = config.encounters
-    .map(
-      (encounter) => `<section class="encounter">
-  <div class="encounter-header">
-    <div class="encounter-date">${escapeHtml(encounter.encounterDate)}</div>
-    <div class="encounter-type">${escapeHtml(encounter.appointmentType)}</div>
-  </div>
-  <div class="encounter-meta">
-    <span>Provider: <strong>${escapeHtml(encounter.provider)}</strong></span>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Subjective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.subjective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Objective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.objective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Assessment</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.assessment ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Plan</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.plan ?? "")}</div>
-  </div>
-</section>`,
-    )
-    .join("");
-
-  return `<div class="soap-pages" style="page-break-after: always;">
-    <header class="letterhead">
-      ${logoMarkup}
-      <div class="office-info">
-        <p class="office-name-lh">${escapeHtml(config.officeName)}</p>
-        <p class="office-detail">
-          ${escapeHtml(config.officeAddress)}<br />
-          T: ${escapeHtml(config.officePhone)}${config.officeFax.trim() ? ` &nbsp;|&nbsp; F: ${escapeHtml(config.officeFax)}` : ""}<br />
-          ${escapeHtml(config.officeEmail)}
-        </p>
-      </div>
-    </header>
-    <div class="patient-banner">
-      <div>
-        <p class="label">Patient</p>
-        <p class="name">${escapeHtml(config.patientName)}</p>
-      </div>
-      <div class="doc-title">Clinical SOAP Notes</div>
-    </div>
-    ${encounterMarkup}
-    <div class="print-footer">
-      ${escapeHtml(config.officeName)} &bull; Confidential Medical Record
-    </div>
-  </div>`;
+  return buildSoapPrintFragment(config);
 }
 
 /**
