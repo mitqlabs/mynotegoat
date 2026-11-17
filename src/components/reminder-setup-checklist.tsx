@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
-import { iphoneSetupSteps, setupTestReport, type SetupReport } from "@/lib/iphone-setup";
+import { iphoneSetupSteps, setupTestReport, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -45,9 +45,9 @@ export function AutomationWarning({
   const time = hourLabel(settings.sendHour);
   if (!warning.length || !hasIphone) return null;
   return (
-    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm" data-testid="automation-warning" role="alert">
-      <p className="font-bold text-red-800">Your {time} run may not be set up — see the iPhone steps</p>
-      <p className="mt-1 text-red-900">
+    <div className="rounded-xl border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-4 py-3 text-sm text-[var(--text-main)]" data-testid="automation-warning" role="alert">
+      <p className="font-bold">Your {time} run may not be set up — see the iPhone steps</p>
+      <p className="mt-1 text-[var(--text-muted)]">
         Reminders were due on {warning.slice(0, 2).map((d) => fmtDate(d)).join(" and ")}, but the phone didn&apos;t send
         them by itself around {time}.
         {settings.automationConfirmed
@@ -66,6 +66,9 @@ export function ReminderSetupChecklist({
   workspaceId,
   devices,
   onChanged,
+  steps: stepsOverride,
+  embedded = false,
+  hasMac = false,
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
@@ -74,9 +77,14 @@ export function ReminderSetupChecklist({
   workspaceId: string;
   devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null }[];
   onChanged?: () => void;
+  /** Times computed from the saved texts. Omit to use the older fixed list. */
+  steps?: SetupStep[];
+  /** Sit on the page with no extra card around it. */
+  embedded?: boolean;
+  hasMac?: boolean;
 }) {
   const [atSend] = catchUpClockLabels(settings.sendHour);
-  const steps = iphoneSetupSteps(settings.sendHour);
+  const steps = stepsOverride ?? iphoneSetupSteps(settings.sendHour);
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
@@ -187,54 +195,70 @@ export function ReminderSetupChecklist({
     setNote("");
     if (!onThisIphone()) {
       setNote("Open this page on the office iPhone and tap Test.");
-      await loadReports();
+      loadRef.current();
       return;
     }
     window.location.href = TEST_URL;
     window.setTimeout(() => loadRef.current(), 4000);
   };
 
+  const body = (
+    <>
+      <ol className="grid gap-4" data-testid="iphone-setup-steps">
+        {steps.map((step, index) => {
+          const isAdd = index === 0;
+          const isTest = index === steps.length - 1;
+          return (
+            <li className="flex items-start gap-3" key={`${index}-${step.text}`}>
+              <span aria-hidden className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-2xl font-bold text-[var(--text-main)]">
+                {index + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                {isAdd ? (
+                  <button
+                    className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60"
+                    data-testid="add-to-iphone"
+                    disabled={busy === "add"}
+                    onClick={() => void addToThisIphone()}
+                    type="button"
+                  >
+                    {busy === "add" ? "Opening…" : "Add to this iPhone"}
+                  </button>
+                ) : isTest ? (
+                  <button
+                    className={`w-full rounded-xl border px-4 py-4 text-left text-lg font-bold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
+                    data-testid="iphone-setup-test"
+                    onClick={() => void runTest()}
+                    type="button"
+                  >
+                    <span className="block">{report.ok ? report.title : "Test"}</span>
+                    {report.ok ? <span className="mt-1 block text-sm font-semibold">{report.fix}</span> : null}
+                  </button>
+                ) : (
+                  <StepWords text={step.text} />
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {hasMac ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
+      {note ? <p className="text-sm font-semibold text-[var(--text-main)]">{note}</p> : null}
+    </>
+  );
+
+  if (embedded) return <div className="grid gap-4 text-[var(--text-main)]">{body}</div>;
+
   return (
     <SetupCard
       onToggle={onToggle}
       open={open}
       status={report.ok ? "done" : "todo"}
-      summary={report.ok ? `STOP catcher working${confirmedOn ? ` · checked ${confirmedOn}` : ""}.` : `The iPhone does not start by itself. Follow these steps once.`}
+      summary={report.ok ? `STOP catcher working${confirmedOn ? ` · checked ${confirmedOn}` : ""}.` : "Follow these steps once."}
       testId="reminder-setup-checklist"
       title={`iPhone texts at ${atSend}`}
     >
-      <ol className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]" data-testid="iphone-setup-steps">
-        {steps.map((step, index) => (
-          <li className="flex items-start gap-3 px-3 py-3" key={step.text}>
-            <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center text-lg">{step.icon}</span>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-[var(--text-muted)]">Step {index + 1}</p>
-              <StepWords text={step.text} />
-              {index === 0 && (
-                <button
-                  className="mt-2 rounded-lg bg-[var(--brand-primary)] px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
-                  data-testid="add-to-iphone"
-                  disabled={busy === "add"}
-                  onClick={() => void addToThisIphone()}
-                  type="button"
-                >
-                  {busy === "add" ? "Opening…" : "Add to this iPhone"}
-                </button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-      <button
-        className={`w-full rounded-xl px-4 py-4 text-left text-base font-bold ${report.ok ? "bg-emerald-600 text-white" : "bg-[var(--brand-primary)] text-white"}`}
-        data-testid="iphone-setup-test"
-        onClick={() => void runTest()}
-        type="button"
-      >
-        <span className="block">{report.ok ? report.title : "Test"}</span>
-        <span className="mt-1 block text-sm font-semibold opacity-95">{report.fix}</span>
-      </button>
-      {note ? <p className="text-sm font-semibold text-red-800">{note}</p> : null}
+      {body}
     </SetupCard>
   );
 }

@@ -4,6 +4,7 @@
  */
 import { catchUpClockLabels } from "@/lib/reminder-automation";
 import { fmtDateTime } from "@/lib/reminder-format";
+import { clockWords } from "@/lib/text-rules";
 
 export interface SetupStep {
   icon: string;
@@ -25,6 +26,34 @@ export function iphoneSetupSteps(sendHour: number): SetupStep[] {
     { icon: "💬", text: "Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**. Tap **NoteGoat**. If you see **Shortcut Input**, tap it. Tap **Done**." },
     { icon: "✅", text: "Come back here and tap **Test**." },
   ];
+}
+
+/**
+ * Phone steps for the times the saved texts actually use.
+ * The first time lists every button. Later times say to do that again.
+ * A time that is already in the list is not asked twice.
+ */
+export function phoneStepsForClocks(clocks: { hour: number; minute: number }[]): SetupStep[] {
+  const steps: SetupStep[] = [
+    { icon: "1", text: "Tap **Add to this iPhone**." },
+    { icon: "2", text: "Tap **Add Shortcut**." },
+  ];
+  clocks.forEach((clock, index) => {
+    const time = clockWords(clock.hour, clock.minute);
+    steps.push({
+      icon: String(steps.length + 1),
+      text:
+        index === 0
+          ? `Set **${time}**. Open **Shortcuts**. Tap **Automation**. Tap **+**. Tap **Time of Day**. Set **${time}**. Tap **Every Day**. Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**. Tap **NoteGoat**. Tap **Done**.`
+          : `Do that again for **${time}**.`,
+    });
+  });
+  steps.push({
+    icon: String(steps.length + 1),
+    text: "Tap **+**. Tap **Message**. Tap **Message Contains**. Type **STOP**. Tap **Done**. Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**. Tap **NoteGoat**. If you see **Shortcut Input**, tap it. Tap **Done**.",
+  });
+  steps.push({ icon: String(steps.length + 1), text: "Tap **Test**." });
+  return steps;
 }
 
 export interface SetupReport {

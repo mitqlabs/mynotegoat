@@ -55,11 +55,29 @@ export interface SmsReminderSettings {
   birthdayTexts: boolean;
   /** Birthday text wording. `{first name}` becomes the patient's first name. */
   birthdayMessage: string;
-  /** The library message Auto Texts → Birthday sends ("" = not attached yet; the server then falls back). */
+  /** The library message birthday texts send ("" = not attached yet; the server then falls back). */
   birthdayTemplateId: string;
+  /** Earliest hour a birthday text may go out. Falls back to sendHour for older settings. */
+  birthdayHour: number;
+  /**
+   * Saved "which message, when" rows. null means this office has not opened the new
+   * screen yet — the queue keeps the old send-hour behavior until they do.
+   */
+  rules: TextRule[] | null;
   /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
    *  computer shows the same layout. A section that is not listed uses its default. */
-  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library", boolean>>;
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more", boolean>>;
+}
+
+export type TextWhenKind = "day-before" | "birthday" | "open-day" | "hours-before";
+
+/** One automatic text: a saved message, when it goes out, and on or off. */
+export interface TextRule {
+  id: string;
+  templateId: string;
+  on: boolean;
+  kind: TextWhenKind;
+  hour: number;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
@@ -89,8 +107,31 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     birthdayTexts: false,
     birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE,
     birthdayTemplateId: "",
+    birthdayHour: 8,
+    rules: null,
     sections: {},
   };
+}
+
+const TEXT_WHEN: ReadonlySet<string> = new Set(["day-before", "birthday", "open-day", "hours-before"]);
+
+function normalizeTextRules(value: unknown): TextRule[] | null {
+  if (!Array.isArray(value)) return null;
+  const rules: TextRule[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.id !== "string" || !TEXT_WHEN.has(String(raw.kind))) continue;
+    const hour = Number(raw.hour);
+    rules.push({
+      id: raw.id.slice(0, 40),
+      templateId: typeof raw.templateId === "string" ? raw.templateId : "",
+      on: raw.on === true,
+      kind: raw.kind as TextWhenKind,
+      hour: Number.isFinite(hour) ? Math.min(23, Math.max(0, Math.round(hour))) : 8,
+    });
+  }
+  return rules;
 }
 
 export function normalizeSmsReminderSettings(value: unknown): SmsReminderSettings {
@@ -133,9 +174,11 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
     base.birthdayMessage = raw.birthdayMessage.trim().slice(0, BIRTHDAY_MESSAGE_MAX);
   }
   if (typeof raw.birthdayTemplateId === "string") base.birthdayTemplateId = raw.birthdayTemplateId;
+  base.birthdayHour = num("birthdayHour", 0, 23) ?? base.sendHour;
+  base.rules = normalizeTextRules(raw.rules);
   if (raw.sections && typeof raw.sections === "object") {
     const sec = raw.sections as Record<string, unknown>;
-    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library"] as const) {
+    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library", "more"] as const) {
       if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
     }
   }

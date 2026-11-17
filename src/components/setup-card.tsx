@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import type { CardStatus } from "@/lib/reminder-format";
 
 const PILL: Record<Exclude<CardStatus, "info">, { text: string; cls: string }> = {
-  done: { text: "✓ Done", cls: "bg-emerald-100 text-emerald-800" },
-  todo: { text: "To do", cls: "bg-amber-100 text-amber-900" },
-  optional: { text: "Optional", cls: "bg-[var(--bg-soft)] text-[var(--text-muted)]" },
+  done: { text: "✓ Done", cls: "border border-[var(--brand-primary)] text-[var(--text-main)]" },
+  todo: { text: "To do", cls: "border border-[var(--brand-accent)] text-[var(--text-main)]" },
+  optional: { text: "Optional", cls: "border border-[var(--line-soft)] text-[var(--text-muted)]" },
 };
 
 /**
@@ -37,7 +37,7 @@ export function SetupCard({
   const pill = status === "info" ? null : PILL[status];
   return (
     <section
-      className="rounded-xl border border-[var(--line-soft)] bg-white"
+      className={`rounded-xl border bg-[var(--bg-panel)] text-[var(--text-main)] ${status === "todo" ? "border-[var(--brand-accent)]" : "border-[var(--line-soft)]"}`}
       data-open={open ? "true" : "false"}
       data-status={status}
       data-testid={testId}

@@ -9,10 +9,10 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
 import { markLocalWrite } from "@/lib/local-sync";
-import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { planAutoTextMigration } from "@/lib/message-library";
-import { AutoTextRows } from "@/components/auto-texts-panel";
+import { legacyRules, withRules } from "@/lib/text-rules";
+import { TextRuleWizard } from "@/components/text-rule-wizard";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -39,11 +39,11 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
-import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { AutomationWarning } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { birthdayLogLabel } from "@/lib/birthday-texts";
-import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, optedOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, optedOutSummary, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -87,12 +87,10 @@ const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5
 
 export function TextRemindersSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
-  const { officeSettings } = useOfficeSettings();
   const { scheduleSettings } = useScheduleSettings();
   const { scheduleAppointments } = useScheduleAppointments();
   const [settings, setSettings] = useState<SmsReminderSettings>(() => loadSettings());
   const [devices, setDevices] = useState<DeviceRow[]>([]);
-  const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [log, setLog] = useState<LogRow[]>([]);
   // Send history over the last two weeks (times + visit dates only), for the "8 AM automation may not be set up" check.
   const [history, setHistory] = useState<{ createdAt: string; visitDate: string }[]>([]);
@@ -125,9 +123,13 @@ export function TextRemindersSettingsPanel() {
     const timer = window.setTimeout(() => {
       const { settings: s, templates } = attachRef.current;
       const plan = planAutoTextMigration(s, templates, new Date().toISOString());
-      if (!plan) return;
-      if (plan.addMessages.length) updateSmsTemplates((current) => [...current.filter((m) => !plan.addMessages.some((a) => a.id === m.id)), ...plan.addMessages]);
-      update(plan.settingsPatch);
+      let next = s;
+      if (plan) {
+        if (plan.addMessages.length) updateSmsTemplates((current) => [...current.filter((m) => !plan.addMessages.some((a) => a.id === m.id)), ...plan.addMessages]);
+        next = { ...s, ...plan.settingsPatch };
+      }
+      if (next.rules == null) next = withRules(next, legacyRules(next));
+      if (next !== s) update(next);
     }, 2500);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -161,7 +163,6 @@ export function TextRemindersSettingsPanel() {
         .limit(25),
     ]);
     setDevices((d as DeviceRow[] | null) ?? []);
-    setDevicesLoaded(true);
     setLog((l as LogRow[] | null) ?? []);
     const since = new Date(Date.now() - (AUTO_RUN_LOOKBACK_DAYS + 2) * 86_400_000).toISOString();
     const { data: h } = await client
@@ -358,11 +359,6 @@ export function TextRemindersSettingsPanel() {
   const setSection = (key: ReminderSection, open: boolean) =>
     update({ sections: { ...settings.sections, [key]: open } });
 
-  // Set up starts collapsed once it is finished (box ticked AND a device has run). Until the devices
-  // load, the ticked box alone decides, so the page doesn't open and then snap shut.
-  const setupDone = devicesLoaded ? reminderSetupDone(settings.automationConfirmed, devices) : settings.automationConfirmed;
-  const setupOpen = sectionOpen(settings.sections, "setup", !setupDone);
-
   const confirmAutomation = (confirmed: boolean) =>
     update({ automationConfirmed: confirmed, automationConfirmedAt: confirmed ? new Date().toISOString() : "" });
 
@@ -392,23 +388,20 @@ export function TextRemindersSettingsPanel() {
     <div className="space-y-5" data-testid="text-reminders-panel">
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
-      <CollapsibleSection
-        hint={setupDone ? "Done. Open to change senders, shortcuts or opt-out setup." : "Checklist, sending devices, shortcuts and opt-out setup."}
-        onToggle={(next) => setSection("setup", next)}
-        open={setupOpen}
-        testId="section-setup"
-        title="Set up"
-      >
-      <ReminderSetupChecklist
-        devices={devices}
-        onChanged={() => void refresh()}
-        onConfirm={confirmAutomation}
-        onToggle={(next) => setSection("steps", next)}
-        open={sectionOpen(settings.sections, "steps", !settings.automationConfirmed)}
-        settings={settings}
-        workspaceId={workspaceId}
-      />
+      <div data-testid="section-setup">
+        <TextRuleWizard
+          devices={devices}
+          hasMac={activeDevices.some((d) => d.kind === "mac")}
+          messages={smsTemplates}
+          onChanged={() => void refresh()}
+          onConfirm={confirmAutomation}
+          settings={settings}
+          update={update}
+          workspaceId={workspaceId}
+        />
+      </div>
 
+      <div data-testid="section-phones">
       <SetupCard
         actions={
           <>
@@ -421,23 +414,23 @@ export function TextRemindersSettingsPanel() {
           </>
         }
         onToggle={(next) => setSection("devices", next)}
-        open={sectionOpen(settings.sections, "devices", true)}
+        open={sectionOpen(settings.sections, "devices", false)}
         status={devicesCard.status}
         summary={devicesCard.summary}
         testId="section-devices"
-        title="Sending devices"
+        title="Phones and Macs"
       >
         {newToken && (
-          <div className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3" data-testid="new-device-token">
+          <div className="grid gap-2 rounded-lg border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-3 py-3 text-[var(--text-main)]" data-testid="new-device-token">
             <p className="font-semibold">Your new setup code for {newTokenName}. Copy it now. It will not be shown again.</p>
-            <code className="select-all break-all rounded-md bg-white px-2 py-1.5 font-mono text-sm">{newToken}</code>
-            <p className="text-amber-900">
+            <code className="select-all break-all rounded-md bg-[var(--bg-soft)] px-2 py-1.5 font-mono text-sm text-[var(--text-main)]">{newToken}</code>
+            <p>
               <b>Do not share this setup code.</b> Anyone who has it can send texts as your office. Paste it into{" "}
               {newTokenKind === "mac" ? "the iMac setup" : "the iPhone setup"} below.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
-                className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-[var(--on-brand)]"
                 data-testid="copy-device-token"
                 onClick={() => {
                   void navigator.clipboard?.writeText(newToken).then(() => setCopied(true));
@@ -490,7 +483,14 @@ export function TextRemindersSettingsPanel() {
         )}
         {message && <p className="font-semibold text-red-700">{message}</p>}
       </SetupCard>
+      </div>
 
+      <CollapsibleSection
+        onToggle={(next) => setSection("more", next)}
+        open={sectionOpen(settings.sections, "more", false)}
+        testId="section-more"
+        title="More"
+      >
       <SetupCard
         onToggle={(next) => setSection("how", next)}
         open={sectionOpen(settings.sections, "how", false)}
@@ -627,21 +627,6 @@ export function TextRemindersSettingsPanel() {
           </ol>
         </InnerFold>
       </SetupCard>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        hint="Turn each automatic text on or off and pick the message it sends."
-        onToggle={(next) => setSection("autotexts", next)}
-        open={sectionOpen(settings.sections, "autotexts", true)}
-        testId="section-autotexts"
-        title="Auto Texts"
-      >
-      <AutoTextRows
-        messages={smsTemplates}
-        office={{ officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone }}
-        settings={settings}
-        update={update}
-      />
       <p className="text-sm">
         <button
           className="font-semibold text-[var(--brand-primary)] underline"
@@ -677,8 +662,8 @@ export function TextRemindersSettingsPanel() {
             <button
               className={`h-[42px] rounded-xl border px-3 text-sm font-semibold ${
                 runDays.includes(dow)
-                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                  : "border-[var(--line-soft)] bg-white"
+                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--on-brand)]"
+                  : "border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]"
               }`}
               key={day}
               onClick={() => toggleDay(dow)}
@@ -711,11 +696,11 @@ export function TextRemindersSettingsPanel() {
         </ul>
       </details>
           {birthdayLog.some((row) => birthdayLogLabel(row.status, row.error, row.claimed_at, localNow(new Date(), settings.timeZone).iso, settings.timeZone) === "Not sent (too late)") ? (
-            <p className="text-sm font-semibold text-red-800" data-testid="birthday-late">
+            <p className="text-sm font-semibold text-[var(--text-main)]" data-testid="birthday-late">
               Some birthday texts were not sent (too late).
             </p>
           ) : null}
-          <details className="rounded-lg border border-[var(--line-soft)] bg-white" data-testid="birthday-log">
+          <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]" data-testid="birthday-log">
             <summary className="cursor-pointer px-3 py-2 font-semibold">Recent birthday texts</summary>
             {birthdayLog.length === 0 ? (
               <p className="px-3 py-2 text-[var(--text-muted)]">None yet.</p>

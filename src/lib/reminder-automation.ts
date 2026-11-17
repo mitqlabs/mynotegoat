@@ -194,6 +194,8 @@ export function buildDeviceQueue(input: {
   alreadySentIds: Set<string>;
   /** Same-day catch-up: only visits starting after this "HH:MM". */
   onlyAfter?: string;
+  /** 24-hour texts: only visits starting at or before this "HH:MM". */
+  notAfter?: string;
   /** Same-day catch-up: say "today" instead of "tomorrow". */
   sameDay?: boolean;
   /** Key Date special hours: visits outside them get no reminder. */
@@ -201,9 +203,15 @@ export function buildDeviceQueue(input: {
 }): DeviceQueueItem[] {
   const queue = buildReminderQueue(input.appointments, input.patientsById, input.settings, input.visitDate);
   const after = input.onlyAfter ? normalizeHHMM(input.onlyAfter) : "";
+  const before = input.notAfter ? normalizeHHMM(input.notAfter) : "";
   return sendableReminders(queue)
     .filter((entry) => !input.alreadySentIds.has(entry.appointmentId))
     .filter((entry) => !after || normalizeHHMM(entry.time) > after)
+    .filter((entry) => {
+      if (!before) return true;
+      const time = normalizeHHMM(entry.time);
+      return !time || time <= before;
+    })
     .filter((entry) => isTimeWithinHours(entry.time, input.hours ?? null))
     .map((entry) => {
       const text = renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office);

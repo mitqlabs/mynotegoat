@@ -17,6 +17,7 @@ import {
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
 import { summaryAfterEmptyRun } from "@/lib/reminder-format";
+import { dueScope } from "@/lib/text-rules";
 import {
   adminClient,
   alreadySentIds,
@@ -59,12 +60,11 @@ export const dynamic = "force-dynamic";
  * reminder for another date; "b:<id>" = broadcast; "bd:<year>:<patient id>" =
  * birthday text. /ack understands all.
  *
- * Birthday texts (Settings → Text Reminders → Birthday texts, default off):
- * from the send hour on, outside quiet hours, every ACTIVE patient whose
- * birthday is today (office time zone) who is not opted out gets one text, at
- * most once per patient per year (birthday_text_log). They ride the same
- * daily run, so the device/Shortcut needs no change. Not tied to office open
- * days or Key Date closures: it is not about a visit.
+ * Birthday texts go out at their own hour (older settings: the send hour),
+ * outside quiet hours. Every patient whose birthday is today who is not
+ * opted out gets one text, at most once per patient per year. Not tied to
+ * office open days or Key Date closures: it is not about a visit.
+ * Saved texts can also limit visits to open office days or the next 24 hours.
  *
  * Legacy: run_requested_until (old Settings "Send now") still counts as
  * force=1 until a run completes.
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
   const todayIso = localNow(now, settings.timeZone).iso;
 
   // Which visit dates to work on, and how.
-  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string; hours?: { start: string; end: string } };
+  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string; notAfter?: string; hours?: { start: string; end: string } };
   let groups: Group[] = [];
   let visitDate: string;
   let reason = "";
@@ -139,6 +139,26 @@ export async function GET(request: NextRequest) {
   groups = openGroups;
   reminderRun = reminderRun && groups.length > 0;
 
+  // Saved texts pick their own hour. Until the office saves that list, the
+  // old send-hour path above is unchanged. A 9 AM birthday does not ride
+  // the 8 AM run. Open days follow office hours and Key Dates.
+  const scope = settings.rules
+    ? dueScope({
+        rules: settings.rules,
+        now,
+        timeZone: settings.timeZone,
+        officeHours: config.officeHours,
+        closedIsoDates: config.closedIsoDates,
+      })
+    : null;
+  if (scope) {
+    const hhmm = localHHMM(now, settings.timeZone);
+    groups = groups
+      .filter((g) => (g.sameDay ? scope.today : scope.tomorrow))
+      .map((g) => (!g.sameDay && scope.limitTomorrowToNow ? { ...g, notAfter: hhmm } : g));
+    reminderRun = groups.length > 0;
+  }
+
   await admin.from("reminder_devices").update({ last_seen_at: now.toISOString() }).eq("id", device.id);
 
   const reply = (body: Record<string, unknown>) =>
@@ -162,6 +182,7 @@ export async function GET(request: NextRequest) {
           office: config.office,
           alreadySentIds: await alreadySentIds(admin, device.workspace_id, g.visitDate),
           onlyAfter: g.onlyAfter,
+          notAfter: g.notAfter,
           sameDay: g.sameDay,
           hours: g.hours,
         }),
@@ -176,10 +197,11 @@ export async function GET(request: NextRequest) {
   const dryRun = settings.dryRun;
   const willSend = !dryRun && !preview;
 
-  // Birthday texts: same daily run, from the send hour on, never in quiet hours.
+  // Birthday texts wait until their own hour. Older settings use the send hour.
   const localToday = localNow(now, settings.timeZone);
+  const birthdayDue = scope ? scope.birthday : localToday.hour >= (settings.birthdayHour || settings.sendHour);
   let birthdays: BirthdayQueueRow[] =
-    !quiet && localToday.hour >= settings.sendHour
+    !quiet && birthdayDue
       ? await loadBirthdayQueue(admin, device, todayIso, settings, {
           retryDryRun: willSend || preview,
           reofferClaims: willSend,

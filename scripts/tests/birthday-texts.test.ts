@@ -311,7 +311,8 @@ async function main() {
   assert.ok(/ackBirthday/.test(ackRoute) && /kind === "birthday"/.test(ackRoute));
   const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
   const autoSrc = readFileSync("src/components/auto-texts-panel.tsx", "utf8");
-  assert.ok(/<AutoTextRows/.test(panel) && /birthdayTexts/.test(autoSrc) && /birthdayTemplateId/.test(autoSrc) && /birthday-preview/.test(autoSrc));
+  assert.ok(/<TextRuleWizard/.test(panel) && /birthdayTexts/.test(autoSrc) && /birthdayTemplateId/.test(autoSrc) && /birthday-preview/.test(autoSrc));
+  assert.ok(/kind === "birthday"/.test(readFileSync("src/lib/text-rules.ts", "utf8")));
   const handbook = readFileSync("src/lib/handbook-content.ts", "utf8");
   const goat = readFileSync("src/lib/handbook-goat.ts", "utf8");
   assert.ok(/Birthday texts/.test(handbook) && /Birthday texts/.test(goat));
