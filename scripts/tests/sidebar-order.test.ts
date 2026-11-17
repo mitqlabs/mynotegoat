@@ -4,6 +4,7 @@
  * Run: npx tsx scripts/tests/sidebar-order.test.ts
  */
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import {
   SETTINGS_ID,
   applySidebarOrder,
@@ -11,6 +12,7 @@ import {
   moveSidebarId,
   reorderSidebarId,
   sidebarCatalog,
+  sidebarLandingHref,
   sidebarOrderFrom,
   sidebarOrderValue,
   visibleSidebarPages,
@@ -114,6 +116,42 @@ test("dragging up lands on the target index", () => {
   assert.deepEqual(reorderSidebarId(start, "missing", "contacts"), [...start]);
   assert.deepEqual(reorderSidebarId(start, "patients", "missing"), [...start]);
   assert.deepEqual(start, ["patients", "contacts", "appointments", "encounters"]);
+});
+
+test("opening the app lands on the first visible sidebar page", () => {
+  assert.equal(sidebarLandingHref("complete", seeAll, null), "/patients");
+  assert.equal(sidebarLandingHref("complete", seeAll, []), "/patients");
+  assert.equal(sidebarLandingHref("complete", seeAll, "nope"), "/patients");
+  assert.equal(sidebarLandingHref("complete", seeAll, ["contacts", "patients"]), "/contacts");
+  assert.equal(sidebarLandingHref("complete", seeAll, ["statistics", "patients"]), "/dashboard");
+  assert.equal(sidebarLandingHref("complete", seeAll, ["handbook", "patients"]), "/handbook");
+  assert.equal(sidebarLandingHref("complete", seeAll, ["goatMail", "patients"]), "/goat-mail");
+  assert.equal(sidebarLandingHref("complete", seeAll, ["goatPage", "patients"]), "/goat-page");
+  assert.equal(sidebarLandingHref("complete", seeAll, [SETTINGS_ID, "messages", "patients"]), "/messages");
+});
+
+test("a hidden first page is skipped, and a fully blocked order uses the default", () => {
+  const hideBilling = (feature: string) => feature !== "billing";
+  assert.equal(sidebarLandingHref("complete", hideBilling, ["billing", "appointments", "patients"]), "/appointments");
+  assert.equal(sidebarLandingHref("complete", () => false, null), "/handbook");
+  assert.equal(sidebarLandingHref("complete", () => false, ["patients", "billing"]), "/handbook");
+  assert.equal(sidebarLandingHref("complete", (feature) => feature !== "patients", null), "/dashboard");
+});
+
+test("root, sign-in, and approval open the sidebar landing page behind the check-in screen", () => {
+  assert.equal(existsSync("src/app/page.tsx"), false);
+  const home = readFileSync("src/app/(portal)/page.tsx", "utf8");
+  const login = readFileSync("src/app/auth/login/login-client.tsx", "utf8");
+  const pending = readFileSync("src/app/auth/pending/page.tsx", "utf8");
+  const layout = readFileSync("src/app/(portal)/layout.tsx", "utf8");
+  assert.match(home, /sidebarLandingHref\(planTier, canView, saved\)/);
+  assert.match(home, /router\.replace\(href\)/);
+  assert.match(login, /router\.replace\(next \?\? "\/"\)/);
+  assert.match(pending, /router\.replace\("\/"\)/);
+  assert.match(layout, /pathname === "\/"/);
+  assert.match(layout, /syncUserPrefs\(\)/);
+  assert.match(layout, /<PortalBootScreen/);
+  assert.match(layout, /<GoatCheckIn \/>/);
 });
 
 test("Sidebar is a Settings section on one tab and has no subtitle", () => {

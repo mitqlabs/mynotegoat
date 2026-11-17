@@ -321,10 +321,34 @@ export default function PortalLayout({
         } finally {
           offProgress();
         }
-        // Bring back this user's prefs (sorts, columns, chat…) from the cloud.
-        void import("@/lib/user-prefs-cloud").then((m) =>
-          m.syncUserPrefs().catch((err: unknown) => console.warn("[user-prefs] restore failed:", err)),
-        );
+        // Bring back this user's prefs (sorts, columns, the sidebar order…)
+        // from the cloud. A prefs failure must not lock the office the way a
+        // failed record pull does. Opening the app at "/" waits for that
+        // order so the check-in screen stays up until we know which page is
+        // first. Every other route keeps going and lets the prefs catch up.
+        const prefs = import("@/lib/user-prefs-cloud")
+          .then((m) => m.syncUserPrefs())
+          .catch((err: unknown) => console.warn("[user-prefs] restore failed:", err));
+        // Role permissions are not in the main cloud pull. On the home
+        // route, read them before choosing a page so a hidden section is
+        // not opened and then bounced.
+        const roles =
+          pathname === "/"
+            ? import("@/lib/role-settings-store")
+                .then((m) => m.fetchAccessFromCloud())
+                .catch((err: unknown) => console.warn("[roles] restore failed:", err))
+            : Promise.resolve(null);
+        if (pathname === "/") {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            Promise.all([prefs, roles]).finally(() => {
+              if (timer) clearTimeout(timer);
+            }),
+            new Promise((resolve) => {
+              timer = setTimeout(resolve, 10_000);
+            }),
+          ]);
+        }
       } catch (error) {
         if (!active) return;
         const message =
@@ -472,6 +496,8 @@ export default function PortalLayout({
     // Deps are intentionally `[]` — router is accessed through
     // routerRef.current so re-runs on router-object identity changes
     // (which shouldn't happen in Next.js anyway) don't stack listeners.
+    // `pathname` is the route this tab opened on, which is what decides
+    // whether to wait for the sidebar order before leaving the check-in.
   }, []);
 
   // (Auto-retry-on-focus was removed. The feature caused an event-listener
@@ -558,28 +584,21 @@ export default function PortalLayout({
   }
 
   if (!mounted) {
-    return (
-      <div className="relative min-h-screen px-4 py-6 lg:px-8">
-        <div className="pointer-events-none opacity-40" aria-hidden="true">
-          <PortalLoadingSkeleton pathname={pathname} />
-        </div>
-        <div className="absolute inset-x-0 top-[18vh] flex justify-center">
-          <div className="rounded-3xl border border-[var(--line-soft,#e2e8f0)] bg-[var(--bg-panel,#fff)] px-10 shadow-xl backdrop-blur-sm">
-            <GoatCheckIn />
-            {bootProgressText ? (
-              <p className="pb-4 text-center text-sm text-[var(--text-muted,#64748b)]" aria-live="polite">
-                {bootProgressText}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    );
+    return <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />;
   }
 
   return (
     <PlanTierProvider planTier={planTier}>
       <WorkspaceAccessProvider membership={membership}>
+      {pathname === "/" ? (
+        <>
+          {/* Stay on the check-in screen until the home page replaces "/"
+              with the first sidebar page. The shell never paints the wrong one. */}
+          <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />
+          {children}
+        </>
+      ) : (
+      <>
       <RouteAccessGuard />
       <AppShell planTier={planTier}>
         {/* Problem-only save badge. Saving and Saved already show on the
@@ -660,8 +679,37 @@ export default function PortalLayout({
         <GlobalRecordRealtime />
         {children}
       </AppShell>
+      </>
+      )}
       </WorkspaceAccessProvider>
     </PlanTierProvider>
+  );
+}
+
+/** Same check-in screen the portal already shows while cloud data loads. */
+function PortalBootScreen({
+  pathname,
+  bootProgressText,
+}: {
+  pathname: string;
+  bootProgressText: string | null;
+}) {
+  return (
+    <div className="relative min-h-screen px-4 py-6 lg:px-8">
+      <div className="pointer-events-none opacity-40" aria-hidden="true">
+        <PortalLoadingSkeleton pathname={pathname} />
+      </div>
+      <div className="absolute inset-x-0 top-[18vh] flex justify-center">
+        <div className="rounded-3xl border border-[var(--line-soft,#e2e8f0)] bg-[var(--bg-panel,#fff)] px-10 shadow-xl backdrop-blur-sm">
+          <GoatCheckIn />
+          {bootProgressText ? (
+            <p className="pb-4 text-center text-sm text-[var(--text-muted,#64748b)]" aria-live="polite">
+              {bootProgressText}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

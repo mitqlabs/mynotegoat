@@ -59,7 +59,7 @@ export default function LoginClient({ verifyNotice, disabledNotice, next }: Logi
     }
 
     if (access.state === "access-granted") {
-      router.replace(next ?? "/patients");
+      router.replace(next ?? "/");
       return;
     }
 
