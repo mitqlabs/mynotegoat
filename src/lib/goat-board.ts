@@ -21,7 +21,6 @@ export const DEFAULT_BOX_ORDER = [
   "schedule",
   "tomorrow-schedule",
   "intake",
-  "goat-answers",
   "todos",
   "case-snapshot",
   "end-of-day",
@@ -77,7 +76,6 @@ export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = 
   schedule: "Today's Schedule",
   "tomorrow-schedule": "Tomorrow's Schedule",
   intake: "New Patient Intake",
-  "goat-answers": "G.O.A.T. Answers",
   todos: "To-Do's & Alerts",
   "case-snapshot": "Case Snapshot",
   "end-of-day": "End of Day Handoff",
@@ -94,7 +92,6 @@ const BOX_SIZE: Record<BuiltinKind, { w: number; h: number }> = {
   schedule: { w: 6, h: 10 },
   "tomorrow-schedule": { w: 6, h: 10 },
   intake: { w: 3, h: 8 },
-  "goat-answers": { w: 3, h: 8 },
   todos: { w: 6, h: 8 },
   "case-snapshot": { w: 6, h: 10 },
   "end-of-day": { w: 12, h: 11 },
@@ -274,9 +271,25 @@ export function boxesFromSnapshot(raw: string): BoardBox[] {
   return dropRetiredBoxes(parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard());
 }
 
-/** Saved layouts from before this box was removed. */
+const RETIRED_KINDS = new Set(["morning-rundown", "goat-answers"]);
+
+/**
+ * Saved layouts from before a box was removed. The old answers box is retired
+ * because G.O.A.T. Mail already lists mail that needs an answer. Boxes that
+ * sat to the right of a retired box slide left so the row does not keep a hole.
+ */
 export function dropRetiredBoxes(boxes: BoardBox[]): BoardBox[] {
-  return boxes.filter((box) => (box.kind as string) !== "morning-rundown");
+  const retired = boxes.filter((box) => RETIRED_KINDS.has(box.kind as string));
+  if (!retired.length) return boxes;
+  let next = boxes.filter((box) => !RETIRED_KINDS.has(box.kind as string));
+  for (const gone of retired) {
+    next = next.map((box) => {
+      const overlapsY = box.y < gone.y + gone.h && gone.y < box.y + box.h;
+      if (overlapsY && box.x >= gone.x + gone.w) return { ...box, x: Math.max(0, box.x - gone.w) };
+      return box;
+    });
+  }
+  return next;
 }
 
 export function subscribeBoard(onStoreChange: () => void): () => void {

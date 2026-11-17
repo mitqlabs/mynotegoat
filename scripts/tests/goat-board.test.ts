@@ -34,7 +34,6 @@ assert.deepEqual([...DEFAULT_BOX_ORDER], [
   "schedule",
   "tomorrow-schedule",
   "intake",
-  "goat-answers",
   "todos",
   "case-snapshot",
   "end-of-day",
@@ -44,6 +43,14 @@ assert.deepEqual(
   dropRetiredBoxes([{ i: "morning-rundown", kind: "morning-rundown" as never, x: 0, y: 0, w: 4, h: 8 }, defaultBoard()[0]]).map((box) => box.kind),
   ["goat-mail"],
 );
+const withAnswers = dropRetiredBoxes([
+  { i: "intake", kind: "intake", x: 0, y: 0, w: 3, h: 8 },
+  { i: "goat-answers", kind: "goat-answers" as never, x: 3, y: 0, w: 3, h: 8 },
+  { i: "todos", kind: "todos", x: 6, y: 0, w: 6, h: 8 },
+]);
+assert.deepEqual(withAnswers.map((box) => box.kind), ["intake", "todos"]);
+assert.equal(withAnswers.find((box) => box.kind === "todos")?.x, 3);
+assert.equal(defaultBoard().some((box) => (box.kind as string) === "goat-answers"), false);
 assert.deepEqual([...VISIT_GROUP_LABELS], ["New Patient", "Seen", "No Show", "Rebook", "Canceled"]);
 assert.deepEqual(HANDOFF_TODAY_ITEMS.map((item) => item.label), [
   "Seen",
@@ -156,6 +163,10 @@ assert.equal(clampMaxH(41), 40);
 assert.equal(clampMaxH(16), 16);
 assert.equal(clampMaxH(3), 4);
 const boardSrc = readFileSync(new URL("../../src/components/goat-briefing-board.tsx", import.meta.url), "utf8");
+assert.match(boardSrc, /goat-box-header/);
+assert.match(boardSrc, /color-mix\(in_srgb,var\(--brand-primary\)_14%,transparent\)/);
+assert.match(boardSrc, /rounded-t-2xl/);
+assert.match(boardSrc, /font-bold text-\[var\(--brand-primary\)\]/);
 assert.match(boardSrc, /isResizable=\{arrange\}/);
 assert.match(boardSrc, /touch-pan-y/);
 assert.match(boardSrc, /saveBoard/);

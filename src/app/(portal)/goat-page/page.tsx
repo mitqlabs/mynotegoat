@@ -88,18 +88,6 @@ export default function GoatPage() {
   return (
     <GoatPageView model={{ ...model, mailNeedingAction: mail.actionCount, questions: mail.questionCount }}>
       <GoatBriefingBoard
-        answers={
-          <GoatMailBoard
-            notice={mail.notice}
-            onAnswer={mail.answer}
-            onConnect={() => void mail.connect()}
-            onDisconnect={() => void mail.disconnect()}
-            onResolve={mail.resolve}
-            rows={mail.rows}
-            status={mail.status}
-            variant="questions"
-          />
-        }
         appointments={scheduleAppointments}
         caseStatuses={caseStatuses}
         closeout={closeout}
