@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- softer squarer date card with an exclamation point marking the key date -->
+  <path d="M7.6 4.5h8.8A3 3 0 0 1 19.4 7.5V8.8H4.6V7.5A3 3 0 0 1 7.6 4.5Z" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <rect x="4.6" y="4.5" width="14.8" height="15" rx="3"/>
+  <path d="M4.6 8.8h14.8"/>
+  <circle cx="8.95" cy="6.65" r="0.92" fill="#0d79bf" stroke="none"/>
+  <circle cx="15.05" cy="6.65" r="0.92" fill="#0d79bf" stroke="none"/>
+  <path d="M12 10.7v3.6"/>
+  <circle cx="12" cy="16.7" r="1.08" fill="#0d79bf" stroke="none"/>
+</svg>

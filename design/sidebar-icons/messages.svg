@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- two overlapping chat bubbles -->
+  <path d="M11.05 3.5h6.7A2.4 2.4 0 0 1 20.15 5.9v3.25A2.4 2.4 0 0 1 17.75 11.55h-6.7A2.4 2.4 0 0 1 8.65 9.15V5.9A2.4 2.4 0 0 1 11.05 3.5Z" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <path d="M11.05 3.5h6.7A2.4 2.4 0 0 1 20.15 5.9v3.25A2.4 2.4 0 0 1 17.75 11.55h-6.7A2.4 2.4 0 0 1 8.65 9.15V5.9A2.4 2.4 0 0 1 11.05 3.5Z"/>
+  <path d="M3.85 9h10.15A2.5 2.5 0 0 1 16.5 11.5v4.75a2.5 2.5 0 0 1-2.5 2.5H8.55L5.7 21.15v-2.4H3.85A1.9 1.9 0 0 1 1.95 16.85v-5.95A1.9 1.9 0 0 1 3.85 9Z"/>
+  <path d="M5.95 13h6.35"/>
+  <path d="M5.95 15.95h4.2"/>
+</svg>

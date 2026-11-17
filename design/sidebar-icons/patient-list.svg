@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- roster card with two patient busts and name lines -->
+  <rect x="3.55" y="3.35" width="16.9" height="17.3" rx="2.6" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <rect x="3.55" y="3.35" width="16.9" height="17.3" rx="2.6"/>
+  <circle cx="7.95" cy="7.55" r="1.55"/>
+  <path d="M5.85 10.95c.45-1.55 1.25-2.05 2.1-2.05s1.65.5 2.1 2.05"/>
+  <path d="M12.15 7.4h5.55"/>
+  <path d="M12.15 9.55h3.55"/>
+  <circle cx="7.95" cy="14.55" r="1.55"/>
+  <path d="M5.85 17.95c.45-1.55 1.25-2.05 2.1-2.05s1.65.5 2.1 2.05"/>
+  <path d="M12.15 14.4h5.55"/>
+  <path d="M12.15 16.55h3.55"/>
+</svg>

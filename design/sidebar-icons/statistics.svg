@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- upward area chart with an end marker -->
+  <path d="M3.7 18.35H20.3V7.15L16.85 5.55L13.05 11.2C11.55 13.55 9.85 10.7 8.15 9.35L3.7 12.85Z" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <path d="M3.35 18.35h17.3"/>
+  <path d="M3.7 12.85L8.15 9.35C9.85 10.7 11.55 13.55 13.05 11.2L16.85 5.55L20.3 7.15"/>
+  <circle cx="20.3" cy="7.15" r="1.2" fill="#0d79bf" stroke="none"/>
+</svg>

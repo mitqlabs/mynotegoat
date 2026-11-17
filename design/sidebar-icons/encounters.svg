@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- clinical clipboard with a clean pulse line -->
+  <rect x="5.15" y="4.9" width="13.7" height="16.05" rx="2.35" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <rect x="5.15" y="4.9" width="13.7" height="16.05" rx="2.35"/>
+  <rect x="8.65" y="2.4" width="6.7" height="4.2" rx="1.35"/>
+  <path d="M8.4 11h7.2"/>
+  <path d="M8.4 14.05h7.2"/>
+  <path d="M8.4 17.2h1.95l1.15-2.5 1.65 3.75 1.2-2.15h2.25"/>
+</svg>

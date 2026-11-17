@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- megaphone with a hanging handle and sound waves -->
+  <path d="M3.55 10.05h4.05L16.15 5.15a1.1 1.1 0 0 1 1.7.95v11.8a1.1 1.1 0 0 1-1.7.95L7.6 13.95H3.55A1.35 1.35 0 0 1 2.2 12.6v-1.2A1.35 1.35 0 0 1 3.55 10.05Z" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <path d="M3.55 10.05h4.05L16.15 5.15a1.1 1.1 0 0 1 1.7.95v11.8a1.1 1.1 0 0 1-1.7.95L7.6 13.95H3.55A1.35 1.35 0 0 1 2.2 12.6v-1.2A1.35 1.35 0 0 1 3.55 10.05Z"/>
+  <path d="M7.95 14.2v2.7a1.7 1.7 0 0 0 1.7 1.7h1.35"/>
+  <path d="M19.25 9.05a4.2 4.2 0 0 1 0 5.9"/>
+  <path d="M21.1 7.3a6.75 6.75 0 0 1 0 9.4"/>
+</svg>

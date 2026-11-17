@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0d79bf" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<!-- open book with a bookmark ribbon -->
+  <path d="M12 5.4C9.7 4.5 6.55 4.4 3.65 5.4V18.1C6.65 17.1 9.7 17.45 12 19.15Z" fill="#0d79bf" fill-opacity="0.18" stroke="none"/>
+  <path d="M12 5.4C9.7 4.5 6.55 4.4 3.65 5.4V18.1C6.65 17.1 9.7 17.45 12 19.15Z"/>
+  <path d="M12 5.4C14.3 4.5 17.45 4.4 20.35 5.4V18.1C17.35 17.1 14.3 17.45 12 19.15Z"/>
+  <path d="M12 5.4v13.75"/>
+  <path d="M13.55 4.2h2.9v7.6l-1.45-1.3-1.45 1.3Z" fill="#0d79bf"/>
+</svg>
