@@ -110,6 +110,9 @@ for (const needle of ["<MessagePatientsComposer", 'testId="recent-sends"'])
 // Auto Texts: the on/off switches + message menus (own component), send settings; Messages: the library.
 const iAuto = panel.indexOf('testId="section-autotexts"');
 assert.ok(iSetup < iAuto && iAuto < iTexts, "Set up, Auto Texts, Broadcast in that order");
+const iOpted = panel.indexOf('testId="section-opted-out"');
+assert.ok(iTexts < iOpted, "Opted out follows Broadcast");
+assert.ok(!panel.slice(iSetup, iTexts).includes('data-testid="opt-out-list"'), "the opted-out list is not inside Set up");
 // The library lives only in SMS / Text Templates; Auto Texts links there.
 assert.ok(!panel.includes('testId="section-library"') && !panel.includes("<MessagesLibraryPanel"), "no duplicate Messages section");
 assert.ok(panel.slice(iAuto, iTexts).includes("Edit messages in SMS / Text Templates"), "Auto Texts links to SMS / Text Templates");

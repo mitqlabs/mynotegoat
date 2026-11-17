@@ -75,7 +75,7 @@ export function reminderSetupDone(automationConfirmed: boolean, devices: DeviceL
   return automationConfirmed && devices.some((d) => !d.revoked_at && Boolean(d.last_run_at));
 }
 
-export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday" | "autotexts" | "library";
+export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library";
 
 /** Open/closed state for a collapsible section. Unset = its default. */
 export function sectionOpen(
@@ -115,6 +115,12 @@ export function lastRunText(summary: string | null | undefined, runAt: string | 
 /** The Opt-out card's collapsed summary: "On · 0 opted out". */
 export function optOutSummary(lineOn: boolean, count: number): string {
   return `${lineOn ? "On" : "Off"} · ${count} opted out`;
+}
+
+/** One line under the Opted out heading. */
+export function optedOutSummary(count: number): string {
+  const n = Math.max(0, Math.floor(count));
+  return n === 1 ? "1 patient doesn't get texts" : `${n} patients don't get texts`;
 }
 
 export type CardStatus = "done" | "todo" | "optional" | "info";

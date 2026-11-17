@@ -28,6 +28,9 @@ import {
   generateDeviceToken,
   hashDeviceToken,
   localNow,
+  optOutHowLabel,
+  phoneMatchKey,
+  searchPatientsToOptOut,
   WEEKDAY_SHORT,
 } from "@/lib/reminder-automation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -40,7 +43,7 @@ import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { birthdayLogLabel } from "@/lib/birthday-texts";
-import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, optedOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -72,6 +75,7 @@ type DeviceRow = {
   revoked_at: string | null;
 };
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
+type PatientPick = { id: string; fullName: string; phone: string; textRemindersOff?: boolean; deleted?: boolean };
 type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; claimed_at: string | null; created_at: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
@@ -98,6 +102,7 @@ export function TextRemindersSettingsPanel() {
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
+  const [optOutQuery, setOptOutQuery] = useState("");
   const [birthdayLog, setBirthdayLog] = useState<BirthdayLogRow[]>([]);
   const { ask, confirmDialog } = useSimpleConfirm();
 
@@ -175,29 +180,29 @@ export function TextRemindersSettingsPanel() {
       .order("created_at", { ascending: false })
       .limit(30);
     setBirthdayLog((bd as BirthdayLogRow[] | null) ?? []);
-    // Patients who replied STOP (latest action per patient, still opted out).
-    const { data: o } = await client
-      .from("reminder_opt_outs")
-      .select("patient_id, action, phone_last4, source, created_at")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(300);
-    const latest = new Map<string, { action: string; at: string; phoneLast4: string; source: string }>();
+    // Everyone with texts turned off, plus the newest STOP row that says how.
+    const [{ data: flagged }, { data: o }] = await Promise.all([
+      client.from("patients").select("id, full_name, phone").eq("workspace_id", workspaceId).eq("text_reminders_off", true).limit(300),
+      client.from("reminder_opt_outs").select("patient_id, action, phone_last4, source, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(300),
+    ]);
+    const latest = new Map<string, { at: string; phoneLast4: string; source: string }>();
     for (const r of (o as { patient_id: string; action: string; phone_last4: string; source: string; created_at: string }[] | null) ?? []) {
-      if (!latest.has(r.patient_id)) latest.set(r.patient_id, { action: r.action, at: r.created_at, phoneLast4: r.phone_last4, source: r.source });
+      if (!r.patient_id || r.patient_id === "test" || r.patient_id.startsWith("unmatched:")) continue;
+      if (r.action !== "stop" || latest.has(r.patient_id)) continue;
+      latest.set(r.patient_id, { at: r.created_at, phoneLast4: r.phone_last4, source: r.source });
     }
-    const stopped = Array.from(latest.entries()).filter(([, v]) => v.action === "stop");
-    if (!stopped.length) return setOptOuts([]);
-    const { data: pts } = await client
-      .from("patients")
-      .select("id, full_name, text_reminders_off")
-      .eq("workspace_id", workspaceId)
-      .in("id", stopped.map(([id]) => id));
-    const byId = new Map(((pts as { id: string; full_name: string | null; text_reminders_off: boolean | null }[] | null) ?? []).map((p) => [p.id, p]));
     setOptOuts(
-      stopped
-        .filter(([id]) => byId.get(id)?.text_reminders_off === true)
-        .map(([id, v]) => ({ patientId: id, name: byId.get(id)?.full_name || "Unknown patient", at: v.at, phoneLast4: v.phoneLast4, source: v.source })),
+      ((flagged as { id: string; full_name: string | null; phone: string | null }[] | null) ?? []).map((p) => {
+        const log = latest.get(p.id);
+        const digits = String(p.phone ?? "").replace(/\D/g, "");
+        return {
+          patientId: p.id,
+          name: p.full_name || "Unknown patient",
+          at: log?.at ?? "",
+          phoneLast4: log?.phoneLast4 || digits.slice(-4),
+          source: log?.source ?? "staff",
+        };
+      }),
     );
   }, [workspaceId]);
 
@@ -206,7 +211,7 @@ export function TextRemindersSettingsPanel() {
     if (!client || !workspaceId) return;
     const ok = await ask({
       title: `Turn text reminders back on for ${row.name}?`,
-      lines: ["They replied STOP. Only do this if they asked to get texts again."],
+      lines: ["Only do this if they asked to get texts again."],
       confirmLabel: "Turn back on",
       cancelLabel: "Cancel",
     });
@@ -227,9 +232,27 @@ export function TextRemindersSettingsPanel() {
     await refresh();
   };
 
+  const addOptOut = async (patient: PatientPick) => {
+    const client = getSupabaseBrowserClient();
+    if (!client || !workspaceId) return;
+    const { error } = await client.from("patients").update({ text_reminders_off: true }).eq("workspace_id", workspaceId).eq("id", patient.id);
+    if (error) return setMessage("Couldn't turn texts off. Try again.");
+    const { error: logError } = await client.from("reminder_opt_outs").insert({
+      workspace_id: workspaceId,
+      patient_id: patient.id,
+      action: "stop",
+      source: "staff",
+      phone_last4: phoneMatchKey(patient.phone).slice(-4),
+    });
+    setOptOutQuery("");
+    if (logError) setMessage("Texts are off. The office list of who added them did not save.");
+    await refresh();
+  };
+
+  const optOutMatches = searchPatientsToOptOut(patientDirectory, optOutQuery);
+
   useEffect(() => {
     // Async fetch on mount; state is set after the network round trip.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 
@@ -526,30 +549,10 @@ export function TextRemindersSettingsPanel() {
             When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), their text reminders turn off. START turns them back on.
             NoteGoat never texts back. A message that already says STOP does not get the line twice.
           </p>
-          <div className="rounded-lg border border-[var(--line-soft)]" data-testid="opt-out-list">
-            <p className="border-b border-[var(--line-soft)] px-3 py-2 font-semibold">Opted out by reply ({optOuts.length})</p>
-            {optOuts.length === 0 ? (
-              <p className="px-3 py-2 text-[var(--text-muted)]">Nobody has replied STOP.</p>
-            ) : (
-              <ul className="max-h-60 overflow-y-auto">
-                {optOuts.map((row) => (
-                  <li className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
-                    <span>
-                      <span className="font-semibold">{row.name}</span>{" "}
-                      <span className="text-[var(--text-muted)]">· {fmtDateTime(row.at, settings.timeZone)}</span>
-                    </span>
-                    <button className={rowBtn} onClick={() => void reEnable(row)} type="button">
-                      Turn texts back on
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
 
         <InnerFold testId="optout-iphone-steps" title="STOP replies">
-          <p>The same NoteGoat shortcut catches STOP. Follow the steps at the top. You do not add a second shortcut. To turn texts back on, use the list above.</p>
+          <p>The same NoteGoat shortcut catches STOP. Follow the steps at the top. You do not add a second shortcut.</p>
         </InnerFold>
       </SetupCard>
 
@@ -798,6 +801,55 @@ export function TextRemindersSettingsPanel() {
           </table>
         )}
       </CollapsibleSection>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hint={optedOutSummary(optOuts.length)}
+        onToggle={(next) => setSection("optedout", next)}
+        open={sectionOpen(settings.sections, "optedout", true)}
+        testId="section-opted-out"
+        title="Opted out"
+      >
+        <div className="grid gap-3" data-testid="opt-out-list">
+          <input
+            aria-label="Add patient"
+            className="h-[42px] w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 text-[var(--text-main)]"
+            onChange={(e) => setOptOutQuery(e.target.value)}
+            placeholder="Add patient"
+            value={optOutQuery}
+          />
+          {optOutMatches.length > 0 && (
+            <ul className="overflow-hidden rounded-lg border border-[var(--line-soft)]">
+              {optOutMatches.map((patient) => (
+                <li className="border-t border-[var(--line-soft)] first:border-t-0" key={patient.id}>
+                  <button className="w-full px-3 py-2 text-left font-semibold text-[var(--text-main)]" onClick={() => void addOptOut(patient)} type="button">
+                    {patient.fullName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {optOuts.length === 0 ? (
+            <p className="text-[var(--text-muted)]">Nobody yet.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]">
+              {optOuts.map((row) => (
+                <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" key={row.patientId}>
+                  <span>
+                    <span className="font-semibold text-[var(--text-main)]">{row.name}</span>{" "}
+                    <span className="text-[var(--text-muted)]">
+                      · {optOutHowLabel(row.source)}
+                      {row.at ? ` · ${fmtDateTime(row.at, settings.timeZone)}` : ""}
+                    </span>
+                  </span>
+                  <button className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]" onClick={() => void reEnable(row)} type="button">
+                    Turn texts back on
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </CollapsibleSection>
       {confirmDialog}
     </div>

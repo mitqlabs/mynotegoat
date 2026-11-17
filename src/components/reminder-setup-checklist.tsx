@@ -5,13 +5,14 @@
  * The phone does not start by itself until these steps are done.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
 import { iphoneSetupSteps, setupTestReport, type SetupReport } from "@/lib/iphone-setup";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 const TEST_URL = "shortcuts://run-shortcut?name=NoteGoat&input=STOP%20TEST";
@@ -81,6 +82,7 @@ export function ReminderSetupChecklist({
   const [note, setNote] = useState("");
   const confirmRef = useRef(onConfirm);
   const confirmedRef = useRef(settings.automationConfirmed);
+  const loadRef = useRef<() => void>(() => {});
   const [stopReportAt, setStopReportAt] = useState<string | null>(null);
   const [unmatched, setUnmatched] = useState(0);
   const iphone = devices.find((d) => !d.revoked_at && d.kind === "iphone");
@@ -92,37 +94,42 @@ export function ReminderSetupChecklist({
     sendHour: settings.sendHour,
   });
 
-  const loadReports = useCallback(async () => {
-    const client = getSupabaseBrowserClient();
-    if (!client || !workspaceId) return;
-    const { data } = await client
-      .from("reminder_opt_outs")
-      .select("patient_id, action, created_at")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    const rows = (data ?? []) as { patient_id: string; action: string; created_at: string }[];
-    const reports = rows.filter(
-      (row) =>
-        row.patient_id === STOP_TEST_PATIENT_ID ||
-        (row.action === "stop" && !row.patient_id.startsWith(UNMATCHED_PREFIX) && row.patient_id !== STOP_TEST_PATIENT_ID),
-    );
-    const at = reports[0]?.created_at ?? null;
-    setStopReportAt(at);
-    setUnmatched(rows.filter((row) => row.patient_id.startsWith(UNMATCHED_PREFIX)).length);
-    if (at && !confirmedRef.current) confirmRef.current(true);
-  }, [workspaceId]);
-
   useEffect(() => {
-    confirmRef.current = onConfirm;
-    confirmedRef.current = settings.automationConfirmed;
-    // The result is loaded from the cloud after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadReports();
-    const onFocus = () => void loadReports();
+    let cancel = false;
+    const load = async () => {
+      const client = getSupabaseBrowserClient();
+      const id = getActiveWorkspaceIdSync();
+      if (!client || !id) return;
+      const { data } = await client
+        .from("reminder_opt_outs")
+        .select("patient_id, action, created_at")
+        .eq("workspace_id", id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (cancel) return;
+      const rows = (data ?? []) as { patient_id: string; action: string; created_at: string }[];
+      const reports = rows.filter(
+        (row) =>
+          row.patient_id === STOP_TEST_PATIENT_ID ||
+          (row.action === "stop" && !row.patient_id.startsWith(UNMATCHED_PREFIX) && row.patient_id !== STOP_TEST_PATIENT_ID),
+      );
+      const at = reports[0]?.created_at ?? null;
+      setStopReportAt(at);
+      setUnmatched(rows.filter((row) => row.patient_id.startsWith(UNMATCHED_PREFIX)).length);
+      if (at && !confirmedRef.current) {
+        confirmedRef.current = true;
+        confirmRef.current(true);
+      }
+    };
+    loadRef.current = () => void load();
+    void load();
+    const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [loadReports, onConfirm, settings.automationConfirmed]);
+    return () => {
+      cancel = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   const addToThisIphone = async () => {
     setNote("");
@@ -184,7 +191,7 @@ export function ReminderSetupChecklist({
       return;
     }
     window.location.href = TEST_URL;
-    window.setTimeout(() => void loadReports(), 4000);
+    window.setTimeout(() => loadRef.current(), 4000);
   };
 
   return (

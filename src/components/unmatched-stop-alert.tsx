@@ -5,7 +5,7 @@
  * One tap marks that person "no reminder texts". Nothing is stored only on this computer.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients } from "@/lib/mock-data";
@@ -19,38 +19,42 @@ interface Notice {
 export function UnmatchedStopAlert() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [note, setNote] = useState("");
-
-  const load = useCallback(async () => {
-    const client = getSupabaseBrowserClient();
-    const workspaceId = getActiveWorkspaceIdSync();
-    if (!client || !workspaceId) return;
-    const { data } = await client
-      .from("reminder_opt_outs")
-      .select("id, patient_id")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    const rows = (data ?? []) as { id: number | string; patient_id: string }[];
-    const seen = new Set<string>();
-    const next: Notice[] = [];
-    for (const row of rows) {
-      if (!row.patient_id.startsWith(UNMATCHED_PREFIX)) continue;
-      const label = row.patient_id.slice(UNMATCHED_PREFIX.length);
-      if (seen.has(label)) continue;
-      seen.add(label);
-      next.push({ id: String(row.id), label });
-    }
-    setNotices(next);
-  }, []);
+  const loadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    // Loaded from the cloud after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    let cancel = false;
+    const load = async () => {
+      const client = getSupabaseBrowserClient();
+      const workspaceId = getActiveWorkspaceIdSync();
+      if (!client || !workspaceId) return;
+      const { data } = await client
+        .from("reminder_opt_outs")
+        .select("id, patient_id")
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (cancel) return;
+      const rows = (data ?? []) as { id: number | string; patient_id: string }[];
+      const seen = new Set<string>();
+      const next: Notice[] = [];
+      for (const row of rows) {
+        if (!row.patient_id.startsWith(UNMATCHED_PREFIX)) continue;
+        const label = row.patient_id.slice(UNMATCHED_PREFIX.length);
+        if (seen.has(label)) continue;
+        seen.add(label);
+        next.push({ id: String(row.id), label });
+      }
+      setNotices(next);
+    };
+    loadRef.current = () => void load();
     void load();
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [load]);
+    return () => {
+      cancel = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   const act = async (noticeId: string, patientId: string | null) => {
     setNote("");
@@ -67,7 +71,7 @@ export function UnmatchedStopAlert() {
       setNote(body.error || "Couldn't save that. Try again.");
       return;
     }
-    await load();
+    loadRef.current();
   };
 
   if (!notices.length) return null;

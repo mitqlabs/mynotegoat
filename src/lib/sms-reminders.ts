@@ -59,7 +59,7 @@ export interface SmsReminderSettings {
   birthdayTemplateId: string;
   /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
    *  computer shows the same layout. A section that is not listed uses its default. */
-  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday" | "autotexts" | "library", boolean>>;
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library", boolean>>;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
@@ -135,7 +135,7 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   if (typeof raw.birthdayTemplateId === "string") base.birthdayTemplateId = raw.birthdayTemplateId;
   if (raw.sections && typeof raw.sections === "object") {
     const sec = raw.sections as Record<string, unknown>;
-    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "iphone", "imac", "birthday", "autotexts", "library"] as const) {
+    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library"] as const) {
       if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
     }
   }

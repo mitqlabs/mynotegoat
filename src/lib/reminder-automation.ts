@@ -708,6 +708,39 @@ export function matchPatientByName(patients: { id: string; fullName: string }[],
   return hits.size === 1 ? [...hits][0] : null;
 }
 
+/** How an opted-out row is described. A phone reply is STOP; anything else was added in the office. */
+export function optOutHowLabel(source: string | null | undefined): string {
+  return source === "iphone" || source === "mac" ? "Replied STOP" : "Added by staff";
+}
+
+/**
+ * Patients to offer in the Opted out "Add patient" box. A name matches any
+ * part of the full name. A phone matches when at least 3 digits are in the
+ * number on file. People already opted out are left out.
+ */
+export function searchPatientsToOptOut<T extends { id: string; fullName: string; phone: string; textRemindersOff?: boolean; deleted?: boolean }>(
+  patients: T[],
+  query: string,
+): T[] {
+  const text = query.trim().toLowerCase();
+  const digits = query.replace(/\D/g, "");
+  if (text.length < 2 && digits.length < 3) return [];
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const patient of patients) {
+    if (!patient.id || seen.has(patient.id) || patient.deleted || patient.textRemindersOff) continue;
+    const name = (patient.fullName || "").toLowerCase();
+    const phone = (patient.phone || "").replace(/\D/g, "");
+    const nameHit = text.length >= 2 && name.includes(text);
+    const phoneHit = digits.length >= 3 && phone.includes(digits);
+    if (!nameHit && !phoneHit) continue;
+    seen.add(patient.id);
+    out.push(patient);
+    if (out.length === 8) break;
+  }
+  return out;
+}
+
 /** Patients the office can tap when a STOP name did not match exactly one person. */
 export function stopReplyChoices<T extends { id: string; fullName: string; deleted?: boolean }>(patients: T[], label: string): T[] {
   const words = normalizePersonName(label).split(" ").filter((word) => word.length >= 3);
