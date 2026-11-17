@@ -4139,7 +4139,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       <span>Charges: {selectedEncounter.charges.length} (${encounterChargeTotal.toFixed(2)})</span>
                       {selectedPatient && (
                         <Link className="underline" href={`/patients/${selectedPatient.id}`}>
-                          Patient File
+                          Case File
                         </Link>
                       )}
                     </div>

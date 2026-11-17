@@ -200,6 +200,8 @@ function EncounterSample() {
           <h2 className="text-lg font-semibold">Jane Sample</h2>
           <span className="text-sm text-[var(--text-muted)]">03/04/2026 @ 9:30 AM</span>
           <span className="tone-warn rounded-full px-2 py-0.5 text-[10px] font-bold uppercase">Open</span>
+          <span className="text-sm text-[var(--text-muted)]">Charges: 1 ($250.00)</span>
+          <span className="text-sm underline">Case File</span>
           <span className="tone-warn rounded-md border px-1.5 py-0.5 text-[10px] font-bold">⚠ ALLERGY: PENICILLIN</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">

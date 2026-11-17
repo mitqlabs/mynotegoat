@@ -2732,7 +2732,7 @@ export function GlobalGoatPopup({
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
-                          Open patient file ↗
+                          Open case file ↗
                         </Link>
                       </div>
                     )}
@@ -3336,7 +3336,7 @@ function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMe
         <p className="mt-1 font-semibold text-emerald-700">
           ✓ Saved ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
-            Open patient file ↗
+            Open case file ↗
           </Link>
         </p>
       </div>

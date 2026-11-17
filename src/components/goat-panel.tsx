@@ -391,9 +391,9 @@ export function GoatPanel({
         href={fileHref}
         rel="noopener"
         target="_blank"
-        title={`Opens the patient file (${SECTION_LABEL[section]}) in a new tab`}
+        title={`Opens the case file (${SECTION_LABEL[section]}) in a new tab`}
       >
-        Patient file ↗
+        Case File ↗
       </a>
     ) : null;
 

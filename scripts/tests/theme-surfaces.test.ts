@@ -29,6 +29,8 @@ for (const label of ["Patient Page", "Encounter", "Case List", "Patient List"]) 
   assert.ok(samples.includes(label), `sample tab ${label}`);
 }
 assert.ok(samples.includes("Jane Sample"), "samples use a fake patient name");
+assert.ok(samples.includes("Case File"), "encounter sample names the case link Case File");
+assert.match(encounter, /href=\{`\/patients\/\$\{selectedPatient\.id\}`\}[\s\S]{0,80}Case File/, "encounter header link to the case is labeled Case File");
 assert.ok(samples.includes("Patient Refused"), "patient sample includes a refused X-ray entry");
 assert.ok(samples.includes("No regions selected"), "patient sample includes the MRI regions field");
 assert.equal(samples.includes("localStorage"), false, "samples do not touch browser storage");

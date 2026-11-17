@@ -673,7 +673,7 @@ export function MessagesWorkspace() {
                           className="text-xs font-semibold text-[var(--brand-primary)] hover:underline"
                           href={`/patients/${conv.patientId}`}
                         >
-                          Open patient file →
+                          Open case file →
                         </Link>
                       </div>
                     )}
