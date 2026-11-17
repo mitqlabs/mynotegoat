@@ -1,9 +1,10 @@
 /**
- * SOAP macro chips. Subjective is one "Complaints" group (Headaches, then
- * the body regions, then any chips the office added). Other sections still
- * split question-style chips under "History" and body-part chips under
- * "Body regions". Every chip uses the same button style — a lighter History
- * chip read as disabled even when it could be clicked.
+ * SOAP macro chips. Ungrouped Subjective is one "Complaints" group
+ * (Headaches, then the body regions, then any chips the office added).
+ * Other sections split the other chips from body-part chips. The other
+ * group's name follows the section (Exam, Plan, …) or the office's folder
+ * name when the macros sit in one. Body-part chips stay "Body regions".
+ * Every chip uses the same button style.
  */
 
 /** Subjective chip order. Anything else the office adds follows these. */
@@ -84,17 +85,38 @@ export function isBodyRegionMacroName(name: string): boolean {
 }
 
 export type SoapMacroGroup<T> = {
-  label: "History" | "Body regions" | "Complaints";
+  label: string;
   /** Kept so callers can still tell the groups apart. Unused chips are never muted. */
   quiet: boolean;
   macros: T[];
 };
 
-export function groupSoapMacros<T extends { buttonName: string }>(macros: T[]): SoapMacroGroup<T>[] {
+/**
+ * Label for the chips that are not body regions. A folder the office named
+ * wins (Plan → Treatments). Otherwise the section supplies one, so Objective
+ * is not stuck under "History".
+ */
+const SECTION_NON_REGION_LABEL: Record<string, string> = {
+  subjective: "History",
+  objective: "Exam",
+  assessment: "Assessment",
+  plan: "Plan",
+};
+
+export function soapNonRegionLabel(section: string, folder?: string): string {
+  const category = folder?.trim();
+  if (category) return category;
+  return SECTION_NON_REGION_LABEL[section] ?? "History";
+}
+
+export function groupSoapMacros<T extends { buttonName: string }>(
+  macros: T[],
+  nonRegionLabel = "History",
+): SoapMacroGroup<T>[] {
   const history = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
   const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
   const groups: SoapMacroGroup<T>[] = [];
-  if (history.length > 0) groups.push({ label: "History", quiet: false, macros: history });
+  if (history.length > 0) groups.push({ label: nonRegionLabel, quiet: false, macros: history });
   if (regions.length > 0) groups.push({ label: "Body regions", quiet: false, macros: regions });
   return groups;
 }

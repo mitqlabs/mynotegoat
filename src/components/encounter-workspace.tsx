@@ -1,11 +1,10 @@
 "use client";
 
 import { ageTokenOn } from "@/lib/age";
-import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { toInlineMacroHtml } from "@/lib/macro-inline";
-import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass } from "@/lib/soap-macro-groups";
+import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass, soapNonRegionLabel } from "@/lib/soap-macro-groups";
 import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -29,7 +28,7 @@ import { refreshFormRequests } from "@/hooks/use-form-requests";
 import { answersToMacroFills, answersToPatientInfo, customAnswersHtml, findMacroByName, findSectionMacro, patientInfoPatch, PATIENT_INFO_FIELDS } from "@/lib/patient-forms";
 import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
-import { formatUsDateInput } from "@/components/us-date-input";
+import { MacroPromptQuestion } from "@/components/macro-prompt-question";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -4416,11 +4415,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            (activeSection === "subjective"
+                            (activeSection === "subjective" && !group.folder.trim()
                               ? group.macros.length
                                 ? [{ label: "Complaints" as const, quiet: false, macros: orderComplaintMacros(group.macros) }]
                                 : []
-                              : groupSoapMacros(group.macros)
+                              : groupSoapMacros(group.macros, soapNonRegionLabel(activeSection, group.folder))
                             ).map((macroGroup) => (
                             <div className="[&+div]:mt-2" key={macroGroup.label}>
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -5148,187 +5147,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 ? runMacro.questions.filter((question) => question.id === editingMacroPromptId)
                 : runMacro.questions
               ).map((question) => (
-                (() => {
-                  const normalizedOptions = question.options
-                    .map((option) => option.trim())
-                    .filter((option): option is string => Boolean(option));
-                  const answerValue = runMacroAnswers[question.id];
-                  const selectedAnswers = Array.isArray(answerValue)
-                    ? answerValue.map((option) => option.trim()).filter((option) => option.length > 0)
-                    : typeof answerValue === "string" && answerValue.trim()
-                      ? [answerValue.trim()]
-                      : [];
-                  const selectedAnswer = selectedAnswers[0] ?? "";
-                  // Decompression "Targeted Segment" / "Which program": one pick
-                  // per section even if the saved macro question is multi-select.
-                  const singlePick =
-                    Boolean(question.multiSelect) && isDecompressionSinglePick(runMacro.buttonName, question.label);
-                  const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
-                  const numericOptions = Array.from(
-                    new Set(
-                      normalizedOptions
-                        .filter((option) => /^\d+$/.test(option))
-                        .map((option) => Number(option)),
-                    ),
-                  ).sort((left, right) => left - right);
-                  const nonNumericOptions = normalizedOptions.filter((option) => !/^\d+$/.test(option));
-                  const usePainScaleColumns = numericOptions.length >= 5;
-                  const midPoint = usePainScaleColumns ? Math.ceil(numericOptions.length / 2) : 0;
-                  const leftPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(0, midPoint).map(String)
-                    : [];
-                  const rightPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(midPoint).map(String)
-                    : [];
-                  const selectableOptions = normalizedOptions.length > 0 ? normalizedOptions : question.options;
-                  const useMultiColumn = !usePainScaleColumns && selectableOptions.length >= 5;
-                  const renderOptionRow = (option: string) => (
-                    <label
-                      key={`${question.id}-${option}`}
-                      className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
-                    >
-                      {singlePick ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({ ...current, [question.id]: [option] }))
-                          }
-                          type="radio"
-                        />
-                      ) : question.multiSelect ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => {
-                              const rawCurrentValues = current[question.id];
-                              const currentValues = Array.isArray(rawCurrentValues) ? rawCurrentValues : [];
-                              const toggled = currentValues.includes(option)
-                                ? currentValues.filter((entry) => entry !== option)
-                                : [...currentValues, option];
-                              // Sort by the original option order, not click order
-                              const optionOrder = question.options;
-                              const nextValues = toggled.slice().sort((a, b) => {
-                                const ai = optionOrder.indexOf(a);
-                                const bi = optionOrder.indexOf(b);
-                                // Items not in the predefined list go to the end
-                                return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
-                              });
-                              return {
-                                ...current,
-                                [question.id]: nextValues,
-                              };
-                            })
-                          }
-                          type="checkbox"
-                        />
-                      ) : (
-                        <input
-                          checked={selectedAnswer === option}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: option,
-                            }))
-                          }
-                          type="radio"
-                        />
-                      )}
-                      {option}
-                    </label>
-                  );
-
-                  // The free-text field below the options always shows the current
-                  // answer (or the joined multi-select answers) so the user can edit
-                  // it like a "live preview". Picking a radio overwrites the field
-                  // with that option text; the user can then click into the field
-                  // and append a detail (e.g. "Yes" -> "Yes - Glendale Adventist").
-                  const freeTextEditableValue = Array.isArray(answerValue)
-                    ? answerValue.join(", ")
-                    : (answerValue ?? "");
-
-                  return (
-                    <div key={question.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                      <p className="text-sm font-semibold">
-                        {question.label}
-                        {singlePick ? " (pick one)" : ""}
-                      </p>
-                      {question.options.length > 0 ? (
-                        <>
-                          {usePainScaleColumns ? (
-                            <div className="mt-2 space-y-2">
-                              <div className="grid gap-2 md:grid-cols-2">
-                                <div className="grid gap-2">{leftPainScaleOptions.map(renderOptionRow)}</div>
-                                <div className="grid gap-2">{rightPainScaleOptions.map(renderOptionRow)}</div>
-                              </div>
-                              {nonNumericOptions.length > 0 && (
-                                <div className="grid gap-2">{nonNumericOptions.map(renderOptionRow)}</div>
-                              )}
-                            </div>
-                          ) : useMultiColumn ? (
-                            // Auto-balanced multi-column: the browser fits as
-                            // many equal ~11rem columns as the width allows and
-                            // balances their heights, so options read A,B,C DOWN
-                            // each column with no lopsided last column.
-                            // break-inside-avoid keeps each chip whole.
-                            <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
-                              {selectableOptions.map((option) => (
-                                <div
-                                  key={`${question.id}-opt-${option}`}
-                                  className="mb-2 break-inside-avoid"
-                                >
-                                  {renderOptionRow(option)}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="mt-2 grid gap-2">{selectableOptions.map(renderOptionRow)}</div>
-                          )}
-                          {/* Live-preview / edit field — always shows the current
-                              answer and is always editable. Picking a radio above
-                              updates this field; typing here overwrites the answer.
-                              Lets the user pick "Yes" then type " - Glendale Adventist"
-                              to end up with "Yes - Glendale Adventist" without losing
-                              the macro structure. */}
-                          <div className="mt-2">
-                            <label className="flex items-start gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm">
-                              <span className="pt-1 text-xs font-semibold text-[var(--text-muted)]">
-                                Other / edit:
-                              </span>
-                              <textarea
-                                className="flex-1 resize-y rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                                onChange={(event) =>
-                                  setRunMacroAnswers((current) => ({
-                                    ...current,
-                                    [question.id]: event.target.value,
-                                  }))
-                                }
-                                placeholder="Pick an option above to start, or type your own"
-                                rows={1}
-                                value={freeTextEditableValue}
-                              />
-                            </label>
-                          </div>
-                        </>
-                      ) : (
-                        <input
-                          className="mt-2 w-full rounded-xl border border-[var(--line-soft)] px-3 py-2"
-                          inputMode={question.dateInput ? "numeric" : undefined}
-                          maxLength={question.dateInput ? 10 : undefined}
-                          placeholder={question.dateInput ? "MM/DD/YYYY" : undefined}
-                          onChange={(event) =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: question.dateInput
-                                ? formatUsDateInput(event.target.value)
-                                : event.target.value,
-                            }))
-                          }
-                          value={freeTextValue}
-                        />
-                      )}
-                    </div>
-                  );
-                })()
+                <MacroPromptQuestion
+                  key={question.id}
+                  answers={runMacroAnswers}
+                  buttonName={runMacro.buttonName}
+                  question={question}
+                  setAnswers={setRunMacroAnswers}
+                />
               ))}
               {runMacro.questions.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)]">No question prompts for this macro.</p>
