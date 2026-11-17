@@ -66,7 +66,12 @@ test("New Patient popup = patient info only; case fields behind + Case; no evalu
   assert.ok(modal.length > 1000);
   assert.doesNotMatch(modal, /new-patient-eval-date|New Patient Evaluation|>Notes</);
   assert.match(modal, /\+ Case/);
-  for (const f of ["Attorney", "Attorney Phone", "Date of Injury", "Case #"]) assert.ok(modal.includes(`>${f}</span>`), f);
+  // Case fields live in the + Case popup, not on the New Patient form itself.
+  const casePopup = readFileSync("src/components/new-patient-case-popup.tsx", "utf8");
+  for (const f of ["Attorney", "Attorney Phone", "Date of Injury", "Case #"]) {
+    assert.ok(!modal.includes(`>${f}</span>`), `${f} stays off the New Patient form`);
+    assert.ok(casePopup.includes(`>${f}</span>`), f);
+  }
   const appt = readFileSync("src/app/(portal)/appointments/page.tsx", "utf8");
   const np = appt.slice(appt.indexOf('data-row="new-patient-fields"'), appt.indexOf("Save Appointment adds the patient"));
   assert.doesNotMatch(np, /new-pt-attorney|new-pt-doi/);
