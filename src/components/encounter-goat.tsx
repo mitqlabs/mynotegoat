@@ -60,7 +60,7 @@ export function EncounterGoat({
 
   const context = useMemo(() => {
     const chargesTotal = encounters.reduce(
-      (sum, e) => sum + e.charges.reduce((s, c) => s + c.unitPrice * c.units, 0),
+      (sum, e) => sum + (e.charges ?? []).reduce((s, c) => s + (Number(c.unitPrice) || 0) * (Number(c.units) || 0), 0),
       0,
     );
     // Same rule as the patient page: encounter charges when there are any,

@@ -21,17 +21,22 @@ const fileHashes = new WeakMap<GoatFile, string>();
 /** Facts for one file (memoized by id + hash; extraction is fast and pure). */
 export function factsFor(file: GoatFile): FileFacts | null {
   if (!file.pages || !file.pages.length) return null;
-  let hash = fileHashes.get(file);
-  if (!hash) {
-    hash = factsHash(file);
-    fileHashes.set(file, hash);
+  try {
+    let hash = fileHashes.get(file);
+    if (!hash) {
+      hash = factsHash(file);
+      fileHashes.set(file, hash);
+    }
+    const hit = mem.get(file.id);
+    if (hit && hit.hash === hash) return hit;
+    const f = extractFileFacts(file);
+    mem.set(file.id, f);
+    dirty.add(file.id);
+    return f;
+  } catch (err) {
+    console.warn("[goat-facts] skipped a file:", err);
+    return null;
   }
-  const hit = mem.get(file.id);
-  if (hit && hit.hash === hash) return hit;
-  const f = extractFileFacts(file);
-  mem.set(file.id, f);
-  dirty.add(file.id);
-  return f;
 }
 
 export function factsForFiles(files: GoatFile[] | null | undefined): FileFacts[] {

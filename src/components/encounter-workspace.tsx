@@ -1,11 +1,10 @@
 "use client";
 
 import { ageTokenOn } from "@/lib/age";
-import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { toInlineMacroHtml } from "@/lib/macro-inline";
-import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass } from "@/lib/soap-macro-groups";
+import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass, soapNonRegionLabel } from "@/lib/soap-macro-groups";
 import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
@@ -29,7 +28,7 @@ import { refreshFormRequests } from "@/hooks/use-form-requests";
 import { answersToMacroFills, answersToPatientInfo, customAnswersHtml, findMacroByName, findSectionMacro, patientInfoPatch, PATIENT_INFO_FIELDS } from "@/lib/patient-forms";
 import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
-import { formatUsDateInput } from "@/components/us-date-input";
+import { MacroPromptQuestion } from "@/components/macro-prompt-question";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
@@ -75,6 +74,7 @@ import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients, updatePatientRecordById, type UpdatePatientRecordPatch } from "@/lib/mock-data";
 import { hasSoapContent, mergeNotesByNewest, pickSaltSource } from "@/lib/salt-source";
 import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
+import { buildSoapPrintDocument } from "@/lib/print-soap";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
@@ -420,19 +420,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-function formatSoapText(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return "-";
-  // The SOAP sections are stored as HTML from the rich-text editor.
-  // Render the HTML directly for print but neutralise the interactive
-  // macro-prompt spans — strip their wrapper tags while keeping the
-  // visible answer text inside so the print looks clean.
-  return trimmed.replace(
-    /<span\s+class="macro-prompt"[^>]*>([\s\S]*?)<\/span>/gi,
-    "$1",
-  );
-}
-
 function buildSoapPrintHtml(config: {
   officeName: string;
   officeAddress: string;
@@ -451,231 +438,7 @@ function buildSoapPrintHtml(config: {
     soap: Record<EncounterSection, string>;
   }>;
 }) {
-  const logoMarkup = config.logoDataUrl.trim()
-    ? `<img alt="Office Logo" src="${escapeHtml(config.logoDataUrl)}" class="logo" />`
-    : "";
-
-  const encounterMarkup = config.encounters
-    .map((encounter, idx) => {
-      const sections = [
-        { label: "Subjective", content: formatSoapText(encounter.soap.subjective) },
-        { label: "Objective", content: formatSoapText(encounter.soap.objective) },
-        { label: "Assessment", content: formatSoapText(encounter.soap.assessment) },
-        { label: "Plan", content: formatSoapText(encounter.soap.plan) },
-      ];
-
-      return `<section class="encounter">
-  <div class="encounter-header">
-    <div class="encounter-date">${escapeHtml(encounter.encounterDate)}</div>
-    <div class="encounter-type">${escapeHtml(encounter.appointmentType)}</div>
-  </div>
-  <div class="encounter-meta">
-    <span>Provider: <strong>${escapeHtml(encounter.provider)}</strong></span>
-  </div>
-  ${sections
-    .map(
-      (s) => `
-  <div class="soap-section">
-    <div class="soap-label">${s.label}</div>
-    <div class="soap-content">${s.content}</div>
-  </div>`,
-    )
-    .join("")}
-</section>`;
-    })
-    .join("");
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(config.documentTitle || `SOAP Notes - ${config.patientName}`)}</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        background: #fff;
-        color: #1a1a1a;
-        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-        font-size: 12px;
-        line-height: 1.4;
-      }
-
-      /* ── Letterhead ── */
-      .letterhead {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #0d79bf;
-        margin-bottom: 10px;
-      }
-      .logo {
-        height: 70px;
-        width: auto;
-        max-width: 200px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-        margin: 0;
-        padding: 0;
-      }
-      .office-info {
-        flex: 1;
-        text-align: right;
-        margin: 0;
-        padding: 0;
-      }
-      .office-name {
-        font-size: 15px;
-        font-weight: 700;
-        color: #0d79bf;
-        margin: 0;
-        padding: 0;
-        line-height: 1.2;
-      }
-      .office-detail {
-        font-size: 11px;
-        color: #444;
-        line-height: 1.5;
-        margin: 0;
-      }
-
-      /* ── Patient banner ── */
-      .patient-banner {
-        background: #f0f6fb;
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        padding: 6px 10px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .patient-banner .label {
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #5a7a8f;
-      }
-      .patient-banner .name {
-        font-size: 14px;
-        font-weight: 700;
-        color: #13293d;
-      }
-      .patient-banner .doc-title {
-        font-size: 11px;
-        font-weight: 600;
-        color: #0d79bf;
-      }
-
-      /* ── Encounter card ── */
-      .encounter {
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        margin-bottom: 8px;
-      }
-      .encounter-header {
-        background: #0d79bf;
-        color: #fff;
-        padding: 4px 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .encounter-date {
-        font-size: 12px;
-        font-weight: 700;
-      }
-      .encounter-type {
-        font-size: 11px;
-        opacity: 0.9;
-      }
-      .encounter-meta {
-        background: #f7fafc;
-        padding: 3px 10px;
-        border-bottom: 1px solid #e2eaf0;
-        font-size: 10px;
-        color: #5a7a8f;
-        display: flex;
-        gap: 16px;
-      }
-
-      /* ── SOAP sections ── */
-      .soap-section {
-        padding: 4px 10px;
-        border-bottom: 1px solid #eef2f6;
-      }
-      .soap-section:last-child {
-        border-bottom: none;
-      }
-      .soap-label {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0d79bf;
-        margin-bottom: 2px;
-      }
-      .soap-content {
-        font-size: 12px;
-        line-height: 1.45;
-        color: #1a1a1a;
-        word-break: break-word;
-      }
-      .soap-content p { margin: 0 0 3px 0; }
-      .soap-content b, .soap-content strong { font-weight: 700; }
-      .soap-content span { font-size: inherit; color: inherit; }
-
-      /* ── Footer ── */
-      .print-footer {
-        margin-top: 14px;
-        padding-top: 6px;
-        border-top: 1px solid #d0dfe9;
-        font-size: 9px;
-        color: #8899a6;
-        text-align: center;
-      }
-
-      @page {
-        size: Letter;
-        margin: 0.5in;
-      }
-      @media print {
-        * { break-inside: auto !important; break-before: auto !important; break-after: auto !important; }
-        .encounter { page-break-inside: auto !important; page-break-before: auto !important; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="wrapper">
-      <header class="letterhead">
-        ${logoMarkup}
-        <div class="office-info">
-          <p class="office-name">${escapeHtml(config.officeName)}</p>
-          <p class="office-detail">
-            ${escapeHtml(config.officeAddress)}<br />
-            T: ${escapeHtml(config.officePhone)}${config.officeFax.trim() ? ` &nbsp;|&nbsp; F: ${escapeHtml(config.officeFax)}` : ""}<br />
-            ${escapeHtml(config.officeEmail)}
-          </p>
-        </div>
-      </header>
-
-      <div class="patient-banner">
-        <div>
-          <p class="label">Patient</p>
-          <p class="name">${escapeHtml(config.patientName)}</p>
-        </div>
-        <div class="doc-title">Clinical SOAP Notes</div>
-      </div>
-
-      ${encounterMarkup || "<p>No encounters found for this patient.</p>"}
-
-      <div class="print-footer">
-        ${escapeHtml(config.officeName)} &bull; Confidential Medical Record
-      </div>
-    </main>
-  </body>
-</html>`;
+  return buildSoapPrintDocument(config);
 }
 
 function printHtmlWithIframeFallback(printableHtml: string) {
@@ -4416,11 +4179,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            (activeSection === "subjective"
+                            (activeSection === "subjective" && !group.folder.trim()
                               ? group.macros.length
                                 ? [{ label: "Complaints" as const, quiet: false, macros: orderComplaintMacros(group.macros) }]
                                 : []
-                              : groupSoapMacros(group.macros)
+                              : groupSoapMacros(group.macros, soapNonRegionLabel(activeSection, group.folder))
                             ).map((macroGroup) => (
                             <div className="[&+div]:mt-2" key={macroGroup.label}>
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -5148,187 +4911,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 ? runMacro.questions.filter((question) => question.id === editingMacroPromptId)
                 : runMacro.questions
               ).map((question) => (
-                (() => {
-                  const normalizedOptions = question.options
-                    .map((option) => option.trim())
-                    .filter((option): option is string => Boolean(option));
-                  const answerValue = runMacroAnswers[question.id];
-                  const selectedAnswers = Array.isArray(answerValue)
-                    ? answerValue.map((option) => option.trim()).filter((option) => option.length > 0)
-                    : typeof answerValue === "string" && answerValue.trim()
-                      ? [answerValue.trim()]
-                      : [];
-                  const selectedAnswer = selectedAnswers[0] ?? "";
-                  // Decompression "Targeted Segment" / "Which program": one pick
-                  // per section even if the saved macro question is multi-select.
-                  const singlePick =
-                    Boolean(question.multiSelect) && isDecompressionSinglePick(runMacro.buttonName, question.label);
-                  const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
-                  const numericOptions = Array.from(
-                    new Set(
-                      normalizedOptions
-                        .filter((option) => /^\d+$/.test(option))
-                        .map((option) => Number(option)),
-                    ),
-                  ).sort((left, right) => left - right);
-                  const nonNumericOptions = normalizedOptions.filter((option) => !/^\d+$/.test(option));
-                  const usePainScaleColumns = numericOptions.length >= 5;
-                  const midPoint = usePainScaleColumns ? Math.ceil(numericOptions.length / 2) : 0;
-                  const leftPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(0, midPoint).map(String)
-                    : [];
-                  const rightPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(midPoint).map(String)
-                    : [];
-                  const selectableOptions = normalizedOptions.length > 0 ? normalizedOptions : question.options;
-                  const useMultiColumn = !usePainScaleColumns && selectableOptions.length >= 5;
-                  const renderOptionRow = (option: string) => (
-                    <label
-                      key={`${question.id}-${option}`}
-                      className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
-                    >
-                      {singlePick ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({ ...current, [question.id]: [option] }))
-                          }
-                          type="radio"
-                        />
-                      ) : question.multiSelect ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => {
-                              const rawCurrentValues = current[question.id];
-                              const currentValues = Array.isArray(rawCurrentValues) ? rawCurrentValues : [];
-                              const toggled = currentValues.includes(option)
-                                ? currentValues.filter((entry) => entry !== option)
-                                : [...currentValues, option];
-                              // Sort by the original option order, not click order
-                              const optionOrder = question.options;
-                              const nextValues = toggled.slice().sort((a, b) => {
-                                const ai = optionOrder.indexOf(a);
-                                const bi = optionOrder.indexOf(b);
-                                // Items not in the predefined list go to the end
-                                return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
-                              });
-                              return {
-                                ...current,
-                                [question.id]: nextValues,
-                              };
-                            })
-                          }
-                          type="checkbox"
-                        />
-                      ) : (
-                        <input
-                          checked={selectedAnswer === option}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: option,
-                            }))
-                          }
-                          type="radio"
-                        />
-                      )}
-                      {option}
-                    </label>
-                  );
-
-                  // The free-text field below the options always shows the current
-                  // answer (or the joined multi-select answers) so the user can edit
-                  // it like a "live preview". Picking a radio overwrites the field
-                  // with that option text; the user can then click into the field
-                  // and append a detail (e.g. "Yes" -> "Yes - Glendale Adventist").
-                  const freeTextEditableValue = Array.isArray(answerValue)
-                    ? answerValue.join(", ")
-                    : (answerValue ?? "");
-
-                  return (
-                    <div key={question.id} className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
-                      <p className="text-sm font-semibold">
-                        {question.label}
-                        {singlePick ? " (pick one)" : ""}
-                      </p>
-                      {question.options.length > 0 ? (
-                        <>
-                          {usePainScaleColumns ? (
-                            <div className="mt-2 space-y-2">
-                              <div className="grid gap-2 md:grid-cols-2">
-                                <div className="grid gap-2">{leftPainScaleOptions.map(renderOptionRow)}</div>
-                                <div className="grid gap-2">{rightPainScaleOptions.map(renderOptionRow)}</div>
-                              </div>
-                              {nonNumericOptions.length > 0 && (
-                                <div className="grid gap-2">{nonNumericOptions.map(renderOptionRow)}</div>
-                              )}
-                            </div>
-                          ) : useMultiColumn ? (
-                            // Auto-balanced multi-column: the browser fits as
-                            // many equal ~11rem columns as the width allows and
-                            // balances their heights, so options read A,B,C DOWN
-                            // each column with no lopsided last column.
-                            // break-inside-avoid keeps each chip whole.
-                            <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
-                              {selectableOptions.map((option) => (
-                                <div
-                                  key={`${question.id}-opt-${option}`}
-                                  className="mb-2 break-inside-avoid"
-                                >
-                                  {renderOptionRow(option)}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="mt-2 grid gap-2">{selectableOptions.map(renderOptionRow)}</div>
-                          )}
-                          {/* Live-preview / edit field — always shows the current
-                              answer and is always editable. Picking a radio above
-                              updates this field; typing here overwrites the answer.
-                              Lets the user pick "Yes" then type " - Glendale Adventist"
-                              to end up with "Yes - Glendale Adventist" without losing
-                              the macro structure. */}
-                          <div className="mt-2">
-                            <label className="flex items-start gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm">
-                              <span className="pt-1 text-xs font-semibold text-[var(--text-muted)]">
-                                Other / edit:
-                              </span>
-                              <textarea
-                                className="flex-1 resize-y rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                                onChange={(event) =>
-                                  setRunMacroAnswers((current) => ({
-                                    ...current,
-                                    [question.id]: event.target.value,
-                                  }))
-                                }
-                                placeholder="Pick an option above to start, or type your own"
-                                rows={1}
-                                value={freeTextEditableValue}
-                              />
-                            </label>
-                          </div>
-                        </>
-                      ) : (
-                        <input
-                          className="mt-2 w-full rounded-xl border border-[var(--line-soft)] px-3 py-2"
-                          inputMode={question.dateInput ? "numeric" : undefined}
-                          maxLength={question.dateInput ? 10 : undefined}
-                          placeholder={question.dateInput ? "MM/DD/YYYY" : undefined}
-                          onChange={(event) =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: question.dateInput
-                                ? formatUsDateInput(event.target.value)
-                                : event.target.value,
-                            }))
-                          }
-                          value={freeTextValue}
-                        />
-                      )}
-                    </div>
-                  );
-                })()
+                <MacroPromptQuestion
+                  key={question.id}
+                  answers={runMacroAnswers}
+                  buttonName={runMacro.buttonName}
+                  question={question}
+                  setAnswers={setRunMacroAnswers}
+                />
               ))}
               {runMacro.questions.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)]">No question prompts for this macro.</p>

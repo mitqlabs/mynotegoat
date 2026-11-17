@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { askGoat, type GoatAnswerGroup, type GoatBlock, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
-import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
+import { GOAT_LINES_PER_FILE, pendingFilesNote, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
 import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
@@ -302,16 +302,31 @@ export function GoatPanel({
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   // "Also mentioned" open/closed, per question (flipped from its default).
   const [hitsFlipped, setHitsFlipped] = useState("");
   // Settings → G.O.A.T.: Show costs / fees and Region order shape recommendations (and their Copy text).
   const { prefs } = useGoatAnswerPrefs();
   const context: GoatContext = useMemo(() => ({ ...pageContext, recFormat: recFormatFromPrefs(prefs) }), [pageContext, prefs]);
   // Recomputed from live page data, so an answer updates as the page is edited.
-  const ruleResult: GoatResult | null = useMemo(
-    () => (asked ? askGoat(context, asked) : null),
-    [asked, context],
-  );
+  // A throw here used to fail the render and leave the box looking like Send did nothing.
+  const ruleResult: GoatResult | null = useMemo(() => {
+    if (!asked) return null;
+    try {
+      return askGoat(context, asked);
+    } catch (err) {
+      console.error(err);
+      return {
+        answers: [{ title: "G.O.A.T.", lines: ["I couldn't finish that. Try sending it again."], source: "G.O.A.T.", section: "info" }],
+        hits: [],
+        terms: [],
+        files: null,
+        filesFirst: false,
+        highlight: [],
+        sourcesCollapsed: false,
+      };
+    }
+  }, [asked, context]);
   const result: GoatResult | null = ruleResult;
 
   // "Searching…" for a moment after Ask, so the status line follows what happens (static, no animation).
@@ -336,6 +351,10 @@ export function GoatPanel({
     setQuestion(trimmed);
     setAsked(trimmed);
     setSearchingFor(trimmed);
+  };
+  /** Enter and Send both read the box itself, so a stale disabled button cannot swallow them. */
+  const submitBox = (raw?: string) => {
+    ask(raw ?? inputRef.current?.value ?? question);
   };
 
   const fileResult = result?.files ?? null;
@@ -362,6 +381,11 @@ export function GoatPanel({
     ) : (
       filesCardInner
     );
+  const pendingNote = filesOn ? pendingFilesNote(files?.files) : null;
+  const resultBlob = result
+    ? [result.answers.flatMap((a) => [a.title, ...a.lines, ...(a.groups ?? []).flatMap((g) => [g.lead, ...g.blocks.flatMap((b) => b.items)])]).join("\n"), result.files?.notes.join("\n") ?? ""].join("\n")
+    : "";
+  const resultTextIncludesPending = /isn'?t read yet|aren'?t read yet/i.test(resultBlob);
   const status: GoatStatus = !result
     ? files?.reader.running
       ? "reading"
@@ -415,29 +439,30 @@ export function GoatPanel({
       </button>
       {open && (
         <div className="mt-3">
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              ask(question);
-            }}
-          >
+          <div className="flex gap-2">
             <input
-              aria-label="Ask G.O.A.T. about this patient"
+              aria-label="Message G.O.A.T. about this patient"
               className="min-w-0 flex-1 rounded-xl theme-surface border border-[var(--line-soft)] px-3 py-2 text-sm"
+              enterKeyHint="send"
               onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                submitBox((e.target as HTMLInputElement).value);
+              }}
               placeholder={`Ask me about ${firstName}…`}
+              ref={inputRef}
               type="text"
               value={question}
             />
             <button
-              className="btn btn-primary disabled:opacity-40"
-              disabled={!question.trim()}
-              type="submit"
+              className="btn btn-primary shrink-0"
+              onClick={() => submitBox()}
+              type="button"
             >
-              Ask
+              Send
             </button>
-          </form>
+          </div>
 
           {!result && (
             <div className="mt-3 flex items-start gap-2">
@@ -582,6 +607,11 @@ export function GoatPanel({
                   I couldn&apos;t find that in {where}. I only read what&apos;s there and I won&apos;t
                   guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
                   diagnoses, billing, notes{filesOn ? " or what a report says" : ""}.
+                </p>
+              )}
+              {pendingNote && !resultTextIncludesPending && (
+                <p className="rounded-xl bg-[var(--bg-soft)] p-2.5 text-sm" data-goat-unread>
+                  {pendingNote}
                 </p>
               )}
             </div>

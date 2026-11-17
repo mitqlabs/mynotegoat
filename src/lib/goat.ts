@@ -17,7 +17,7 @@ import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-fin
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
-import { answerFromFiles, findingsCardFromFile, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, findingsCardFromFile, pendingFilesNote, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
@@ -1089,10 +1089,25 @@ function searchPage(ctx: GoatContext, terms: TermMatcher[]): GoatHit[] {
 
 // ---------------------------------------------------------------------------
 
+function attachPendingFiles(result: GoatResult, files: GoatFile[] | null | undefined): GoatResult {
+  const note = pendingFilesNote(files);
+  if (!note) return result;
+  const already = [...result.answers.flatMap((a) => a.lines), ...(result.files?.notes ?? [])].some((line) => /isn'?t read yet|aren'?t read yet/i.test(line));
+  if (already) return result;
+  if (!result.answers.length) {
+    return {
+      ...result,
+      answers: [{ title: "Patient files", lines: [note], source: "Patient Files", section: "info" }],
+    };
+  }
+  const [first, ...rest] = result.answers;
+  return { ...result, answers: [{ ...first, lines: [...first.lines, note] }, ...rest] };
+}
+
 export function askGoat(ctx: GoatContext, question: string): GoatResult {
   // Two questions in one ("when was the xray and when is the next visit"): answer each, in order.
   const parts = findReferralFacts(ctx, question) ? [question] : splitQuestion(question);
-  if (parts.length < 2) return askGoatOne(ctx, question);
+  if (parts.length < 2) return attachPendingFiles(askGoatOne(ctx, question), ctx.files);
   const results = parts.map((p) => askGoatOne(ctx, p));
   const answers: GoatAnswer[] = [];
   results.forEach((r, i) => {
@@ -1100,7 +1115,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     for (const a of r.answers) if (!answers.some((x) => x.title === a.title)) answers.push(a);
   });
   const withFiles = results.find((r) => r.files && r.files.matches.length) ?? results[0];
-  return {
+  return attachPendingFiles({
     answers,
     hits: results.flatMap((r) => r.hits).slice(0, 5),
     terms: [...new Set(results.flatMap((r) => r.terms))],
@@ -1108,7 +1123,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     filesFirst: false,
     highlight: [...new Set(results.flatMap((r) => r.highlight))],
     sourcesCollapsed: true,
-  };
+  }, ctx.files);
 }
 
 function askGoatOne(ctx: GoatContext, question: string): GoatResult {

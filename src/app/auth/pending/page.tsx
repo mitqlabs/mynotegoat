@@ -24,7 +24,7 @@ export default function PendingApprovalPage() {
     }
 
     if (access.state === "access-granted") {
-      router.replace("/patients");
+      router.replace("/");
       return;
     }
 
