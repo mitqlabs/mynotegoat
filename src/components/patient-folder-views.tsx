@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { softPillStyle } from "@/lib/color-utils";
 import { ageOn } from "@/lib/age";
 import { PatientPhotoControl } from "@/components/patient-photo-cropper";
 import { formatDobDisplay, formatFolderMoney, formatPhoneDisplay, splitFullName } from "@/lib/patient-folders";
@@ -16,14 +17,15 @@ import {
 } from "@/components/patient-person-fields";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
+export type FolderStatusColumn = { name: string; color: string };
+
 export type FolderListRow = {
   id: string;
   name: string;
   dob: string;
   phone: string;
-  active: number;
-  submitted: number;
-  paid: number;
+  /** Case counts keyed by the office's configured status name. Missing keys count as zero. */
+  counts: Record<string, number>;
   total: number;
   photo?: string;
 };
@@ -92,24 +94,26 @@ export function StatusPill({ status }: { status: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusPillClass(status)}`}>{status}</span>;
 }
 
-function CountBubble({ n, tone }: { n: number; tone: "green" | "amber" | "blue" }) {
-  const color =
-    n === 0
-      ? "bg-slate-100 text-slate-400"
-      : tone === "green"
-        ? "bg-emerald-100 text-emerald-700"
-        : tone === "amber"
-          ? "bg-amber-100 text-amber-700"
-          : "bg-sky-100 text-sky-700";
-  return <span className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${color}`}>{n}</span>;
+function CountBubble({ n, color }: { n: number; color: string }) {
+  const tinted = n > 0 ? softPillStyle(color) : undefined;
+  return (
+    <span
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${tinted ? "" : "bg-slate-100 text-slate-400"}`}
+      style={tinted}
+    >
+      {n}
+    </span>
+  );
 }
 
 export function PatientFolderListView({
   rows,
+  statuses,
   onOpen,
   onNewPatient,
 }: {
   rows: FolderListRow[];
+  statuses: FolderStatusColumn[];
   onOpen: (id: string) => void;
   onNewPatient: () => void;
 }) {
@@ -154,9 +158,9 @@ export function PatientFolderListView({
                 <th className="px-4 py-3">Patient</th>
                 <th className="px-4 py-3">DOB</th>
                 <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3 text-center">Active</th>
-                <th className="px-4 py-3 text-center">Submitted</th>
-                <th className="px-4 py-3 text-center">Paid</th>
+                {statuses.map((status) => (
+                  <th className="px-4 py-3 text-center" key={status.name}>{status.name}</th>
+                ))}
                 <th className="px-4 py-3 text-center">Total</th>
               </tr>
             </thead>
@@ -174,15 +178,17 @@ export function PatientFolderListView({
                   </td>
                   <td className="px-4 py-3">{formatDobDisplay(row.dob)}</td>
                   <td className="px-4 py-3">{formatPhoneDisplay(row.phone)}</td>
-                  <td className="px-4 py-3 text-center"><CountBubble n={row.active} tone="green" /></td>
-                  <td className="px-4 py-3 text-center"><CountBubble n={row.submitted} tone="amber" /></td>
-                  <td className="px-4 py-3 text-center"><CountBubble n={row.paid} tone="blue" /></td>
+                  {statuses.map((status) => (
+                    <td className="px-4 py-3 text-center" key={status.name}>
+                      <CountBubble color={status.color} n={row.counts[status.name] ?? 0} />
+                    </td>
+                  ))}
                   <td className="px-4 py-3 text-center font-semibold">{row.total}</td>
                 </tr>
               ))}
               {shown.length === 0 && (
                 <tr className="border-t border-[var(--line-soft)]">
-                  <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={7}>
+                  <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={4 + statuses.length}>
                     No patients match that search.
                   </td>
                 </tr>

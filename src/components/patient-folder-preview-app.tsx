@@ -143,26 +143,42 @@ function startingFolder(): FolderDetail {
   };
 }
 
-const OTHER_ROWS: FolderListRow[] = [
-  { id: "pf-alvarez", name: "Alvarez, Maria", dob: "11/02/1988", phone: "(323) 555-0199", active: 1, submitted: 0, paid: 0, total: 1 },
-  { id: "pf-bennett", name: "Bennett, Laura", dob: "07/21/1992", phone: "(626) 555-0110", active: 0, submitted: 1, paid: 1, total: 2 },
-  { id: "pf-chen", name: "Chen, David", dob: "01/09/1975", phone: "(818) 555-0187", active: 2, submitted: 0, paid: 1, total: 3 },
-  { id: "pf-dawson", name: "Dawson, Kevin", dob: "05/30/1983", phone: "(213) 555-0163", active: 0, submitted: 0, paid: 3, total: 3 },
-  { id: "pf-garcia", name: "Garcia, Elena", dob: "09/12/1990", phone: "(747) 555-0121", active: 1, submitted: 1, paid: 0, total: 2 },
-  { id: "pf-kim", name: "Kim, Sarah", dob: "12/04/1986", phone: "(818) 555-0175", active: 1, submitted: 0, paid: 0, total: 1 },
-  { id: "pf-patel", name: "Patel, Ravi", dob: "02/18/1981", phone: "(310) 555-0134", active: 0, submitted: 2, paid: 1, total: 3 },
-  { id: "pf-rivera", name: "Rivera, Carlos", dob: "08/25/1972", phone: "(323) 555-0158", active: 1, submitted: 0, paid: 2, total: 3 },
-  { id: "pf-thompson", name: "Thompson, Amy", dob: "04/07/1995", phone: "(626) 555-0190", active: 0, submitted: 0, paid: 1, total: 1 },
+const PREVIEW_STATUSES = [
+  { name: "Active", color: "#1f9d60" },
+  { name: "Discharged", color: "#5f75ff" },
+  { name: "Ready To Submit", color: "#f0a43f" },
+  { name: "Submitted", color: "#f4e526" },
+  { name: "Dropped", color: "#c9423a" },
+  { name: "Paid", color: "#80e74b" },
 ];
 
 function counts(cases: FolderCaseRow[]) {
-  return {
-    active: cases.filter((row) => row.status === "Active").length,
-    submitted: cases.filter((row) => row.status === "Submitted").length,
-    paid: cases.filter((row) => row.status === "Paid").length,
-    total: cases.length,
-  };
+  const tally: Record<string, number> = {};
+  for (const status of PREVIEW_STATUSES) tally[status.name] = 0;
+  for (const row of cases) {
+    const match = PREVIEW_STATUSES.find((status) => status.name.toLowerCase() === row.status.trim().toLowerCase());
+    if (match) tally[match.name] += 1;
+  }
+  return { counts: tally, total: cases.length };
 }
+
+function sampleCounts(partial: Record<string, number>) {
+  const tally: Record<string, number> = {};
+  for (const status of PREVIEW_STATUSES) tally[status.name] = partial[status.name] ?? 0;
+  return tally;
+}
+
+const OTHER_ROWS: FolderListRow[] = [
+  { id: "pf-alvarez", name: "Alvarez, Maria", dob: "11/02/1988", phone: "(323) 555-0199", counts: sampleCounts({ Active: 1 }), total: 1 },
+  { id: "pf-bennett", name: "Bennett, Laura", dob: "07/21/1992", phone: "(626) 555-0110", counts: sampleCounts({ Submitted: 1, Paid: 1 }), total: 2 },
+  { id: "pf-chen", name: "Chen, David", dob: "01/09/1975", phone: "(818) 555-0187", counts: sampleCounts({ Active: 2, Paid: 1 }), total: 3 },
+  { id: "pf-dawson", name: "Dawson, Kevin", dob: "05/30/1983", phone: "(213) 555-0163", counts: sampleCounts({ Paid: 3 }), total: 3 },
+  { id: "pf-garcia", name: "Garcia, Elena", dob: "09/12/1990", phone: "(747) 555-0121", counts: sampleCounts({ Active: 1, Submitted: 1 }), total: 2 },
+  { id: "pf-kim", name: "Kim, Sarah", dob: "12/04/1986", phone: "(818) 555-0175", counts: sampleCounts({ Active: 1 }), total: 1 },
+  { id: "pf-patel", name: "Patel, Ravi", dob: "02/18/1981", phone: "(310) 555-0134", counts: sampleCounts({ Submitted: 2, Paid: 1 }), total: 3 },
+  { id: "pf-rivera", name: "Rivera, Carlos", dob: "08/25/1972", phone: "(323) 555-0158", counts: sampleCounts({ Active: 1, Paid: 2 }), total: 3 },
+  { id: "pf-thompson", name: "Thompson, Amy", dob: "04/07/1995", phone: "(626) 555-0190", counts: sampleCounts({ Paid: 1 }), total: 1 },
+];
 
 export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list" | "patient" | "case" | "cases" }) {
   const [screen, setScreen] = useState<Screen>(
@@ -259,6 +275,7 @@ export function PatientFolderPreviewApp({ initial = "list" }: { initial?: "list"
             onNewPatient={() => {}}
             onOpen={openFolder}
             rows={listRows}
+            statuses={PREVIEW_STATUSES}
           />
         )}
         {screen.name === "patient" && (

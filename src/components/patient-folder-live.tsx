@@ -13,6 +13,7 @@ import { caseNumberStampFor, renderCaseNumber } from "@/lib/case-number";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { usDateToIso } from "@/components/patient-person-fields";
 import { usePatientBilling } from "@/hooks/use-patient-billing";
+import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useTasks } from "@/hooks/use-tasks";
 import { currentAuthor } from "@/hooks/use-case-note-entries";
 import { formatEntryDate, CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, loadCaseNoteEntries, makeEntry, saveCaseNoteEntries } from "@/lib/case-note-entries";
@@ -124,6 +125,7 @@ function useFolderTick(): number {
 
 export function PatientFolderListPage({ onNewPatient }: { onNewPatient: () => void }) {
   const { getRecord } = usePatientBilling();
+  const { caseStatuses } = useCaseStatuses();
   const tick = useFolderTick();
   const rows: FolderListRow[] = useMemo(() => {
     void tick;
@@ -133,21 +135,26 @@ export function PatientFolderListPage({ onNewPatient }: { onNewPatient: () => vo
       .map((folder) => {
         const members = folder.caseIds.map((id) => byId.get(id)).filter((row): row is PatientRecord => Boolean(row));
         const cloud = loadFolderCloud();
+        const counts: Record<string, number> = {};
+        for (const status of caseStatuses) counts[status.name] = 0;
+        for (const member of members) {
+          const key = member.caseStatus.trim().toLowerCase();
+          const match = caseStatuses.find((status) => status.name.trim().toLowerCase() === key);
+          if (match) counts[match.name] += 1;
+        }
         return {
           id: folder.id,
           name: folder.person.fullName,
           dob: folder.person.dob,
           phone: folder.person.phone,
           photo: cloud.people[folder.id]?.photoDataUrl || undefined,
-          active: members.filter((row) => row.caseStatus === "Active").length,
-          submitted: members.filter((row) => row.caseStatus === "Submitted").length,
-          paid: members.filter((row) => row.caseStatus === "Paid").length,
+          counts,
           total: members.length,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
     // tick re-reads the module-level patient list and the folder cloud.
-  }, [getRecord, tick]);
+  }, [caseStatuses, getRecord, tick]);
 
   if (!patientFoldersEnabled()) return null;
 
@@ -156,6 +163,7 @@ export function PatientFolderListPage({ onNewPatient }: { onNewPatient: () => vo
       onNewPatient={onNewPatient}
       onOpen={(id) => window.location.assign(`/patients/${id}`)}
       rows={rows}
+      statuses={caseStatuses.map((status) => ({ name: status.name, color: status.color }))}
     />
   );
 }
