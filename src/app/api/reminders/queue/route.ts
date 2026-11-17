@@ -12,10 +12,12 @@ import {
   planCatchUp,
   planReminderRun,
   planScheduledRun,
+  shortcutBatchSize,
   withoutClosedDates,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
 import { summaryAfterEmptyRun } from "@/lib/reminder-format";
+import { dueScope } from "@/lib/text-rules";
 import {
   adminClient,
   alreadySentIds,
@@ -49,18 +51,20 @@ export const dynamic = "force-dynamic";
  *   ?preview=1   list even on a non-run day (device must not send)
  *   ?format=shortcut  iPhone-friendly reply: `items` is non-empty ONLY when
  *                the phone should send right now; dry runs are logged here.
+ *   ?batch=5     with format=shortcut, hand out at most this many texts and
+ *                claim only those. The shortcut asks again until send=no.
+ *                Omitted = no limit (shortcuts installed before batching).
  *
  * Every call (outside quiet hours) also hands out queued "Message patients"
  * texts. Item ids: plain = appointment on `visitDate`; "r:<date>:<id>" =
  * reminder for another date; "b:<id>" = broadcast; "bd:<year>:<patient id>" =
  * birthday text. /ack understands all.
  *
- * Birthday texts (Settings → Text Reminders → Birthday texts, default off):
- * from the send hour on, outside quiet hours, every ACTIVE patient whose
- * birthday is today (office time zone) who is not opted out gets one text, at
- * most once per patient per year (birthday_text_log). They ride the same
- * daily run, so the device/Shortcut needs no change. Not tied to office open
- * days or Key Date closures: it is not about a visit.
+ * Birthday texts go out at their own hour (older settings: the send hour),
+ * outside quiet hours. Every patient whose birthday is today who is not
+ * opted out gets one text, at most once per patient per year. Not tied to
+ * office open days or Key Date closures: it is not about a visit.
+ * Saved texts can also limit visits to open office days or the next 24 hours.
  *
  * Legacy: run_requested_until (old Settings "Send now") still counts as
  * force=1 until a run completes.
@@ -84,7 +88,7 @@ export async function GET(request: NextRequest) {
   const todayIso = localNow(now, settings.timeZone).iso;
 
   // Which visit dates to work on, and how.
-  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string; hours?: { start: string; end: string } };
+  type Group = { visitDate: string; sameDay: boolean; onlyAfter?: string; notAfter?: string; hours?: { start: string; end: string } };
   let groups: Group[] = [];
   let visitDate: string;
   let reason = "";
@@ -135,6 +139,26 @@ export async function GET(request: NextRequest) {
   groups = openGroups;
   reminderRun = reminderRun && groups.length > 0;
 
+  // Saved texts pick their own hour. Until the office saves that list, the
+  // old send-hour path above is unchanged. A 9 AM birthday does not ride
+  // the 8 AM run. Open days follow office hours and Key Dates.
+  const scope = settings.rules
+    ? dueScope({
+        rules: settings.rules,
+        now,
+        timeZone: settings.timeZone,
+        officeHours: config.officeHours,
+        closedIsoDates: config.closedIsoDates,
+      })
+    : null;
+  if (scope) {
+    const hhmm = localHHMM(now, settings.timeZone);
+    groups = groups
+      .filter((g) => (g.sameDay ? scope.today : scope.tomorrow))
+      .map((g) => (!g.sameDay && scope.limitTomorrowToNow ? { ...g, notAfter: hhmm } : g));
+    reminderRun = groups.length > 0;
+  }
+
   await admin.from("reminder_devices").update({ last_seen_at: now.toISOString() }).eq("id", device.id);
 
   const reply = (body: Record<string, unknown>) =>
@@ -158,6 +182,7 @@ export async function GET(request: NextRequest) {
           office: config.office,
           alreadySentIds: await alreadySentIds(admin, device.workspace_id, g.visitDate),
           onlyAfter: g.onlyAfter,
+          notAfter: g.notAfter,
           sameDay: g.sameDay,
           hours: g.hours,
         }),
@@ -172,11 +197,18 @@ export async function GET(request: NextRequest) {
   const dryRun = settings.dryRun;
   const willSend = !dryRun && !preview;
 
-  // Birthday texts: same daily run, from the send hour on, never in quiet hours.
+  // Birthday texts wait until their own hour. Older settings use the send hour.
   const localToday = localNow(now, settings.timeZone);
+  const birthdayDue = scope ? scope.birthday : localToday.hour >= (settings.birthdayHour || settings.sendHour);
   let birthdays: BirthdayQueueRow[] =
-    !quiet && localToday.hour >= settings.sendHour
-      ? await loadBirthdayQueue(admin, device, todayIso, settings, { retryDryRun: willSend || preview, body: config.birthdayBody, office: config.office })
+    !quiet && birthdayDue
+      ? await loadBirthdayQueue(admin, device, todayIso, settings, {
+          retryDryRun: willSend || preview,
+          reofferClaims: willSend,
+          now,
+          body: config.birthdayBody,
+          office: config.office,
+        })
       : [];
   let held = false;
   const isBackup = willSend ? await otherPrimaryExists(admin, device) : false;
@@ -210,6 +242,37 @@ export async function GET(request: NextRequest) {
     const before = broadcasts.length;
     broadcasts = broadcasts.filter((b) => !broadcastBackupHold(b.createdAt, now, selfForced));
     if (broadcasts.length < before) held = true;
+  }
+
+  // A shortcut that passes batch= only leases what this call returns. The
+  // rest stay unclaimed, so a run that dies after the GET does not stick
+  // the whole morning. The next call (the shortcut's loop, or a later
+  // automation) picks them up. Claims still expire, so a batch that was
+  // leased and never acked comes back too.
+  let truncated = false;
+  const batchLimit = willSend && shortcut ? shortcutBatchSize(params.get("batch")) : 0;
+  if (batchLimit > 0) {
+    type Piece =
+      | { kind: "bday"; row: BirthdayQueueRow }
+      | { kind: "rem"; date: string; item: DeviceQueueItem }
+      | { kind: "cast"; row: (typeof broadcasts)[number] };
+    const pieces: Piece[] = [];
+    for (const row of birthdays) pieces.push({ kind: "bday", row });
+    for (const [date, list] of byDate) for (const item of list) pieces.push({ kind: "rem", date, item });
+    for (const row of broadcasts) pieces.push({ kind: "cast", row });
+    truncated = pieces.length > batchLimit;
+    const kept = pieces.slice(0, batchLimit);
+    birthdays = kept.flatMap((p) => (p.kind === "bday" ? [p.row] : []));
+    const nextDates = new Map<string, DeviceQueueItem[]>();
+    for (const p of kept) {
+      if (p.kind !== "rem") continue;
+      const list = nextDates.get(p.date) ?? [];
+      list.push(p.item);
+      nextDates.set(p.date, list);
+    }
+    byDate.clear();
+    for (const [date, list] of nextDates) byDate.set(date, list);
+    broadcasts = kept.flatMap((p) => (p.kind === "cast" ? [p.row] : []));
   }
 
   // Claims: each device only gets what it leased.
@@ -254,7 +317,7 @@ export async function GET(request: NextRequest) {
       .update({ last_run_at: now.toISOString(), last_run_summary: summary, run_requested_until: null })
       .eq("id", device.id);
   };
-  if (reminderRun && !preview && reminderItems.length === 0 && !held) {
+  if (reminderRun && !preview && reminderItems.length === 0 && !held && !truncated) {
     // Keep the day's real totals ("10/29/26: 14 sent") instead of overwriting them.
     await finishRun(summaryAfterEmptyRun(device.last_run_summary, visitDate));
   }

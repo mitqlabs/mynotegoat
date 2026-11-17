@@ -4,6 +4,7 @@
  * Handbook chapter (#chapter-text-reminders) and the checklist on the page.
  */
 import { HOWTO_QUESTION } from "@/lib/goat-howto";
+import { catchUpClockLabels } from "@/lib/reminder-automation";
 
 export const REMINDERS_HANDBOOK_ANCHOR = "/handbook#chapter-text-reminders";
 const SETTINGS_LINK = { label: "Settings → Text Reminders", href: "/settings" };
@@ -13,22 +14,21 @@ export interface RemindersHelp {
   links: Array<{ label: string; href: string }>;
 }
 
-const hourText = (sendHour?: number) => {
-  const h = typeof sendHour === "number" ? sendHour : 8;
-  return `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
+const hourText = (sendHour?: number) => catchUpClockLabels(typeof sendHour === "number" ? sendHour : 8)[0];
+
+const AUTOMATION_STEPS = (sendHour?: number) => {
+  const [atSend, atHalf, atNext] = catchUpClockLabels(typeof sendHour === "number" ? sendHour : 8);
+  return [
+    "1. On the office iPhone, open NoteGoat, Settings, Text Reminders, and tap Add to this iPhone. Then tap Add Shortcut. The code is already filled in.",
+    "2. Open Shortcuts. Tap Automation. Tap +. Tap Time of Day.",
+    `3. Set ${atSend}. Tap Every Day. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.`,
+    `4. Do that again for ${atHalf}, then again for ${atNext}.`,
+    "5. Tap +. Tap Message. Tap Message Contains. Type STOP. Tap Done. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.",
+    "6. Come back to Text Reminders and tap Test. It should say STOP catcher working.",
+  ].join("\n");
 };
 
-const AUTOMATION_STEPS = (time: string) =>
-  [
-    "1. On the office iPhone, open Shortcuts and tap the back arrow out of \"All Shortcuts\" to the main screen.",
-    "2. Open Automation and tap +, then choose Time of Day.",
-    `3. Set ${time}, Repeat: Every Day. Turn Automation (Run Immediately) ON and Notify When Run OFF.`,
-    "4. In the search bar at the bottom type Run Shortcut and tap it. Tap the blue Shortcut word and pick Send-Reminders. Leave Input empty.",
-    `5. Rename it (for example "${time.replace(":00", "")} Reminders") and save.`,
-    "6. If iOS asks the first time it texts, tap Always Allow.",
-  ].join("\n");
-
-const NOTES = "Running every day is fine. NoteGoat only sends when reminders are due and never texts anyone twice. Keep just one automation.";
+const NOTES = "Running every day is fine. NoteGoat only sends when reminders are due and never texts anyone twice. Keep these three automations and delete any other copy.";
 
 const SETUP =
   /\b(set\s*up|setup|schedule|automat\w*|turn on|create|make|install|configure|8\s*(?:am|a\.m\.)|eight|morning)\b/i;
@@ -56,25 +56,25 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
   if (trouble) {
     return {
       text: [
-        `If reminders didn't go out by themselves, the most common cause is the ${time} automation was never created. The Send-Reminders shortcut does NOT run by itself; iOS can't put a schedule inside a shortcut.`,
+        `If reminders didn't go out by themselves, the most common cause is the ${time} run was never created. The NoteGoat shortcut does NOT run by itself; you set it to run by itself. It used to be called Send Reminders.`,
         "",
         "Check this first: on the office iPhone open Shortcuts → Automation. If the list is empty, do this once:",
-        AUTOMATION_STEPS(time),
+        AUTOMATION_STEPS(opts.sendHour),
         "",
         NOTES,
-        "If the automation is already there, open it and make sure it's on, Every Day, Run Immediately, and runs Send-Reminders. Then in Text Reminders check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), today is one of the Run days, and read Recent sends for skipped patients (opted out, no phone, or not on a Scheduled visit). To send right now, use Send Reminders Now.",
+        "If they are already there, open each one and make sure it's on, Every Day, Run Immediately (not Ask Before Running), Notify When Run is off, and it runs NoteGoat. There should be three times plus one for messages that contain STOP. Then in Text Reminders check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), today is one of the Run days, and read Recent sends. Tap Test. A red line at the top means this morning did not finish, or a STOP reply did not match a patient. To send right now, open Shortcuts and tap NoteGoat.",
       ].join("\n"),
       links,
     };
   }
   return {
     text: [
-      `Setting up ${time} reminders is 3 steps. Step 2 is required because the shortcut does NOT run by itself.`,
-      "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the setup code, and add the Send-Reminders shortcut.",
-      `Step 2 (required): create the ${time} automation on the iPhone:`,
-      AUTOMATION_STEPS(time),
+      `Setting up ${time} reminders: Step 2 is required because the shortcut does NOT run by itself.`,
+      "On the office iPhone, open Settings → Text Reminders and tap Add to this iPhone, then Add Shortcut. The code is already filled in.",
+      `Then set it to run by itself:`,
+      AUTOMATION_STEPS(opts.sendHour),
       NOTES,
-      "Step 3: check Send reminders automatically. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Then check \"I made the " + time + " automation\" on the page.",
+      "Check Send reminders automatically. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Tap Test. It says STOP catcher working when the phone has reported in.",
     ].join("\n"),
     links,
   };
@@ -153,7 +153,7 @@ export function birthdayTextsHelp(question: string, opts: { canSeeSettings?: boo
     text: [
       "Yes. Birthday texts are one of the Auto Texts, and they text patients happy birthday on their birthday. It starts off. To turn it on: Settings → Text Reminders → Auto Texts → Birthday, turn the switch on, and pick the message it sends in the menu. You write and edit messages in Settings → Templates → SMS / Text Templates (use {first name} where the patient's first name goes). If you pick none, it sends \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
       `It goes out with the daily ${hourText(opts.sendHour)} reminders from the same iPhone shortcut, so there is nothing new to set up on the phone.`,
-      "Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays on Feb 28 in years with no Feb 29). Never patients marked \"no text reminders\" or who replied STOP, and each patient gets at most one a year. Test mode applies. A missed birthday is not sent late.",
+      "Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays on Feb 28 in years with no Feb 29). Never patients marked \"no text reminders\" or who replied STOP, and each patient gets at most one a year. Test mode applies. If the phone fetches it and does not send it, the same day is tried again. A birthday is not sent late.",
     ].join("\n"),
     links,
   };

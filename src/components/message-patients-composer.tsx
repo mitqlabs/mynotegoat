@@ -32,11 +32,11 @@ import {
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
-const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
+const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-[var(--text-main)]";
 // Solid brand button. Do NOT also set bg-white here: two bg-* classes on one element
 // are resolved by stylesheet order, and white-on-white made this button invisible.
 const primaryBtn =
-  "h-[42px] shrink-0 rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-4 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-[42px] shrink-0 rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--on-brand)] shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 const MAX = 640;
 /** Supabase returns at most 1000 rows per request; recipients insert in chunks. */
 const PAGE = 1000;
@@ -55,8 +55,8 @@ type BroadcastRow = {
 /** mm/dd/yy, like every other date on the Text Reminders page. */
 const usDate = fmtDate;
 
-/** Must match the shortcut name in tools/build-shortcuts.py. */
-export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=Send%20Reminders%20Now";
+/** The one iPhone shortcut. Tapping it with no message sends waiting texts. */
+export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=NoteGoat";
 
 function isAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -75,7 +75,7 @@ export function SendFromIphoneButton({ className = "" }: { className?: string })
   if (!show) return null;
   return (
     <a
-      className={`inline-flex h-[42px] items-center justify-center rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-white ${className}`}
+      className={`inline-flex h-[42px] items-center justify-center rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--on-brand)] ${className}`}
       data-testid="send-from-iphone"
       href={SEND_NOW_SHORTCUT_URL}
     >
@@ -349,7 +349,7 @@ export function MessagePatientsComposer({
   };
 
   return (
-    <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-3 text-sm" data-testid="message-patients" ref={rootRef}>
+    <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-3 text-sm text-[var(--text-main)]" data-testid="message-patients" ref={rootRef}>
       <div>
         <p className="font-semibold">Message patients</p>
         <p className="text-[var(--text-muted)]">
@@ -357,14 +357,14 @@ export function MessagePatientsComposer({
         </p>
       </div>
       {settings.dryRun && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 font-semibold text-amber-800">
+        <p className="rounded-lg border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-3 py-2 font-semibold text-[var(--text-main)]">
           Test mode is on: nobody is texted. Turn it off in Texts when you are ready.
         </p>
       )}
       <label className="grid gap-1">
         <span className={label}>Message</span>
         <textarea
-          className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+          className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-[var(--text-main)]"
           maxLength={MAX}
           onChange={(e) => setText(e.target.value)}
           placeholder="Our office is closed today due to an emergency. We'll call you to reschedule."

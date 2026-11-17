@@ -9,10 +9,10 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
 import { markLocalWrite } from "@/lib/local-sync";
-import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { planAutoTextMigration } from "@/lib/message-library";
-import { AutoTextRows } from "@/components/auto-texts-panel";
+import { legacyRules, withRules } from "@/lib/text-rules";
+import { TextRuleWizard } from "@/components/text-rule-wizard";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -27,6 +27,10 @@ import {
   effectiveRunDays,
   generateDeviceToken,
   hashDeviceToken,
+  localNow,
+  optOutHowLabel,
+  phoneMatchKey,
+  searchPatientsToOptOut,
   WEEKDAY_SHORT,
 } from "@/lib/reminder-automation";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -35,10 +39,11 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { patients as patientDirectory } from "@/lib/mock-data";
 import { appConfirm, appPrompt } from "@/components/app-dialog";
 import { MessagePatientsComposer, SendFromIphoneButton, type MessagePatientsPrefill } from "@/components/message-patients-composer";
-import { AutomationWarning, ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
+import { AutomationWarning } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
-import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, reminderSetupDone, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
+import { birthdayLogLabel } from "@/lib/birthday-texts";
+import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, optedOutSummary, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
 
@@ -70,23 +75,22 @@ type DeviceRow = {
   revoked_at: string | null;
 };
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
-type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; created_at: string };
+type PatientPick = { id: string; fullName: string; phone: string; textRemindersOff?: boolean; deleted?: boolean };
+type BirthdayLogRow = { id: string; year: number; phone_last4: string; status: string; error: string | null; claimed_at: string | null; created_at: string };
 type LogRow = { id: number; visit_date: string; phone_last4: string; status: string; error: string | null; created_at: string };
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 
 const label = "text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]";
-const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-white px-3";
-const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold";
+const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-[var(--text-main)]";
+const rowBtn = "rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]";
 
 export function TextRemindersSettingsPanel() {
   const { smsTemplates, updateSmsTemplates } = useSmsTemplates();
-  const { officeSettings } = useOfficeSettings();
   const { scheduleSettings } = useScheduleSettings();
   const { scheduleAppointments } = useScheduleAppointments();
   const [settings, setSettings] = useState<SmsReminderSettings>(() => loadSettings());
   const [devices, setDevices] = useState<DeviceRow[]>([]);
-  const [devicesLoaded, setDevicesLoaded] = useState(false);
   const [log, setLog] = useState<LogRow[]>([]);
   // Send history over the last two weeks (times + visit dates only), for the "8 AM automation may not be set up" check.
   const [history, setHistory] = useState<{ createdAt: string; visitDate: string }[]>([]);
@@ -96,6 +100,7 @@ export function TextRemindersSettingsPanel() {
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
+  const [optOutQuery, setOptOutQuery] = useState("");
   const [birthdayLog, setBirthdayLog] = useState<BirthdayLogRow[]>([]);
   const { ask, confirmDialog } = useSimpleConfirm();
 
@@ -118,9 +123,13 @@ export function TextRemindersSettingsPanel() {
     const timer = window.setTimeout(() => {
       const { settings: s, templates } = attachRef.current;
       const plan = planAutoTextMigration(s, templates, new Date().toISOString());
-      if (!plan) return;
-      if (plan.addMessages.length) updateSmsTemplates((current) => [...current.filter((m) => !plan.addMessages.some((a) => a.id === m.id)), ...plan.addMessages]);
-      update(plan.settingsPatch);
+      let next = s;
+      if (plan) {
+        if (plan.addMessages.length) updateSmsTemplates((current) => [...current.filter((m) => !plan.addMessages.some((a) => a.id === m.id)), ...plan.addMessages]);
+        next = { ...s, ...plan.settingsPatch };
+      }
+      if (next.rules == null) next = withRules(next, legacyRules(next));
+      if (next !== s) update(next);
     }, 2500);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,8 +146,6 @@ export function TextRemindersSettingsPanel() {
     const time = (v: string | null) => (v && /^\d{2}:\d{2}$/.test(v) ? v : undefined);
     return { key: 1, date, message: (q.get("msgText") ?? "").slice(0, 640), startTime: time(q.get("msgStart")), endTime: time(q.get("msgEnd")) };
   });
-  const origin = typeof window === "undefined" ? "https://www.mynotegoat.com" : window.location.origin;
-
   const refresh = useCallback(async () => {
     const client = getSupabaseBrowserClient();
     if (!client || !workspaceId) return;
@@ -156,7 +163,6 @@ export function TextRemindersSettingsPanel() {
         .limit(25),
     ]);
     setDevices((d as DeviceRow[] | null) ?? []);
-    setDevicesLoaded(true);
     setLog((l as LogRow[] | null) ?? []);
     const since = new Date(Date.now() - (AUTO_RUN_LOOKBACK_DAYS + 2) * 86_400_000).toISOString();
     const { data: h } = await client
@@ -170,34 +176,34 @@ export function TextRemindersSettingsPanel() {
     // Recent birthday texts (last 4 digits only). Missing table = nothing yet.
     const { data: bd } = await client
       .from("birthday_text_log")
-      .select("id, year, phone_last4, status, error, created_at")
+      .select("id, year, phone_last4, status, error, claimed_at, created_at")
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(30);
     setBirthdayLog((bd as BirthdayLogRow[] | null) ?? []);
-    // Patients who replied STOP (latest action per patient, still opted out).
-    const { data: o } = await client
-      .from("reminder_opt_outs")
-      .select("patient_id, action, phone_last4, source, created_at")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(300);
-    const latest = new Map<string, { action: string; at: string; phoneLast4: string; source: string }>();
+    // Everyone with texts turned off, plus the newest STOP row that says how.
+    const [{ data: flagged }, { data: o }] = await Promise.all([
+      client.from("patients").select("id, full_name, phone").eq("workspace_id", workspaceId).eq("text_reminders_off", true).limit(300),
+      client.from("reminder_opt_outs").select("patient_id, action, phone_last4, source, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(300),
+    ]);
+    const latest = new Map<string, { at: string; phoneLast4: string; source: string }>();
     for (const r of (o as { patient_id: string; action: string; phone_last4: string; source: string; created_at: string }[] | null) ?? []) {
-      if (!latest.has(r.patient_id)) latest.set(r.patient_id, { action: r.action, at: r.created_at, phoneLast4: r.phone_last4, source: r.source });
+      if (!r.patient_id || r.patient_id === "test" || r.patient_id.startsWith("unmatched:")) continue;
+      if (r.action !== "stop" || latest.has(r.patient_id)) continue;
+      latest.set(r.patient_id, { at: r.created_at, phoneLast4: r.phone_last4, source: r.source });
     }
-    const stopped = Array.from(latest.entries()).filter(([, v]) => v.action === "stop");
-    if (!stopped.length) return setOptOuts([]);
-    const { data: pts } = await client
-      .from("patients")
-      .select("id, full_name, text_reminders_off")
-      .eq("workspace_id", workspaceId)
-      .in("id", stopped.map(([id]) => id));
-    const byId = new Map(((pts as { id: string; full_name: string | null; text_reminders_off: boolean | null }[] | null) ?? []).map((p) => [p.id, p]));
     setOptOuts(
-      stopped
-        .filter(([id]) => byId.get(id)?.text_reminders_off === true)
-        .map(([id, v]) => ({ patientId: id, name: byId.get(id)?.full_name || "Unknown patient", at: v.at, phoneLast4: v.phoneLast4, source: v.source })),
+      ((flagged as { id: string; full_name: string | null; phone: string | null }[] | null) ?? []).map((p) => {
+        const log = latest.get(p.id);
+        const digits = String(p.phone ?? "").replace(/\D/g, "");
+        return {
+          patientId: p.id,
+          name: p.full_name || "Unknown patient",
+          at: log?.at ?? "",
+          phoneLast4: log?.phoneLast4 || digits.slice(-4),
+          source: log?.source ?? "staff",
+        };
+      }),
     );
   }, [workspaceId]);
 
@@ -206,7 +212,7 @@ export function TextRemindersSettingsPanel() {
     if (!client || !workspaceId) return;
     const ok = await ask({
       title: `Turn text reminders back on for ${row.name}?`,
-      lines: ["They replied STOP. Only do this if they asked to get texts again."],
+      lines: ["Only do this if they asked to get texts again."],
       confirmLabel: "Turn back on",
       cancelLabel: "Cancel",
     });
@@ -227,9 +233,27 @@ export function TextRemindersSettingsPanel() {
     await refresh();
   };
 
+  const addOptOut = async (patient: PatientPick) => {
+    const client = getSupabaseBrowserClient();
+    if (!client || !workspaceId) return;
+    const { error } = await client.from("patients").update({ text_reminders_off: true }).eq("workspace_id", workspaceId).eq("id", patient.id);
+    if (error) return setMessage("Couldn't turn texts off. Try again.");
+    const { error: logError } = await client.from("reminder_opt_outs").insert({
+      workspace_id: workspaceId,
+      patient_id: patient.id,
+      action: "stop",
+      source: "staff",
+      phone_last4: phoneMatchKey(patient.phone).slice(-4),
+    });
+    setOptOutQuery("");
+    if (logError) setMessage("Texts are off. The office list of who added them did not save.");
+    await refresh();
+  };
+
+  const optOutMatches = searchPatientsToOptOut(patientDirectory, optOutQuery);
+
   useEffect(() => {
     // Async fetch on mount; state is set after the network round trip.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 
@@ -335,11 +359,6 @@ export function TextRemindersSettingsPanel() {
   const setSection = (key: ReminderSection, open: boolean) =>
     update({ sections: { ...settings.sections, [key]: open } });
 
-  // Set up starts collapsed once it is finished (box ticked AND a device has run). Until the devices
-  // load, the ticked box alone decides, so the page doesn't open and then snap shut.
-  const setupDone = devicesLoaded ? reminderSetupDone(settings.automationConfirmed, devices) : settings.automationConfirmed;
-  const setupOpen = sectionOpen(settings.sections, "setup", !setupDone);
-
   const confirmAutomation = (confirmed: boolean) =>
     update({ automationConfirmed: confirmed, automationConfirmedAt: confirmed ? new Date().toISOString() : "" });
 
@@ -369,20 +388,18 @@ export function TextRemindersSettingsPanel() {
     <div className="space-y-5" data-testid="text-reminders-panel">
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
-      <CollapsibleSection
-        hint={setupDone ? "Done. Open to change senders, shortcuts or opt-out setup." : "Checklist, sending devices, shortcuts and opt-out setup."}
-        onToggle={(next) => setSection("setup", next)}
-        open={setupOpen}
-        testId="section-setup"
-        title="Set up"
-      >
-      <ReminderSetupChecklist
-        onConfirm={confirmAutomation}
-        onToggle={(next) => setSection("steps", next)}
-        open={sectionOpen(settings.sections, "steps", !settings.automationConfirmed)}
-        settings={settings}
-      />
-
+      <div data-testid="section-setup">
+        <TextRuleWizard
+          devices={devices}
+          hasMac={activeDevices.some((d) => d.kind === "mac")}
+          messages={smsTemplates}
+          onChanged={() => void refresh()}
+          onConfirm={confirmAutomation}
+          settings={settings}
+          update={update}
+          workspaceId={workspaceId}
+        >
+      <div data-testid="section-phones">
       <SetupCard
         actions={
           <>
@@ -395,23 +412,23 @@ export function TextRemindersSettingsPanel() {
           </>
         }
         onToggle={(next) => setSection("devices", next)}
-        open={sectionOpen(settings.sections, "devices", true)}
+        open={sectionOpen(settings.sections, "devices", false)}
         status={devicesCard.status}
         summary={devicesCard.summary}
         testId="section-devices"
-        title="Sending devices"
+        title="Phones and Macs"
       >
         {newToken && (
-          <div className="grid gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3" data-testid="new-device-token">
+          <div className="grid gap-2 rounded-lg border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-3 py-3 text-[var(--text-main)]" data-testid="new-device-token">
             <p className="font-semibold">Your new setup code for {newTokenName}. Copy it now. It will not be shown again.</p>
-            <code className="select-all break-all rounded-md bg-white px-2 py-1.5 font-mono text-sm">{newToken}</code>
-            <p className="text-amber-900">
+            <code className="select-all break-all rounded-md bg-[var(--bg-soft)] px-2 py-1.5 font-mono text-sm text-[var(--text-main)]">{newToken}</code>
+            <p>
               <b>Do not share this setup code.</b> Anyone who has it can send texts as your office. Paste it into{" "}
               {newTokenKind === "mac" ? "the iMac setup" : "the iPhone setup"} below.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
-                className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="rounded-lg border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-[var(--on-brand)]"
                 data-testid="copy-device-token"
                 onClick={() => {
                   void navigator.clipboard?.writeText(newToken).then(() => setCopied(true));
@@ -453,7 +470,7 @@ export function TextRemindersSettingsPanel() {
                     <button className={rowBtn} onClick={() => void newCode(d.id)} type="button">
                       Get new setup code
                     </button>
-                    <button className={`${rowBtn} text-red-700`} onClick={() => void revokeDevice(d.id)} type="button">
+                    <button className={rowBtn} onClick={() => void revokeDevice(d.id)} type="button">
                       Remove
                     </button>
                   </div>
@@ -462,9 +479,18 @@ export function TextRemindersSettingsPanel() {
             })}
           </ul>
         )}
-        {message && <p className="font-semibold text-red-700">{message}</p>}
+        {message && <p className="font-semibold text-[var(--text-main)]">{message}</p>}
       </SetupCard>
+      </div>
+        </TextRuleWizard>
+      </div>
 
+      <CollapsibleSection
+        onToggle={(next) => setSection("more", next)}
+        open={sectionOpen(settings.sections, "more", false)}
+        testId="section-more"
+        title="More"
+      >
       <SetupCard
         onToggle={(next) => setSection("how", next)}
         open={sectionOpen(settings.sections, "how", false)}
@@ -484,8 +510,7 @@ export function TextRemindersSettingsPanel() {
             Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
-            <b>Send-Reminders</b> (iPhone shortcut) texts tomorrow&apos;s patients. It runs at {hourLabel(settings.sendHour)} only after you
-            make the automation (Step 2 above).
+            <b>NoteGoat</b> on the iPhone texts 5 patients, then asks for the next 5. It also catches a reply of STOP. It runs at each time in the steps, and once more an hour after the last one. That later run sends anything still waiting.
           </li>
           <li>
             <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
@@ -524,48 +549,10 @@ export function TextRemindersSettingsPanel() {
             When a patient replies STOP (or UNSUBSCRIBE, END, QUIT, STOPALL), their text reminders turn off. START turns them back on.
             NoteGoat never texts back. A message that already says STOP does not get the line twice.
           </p>
-          <div className="rounded-lg border border-[var(--line-soft)]" data-testid="opt-out-list">
-            <p className="border-b border-[var(--line-soft)] px-3 py-2 font-semibold">Opted out by reply ({optOuts.length})</p>
-            {optOuts.length === 0 ? (
-              <p className="px-3 py-2 text-[var(--text-muted)]">Nobody has replied STOP.</p>
-            ) : (
-              <ul className="max-h-60 overflow-y-auto">
-                {optOuts.map((row) => (
-                  <li className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] px-3 py-2 first:border-t-0" key={row.patientId}>
-                    <span>
-                      <span className="font-semibold">{row.name}</span>{" "}
-                      <span className="text-[var(--text-muted)]">· {fmtDateTime(row.at, settings.timeZone)}</span>
-                    </span>
-                    <button className={rowBtn} onClick={() => void reEnable(row)} type="button">
-                      Turn texts back on
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
 
-        <InnerFold testId="optout-iphone-steps" title="Catch STOP replies on the iPhone (only if the iPhone sends the texts)">
-          <p className="text-[var(--text-muted)]">The iMac reads STOP replies on its own. Skip this if you use the iMac.</p>
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>
-              On the office iPhone, tap{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
-              {" "}→ <b>Add Shortcut</b>, and paste the same setup code when it asks.
-            </li>
-            <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
-            <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
-            <li>Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off. Tap <b>Next</b>.</li>
-            <li>Pick <b>Run Shortcut</b> → <b>NoteGoat Opt-Out</b>. Tap the shortcut&apos;s <b>Input</b> and choose <b>Shortcut Input</b> (the message). Tap <b>Done</b>.</li>
-            <li>Repeat steps 2–5 with <Mono>START</Mono> if you want patients to be able to opt back in.</li>
-          </ol>
-          <p className="text-[var(--text-muted)]">
-            Good to know: iOS only runs this for messages that <i>contain</i> STOP, and NoteGoat only acts when the whole reply is the
-            word. If the patient is saved in the iPhone&apos;s Contacts, iOS may pass their name instead of their number, and NoteGoat
-            can&apos;t match it. Check &quot;Opted out by reply&quot; above, and mark them &quot;no text reminders&quot; by hand if needed.
-            Words like UNSUBSCRIBE need their own automation.
-          </p>
+        <InnerFold testId="optout-iphone-steps" title="STOP replies">
+          <p>The same NoteGoat shortcut catches STOP. Follow the steps at the top. You do not add a second shortcut.</p>
         </InnerFold>
       </SetupCard>
 
@@ -578,70 +565,8 @@ export function TextRemindersSettingsPanel() {
         title="iPhone setup (Shortcuts app)"
       >
         <div className="space-y-3" data-testid="iphone-steps">
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>. It is a long line of letters and numbers. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
-            <li>
-              On the office iPhone, open this page and tap{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-              {" "}→ <b>Add Shortcut</b>. Paste your setup code when it asks.
-            </li>
-            <li>
-              Get{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
-              {" "}the same way. It is the backup for days the phone missed {hourLabel(settings.sendHour)}. Long-press it → <b>Share</b> → <b>Add to Home Screen</b>.
-            </li>
-            <li>
-              <b>Last step, required:</b> make the {hourLabel(settings.sendHour)} automation. Do <b>Step 2</b> in the box at the top of Set up.
-            </li>
-          </ol>
+          <p>Use the steps at the top of this page. One shortcut, named <b>NoteGoat</b>, sends the texts and catches STOP.</p>
         </div>
-        <InnerFold testId="iphone-steps-manual" title="Only if the download did not work: build the shortcut by hand">
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>.</li>
-            <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
-            <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
-            <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
-            <li>Tap the blue <b>URL</b> and paste: <Mono>{`${origin}/api/reminders/queue?format=shortcut`}</Mono></li>
-            <li>Tap the <b>⌄</b> arrow (Show More) on that block. Leave <b>Method</b> on <Mono>GET</Mono>.</li>
-            <li>
-              Tap <b>Headers</b> → <b>Add new header</b>:
-              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-                <li><b>Key</b>: <Mono>Authorization</Mono></li>
-                <li><b>Text</b>: type <Mono>Bearer </Mono> (with one space after it), then paste your code, e.g. <Mono>Bearer ngr_abc123…</Mono></li>
-              </ol>
-            </li>
-            <li>Add <b>Get Dictionary Value</b>. Set it to get the value for key <Mono>visitDate</Mono> in <b>Contents of URL</b>.</li>
-            <li>Add <b>Set Variable</b> and name the variable <Mono>VisitDate</Mono>.</li>
-            <li>Add another <b>Get Dictionary Value</b>: key <Mono>items</Mono> in <b>Contents of URL</b>.</li>
-            <li>
-              Add <b>Repeat with Each</b> (it repeats with each item from the step above). Drag these <b>inside</b> the loop, in order:
-              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-                <li><b>Get Dictionary Value</b>: key <Mono>text</Mono> in <b>Repeat Item</b>.</li>
-                <li><b>Send Message</b>: message = that <b>Dictionary Value</b>; recipient = another <b>Get Dictionary Value</b> with key <Mono>phone</Mono> in <b>Repeat Item</b>.</li>
-                <li>On Send Message, tap <b>⌄</b> and turn <b>Show When Run</b> OFF.</li>
-                <li><b>Get Contents of URL</b>: <Mono>{`${origin}/api/reminders/ack`}</Mono>. Tap <b>⌄</b>, set <b>Method</b> to <Mono>POST</Mono>, and add the same <Mono>Authorization</Mono> header.</li>
-                <li>
-                  Set <b>Request Body</b> to <b>JSON</b> and add 3 fields (type Text):
-                  <ul className="mt-1 list-disc space-y-1 pl-5">
-                    <li><Mono>visitDate</Mono> = the <b>VisitDate</b> variable</li>
-                    <li><Mono>id</Mono> = <b>Repeat Item</b> → key <Mono>id</Mono></li>
-                    <li><Mono>status</Mono> = <Mono>sent</Mono></li>
-                  </ul>
-                </li>
-                <li><b>Wait</b>: <Mono>5</Mono> seconds.</li>
-              </ol>
-            </li>
-            <li>Optional, after the loop: <b>Get Dictionary Value</b> key <Mono>message</Mono> in Contents of URL → <b>Show Notification</b>.</li>
-            <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
-            <li>
-              Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
-              <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Nobody gets two texts.
-            </li>
-            <li>
-              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the {hourLabel(settings.sendHour)} automation.
-            </li>
-          </ol>
-        </InnerFold>
       </SetupCard>
 
       <SetupCard
@@ -702,21 +627,6 @@ export function TextRemindersSettingsPanel() {
           </ol>
         </InnerFold>
       </SetupCard>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        hint="Turn each automatic text on or off and pick the message it sends."
-        onToggle={(next) => setSection("autotexts", next)}
-        open={sectionOpen(settings.sections, "autotexts", true)}
-        testId="section-autotexts"
-        title="Auto Texts"
-      >
-      <AutoTextRows
-        messages={smsTemplates}
-        office={{ officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone }}
-        settings={settings}
-        update={update}
-      />
       <p className="text-sm">
         <button
           className="font-semibold text-[var(--brand-primary)] underline"
@@ -752,8 +662,8 @@ export function TextRemindersSettingsPanel() {
             <button
               className={`h-[42px] rounded-xl border px-3 text-sm font-semibold ${
                 runDays.includes(dow)
-                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                  : "border-[var(--line-soft)] bg-white"
+                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--on-brand)]"
+                  : "border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]"
               }`}
               key={day}
               onClick={() => toggleDay(dow)}
@@ -781,11 +691,16 @@ export function TextRemindersSettingsPanel() {
           <li>It goes out with the {hourLabel(settings.sendHour)} reminders, from the same iPhone shortcut or iMac. There is nothing new to set up on the phone.</li>
           <li>Every patient with a date of birth and a phone number gets one, whatever their case status, on the day of their birthday (Feb 29 birthdays get it on Feb 28 in years with no Feb 29).</li>
           <li>Never patients marked &quot;no text reminders&quot; or who replied STOP. Each patient gets at most one birthday text a year.</li>
-          <li>If the phone is off that morning, the text goes out the next time the shortcut runs that same day. A missed birthday is not sent late.</li>
+          <li>If the phone fetches a birthday text and does not send it, the same day is tried again the next time Send Reminders runs. A birthday from an earlier day is not sent late.</li>
           <li>Test mode applies here too: nothing is texted, it only shows below what would have gone out.</li>
         </ul>
       </details>
-          <details className="rounded-lg border border-[var(--line-soft)] bg-white" data-testid="birthday-log">
+          {birthdayLog.some((row) => birthdayLogLabel(row.status, row.error, row.claimed_at, localNow(new Date(), settings.timeZone).iso, settings.timeZone) === "Not sent (too late)") ? (
+            <p className="text-sm font-semibold text-[var(--text-main)]" data-testid="birthday-late">
+              Some birthday texts were not sent (too late).
+            </p>
+          ) : null}
+          <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]" data-testid="birthday-log">
             <summary className="cursor-pointer px-3 py-2 font-semibold">Recent birthday texts</summary>
             {birthdayLog.length === 0 ? (
               <p className="px-3 py-2 text-[var(--text-muted)]">None yet.</p>
@@ -804,8 +719,7 @@ export function TextRemindersSettingsPanel() {
                       <td className="px-3 py-1">{fmtDateTime(row.created_at, settings.timeZone)}</td>
                       <td className="px-3 py-1">{row.phone_last4}</td>
                       <td className="px-3 py-1">
-                        {row.status === "claimed" ? "Handed to the phone, no answer yet" : plainResult(row.status)}
-                        {row.error ? ` — ${row.error}` : ""}
+                        {birthdayLogLabel(row.status, row.error, row.claimed_at, localNow(new Date(), settings.timeZone).iso, settings.timeZone)}
                       </td>
                     </tr>
                   ))}
@@ -872,6 +786,55 @@ export function TextRemindersSettingsPanel() {
           </table>
         )}
       </CollapsibleSection>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hint={optedOutSummary(optOuts.length)}
+        onToggle={(next) => setSection("optedout", next)}
+        open={sectionOpen(settings.sections, "optedout", true)}
+        testId="section-opted-out"
+        title="Opted out"
+      >
+        <div className="grid gap-3" data-testid="opt-out-list">
+          <input
+            aria-label="Add patient"
+            className="h-[42px] w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 text-[var(--text-main)]"
+            onChange={(e) => setOptOutQuery(e.target.value)}
+            placeholder="Add patient"
+            value={optOutQuery}
+          />
+          {optOutMatches.length > 0 && (
+            <ul className="overflow-hidden rounded-lg border border-[var(--line-soft)]">
+              {optOutMatches.map((patient) => (
+                <li className="border-t border-[var(--line-soft)] first:border-t-0" key={patient.id}>
+                  <button className="w-full px-3 py-2 text-left font-semibold text-[var(--text-main)]" onClick={() => void addOptOut(patient)} type="button">
+                    {patient.fullName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {optOuts.length === 0 ? (
+            <p className="text-[var(--text-muted)]">Nobody yet.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]">
+              {optOuts.map((row) => (
+                <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" key={row.patientId}>
+                  <span>
+                    <span className="font-semibold text-[var(--text-main)]">{row.name}</span>{" "}
+                    <span className="text-[var(--text-muted)]">
+                      · {optOutHowLabel(row.source)}
+                      {row.at ? ` · ${fmtDateTime(row.at, settings.timeZone)}` : ""}
+                    </span>
+                  </span>
+                  <button className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]" onClick={() => void reEnable(row)} type="button">
+                    Turn texts back on
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </CollapsibleSection>
       {confirmDialog}
     </div>

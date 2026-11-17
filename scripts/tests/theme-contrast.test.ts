@@ -60,7 +60,7 @@ assert.match(css, /\.bg-amber-50[\s\S]{0,400}var\(--bg-panel\)/, "amber-50 fill 
 assert.match(css, /\.bg-yellow-50/, "yellow-50 fill is themed");
 assert.match(css, /\.bg-\\\[\\#fef9e7\\\]/, "cream #fef9e7 fill is themed");
 const checklist = readFileSync(new URL("../../src/components/reminder-setup-checklist.tsx", import.meta.url), "utf8");
-assert.match(checklist, /bg-amber-50/, "required step still uses the shared amber class the theme remaps");
+assert.equal(/bg-(?:amber|yellow)-50|bg-white|bg-\[#fef9e7\]/.test(checklist), false, "setup steps use theme fills only (no cream REQUIRED box)");
 
 const samples = readFileSync(new URL("../../src/components/theme-page-samples.tsx", import.meta.url), "utf8");
 assert.equal(samples.includes("text-[var(--brand-ink)]"), false, "sample names are not the accent");

@@ -1,40 +1,49 @@
 "use client";
 
 /**
- * Settings → Text Reminders: the setup checklist. Step 2 (the 8 AM
- * automation) is spelled out because iOS can't ship a schedule inside a
- * shortcut. Without it the phone never sends by itself.
+ * Settings → Text Reminders: one list for the office iPhone.
+ * The phone does not start by itself until these steps are done.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
+import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
+import { iphoneSetupSteps, setupTestReport, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
+const TEST_URL = "shortcuts://run-shortcut?name=NoteGoat&input=STOP%20TEST";
 
-function Badge({ children, tone }: { children: ReactNode; tone: "required" | "done" | "plain" }) {
-  const cls =
-    tone === "required"
-      ? "bg-amber-200 text-amber-900"
-      : tone === "done"
-        ? "bg-emerald-100 text-emerald-800"
-        : "bg-[var(--bg-soft)] text-[var(--text-muted)]";
-  return <span className={`rounded-md px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide ${cls}`}>{children}</span>;
+function onThisIphone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }
 
-function StepNumber({ n, done }: { n: number; done?: boolean }) {
+function StepWords({ text }: { text: string }) {
+  const parts = text.split(/\*\*/);
   return (
-    <span
-      aria-hidden
-      className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-bold text-white ${done ? "bg-emerald-600" : "bg-[var(--brand-primary)]"}`}
-    >
-      {done ? "✓" : n}
-    </span>
+    <>
+      {parts.map((part, i) => (i % 2 === 1 ? <b key={i}>{part}</b> : <span key={i}>{part}</span>))}
+    </>
   );
 }
 
-/** The red "automation may not be set up" notice. Shown at the top of the page even when Set up is collapsed. */
+function StepLines({ lines }: { lines: string[] }) {
+  return (
+    <div className="grid gap-4">
+      {lines.map((line, index) => (
+        <p className="text-lg font-semibold leading-relaxed text-[var(--text-main)]" key={`${index}-${line}`}>
+          <StepWords text={line} />
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** The red "may not be set up" notice. Shown at the top of the page even when Set up is collapsed. */
 export function AutomationWarning({
   settings,
   warning,
@@ -48,14 +57,14 @@ export function AutomationWarning({
   const time = hourLabel(settings.sendHour);
   if (!warning.length || !hasIphone) return null;
   return (
-    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm" data-testid="automation-warning" role="alert">
-      <p className="font-bold text-red-800">Your {time} automation may not be set up — see Step 2</p>
-      <p className="mt-1 text-red-900">
+    <div className="rounded-xl border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-4 py-3 text-sm text-[var(--text-main)]" data-testid="automation-warning" role="alert">
+      <p className="font-bold">Your {time} run may not be set up — see the iPhone steps</p>
+      <p className="mt-1 text-[var(--text-muted)]">
         Reminders were due on {warning.slice(0, 2).map((d) => fmtDate(d)).join(" and ")}, but the phone didn&apos;t send
         them by itself around {time}.
         {settings.automationConfirmed
-          ? " You ticked the box below, so open Shortcuts → Automation and make sure the automation is on and set to Run Immediately."
-          : " If you haven't made the automation yet, do Step 2 now."}
+          ? " Open Shortcuts, tap Automation, and make sure each one says Run Immediately."
+          : " Do the iPhone steps below."}
       </p>
     </div>
   );
@@ -66,97 +75,202 @@ export function ReminderSetupChecklist({
   onConfirm,
   open,
   onToggle,
+  workspaceId,
+  devices,
+  onChanged,
+  steps: stepsOverride,
+  embedded = false,
+  hasMac = false,
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
   open: boolean;
   onToggle: (next: boolean) => void;
+  workspaceId: string;
+  devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null }[];
+  onChanged?: () => void;
+  /** Times computed from the saved texts. Omit to use the older fixed list. */
+  steps?: SetupStep[];
+  /** Sit on the page with no extra card around it. */
+  embedded?: boolean;
+  hasMac?: boolean;
 }) {
-  const time = hourLabel(settings.sendHour);
-  const confirmed = settings.automationConfirmed;
+  const [atSend] = catchUpClockLabels(settings.sendHour);
+  const steps = stepsOverride ?? iphoneSetupSteps(settings.sendHour);
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState("");
+  const confirmRef = useRef(onConfirm);
+  const confirmedRef = useRef(settings.automationConfirmed);
+  const loadRef = useRef<() => void>(() => {});
+  const [stopReportAt, setStopReportAt] = useState<string | null>(null);
+  const [unmatched, setUnmatched] = useState(0);
+  const iphone = devices.find((d) => !d.revoked_at && d.kind === "iphone");
+  const report: SetupReport = setupTestReport({
+    stopReportAt,
+    lastSeenAt: iphone?.last_seen_at ?? null,
+    unmatched,
+    timeZone: settings.timeZone,
+    sendHour: settings.sendHour,
+  });
+
+  useEffect(() => {
+    let cancel = false;
+    const load = async () => {
+      const client = getSupabaseBrowserClient();
+      const id = getActiveWorkspaceIdSync();
+      if (!client || !id) return;
+      const { data } = await client
+        .from("reminder_opt_outs")
+        .select("patient_id, action, created_at")
+        .eq("workspace_id", id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (cancel) return;
+      const rows = (data ?? []) as { patient_id: string; action: string; created_at: string }[];
+      const reports = rows.filter(
+        (row) =>
+          row.patient_id === STOP_TEST_PATIENT_ID ||
+          (row.action === "stop" && !row.patient_id.startsWith(UNMATCHED_PREFIX) && row.patient_id !== STOP_TEST_PATIENT_ID),
+      );
+      const at = reports[0]?.created_at ?? null;
+      setStopReportAt(at);
+      setUnmatched(rows.filter((row) => row.patient_id.startsWith(UNMATCHED_PREFIX)).length);
+      if (at && !confirmedRef.current) {
+        confirmedRef.current = true;
+        confirmRef.current(true);
+      }
+    };
+    loadRef.current = () => void load();
+    void load();
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancel = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  const addToThisIphone = async () => {
+    setNote("");
+    if (!onThisIphone()) {
+      setNote("Open this page on the office iPhone, then tap Add to this iPhone.");
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client || !workspaceId) {
+      setNote("Sign in on this iPhone first.");
+      return;
+    }
+    setBusy("add");
+    const token = generateDeviceToken();
+    const tokenHash = await hashDeviceToken(token);
+    const existing = devices.find((d) => !d.revoked_at && d.kind === "iphone");
+    const error = existing
+      ? (await client.from("reminder_devices").update({ token_hash: tokenHash }).eq("id", existing.id)).error
+      : (
+          await client.from("reminder_devices").insert({
+            workspace_id: workspaceId,
+            name: "Office iPhone",
+            kind: "iphone",
+            is_primary: true,
+            token_hash: tokenHash,
+          })
+        ).error;
+    if (!error && !existing) {
+      const others = devices.filter((d) => !d.revoked_at).map((d) => d.id);
+      if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
+    }
+    if (error) {
+      setBusy("");
+      setNote("Couldn't add the iPhone. Try again.");
+      return;
+    }
+    onChanged?.();
+    const { data: session } = await client.auth.getSession();
+    const access = session.session?.access_token ?? "";
+    const res = await fetch("/api/reminders/shortcut", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { importUrl?: string; error?: string };
+    setBusy("");
+    if (!res.ok || !body.importUrl) {
+      setNote(body.error || "Couldn't open the shortcut. Try again.");
+      return;
+    }
+    window.location.href = body.importUrl;
+  };
+
+  const runTest = async () => {
+    setNote("");
+    if (!onThisIphone()) {
+      setNote("Open this page on the office iPhone and tap Test.");
+      loadRef.current();
+      return;
+    }
+    window.location.href = TEST_URL;
+    window.setTimeout(() => loadRef.current(), 4000);
+  };
+
+  const body = (
+    <>
+      <ol className="grid gap-8" data-testid="iphone-setup-steps">
+        {steps.map((step, index) => {
+          const isAdd = index === 0;
+          const isTest = index === steps.length - 1;
+          return (
+            <li className="flex items-start gap-3" key={`${index}-${step.text}`}>
+              <span aria-hidden className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-2xl font-bold text-[var(--text-main)]">
+                {index + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                {isAdd ? (
+                  <button
+                    className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60"
+                    data-testid="add-to-iphone"
+                    disabled={busy === "add"}
+                    onClick={() => void addToThisIphone()}
+                    type="button"
+                  >
+                    {busy === "add" ? "Opening…" : "Add to this iPhone"}
+                  </button>
+                ) : isTest ? (
+                  <button
+                    className={`w-full rounded-xl border px-4 py-4 text-left text-lg font-bold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
+                    data-testid="iphone-setup-test"
+                    onClick={() => void runTest()}
+                    type="button"
+                  >
+                    <span className="block">{report.ok ? report.title : "Test"}</span>
+                    {report.ok ? <span className="mt-1 block text-sm font-semibold">{report.fix}</span> : null}
+                  </button>
+                ) : (
+                  <StepLines lines={step.lines?.length ? step.lines : [step.text]} />
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {hasMac ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
+      {note ? <p className="text-sm font-semibold text-[var(--text-main)]">{note}</p> : null}
+    </>
+  );
+
+  if (embedded) return <div className="grid gap-4 text-[var(--text-main)]">{body}</div>;
+
   return (
     <SetupCard
       onToggle={onToggle}
       open={open}
-      status={confirmed ? "done" : "todo"}
-      summary={
-        confirmed
-          ? `Done. You made the ${time} automation${confirmedOn ? ` on ${confirmedOn}` : ""}.`
-          : `Step 2 is required. Without it the iPhone never sends by itself.`
-      }
+      status={report.ok ? "done" : "todo"}
+      summary={report.ok ? `STOP catcher working${confirmedOn ? ` · checked ${confirmedOn}` : ""}.` : "Follow these steps once."}
       testId="reminder-setup-checklist"
-      title="Automatic reminders: 3 steps"
+      title={`iPhone texts at ${atSend}`}
     >
-      <ol className="divide-y divide-[var(--line-soft)] rounded-lg border border-[var(--line-soft)]">
-        <li className="flex gap-3 px-3 py-3">
-          <StepNumber n={1} />
-          <div className="grid gap-1">
-            <p className="font-semibold">
-              Add the shortcut to the iPhone <Badge tone="plain">One time</Badge>
-            </p>
-            <p className="text-[var(--text-muted)]">
-              Click <b>+ Add iPhone</b> in <b>Sending devices</b>, copy the setup code, then open <b>iPhone setup</b> below and follow it.
-            </p>
-          </div>
-        </li>
-
-        <li className={`flex gap-3 px-3 py-3 ${confirmed ? "bg-emerald-50/50" : "bg-amber-50"}`} data-testid="step-automation">
-          <StepNumber done={confirmed} n={2} />
-          <div className="grid min-w-0 flex-1 gap-2">
-            <p className="font-semibold">
-              Make the {time} automation <Badge tone={confirmed ? "done" : "required"}>{confirmed ? "Done" : "Required"}</Badge>
-            </p>
-            <p className="font-semibold text-amber-900">
-              The shortcut does not start by itself. You set the alarm once, on the phone. It takes about 30 seconds.
-            </p>
-            <ol className="list-decimal space-y-1.5 pl-5">
-              <li>
-                On the office iPhone, open <b>Shortcuts</b>. If you are inside a folder, tap <b>‹</b> until you reach the main screen.
-              </li>
-              <li>
-                Tap <b>Automation</b>, then <b>+</b>, then <b>Time of Day</b>.
-              </li>
-              <li>
-                Set the time to <b>{time}</b> and <b>Repeat: Every Day</b>. Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off.
-              </li>
-              <li>
-                Search <b>Run Shortcut</b> and tap it. Tap the blue <b>Shortcut</b> word and pick <b>Send-Reminders</b>. Leave <b>Input</b> empty.
-              </li>
-              <li>
-                Name it (for example <b>{time.replace(":00", "")} Reminders</b>) and go back to save it.
-              </li>
-              <li>
-                If iOS asks permission the first time it texts, tap <b>Always Allow</b>.
-              </li>
-            </ol>
-            <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-              <li>Every day is fine. NoteGoat only sends when reminders are due, and never texts anyone twice.</li>
-              <li>Keep just one of these automations. Delete any copy.</li>
-              <li>Shortcut list empty? Use the <b>Run Shortcut</b> search, or close Shortcuts completely and try again.</li>
-              <li>Using only the iMac? Skip this step.</li>
-            </ul>
-            <label className="mt-1 inline-flex items-center gap-2 font-semibold" data-testid="automation-confirm">
-              <input checked={confirmed} className="h-4 w-4" onChange={(e) => onConfirm(e.target.checked)} type="checkbox" />
-              I made the {time} automation
-              {confirmed && confirmedOn && <span className="font-normal text-[var(--text-muted)]">(checked {confirmedOn})</span>}
-            </label>
-          </div>
-        </li>
-
-        <li className="flex gap-3 px-3 py-3">
-          <StepNumber n={3} />
-          <div className="grid gap-1">
-            <p className="font-semibold">
-              Turn on sending <Badge tone="plain">When Recent sends looks right</Badge>
-            </p>
-            <p className="text-[var(--text-muted)]">
-              In <b>Texts</b>, check the box <b>Send reminders automatically</b>. While <b>Test mode</b> is checked, nothing is texted. When <b>Recent sends</b> looks right, uncheck <b>Test mode</b>.
-              Tomorrow at {time}, check <b>Recent sends</b> to see it ran.
-            </p>
-          </div>
-        </li>
-      </ol>
+      {body}
     </SetupCard>
   );
 }

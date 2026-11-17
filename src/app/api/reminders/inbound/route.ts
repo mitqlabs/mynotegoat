@@ -8,7 +8,10 @@ export const dynamic = "force-dynamic";
  * Body: { from, text } or { messages: [{ from, text }] }  (max 200).
  * Only whole-message keywords count: STOP / STOPALL / UNSUBSCRIBE /
  * END / QUIT turn the patient's text reminders off; START / UNSTOP turn them
- * back on. Anything else is ignored and never stored. Never sends a reply.
+ * back on. A phone number matches the patient. A contact name matches only
+ * when exactly one patient has that name. Anything else is saved as an
+ * unmatched STOP so the office can see it. "STOP TEST" only records that
+ * the phone checked in and never changes a patient. Never sends a reply.
  */
 export async function POST(request: NextRequest) {
   const admin = adminClient();

@@ -75,7 +75,7 @@ export function reminderSetupDone(automationConfirmed: boolean, devices: DeviceL
   return automationConfirmed && devices.some((d) => !d.revoked_at && Boolean(d.last_run_at));
 }
 
-export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "iphone" | "imac" | "birthday" | "autotexts" | "library";
+export type ReminderSection = "setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more";
 
 /** Open/closed state for a collapsible section. Unset = its default. */
 export function sectionOpen(
@@ -117,12 +117,18 @@ export function optOutSummary(lineOn: boolean, count: number): string {
   return `${lineOn ? "On" : "Off"} · ${count} opted out`;
 }
 
+/** One line under the Opted out heading. */
+export function optedOutSummary(count: number): string {
+  const n = Math.max(0, Math.floor(count));
+  return n === 1 ? "1 patient doesn't get texts" : `${n} patients don't get texts`;
+}
+
 export type CardStatus = "done" | "todo" | "optional" | "info";
 
 /** Sending devices card: not done until a device is added; the summary names what is connected. */
 export function devicesStatus(devices: Array<DeviceLike & { name: string; is_primary: boolean | null }>, timeZone = "America/Los_Angeles"): { status: CardStatus; summary: string } {
   const active = devices.filter((d) => !d.revoked_at);
-  if (!active.length) return { status: "todo", summary: "No device yet. Click + Add iPhone to start." };
+  if (!active.length) return { status: "todo", summary: "No phone yet. Tap Add to this iPhone." };
   const seen = active.map((d) => d.last_seen_at).filter((t): t is string => Boolean(t)).sort().pop();
   const names = active.length === 1 ? active[0].name : `${active.length} devices`;
   return { status: seen ? "done" : "todo", summary: `${names} · ${lastCheckedText(seen, timeZone)}` };

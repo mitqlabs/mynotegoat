@@ -94,35 +94,42 @@ const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "
 assert.match(panel, /update\(\{ sections: \{ \.\.\.settings\.sections, \[key\]: open \} \}\)/, "toggles save through update() -> cloud settings");
 assert.match(panel, /dualWriteKv\(SMS_REMINDER_SETTINGS_KEY/);
 assert.doesNotMatch(panel, /localStorage\.setItem\([^)]*section/i, "no localStorage-only section state");
-for (const id of ["section-setup", "section-autotexts", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"`));
+for (const id of ["section-setup", "section-phones", "section-more", "section-texts", "recent-sends"]) assert.match(panel, new RegExp(`testId="${id}"|data-testid="${id}"`));
 assert.match(composer, /testId="recent-messages"/);
-// Layout: the warning sits outside Set up; the checklist, devices, shortcuts and opt-out are inside it; send settings, composer and Recent sends are in Texts.
+// Layout: warning, the short text list, Phones and Macs, More (closed), Broadcast, Opted out.
 const iWarn = panel.indexOf("<AutomationWarning");
-const iSetup = panel.indexOf('testId="section-setup"');
+const iSetup = panel.indexOf('data-testid="section-setup"');
+const iPhones = panel.indexOf('data-testid="section-phones"');
+const iMore = panel.indexOf('testId="section-more"');
 const iTexts = panel.indexOf('testId="section-texts"');
-assert.ok(iWarn > 0 && iWarn < iSetup && iSetup < iTexts, "warning, Set up, Texts in that order");
-const inSetup = panel.slice(iSetup, iTexts);
-for (const needle of ["<ReminderSetupChecklist", "Sending devices", "How it works", "Send Reminders Now</b> (iPhone shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"'])
-  assert.ok(inSetup.includes(needle), `Set up contains ${needle}`);
+assert.ok(iWarn > 0 && iWarn < iSetup && iSetup < iPhones && iPhones < iMore && iMore < iTexts, "warning, texts, phones, More, Broadcast");
+assert.ok(panel.slice(iSetup, iPhones).includes("<TextRuleWizard"), "the short list is the first thing");
+assert.ok(panel.slice(iPhones, iMore).includes("Phones and Macs"), "devices stay in Phones and Macs");
 const inTexts = panel.slice(iTexts);
 for (const needle of ["<MessagePatientsComposer", 'testId="recent-sends"'])
   assert.ok(inTexts.includes(needle), `Texts contains ${needle}`);
-// Auto Texts: the on/off switches + message menus (own component), send settings; Messages: the library.
-const iAuto = panel.indexOf('testId="section-autotexts"');
-assert.ok(iSetup < iAuto && iAuto < iTexts, "Set up, Auto Texts, Broadcast in that order");
-// The library lives only in SMS / Text Templates; Auto Texts links there.
+const iOpted = panel.indexOf('testId="section-opted-out"');
+assert.ok(iTexts < iOpted, "Opted out follows Broadcast");
+assert.ok(!panel.slice(iSetup, iTexts).includes('data-testid="opt-out-list"'), "the opted-out list is not inside the text list");
 assert.ok(!panel.includes('testId="section-library"') && !panel.includes("<MessagesLibraryPanel"), "no duplicate Messages section");
-assert.ok(panel.slice(iAuto, iTexts).includes("Edit messages in SMS / Text Templates"), "Auto Texts links to SMS / Text Templates");
+assert.ok(!panel.includes("<AutoTextRows"), "Auto Texts is not a separate section");
+const inMore = panel.slice(iMore, iTexts);
+for (const needle of ["How it works", "Send Reminders Now</b> (iPhone shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"', "Edit messages in SMS / Text Templates", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
+  assert.ok(inMore.includes(needle), `More contains ${needle}`);
 assert.match(panel, /title="Broadcast"/);
-const inAuto = panel.slice(iAuto, iTexts);
-for (const needle of ["<AutoTextRows", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
-  assert.ok(inAuto.includes(needle), `Auto Texts contains ${needle}`);
+assert.match(panel, /sectionOpen\(settings\.sections, "more", false\)/, "More starts closed");
+assert.match(panel, /sectionOpen\(settings\.sections, "devices", false\)/, "Phones and Macs starts closed");
 assert.ok(!inTexts.includes("Test mode (nothing is texted)") && !inTexts.includes("Run days"), "send settings are not in Texts");
-assert.ok(!inTexts.includes("Sending devices"), "devices are not in Texts");
+assert.ok(!inTexts.includes("Phones and Macs"), "devices are not in Texts");
 // Every date on the page goes through the mm/dd/yy helpers.
 assert.doesNotMatch(panel, /toLocale(Date|Time)?String/);
 assert.doesNotMatch(panel, /\{row\.visit_date\}/);
 assert.doesNotMatch(readFileSync("src/components/reminder-setup-checklist.tsx", "utf8"), /toLocale/);
+const setupSkin = readFileSync("src/components/setup-card.tsx", "utf8") + readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
+assert.doesNotMatch(setupSkin, /amber-|yellow-|bg-white|text-white|bg-red-50|bg-emerald-/);
+assert.match(setupSkin, /border-\[var\(--brand-accent\)\]/);
+assert.match(setupSkin, /bg-\[var\(--bg-panel\)\]/);
+assert.match(setupSkin, /text-\[var\(--text-main\)\]/);
 assert.match(panel, /lastRunText\(d\.last_run_summary/);
 
 // G.O.A.T. answers layout / date questions and never edits anything.
@@ -145,7 +152,7 @@ const named = (o: Partial<{ name: string; kind: string; is_primary: boolean; rev
   name: "Office iPhone", kind: "iphone", is_primary: true, revoked_at: null, last_seen_at: null, last_run_at: null, ...o,
 });
 assert.equal(devicesStatus([]).status, "todo");
-assert.match(devicesStatus([]).summary, /Add iPhone/);
+assert.match(devicesStatus([]).summary, /Add to this iPhone/);
 assert.equal(devicesStatus([named({})]).status, "todo", "added but never checked in");
 const seenDev = named({ last_seen_at: "2026-10-28T17:41:00Z" });
 assert.deepEqual(devicesStatus([seenDev], "America/Los_Angeles"), { status: "done", summary: "Office iPhone · Last checked 10/28/26 10:41 AM" });

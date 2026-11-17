@@ -6,8 +6,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  BIRTHDAY_EXPIRED_ERROR,
   birthdayDobSuffixes,
   birthdayFirstName,
+  birthdayLogLabel,
   birthdayPhone,
   DEFAULT_BIRTHDAY_MESSAGE,
   isBirthdayToday,
@@ -187,8 +189,9 @@ async function main() {
     // a second device claiming the same row at the same time loses
     const held2 = await claimBirthdays(admin, device, q1, new Date("2026-11-02T16:00:01Z"));
     assert.equal(held2.size, 0, "unique key: first claim wins");
-    // claimed rows are never handed out again
-    assert.deepEqual(await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true }), []);
+    // a fresh claim is held for the claim window, so a run still texting is not handed out twice
+    const heldNow = new Date("2026-11-02T16:05:00Z");
+    assert.deepEqual(await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, reofferClaims: true, now: heldNow }), []);
     // the device answers
     assert.equal(await ackBirthday(admin, device, 2026, "1", "sent", null, new Date("2026-11-02T16:00:05Z")), true);
     assert.equal(tables.birthday_text_log[0].status, "sent");
@@ -198,6 +201,48 @@ async function main() {
     const next = await loadBirthdayQueue(admin, device, "2027-11-02", on, { retryDryRun: true });
     assert.deepEqual(next.map((r) => r.patientId), ["1"]);
     assert.equal(next[0].year, 2027);
+  }
+
+  // same-day expired claim is handed out again; a sent ack still blocks a second text
+  {
+    const { admin, tables } = fakeAdmin({ patients: roster });
+    const claimedAt = new Date("2026-11-02T16:00:00Z");
+    const q1 = await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, now: claimedAt });
+    assert.equal((await claimBirthdays(admin, device, q1, claimedAt)).size, 1);
+    const later = new Date("2026-11-02T16:20:00Z");
+    const again = await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, reofferClaims: true, now: later });
+    assert.equal(again[0]?.prior, "claimed", "same-day expired claim is offered again");
+    assert.equal(again[0]?.claimedAt, claimedAt.toISOString());
+    assert.equal((await claimBirthdays(admin, device, again, later)).size, 1, "the first device to take the expired lease wins");
+    assert.equal((await claimBirthdays(admin, device, again, later)).size, 0, "the lease timestamp moved, so a second take loses");
+    assert.equal(await ackBirthday(admin, device, 2026, "1", "sent", null, later), true);
+    assert.equal(tables.birthday_text_log[0].status, "sent");
+    assert.deepEqual(
+      await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, reofferClaims: true, now: new Date("2026-11-02T18:00:00Z") }),
+      [],
+      "a sent ack is never handed out again",
+    );
+  }
+
+  // a birthday from an earlier day is closed and not sent late, even if today is not their birthday
+  {
+    const { admin, tables } = fakeAdmin({ patients: roster });
+    const claimedAt = new Date("2026-11-02T16:00:00Z");
+    const q1 = await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, now: claimedAt });
+    assert.equal((await claimBirthdays(admin, device, q1, claimedAt)).size, 1);
+    const nextDay = new Date("2026-11-03T16:00:00Z");
+    assert.deepEqual(await loadBirthdayQueue(admin, device, "2026-11-03", on, { retryDryRun: true, reofferClaims: true, now: nextDay }), []);
+    assert.equal(tables.birthday_text_log[0].status, "failed");
+    assert.equal(tables.birthday_text_log[0].error, BIRTHDAY_EXPIRED_ERROR);
+    assert.equal(tables.birthday_text_log[0].sent_at, null);
+    assert.deepEqual(
+      await loadBirthdayQueue(admin, device, today, on, { retryDryRun: true, reofferClaims: true, now: nextDay }),
+      [],
+      "the closed birthday is not offered on a later run",
+    );
+    assert.equal(birthdayLogLabel("claimed", null, claimedAt.toISOString(), "2026-11-03", "America/Los_Angeles"), "Not sent (too late)");
+    assert.equal(birthdayLogLabel("failed", BIRTHDAY_EXPIRED_ERROR, claimedAt.toISOString(), "2026-11-03", "America/Los_Angeles"), "Not sent (too late)");
+    assert.equal(birthdayLogLabel("claimed", null, claimedAt.toISOString(), "2026-11-02", "America/Los_Angeles"), "Handed to the phone, no answer yet");
   }
 
   // failed: retried, but only 3 tries in a year
@@ -266,7 +311,8 @@ async function main() {
   assert.ok(/ackBirthday/.test(ackRoute) && /kind === "birthday"/.test(ackRoute));
   const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
   const autoSrc = readFileSync("src/components/auto-texts-panel.tsx", "utf8");
-  assert.ok(/<AutoTextRows/.test(panel) && /birthdayTexts/.test(autoSrc) && /birthdayTemplateId/.test(autoSrc) && /birthday-preview/.test(autoSrc));
+  assert.ok(/<TextRuleWizard/.test(panel) && /birthdayTexts/.test(autoSrc) && /birthdayTemplateId/.test(autoSrc) && /birthday-preview/.test(autoSrc));
+  assert.ok(/kind === "birthday"/.test(readFileSync("src/lib/text-rules.ts", "utf8")));
   const handbook = readFileSync("src/lib/handbook-content.ts", "utf8");
   const goat = readFileSync("src/lib/handbook-goat.ts", "utf8");
   assert.ok(/Birthday texts/.test(handbook) && /Birthday texts/.test(goat));

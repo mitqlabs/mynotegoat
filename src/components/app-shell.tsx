@@ -15,6 +15,8 @@ import { useUnreadMessages } from "@/hooks/use-unread-messages";
 import { useSidebarOrder } from "@/hooks/use-sidebar-order";
 import { applySidebarOrder, visibleSidebarPages, type SidebarPage } from "@/lib/sidebar-order";
 import { SidebarIconView } from "@/components/sidebar-icons";
+import { ReminderMorningBanner } from "@/components/reminder-morning-banner";
+import { UnmatchedStopAlert } from "@/components/unmatched-stop-alert";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -401,6 +403,8 @@ export function AppShell({
                 </button>
               </nav>
 
+              <ReminderMorningBanner />
+              <UnmatchedStopAlert />
               <main className="p-4 lg:p-7">
                 <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
               </main>

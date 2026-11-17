@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { parseOptOutReply, phoneMatchKey, withOptOutLine } from "../../src/lib/reminder-automation";
+import { readFileSync } from "node:fs";
+import { optOutHowLabel, parseOptOutReply, phoneMatchKey, searchPatientsToOptOut, withOptOutLine } from "../../src/lib/reminder-automation";
+import { optedOutSummary } from "../../src/lib/reminder-format";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 
 for (const w of ["STOP", "stop", " Stop ", "STOP.", "stop!", "StopAll", "UNSUBSCRIBE", "End", "quit", '"STOP"']) {
@@ -29,4 +31,34 @@ assert.equal(n.optOutLine, false);
 assert.equal(n.optOutText, "Text STOP to end.");
 assert.equal(normalizeSmsReminderSettings({}).optOutLine, true);
 assert.equal(normalizeSmsReminderSettings({ optOutText: "  " }).optOutText, "Reply STOP to opt out.");
+const people = [
+  { id: "1", fullName: "Doe, Jane", phone: "817-555-0101", textRemindersOff: false },
+  { id: "2", fullName: "Roe, John", phone: "817-555-0199", textRemindersOff: true },
+  { id: "3", fullName: "Smith, Ann", phone: "214-555-0101", textRemindersOff: false, deleted: true },
+];
+assert.deepEqual(searchPatientsToOptOut(people, "j").map((p) => p.id), [], "too short");
+assert.deepEqual(searchPatientsToOptOut(people, "jane").map((p) => p.id), ["1"]);
+assert.deepEqual(searchPatientsToOptOut(people, "555-0199").map((p) => p.id), [], "already opted out");
+assert.deepEqual(searchPatientsToOptOut(people, "214555").map((p) => p.id), [], "deleted");
+assert.deepEqual(searchPatientsToOptOut(people, "0101").map((p) => p.id), ["1"]);
+assert.equal(optOutHowLabel("iphone"), "Replied STOP");
+assert.equal(optOutHowLabel("mac"), "Replied STOP");
+assert.equal(optOutHowLabel("staff"), "Added by staff");
+assert.equal(optOutHowLabel(null), "Added by staff");
+assert.equal(optedOutSummary(3), "3 patients don't get texts");
+assert.equal(optedOutSummary(1), "1 patient doesn't get texts");
+const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
+const wizard = readFileSync("src/components/text-rule-wizard.tsx", "utf8");
+const steps = readFileSync("src/lib/iphone-setup.ts", "utf8");
+const setup = panel.slice(panel.indexOf('data-testid="section-setup"'), panel.indexOf('data-testid="section-phones"'));
+const afterBroadcast = panel.slice(panel.indexOf('testId="section-texts"'));
+assert.ok(!setup.includes('data-testid="opt-out-list"'), "the list is not inside the text list");
+assert.ok(wizard.includes("phoneStepsForClocks") && steps.includes("Type **STOP**"), "the phone steps catch STOP");
+assert.ok(afterBroadcast.indexOf('testId="section-opted-out"') > afterBroadcast.indexOf('title="Broadcast"'));
+assert.match(panel, /placeholder="Add patient"/);
+assert.match(panel, /action: "stop"/);
+assert.match(panel, /source: "staff"/);
+const sql = readFileSync("supabase/migrations/20261117210000_reminder_opt_out_staff_stop.sql", "utf8");
+assert.match(sql, /action in \('stop', 'start'\)/);
+assert.match(sql, /source = 'staff'/);
 console.log("opt-out tests passed");

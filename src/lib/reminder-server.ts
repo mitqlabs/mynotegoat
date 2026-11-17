@@ -5,13 +5,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { broadcastTimeOk, hashDeviceToken, parseOptOutReply, phoneMatchKey, splitPatientName, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, splitPatientName, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { expandTokens } from "@/lib/sms-render";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsTemplates } from "@/lib/sms-template-core";
 import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
-import { birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
+import { BIRTHDAY_EXPIRED_ERROR, birthdayClaimDecision, birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
 
 export interface ReminderDevice {
   id: string;
@@ -291,9 +291,7 @@ export async function loadBroadcastQueue(
     claimed_until: string | null;
     reminder_broadcasts: B | B[];
   };
-  const rows = (data as unknown as Row[]).filter(
-    (r) => !r.claimed_until || r.claimed_by === device.id || new Date(r.claimed_until) < now,
-  );
+  const rows = (data as unknown as Row[]).filter((r) => leaseCanTake(r.claimed_by, r.claimed_until, device.id, now));
   const ids = Array.from(new Set(rows.map((r) => r.patient_id)));
   if (!ids.length) return [];
   // Chunked: an all-active broadcast can hold hundreds of ids (URL length).
@@ -397,13 +395,19 @@ export interface InboundReply {
   text: string;
 }
 
+export { STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
+
 export interface InboundResult {
   /** Keyword messages seen (stop/start). */
   keywords: number;
   /** Patients whose text-reminder flag actually changed. */
   changed: number;
-  /** Keyword messages whose phone matched no patient. */
+  /** Keyword messages that did not match one patient. */
   unmatched: number;
+  /** Names or numbers we could not match. Shown in NoteGoat. */
+  unmatchedLabels: string[];
+  /** STOP TEST reports. These never change a patient. */
+  tested: number;
   /** Non-keyword messages (ignored, never stored). */
   ignored: number;
 }
@@ -420,55 +424,88 @@ export async function applyInboundReplies(
   replies: InboundReply[],
   source: string,
 ): Promise<InboundResult> {
-  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, ignored: 0 };
-  const wanted: { key: string; action: "stop" | "start" }[] = [];
+  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, unmatchedLabels: [], tested: 0, ignored: 0 };
+  const wanted: { from: string; action: "stop" | "start" }[] = [];
   for (const reply of replies) {
+    if (isStopTest(reply.text)) {
+      result.tested += 1;
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: STOP_TEST_PATIENT_ID,
+        action: "stop",
+        phone_last4: "TEST",
+        source,
+        device_id: device.id,
+      });
+      continue;
+    }
     const action = parseOptOutReply(reply.text);
-    const key = phoneMatchKey(reply.from);
     if (!action) {
       result.ignored += 1;
       continue;
     }
     result.keywords += 1;
-    if (!key) result.unmatched += 1;
-    else wanted.push({ key, action });
+    wanted.push({ from: reply.from, action });
   }
   if (!wanted.length) return result;
   const { data: pts, error } = await admin
     .from("patients")
-    .select("id, phone, text_reminders_off")
+    .select("id, full_name, phone, text_reminders_off")
     .eq("workspace_id", device.workspace_id);
   if (error) throw new Error(`patients lookup failed: ${error.message}`);
-  const byKey = new Map<string, { id: string; off: boolean }[]>();
-  for (const p of pts ?? []) {
-    const key = phoneMatchKey(p.phone);
+  const people = (pts ?? []).map((p) => ({
+    id: p.id as string,
+    fullName: String(p.full_name ?? ""),
+    phone: String(p.phone ?? ""),
+    off: p.text_reminders_off === true,
+  }));
+  const byPhone = new Map<string, typeof people>();
+  for (const person of people) {
+    const key = phoneMatchKey(person.phone);
     if (!key) continue;
-    const list = byKey.get(key) ?? [];
-    list.push({ id: p.id as string, off: p.text_reminders_off === true });
-    byKey.set(key, list);
+    const list = byPhone.get(key) ?? [];
+    list.push(person);
+    byPhone.set(key, list);
   }
-  for (const { key, action } of wanted) {
-    const matches = byKey.get(key) ?? [];
+  for (const { from, action } of wanted) {
+    const phoneKey = phoneMatchKey(from);
+    const matches = phoneKey
+      ? (byPhone.get(phoneKey) ?? [])
+      : (() => {
+          const id = matchPatientByName(people, from);
+          const person = id ? people.find((p) => p.id === id) : undefined;
+          return person ? [person] : [];
+        })();
     if (!matches.length) {
       result.unmatched += 1;
+      const label = (from || "unknown").replace(/\s+/g, " ").trim().slice(0, 80) || "unknown";
+      result.unmatchedLabels.push(label);
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: `${UNMATCHED_PREFIX}${label}`,
+        action,
+        phone_last4: phoneKey ? phoneKey.slice(-4) : "",
+        source,
+        device_id: device.id,
+      });
       continue;
     }
     const off = action === "stop";
-    for (const m of matches) {
-      if (m.off === off) continue; // already in that state
+    for (const person of matches) {
+      if (person.off === off) continue;
       const { error: upErr } = await admin
         .from("patients")
         .update({ text_reminders_off: off })
         .eq("workspace_id", device.workspace_id)
-        .eq("id", m.id);
+        .eq("id", person.id);
       if (upErr) continue;
-      m.off = off;
+      person.off = off;
       result.changed += 1;
       await admin.from("reminder_opt_outs").insert({
         workspace_id: device.workspace_id,
-        patient_id: m.id,
+        patient_id: person.id,
         action,
-        phone_last4: key.slice(-4),
+        phone_last4: phoneMatchKey(person.phone).slice(-4) || phoneKey.slice(-4),
         source,
         device_id: device.id,
       });
@@ -482,34 +519,78 @@ export async function applyInboundReplies(
 /** A failed birthday text is tried again later the same year, at most this many times. */
 export const BIRTHDAY_MAX_ATTEMPTS = 3;
 
+/**
+ * Close birthday claims from an earlier day. They are not sent late, and a
+ * later run must not hand them out. Same-day claims are left for the queue
+ * to re-offer once the claim window has passed. Missing table: do nothing.
+ */
+export async function expireStaleBirthdayClaims(
+  admin: SupabaseClient,
+  device: ReminderDevice,
+  todayIso: string,
+  timeZone: string,
+  now: Date,
+): Promise<void> {
+  const { data, error } = await admin
+    .from("birthday_text_log")
+    .select("id, claimed_at, created_at")
+    .eq("workspace_id", device.workspace_id)
+    .eq("status", "claimed")
+    .limit(200);
+  if (error || !data?.length) return;
+  for (const row of data) {
+    const claimedAt = String(row.claimed_at ?? row.created_at ?? "");
+    if (birthdayClaimDecision({ claimedAt, todayIso, now, timeZone }) !== "expire") continue;
+    await admin
+      .from("birthday_text_log")
+      .update({ status: "failed", error: BIRTHDAY_EXPIRED_ERROR, sent_at: null })
+      .eq("workspace_id", device.workspace_id)
+      .eq("id", row.id)
+      .eq("status", "claimed");
+  }
+}
+
 export interface BirthdayQueueRow extends BirthdayRecipient {
   year: number;
   /** What the send log already says about this patient this year. */
-  prior: "none" | "failed" | "dry-run";
+  prior: "none" | "failed" | "dry-run" | "claimed";
   attempts: number;
+  /** Set when prior is "claimed": the lease we are taking over. */
+  claimedAt?: string;
 }
 
 /**
  * Birthday texts for today: patients (any case status) whose birthday is today (office
  * time zone; Feb 29 → Feb 28 in non-leap years), not opted out, with a phone
  * and first name, minus anyone the send log (birthday_text_log) already has
- * for this year. A patient is never handed out again once claimed or sent,
- * so "at most once per patient per year" holds even if a device never
- * answers. If the log table is missing or unreadable this returns nothing:
- * the queue never sends a text it cannot record.
+ * for this year. A "sent" ack is final. A claim the phone never answers is
+ * not: after the claim window it is handed out again the same day, and a
+ * claim from an earlier day is closed without sending (a birthday text is
+ * not sent late). If the log table is missing or unreadable this returns
+ * nothing: the queue never sends a text it cannot record.
  *
  * `retryDryRun`: true when about to really send (or previewing), so rows a
  * test run logged count as not sent yet. False in test mode, so the same
  * test text is not logged again on every 10-minute check.
+ * `reofferClaims`: true on a real send. Same-day expired claims are handed
+ * out again. Left false for a dry run, which must not take over a live claim.
  */
 export async function loadBirthdayQueue(
   admin: SupabaseClient,
   device: ReminderDevice,
   todayIso: string,
   settings: SmsReminderSettings,
-  opts: { retryDryRun: boolean; body?: string; office?: { officeName?: string; doctorName?: string; phone?: string } },
+  opts: {
+    retryDryRun: boolean;
+    reofferClaims?: boolean;
+    now?: Date;
+    body?: string;
+    office?: { officeName?: string; doctorName?: string; phone?: string };
+  },
 ): Promise<BirthdayQueueRow[]> {
   if (!settings.birthdayTexts) return [];
+  const now = opts.now ?? new Date();
+  await expireStaleBirthdayClaims(admin, device, todayIso, settings.timeZone, now);
   const suffixes = birthdayDobSuffixes(todayIso);
   if (!suffixes.length) return [];
   const year = Number(todayIso.slice(0, 4));
@@ -532,19 +613,53 @@ export async function loadBirthdayQueue(
   if (!picks.length) return [];
   const { data: logRows, error: logError } = await admin
     .from("birthday_text_log")
-    .select("patient_id, status, attempts")
+    .select("patient_id, status, attempts, claimed_at, created_at, error")
     .eq("workspace_id", device.workspace_id)
     .eq("year", year)
     .in("patient_id", picks.map((p) => p.patientId));
   if (logError) return [];
-  const logged = new Map((logRows ?? []).map((r) => [String(r.patient_id), { status: String(r.status), attempts: Number(r.attempts) || 1 }]));
+  const logged = new Map(
+    (logRows ?? []).map((r) => [
+      String(r.patient_id),
+      {
+        status: String(r.status),
+        attempts: Number(r.attempts) || 1,
+        claimedAt: String(r.claimed_at ?? r.created_at ?? ""),
+        error: typeof r.error === "string" ? r.error : null,
+      },
+    ]),
+  );
   const out: BirthdayQueueRow[] = [];
   for (const pick of picks) {
     const row = logged.get(pick.patientId);
-    if (!row) out.push({ ...pick, year, prior: "none", attempts: 0 });
-    else if (row.status === "failed" && row.attempts < BIRTHDAY_MAX_ATTEMPTS) out.push({ ...pick, year, prior: "failed", attempts: row.attempts });
+    if (!row) {
+      out.push({ ...pick, year, prior: "none", attempts: 0 });
+      continue;
+    }
+    if (row.status === "claimed") {
+      const decision = birthdayClaimDecision({
+        claimedAt: row.claimedAt,
+        todayIso,
+        now,
+        timeZone: settings.timeZone,
+      });
+      if (decision === "expire") {
+        await admin
+          .from("birthday_text_log")
+          .update({ status: "failed", error: BIRTHDAY_EXPIRED_ERROR, sent_at: null })
+          .eq("workspace_id", device.workspace_id)
+          .eq("patient_id", pick.patientId)
+          .eq("year", year)
+          .eq("status", "claimed");
+      } else if (decision === "reoffer" && opts.reofferClaims) {
+        out.push({ ...pick, year, prior: "claimed", attempts: row.attempts, claimedAt: row.claimedAt });
+      }
+      continue;
+    }
+    if (row.status === "failed" && row.error === BIRTHDAY_EXPIRED_ERROR) continue;
+    if (row.status === "failed" && row.attempts < BIRTHDAY_MAX_ATTEMPTS) out.push({ ...pick, year, prior: "failed", attempts: row.attempts });
     else if (row.status === "dry-run" && opts.retryDryRun) out.push({ ...pick, year, prior: "dry-run", attempts: row.attempts });
-    // claimed / sent / failed too often: never again this year.
+    // sent, or failed too often: never again this year.
   }
   return out;
 }
@@ -574,6 +689,21 @@ export async function claimBirthdays(
         ...common,
       });
       if (!error) held.add(row.patientId);
+      continue;
+    }
+    if (row.prior === "claimed") {
+      // Take over only the expired lease we just read. A phone that already
+      // refreshed it (or acked it) keeps the row, so nobody is texted twice.
+      const { data } = await admin
+        .from("birthday_text_log")
+        .update({ ...common, phone_last4: row.phone.slice(-4) })
+        .eq("workspace_id", device.workspace_id)
+        .eq("patient_id", row.patientId)
+        .eq("year", row.year)
+        .eq("status", "claimed")
+        .eq("claimed_at", row.claimedAt ?? "")
+        .select("id");
+      if ((data ?? []).length > 0) held.add(row.patientId);
       continue;
     }
     // A failed or test row: take it over only if nobody changed it meanwhile.
