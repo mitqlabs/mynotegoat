@@ -25,7 +25,7 @@ assert.ok(colorRow.includes("w-12"), "the swatch stays the small color box");
 assert.equal(themes.includes("function LiveSamples"), false, "the three mini previews are gone");
 assert.ok(themes.includes("<ThemePageSamples"), "My Theme shows the page samples");
 
-for (const label of ["Patient Page", "Encounter", "Case List", "Patient List"]) {
+for (const label of ["Patient Page", "Encounter", "Case List", "Patient List", "Contacts"]) {
   assert.ok(samples.includes(label), `sample tab ${label}`);
 }
 assert.ok(samples.includes("Jane Sample"), "samples use a fake patient name");

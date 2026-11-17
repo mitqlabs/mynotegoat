@@ -10,9 +10,12 @@ import {
   lookOf,
   mineColors,
   myThemeReadable,
+  resolvedTheme,
   sameTheme,
+  swatchHardToRead,
   THEMES,
   type BrandSettings,
+  type ExtraColorKey,
   type Mode,
   type MyTheme,
   type ThemeId,
@@ -37,6 +40,17 @@ const COLOR_LABELS: { key: keyof MyTheme; label: string }[] = [
   { key: "background", label: "Background" },
   { key: "surface", label: "Surface" },
   { key: "text", label: "Text" },
+];
+
+const MORE_COLORS: { key: ExtraColorKey; label: string }[] = [
+  { key: "link", label: "Link" },
+  { key: "muted", label: "Muted text" },
+  { key: "heading", label: "Headings" },
+  { key: "button", label: "Button" },
+  { key: "buttonText", label: "Button text" },
+  { key: "line", label: "Borders" },
+  { key: "badge", label: "Badges" },
+  { key: "danger", label: "Danger" },
 ];
 
 /** Colour drags fire continuously. The cloud write waits until they pause. */
@@ -345,9 +359,29 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
               <h3 className="mb-3 text-sm font-semibold">My Theme — {tone === "light" ? "Light" : "Dark"} Colors</h3>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {COLOR_LABELS.map(({ key, label }) => (
-                  <ColorRow key={`${tone}-${key}`} label={label} value={editing[key]} onChange={(v) => setColor(key, v)} />
+                  <ColorRow
+                    key={`${tone}-${key}`}
+                    label={label}
+                    note={key === "text" || key === "accent" ? (swatchHardToRead(key, editing) ? "hard to read" : "") : ""}
+                    value={editing[key] ?? ""}
+                    onChange={(v) => setColor(key, v)}
+                  />
                 ))}
               </div>
+              <details open className="mt-4">
+                <summary className="cursor-pointer text-sm font-semibold">More colors</summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {MORE_COLORS.map(({ key, label }) => (
+                    <ColorRow
+                      key={`${tone}-${key}`}
+                      label={label}
+                      note={swatchHardToRead(key, editing) ? "hard to read" : ""}
+                      value={resolvedTheme(editing)[key]}
+                      onChange={(v) => setColor(key, v)}
+                    />
+                  ))}
+                </div>
+              </details>
               {tone === "dark" && mineDark && (
                 <button type="button" className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline" onClick={resetDark}>
                   Start Dark Over From My Light Colors
@@ -394,13 +428,13 @@ export function ThemeColorRowsPreview() {
   return (
     <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="theme-color-rows">
       {COLOR_LABELS.map(({ key, label }) => (
-        <ColorRow key={key} label={label} value={colors[key]} onChange={(value) => setColors((current) => ({ ...current, [key]: value }))} />
+        <ColorRow key={key} label={label} value={colors[key] ?? "#000000"} onChange={(value) => setColors((current) => ({ ...current, [key]: value }))} />
       ))}
     </div>
   );
 }
 
-function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (hex: string) => void }) {
+function ColorRow({ label, value, note, onChange }: { label: string; value: string; note?: string; onChange: (hex: string) => void }) {
   return (
     <div className="flex w-fit items-center gap-2">
       <input
@@ -411,6 +445,7 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
         className="h-9 w-12 max-w-12 shrink-0 cursor-pointer rounded-md border border-[var(--line-soft)] bg-transparent p-0.5"
       />
       <span className="text-sm font-medium">{label}</span>
+      {note ? <span className="text-xs text-[var(--text-muted)]">{note}</span> : null}
     </div>
   );
 }

@@ -13,6 +13,7 @@ const TABS = [
   { id: "encounter", label: "Encounter" },
   { id: "cases", label: "Case List" },
   { id: "patients", label: "Patient List" },
+  { id: "contacts", label: "Contacts" },
 ] as const;
 
 type SampleId = (typeof TABS)[number]["id"];
@@ -201,7 +202,7 @@ function EncounterSample() {
           <span className="text-sm text-[var(--text-muted)]">03/04/2026 @ 9:30 AM</span>
           <span className="tone-warn rounded-full px-2 py-0.5 text-[10px] font-bold uppercase">Open</span>
           <span className="text-sm text-[var(--text-muted)]">Charges: 1 ($250.00)</span>
-          <span className="text-sm underline">Case File</span>
+          <span className="text-link text-sm underline">Case File</span>
           <span className="tone-warn rounded-md border px-1.5 py-0.5 text-[10px] font-bold">⚠ ALLERGY: PENICILLIN</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -244,7 +245,7 @@ function ListTable({
     <section className="panel-card overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3">
         <h2 className="text-lg font-semibold">{title}</h2>
-        <span className="rounded-full bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-[var(--on-brand)]">
+        <span className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-3 py-1 text-xs font-semibold text-[var(--on-brand)]">
           {title === "Case List" ? "Add Case" : "New Patient"}
         </span>
       </div>
@@ -254,7 +255,7 @@ function ListTable({
         </div>
       </div>
       <table className="w-full text-left text-sm">
-        <thead className="bg-[var(--bg-soft)] text-xs uppercase tracking-wide text-[var(--text-muted)]">
+        <thead className="bg-[var(--bg-soft)] text-xs uppercase tracking-wide text-[var(--text)]">
           <tr>
             {headers.map((header, index) => (
               <th
@@ -276,13 +277,34 @@ function ListTable({
                   className="px-4 py-2"
                   style={index === 1 ? { background: "color-mix(in srgb, var(--brand-primary) 12%, transparent)" } : undefined}
                 >
-                  {index === 0 ? <span className="font-semibold text-[var(--brand-ink)]">{cell}</span> : cell}
+                  {index === 0 ? <span className="font-semibold text-[var(--text)]">{cell}</span> : cell}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+function ContactsSample() {
+  return (
+    <section className="panel-card p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Contacts</h2>
+        <span className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-3 py-1 text-xs font-semibold text-[var(--on-brand)]">Add Contact</span>
+      </div>
+      <article className="theme-surface grid gap-1 rounded-xl border border-[var(--line-soft)] p-3 text-sm">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-[var(--text)]">North Sample Firm</p>
+          <span className="theme-badge rounded-full px-2 py-0.5 text-[10px] font-semibold">Attorney</span>
+        </div>
+        <p className="text-[var(--text-muted)]">(818) 555-0100</p>
+        <p className="text-[var(--text-muted)]">100 Sample Ave, Glendale, CA</p>
+        <a className="text-link underline" href="mailto:ada@example.test">ada@example.test</a>
+      </article>
+      <p className="callout mt-3 rounded-lg border px-3 py-2 text-sm">Required: confirm the main email before letters go out.</p>
     </section>
   );
 }
@@ -320,6 +342,7 @@ const SAMPLES: Record<SampleId, () => ReactNode> = {
   encounter: EncounterSample,
   cases: CaseListSample,
   patients: PatientListSample,
+  contacts: ContactsSample,
 };
 
 /** One sample, using whatever theme is already on the page. Fake data only. */

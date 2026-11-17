@@ -26,12 +26,24 @@ export const TONE_STORAGE_KEY = "casemate.theme-tone.v1";
 /** Old per-device values. Read only, never written. */
 export const LEGACY_TONE_KEYS = ["casemate.theme", "notegoat.theme"] as const;
 
-/** The four colours a person sees on a theme card, and the four My Theme edits. */
+/** Extra My Theme picks. Missing keys stay derived from the four base colours. */
+export const EXTRA_COLOR_KEYS = ["link", "muted", "heading", "button", "buttonText", "line", "badge", "danger"] as const;
+export type ExtraColorKey = (typeof EXTRA_COLOR_KEYS)[number];
+
+/** The four base colours, plus optional picks that override the derived shades. */
 export interface MyTheme {
   accent: string;
   background: string;
   surface: string;
   text: string;
+  link?: string;
+  muted?: string;
+  heading?: string;
+  button?: string;
+  buttonText?: string;
+  line?: string;
+  badge?: string;
+  danger?: string;
 }
 
 /** Every shade a ready-made theme paints. `accent` is the button color. */
@@ -410,7 +422,68 @@ function myThemeFrom(value: unknown): MyTheme | undefined {
   const background = normalizeHex(v.background);
   const surface = normalizeHex(v.surface);
   const text = normalizeHex(v.text);
-  return accent && background && surface && text ? { accent, background, surface, text } : undefined;
+  if (!accent || !background || !surface || !text) return undefined;
+  const theme: MyTheme = { accent, background, surface, text };
+  for (const key of EXTRA_COLOR_KEYS) {
+    const hex = normalizeHex(v[key]);
+    if (hex) theme[key] = hex;
+  }
+  return theme;
+}
+
+/** Secondary text: stepped toward the surface, never below 4.5:1. */
+export function mutedInk(text: string, surface: string): string {
+  let color = text;
+  for (let i = 0; i < 16; i++) {
+    const next = mix(color, surface, 0.12);
+    if (contrast(next, surface) < 4.5) break;
+    color = next;
+  }
+  return color;
+}
+
+/** Accent used as a link, nudged until it reads on the surface. */
+export function linkInk(accent: string, surface: string, text: string): string {
+  return readableAccent(accent, surface, text);
+}
+
+/** A readable danger red on the surface. */
+export function dangerInk(surface: string, text: string): string {
+  return readableAccent("#c9423a", surface, text);
+}
+
+/** Words on a badge fill: the theme text when it clears 4.5:1, otherwise black or white. */
+export function badgeInk(badge: string, text: string): string {
+  return contrast(text, badge) >= 4.5 ? text : inkOn(badge);
+}
+
+/** Base colours plus every extra, using a stored pick when there is one. */
+export function resolvedTheme(c: MyTheme): MyTheme & Record<ExtraColorKey, string> {
+  const button = c.button ?? c.accent;
+  return {
+    ...c,
+    link: c.link ?? linkInk(c.accent, c.surface, c.text),
+    muted: c.muted ?? mutedInk(c.text, c.surface),
+    heading: c.heading ?? c.accent,
+    button,
+    buttonText: c.buttonText ?? inkOn(button),
+    line: c.line ?? mix(c.text, c.surface, 0.82),
+    badge: c.badge ?? mix(c.accent, c.surface, 0.84),
+    danger: c.danger ?? dangerInk(c.surface, c.text),
+  };
+}
+
+/** True when this pick is too close to the colour behind it. */
+export function swatchHardToRead(key: ExtraColorKey | "text" | "accent", c: MyTheme): boolean {
+  const r = resolvedTheme(c);
+  if (key === "text") return Math.min(contrast(r.text, r.surface), contrast(r.text, r.background)) < 4.5;
+  if (key === "accent" || key === "button" || key === "buttonText") return contrast(r.buttonText, r.button) < 4.5;
+  if (key === "link") return contrast(r.link, r.surface) < 4.5;
+  if (key === "muted") return contrast(r.muted, r.surface) < 4.5;
+  if (key === "heading") return contrast(inkOn(r.heading), r.heading) < 4.5;
+  if (key === "badge") return contrast(badgeInk(r.badge, r.text), r.badge) < 4.5;
+  if (key === "danger") return contrast(r.danger, r.surface) < 4.5;
+  return contrast(r.line, r.surface) < 1.08;
 }
 
 /**
@@ -472,6 +545,7 @@ export interface ThemeLook {
 
 /** The custom properties My Theme's rules read. */
 export function varsOf(c: MyTheme): Record<string, string> {
+  const r = resolvedTheme(c);
   const ink = readableAccent(c.accent, c.surface, c.text);
   return {
     "--my-bg": c.background,
@@ -479,11 +553,38 @@ export function varsOf(c: MyTheme): Record<string, string> {
     "--my-text": c.text,
     "--my-accent": c.accent,
     "--my-accent-ink": ink,
-    "--my-btn-ink": inkOn(c.accent),
+    "--my-btn-ink": r.buttonText,
+    "--my-link": r.link,
+    "--my-muted": r.muted,
+    "--my-heading": r.heading,
+    "--my-heading-ink": inkOn(r.heading),
+    "--my-button": r.button,
+    "--my-button-text": r.buttonText,
+    "--my-line": r.line,
+    "--my-badge": r.badge,
+    "--my-badge-ink": badgeInk(r.badge, c.text),
+    "--my-danger": r.danger,
   };
 }
 
-export const MY_VARS = ["--my-bg", "--my-surface", "--my-text", "--my-accent", "--my-accent-ink", "--my-btn-ink"];
+export const MY_VARS = [
+  "--my-bg",
+  "--my-surface",
+  "--my-text",
+  "--my-accent",
+  "--my-accent-ink",
+  "--my-btn-ink",
+  "--my-link",
+  "--my-muted",
+  "--my-heading",
+  "--my-heading-ink",
+  "--my-button",
+  "--my-button-text",
+  "--my-line",
+  "--my-badge",
+  "--my-badge-ink",
+  "--my-danger",
+];
 
 export function lookOf(brand: BrandSettings, mode: Mode = "light"): ThemeLook {
   const b = brandFrom(brand);

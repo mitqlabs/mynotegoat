@@ -2565,7 +2565,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                             <div className="flex items-center gap-2">
                               <Link
                                 href={openHref(patient.id)}
-                                className={`min-w-0 font-semibold text-[var(--brand-primary)] underline ${
+                                className={`min-w-0 font-semibold text-[var(--text)] underline ${
                                   multiLocation ? "block w-40 shrink-0 truncate sm:w-56" : ""
                                 }`}
                                 title={patient.fullName}
@@ -2877,7 +2877,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <Link href={openHref(item.patientId)} className="font-semibold text-[var(--brand-primary)] underline">
+                            <Link href={openHref(item.patientId)} className="font-semibold text-[var(--text)] underline">
                               {item.patientName}
                             </Link>
                             {item.note && <p className="text-xs text-[var(--text-muted)]">{item.note}</p>}

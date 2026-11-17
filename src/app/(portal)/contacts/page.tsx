@@ -27,7 +27,7 @@ import { appAlert, appConfirm } from "@/components/app-dialog";
 
 function PhoneIcon() {
   return (
-    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -35,7 +35,7 @@ function PhoneIcon() {
 
 function MailIcon() {
   return (
-    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <rect height="14" rx="2" width="18" x="3" y="5" />
       <path d="m3 7 9 6 9-6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -44,7 +44,7 @@ function MailIcon() {
 
 function FaxIcon() {
   return (
-    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <path d="M7 8V3h8l2 2v3" strokeLinecap="round" strokeLinejoin="round" />
       <rect height="9" rx="1.5" width="18" x="3" y="8" />
       <path d="M7 17h10v4H7z" strokeLinecap="round" strokeLinejoin="round" />
@@ -54,7 +54,7 @@ function FaxIcon() {
 
 function BuildingIcon() {
   return (
-    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#9aa5b1]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+    <svg aria-hidden className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <path d="M5 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17M15 9h3a1 1 0 0 1 1 1v11M3 21h18" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M9 7h2M9 11h2M9 15h2" strokeLinecap="round" />
     </svg>
@@ -510,12 +510,12 @@ export default function ContactsPage() {
         />
       )}
 
-      <section className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_4px_16px_rgba(16,24,40,0.05)]">
-        <div className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2 text-[11px] font-semibold text-[#7b8794]">
+      <section className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] shadow-[0_1px_2px_rgba(16,24,40,0.04),0_4px_16px_rgba(16,24,40,0.05)]">
+        <div className="flex items-center gap-3 border-b border-[var(--line-soft)] px-5 py-2 text-[11px] font-semibold text-[var(--text-muted)]">
           <span className="uppercase tracking-wide">Sort</span>
           <SortHeader k="name" label="Name" onSort={changeSort} sort={sort} />
           <SortHeader k="category" label="Category" onSort={changeSort} sort={sort} />
-          <span className="ml-auto font-medium normal-case tracking-normal text-[#9aa5b1]">
+          <span className="ml-auto font-medium normal-case tracking-normal text-[var(--text-muted)]">
             {filteredContacts.length} {filteredContacts.length === 1 ? "contact" : "contacts"}
           </span>
         </div>
@@ -543,11 +543,11 @@ export default function ContactsPage() {
               className="col-span-full flex items-center gap-2 border-b border-[var(--line-soft)] px-1 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-wide first:pt-0"
               data-contact-group
               key={`group-${contact.category}`}
-              style={{ color: pill.fg }}
+              style={{ color: "var(--text)" }}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: pill.fg }} />
               {contact.category}
-              <span className="font-medium text-[#9aa5b1]">{groupCount}</span>
+              <span className="font-medium text-[var(--text-muted)]">{groupCount}</span>
             </li>
           ) : null;
 
@@ -697,7 +697,7 @@ export default function ContactsPage() {
             groupHeader,
             <li
               key={contact.id}
-              className="group flex min-w-0 flex-col gap-2 rounded-xl border border-[#e8edf2] bg-white p-3 text-[13px] text-[#334155] transition-colors hover:border-[#cfd9e3] hover:bg-[#fbfdff]"
+              className="group flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3 text-[13px] text-[var(--text)] transition-colors hover:border-[var(--line-soft)] hover:bg-[var(--bg-soft)]"
               data-contact-row
             >
               <div className="flex min-w-0 items-start gap-2.5">
@@ -712,7 +712,7 @@ export default function ContactsPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                     {canOpenContact ? (
                       <button
-                        className="block max-w-full cursor-pointer truncate text-left text-[14px] font-semibold leading-5 text-[#1f2937] decoration-[var(--brand-primary)]/40 underline-offset-2 transition-colors hover:text-[var(--brand-primary)] hover:underline focus-visible:text-[var(--brand-primary)] focus-visible:underline focus-visible:outline-none"
+                        className="block max-w-full cursor-pointer truncate text-left text-[14px] font-semibold leading-5 text-[var(--text)] decoration-[var(--link)]/40 underline-offset-2 transition-colors hover:text-[var(--link)] hover:underline focus-visible:text-[var(--link)] focus-visible:underline focus-visible:outline-none"
                         data-contact-open
                         onClick={() => startEditing(contact)}
                         title={`Open ${contact.name}`}
@@ -721,7 +721,7 @@ export default function ContactsPage() {
                         <span className="font-semibold">{contact.name}</span>
                       </button>
                     ) : (
-                      <p className="truncate text-[14px] font-semibold leading-5 text-[#1f2937]" title={contact.name}>{contact.name}</p>
+                      <p className="truncate text-[14px] font-semibold leading-5 text-[var(--text)]" title={contact.name}>{contact.name}</p>
                     )}
                     <span
                       className="shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-semibold leading-4"
@@ -731,10 +731,10 @@ export default function ContactsPage() {
                     </span>
                   </div>
                   {contact.subCategory ? (
-                    <p className="truncate text-[11.5px] leading-4 text-[#64748b]">{contact.subCategory}</p>
+                    <p className="truncate text-[11.5px] leading-4 text-[var(--text-muted)]">{contact.subCategory}</p>
                   ) : null}
                   {(contact.phone || contact.fax || contact.address || emailRows.length > 0) && (
-                    <div className="mt-1 grid min-w-0 gap-1 text-[12.5px] leading-5">
+                    <div className="mt-1 grid min-w-0 gap-1 text-[12.5px] leading-5 text-[var(--text-muted)]">
                       {contact.phone && (
                         <p className="flex min-w-0 items-center gap-1.5 tabular-nums" data-contact-phone>
                           <PhoneIcon />
@@ -756,12 +756,12 @@ export default function ContactsPage() {
                       {emailRows.map((e, i) => (
                         <p key={i} className="flex min-w-0 items-center gap-1.5" data-contact-email>
                           <MailIcon />
-                          <a className="truncate hover:text-[var(--brand-primary)] hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
+                          <a className="text-link truncate hover:underline" href={`mailto:${e.email}`} title={e.email}>{e.email}</a>
                           {i === 0 && emailRows.length > 1 && (
-                            <span className="shrink-0 rounded-full bg-[#fef3c7] px-1.5 text-[10.5px] font-semibold leading-4 text-[#92400e]" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
+                            <span className="theme-badge shrink-0 rounded-full px-1.5 text-[10.5px] font-semibold leading-4" title="Main email (used on reports, letters and G.O.A.T.)">Main</span>
                           )}
                           {(e.name || e.label) && (
-                            <span className="shrink-0 truncate rounded-full bg-[#f1f5f9] px-1.5 text-[10.5px] font-medium leading-4 text-[#64748b]">
+                            <span className="shrink-0 truncate rounded-full bg-[var(--bg-soft)] px-1.5 text-[10.5px] font-medium leading-4 text-[var(--text-muted)]">
                               {[e.name, e.label].filter(Boolean).join(" · ")}
                             </span>
                           )}
