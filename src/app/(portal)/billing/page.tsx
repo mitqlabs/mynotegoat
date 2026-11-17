@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -424,6 +425,8 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 }
 
 export default function BillingPage() {
+  const searchParams = useSearchParams();
+  const requestedPatientId = searchParams.get("patient") ?? "";
   const { encountersByNewest } = useEncounterNotes();
   const { officeSettings } = useOfficeSettings();
   const { contacts } = useContactDirectory();
@@ -491,6 +494,15 @@ export default function BillingPage() {
       })
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
   }, [patientsById, chargeTotalsByPatientId]);
+
+  useEffect(() => {
+    if (!requestedPatientId) return;
+    const match = patientRows.find((row) => row.id === requestedPatientId);
+    if (!match) return;
+    setSelectedPatientId(match.id);
+    setPatientSearch(match.fullName);
+    setMessage("");
+  }, [requestedPatientId, patientRows]);
 
   // Live-search matches for the autocomplete dropdown. Uses the same
   // order-insensitive word-split logic as the Encounters picker so

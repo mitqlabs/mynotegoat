@@ -1024,7 +1024,7 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {visibleSections === 0 && (
         <section className="panel-card p-4 text-sm text-[var(--text-muted)]">
-          Your role doesn&apos;t include any Dashboard sections. An admin can change that in Settings → Roles & Permissions.
+          Your role doesn&apos;t include any Statistics sections. An admin can change that in Settings → Roles & Permissions.
         </section>
       )}
       {canSee("weeklySummary") && (
@@ -1102,10 +1102,14 @@ export default function DashboardPage() {
       </section>
 
       <div className="space-y-5">
-        {/* Four snapshot cards stay a compact 2×2. Cases By Month,
-            Imaging, and Specialists share the next row. */}
-        <section className="flex flex-wrap items-start gap-4">
-          <div className="grid w-full max-w-[44rem] grid-cols-1 items-stretch gap-3 sm:grid-cols-2" data-statistics-layout="2x2">
+        {/* Left: the four snapshot cards in a 2×2. Beside them, on a wide
+            screen: Cases By Month, Imaging, and Specialists. Narrow screens
+            stack the whole row. */}
+        <section
+          className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(22rem,36rem)_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.95fr)]"
+          data-statistics-layout="top"
+        >
+          <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2" data-statistics-layout="2x2">
           <article className="panel-card h-full p-3">
             <h4 className="text-sm font-semibold">Total Cases</h4>
             <p className="mt-1 text-2xl font-bold tabular-nums">{filteredPatients.length}</p>
@@ -1293,12 +1297,9 @@ export default function DashboardPage() {
             </div>
           </article>
           </div>
-        </section>
-
-        <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3" data-statistics-layout="month-referrals">
-          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
             <h4 className="text-sm font-semibold">Cases By Month</h4>
-            <div className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto text-sm">
+            <div className="mt-2 max-h-80 min-h-0 flex-1 space-y-0.5 overflow-y-auto text-sm xl:max-h-none">
               {monthCounts.map((entry) => (
                 <div key={entry.month} className="flex items-center justify-between">
                   <span>{entry.month}</span>
@@ -1313,12 +1314,9 @@ export default function DashboardPage() {
             </div>
           </article>
 
-          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
             <h4 className="text-sm font-semibold">Imaging Referrals</h4>
-            <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
-              Cases = distinct patients per facility. Xrays / MRIs = one per imaged region (a bilateral BL extremity counts as two).
-            </p>
-            <div className="mt-2 min-h-0 flex-1 overflow-y-auto text-xs">
+            <div className="mt-2 max-h-80 min-h-0 flex-1 overflow-y-auto text-xs xl:max-h-none">
               <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 bg-white py-1 font-semibold text-[var(--text-muted)]">
                 <span>Facility</span>
                 <span className="text-right">Cases</span>
@@ -1353,10 +1351,9 @@ export default function DashboardPage() {
             </div>
           </article>
 
-          <article className="panel-card flex h-auto flex-col p-3 lg:h-[26rem]">
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
             <h4 className="text-sm font-semibold">Specialist Referrals</h4>
-            <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">Case counts only.</p>
-            <div className="mt-2 min-h-0 flex-1 overflow-y-auto text-xs">
+            <div className="mt-2 max-h-80 min-h-0 flex-1 overflow-y-auto text-xs xl:max-h-none">
               <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_3rem] gap-x-2 bg-white py-1 font-semibold text-[var(--text-muted)]">
                 <span>Specialist</span>
                 <span className="text-right">Cases</span>
@@ -1390,9 +1387,6 @@ export default function DashboardPage() {
           <article className="panel-card overflow-hidden">
           <div className="border-b border-[var(--line-soft)] p-4">
             <h4 className="text-lg font-semibold">Attorney Performance</h4>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Click any column heading to sort by it; click again to reverse.
-            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">

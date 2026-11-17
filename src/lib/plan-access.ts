@@ -24,7 +24,7 @@ export const portalNavItems: PortalNavItem[] = [
   // "Patient List" is the whole list; an individual case file is the
   // "patient page". Keeping the two named apart avoids a lot of confusion.
   { href: "/patients", label: "Patient List", feature: "patients" },
-  { href: "/dashboard", label: "Dashboard", feature: "statistics" },
+  { href: "/dashboard", label: "Statistics", feature: "statistics" },
   { href: "/contacts", label: "Contacts", feature: "contacts" },
   { href: "/appointments", label: "Schedule", feature: "appointments" },
   { href: "/encounters", label: "Encounters", feature: "encounters" },
@@ -114,7 +114,13 @@ export function hasPortalFeature(_planTier: PlanTier, _feature: PortalFeature) {
 }
 
 export function getVisiblePortalNavItems(_planTier: PlanTier) {
-  return portalNavItems;
+  // Case List exists only while the patient-folder preview switch is on.
+  // Production does not set the switch, so the nav stays exactly as it is today.
+  if (process.env.NEXT_PUBLIC_PATIENT_FOLDERS !== "on") return portalNavItems;
+  const items = [...portalNavItems];
+  const index = items.findIndex((item) => item.href === "/patients");
+  items.splice(index + 1, 0, { href: "/cases", label: "Case List", feature: "patients" });
+  return items;
 }
 
 export function getDefaultPortalPath(planTier: PlanTier) {
@@ -123,7 +129,7 @@ export function getDefaultPortalPath(planTier: PlanTier) {
 }
 
 export function resolvePortalFeatureFromPath(pathname: string): PortalFeature | null {
-  if (pathname.startsWith("/patients")) {
+  if (pathname.startsWith("/patients") || pathname.startsWith("/cases")) {
     return "patients";
   }
   if (pathname.startsWith("/dashboard") || pathname.startsWith("/statistics")) {

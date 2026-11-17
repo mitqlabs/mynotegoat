@@ -181,7 +181,7 @@ const backupModules: BackupModuleDefinition[] = [
   },
   {
     id: "dashboardRules",
-    label: "Dashboard Priority Rules",
+    label: "Statistics Priority Rules",
     description:
       "Priority status and warning thresholds, tasks, follow-up workspace display settings, and follow-up clear overrides",
     keys: [
@@ -4123,7 +4123,7 @@ export default function SettingsPage() {
           <article className="xl:col-span-2 rounded-xl border border-[var(--line-soft)] bg-white p-4">
             <h4 className="text-lg font-semibold">Case Flow</h4>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Configure when each category appears and clears in the Case Flow on the Dashboard.
+              Configure when each category appears and clears in the Case Flow on Statistics.
             </p>
 
             <div className="mt-4 space-y-4">

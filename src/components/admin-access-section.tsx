@@ -235,7 +235,7 @@ export function AdminAccessSection() {
             </Row>
           ))}
 
-          <p className="px-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Dashboard sections</p>
+          <p className="px-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Statistics sections</p>
           {MANAGER_DASHBOARD_SECTIONS.map((section) => (
             <Row admin="Yes" key={section.key} label={section.label}>
               <Center>
@@ -288,7 +288,7 @@ export function AdminAccessSection() {
               <span className="font-semibold text-[var(--text-primary)]">Owner</span> — the account the office was created under. Everything, plus the only one who can add or remove Admins and move people between roles.
             </li>
             <li>
-              <span className="font-semibold text-[var(--text-primary)]">Admin</span> — everything: Settings, Team, Dashboard, all deletes.
+              <span className="font-semibold text-[var(--text-primary)]">Admin</span> — everything: Settings, Team, Statistics, all deletes.
             </li>
             <li>
               <span className="font-semibold text-[var(--text-primary)]">Manager</span> — runs the office day to day, limited by the grid above.

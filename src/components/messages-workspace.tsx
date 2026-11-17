@@ -351,7 +351,7 @@ export function MessagesWorkspace() {
             onClick={() => setComposerOpen((v) => !v)}
             type="button"
           >
-            <span className="text-lg font-semibold">New message</span>
+            <span className="text-lg font-semibold">New Message</span>
             <span className="ml-auto text-xs text-[var(--text-muted)]">{countLine}</span>
             <span className="text-[var(--text-muted)]">{composerOpen ? "▾" : "▸"}</span>
           </button>

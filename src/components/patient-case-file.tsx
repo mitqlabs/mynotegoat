@@ -11,12 +11,13 @@ import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dat
 import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
-import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
+import { type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { PatientAddressFields, PatientIdentityFields } from "@/components/patient-person-fields";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
 import { GoatPanel } from "@/components/goat-panel";
@@ -63,6 +64,8 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
 import { onLocalChange } from "@/lib/local-sync";
 import { getPatientById, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { folderForCase, splitFullName } from "@/lib/patient-folders";
 import {
   addAdditionalDoi,
   doiTokens,
@@ -81,6 +84,7 @@ import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
+import { PatientTodoList } from "@/components/patient-todo-list";
 import { softPillStyle } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
@@ -130,7 +134,6 @@ const DocumentScannerModal = dynamic(
   () => import("@/components/document-scanner-modal").then((m) => ({ default: m.DocumentScannerModal })),
   { ssr: false },
 );
-import { SmsSendMenu } from "@/components/sms-send-menu";
 import { QuestionnaireReviewCards, SendFormButton } from "@/components/patient-forms-panel";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
@@ -1579,6 +1582,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         .sort((a, b) => compareAttorneyPickerNames(a.name, b.name)),
     [contacts],
   );
+  const folderCrumb = useMemo(() => {
+    if (!patientFoldersEnabled()) return null;
+    const found = folderForCase(
+      patient.id,
+      allPatients.filter((row) => !row.deleted).map((row) => ({
+        id: row.id,
+        fullName: row.fullName,
+        dob: row.dob,
+        phone: row.phone,
+        address: row.address,
+      })),
+    );
+    if (found) return found;
+    const parts = splitFullName(patient.fullName);
+    const name = parts.lastName && parts.firstName ? `${parts.lastName}, ${parts.firstName}` : patient.fullName.trim() || "Patient";
+    return { id: `pf-${patient.id}`, name };
+  }, [patient.id, patient.fullName, allPatients.length]);
   const imagingCenterContacts = useMemo(
     () =>
       contacts
@@ -5413,10 +5433,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="text-sm text-[var(--text-muted)]">
-              <Link href="/patients" className="underline">
-                Patients
-              </Link>{" "}
-              / Patient File
+              {folderCrumb ? (
+                <>
+                  <Link href="/patients" className="underline">
+                    Patients
+                  </Link>
+                  {" / "}
+                  <Link href={`/patients/${folderCrumb.id}`} className="underline">
+                    {folderCrumb.name}
+                  </Link>
+                  {" / Case"}
+                </>
+              ) : (
+                <>
+                  <Link href="/patients" className="underline">
+                    Patients
+                  </Link>{" "}
+                  / Patient File
+                </>
+              )}
             </p>
             <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
             {demographicsLine(patientSex, maritalStatus, patientDob) && (
@@ -5563,139 +5598,30 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 3. Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam (five on xl)
               Everything from Case # onward is PI-only, so a cash patient
               simply drops those and the rest reflows. */}
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Last Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setLastName(event.target.value)}
-              value={lastName}
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient First Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setFirstName(event.target.value)}
-              value={firstName}
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => setPatientDob(formatUsDateInput(event.target.value))}
-              placeholder="MM/DD/YYYY"
-              value={patientDob}
-            />
-          </label>
-
-          <div className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
-            {/* Text and Add to Contacts sit side by side after the input (they
-                wrap under it when the column is narrow); the No reminder texts
-                checkbox goes on its own line underneath. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                className="min-w-[9.5rem] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                inputMode="numeric"
-                maxLength={12}
-                onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
-                value={patientPhone}
-              />
-              {/* Kept together so they wrap as a pair, never split. */}
-              <span className="inline-flex shrink-0 items-center gap-2">
-                {patientPhone.replace(/\D/g, "").length > 0 && (
-                  <SmsSendMenu
-                    align="right"
-                    ariaLabel="Text this patient"
-                    className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
-                    context={{
-                      patient: {
-                        firstName,
-                        lastName,
-                        fullName: [firstName, lastName].filter(Boolean).join(" "),
-                      },
-                    }}
-                    label={
-                      <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5z" strokeLinejoin="round" />
-                      </svg>
-                    }
-                    phone={patientPhone}
-                  />
-                )}
-                <button
-                  aria-label="Add to Contacts"
-                  className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-white text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
-                  onClick={addPatientToContacts}
-                  title="Add to Contacts (downloads a .vcf — macOS opens it in Contacts with name, phone, birthday and address pre-filled)"
-                  type="button"
-                >
-                  <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                    <circle cx="10" cy="8" r="3.5" />
-                    <path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </span>
-            </div>
-            {patientPhone.replace(/\D/g, "").length > 0 && (
-              <label
-                className="inline-flex w-fit items-center gap-1.5 text-xs leading-4 font-semibold text-[var(--text-muted)]"
-                title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
-              >
-                <input
-                  checked={textRemindersOff}
-                  onChange={(event) => handleTextRemindersChange(event.target.checked)}
-                  type="checkbox"
-                />
-                No reminder texts
-              </label>
-            )}
-          </div>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
-            <select
-              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientSex(event.target.value as "Male" | "Female" | "Other" | "")}
-              value={patientSex}
-            >
-              <option value="">—</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
-            <select
-              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setMaritalStatus(event.target.value as MaritalStatus | "")}
-              value={maritalStatus}
-            >
-              <option value="">—</option>
-              {maritalStatusOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-              {maritalStatus === "Other" && <option value="Other">Other</option>}
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Email</span>
-            <input
-              className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientEmail(event.target.value)}
-              type="email"
-              value={patientEmail}
-            />
-          </label>
+          <PatientIdentityFields
+            onAddToContacts={addPatientToContacts}
+            onChange={(next) => {
+              setLastName(next.lastName);
+              setFirstName(next.firstName);
+              setPatientDob(next.dob);
+              setPatientPhone(next.phone);
+              setPatientSex(next.sex);
+              setMaritalStatus(next.maritalStatus);
+              setPatientEmail(next.email);
+            }}
+            onTextRemindersOff={handleTextRemindersChange}
+            value={{
+              lastName,
+              firstName,
+              dob: patientDob,
+              phone: patientPhone,
+              sex: patientSex,
+              maritalStatus,
+              email: patientEmail,
+              address: patientAddress,
+              textRemindersOff,
+            }}
+          />
 
           {!isCashPatient && showCaseFields && (
             <label className="grid gap-1">
@@ -5894,15 +5820,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           )}
           </div>
 
-          <div className="md:col-span-2 xl:col-span-4">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
-            <div className="mt-1">
-              <AddressFieldGroup
-                onChange={setPatientAddress}
-                value={patientAddress}
-              />
-            </div>
-          </div>
+          <PatientAddressFields
+            address={patientAddress}
+            className="md:col-span-2 xl:col-span-4"
+            onChange={setPatientAddress}
+          />
         </div>
 
         {/* Every field has a fixed width on sm+ (full width on phones) so the
@@ -7415,36 +7337,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                   To-Do
                 </div>
-                {patientTasks.length === 0 ? (
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
-                ) : (
-                  <ul className="mt-1 grid gap-2">
-                    {patientTasks.map((task) => (
-                      <li
-                        key={task.id}
-                        className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      >
-                        <input
-                          checked={task.done}
-                          className="mt-1"
-                          onChange={() => toggleTaskDone(task.id)}
-                          type="checkbox"
-                        />
-                        <div className="flex-1">
-                          <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>
-                            {task.title}
-                          </div>
-                          {(task.dueDate || task.priority) && (
-                            <div className="text-xs text-[var(--text-muted)]">
-                              {task.priority}
-                              {task.dueDate ? ` • Due ${task.dueDate}` : ""}
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <PatientTodoList
+                  items={patientTasks.map((task) => ({
+                    id: task.id,
+                    title: task.title,
+                    done: task.done,
+                    priority: task.priority,
+                    dueDate: task.dueDate,
+                  }))}
+                  onToggle={toggleTaskDone}
+                />
               </div>
             </div>
           )}

@@ -13,7 +13,6 @@
 
 import {
   getVisiblePortalNavItems,
-  portalNavItems,
   type PlanTier,
   type PortalFeature,
 } from "@/lib/plan-access";
@@ -35,9 +34,25 @@ export interface SidebarPage {
 }
 
 /** Movable pages, in the order the sidebar uses when nobody has chosen. */
+export const CASE_LIST_ID = "caseList";
+
+/**
+ * Nav pages with their sidebar ids. Uses the switch-aware list so Case List
+ * (/cases, only with the patient-folder switch on) is its own movable page;
+ * it shares the patients access feature but needs its own id.
+ */
+function navPages(): { id: string; href: string; label: string; feature: PortalFeature }[] {
+  return getVisiblePortalNavItems("complete").map((item) => ({
+    id: item.href === "/cases" ? CASE_LIST_ID : item.feature,
+    href: item.href,
+    label: item.label,
+    feature: item.feature,
+  }));
+}
+
 export function defaultMovableIds(): string[] {
   return [
-    ...portalNavItems.filter((item) => item.feature !== SETTINGS_ID).map((item) => item.feature),
+    ...navPages().filter((item) => item.id !== SETTINGS_ID).map((item) => item.id),
     HANDBOOK_ID,
     GOAT_MAIL_ID,
     GOAT_PAGE_ID,
@@ -45,10 +60,10 @@ export function defaultMovableIds(): string[] {
 }
 
 export function sidebarCatalog(): SidebarPage[] {
-  const pages: SidebarPage[] = portalNavItems
-    .filter((item) => item.feature !== SETTINGS_ID)
+  const pages: SidebarPage[] = navPages()
+    .filter((item) => item.id !== SETTINGS_ID)
     .map((item) => ({
-      id: item.feature,
+      id: item.id,
       href: item.href,
       label: item.label,
       feature: item.feature,
@@ -60,7 +75,7 @@ export function sidebarCatalog(): SidebarPage[] {
     { id: GOAT_MAIL_ID, href: "/goat-mail", label: "G.O.A.T. Mail", active: "prefix", kind: "link" },
     { id: GOAT_PAGE_ID, href: "/goat-page", label: "G.O.A.T.", active: "prefix", kind: "goatPage" },
   );
-  const settings = portalNavItems.find((item) => item.feature === SETTINGS_ID);
+  const settings = navPages().find((item) => item.id === SETTINGS_ID);
   if (settings) {
     pages.push({
       id: SETTINGS_ID,

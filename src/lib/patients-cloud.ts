@@ -36,6 +36,7 @@ import type {
 } from "@/lib/mock-data";
 import { normalizeMaritalStatus } from "@/lib/marital-status";
 import { normalizeCompliance } from "@/lib/compliance";
+import { frozenPersonColumns } from "@/lib/patient-folder-guard";
 
 interface PatientRow {
   id: string;
@@ -68,16 +69,19 @@ interface PatientRow {
 }
 
 export function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
+  // With the folder switch on, person columns stay as they were on the case
+  // row. The folder record holds any edit. With the switch off, frozen is null.
+  const frozen = frozenPersonColumns(patient.id);
   return {
     id: patient.id,
     workspace_id: workspaceId,
-    full_name: patient.fullName ?? "",
-    dob: patient.dob ?? "",
-    sex: patient.sex ?? null,
-    marital_status: patient.maritalStatus ?? null,
-    phone: patient.phone ?? "",
-    email: patient.email ?? null,
-    address: patient.address ?? null,
+    full_name: frozen ? frozen.fullName : (patient.fullName ?? ""),
+    dob: frozen ? frozen.dob : (patient.dob ?? ""),
+    sex: frozen ? frozen.sex : (patient.sex ?? null),
+    marital_status: frozen ? frozen.maritalStatus : (patient.maritalStatus ?? null),
+    phone: frozen ? frozen.phone : (patient.phone ?? ""),
+    email: frozen ? frozen.email : (patient.email ?? null),
+    address: frozen ? frozen.address : (patient.address ?? null),
     attorney: patient.attorney ?? "",
     case_status: patient.caseStatus ?? "Active",
     date_of_loss: patient.dateOfLoss ?? "",
@@ -88,7 +92,7 @@ export function patientToRow(patient: PatientRecord, workspaceId: string): Patie
     xray_referrals: (patient.xrayReferrals as unknown[] | undefined) ?? null,
     mri_referrals: (patient.mriReferrals as unknown[] | undefined) ?? null,
     specialist_referrals: (patient.specialistReferrals as unknown[] | undefined) ?? null,
-    alerts: patient.alerts ?? null,
+    alerts: frozen ? frozen.alerts : (patient.alerts ?? null),
     is_cash_patient: patient.isCashPatient ?? false,
     location_id: patient.locationId ?? null,
     text_reminders_off: patient.textRemindersOff === true,

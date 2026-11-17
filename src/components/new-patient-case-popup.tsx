@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AttorneyFirmSelect } from "@/components/attorney-firm-select";
 import { ScrollLock } from "@/components/scroll-lock";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { UsDateInput } from "@/components/us-date-input";
 import { SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import type { CasePopupConflict, CasePopupDraft } from "@/lib/new-patient-intake";
+import { formatDobDisplay } from "@/lib/patient-folders";
+import { nameSearchMatches } from "@/lib/patient-name-match";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { to12hLabel } from "@/lib/time-12h";
 
 export type CaseAttorneyOption = { id: string; name: string; phone: string };
+
+export type CasePatientChoice = { id: string; name: string; dob: string };
 
 const emptyDraft: CasePopupDraft = { attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" };
 
@@ -32,6 +36,11 @@ export function NewPatientCasePopup({
   onDismissIssue,
   onClose,
   onSave,
+  showPatientPicker = false,
+  people = [],
+  attachedId = "",
+  onAttach,
+  onNewPatient,
 }: {
   initial?: CasePopupDraft;
   attorneys: CaseAttorneyOption[];
@@ -42,9 +51,23 @@ export function NewPatientCasePopup({
   onDismissIssue: () => void;
   onClose: () => void;
   onSave: (draft: CasePopupDraft, bookAnyway: boolean) => void;
+  /** List-level Add Case. Omitted on the New Patient "+ Case" popup, which stays unchanged. */
+  showPatientPicker?: boolean;
+  people?: CasePatientChoice[];
+  attachedId?: string;
+  onAttach?: (id: string) => void;
+  onNewPatient?: () => void;
 }) {
   const [draft, setDraft] = useState<CasePopupDraft>(initial ?? emptyDraft);
   const [bookAnyway, setBookAnyway] = useState(false);
+  const [finder, setFinder] = useState("");
+  const [needPatient, setNeedPatient] = useState("");
+  const matches = useMemo(() => {
+    const q = finder.trim();
+    if (!q) return [];
+    return people.filter((person) => nameSearchMatches(person.name, q)).slice(0, 8);
+  }, [finder, people]);
+  const attached = people.find((person) => person.id === attachedId);
 
   const changeWhen = (patch: Partial<CasePopupDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -61,13 +84,17 @@ export function NewPatientCasePopup({
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();
+          if (showPatientPicker && !attachedId) {
+            setNeedPatient("Choose a patient.");
+            return;
+          }
           onSave(draft, bookAnyway);
         }}
         role="dialog"
       >
         <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
           <div>
-            <h3 className="text-xl font-semibold" id="case-popup-title">+ Case</h3>
+            <h3 className="text-xl font-semibold" id="case-popup-title">{showPatientPicker ? "Add Case" : "+ Case"}</h3>
             <p className="text-sm text-[var(--text-muted)]">All of these can be left blank.</p>
           </div>
           <button aria-label="Close" className="btn btn-secondary btn-sm" onClick={onClose} type="button">
@@ -76,6 +103,56 @@ export function NewPatientCasePopup({
         </div>
 
         <div className="grid gap-3 px-5 py-4 sm:grid-cols-2">
+          {showPatientPicker && (
+            <div className="grid gap-3 sm:col-span-2">
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded-full bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white" type="button">
+                  Existing
+                </button>
+                <button
+                  className="rounded-full bg-[var(--bg-soft)] px-4 py-1.5 text-sm font-semibold"
+                  onClick={() => onNewPatient?.()}
+                  type="button"
+                >
+                  New
+                </button>
+              </div>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold text-[var(--text-muted)]">Patient</span>
+                <input
+                  className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                  onChange={(event) => {
+                    setFinder(event.target.value);
+                    setNeedPatient("");
+                    if (attachedId) onAttach?.("");
+                  }}
+                  placeholder="Search patients by name..."
+                  value={attached ? attached.name : finder}
+                />
+              </label>
+              {matches.length > 0 && !attached && (
+                <ul className="max-h-56 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white shadow-lg">
+                  {matches.map((person) => (
+                    <li key={person.id}>
+                      <button
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[var(--bg-soft)]"
+                        onClick={() => {
+                          onAttach?.(person.id);
+                          setFinder("");
+                          setNeedPatient("");
+                        }}
+                        type="button"
+                      >
+                        <span className="font-semibold">{person.name}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{person.dob ? formatDobDisplay(person.dob) : "No DOB"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {needPatient && <p className="text-sm font-semibold text-[#b43b34]">{needPatient}</p>}
+            </div>
+          )}
           <label className="grid min-w-0 gap-1 sm:col-span-2">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
             <AttorneyFirmSelect
@@ -158,11 +235,13 @@ export function NewPatientCasePopup({
         </div>
 
         <div className="grid gap-2 px-5 pb-4">
+          {!showPatientPicker && (
           <p className="text-xs text-[var(--text-muted)]">
             {purpose === "intake"
               ? "Save writes this onto the chart. An exam date and time book a New Patient visit and set the Initial Exam date. They leave New Patient Intake only when an attorney is set (Self counts) and that exam is booked or an Initial Exam date is saved. Attorney alone keeps them here."
               : "Save keeps this with the new patient. Create Patient books the visit. They stay in New Patient Intake until an attorney is set (Self counts) and an Initial Exam date is saved or a New Patient visit is booked. The exam date is saved as the Initial Exam."}
           </p>
+          )}
           {message && !conflict && (
             <p className="text-sm font-semibold text-[#b43b34]" role="alert">{message}</p>
           )}

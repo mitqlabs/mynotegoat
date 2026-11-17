@@ -60,6 +60,8 @@ import {
   normalizeCompliance,
 } from "@/lib/compliance";
 import { createPatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { PatientFolderListPage } from "@/components/patient-folder-live";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -567,6 +569,12 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"], discharge
 }
 
 export default function PatientsPage() {
+  // Folder preview replaces this list with one row per person. The switch
+  // defaults off, so production still renders the case list below.
+  return <LegacyPatientsPage folderList={patientFoldersEnabled()} />;
+}
+
+export function LegacyPatientsPage({ mode = "patients", folderList = false }: { mode?: "patients" | "cases"; folderList?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // When a patient page navigates here via Save & Close, it appends
@@ -734,7 +742,9 @@ export default function PatientsPage() {
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
-  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string }>(null);
+  const [newPatientFromAddCase, setNewPatientFromAddCase] = useState(false);
+  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }>(null);
+  const [addCasePatientId, setAddCasePatientId] = useState("");
   const [caseMessage, setCaseMessage] = useState("");
   const [caseConflict, setCaseConflict] = useState<CasePopupConflict | null>(null);
   const [newPatientMessage, setNewPatientMessage] = useState("");
@@ -793,7 +803,8 @@ export default function PatientsPage() {
     });
   };
 
-  const openNewPatientModal = () => {
+  const openNewPatientModal = (fromAddCase = false) => {
+    setNewPatientFromAddCase(fromAddCase === true);
     setNewPatientMessage("");
     setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
@@ -835,6 +846,7 @@ export default function PatientsPage() {
 
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
+    setNewPatientFromAddCase(false);
     setNewPatientMessage("");
     setNewPatientBookAnyway("");
   };
@@ -1324,15 +1336,20 @@ export default function PatientsPage() {
     [attorneyContacts],
   );
 
-  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string }) => {
+  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }) => {
     setCaseMessage("");
     setCaseConflict(null);
+    if (next.source === "add") setAddCasePatientId("");
     setCasePopup(next);
   };
 
   const casePopupNames = () => {
     if (casePopup?.source === "intake") {
       const patient = patients.find((row) => row.id === casePopup.patientId);
+      return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
+    }
+    if (casePopup?.source === "add") {
+      const patient = patients.find((row) => row.id === addCasePatientId);
       return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
     }
     return { firstName: newPatientDraft.firstName, lastName: newPatientDraft.lastName };
@@ -1473,6 +1490,93 @@ export default function PatientsPage() {
       }
     }
     setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
+  };
+
+  const addCasePeople = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; name: string; dob: string }[] = [];
+    for (const patient of patients) {
+      if (patient.deleted) continue;
+      const key = `${patient.fullName.trim().toLowerCase()}|${patient.dob ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: patient.id, name: patient.fullName, dob: patient.dob ?? "" });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [listVersion]);
+
+  const saveAddedCase = (draft: CasePopupDraft, bookAnyway: boolean) => {
+    const base = patients.find((row) => row.id === addCasePatientId);
+    if (!base) {
+      setCaseMessage("Choose a patient.");
+      return;
+    }
+    const locationId = base.locationId || "";
+    const reviewed = reviewCasePopup(draft, {
+      bookAnyway,
+      appointments: scheduleAppointments,
+      settings: settingsForLocation(locationId),
+      types: appointmentTypes,
+    });
+    if (!reviewed.ok) {
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      return;
+    }
+    if (!rememberAttorney(draft.attorney, draft.attorneyPhone)) {
+      setCaseMessage("Could not save that attorney.");
+      return;
+    }
+    const names = splitFullName(base.fullName);
+    const created = createPatientRecord({
+      firstName: names.firstName,
+      lastName: names.lastName,
+      dob: base.dob,
+      sex: base.sex,
+      maritalStatus: base.maritalStatus,
+      phone: base.phone,
+      email: base.email,
+      address: base.address,
+      attorney: cleanAttorneyLabel(draft.attorney || base.attorney || "Self") || "Self",
+      dateOfLoss: draft.dateOfLoss,
+      initialExam: reviewed.initialExamIso,
+      isCashPatient: base.isCashPatient,
+      locationId,
+    });
+    if (!created) {
+      setCaseMessage("Could not add that case.");
+      return;
+    }
+    if (reviewed.visit) {
+      const office = loadOfficeSettings();
+      try {
+        addAppointments([
+          {
+            id: createAppointmentId(),
+            patientId: created.id,
+            patientName: created.fullName,
+            provider: office.doctorName?.trim() ?? "",
+            location: office.officeName?.trim() ?? "",
+            appointmentType: reviewed.visit.type,
+            caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, created.fullName),
+            room: "",
+            date: reviewed.visit.iso,
+            startTime: reviewed.visit.time,
+            durationMin: reviewed.visit.durationMin,
+            status: "Scheduled",
+            note: "",
+            overrideOfficeHours: reviewed.visit.override,
+          },
+        ]);
+      } catch (error) {
+        setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+        return;
+      }
+    }
+    setCasePopup(null);
+    setAddCasePatientId("");
     setCaseMessage("");
     setCaseConflict(null);
   };
@@ -2023,8 +2127,14 @@ export default function PatientsPage() {
     return `${fmt(today)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
   }, []);
 
+  const openHref = (id: string) => `/patients/${id}`;
+
   return (
     <div className="space-y-5">
+      {folderList ? (
+        <PatientFolderListPage onNewPatient={openNewPatientModal} />
+      ) : (
+      <>
       {printPickerFor && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
@@ -2105,18 +2215,18 @@ export default function PatientsPage() {
         </div>
       )}
       <section className="panel-card p-4">
+        {mode !== "cases" && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">All Patients Workspace</h3>
-          <button
-            className="btn btn-primary"
-            onClick={openNewPatientModal}
-            type="button"
-          >
+          <div>
+            <h3 className="text-xl font-semibold">All Patients Workspace</h3>
+          </div>
+          <button className="btn btn-primary" onClick={() => openNewPatientModal()} type="button">
             New Patient
           </button>
         </div>
+        )}
 
-        <div className="mt-4 space-y-2">
+        <div className={`${mode === "cases" ? "" : "mt-4"} space-y-2`}>
           {/* Top row: patient type */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -2147,6 +2257,11 @@ export default function PatientsPage() {
               <span className="text-base leading-none">&#127874;</span>
               Birthdays
             </button>
+            {mode === "cases" && (
+              <button className="btn btn-primary ml-auto" onClick={() => openCasePopup({ source: "add" })} type="button">
+                Add Case
+              </button>
+            )}
           </div>
           {/* PI sub-tabs (only in the Personal Injury section) */}
           {section === "pi" && (
@@ -2448,7 +2563,7 @@ export default function PatientsPage() {
                           <td key={colId} className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <Link
-                                href={`/patients/${patient.id}`}
+                                href={openHref(patient.id)}
                                 className={`min-w-0 font-semibold text-[var(--brand-primary)] underline ${
                                   multiLocation ? "block w-40 shrink-0 truncate sm:w-56" : ""
                                 }`}
@@ -2761,7 +2876,7 @@ export default function PatientsPage() {
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <Link href={`/patients/${item.patientId}`} className="font-semibold text-[var(--brand-primary)] underline">
+                            <Link href={openHref(item.patientId)} className="font-semibold text-[var(--brand-primary)] underline">
                               {item.patientName}
                             </Link>
                             {item.note && <p className="text-xs text-[var(--text-muted)]">{item.note}</p>}
@@ -3067,7 +3182,7 @@ export default function PatientsPage() {
                       <div className="min-w-0 flex-1">
                         <Link
                           className="text-base font-bold text-[var(--brand-primary)] hover:underline"
-                          href={`/patients/${entry.id}`}
+                          href={openHref(entry.id)}
                         >
                           {entry.fullName}
                         </Link>
@@ -3102,6 +3217,9 @@ export default function PatientsPage() {
         </div>
       )}
 
+      </>
+      )}
+
       {showNewPatientModal && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
@@ -3110,6 +3228,24 @@ export default function PatientsPage() {
           <form className="panel-card mx-auto w-full max-w-3xl overflow-hidden p-0" data-testid="new-patient-modal" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
             <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
               <div>
+                {newPatientFromAddCase && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <button
+                      className="rounded-full bg-[var(--bg-soft)] px-4 py-1.5 text-sm font-semibold"
+                      onClick={() => {
+                        setShowNewPatientModal(false);
+                        setNewPatientFromAddCase(false);
+                        setCasePopup({ source: "add" });
+                      }}
+                      type="button"
+                    >
+                      Existing
+                    </button>
+                    <button className="rounded-full bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white" type="button">
+                      New
+                    </button>
+                  </div>
+                )}
                 <h3 className="text-xl font-semibold">New Patient</h3>
                 <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. + Case adds the attorney, date of injury, and first exam.</p>
               </div>
@@ -3368,7 +3504,7 @@ export default function PatientsPage() {
               {newPatientBookingIssue && (
                 <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
                   {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
-                  <Link className="text-[var(--brand-primary)] underline" href={`/patients/${newPatientBookingIssue.patientId}`}>Open patient</Link>
+                  <Link className="text-[var(--brand-primary)] underline" href={openHref(newPatientBookingIssue.patientId)}>Open patient</Link>
                 </div>
               )}
               {newPatientMessage && <p className="text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>}
@@ -3391,7 +3527,7 @@ export default function PatientsPage() {
           attorneys={caseAttorneyOptions}
           conflict={caseConflict}
           initial={casePopupInitial()}
-          key={casePopup.source === "intake" ? casePopup.patientId : "new"}
+          key={casePopup.source === "intake" ? casePopup.patientId : casePopup.source}
           message={caseMessage}
           onCaseNumber={(dateOfLoss) => {
             const names = casePopupNames();
@@ -3399,6 +3535,7 @@ export default function PatientsPage() {
           }}
           onClose={() => {
             setCasePopup(null);
+            setAddCasePatientId("");
             setCaseMessage("");
             setCaseConflict(null);
           }}
@@ -3406,8 +3543,13 @@ export default function PatientsPage() {
             setCaseMessage("");
             setCaseConflict(null);
           }}
-          onSave={saveCasePopup}
-          purpose={casePopup.source}
+          onSave={casePopup.source === "add" ? saveAddedCase : saveCasePopup}
+          purpose={casePopup.source === "intake" ? "intake" : "new"}
+          showPatientPicker={casePopup.source === "add"}
+          people={addCasePeople}
+          attachedId={addCasePatientId}
+          onAttach={setAddCasePatientId}
+          onNewPatient={() => openNewPatientModal(true)}
         />
       )}
 
