@@ -85,6 +85,38 @@ export function TextCard({ d, today, onChange, onSend, onCancel }: {
   );
 }
 
+/** Confirm before a day is marked Closed on Key Dates. Nothing is written until Confirm. */
+export function ClosedDayCard({
+  d,
+  withText,
+  onConfirm,
+  onCancel,
+}: {
+  d: NonNullable<ChatMessage["closedDay"]>;
+  /** A text card on the same message owns the Send button. */
+  withText?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (d.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Okay, that day was not changed.</p>;
+  if (d.state === "done") return <p className="mt-1.5 text-xs font-semibold text-emerald-700" data-goat-closed="done">{d.result}</p>;
+  const busy = d.state === "saving";
+  return (
+    <div className="mt-2 space-y-1.5 text-xs" data-goat-closed="open">
+      <p className="rounded-lg bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-2 text-[13px]">
+        <span className="font-semibold">{d.label}</span> will be Closed on Key Dates.
+      </p>
+      {d.result && d.state === "error" && <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800">{d.result}</p>}
+      {!withText && (
+        <div className="flex flex-wrap gap-1.5">
+          <button className={primary} disabled={busy} onClick={onConfirm} type="button">{busy ? "Saving…" : "Confirm"}</button>
+          <button className={quiet} disabled={busy} onClick={onCancel} type="button">Never mind</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The checklist for a bulk cancel. */
 export function BulkCancelCard({ d, busy, onToggle, onToggleAll, onCancelVisits, onNever, onUndo, onTextThem }: {
   d: NonNullable<ChatMessage["bulkCancel"]>;

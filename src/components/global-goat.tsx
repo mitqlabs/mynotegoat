@@ -70,7 +70,7 @@ import { notifyChange } from "@/lib/local-sync";
 import { CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
 import { currentAuthor as currentNoteAuthor } from "@/hooks/use-case-note-entries";
 import { logActivity } from "@/lib/activity-log";
-import { BulkCancelCard, TextCard } from "@/components/goat-text-cards";
+import { BulkCancelCard, ClosedDayCard, TextCard } from "@/components/goat-text-cards";
 import { clock12, describeBulkCancel, minutesOf, selectBulkCancel, type BulkCancelQuery } from "@/lib/goat-bulk-cancel";
 import { loadTextRecipients, queueBroadcast, readMacSeen } from "@/lib/broadcast-queue";
 import { dayLabel as textDayLabel, dayPhrase as textDayPhrase, parseTextRequest, suggestedCancelText, tidyTextMessage } from "@/lib/goat-text";
@@ -91,6 +91,8 @@ import { birthdayTextsHelp, macSetupHelp, reminderPageHelp, remindersHelp } from
 import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { broadcastHelp } from "@/lib/goat-broadcast-help";
 import { keyDatesHelp } from "@/lib/goat-keydates-help";
+import { closedDayLabel, closedDayMessage, closedDayRequest } from "@/lib/goat-closed-day";
+import { addClosedDayIfMissing } from "@/hooks/use-cloud-key-dates";
 import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
@@ -189,7 +191,7 @@ interface AnswererProps {
   patient: PatientRecord;
   job: Job;
   onPartial: (text: string) => void;
-  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => void;
+  onDone: (jobId: string, msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => void;
 }
 
 function PatientAnswerer(props: AnswererProps) {
@@ -221,51 +223,56 @@ function Answerer({ job, onDone, context, files }: AnswererProps & { context: Go
     if (started.current === job.id) return;
     started.current = job.id;
     void (async () => {
-      // Give the Patient Files reader a moment to pull already-extracted text (cache) before answering.
-      const t0 = Date.now();
-      await new Promise((r) => setTimeout(r, 400));
-      while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
-      const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
-      // "when was his XR and what were the findings?": answer each part, then one reply with every part.
-      const parts = splitPatientQuestion(job.question);
-      const answerPart = async (question: string): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number }> => {
-        // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
-        const typed = typedDateAnswer(ctx, question);
-        if (typed) return { text: typed, ms: 0 };
-        const t1 = performance.now();
-        return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1 };
-      };
-      if (parts.length < 2) {
-        onDone(await answerPart(job.question));
-        return;
+      try {
+        // Give the Patient Files reader a moment to pull already-extracted text (cache) before answering.
+        const t0 = Date.now();
+        await new Promise((r) => setTimeout(r, 400));
+        while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
+        const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
+        // "when was his XR and what were the findings?": answer each part, then one reply with every part.
+        const parts = splitPatientQuestion(job.question);
+        const answerPart = async (question: string): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number }> => {
+          // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
+          const typed = typedDateAnswer(ctx, question);
+          if (typed) return { text: typed, ms: 0 };
+          const t1 = performance.now();
+          return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1 };
+        };
+        if (parts.length < 2) {
+          onDone(job.id, await answerPart(job.question));
+          return;
+        }
+        const answers = [];
+        for (const part of parts) {
+          answers.push(await answerPart(part));
+        }
+        const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
+        onDone(job.id, {
+          // The same block (e.g. "Specialist referrals") is shown once, under the first part that has it.
+          text: (() => {
+            const seen = new Set<string>();
+            return answers
+              .map((a, i) => {
+                const blocks = a.text.split(/\n\n+/).filter((b) => {
+                  const k = b.trim();
+                  if (seen.has(k)) return false;
+                  seen.add(k);
+                  return true;
+                });
+                return `${label(parts[i])}?\n${blocks.join("\n\n") || "(see above)"}`;
+              })
+              .join("\n\n");
+          })(),
+          quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
+          warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
+          copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
+          originals: answers.some((a) => a.originals?.length) ? answers.flatMap((a) => a.originals ?? []) : undefined,
+          ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
+        });
+      } catch (err) {
+        console.error(err);
+        onDone(job.id, { text: "I couldn't finish that lookup. Try sending it again." });
       }
-      const answers = [];
-      for (const part of parts) {
-        answers.push(await answerPart(part));
-      }
-      const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
-      onDone({
-        // The same block (e.g. "Specialist referrals") is shown once, under the first part that has it.
-        text: (() => {
-          const seen = new Set<string>();
-          return answers
-            .map((a, i) => {
-              const blocks = a.text.split(/\n\n+/).filter((b) => {
-                const k = b.trim();
-                if (seen.has(k)) return false;
-                seen.add(k);
-                return true;
-              });
-              return `${label(parts[i])}?\n${blocks.join("\n\n") || "(see above)"}`;
-            })
-            .join("\n\n");
-        })(),
-        quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
-        warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
-        copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
-        originals: answers.some((a) => a.originals?.length) ? answers.flatMap((a) => a.originals ?? []) : undefined,
-        ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
-      });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per job; callbacks only touch refs / functional updates
   }, [job]);
@@ -415,6 +422,8 @@ export function GlobalGoatPopup({
   const askRef = useRef<{ raw: string } | null>(null);
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
+  /** Text cards already mid-confirm, so a second tap cannot queue twice. */
+  const textBusyRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
   const [openedAt] = useState(() => new Date());
   const greeting = greetingFor(openedAt.getHours());
@@ -830,7 +839,7 @@ export function GlobalGoatPopup({
         mem = { ...mem, listed: m.omListed };
         sawListed = true;
       }
-      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk || m.textDraft || m.bulkCancel);
+      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk || m.textDraft || m.closedDay || m.bulkCancel);
       if (action && !sawAction) {
         sawAction = true;
         followUps = Boolean(m.om || m.omUndo);
@@ -1545,34 +1554,113 @@ export function GlobalGoatPopup({
       },
     });
   };
+  const showClosedDay = async (req: { iso: string; broadcast: boolean }) => {
+    try {
+    const label = closedDayLabel(req.iso);
+    const closedDay: NonNullable<ChatMessage["closedDay"]> = { iso: req.iso, label, reason: "Office closed", state: "open" };
+    const dayLine = `${label} will be Closed on Key Dates.`;
+    if (!req.broadcast) {
+      push({ role: "goat", text: dayLine, practice: true, closedDay });
+      return;
+    }
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: `${dayLine} ${TEXT_ADMIN_ONLY}`, practice: true, closedDay });
+      return;
+    }
+    const message = closedDayMessage(practiceOverride ? "" : loadOfficeSettings().officeName, req.iso);
+    const client = getSupabaseBrowserClient();
+    const ws = getActiveWorkspaceIdSync();
+    const found = client && ws ? await loadTextRecipients(client, ws, { kind: "active" }, smsSettings()).catch(() => null) : null;
+    if (!found) {
+      push({ role: "goat", text: `${dayLine} I couldn't load patients just now, so I haven't prepared a text.`, practice: true, closedDay });
+      return;
+    }
+    const n = found.recipients.length;
+    if (!n) {
+      push({ role: "goat", text: `${dayLine} There's nobody with a phone number to text.`, practice: true, closedDay });
+      return;
+    }
+    push({
+      role: "goat",
+      practice: true,
+      text: n ? `${dayLine} Here's the text for active patients. Nothing is marked or queued until you tap Send.` : `${dayLine} There's nobody with a phone number to text.`,
+      closedDay,
+      textDraft: {
+        audience: { kind: "active" },
+        message: message.slice(0, 840),
+        state: "open",
+        recipients: found.recipients.map((r) => ({ id: r.patientId, name: r.patientName })),
+        skipped: found.skipped,
+        deferred: found.deferred,
+      },
+    });
+    } catch (err) {
+      console.error(err);
+      push({ role: "goat", text: "Something went wrong preparing that. Try sending it again.", practice: true });
+    }
+  };
+  /** Writes the closed day the same way Key Dates does. Does not queue a text. */
+  const saveClosedDay = async (msg: ChatMessage): Promise<boolean> => {
+    const d = msg.closedDay;
+    if (!d || d.state === "done") return true;
+    if (d.state === "canceled") return false;
+    if (practiceOverride || !roleKnown || !canEditFeature("keyDates")) {
+      setMsg(msg.id, { closedDay: { ...d, state: "error", result: "Marking a closed day needs permission to edit Key Dates. Ask an owner or admin." } });
+      return false;
+    }
+    setMsg(msg.id, { closedDay: { ...d, state: "saving", result: undefined } });
+    try {
+      const outcome = await addClosedDayIfMissing(d.iso, d.reason);
+      setMsg(msg.id, { closedDay: { ...d, state: "done", result: outcome === "already" ? `${d.label} is already Closed on Key Dates.` : `${d.label} is Closed on Key Dates.` } });
+      return true;
+    } catch (err) {
+      setMsg(msg.id, { closedDay: { ...d, state: "error", result: err instanceof Error ? err.message : "Couldn't save the closed day." } });
+      return false;
+    }
+  };
   /** The Send tap: re-read who gets it (never queue a stale list), then queue exactly like Message patients. */
   const sendTextDraft = async (msg: ChatMessage) => {
     const d = msg.textDraft;
-    if (!d || d.state !== "open") return;
+    if (!d || d.state !== "open" || textBusyRef.current.has(msg.id)) return;
     if (!isGoatAdmin || practiceOverride) return setMsg(msg.id, { textDraft: { ...d, result: TEXT_ADMIN_ONLY } });
-    const client = getSupabaseBrowserClient();
-    const ws = getActiveWorkspaceIdSync();
-    if (!client || !ws) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "Sign in to message patients." } });
-    setMsg(msg.id, { textDraft: { ...d, state: "queuing", result: undefined } });
-    const settings = smsSettings();
-    const fresh = await loadTextRecipients(client, ws, d.audience, settings).catch(() => null);
-    if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was sent. Try again." } });
-    const shown = new Set((d.recipients ?? []).map((r) => r.id));
-    const same = fresh.recipients.length === shown.size && fresh.recipients.every((r) => shown.has(r.patientId));
-    if (!same) {
-      setMsg(msg.id, {
-        textDraft: {
-          ...d, state: "open", recipients: fresh.recipients.map((r) => ({ id: r.patientId, name: r.patientName })), skipped: fresh.skipped, deferred: fresh.deferred,
-          result: `The list changed while you were looking (it was ${shown.size}, now ${fresh.recipients.length}). Check it, then tap Send again.`,
-        },
-      });
-      return;
+    textBusyRef.current.add(msg.id);
+    let queued = false;
+    try {
+      if (msg.closedDay && msg.closedDay.state !== "done") {
+        setMsg(msg.id, { textDraft: { ...d, state: "queuing" } });
+        const marked = await saveClosedDay(msg);
+        if (!marked) {
+          setMsg(msg.id, { textDraft: { ...d, state: "open" } });
+          return;
+        }
+      }
+      const client = getSupabaseBrowserClient();
+      const ws = getActiveWorkspaceIdSync();
+      if (!client || !ws) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "Sign in to message patients." } });
+      setMsg(msg.id, { textDraft: { ...d, state: "queuing", result: undefined } });
+      const settings = smsSettings();
+      const fresh = await loadTextRecipients(client, ws, d.audience, settings).catch(() => null);
+      if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was sent. Try again." } });
+      const shown = new Set((d.recipients ?? []).map((r) => r.id));
+      const same = fresh.recipients.length === shown.size && fresh.recipients.every((r) => shown.has(r.patientId));
+      if (!same) {
+        setMsg(msg.id, {
+          textDraft: {
+            ...d, state: "open", recipients: fresh.recipients.map((r) => ({ id: r.patientId, name: r.patientName })), skipped: fresh.skipped, deferred: fresh.deferred,
+            result: `The list changed while you were looking (it was ${shown.size}, now ${fresh.recipients.length}). Check it, then tap Send again.`,
+          },
+        });
+        return;
+      }
+      const r = await queueBroadcast(client, ws, { message: d.message, date: fresh.date, recipients: fresh.recipients, booked: d.audience.kind === "booked" }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "Couldn't queue the message." }));
+      if (!r.ok) return setMsg(msg.id, { textDraft: { ...d, state: "open", result: r.error } });
+      const mac = await readMacSeen(client, ws).catch(() => false);
+      logActivity({ category: "messages", action: "broadcast.queued", summary: `Queued a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
+      setMsg(msg.id, { textDraft: { ...d, state: "queued", result: queuedStatusText(r.count, settings.dryRun, mac) } });
+      queued = true;
+    } finally {
+      if (!queued) textBusyRef.current.delete(msg.id);
     }
-    const r = await queueBroadcast(client, ws, { message: d.message, date: fresh.date, recipients: fresh.recipients, booked: d.audience.kind === "booked" }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "Couldn't queue the message." }));
-    if (!r.ok) return setMsg(msg.id, { textDraft: { ...d, state: "open", result: r.error } });
-    const mac = await readMacSeen(client, ws).catch(() => false);
-    logActivity({ category: "messages", action: "broadcast.queued", summary: `Sent a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
-    setMsg(msg.id, { textDraft: { ...d, state: "queued", result: queuedStatusText(r.count, settings.dryRun, mac) } });
   };
 
   const BULK_NEEDS_EDIT = "Canceling appointments needs permission to edit the schedule. Ask an owner or admin.";
@@ -1931,10 +2019,38 @@ export function GlobalGoatPopup({
     if (typed) window.setTimeout(() => sendRef.current(typed), 50);
   };
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
+    try {
+      sendCore(raw, opts);
+    } catch (err) {
+      console.error(err);
+      const text = raw.trim();
+      setInput("");
+      setMention(null);
+      if (jobRef.current) {
+        jobRef.current = null;
+        setJob(null);
+      }
+      setChat((c) => {
+        const last = c.messages[c.messages.length - 1];
+        const already = Boolean(text) && last?.role === "user" && last.text === text;
+        const extra: ChatMessage[] = [];
+        if (text && !already) extra.push({ role: "user", text, practice: true, id: newId(), at: nowIso() });
+        extra.push({ role: "goat", text: "Something went wrong with that. Try sending it again.", practice: true, id: newId(), at: nowIso() });
+        return { ...c, messages: [...c.messages, ...extra] };
+      });
+    }
+  };
+  const sendCore = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     // Typos and texting shorthand ("tmrw", "pls", "remind me 2", "lawer") → plain words first.
     const casual = !opts && !raw.includes("\n") && !isFlowToken(raw.trim()) && !raw.trim().startsWith("/") && !raw.trim().startsWith("@");
     const question = casual ? normalizeCasual(raw) : raw.trim();
-    if (!question || job || practiceBusy) return;
+    if (!question || practiceBusy) return;
+    // A lookup that never finished used to leave the button disabled, so Enter and
+    // Send both did nothing while the typed text stayed in the box. A new message wins.
+    if (jobRef.current) {
+      jobRef.current = null;
+      setJob(null);
+    }
     // Two requests in one message: "book John Wed 2pm and remind me to call his lawyer".
     // Each step runs on its own (each still gets its own confirm card); "his/him" carries the patient.
     if (casual && !parseTextRequest(raw.trim(), practiceData().today) && flowRef.current?.k !== "textMsg") {
@@ -1974,6 +2090,16 @@ export function GlobalGoatPopup({
     // A waiting /text or bulk-cancel step takes the typed reply as-is (a text message is free text: never re-read it as a to-do).
     const stepK = flowRef.current?.k;
     if (!opts && stepK && (stepK === "textMsg" || stepK === "textWho" || stepK === "textDay" || stepK === "textPick" || stepK === "cancelDay") && tryFlow(stepK === "textMsg" ? raw.trim() : question)) return;
+    // "we will be closed Thursday the 19th" → confirm a Key Dates closed day.
+    // "…send all active patients a message" → that day plus a broadcast draft. Nothing is saved or queued here.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const closed = closedDayRequest(question, practiceData().today);
+      if (closed) {
+        push({ role: "user", text: question, practice: true });
+        void showClosedDay(closed);
+        return;
+      }
+    }
     // "text everyone "we're closed tomorrow"", "text all active patients that we're closed Friday", "cancel all appointments tomorrow":
     // the action wins over the Handbook answer below; a "how do I…" question still gets the answer. Nothing happens before a tap.
     if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current && tryNaturalAction(raw)) return;
@@ -2429,12 +2555,12 @@ export function GlobalGoatPopup({
 
   // Plain functions: they only touch refs and functional state updates, so a stale copy is fine.
   const onPartial = (t: string) => setPartial(t);
-  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => {
+  const onDone = (jobId: string, m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => {
     const j = jobRef.current;
-    if (j) {
-      const p = findPatient(patientsOverride, j.patientId);
-      push({ role: "goat", ...m, patientId: j.patientId, patientName: p ? displayName(p.fullName) : undefined }, j.patientId);
-    }
+    // A newer message already took over, or the lookup was canceled. Drop this reply.
+    if (!j || j.id !== jobId) return;
+    const p = findPatient(patientsOverride, j.patientId);
+    push({ role: "goat", ...m, patientId: j.patientId, patientName: p ? displayName(p.fullName) : undefined }, j.patientId);
     jobRef.current = null;
     setJob(null);
     setPartial("");
@@ -2546,7 +2672,7 @@ export function GlobalGoatPopup({
             />
           )}
 
-          <div ref={listRef} className={`flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[var(--bg-soft)]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
+          <div ref={listRef} className={`min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[var(--bg-soft)]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
@@ -2645,7 +2771,15 @@ export function GlobalGoatPopup({
                         onPick={(p) => { setMsg(m.id, { flowPicker: { ...m.flowPicker!, picked: p.fullName } }); tryFlow(`${FLOW_TOKEN}${m.flowPicker!.next}-case ${p.id}`); }}
                       />
                     )}
-                    {m.textDraft && <TextCard d={m.textDraft} today={practiceData().today} onCancel={() => setMsg(m.id, { textDraft: { ...m.textDraft!, state: "canceled" } })} onChange={(message) => setMsg(m.id, { textDraft: { ...m.textDraft!, message, result: undefined } })} onSend={() => void sendTextDraft(m)} />}
+                    {m.closedDay && (
+                      <ClosedDayCard
+                        d={m.closedDay}
+                        withText={Boolean(m.textDraft && m.textDraft.state !== "canceled")}
+                        onCancel={() => setMsg(m.id, { closedDay: { ...m.closedDay!, state: "canceled" } })}
+                        onConfirm={() => void saveClosedDay(m)}
+                      />
+                    )}
+                    {m.textDraft && <TextCard d={m.textDraft} today={practiceData().today} onCancel={() => setMsg(m.id, { textDraft: { ...m.textDraft!, state: "canceled" }, ...(m.closedDay && m.closedDay.state !== "done" ? { closedDay: { ...m.closedDay, state: "canceled" as const } } : {}) })} onChange={(message) => setMsg(m.id, { textDraft: { ...m.textDraft!, message, result: undefined } })} onSend={() => void sendTextDraft(m)} />}
                     {m.bulkCancel && (
                       <BulkCancelCard
                         d={m.bulkCancel}
@@ -2759,12 +2893,13 @@ export function GlobalGoatPopup({
             )}
           </div>
 
-          <div className={`border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
+          <div className={`relative z-20 shrink-0 border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
             <form
               className="flex gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                send(input);
+                const value = inputRef.current?.value ?? input;
+                if (value.trim()) send(value);
               }}
             >
               <div className="relative min-w-0 flex-1">
@@ -2790,6 +2925,19 @@ export function GlobalGoatPopup({
                     syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
                   }}
                   onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      if (mention && mentionMatches.length) {
+                        e.preventDefault();
+                        pickMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                        return;
+                      }
+                      // Enter must send even when the button is disabled. A disabled
+                      // submit button swallows Enter and the form never fires.
+                      e.preventDefault();
+                      const value = (e.target as HTMLInputElement).value;
+                      if (value.trim()) send(value);
+                      return;
+                    }
                     const vq = !mention ? viewQuery(input) : null;
                     if (vq !== null && e.key === "Tab" && viewMatches(vq, isGoatAdmin).length) {
                       e.preventDefault();
@@ -2896,8 +3044,8 @@ export function GlobalGoatPopup({
                   </div>
                 )}
               </div>
-              <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
-                Ask
+              <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 shrink-0 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "shrink-0 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim()} type="submit">
+                Send
               </button>
             </form>
           </div>

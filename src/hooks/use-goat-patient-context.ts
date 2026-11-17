@@ -46,7 +46,7 @@ export function useGoatPatientContext(patient: PatientRecord): { context: GoatCo
   const billingRecord = getRecord(patient.id);
 
   const context = useMemo(() => {
-    const chargesTotal = encounters.reduce((sum, e) => sum + e.charges.reduce((s, c) => s + c.unitPrice * c.units, 0), 0);
+    const chargesTotal = encounters.reduce((sum, e) => sum + (e.charges ?? []).reduce((s, c) => s + (Number(c.unitPrice) || 0) * (Number(c.units) || 0), 0), 0);
     const matrix = (patient.matrix ?? {}) as Record<string, string | undefined>;
     const fromMatrix = (v: string | undefined) => Number.parseFloat(String(v ?? "").replace(/[^0-9.]/g, "")) || 0;
     const storedBilled = billingRecord ? billingRecord.billedAmount : fromMatrix(matrix.billed);
