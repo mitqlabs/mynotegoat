@@ -8531,8 +8531,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Save status — bright, can't-miss-it pill. Replaces the
               tiny blue "Updated…" line that was way too easy to miss
               and led to "did the save actually work?" anxiety. */}
-          {/* Saving… / Saved ✓ now live in the ONE global badge (bottom-right);
-              this spot only speaks up when something actually failed. */}
+          {/* Saving… / Saved show on the circular G.O.A.T. button.
+              This spot only speaks up when something actually failed. */}
           {saveStatus === "error" && saveMessage && (
             <span
               className="inline-flex items-center gap-2 rounded-full border-2 border-red-400 bg-red-50 px-3 py-1 text-sm font-semibold text-red-800 shadow-sm"
