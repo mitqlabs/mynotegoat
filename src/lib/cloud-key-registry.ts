@@ -105,6 +105,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.sidebar-collapsed": "user",
   // Light or Dark for this person. The old per-device keys are read-only fallbacks.
   "casemate.theme-tone.v1": "user",
+  // This person's sidebar page order. Settings is not stored; it stays last.
+  "casemate.sidebar-order.v1": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
   "casemate.goat-install-tip.v1": "user",
   // G.O.A.T. memory: last patient/action, and hidden heads-ups (follow you to every device).

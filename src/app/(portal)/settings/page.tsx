@@ -13,6 +13,7 @@ import { MarketingVisitTypesSection } from "@/components/marketing-visit-types-s
 import { ModuleVisibilitySection } from "@/components/module-visibility-section";
 import { TeamSettingsSection } from "@/components/team-settings-section";
 import { ThemesSection } from "@/components/themes-section";
+import { SidebarOrderSection } from "@/components/sidebar-order-section";
 import { AdminAccessSection } from "@/components/admin-access-section";
 import { DeletePasswordField } from "@/components/delete-password-field";
 import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doctors-section";
@@ -98,6 +99,7 @@ const defaultExpandedSections: Record<SettingsSectionKey, boolean> = {
   goat: false,
   goatPage: false,
   themes: false,
+  sidebar: false,
 };
 
 /** Settings tabs. Each tab shows a subset of sections; wrappers listed
@@ -3375,6 +3377,16 @@ export default function SettingsPage() {
         title="Themes"
       >
         <ThemesSection canEditOffice={canEditSettings} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        hidden={!showSection("sidebar")}
+        id="sidebar"
+        isOpen={sectionIsOpen("sidebar")}
+        onToggle={() => toggleSection("sidebar")}
+        title="Sidebar"
+      >
+        <SidebarOrderSection />
       </CollapsibleSection>
 
       {/* ── Office Settings group ───────────────────────────────────

@@ -13,6 +13,8 @@ import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { ReadOnlyContentGuard } from "@/components/read-only-content-guard";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
 import { ThemeModeSwitch } from "@/components/theme-mode-switch";
+import { useSidebarOrder } from "@/hooks/use-sidebar-order";
+import { applySidebarOrder, visibleSidebarPages, type SidebarPage } from "@/lib/sidebar-order";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -103,6 +105,106 @@ function buildTitle(pathname: string, items: { href: string; label: string }[]) 
   return item?.label ?? "My Note Goat";
 }
 
+function pageActive(pathname: string, page: SidebarPage): boolean {
+  if (page.active === "exact") return pathname === page.href;
+  return pathname === page.href || pathname.startsWith(`${page.href}/`);
+}
+
+function SidebarNavItem({
+  page,
+  pathname,
+  variant,
+  unread,
+}: {
+  page: SidebarPage;
+  pathname: string;
+  variant: "expanded" | "collapsed" | "mobile";
+  unread: number;
+}) {
+  const active = pageActive(pathname, page);
+  if (page.kind === "goatPage") {
+    if (variant === "expanded") {
+      return (
+        <GlobalGoatButton
+          textOnly
+          className={classNames(
+            "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
+            active ? "nav-link-active" : "nav-link",
+          )}
+        />
+      );
+    }
+    if (variant === "collapsed") {
+      return (
+        <GlobalGoatButton
+          compact
+          className={classNames(
+            "flex h-10 w-10 items-center justify-center rounded-xl transition",
+            active ? "nav-link-active" : "nav-link",
+          )}
+        />
+      );
+    }
+    return (
+      <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
+    );
+  }
+
+  if (variant === "expanded") {
+    return (
+      <Link
+        href={page.href}
+        className={classNames(
+          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
+          active ? "nav-link-active" : "nav-link",
+        )}
+      >
+        <span>{page.label}</span>
+        {page.feature === "messages" && <NavBadge count={unread} />}
+      </Link>
+    );
+  }
+
+  if (variant === "collapsed") {
+    const icon =
+      page.id === "handbook" ? "📖" : page.id === "goatMail" ? "✉️" : (navIcons[page.href] ?? page.label.charAt(0));
+    return (
+      <Link
+        href={page.href}
+        className={classNames(
+          page.feature
+            ? "relative flex h-10 w-10 items-center justify-center rounded-xl transition"
+            : "flex h-10 w-10 items-center justify-center rounded-xl transition",
+          active ? "nav-link-active" : "nav-link",
+        )}
+        title={page.label}
+      >
+        {icon}
+        {page.feature === "messages" && unread > 0 && (
+          <NavBadge count={unread} className="absolute -right-1 -top-1" />
+        )}
+      </Link>
+    );
+  }
+
+  return (
+    <Link
+      href={page.href}
+      className={classNames(
+        page.id === "goatMail"
+          ? "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold"
+          : "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
+        active
+          ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
+          : "bg-[var(--bg-soft)] text-[var(--text-main)]",
+      )}
+    >
+      {page.label}
+      {page.feature === "messages" && <NavBadge count={unread} />}
+    </Link>
+  );
+}
+
 const SIDEBAR_COLLAPSED_KEY = "casemate.sidebar-collapsed";
 
 export function AppShell({
@@ -124,12 +226,18 @@ export function AppShell({
   // Owners/office-admins see everything the office has enabled; a member only
   // sees sections they were granted, and never Settings.
   const { canView } = useWorkspaceAccess();
+  const savedSidebarOrder = useSidebarOrder();
   const navItems = useMemo(
     () => getVisiblePortalNavItems(planTier).filter((item) => canView(item.feature)),
     [planTier, canView],
   );
-  const mainNav = navItems.filter((item) => item.href !== "/settings");
-  const settingsItem = navItems.find((item) => item.href === "/settings");
+  const orderedPages = useMemo(
+    () => applySidebarOrder(visibleSidebarPages(planTier, canView), savedSidebarOrder),
+    [planTier, canView, savedSidebarOrder],
+  );
+  const mainNav = orderedPages.filter((item) => item.id !== "settings");
+  const mobileNav = mainNav.filter((item) => item.id !== "handbook");
+  const settingsItem = orderedPages.find((item) => item.id === "settings");
   const unreadMessages = useUnreadMessages();
 
   const toggleSidebar = useCallback(() => {
@@ -231,68 +339,11 @@ export function AppShell({
                     </div>
 
                     <nav className="space-y-2">
-                      {mainNav.map((item) => {
-                        const active =
-                          pathname === item.href || pathname.startsWith(`${item.href}/`);
-                        return (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            className={classNames(
-                              "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
-                              active
-                                ? "nav-link-active"
-                                : "nav-link",
-                            )}
-                          >
-                            <span>{item.label}</span>
-                            {item.feature === "messages" && <NavBadge count={unreadMessages} />}
-                          </Link>
-                        );
-                      })}
-                      <Link
-                        href="/handbook"
-                        className={classNames(
-                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
-                          pathname === "/handbook"
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                      >
-                        <span>Handbook</span>
-                      </Link>
-                      <Link
-                        href="/goat-mail"
-                        className={classNames(
-                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
-                          pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                      >
-                        <span>G.O.A.T. Mail</span>
-                      </Link>
-                      <GlobalGoatButton
-                        textOnly
-                        className={classNames(
-                          "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
-                          pathname === "/goat-page" || pathname.startsWith("/goat-page/")
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                      />
+                      {mainNav.map((page) => (
+                        <SidebarNavItem key={page.id} page={page} pathname={pathname} unread={unreadMessages} variant="expanded" />
+                      ))}
                       {settingsItem && (
-                        <Link
-                          href={settingsItem.href}
-                          className={classNames(
-                            "flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition",
-                            pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                              ? "nav-link-active"
-                              : "nav-link",
-                          )}
-                        >
-                          <span>{settingsItem.label}</span>
-                        </Link>
+                        <SidebarNavItem page={settingsItem} pathname={pathname} unread={unreadMessages} variant="expanded" />
                       )}
                     </nav>
 
@@ -333,74 +384,11 @@ export function AppShell({
                 {sidebarCollapsed && (
                   <>
                     <nav className="space-y-2">
-                      {mainNav.map((item) => {
-                        const active =
-                          pathname === item.href || pathname.startsWith(`${item.href}/`);
-                        return (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            className={classNames(
-                              "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
-                              active
-                                ? "nav-link-active"
-                                : "nav-link",
-                            )}
-                            title={item.label}
-                          >
-                            {navIcons[item.href] ?? item.label.charAt(0)}
-                            {item.feature === "messages" && unreadMessages > 0 && (
-                              <NavBadge count={unreadMessages} className="absolute -right-1 -top-1" />
-                            )}
-                          </Link>
-                        );
-                      })}
-                      <Link
-                        href="/handbook"
-                        className={classNames(
-                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
-                          pathname === "/handbook"
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                        title="Handbook"
-                      >
-                        📖
-                      </Link>
-                      <Link
-                        href="/goat-mail"
-                        className={classNames(
-                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
-                          pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                        title="G.O.A.T. Mail"
-                      >
-                        ✉️
-                      </Link>
-                      <GlobalGoatButton
-                        compact
-                        className={classNames(
-                          "flex h-10 w-10 items-center justify-center rounded-xl transition",
-                          pathname === "/goat-page" || pathname.startsWith("/goat-page/")
-                            ? "nav-link-active"
-                            : "nav-link",
-                        )}
-                      />
+                      {mainNav.map((page) => (
+                        <SidebarNavItem key={page.id} page={page} pathname={pathname} unread={unreadMessages} variant="collapsed" />
+                      ))}
                       {settingsItem && (
-                        <Link
-                          href={settingsItem.href}
-                          className={classNames(
-                            "relative flex h-10 w-10 items-center justify-center rounded-xl transition",
-                            pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                              ? "nav-link-active"
-                              : "nav-link",
-                          )}
-                          title={settingsItem.label}
-                        >
-                          {navIcons[settingsItem.href] ?? "S"}
-                        </Link>
+                        <SidebarNavItem page={settingsItem} pathname={pathname} unread={unreadMessages} variant="collapsed" />
                       )}
                     </nav>
 
@@ -459,49 +447,11 @@ export function AppShell({
               </header>
 
               <nav className="flex gap-2 overflow-x-auto border-b border-[var(--line-soft)] bg-[var(--header-bg)] px-3 py-3 lg:hidden">
-                {mainNav.map((item) => {
-                  const active =
-                    pathname === item.href || pathname.startsWith(`${item.href}/`);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={classNames(
-                        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
-                        active
-                          ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
-                          : "bg-[var(--bg-soft)] text-[var(--text-main)]",
-                      )}
-                    >
-                      {item.label}
-                      {item.feature === "messages" && <NavBadge count={unreadMessages} />}
-                    </Link>
-                  );
-                })}
-                <Link
-                  href="/goat-mail"
-                  className={classNames(
-                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
-                    pathname === "/goat-mail" || pathname.startsWith("/goat-mail/")
-                      ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
-                      : "bg-[var(--bg-soft)] text-[var(--text-main)]",
-                  )}
-                >
-                  G.O.A.T. Mail
-                </Link>
-                <GlobalGoatButton className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--bg-soft)] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--text-main)]" />
+                {mobileNav.map((page) => (
+                  <SidebarNavItem key={page.id} page={page} pathname={pathname} unread={unreadMessages} variant="mobile" />
+                ))}
                 {settingsItem && (
-                  <Link
-                    href={settingsItem.href}
-                    className={classNames(
-                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold",
-                      pathname === settingsItem.href || pathname.startsWith(`${settingsItem.href}/`)
-                        ? "bg-[var(--brand-primary)] text-[var(--on-brand)]"
-                        : "bg-[var(--bg-soft)] text-[var(--text-main)]",
-                    )}
-                  >
-                    {settingsItem.label}
-                  </Link>
+                  <SidebarNavItem page={settingsItem} pathname={pathname} unread={unreadMessages} variant="mobile" />
                 )}
                 {/* Mobile-only sign out, icon at the end of the pill row. The
                     desktop sidebar (which holds Sign Out) is hidden below lg.

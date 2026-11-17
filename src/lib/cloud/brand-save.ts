@@ -76,12 +76,16 @@ export async function saveOfficeBrand(next: BrandSettings): Promise<SaveResult> 
       };
 }
 
-export async function savePersonTone(mode: Mode): Promise<SaveResult> {
+/**
+ * Save one per-person preference and say Saved only after the cloud row
+ * reads back the same value. Light/Dark and the sidebar order both use this.
+ */
+export async function savePersonPref(storageKey: string, value: string): Promise<SaveResult> {
   try {
-    window.localStorage.setItem(TONE_STORAGE_KEY, mode);
-    notifyChange(TONE_STORAGE_KEY);
+    window.localStorage.setItem(storageKey, value);
+    notifyChange(storageKey);
   } catch (error) {
-    return { ok: false, reason: reasonFrom(error, "This browser could not store Light or Dark.") };
+    return { ok: false, reason: reasonFrom(error, "This browser could not store that choice.") };
   }
 
   const client = getSupabaseBrowserClient();
@@ -104,8 +108,8 @@ export async function savePersonTone(mode: Mode): Promise<SaveResult> {
     mirror = {};
   }
   const merged = mergePrefs((read.data?.value ?? {}) as PrefMap, mirror);
-  const prev = merged[TONE_STORAGE_KEY]?.at ?? 0;
-  merged[TONE_STORAGE_KEY] = { v: mode, at: Math.max(Date.now(), prev + 1) };
+  const prev = merged[storageKey]?.at ?? 0;
+  merged[storageKey] = { v: value, at: Math.max(Date.now(), prev + 1) };
 
   const wrote = await client.from("workspace_kv").upsert({ workspace_id: workspaceId, key, value: merged }, { onConflict: "workspace_id,key" });
   if (wrote.error) return { ok: false, reason: `The database said: ${wrote.error.message}` };
@@ -113,7 +117,11 @@ export async function savePersonTone(mode: Mode): Promise<SaveResult> {
   const back = await client.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", key).maybeSingle();
   if (back.error) return { ok: false, reason: `Saved, but it could not be read back: ${back.error.message}` };
   if (!back.data) return { ok: false, reason: "Saved, but it could not be read back." };
-  return toneReadbackOk(back.data.value, mode)
+  return toneReadbackOk(back.data.value, value, storageKey)
     ? { ok: true }
     : { ok: false, reason: "The database did not keep that choice." };
+}
+
+export async function savePersonTone(mode: Mode): Promise<SaveResult> {
+  return savePersonPref(TONE_STORAGE_KEY, mode);
 }

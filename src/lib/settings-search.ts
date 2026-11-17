@@ -100,7 +100,7 @@ export function showExtraSection(
 /** Settings tabs: each section key lists the tab(s) it shows on; wrappers appear on several so their children are reachable. */
 export type SettingsTabId = "office" | "schedule" | "notes" | "goat" | "reminders" | "forms" | "billing" | "account" | "all";
 export const SETTINGS_TABS: { id: SettingsTabId; label: string; keys: SettingsSectionKey[] }[] = [
-  { id: "office", label: "Office", keys: ["themes", "officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories", "adminAccess"] },
+  { id: "office", label: "Office", keys: ["themes", "sidebar", "officeSettings", "office", "caseStatuses", "patientPage", "templates", "contactCategories", "adminAccess"] },
   { id: "schedule", label: "Schedule", keys: ["officeSettings", "schedule"] },
   { id: "notes", label: "Notes & Macros", keys: ["macros", "soapMacros", "templates", "documents"] },
   { id: "goat", label: "G.O.A.T.", keys: ["goat", "goatPage"] },

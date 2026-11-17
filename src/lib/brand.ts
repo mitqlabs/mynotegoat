@@ -498,11 +498,11 @@ export function checkMyTheme(c: MyTheme): ThemeCheck {
   return { ok: problems.length === 0, problems, notes, textContrast, buttonContrast };
 }
 
-/** True when a person's prefs row still has the mode that was saved. */
-export function toneReadbackOk(stored: unknown, mode: Mode, key = TONE_STORAGE_KEY): boolean {
+/** True when a person's prefs row still has the value that was saved. */
+export function toneReadbackOk(stored: unknown, value: string, key = TONE_STORAGE_KEY): boolean {
   if (!stored || typeof stored !== "object" || Array.isArray(stored)) return false;
   const entry = (stored as Record<string, { v?: unknown }>)[key];
-  return entry?.v === mode;
+  return entry?.v === value;
 }
 
 /** A stored tone, or null when this person has not picked yet. */
