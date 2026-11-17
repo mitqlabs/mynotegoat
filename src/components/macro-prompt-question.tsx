@@ -112,7 +112,7 @@ export function MacroPromptQuestion({
   const freeTextEditableValue = macroOtherEditText(answerValue);
 
   return (
-    <div className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+    <div className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
       <p
         className={`text-sm font-semibold${canToggleAll ? " cursor-pointer touch-manipulation" : ""}`}
         onClick={

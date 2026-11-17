@@ -5278,7 +5278,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {isCashPatient && (
-                <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                <span className="tone-ok inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider">
                   Non-PI Patient
                 </span>
               )}
@@ -5336,11 +5336,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             {patientAlerts.map((alert, index) => (
               <span
                 key={`alert-${index}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] shadow-sm"
+                className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
               >
                 ⚠ {alert}
                 <button
-                  className="ml-1 rounded-full text-[#92400e]/60 transition hover:text-[#b43b34]"
+                  className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
                   onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
                   title="Remove alert"
                   type="button"
@@ -5385,8 +5385,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       {!isCashPatient && caseInfoMissing && !caseFieldsOpen && (
         // Added before the case details (e.g. quick add from a text): a gentle
         // nudge, never a blocker. Fields are right below (Case info).
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
-          <span className="font-semibold text-[#8a5a00]">Case info missing</span>
+        <div className="tone-warn flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm" data-testid="case-info-missing">
+          <span className="font-semibold">Case info missing</span>
           <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
           <button
             className="btn btn-primary btn-sm ml-auto"
@@ -5609,7 +5609,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </span>
               )}
               {initialExamInfo.source === "manual" && initialExamInfo.differsFromVisit && initialExamInfo.visit && (
-                <span className="text-xs text-[#9a5b00]" data-initial-exam-mismatch>
+                <span className="tone-warn-text text-xs" data-initial-exam-mismatch>
                   The Initial Exam box says {initialExamInfo.date} but the first New Patient visit was{" "}
                   {initialExamInfo.visit.date} ({initialExamInfo.visit.status}).{" "}
                   <button
@@ -5888,7 +5888,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {xray.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -5896,7 +5896,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {xray.regions.map((region) => (
                           <span
                             key={`xray-region-${region}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, xray.lateralityByRegion)}
                             {xray.flexExtRegions.includes(region) && (
@@ -5959,7 +5959,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.xray ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -5977,23 +5977,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {xrayReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6110,7 +6106,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {mri.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6118,7 +6114,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {mri.regions.map((region) => (
                           <span
                             key={`mri-region-${region}`}
-                            className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-[var(--bg-soft)] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, mri.lateralityByRegion)}
                           </span>
@@ -6176,7 +6172,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6200,23 +6196,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {mriReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6389,7 +6381,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.specialist ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6407,16 +6399,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {specialistReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{entry.specialist}</p>
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
@@ -6447,7 +6435,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                             active
                               ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+                              : "tone-neutral border text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                           }`}
                           key={opt.value}
                           onClick={() => {
@@ -6539,7 +6527,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {sectionPanelsOpen.appointments && (
           <>
             {blockedAppointments.length > 0 && (
-              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="tone-alert mt-2 rounded-xl border px-3 py-2 text-sm">
                 <span className="font-semibold">
                   ⚠ {blockedAppointments.length} scheduled appointment
                   {blockedAppointments.length === 1 ? "" : "s"} on a now-CLOSED date:
@@ -6563,7 +6551,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   >
                     {type}:{" "}
                     <span className="font-semibold tabular-nums">
-                      <span className="text-[#111]">{c.scheduled}</span>
+                      <span className="text-[var(--text-main)]">{c.scheduled}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
                       <span className="text-[var(--brand-ink)]">{c.checkedIn}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
@@ -6590,8 +6578,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <button
                     className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${
                       appointmentsLocked
-                        ? "border border-amber-300 bg-amber-50 text-amber-800"
-                        : "border border-emerald-300 bg-emerald-50 text-emerald-800"
+                        ? "tone-warn border"
+                        : "tone-ok border"
                     }`}
                     onClick={() => setAppointmentsUnlocked((v) => !v)}
                     title={appointmentsLocked ? "Unlock to edit this closed case" : "Re-lock this closed case"}
@@ -6638,7 +6626,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 especially useful inside the new 2-col patient-page
                 layout where this section is already half-width. */}
             <div className="mt-3">
-              <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+              <article className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                 <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full table-fixed border-collapse text-sm">
@@ -6915,7 +6903,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     return (
                                       <span className="mt-1 flex items-center gap-1">
                                         <span
-                                          className="max-w-[110px] truncate rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                          className="tone-ok max-w-[110px] truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                                           title={appliedPkg.snapshot.name}
                                         >
                                           {appliedPkg.snapshot.name}
@@ -7032,7 +7020,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="px-2 py-2 text-right">
                               {appointment ? (
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                                   onClick={() => void handleDeleteAppointment(appointment)}
                                   title="Delete appointment"
                                   type="button"
@@ -7059,7 +7047,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 // schedule + "+ Encounter" on the
                                 // check-in row.
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                                   onClick={async () => {
                                     const chargeCount = linkedEncounter.charges.length;
                                     const status = linkedEncounter.signed ? " (CLOSED)" : "";
@@ -7430,7 +7418,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {diagnosisMessage && <p className="mt-3 text-sm font-semibold text-[var(--brand-primary)]">{diagnosisMessage}</p>}
 
-            <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)] bg-white">
+            <div className="theme-surface mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-[var(--bg-soft)] text-left">
@@ -7555,7 +7543,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {checkedOutOpenNoteVisits.length > 0 && (
               <div
-                className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                className="tone-warn mt-3 rounded-xl border px-3 py-2 text-sm"
                 data-open-note-warning
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7576,7 +7564,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <ul className="mt-2 grid gap-1">
                     {checkedOutOpenNoteVisits.map((visit) => (
                       <li
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1"
+                        className="theme-surface flex flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-1"
                         key={visit.noteId}
                       >
                         <span className="text-xs">
@@ -7952,7 +7940,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             )}
                             {/* Delete */}
                             <button
-                              className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 transition-colors"
+                              className="rounded-lg p-1.5 text-red-500 hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                               onClick={() => handlePatientFileDelete(file)}
                               title="Delete"
                               type="button"
@@ -8105,7 +8093,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     onChange={(event) => setDischargeDate(formatUsDateInput(event.target.value))}
                     placeholder="MM/DD/YYYY"
                     // Inline: global input styles out-rank Tailwind's text colour utilities.
-                    style={dischargeInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
+                    style={dischargeInfo.source === "visit" ? { color: "var(--brand-ink)" } : undefined}
                     title={
                       dischargeInfo.source === "visit"
                         ? `From the Discharge visit (${dischargeInfo.visit?.status ?? "Checked Out"})`
@@ -8120,7 +8108,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </span>
                 )}
                 {dischargeInfo.source === "manual" && dischargeInfo.differsFromVisit && dischargeInfo.visit && (
-                  <span className="text-xs text-[#9a5b00]">
+                  <span className="tone-warn-text text-xs">
                     The Discharge box says {dischargeInfo.date} but the Discharge visit was {dischargeInfo.visit.date} (
                     {dischargeInfo.visit.status}).{" "}
                     <button
@@ -8253,7 +8241,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <div className="panel-card flex flex-wrap items-center justify-between gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
-            className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 active:scale-[0.97] active:shadow-inner"
+            className="tone-alert rounded-lg border bg-[var(--bg-panel)] px-2.5 py-1 text-xs font-semibold transition-all hover:brightness-95 active:scale-[0.97] active:shadow-inner"
             onClick={() => { setShowDeleteModal(true); setDeletePasswordInput(""); setDeleteError(""); }}
             type="button"
           >
@@ -8266,7 +8254,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               This spot only speaks up when something actually failed. */}
           {saveStatus === "error" && saveMessage && (
             <span
-              className="inline-flex items-center gap-2 rounded-full border-2 border-red-400 bg-red-50 px-3 py-1 text-sm font-semibold text-red-800 shadow-sm"
+              className="tone-alert inline-flex items-center gap-2 rounded-full border-2 px-3 py-1 text-sm font-semibold shadow-sm"
               role="alert"
             >
               ⚠
@@ -8568,7 +8556,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           {enc.appointmentType && (
                             <span className="text-xs text-[var(--text-muted)]">• {enc.appointmentType}</span>
                           )}
-                          <span className={`text-xs ${enc.signed ? "text-emerald-600" : "text-amber-600"}`}>
+                          <span className={`text-xs ${enc.signed ? "text-[var(--status-active)]" : "tone-warn-text"}`}>
                             {enc.signed ? "Signed" : "Open"}
                           </span>
                         </label>

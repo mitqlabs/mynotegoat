@@ -49,7 +49,12 @@ export const THEME_SCRIPT = `(function(){
   function colors(raw){
     if(!raw) return null;
     var accent=hex(raw.accent), background=hex(raw.background), surface=hex(raw.surface), text=hex(raw.text);
-    return accent&&background&&surface&&text?{accent:accent,background:background,surface:surface,text:text}:null;
+    if(!(accent&&background&&surface&&text)) return null;
+    var out={accent:accent,background:background,surface:surface,text:text};
+    ["link","muted","heading","button","buttonText","line","badge","danger"].forEach(function(k){
+      var h=hex(raw[k]); if(h) out[k]=h;
+    });
+    return out;
   }
   try {
     var root=document.documentElement;
@@ -76,7 +81,7 @@ export const THEME_SCRIPT = `(function(){
     if(id==="mine"&&!mine&&!locked) id="blue";
     root.setAttribute("data-brand",id);
     root.setAttribute("data-tone",tone);
-    ["--my-bg","--my-surface","--my-text","--my-accent","--my-accent-ink","--my-btn-ink"].forEach(function(name){
+    ["--my-bg","--my-surface","--my-text","--my-accent","--my-accent-ink","--my-btn-ink","--my-link","--my-muted","--my-heading","--my-heading-ink","--my-button","--my-button-text","--my-line","--my-badge","--my-badge-ink","--my-danger"].forEach(function(name){
       root.style.removeProperty(name);
     });
     if(id==="mine"){
@@ -89,7 +94,25 @@ export const THEME_SCRIPT = `(function(){
         root.style.setProperty("--my-text",c.text);
         root.style.setProperty("--my-accent",c.accent);
         root.style.setProperty("--my-accent-ink",ink);
-        root.style.setProperty("--my-btn-ink",contrast(c.accent,"#ffffff")>=contrast(c.accent,"#000000")?"#ffffff":"#000000");
+        var button=c.button||c.accent;
+        var buttonText=c.buttonText||(contrast(button,"#ffffff")>=contrast(button,"#000000")?"#ffffff":"#000000");
+        var muted=c.muted||c.text, ms=0;
+        if(!c.muted){ while(ms<16){ var nxt=mix(muted,c.surface,0.12); if(contrast(nxt,c.surface)<4.5) break; muted=nxt; ms++; } }
+        var heading=c.heading||c.accent;
+        var badge=c.badge||mix(c.accent,c.surface,0.84);
+        var danger=c.danger||"#c9423a", dg=0;
+        if(!c.danger){ while(dg<24 && contrast(danger,c.surface)<4.5){ danger=mix(danger,c.text,0.12); dg++; } }
+        root.style.setProperty("--my-btn-ink",buttonText);
+        root.style.setProperty("--my-link",c.link||ink);
+        root.style.setProperty("--my-muted",muted);
+        root.style.setProperty("--my-heading",heading);
+        root.style.setProperty("--my-heading-ink",contrast(heading,"#ffffff")>=contrast(heading,"#000000")?"#ffffff":"#000000");
+        root.style.setProperty("--my-button",button);
+        root.style.setProperty("--my-button-text",buttonText);
+        root.style.setProperty("--my-line",c.line||mix(c.text,c.surface,0.82));
+        root.style.setProperty("--my-badge",badge);
+        root.style.setProperty("--my-badge-ink",contrast(c.text,badge)>=4.5?c.text:(contrast(badge,"#ffffff")>=contrast(badge,"#000000")?"#ffffff":"#000000"));
+        root.style.setProperty("--my-danger",danger);
       }
     }
   } catch(e) {

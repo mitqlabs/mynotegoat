@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ThemePageSamples } from "@/components/theme-page-samples";
 import {
   BRAND_STORAGE_KEY,
   brandFrom,
@@ -9,9 +10,12 @@ import {
   lookOf,
   mineColors,
   myThemeReadable,
+  resolvedTheme,
   sameTheme,
+  swatchHardToRead,
   THEMES,
   type BrandSettings,
+  type ExtraColorKey,
   type Mode,
   type MyTheme,
   type ThemeId,
@@ -36,6 +40,17 @@ const COLOR_LABELS: { key: keyof MyTheme; label: string }[] = [
   { key: "background", label: "Background" },
   { key: "surface", label: "Surface" },
   { key: "text", label: "Text" },
+];
+
+const MORE_COLORS: { key: ExtraColorKey; label: string }[] = [
+  { key: "link", label: "Link" },
+  { key: "muted", label: "Muted text" },
+  { key: "heading", label: "Headings" },
+  { key: "button", label: "Button" },
+  { key: "buttonText", label: "Button text" },
+  { key: "line", label: "Borders" },
+  { key: "badge", label: "Badges" },
+  { key: "danger", label: "Danger" },
 ];
 
 /** Colour drags fire continuously. The cloud write waits until they pause. */
@@ -109,64 +124,6 @@ export function ThemePreview({ brand, mode, compact = false }: { brand: BrandSet
           </span>
           <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>Maybe Later</span>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Case list, patient page, and encounter, painted with the real theme variables. */
-function LiveSamples({ brand, mode }: { brand: BrandSettings; mode: Mode }) {
-  const look = lookOf(brand, mode);
-  const bar = { background: "var(--btn-bg, var(--brand-primary))", color: "var(--on-brand)" } as const;
-  const sorted = { background: "color-mix(in srgb, var(--brand-primary) 22%, var(--bg-soft))" } as const;
-  return (
-    <div
-      data-brand={look.id}
-      data-tone={look.dark ? "dark" : "light"}
-      style={{ ...look.vars, color: "var(--text-main)" }}
-      className="grid grid-cols-3 gap-2"
-    >
-      <div className="min-w-0 overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)]">
-        <div className="px-1.5 py-1 text-[10px] font-semibold">Case List</div>
-        <table className="w-full border-collapse text-[8px]">
-          <thead>
-            <tr className="bg-[var(--bg-soft)] text-left">
-              <th className="px-1 py-1 font-semibold">Patient</th>
-              <th className="px-1 py-1 font-semibold" style={sorted}>Exam</th>
-              <th className="px-1 py-1 font-semibold">Attorney</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              ["Sample, Alex", "11/02", "North Firm"],
-              ["Sample, Blake", "10/28", "Hart Firm"],
-            ].map((row) => (
-              <tr key={row[0]} className="border-t border-[var(--line-soft)]">
-                <td className="px-1 py-1 font-semibold" style={{ color: "var(--brand-ink)" }}>{row[0]}</td>
-                <td className="px-1 py-1" style={sorted}>{row[1]}</td>
-                <td className="px-1 py-1">{row[2]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-1.5">
-        <div className="text-[10px] font-semibold">Patient Page</div>
-        <div className="text-[8px]" style={{ color: "var(--text-muted)" }}>Sample, Alex</div>
-        <div className="mt-1 rounded-md px-1.5 py-1 text-[8px] font-semibold" style={bar}>Notes</div>
-        <div className="mt-1 rounded-md border border-[var(--line-soft)] bg-[var(--bg-soft)] px-1.5 py-1 text-[8px]">Visit note</div>
-        <div className="mt-1 rounded-md px-1.5 py-1 text-[8px] font-semibold" style={bar}>X-Ray</div>
-      </div>
-      <div className="min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-1.5">
-        <div className="text-[10px] font-semibold">Encounter</div>
-        {["Subjective", "Objective", "Assessment", "Plan"].map((name) => (
-          <div key={name} className="mt-1">
-            <div className="rounded-md px-1.5 py-0.5 text-[8px] font-semibold" style={bar}>{name}</div>
-            <div className="mt-0.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-soft)] px-1.5 py-0.5 text-[8px]" style={{ color: "var(--text-muted)" }}>
-              Sample line
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -402,9 +359,29 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
               <h3 className="mb-3 text-sm font-semibold">My Theme — {tone === "light" ? "Light" : "Dark"} Colors</h3>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {COLOR_LABELS.map(({ key, label }) => (
-                  <ColorRow key={`${tone}-${key}`} label={label} value={editing[key]} onChange={(v) => setColor(key, v)} />
+                  <ColorRow
+                    key={`${tone}-${key}`}
+                    label={label}
+                    note={key === "text" || key === "accent" ? (swatchHardToRead(key, editing) ? "hard to read" : "") : ""}
+                    value={editing[key] ?? ""}
+                    onChange={(v) => setColor(key, v)}
+                  />
                 ))}
               </div>
+              <details open className="mt-4">
+                <summary className="cursor-pointer text-sm font-semibold">More colors</summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {MORE_COLORS.map(({ key, label }) => (
+                    <ColorRow
+                      key={`${tone}-${key}`}
+                      label={label}
+                      note={swatchHardToRead(key, editing) ? "hard to read" : ""}
+                      value={resolvedTheme(editing)[key]}
+                      onChange={(v) => setColor(key, v)}
+                    />
+                  ))}
+                </div>
+              </details>
               {tone === "dark" && mineDark && (
                 <button type="button" className="mt-3 text-xs font-semibold text-[var(--brand-ink)] underline" onClick={resetDark}>
                   Start Dark Over From My Light Colors
@@ -433,7 +410,7 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
                 </p>
               ))}
             </div>
-            <LiveSamples brand={{ theme: "mine", mine: lightColors, mineDark }} mode={tone} />
+            <ThemePageSamples brand={{ theme: "mine", mine: lightColors, mineDark }} mode={tone} />
           </div>
         )}
       </fieldset>
@@ -441,17 +418,34 @@ function OfficeThemeCard({ saved, tone, canEdit }: { saved: BrandSettings; tone:
   );
 }
 
-function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (hex: string) => void }) {
+export function ThemeColorRowsPreview() {
+  const [colors, setColors] = useState<MyTheme>({
+    accent: "#0d79bf",
+    background: "#eef6fb",
+    surface: "#fdfefe",
+    text: "#172a3a",
+  });
   return (
-    <label className="flex items-center gap-2">
+    <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="theme-color-rows">
+      {COLOR_LABELS.map(({ key, label }) => (
+        <ColorRow key={key} label={label} value={colors[key] ?? "#000000"} onChange={(value) => setColors((current) => ({ ...current, [key]: value }))} />
+      ))}
+    </div>
+  );
+}
+
+function ColorRow({ label, value, note, onChange }: { label: string; value: string; note?: string; onChange: (hex: string) => void }) {
+  return (
+    <div className="flex w-fit items-center gap-2">
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={`${label} Color`}
-        className="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-[var(--line-soft)] bg-transparent p-0.5"
+        className="h-9 w-12 max-w-12 shrink-0 cursor-pointer rounded-md border border-[var(--line-soft)] bg-transparent p-0.5"
       />
       <span className="text-sm font-medium">{label}</span>
-    </label>
+      {note ? <span className="text-xs text-[var(--text-muted)]">{note}</span> : null}
+    </div>
   );
 }

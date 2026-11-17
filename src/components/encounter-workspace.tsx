@@ -644,7 +644,7 @@ function AppointmentsOverview({
                         <button
                           className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
                             canStart
-                              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                              ? "tone-ok border"
                               : "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)]"
                           }`}
                           disabled={!canStart}
@@ -3690,7 +3690,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                     </button>
                                   ) : canStart ? (
                                     <button
-                                      className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 transition-all active:scale-[0.97] active:brightness-95"
+                                      className="tone-ok rounded-lg border px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] active:brightness-95"
                                       onClick={() => {
                                         const provider = officeSettings.doctorName || "Provider";
                                         const newId = createEncounter({
@@ -3717,7 +3717,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 <td className="px-1 py-1.5 text-center">
                                   {linked && (
                                     <button
-                                      className="rounded p-0.5 text-[10px] text-red-400 hover:bg-red-50 hover:text-red-600 active:scale-90"
+                                      className="rounded p-0.5 text-[10px] text-[var(--status-alert)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] active:scale-90"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         void (async () => {
@@ -3798,19 +3798,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   }
                   if (warnings.length === 0) return null;
                   return (
-                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Encounter Warnings</p>
+                    <div className="tone-warn mt-2 rounded-lg border px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide">Encounter Warnings</p>
                       <ul className="mt-1 space-y-0.5">
                         {warnings.map((w) => (
-                          <li key={w.encId} className="flex items-center gap-2 text-xs text-amber-800">
+                          <li key={w.encId} className="flex items-center gap-2 text-xs">
                             <button
                               type="button"
-                              className="font-semibold underline hover:text-amber-900"
+                              className="font-semibold underline"
                               onClick={() => setSelectedEncounterId(w.encId)}
                             >
                               {w.date}
                             </button>
-                            <span className="text-amber-600">
+                            <span className="text-[var(--text-muted)]">
                               Missing: {w.issues.join(", ")}
                             </span>
                           </li>
@@ -3896,13 +3896,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           </span>
                         )}
                       </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${selectedEncounter.signed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${selectedEncounter.signed ? "tone-ok" : "tone-warn"}`}>
                         {selectedEncounter.signed ? "Closed" : "Open"}
                       </span>
                       <span>Charges: {selectedEncounter.charges.length} (${encounterChargeTotal.toFixed(2)})</span>
                       {selectedPatient && (
                         <Link className="underline" href={`/patients/${selectedPatient.id}`}>
-                          Patient File
+                          Case File
                         </Link>
                       )}
                     </div>
@@ -3911,7 +3911,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {selectedPatient.alerts.map((alert, i) => (
                           <span
                             key={`enc-alert-${i}`}
-                            className="inline-flex items-center rounded-md border border-[#e8b931] bg-[#fef9e7] px-1.5 py-0.5 text-[10px] font-bold text-[#92400e]"
+                            className="tone-warn inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold"
                           >
                             ⚠ {alert}
                           </span>
@@ -3921,7 +3921,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button
-                      className="rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition-all active:scale-[0.97]"
+                      className="tone-info rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97]"
                       onClick={async () => {
                         setMessage("Saving encounters...");
                         const result = await forceSaveAll(selectedEncounter.patientId);
@@ -3973,7 +3973,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     ) : (
                       <button
-                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition-all active:scale-[0.97] disabled:opacity-60"
+                        className="tone-ok rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97] disabled:opacity-60"
                         disabled={closeBusy}
                         onClick={async () => {
                           if (selectedEncounter.charges.length === 0) {
@@ -4041,7 +4041,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       Next Enc. →
                     </button>
                     <button
-                      className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600 transition-all active:scale-[0.97]"
+                      className="tone-alert rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97]"
                       onClick={handleDeleteEncounter}
                       type="button"
                     >
@@ -4127,7 +4127,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 </div>
               </section>
 
-              <section className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+              <section className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                 <QuestionnaireInsertBanner
                   focusId={initialQuestionnaireId}
                   onInsert={applyQuestionnaire}
@@ -4162,7 +4162,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <div key={group.folder || "__ungrouped__"}>
                           {!isUngrouped && (
                             <button
-                              className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] hover:bg-white/60"
+                              className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                               onClick={() => toggleMacroFolder(group.folder)}
                               type="button"
                             >
@@ -4268,7 +4268,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             .slice(0, 2)
                             .join(" • ");
                           return (
-                            <span key={run.id} className="inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-white pr-1">
+                            <span key={run.id} className="theme-surface inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] pr-1">
                               <button
                                 className="px-3 py-1.5 text-left text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                                 disabled={selectedEncounter.signed}
@@ -4282,7 +4282,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               </button>
                               {!selectedEncounter.signed && (
                                 <button
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-red-50 hover:text-[#b43b34] transition-colors"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] hover:text-[var(--status-alert)] transition-colors"
                                   onClick={async () => {
                                     if ((await appConfirm(`Remove "${run.macroName}" input?`))) {
                                       removeMacroRun(selectedEncounter.id, run.id);
@@ -4358,7 +4358,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             const isActive = section === activeSection;
                             return (
                               <div
-                                className={`flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white ${
+                                className={`theme-surface flex min-h-0 flex-col overflow-hidden rounded-xl border ${
                                   isActive
                                     ? "border-[var(--brand-primary)]"
                                     : "border-[var(--line-soft)]"
@@ -4441,7 +4441,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               </section>
 
               <section>
-                <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                <article className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-lg font-semibold">Encounter Charges</h4>
                     <div className="flex flex-wrap items-center gap-2">
@@ -4474,7 +4474,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     </div>
                   </div>
                   {showPriorChargesPreview && saltSourceEncounter && (
-                    <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[#f6f9fc] p-3 text-sm">
+                    <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 text-sm">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                         Prior charges from {saltSourceEncounter.encounterDate}
                       </p>
@@ -4488,7 +4488,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             {sortedSaltSourceCharges.map((charge) => (
                               <li
                                 key={`prior-charge-${charge.id}`}
-                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5"
+                                className="theme-surface flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] px-3 py-1.5"
                               >
                                 <span className="font-semibold">
                                   {charge.name}
@@ -4619,7 +4619,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <p className="px-1 text-xs font-semibold">${(entry.unitPrice * entry.units).toFixed(2)}</p>
                         {/* Remove */}
                         <button
-                          className="rounded-lg p-1 text-[#b43b34] hover:bg-red-50 transition-colors disabled:opacity-30"
+                          className="rounded-lg p-1 text-[var(--status-alert)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors disabled:opacity-30"
                           disabled={selectedEncounter.signed}
                           onClick={async () => {
                             // Pass macroLibraryById so linked charges also
@@ -4705,7 +4705,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               </button>
               {importPlan && (
                 <button
-                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 disabled:opacity-40"
+                  className="tone-ok rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-40"
                   disabled={importPlan.fills.length === 0 && importPlan.unmatched.length === 0}
                   onClick={applyChirotouchImport}
                   type="button"
@@ -4766,7 +4766,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 )}
                 {importPlan.unmatched.length > 0 && (
                   <div>
-                    <p className="font-semibold text-amber-700">
+                    <p className="tone-warn-text font-semibold">
                       {importPlan.unmatched.length} unmatched — added as text at the bottom of
                       Objective so nothing is lost:
                     </p>

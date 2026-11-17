@@ -34,7 +34,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
   for (const [start, end] of matcher.ranges(text)) {
     if (start > at) parts.push(<Fragment key={`t${at}`}>{text.slice(at, start)}</Fragment>);
     parts.push(
-      <mark key={`m${start}`} className="rounded bg-[#fff2b3] px-0.5 text-inherit">
+      <mark key={`m${start}`} className="tone-warn-badge rounded px-0.5 text-inherit">
         {text.slice(start, end)}
       </mark>,
     );
@@ -45,9 +45,9 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 }
 
 const DOC_BADGE: Record<GoatFileMatch["docType"], { label: string; className: string }> = {
-  report: { label: "Report", className: "bg-emerald-50 text-emerald-800" },
-  referral: { label: "Referral", className: "bg-amber-50 text-amber-800" },
-  other: { label: "Document", className: "bg-slate-100 text-slate-700" },
+  report: { label: "Report", className: "tone-ok" },
+  referral: { label: "Referral", className: "tone-warn" },
+  other: { label: "Document", className: "tone-neutral" },
 };
 
 /** One region's findings: a subheading, then each item on its own line, in full. */
@@ -180,7 +180,7 @@ function FileMatchBlock({
 
 function FilesCard({ files, onOpen }: { files: GoatFilesResult; onOpen?: (fileId: string, page?: number) => void }) {
   return (
-    <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+    <div className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
       <div className="text-sm font-semibold">
         {files.title ? (
           <>
@@ -258,7 +258,7 @@ function FilesStatus({ files }: { files: GoatFilesController }) {
       </div>
       {reader.running && (
         <>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--bg-soft)]">
             <div className="h-full rounded-full section-bar transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
           </div>
           <div className="mt-1 truncate">
@@ -415,9 +415,9 @@ export function GoatPanel({
         href={fileHref}
         rel="noopener"
         target="_blank"
-        title={`Opens the patient file (${SECTION_LABEL[section]}) in a new tab`}
+        title={`Opens the case file (${SECTION_LABEL[section]}) in a new tab`}
       >
-        Patient file ↗
+        Case File ↗
       </a>
     ) : null;
 
@@ -442,7 +442,7 @@ export function GoatPanel({
           <div className="flex gap-2">
             <input
               aria-label="Message G.O.A.T. about this patient"
-              className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 flex-1 rounded-xl theme-surface border border-[var(--line-soft)] px-3 py-2 text-sm"
               enterKeyHint="send"
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
@@ -495,7 +495,7 @@ export function GoatPanel({
               {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
-                <div key={a.title} className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+                <div key={a.title} className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-sm font-semibold">
                       <GoatAvatar size={22} />
@@ -518,7 +518,7 @@ export function GoatPanel({
                     </div>
                   )}
                   {a.flag && (
-                    <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                    <p className="tone-warn mt-1.5 rounded-md px-2 py-1 text-xs font-semibold">
                       {a.flag}
                     </p>
                   )}
@@ -551,7 +551,7 @@ export function GoatPanel({
               {!result.filesFirst && filesCard}
 
               {result.hits.length > 0 && (
-                <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+                <div className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
                   <button
                     aria-expanded={hitsOpen}
                     className="flex w-full items-center justify-between gap-2 text-left text-sm font-semibold"

@@ -228,7 +228,7 @@ export function complianceColor(value: string | undefined, options?: ComplianceO
 }
 
 /** Neutral pill for "Not set" and for values that don't match a live option. */
-export const COMPLIANCE_NEUTRAL_PILL = { backgroundColor: "#eef1f4", color: "#475569" } as const;
+export const COMPLIANCE_NEUTRAL_PILL = { backgroundColor: "var(--bg-soft)", color: "var(--text-muted)" } as const;
 
 /**
  * Pill colors for a compliance value: the SAME soft tinted pill as Case Status

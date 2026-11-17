@@ -62,7 +62,7 @@ export function CaseNotesLog({
 
   return (
     <div className="grid gap-3">
-      <div className="rounded-2xl border border-[var(--line-soft)] bg-white p-2 focus-within:border-[var(--brand-primary)]">
+      <div className="theme-surface rounded-2xl border border-[var(--line-soft)] p-2 focus-within:border-[var(--brand-primary)]">
         <textarea
           aria-label="Add a note"
           className="block max-h-40 min-h-[44px] w-full resize-none bg-transparent px-2 py-1 text-sm outline-none"
@@ -96,7 +96,7 @@ export function CaseNotesLog({
       )}
 
       {entries.length > 0 && (
-        <ul className="grid divide-y divide-[var(--line-soft)] overflow-y-auto rounded-xl border border-[var(--line-soft)] bg-white" style={{ maxHeight: maxListHeight }}>
+        <ul className="theme-surface grid divide-y divide-[var(--line-soft)] overflow-y-auto rounded-xl border border-[var(--line-soft)]" style={{ maxHeight: maxListHeight }}>
           {entries.map((e) => {
             const editing = editingId === e.id;
             const mayEdit = canEditText(e);
