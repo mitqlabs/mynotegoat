@@ -21,6 +21,7 @@ import {
   imagingReferralRows,
   itemShown,
   matchesPeriod,
+  snapshotStatusesToShow,
   nextOpenDayLabel,
   nextOpenOfficeDay,
   orderedIds,
@@ -36,7 +37,8 @@ import {
   type SnapshotPeriod,
 } from "@/lib/goat-board";
 import { printGoatHandoff } from "@/lib/print-goat-handoff";
-import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { buildInitialExamIndex, isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import type { KeyDateRecord } from "@/lib/key-dates";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { caseReviewAnswer } from "@/lib/goat-pipeline";
@@ -141,7 +143,6 @@ export function GoatBriefingBoard({
   appointmentTypes = [],
   closeout,
   mail,
-  answers,
   todos,
   referrals = [],
   onAddReferral,
@@ -158,7 +159,6 @@ export function GoatBriefingBoard({
   appointmentTypes?: string[];
   closeout: CloseoutModel;
   mail: ReactNode;
-  answers: ReactNode;
   todos: ReactNode;
   referrals?: Array<{ id: string; name: string; phone?: string; dateOfLoss?: string; attorney?: string; missing: string[]; from?: string; canAdd: boolean }>;
   onAddReferral?: (id: string) => void;
@@ -232,13 +232,29 @@ export function GoatBriefingBoard({
   }, [appointments, isAdmin, patients, todayIso]);
 
   const officeDay = useMemo(() => nextOpenOfficeDay(todayIso, scheduleSettings, keyDates), [keyDates, scheduleSettings, todayIso]);
-  const months = useMemo(() => casesByMonth(patients), [patients]);
-  const imaging = useMemo(() => imagingReferralRows(patients), [patients]);
-  const specialists = useMemo(() => specialistReferralRows(patients), [patients]);
+  const intakeIndex = useMemo(
+    () =>
+      buildInitialExamIndex(
+        appointments.map((visit) => ({
+          patientId: visit.patientId,
+          patientName: visit.patientName,
+          appointmentType: visit.appointmentType ?? "",
+          status: visit.status,
+          date: visit.date,
+        })),
+      ),
+    [appointments],
+  );
+  const casePatients = useMemo(
+    () => patients.filter((patient) => !isInNewPatientIntake(patient, intakeIndex)),
+    [intakeIndex, patients],
+  );
+  const months = useMemo(() => casesByMonth(casePatients), [casePatients]);
+  const imaging = useMemo(() => imagingReferralRows(casePatients), [casePatients]);
+  const specialists = useMemo(() => specialistReferralRows(casePatients), [casePatients]);
 
   const body = (box: BoardBox): ReactNode => {
     if (box.kind === "goat-mail") return mail;
-    if (box.kind === "goat-answers") return answers;
     if (box.kind === "todos") return todos;
     if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm">{briefs.check}</p>;
     if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{briefs.biz}</p>;
@@ -298,29 +314,48 @@ export function GoatBriefingBoard({
     }
     if (box.kind === "case-snapshot") {
       const period = box.period ?? "this-year";
-      const inPeriod = patients.filter((patient) => matchesPeriod(patient, period, todayIso));
+      const inPeriod = casePatients.filter((patient) => matchesPeriod(patient, period, todayIso));
       const order = orderedIds(caseStatuses.map((status) => `status:${status.name}`), box.itemOrder);
+      const onlyStatus = snapshotStatusesToShow(box.snapshotStatus, caseStatuses.map((status) => status.name));
+      const shownIds = onlyStatus ? [`status:${onlyStatus}`] : order;
       return (
         <div className="space-y-3">
-          <label className="grid gap-1 text-xs font-semibold text-[var(--text-muted)]">
-            Period
-            <select
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
-              onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, period: event.target.value as SnapshotPeriod } : row)))}
-              value={period}
-            >
-              <option value="this-year">This Year</option>
-              <option value="last-year">Last Year</option>
-              {Array.from({ length: 8 }, (_, index) => Number(todayIso.slice(0, 4)) - index)
-                .filter((year) => year !== Number(todayIso.slice(0, 4)) && year !== Number(todayIso.slice(0, 4)) - 1)
-                .map((year) => (
-                  <option key={year} value={`year:${year}`}>{year}</option>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-[var(--text-muted)]">
+              Period
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
+                data-testid="case-snapshot-period"
+                onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, period: event.target.value as SnapshotPeriod } : row)))}
+                value={period}
+              >
+                <option value="this-year">This Year</option>
+                <option value="last-year">Last Year</option>
+                {Array.from({ length: 8 }, (_, index) => Number(todayIso.slice(0, 4)) - index)
+                  .filter((year) => year !== Number(todayIso.slice(0, 4)) && year !== Number(todayIso.slice(0, 4)) - 1)
+                  .map((year) => (
+                    <option key={year} value={`year:${year}`}>{year}</option>
+                  ))}
+                <option value="all">All Time</option>
+              </select>
+            </label>
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-[var(--text-muted)]">
+              Status
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-normal"
+                data-testid="case-snapshot-status"
+                onChange={(event) => commit(boxes.map((row) => (row.i === box.i ? { ...row, snapshotStatus: event.target.value } : row)))}
+                value={onlyStatus ?? "all"}
+              >
+                <option value="all">All statuses</option>
+                {caseStatuses.map((status) => (
+                  <option key={status.name} value={status.name}>{status.name}</option>
                 ))}
-              <option value="all">All Time</option>
-            </select>
-          </label>
-          {order.map((id) => {
-            if (!itemShown(box.hiddenItems, id)) return null;
+              </select>
+            </label>
+          </div>
+          {shownIds.map((id) => {
+            if (!onlyStatus && !itemShown(box.hiddenItems, id)) return null;
             const status = caseStatuses.find((row) => `status:${row.name}` === id);
             if (!status) return null;
             const list = patientsInStatus(inPeriod, status.name);
@@ -338,7 +373,7 @@ export function GoatBriefingBoard({
       );
     }
     if (box.kind === "status-cases") {
-      const list = patientsInStatus(patients, box.statusName ?? "");
+      const list = patientsInStatus(casePatients, box.statusName ?? "");
       return <CaseLinks empty={`No ${box.statusName ?? "matching"} cases.`} patients={list} />;
     }
     if (box.kind === "end-of-day") {
@@ -483,8 +518,8 @@ export function GoatBriefingBoard({
         {boxes.map((box) => (
           <div className="h-full" id={`goat-box-${box.i}`} key={box.i}>
             <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white">
-              <header className={`${arrange ? "goat-box-drag cursor-grab" : ""} border-b border-[var(--line-soft)] px-3 py-2`}>
-                <h2 className="truncate text-sm font-semibold">{boxTitle(box)}</h2>
+              <header className={`goat-box-header ${arrange ? "goat-box-drag cursor-grab" : ""} rounded-t-2xl border-b border-[var(--line-soft)] bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] px-3 py-2`}>
+                <h2 className="truncate text-sm font-bold text-[var(--brand-primary)]">{boxTitle(box)}</h2>
               </header>
               <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">{body(box)}</div>
             </article>

@@ -2,7 +2,8 @@
  * SOAP macro chips. Subjective is one "Complaints" group (Headaches, then
  * the body regions, then any chips the office added). Other sections still
  * split question-style chips under "History" and body-part chips under
- * "Body regions". History stays visually quieter.
+ * "Body regions". Every chip uses the same button style — a lighter History
+ * chip read as disabled even when it could be clicked.
  */
 
 /** Subjective chip order. Anything else the office adds follows these. */
@@ -84,7 +85,7 @@ export function isBodyRegionMacroName(name: string): boolean {
 
 export type SoapMacroGroup<T> = {
   label: "History" | "Body regions" | "Complaints";
-  /** History chips are lighter so they don't compete with the region row. */
+  /** Kept so callers can still tell the groups apart. Unused chips are never muted. */
   quiet: boolean;
   macros: T[];
 };
@@ -93,18 +94,15 @@ export function groupSoapMacros<T extends { buttonName: string }>(macros: T[]): 
   const history = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
   const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
   const groups: SoapMacroGroup<T>[] = [];
-  if (history.length > 0) groups.push({ label: "History", quiet: true, macros: history });
+  if (history.length > 0) groups.push({ label: "History", quiet: false, macros: history });
   if (regions.length > 0) groups.push({ label: "Body regions", quiet: false, macros: regions });
   return groups;
 }
 
-/** Shared chip chrome. Quiet = history. */
-export function soapMacroChipClass(quiet: boolean, dragging: boolean): string {
+/** Shared chip chrome. History and body regions look equally clickable. */
+export function soapMacroChipClass(_quiet: boolean, dragging: boolean): string {
   return [
-    "rounded-full border px-2.5 py-1 text-xs transition-opacity",
-    quiet
-      ? "border-[var(--line-soft)] bg-[#f7f9fb] font-medium text-[var(--text-muted)]"
-      : "border-[#b7c9d6] bg-white font-semibold text-[var(--text-primary)]",
+    "rounded-full border border-[#b7c9d6] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] transition-opacity",
     dragging ? "opacity-40" : "",
   ]
     .filter(Boolean)

@@ -21,7 +21,6 @@ export const DEFAULT_BOX_ORDER = [
   "schedule",
   "tomorrow-schedule",
   "intake",
-  "goat-answers",
   "todos",
   "case-snapshot",
   "end-of-day",
@@ -63,6 +62,11 @@ export type BoardBox = {
   typePriority?: string[];
   /** Case Snapshot window. Missing means This Year. */
   period?: SnapshotPeriod;
+  /**
+   * Case Snapshot status filter. Missing or "all" shows every status group.
+   * A case-status name shows only that group. Saved on the board with period.
+   */
+  snapshotStatus?: string;
   /** Appointment row fields. Missing means time, name, type, and status. */
   fields?: RowField[];
   /** Tallest this box is allowed to grow, in grid rows. */
@@ -77,7 +81,6 @@ export const BOX_TITLES: Record<Exclude<BuiltinKind, "status-cases">, string> = 
   schedule: "Today's Schedule",
   "tomorrow-schedule": "Tomorrow's Schedule",
   intake: "New Patient Intake",
-  "goat-answers": "G.O.A.T. Answers",
   todos: "To-Do's & Alerts",
   "case-snapshot": "Case Snapshot",
   "end-of-day": "End of Day Handoff",
@@ -94,7 +97,6 @@ const BOX_SIZE: Record<BuiltinKind, { w: number; h: number }> = {
   schedule: { w: 6, h: 10 },
   "tomorrow-schedule": { w: 6, h: 10 },
   intake: { w: 3, h: 8 },
-  "goat-answers": { w: 3, h: 8 },
   todos: { w: 6, h: 8 },
   "case-snapshot": { w: 6, h: 10 },
   "end-of-day": { w: 12, h: 11 },
@@ -274,9 +276,25 @@ export function boxesFromSnapshot(raw: string): BoardBox[] {
   return dropRetiredBoxes(parseBoard(personal || null) ?? parseBoard(office || null) ?? defaultBoard());
 }
 
-/** Saved layouts from before this box was removed. */
+const RETIRED_KINDS = new Set(["morning-rundown", "goat-answers"]);
+
+/**
+ * Saved layouts from before a box was removed. The old answers box is retired
+ * because G.O.A.T. Mail already lists mail that needs an answer. Boxes that
+ * sat to the right of a retired box slide left so the row does not keep a hole.
+ */
 export function dropRetiredBoxes(boxes: BoardBox[]): BoardBox[] {
-  return boxes.filter((box) => (box.kind as string) !== "morning-rundown");
+  const retired = boxes.filter((box) => RETIRED_KINDS.has(box.kind as string));
+  if (!retired.length) return boxes;
+  let next = boxes.filter((box) => !RETIRED_KINDS.has(box.kind as string));
+  for (const gone of retired) {
+    next = next.map((box) => {
+      const overlapsY = box.y < gone.y + gone.h && gone.y < box.y + box.h;
+      if (overlapsY && box.x >= gone.x + gone.w) return { ...box, x: Math.max(0, box.x - gone.w) };
+      return box;
+    });
+  }
+  return next;
 }
 
 export function subscribeBoard(onStoreChange: () => void): () => void {
@@ -503,6 +521,17 @@ function yearOf(value: string | undefined): number | null {
 /** Initial exam year, otherwise the date-of-loss year. Undated cases have no year. */
 export function caseYear(patient: { matrix?: { initialExam?: string }; dateOfLoss?: string }): number | null {
   return yearOf(patient.matrix?.initialExam) ?? yearOf(patient.dateOfLoss);
+}
+
+/**
+ * The one case status a Case Snapshot should show, or null for every group.
+ * A blank, "all", or a name that is not on the office list means every group.
+ */
+export function snapshotStatusesToShow(saved: string | undefined, statusNames: string[]): string | null {
+  const name = (saved ?? "").trim();
+  if (!name || /^all(\s+statuses)?$/i.test(name)) return null;
+  const match = statusNames.find((status) => status.trim().toLowerCase() === name.toLowerCase());
+  return match ?? null;
 }
 
 export function matchesPeriod(

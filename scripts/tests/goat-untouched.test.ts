@@ -22,13 +22,13 @@ const items = listUntouchedItems({
     { id: "t2", title: "Send medicals", priority: "High", done: true, dueDate: "", createdAt: "", updatedAt: "" },
   ],
   patients: [
-    { id: "lien3", fullName: "Lien, Three", caseStatus: "Active", dateOfLoss: "2026-01-01", matrix: { lien: "11/05/2026 Requested" } },
-    { id: "lien7", fullName: "Lien, Seven", caseStatus: "Active", dateOfLoss: "2026-01-01", matrix: { lien: "10/20/2026 Requested" } },
-    { id: "lien1", fullName: "Lien, New", caseStatus: "Active", dateOfLoss: "2026-01-01", matrix: { lien: "11/08/2026 Requested" } },
-    { id: "rb", fullName: "Bill, Bea", caseStatus: "Discharged", dateOfLoss: "2026-02-01", matrix: { lien: "Received", rbSent: "" } },
-    { id: "sent", fullName: "Sent, Sam", caseStatus: "Discharged", dateOfLoss: "2026-02-01", matrix: { rbSent: "11/01/2026" } },
-    { id: "wait", fullName: "Wait, Wes", caseStatus: "Active", dateOfLoss: "" },
-    { id: "booked", fullName: "Booked, Bea", caseStatus: "Active", dateOfLoss: "" },
+    { id: "lien3", fullName: "Lien, Three", caseStatus: "Active", attorney: "Sample Law", dateOfLoss: "2026-01-01", matrix: { lien: "11/05/2026 Requested", initialExam: "01/02/2026" } },
+    { id: "lien7", fullName: "Lien, Seven", caseStatus: "Active", attorney: "Sample Law", dateOfLoss: "2026-01-01", matrix: { lien: "10/20/2026 Requested", initialExam: "01/02/2026" } },
+    { id: "lien1", fullName: "Lien, New", caseStatus: "Active", attorney: "Sample Law", dateOfLoss: "2026-01-01", matrix: { lien: "11/08/2026 Requested", initialExam: "01/02/2026" } },
+    { id: "rb", fullName: "Bill, Bea", caseStatus: "Discharged", attorney: "Sample Law", dateOfLoss: "2026-02-01", matrix: { lien: "Received", rbSent: "", initialExam: "02/02/2026" } },
+    { id: "sent", fullName: "Sent, Sam", caseStatus: "Discharged", attorney: "Sample Law", dateOfLoss: "2026-02-01", matrix: { rbSent: "11/01/2026", initialExam: "02/02/2026" } },
+    { id: "wait", fullName: "Wait, Wes", caseStatus: "Active", attorney: "", dateOfLoss: "" },
+    { id: "booked", fullName: "Booked, Bea", caseStatus: "Active", attorney: "", dateOfLoss: "" },
   ],
 });
 

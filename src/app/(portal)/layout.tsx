@@ -111,12 +111,6 @@ export default function PortalLayout({
   const [leakAlarm, setLeakAlarm] = useState<
     { target: string; type: string; count: number } | null
   >(null);
-  // When syncStatus flips to "synced" we flash a green "Cloud Saved!" pill for
-  // a few seconds so the user has positive confirmation that their work made
-  // it to the cloud. The flash is driven by a setTimeout started inside the
-  // sync-status callback (not an effect), because each successful sync should
-  // re-arm the 2.5s window rather than let it expire mid-flash.
-  const [showSavedFlash, setShowSavedFlash] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapErrorDetail, setBootstrapErrorDetail] = useState<string | null>(null);
   const [bootProgressText, setBootProgressText] = useState<string | null>(null);
@@ -279,7 +273,6 @@ export default function PortalLayout({
       // Install interceptor paused so bootstrap writes don't trigger syncs
       pauseSync();
       installStorageSyncInterceptor();
-      let savedFlashTimer: ReturnType<typeof setTimeout> | null = null;
       unsubscribeSync = onSyncStatusChange((status, detail) => {
         if (!active) return;
         setSyncStatus(status);
@@ -293,26 +286,10 @@ export default function PortalLayout({
           // Reset the dismiss flag on EVERY new error so a fresh failure
           // re-shows the pill even if the user dismissed the previous one.
           setErrorPillDismissed(false);
-          setShowSavedFlash(false);
-          if (savedFlashTimer) {
-            clearTimeout(savedFlashTimer);
-            savedFlashTimer = null;
-          }
         } else if (status === "synced") {
-          // Clear any stale error message once we get a clean push through,
-          // and flash the green confirmation for 2.5s. A rapid burst of
-          // successful syncs re-arms the timer so the flash stays on screen
-          // until the burst quiets down — this avoids a flickery toast when
-          // several saves fire in quick succession (common during SOAP edits).
+          // A clean push clears a sticky failure. Saving and Saved themselves
+          // show on the circular G.O.A.T. button, not on a second pill.
           setSyncErrorMessage(null);
-          setShowSavedFlash(true);
-          if (savedFlashTimer) {
-            clearTimeout(savedFlashTimer);
-          }
-          savedFlashTimer = setTimeout(() => {
-            if (active) setShowSavedFlash(false);
-            savedFlashTimer = null;
-          }, 2500);
         }
       });
 
@@ -605,12 +582,10 @@ export default function PortalLayout({
       <WorkspaceAccessProvider membership={membership}>
       <RouteAccessGuard />
       <AppShell planTier={planTier}>
-        {/* Sync status indicator.
-            Priority: error > syncing > saved-flash. An "error" state is
-            sticky until a subsequent successful sync clears it — the
-            interceptor flips us back to "synced" on the next successful
-            push, which both drops the red pill and triggers the green
-            flash so the user has unambiguous confirmation. */}
+        {/* Problem-only save badge. Saving and Saved already show on the
+            circular G.O.A.T. button. This stays up for a queued or offline
+            sync, and for a real failure (error text + Retry) until a later
+            successful sync clears it. */}
         <SaveBadge
           errorDismissed={errorPillDismissed}
           errorMessage={syncErrorMessage}
@@ -624,7 +599,6 @@ export default function PortalLayout({
             }
           }}
           retrying={retryingSync}
-          savedFlash={showSavedFlash}
           status={syncStatus}
           unsyncedNotes={unsyncedNotes}
         />

@@ -1,6 +1,6 @@
 /**
- * + Case popup: optional fields, a date of injury leaves intake, an exam books
- * a New Patient visit and becomes the Initial Exam date.
+ * + Case popup: optional fields. A date of injury does not leave intake.
+ * Booking the exam does. That date becomes the Initial Exam.
  * Run: npx tsx scripts/tests/case-popup.test.ts
  */
 import assert from "node:assert/strict";
@@ -28,9 +28,12 @@ const doiOnly = reviewCasePopup({ ...base, dateOfLoss: "02/11/2026", attorney: "
 assert.equal(doiOnly.ok, true);
 if (doiOnly.ok) {
   assert.equal(doiOnly.dateOfLossIso, "2026-02-11");
-  assert.equal(doiOnly.movesToPatientList, true);
+  assert.equal(doiOnly.movesToPatientList, false, "attorney and a date of injury, with no exam, stay in New Patient");
   assert.equal(doiOnly.visit, null);
-  assert.equal(isInNewPatientIntake({ dateOfLoss: doiOnly.dateOfLossIso, isCashPatient: false }), false);
+  assert.equal(
+    isInNewPatientIntake({ id: "p", fullName: "Doe, Jane", attorney: "Ward Law", dateOfLoss: doiOnly.dateOfLossIso, isCashPatient: false }),
+    true,
+  );
 }
 
 const booked = reviewCasePopup(
@@ -85,9 +88,15 @@ assert.match(page, /initialExam: newPatientDraft\.isCashPatient \? "" : reviewed
 assert.match(page, /data-testid="new-patient-add-case"/);
 assert.match(page, /intake-add-case|onAddCase/);
 assert.match(intake, /data-testid="intake-add-case"/);
-for (const id of ["case-attorney", "case-attorney-phone", "case-doi", "case-number", "case-exam-date", "case-exam-time", "case-popup-save"]) {
+for (const id of ["case-attorney-phone", "case-doi", "case-number", "case-exam-date", "case-exam-time", "case-popup-save"]) {
   assert.ok(popup.includes(`data-testid="${id}"`), id);
 }
+assert.match(popup, /selectTestId="case-attorney"/);
+assert.match(popup, /nameTestId="case-attorney-name"/);
 assert.match(popup, /formatUsPhoneInput\(match\.phone\)/);
+assert.match(popup, /SELF_ATTORNEY_VALUE/);
+const picker = readFileSync(new URL("../../src/components/attorney-firm-select.tsx", import.meta.url), "utf8");
+assert.match(picker, /data-testid=\{selectTestId\}/);
+assert.match(picker, /SELF \(self-represented\)|SELF_ATTORNEY_LABEL/);
 
 console.log("case-popup ok");

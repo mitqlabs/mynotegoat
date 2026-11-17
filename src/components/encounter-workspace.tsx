@@ -73,7 +73,7 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients, updatePatientRecordById, type UpdatePatientRecordPatch } from "@/lib/mock-data";
-import { hasSoapContent, mergeNotesByNewest, pickSaltSource, sectionMatchesSource } from "@/lib/salt-source";
+import { hasSoapContent, mergeNotesByNewest, pickSaltSource } from "@/lib/salt-source";
 import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
@@ -1609,79 +1609,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // Track which encounter we last auto-applied the treatment plan into.
   const autoAppliedPlanRef = useRef<string | null>(null);
 
-  // Existing notes are never rewritten on open. Copy From reloads only after confirm.
-  const replaceSectionsFromSource = (
-    source: NonNullable<typeof saltSourceEncounter>,
-    sections: Array<(typeof encounterSections)[number]>,
-  ) => {
-    if (!selectedEncounter) return;
-    let totalMacros = 0;
-    sections.forEach((section) => {
-      for (const oldRun of selectedEncounter.macroRuns) {
-        if (oldRun.section === section) removeMacroRun(selectedEncounter.id, oldRun.id);
-      }
-      const sourceText = (source.soap[section] ?? "").trim();
-      const { html: rewrittenText, idMap } = rewriteMacroRunIds(sourceText);
-      setSoapSection(selectedEncounter.id, section, rewrittenText);
-      idMap.forEach((newId, oldId) => {
-        const sourceRun = source.macroRuns.find((entry) => entry.id === oldId);
-        if (!sourceRun) return;
-        addMacroRun(selectedEncounter.id, {
-          id: newId,
-          section,
-          macroId: sourceRun.macroId,
-          macroName: sourceRun.macroName,
-          body: sourceRun.body,
-          answers: { ...sourceRun.answers },
-          generatedText: sourceRun.generatedText.replace(
-            new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
-            `data-macro-run-id="${newId}"`,
-          ),
-        });
-        totalMacros += 1;
-      });
-      source.macroRuns.forEach((sourceRun) => {
-        if (sourceRun.section !== section || idMap.has(sourceRun.id)) return;
-        addMacroRun(selectedEncounter.id, {
-          id: createEncounterMacroRunId(),
-          section,
-          macroId: sourceRun.macroId,
-          macroName: sourceRun.macroName,
-          body: sourceRun.body,
-          answers: { ...sourceRun.answers },
-          generatedText: sourceRun.generatedText,
-        });
-        totalMacros += 1;
-      });
-    });
-    const macroSuffix = totalMacros > 0 ? ` (with ${totalMacros} editable macro${totalMacros === 1 ? "" : "s"})` : "";
-    const { added, removed } = reconcileLinkedCharges(selectedEncounter.id, macroLibraryById);
-    setMessage(
-      `Copied ${sections.length} section${sections.length === 1 ? "" : "s"} from ${source.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
-    );
-  };
-
-  const handleSaltSourceChange = async (nextId: string) => {
-    if (!selectedEncounter || selectedEncounter.signed) return;
-    const source = priorPatientEncounters.find((entry) => entry.id === nextId);
-    const previousId = resolvedSaltSourceEncounterId;
+  // Picking a prior visit only changes which note is shown underneath.
+  // Copy Subjective / Copy SOAP are the actions that write into this note.
+  const selectPriorEncounter = (nextId: string) => {
+    if (!nextId || !selectedEncounter || selectedEncounter.signed) return;
     setSaltSourceEncounterIdDraft(nextId);
-    if (!source) return;
-    const sections = encounterSections.filter(
-      (section) =>
-        !(planWins && section === "plan") &&
-        ((source.soap[section] ?? "").trim().length > 0 || source.macroRuns.some((run) => run.section === section)) &&
-        !sectionMatchesSource(selectedEncounter, source, section),
-    );
-    if (sections.length === 0) return;
-    const confirmed = await appConfirm(
-      `Replace this note with ${source.encounterDate}? This replaces what is on the note now.`,
-    );
-    if (!confirmed) {
-      setSaltSourceEncounterIdDraft(previousId);
-      return;
-    }
-    replaceSectionsFromSource(source, sections);
   };
 
   // Auto-Salt Charges: when enabled and a new encounter is selected that has no charges,
@@ -4368,11 +4300,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
                 {/* Compare / Copy — compact row */}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Copy From</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">View prior</span>
                   <select
+                    aria-label="View prior encounter"
                     className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs"
                     disabled={selectedEncounter.signed || priorPatientEncounters.length === 0}
-                    onChange={(event) => void handleSaltSourceChange(event.target.value)}
+                    onChange={(event) => selectPriorEncounter(event.target.value)}
                     value={resolvedSaltSourceEncounterId}
                   >
                     {priorPatientEncounters.length === 0 ? (

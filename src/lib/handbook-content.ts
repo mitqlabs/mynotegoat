@@ -119,8 +119,8 @@ export const handbookChapters: HandbookChapter[] = [
         heading: "Take in a new patient",
         steps: [
           "Got a text with just a name and number? Patient List → New Patient. Only Last Name, First Name and Phone are required; DOB, Sex, Marital Status and the address are optional. If that name is already in the office, a line under the name offers Fill in. It copies phone, DOB, sex, marital status, address, email, and the Non-PI tick into empty boxes only. It leaves attorney, date of injury, and notes alone, and it still creates a new record. Dismiss hides it. The red duplicate warning is separate: that one appears only when the name and the date of loss both match.",
-          "Know the case details already? Tap + Case. A popup opens: pick an Attorney (their phone fills in), enter the Date of Injury (the Case # fills in), and, if you want, an Initial Exam date and time. Every field can be left blank. Save keeps it with the new patient. Create Patient then books the visit. A date of injury puts them on the Patient List instead of New Patient Intake, and that exam date is saved as the Initial Exam.",
-          "If that exam time is taken or outside office hours, the popup says so and shows the open times nearby as buttons. Click one, then Save. Or tick \u201cBook anyway\u201d when Settings → Schedule allows overrides (it books exactly like the Schedule's override). Leave the exam date blank and nothing is booked. While the Initial Exam box is blank, it shows the first New Patient visit's date and follows that visit if it moves or is canceled. A date saved from + Case stays put. A chart already in New Patient Intake has its own + Case: Save writes the case info, books the visit, and a date of injury moves that chart onto the Patient List. On the patient's page, + Case still opens the case fields on the page.",
+          "Know the case details already? Tap + Case. A popup opens: pick an Attorney (their phone fills in), enter the Date of Injury (the Case # fills in), and, if you want, an Initial Exam date and time. Every field can be left blank. Save keeps it with the new patient. Create Patient then books the visit. They stay in New Patient Intake until an attorney is set (Self counts) and an Initial Exam date is saved or a New Patient visit is booked. Attorney alone keeps them there. The exam date is saved as the Initial Exam.",
+          "If that exam time is taken or outside office hours, the popup says so and shows the open times nearby as buttons. Click one, then Save. Or tick \u201cBook anyway\u201d when Settings → Schedule allows overrides (it books exactly like the Schedule's override). Leave the exam date blank and nothing is booked. While the Initial Exam box is blank, it shows the first New Patient visit's date and follows that visit if it moves or is canceled. A date saved from + Case stays put. A chart already in New Patient Intake has its own + Case: Save writes the case info and books the visit. They move onto the Patient List only once an attorney is set (Self counts) and the exam is booked or an Initial Exam date is saved. On the patient's page, + Case still opens the case fields on the page.",
           "MRI, X-ray and Specialist cards show the center or doctor's email in small text under the name (from Contacts, starred email first). Click the envelope to email or the copy icon to copy. No email in Contacts = no line.",
           "Next to Patient Phone are two small icons: the chat bubble opens Text (pick a message to send), and the person-plus adds the patient to your Mac's Contacts (downloads a card with name, phone, birthday and address). Hover an icon to see what it does.",
           "Need the attorney's email? On the patient's page, the Attorney Email box (next to Attorney Phone) shows the attorney's email from Contacts, starred (★) email first. If the attorney has more than one, pick another from the box. Click the envelope to open a new message to that address in your mail app (Outlook), or the copy icon (it turns into a check) and paste it anywhere. No email in Contacts shows “No email”; add one on the Contacts page. Picking a different email here only changes what you copy; it doesn't change the contact.",
@@ -969,7 +969,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "An older visit is missing from the Encounters list",
         steps: [
-          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the Copy From dropdown.",
+          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the View prior dropdown.",
           "If a visit still shows + Enc., wait a second or two for the patient's notes to load before clicking it.",
           "Do not start a second note for it. The note is not lost: older notes are simply not kept on this computer, and they load when you pick the patient.",
         ],
@@ -980,7 +980,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Change the type on the appointment (Edit Appointment, the Appointments page, or the type menu in the Encounters table).",
           "The note for that visit follows automatically, so a New Patient visit no longer carries an Office Visit note.",
-          "Copy From shows each visit with its appointment's type.",
+          "View prior shows each visit with its appointment's type.",
         ],
         watchOut: "If two notes exist for the same day, NoteGoat leaves them alone rather than guess which one to rename.",
       },
@@ -991,13 +991,13 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Type straight into the box, use macros, or mix both.",
           "A macro that asks questions opens a popup titled with just the macro's name (for example Medical & Family HX). Fill in the answers and save.",
           "In Plan, one-paragraph macros run together: tap Begin Decompression, then a second-region macro, and the second text follows on the same paragraph after one space.",
-          "Copy From pulls a previous visit's section across when today is much the same.",
+          "To reuse a previous visit, pick it under View prior (that only shows it underneath), then click Copy and the section name, or Copy SOAP. NoteGoat asks before it replaces text already on the note.",
         ],
       },
       {
         heading: "Read the last visit while you write",
         steps: [
-          "Pick a previous visit in Copy From.",
+          "Pick a previous visit under View prior. That only changes the note shown underneath. It does not change the note you are writing.",
           "The whole of that note appears underneath in four columns — Subjective, Objective, Assessment, Plan — with the one you're typing outlined.",
           "Drag the grey divider between the two to give whichever half you need the room.",
         ],

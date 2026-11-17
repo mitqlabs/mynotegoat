@@ -7,6 +7,7 @@ import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-ty
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { mdyToIso, reviewCasePopup, scheduleCaseLabel, takeNewPatientPrefill, type CasePopupConflict, type CasePopupDraft } from "@/lib/new-patient-intake";
 import { NewPatientCasePopup, type CaseAttorneyOption } from "@/components/new-patient-case-popup";
+import { isSelfRepresentedAttorney, SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import { isoToUsDate } from "@/components/us-date-input";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
 import { findDuplicateCases } from "@/lib/patient-duplicate";
@@ -906,7 +907,7 @@ export default function PatientsPage() {
     const attorneyPhone = newPatientDraft.isCashPatient
       ? ""
       : formatUsPhoneInput(newPatientDraft.attorneyPhone);
-    if (!newPatientDraft.isCashPatient && normalizeAttorneyKey(attorneyName) !== "self" && attorneyPhone) {
+    if (!newPatientDraft.isCashPatient && !isSelfRepresentedAttorney(attorneyName) && attorneyPhone) {
       const attorneyExists = contacts.some(
         (contact) =>
           normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -1306,18 +1307,22 @@ export default function PatientsPage() {
   }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides, listVersion]);
 
   const intakePatients = useMemo(
-    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient)),
-    [filteredPatients],
+    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
   );
   const listedPatients = useMemo(
-    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient)),
-    [filteredPatients],
+    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
   );
-  const caseAttorneyOptions: CaseAttorneyOption[] = attorneyContacts.map((contact) => ({
-    id: contact.id,
-    name: contact.name,
-    phone: contact.phone,
-  }));
+  const caseAttorneyOptions = useMemo<CaseAttorneyOption[]>(
+    () =>
+      attorneyContacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+      })),
+    [attorneyContacts],
+  );
 
   const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string }) => {
     setCaseMessage("");
@@ -1336,8 +1341,12 @@ export default function PatientsPage() {
   const casePopupInitial = (): CasePopupDraft => {
     if (casePopup?.source === "intake") {
       const patient = patients.find((row) => row.id === casePopup.patientId);
-      const attorney = patient && normalizeAttorneyKey(patient.attorney) !== "self" ? patient.attorney : "";
-      const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney));
+      // "Self" / "pro se" stay on the draft so the dropdown selects SELF
+      // instead of looking blank or like a name someone typed.
+      const attorney = patient?.attorney ?? "";
+      const matched = !isSelfRepresentedAttorney(attorney)
+        ? attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney))
+        : undefined;
       const doi = patient?.dateOfLoss ?? "";
       return {
         attorney,
@@ -1349,7 +1358,7 @@ export default function PatientsPage() {
     }
     return {
       attorney: newPatientDraft.attorney,
-      attorneyPhone: newPatientDraft.attorneyPhone,
+      attorneyPhone: isSelfRepresentedAttorney(newPatientDraft.attorney) ? "" : newPatientDraft.attorneyPhone,
       dateOfLoss: newPatientDraft.dateOfLoss,
       evalDate: newPatientDraft.evalDate,
       evalTime: newPatientDraft.evalTime,
@@ -1359,7 +1368,7 @@ export default function PatientsPage() {
   const rememberAttorney = (name: string, phone: string) => {
     const attorneyName = cleanAttorneyLabel(name);
     const attorneyPhone = formatUsPhoneInput(phone);
-    if (!attorneyName || normalizeAttorneyKey(attorneyName) === "self" || !attorneyPhone) return true;
+    if (!attorneyName || isSelfRepresentedAttorney(attorneyName) || !attorneyPhone) return true;
     const attorneyExists = contacts.some(
       (contact) =>
         normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -1423,7 +1432,9 @@ export default function PatientsPage() {
       setCaseMessage("Could not save that attorney.");
       return;
     }
-    const attorneyName = cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
+    const attorneyName = isSelfRepresentedAttorney(draft.attorney)
+      ? SELF_ATTORNEY_VALUE
+      : cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
     updatePatientRecordById(intakeId, {
       attorney: attorneyName || "Self",
       dateOfLoss: reviewed.dateOfLossIso,
@@ -1698,7 +1709,9 @@ export default function PatientsPage() {
     if (!patient) return "-";
     if (id === "attorneyPhone") {
       const key = normalizeAttorneyKey(patient.attorney);
-      const contact = key && key !== "self" ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key) : undefined;
+      const contact = key && !isSelfRepresentedAttorney(patient.attorney)
+        ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key)
+        : undefined;
       return contact?.phone || "-";
     }
     if (id === "discharge") {
@@ -2564,7 +2577,7 @@ export default function PatientsPage() {
                   <th className="w-[220px] border-r border-[var(--line-soft)] px-4 py-3 text-left">
                     Patient
                   </th>
-                  {filteredPatients.map((patient) => (
+                  {listedPatients.map((patient) => (
                     <th key={`name-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3 text-left">
                       {patient.fullName}
                     </th>
@@ -2575,14 +2588,14 @@ export default function PatientsPage() {
                     <td className="border-r border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3 font-semibold">
                       {row.label}
                     </td>
-                    {filteredPatients.map((patient) => (
+                    {listedPatients.map((patient) => (
                       <td key={`${row.label}-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3">
                         {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex), initialExamOf(patient, initialExamIndex))}
                       </td>
                     ))}
                   </tr>
                 ))}
-                {filteredPatients.length === 0 && (
+                {listedPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={2}>
                       No patients match the selected filters.

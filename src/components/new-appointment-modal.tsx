@@ -2512,26 +2512,30 @@ function SeriesEditor({
               )}
             </span>
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
-              <input
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                onChange={(event) => onChange({ ...series, startDateOverride: event.target.value })}
-                type="date"
-                value={series.startDateOverride || startsOn}
-              />
-              <span className="text-[10px] text-[var(--text-muted)]">
+          {/* items-start: the helper sits under Starts only, so it must not
+              stretch the row and drop the Time box. Both inputs are h-9. */}
+          <div className="grid items-start gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
+                <input
+                  className="h-9 rounded-lg border border-[var(--line-soft)] bg-white px-2 text-sm"
+                  onChange={(event) => onChange({ ...series, startDateOverride: event.target.value })}
+                  type="date"
+                  value={series.startDateOverride || startsOn}
+                />
+              </label>
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
                 {series.startDateOverride
                   ? "Your own start date."
                   : `Follows ${index === 0 ? "Series 1" : `Series ${index + 1}`} — the day after its last visit.`}
-              </span>
-            </label>
-            <label className="grid gap-1">
+              </p>
+            </div>
+            <label className="grid content-start gap-1 self-start">
               <span className="text-xs font-semibold text-[var(--text-muted)]">Time</span>
               <TimeInput12h
                 smart
-                inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                inputClassName="h-9 rounded-lg border border-[var(--line-soft)] bg-white px-2 text-sm"
                 onChange={(v) => onChange({ ...series, startTime: v })}
                 value={series.startTime || mainStartTime}
               />

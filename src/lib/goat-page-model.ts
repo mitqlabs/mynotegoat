@@ -1,9 +1,9 @@
 /**
  * GOAT Page numbers from records the app already has: today's schedule,
- * patients without case info, and case counts. Mail, questions, and
- * to-dos are passed in later; they start at zero.
+ * patients still in New Patient Intake, and case counts. Mail, questions,
+ * and to-dos are passed in later; they start at zero.
  */
-import { isNewPatientAppointmentType } from "@/lib/initial-exam-date";
+import { buildInitialExamIndex, isNewPatientAppointmentType } from "@/lib/initial-exam-date";
 import { goatGreeting, goatGreetingDate, goatWelcomeEmoji } from "@/lib/goat-greeting";
 import { lienFollowUpStage } from "@/lib/follow-up-queue";
 import { isInNewPatientIntake } from "@/lib/patient-list-intake";
@@ -20,7 +20,7 @@ export type GoatPagePatient = {
   onPatientList?: boolean;
   phone?: string;
   attorney?: string;
-  matrix?: { lien?: string; rbSent?: string };
+  matrix?: { lien?: string; rbSent?: string; initialExam?: string };
 };
 
 export type GoatPageScheduleRow = {
@@ -86,7 +86,8 @@ export function buildGoatPageModel(input: {
   const nowMin = input.now.getHours() * 60 + input.now.getMinutes();
   const closed = new Set(input.closedStatuses.map((s) => s.toLowerCase()));
   const livePatients = input.patients.filter((p) => !p.deleted);
-  const intake = livePatients.filter((p) => isInNewPatientIntake(p));
+  const intakeIndex = buildInitialExamIndex(input.appointments);
+  const intake = livePatients.filter((p) => isInNewPatientIntake(p, intakeIndex));
   const day = input.appointments
     .filter((a) => a.date === iso)
     .slice()
@@ -135,7 +136,7 @@ export function buildGoatPageModel(input: {
     };
   });
   const openCases = livePatients.filter(
-    (p) => !p.isCashPatient && !closed.has(p.caseStatus.toLowerCase()) && !isInNewPatientIntake(p),
+    (p) => !p.isCashPatient && !closed.has(p.caseStatus.toLowerCase()) && !isInNewPatientIntake(p, intakeIndex),
   );
   return {
     greeting: goatGreeting(input.now.getHours()),

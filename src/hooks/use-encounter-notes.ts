@@ -1,5 +1,13 @@
 "use client";
 import { appendInlineToLastBlock } from "@/lib/macro-inline";
+import {
+  collapseMirroredHtml,
+  MACRO_RUN_PRUNE_GRACE_MS,
+  macroRunIdInHtml,
+  markMacroRunSeen,
+  reconcileMacroRuns,
+  type MacroRunPresence,
+} from "@/lib/macro-run-list";
 import { getSessionUser } from "@/lib/supabase-browser";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -67,18 +75,15 @@ function nowIso() {
 }
 
 /**
- * MacroRun prune grace — see the long comment inside setSoapSection.
- * Keyed by "${encounterId}:${runId}" → timestamp (ms) when the run's
- * data-macro-run-id span first went missing from the HTML.
- *
- * Module-level on purpose: survives individual setSoapSection
- * invocations, resets on full reload, and doesn't require plumbing
- * extra state through React. Kept small by deleting entries whenever
- * the id reappears or when the grace expires and the run is actually
- * pruned.
+ * Which macro-run ids have actually appeared in note HTML, and when a
+ * previously-seen id went missing (cut/paste grace). Module-level so it
+ * survives individual setSoapSection calls. A run that was never in the
+ * HTML is not given grace — see src/lib/macro-run-list.ts.
  */
-const macroRunPruneGrace = new Map<string, number>();
-const MACRO_RUN_PRUNE_GRACE_MS = 5000;
+const macroRunPresence: MacroRunPresence = {
+  seen: new Set<string>(),
+  missingSince: new Map<string, number>(),
+};
 
 /**
  * Per-encounter recheck timer. setSoapSection's grace logic only
@@ -575,43 +580,29 @@ export function useEncounterNotes() {
    */
   const applyMacroPruneCheck = useCallback(
     (current: EncounterNoteRecord, section: EncounterSection, sectionHtml: string) => {
-      const nowMs = Date.now();
-      let anyMissing = false;
-      const nextRuns = current.macroRuns.filter((run) => {
-        if (run.section !== section) return true;
-        const key = `${current.id}:${run.id}`;
-        const present = sectionHtml.includes(`data-macro-run-id="${run.id}"`);
-        if (present) {
-          macroRunPruneGrace.delete(key);
-          return true;
-        }
-        const firstMissingAt = macroRunPruneGrace.get(key);
-        if (firstMissingAt === undefined) {
-          macroRunPruneGrace.set(key, nowMs);
-          anyMissing = true;
-          return true;
-        }
-        if (nowMs - firstMissingAt < MACRO_RUN_PRUNE_GRACE_MS) {
-          anyMissing = true;
-          return true;
-        }
-        macroRunPruneGrace.delete(key);
-        return false;
+      const reconciled = reconcileMacroRuns({
+        runs: current.macroRuns,
+        encounterId: current.id,
+        section,
+        sectionHtml,
+        presence: macroRunPresence,
+        now: Date.now(),
       });
       let nextCharges = current.charges;
-      if (nextRuns.length !== current.macroRuns.length) {
-        const liveRunIds = new Set(nextRuns.map((r) => r.id));
+      if (reconciled.runs.length !== current.macroRuns.length) {
+        const liveRunIds = new Set(reconciled.runs.map((run) => run.id));
         nextCharges = current.charges.filter((charge) =>
           charge.linkedMacroRunId ? liveRunIds.has(charge.linkedMacroRunId) : true,
         );
       }
-      return { nextRuns, nextCharges, anyMissing };
+      return { nextRuns: reconciled.runs, nextCharges, anyMissing: reconciled.anyMissing };
     },
     [],
   );
 
   const setSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, value: string) => {
+      const sectionValue = collapseMirroredHtml(value);
       upsertEncounter(encounterId, (current) => {
         // MacroRun pruning with grace period.
         //
@@ -634,7 +625,7 @@ export function useEncounterNotes() {
         const { nextRuns, nextCharges, anyMissing } = applyMacroPruneCheck(
           current,
           section,
-          value,
+          sectionValue,
         );
 
         // Schedule a delayed recheck when any run is currently inside
@@ -674,7 +665,7 @@ export function useEncounterNotes() {
           ...current,
           soap: {
             ...current.soap,
-            [section]: value,
+            [section]: sectionValue,
           },
           macroRuns: nextRuns,
           charges: nextCharges,
@@ -693,6 +684,13 @@ export function useEncounterNotes() {
       upsertEncounter(encounterId, (current) => {
         const timestamp = nowIso();
         createdId = input.id ?? createEncounterMacroRunId();
+        if (!createdId) return current;
+        if (current.macroRuns.some((run) => run.id === createdId)) return current;
+        // The section HTML is updated in the same turn, before this add.
+        // An extra call whose id never landed in the note must not become a chip.
+        const sectionHtml = current.soap[input.section] ?? "";
+        if (!macroRunIdInHtml(sectionHtml, createdId)) return current;
+        markMacroRunSeen(macroRunPresence, current.id, createdId);
         return {
           ...current,
           macroRuns: [
@@ -767,7 +765,7 @@ export function useEncounterNotes() {
         // paragraph one space after its text instead of starting a new line.
         const chained = existing && options?.inlineWithPrevious ? appendInlineToLastBlock(existing, trimmedSnippet) : null;
         const composed = chained ?? (existing ? `${existing}${trimmedSnippet}` : trimmedSnippet);
-        const nextText = normalizeEditorBlocks(composed);
+        const nextText = collapseMirroredHtml(normalizeEditorBlocks(composed));
         return {
           ...current,
           soap: {

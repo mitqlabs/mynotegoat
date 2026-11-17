@@ -340,30 +340,19 @@ export function MessagesWorkspace() {
     );
   }
 
+  const countLine = `${conversations.length} active chat${conversations.length === 1 ? "" : "s"} · ${messages.length} message${messages.length === 1 ? "" : "s"}`;
+
   return (
     <div className="space-y-5">
-      <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-end gap-3">
-          <div className="text-right text-sm">
-            <p>
-              <span className="font-semibold">{conversations.length}</span> active chat
-              {conversations.length === 1 ? "" : "s"}
-            </p>
-            <p className="text-[var(--text-muted)]">
-              {messages.length} message{messages.length === 1 ? "" : "s"}
-            </p>
-          </div>
-        </div>
-      </section>
-
       {canPost && (
         <section className="panel-card overflow-hidden">
           <button
-            className="flex w-full items-center justify-between px-4 py-3 text-left"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left"
             onClick={() => setComposerOpen((v) => !v)}
             type="button"
           >
             <span className="text-lg font-semibold">New message</span>
+            <span className="ml-auto text-xs text-[var(--text-muted)]">{countLine}</span>
             <span className="text-[var(--text-muted)]">{composerOpen ? "▾" : "▸"}</span>
           </button>
           {composerOpen && (
