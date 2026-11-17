@@ -55,8 +55,8 @@ type BroadcastRow = {
 /** mm/dd/yy, like every other date on the Text Reminders page. */
 const usDate = fmtDate;
 
-/** Must match the shortcut name in tools/build-shortcuts.py. */
-export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=Send%20Reminders%20Now";
+/** The one iPhone shortcut. Tapping it with no message sends waiting texts. */
+export const SEND_NOW_SHORTCUT_URL = "shortcuts://run-shortcut?name=NoteGoat";
 
 function isAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;

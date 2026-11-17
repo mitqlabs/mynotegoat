@@ -19,14 +19,12 @@ const hourText = (sendHour?: number) => catchUpClockLabels(typeof sendHour === "
 const AUTOMATION_STEPS = (sendHour?: number) => {
   const [atSend, atHalf, atNext] = catchUpClockLabels(typeof sendHour === "number" ? sendHour : 8);
   return [
-    "1. On the office iPhone, open Shortcuts and tap the back arrow out of \"All Shortcuts\" to the main screen.",
-    "2. Open Automation and tap +, then choose Time of Day.",
-    `3. Set ${atSend}, Repeat: Every Day. Choose Run Immediately (not Ask Before Running). Turn Notify When Run OFF.`,
-    "4. In the search bar at the bottom type Run Shortcut and tap it. Tap the blue Shortcut word and pick Send Reminders. Leave Input empty.",
-    `5. Name it "${atSend} Reminders" and save.`,
-    `6. Do the same two more times, at ${atHalf} and ${atNext}, both running Send Reminders. Those runs send anything the first one missed, and do nothing if everything already went out.`,
-    "7. If iOS asks the first time it texts, tap Always Allow.",
-    "8. Leave the iPhone on, charged, and unlocked. If it was locked at the first time, the later runs send what is still waiting.",
+    "1. On the office iPhone, open NoteGoat, Settings, Text Reminders, and tap Add to this iPhone. Then tap Add Shortcut. The code is already filled in.",
+    "2. Open Shortcuts. Tap Automation. Tap +. Tap Time of Day.",
+    `3. Set ${atSend}. Tap Every Day. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.`,
+    `4. Do that again for ${atHalf}, then again for ${atNext}.`,
+    "5. Tap +. Tap Message. Tap Message Contains. Type STOP. Tap Done. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.",
+    "6. Come back to Text Reminders and tap Test. It should say STOP catcher working.",
   ].join("\n");
 };
 
@@ -58,25 +56,25 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
   if (trouble) {
     return {
       text: [
-        `If reminders didn't go out by themselves, the most common cause is the ${time} automation was never created. The Send Reminders shortcut does NOT run by itself; iOS can't put a schedule inside a shortcut.`,
+        `If reminders didn't go out by themselves, the most common cause is the ${time} run was never created. The NoteGoat shortcut does NOT run by itself; you set it to run by itself. It used to be called Send Reminders.`,
         "",
         "Check this first: on the office iPhone open Shortcuts → Automation. If the list is empty, do this once:",
         AUTOMATION_STEPS(opts.sendHour),
         "",
         NOTES,
-        "If the automations are already there, open each one and make sure it's on, Every Day, Run Immediately (not Ask Before Running), Notify When Run is off, and it runs Send Reminders. There should be three: the send time, 30 minutes later, and 60 minutes later. Then in Text Reminders check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), today is one of the Run days, and read Recent sends for skipped patients (opted out, no phone, or not on a Scheduled visit). A red line at the top of NoteGoat means this morning did not finish. To send right now, use Send Reminders Now.",
+        "If they are already there, open each one and make sure it's on, Every Day, Run Immediately (not Ask Before Running), Notify When Run is off, and it runs NoteGoat. There should be three times plus one for messages that contain STOP. Then in Text Reminders check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), today is one of the Run days, and read Recent sends. Tap Test. A red line at the top means this morning did not finish, or a STOP reply did not match a patient. To send right now, open Shortcuts and tap NoteGoat.",
       ].join("\n"),
       links,
     };
   }
   return {
     text: [
-      `Setting up ${time} reminders is 3 steps. Step 2 is required because the shortcut does NOT run by itself.`,
-      "Step 1 (one time): Settings → Templates → Text Reminders → + Add iPhone, copy the setup code, and add the Send-Reminders shortcut.",
-      `Step 2 (required): create the ${time} automations on the iPhone:`,
+      `Setting up ${time} reminders: Step 2 is required because the shortcut does NOT run by itself.`,
+      "On the office iPhone, open Settings → Text Reminders and tap Add to this iPhone, then Add Shortcut. The code is already filled in.",
+      `Then set it to run by itself:`,
       AUTOMATION_STEPS(opts.sendHour),
       NOTES,
-      "Step 3: check Send reminders automatically. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Then check \"I made the " + time + " automations\" on the page.",
+      "Check Send reminders automatically. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Tap Test. It says STOP catcher working when the phone has reported in.",
     ].join("\n"),
     links,
   };

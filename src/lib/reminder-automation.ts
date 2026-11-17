@@ -641,6 +641,11 @@ export function broadcastSendDay(
 
 // ---- Opt-out by reply ("STOP") ----
 
+/** Stored on reminder_opt_outs. Not a patient. Proves the phone reported a test. */
+export const STOP_TEST_PATIENT_ID = "test";
+/** Stored on reminder_opt_outs. The rest of patient_id is who we could not match. */
+export const UNMATCHED_PREFIX = "unmatched:";
+
 /** Replies that opt a patient out (carrier-standard keywords). */
 export const OPT_OUT_KEYWORDS = ["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT"] as const;
 /** Replies that opt a patient back in. */
@@ -663,6 +668,67 @@ export function parseOptOutReply(text: unknown): "stop" | "start" | null {
 export function phoneMatchKey(phone: unknown): string {
   const digits = String(phone ?? "").replace(/\D/g, "");
   return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/** Letters and numbers only, lower case, one space between words. */
+export function normalizePersonName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The whole reply "STOP TEST" is the office testing the phone. It is not a
+ * patient opting out.
+ */
+export function isStopTest(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  const word = text.trim().replace(/[\s.!]+$/, "").replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").toUpperCase();
+  return word === "STOP TEST";
+}
+
+/**
+ * When the phone sends a contact name instead of a number, match it only
+ * when exactly one patient in the office has that name. "Jane Doe" matches
+ * "Doe, Jane". Two Janes match nobody.
+ */
+export function matchPatientByName(patients: { id: string; fullName: string }[], from: string): string | null {
+  const want = normalizePersonName(from);
+  if (want.length < 2) return null;
+  const hits = new Set<string>();
+  for (const patient of patients) {
+    const { firstName, lastName } = splitPatientName(patient.fullName || "");
+    const forms = [
+      normalizePersonName(patient.fullName || ""),
+      normalizePersonName(`${firstName} ${lastName}`),
+      normalizePersonName(`${lastName} ${firstName}`),
+      normalizePersonName(firstName),
+      normalizePersonName(lastName),
+    ].filter((form) => form.length >= 2);
+    if (forms.includes(want)) hits.add(patient.id);
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+/** Patients the office can tap when a STOP name did not match exactly one person. */
+export function stopReplyChoices<T extends { id: string; fullName: string; deleted?: boolean }>(patients: T[], label: string): T[] {
+  const words = normalizePersonName(label).split(" ").filter((word) => word.length >= 3);
+  if (!words.length) return [];
+  const scored = patients
+    .filter((patient) => !patient.deleted)
+    .map((patient) => {
+      const name = normalizePersonName(patient.fullName || "");
+      return { patient, score: words.filter((word) => name.includes(word)).length };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.patient.fullName.localeCompare(b.patient.fullName));
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of scored) {
+    if (seen.has(row.patient.id)) continue;
+    seen.add(row.patient.id);
+    out.push(row.patient);
+    if (out.length === 5) break;
+  }
+  return out;
 }
 
 /** Append the opt-out line (when on) unless the text already mentions STOP. */

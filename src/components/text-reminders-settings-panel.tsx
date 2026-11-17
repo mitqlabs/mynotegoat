@@ -139,8 +139,6 @@ export function TextRemindersSettingsPanel() {
     const time = (v: string | null) => (v && /^\d{2}:\d{2}$/.test(v) ? v : undefined);
     return { key: 1, date, message: (q.get("msgText") ?? "").slice(0, 640), startTime: time(q.get("msgStart")), endTime: time(q.get("msgEnd")) };
   });
-  const origin = typeof window === "undefined" ? "https://www.mynotegoat.com" : window.location.origin;
-
   const refresh = useCallback(async () => {
     const client = getSupabaseBrowserClient();
     if (!client || !workspaceId) return;
@@ -379,10 +377,13 @@ export function TextRemindersSettingsPanel() {
         title="Set up"
       >
       <ReminderSetupChecklist
+        devices={devices}
+        onChanged={() => void refresh()}
         onConfirm={confirmAutomation}
         onToggle={(next) => setSection("steps", next)}
         open={sectionOpen(settings.sections, "steps", !settings.automationConfirmed)}
         settings={settings}
+        workspaceId={workspaceId}
       />
 
       <SetupCard
@@ -486,8 +487,7 @@ export function TextRemindersSettingsPanel() {
             Nobody gets two texts. It is one text per patient per day. The backup sender only sends what is still unsent 30 minutes later.
           </li>
           <li>
-            <b>Send Reminders</b> (iPhone shortcut) texts 5 patients, then asks for the next 5, so a long morning does not get cut off. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, only after you
-            make the automations (Step 2 above). The later runs do nothing if everything already went out.
+            <b>NoteGoat</b> on the iPhone texts 5 patients, then asks for the next 5. It also catches a reply of STOP. It runs at {hourLabel(settings.sendHour)}, and again 30 and 60 minutes later, after the steps at the top. The later runs do nothing if everything already went out.
           </li>
           <li>
             <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
@@ -548,26 +548,8 @@ export function TextRemindersSettingsPanel() {
           </div>
         </div>
 
-        <InnerFold testId="optout-iphone-steps" title="Catch STOP replies on the iPhone (only if the iPhone sends the texts)">
-          <p className="text-[var(--text-muted)]">The iMac reads STOP replies on its own. Skip this if you use the iMac.</p>
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>
-              On the office iPhone, tap{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/NoteGoat-Opt-Out.shortcut" download>Get NoteGoat Opt-Out</a>
-              {" "}→ <b>Add Shortcut</b>, and paste the same setup code when it asks.
-            </li>
-            <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Message</b>.</li>
-            <li>Tap <b>Message Contains</b>, type <Mono>STOP</Mono>, tap <b>Done</b>. Leave <b>Sender</b> empty (anyone).</li>
-            <li>Choose <b>Run Immediately</b> and turn <b>Notify When Run</b> off. Tap <b>Next</b>.</li>
-            <li>Pick <b>Run Shortcut</b> → <b>NoteGoat Opt-Out</b>. Tap the shortcut&apos;s <b>Input</b> and choose <b>Shortcut Input</b> (the message). Tap <b>Done</b>.</li>
-            <li>Repeat steps 2–5 with <Mono>START</Mono> if you want patients to be able to opt back in.</li>
-          </ol>
-          <p className="text-[var(--text-muted)]">
-            Good to know: iOS only runs this for messages that <i>contain</i> STOP, and NoteGoat only acts when the whole reply is the
-            word. If the patient is saved in the iPhone&apos;s Contacts, iOS may pass their name instead of their number, and NoteGoat
-            can&apos;t match it. Check &quot;Opted out by reply&quot; above, and mark them &quot;no text reminders&quot; by hand if needed.
-            Words like UNSUBSCRIBE need their own automation.
-          </p>
+        <InnerFold testId="optout-iphone-steps" title="STOP replies">
+          <p>The same NoteGoat shortcut catches STOP. Follow the steps at the top. You do not add a second shortcut. To turn texts back on, use the list above.</p>
         </InnerFold>
       </SetupCard>
 
@@ -580,73 +562,8 @@ export function TextRemindersSettingsPanel() {
         title="iPhone setup (Shortcuts app)"
       >
         <div className="space-y-3" data-testid="iphone-steps">
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>. It is a long line of letters and numbers. Text or AirDrop it to yourself so you can paste it on the iPhone.</li>
-            <li>
-              If <b>Send Reminders</b> is already on the iPhone, delete that shortcut first (long-press it → <b>Delete</b>). Then tap{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders.shortcut" download>Get the shortcut</a>
-              {" "}→ <b>Add Shortcut</b>. If it shows the steps first, scroll down and tap <b>Add Shortcut</b>. Paste your setup code when it asks. This file sends 5 texts at a time and then asks for the next 5.
-            </li>
-            <li>
-              Delete any old <b>Send Reminders Now</b> the same way, then get{" "}
-              <a className="font-semibold text-[var(--brand-primary)] underline" href="/shortcuts/Send-Reminders-Now.shortcut" download>Send Reminders Now</a>
-              . Long-press it → <b>Share</b> → <b>Add to Home Screen</b>. Use it when the morning run did not finish.
-            </li>
-            <li>
-              <b>Last step, required:</b> make the three automations. Do <b>Step 2</b> in the box at the top of Set up.
-            </li>
-          </ol>
+          <p>Use the steps at the top of this page. One shortcut, named <b>NoteGoat</b>, sends the texts and catches STOP.</p>
         </div>
-        <InnerFold testId="iphone-steps-manual" title="Only if the download did not work: build the shortcut by hand">
-          <p className="text-[var(--text-muted)]">
-            The downloaded shortcut is the one to use. It sends 5 texts, then asks for the next 5. These hand-built steps do one pass. The later automations in Step 2 still send anything that was missed.
-          </p>
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Above, click <b>+ Add iPhone</b>, then <b>Copy setup code</b>.</li>
-            <li>On the office iPhone, open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
-            <li>Tap the name at the top and rename it <b>Send Reminders</b>.</li>
-            <li>Tap <b>Search Actions</b>, type <b>Get Contents of URL</b>, and tap it.</li>
-            <li>Tap the blue <b>URL</b> and paste: <Mono>{`${origin}/api/reminders/queue?format=shortcut`}</Mono></li>
-            <li>Tap the <b>⌄</b> arrow (Show More) on that block. Leave <b>Method</b> on <Mono>GET</Mono>.</li>
-            <li>
-              Tap <b>Headers</b> → <b>Add new header</b>:
-              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-                <li><b>Key</b>: <Mono>Authorization</Mono></li>
-                <li><b>Text</b>: type <Mono>Bearer </Mono> (with one space after it), then paste your code, e.g. <Mono>Bearer ngr_abc123…</Mono></li>
-              </ol>
-            </li>
-            <li>Add <b>Get Dictionary Value</b>. Set it to get the value for key <Mono>visitDate</Mono> in <b>Contents of URL</b>.</li>
-            <li>Add <b>Set Variable</b> and name the variable <Mono>VisitDate</Mono>.</li>
-            <li>Add another <b>Get Dictionary Value</b>: key <Mono>items</Mono> in <b>Contents of URL</b>.</li>
-            <li>
-              Add <b>Repeat with Each</b> (it repeats with each item from the step above). Drag these <b>inside</b> the loop, in order:
-              <ol className="mt-1 list-[lower-alpha] space-y-1 pl-5">
-                <li><b>Get Dictionary Value</b>: key <Mono>text</Mono> in <b>Repeat Item</b>.</li>
-                <li><b>Send Message</b>: message = that <b>Dictionary Value</b>; recipient = another <b>Get Dictionary Value</b> with key <Mono>phone</Mono> in <b>Repeat Item</b>.</li>
-                <li>On Send Message, tap <b>⌄</b> and turn <b>Show When Run</b> OFF.</li>
-                <li><b>Get Contents of URL</b>: <Mono>{`${origin}/api/reminders/ack`}</Mono>. Tap <b>⌄</b>, set <b>Method</b> to <Mono>POST</Mono>, and add the same <Mono>Authorization</Mono> header.</li>
-                <li>
-                  Set <b>Request Body</b> to <b>JSON</b> and add 3 fields (type Text):
-                  <ul className="mt-1 list-disc space-y-1 pl-5">
-                    <li><Mono>visitDate</Mono> = the <b>VisitDate</b> variable</li>
-                    <li><Mono>id</Mono> = <b>Repeat Item</b> → key <Mono>id</Mono></li>
-                    <li><Mono>status</Mono> = <Mono>sent</Mono></li>
-                  </ul>
-                </li>
-                <li><b>Wait</b>: <Mono>5</Mono> seconds.</li>
-              </ol>
-            </li>
-            <li>Optional, after the loop: <b>Get Dictionary Value</b> key <Mono>message</Mono> in Contents of URL → <b>Show Notification</b>.</li>
-            <li>Tap <b>▶</b> to run it once. Tap <b>Always Allow</b> for mynotegoat.com and for Messages.</li>
-            <li>
-              Back in the Shortcuts list, long-press it → <b>Duplicate</b>. Rename the copy <b>Send Reminders Now</b>, and change its first URL to end in{" "}
-              <Mono>?format=shortcut&amp;force=1</Mono>. Long-press → <b>Share</b> → <b>Add to Home Screen</b>. Nobody gets two texts.
-            </li>
-            <li>
-              <b>Required:</b> the shortcut does not run by itself. Do <b>Step 2</b> at the top of Set up to make the three automations.
-            </li>
-          </ol>
-        </InnerFold>
       </SetupCard>
 
       <SetupCard

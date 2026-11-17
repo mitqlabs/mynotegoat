@@ -15,8 +15,8 @@ import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
 import { morningRunStatus, morningWorkDue, type MorningRunStatus } from "@/lib/reminder-automation-health";
 
-/** Must match the shortcut name in tools/build-shortcuts.py. */
-const SEND_NOW_URL = "shortcuts://run-shortcut?name=Send%20Reminders%20Now";
+/** The one iPhone shortcut. Tapping it with no message sends waiting texts. */
+const SEND_NOW_URL = "shortcuts://run-shortcut?name=NoteGoat";
 
 function readSettings() {
   if (typeof window === "undefined") return defaultSmsReminderSettings();

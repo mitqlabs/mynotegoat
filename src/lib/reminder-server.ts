@@ -5,7 +5,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { broadcastTimeOk, hashDeviceToken, leaseCanTake, parseOptOutReply, phoneMatchKey, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsTemplates } from "@/lib/sms-template-core";
 import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
@@ -389,13 +389,19 @@ export interface InboundReply {
   text: string;
 }
 
+export { STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
+
 export interface InboundResult {
   /** Keyword messages seen (stop/start). */
   keywords: number;
   /** Patients whose text-reminder flag actually changed. */
   changed: number;
-  /** Keyword messages whose phone matched no patient. */
+  /** Keyword messages that did not match one patient. */
   unmatched: number;
+  /** Names or numbers we could not match. Shown in NoteGoat. */
+  unmatchedLabels: string[];
+  /** STOP TEST reports. These never change a patient. */
+  tested: number;
   /** Non-keyword messages (ignored, never stored). */
   ignored: number;
 }
@@ -412,55 +418,88 @@ export async function applyInboundReplies(
   replies: InboundReply[],
   source: string,
 ): Promise<InboundResult> {
-  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, ignored: 0 };
-  const wanted: { key: string; action: "stop" | "start" }[] = [];
+  const result: InboundResult = { keywords: 0, changed: 0, unmatched: 0, unmatchedLabels: [], tested: 0, ignored: 0 };
+  const wanted: { from: string; action: "stop" | "start" }[] = [];
   for (const reply of replies) {
+    if (isStopTest(reply.text)) {
+      result.tested += 1;
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: STOP_TEST_PATIENT_ID,
+        action: "stop",
+        phone_last4: "TEST",
+        source,
+        device_id: device.id,
+      });
+      continue;
+    }
     const action = parseOptOutReply(reply.text);
-    const key = phoneMatchKey(reply.from);
     if (!action) {
       result.ignored += 1;
       continue;
     }
     result.keywords += 1;
-    if (!key) result.unmatched += 1;
-    else wanted.push({ key, action });
+    wanted.push({ from: reply.from, action });
   }
   if (!wanted.length) return result;
   const { data: pts, error } = await admin
     .from("patients")
-    .select("id, phone, text_reminders_off")
+    .select("id, full_name, phone, text_reminders_off")
     .eq("workspace_id", device.workspace_id);
   if (error) throw new Error(`patients lookup failed: ${error.message}`);
-  const byKey = new Map<string, { id: string; off: boolean }[]>();
-  for (const p of pts ?? []) {
-    const key = phoneMatchKey(p.phone);
+  const people = (pts ?? []).map((p) => ({
+    id: p.id as string,
+    fullName: String(p.full_name ?? ""),
+    phone: String(p.phone ?? ""),
+    off: p.text_reminders_off === true,
+  }));
+  const byPhone = new Map<string, typeof people>();
+  for (const person of people) {
+    const key = phoneMatchKey(person.phone);
     if (!key) continue;
-    const list = byKey.get(key) ?? [];
-    list.push({ id: p.id as string, off: p.text_reminders_off === true });
-    byKey.set(key, list);
+    const list = byPhone.get(key) ?? [];
+    list.push(person);
+    byPhone.set(key, list);
   }
-  for (const { key, action } of wanted) {
-    const matches = byKey.get(key) ?? [];
+  for (const { from, action } of wanted) {
+    const phoneKey = phoneMatchKey(from);
+    const matches = phoneKey
+      ? (byPhone.get(phoneKey) ?? [])
+      : (() => {
+          const id = matchPatientByName(people, from);
+          const person = id ? people.find((p) => p.id === id) : undefined;
+          return person ? [person] : [];
+        })();
     if (!matches.length) {
       result.unmatched += 1;
+      const label = (from || "unknown").replace(/\s+/g, " ").trim().slice(0, 80) || "unknown";
+      result.unmatchedLabels.push(label);
+      await admin.from("reminder_opt_outs").insert({
+        workspace_id: device.workspace_id,
+        patient_id: `${UNMATCHED_PREFIX}${label}`,
+        action,
+        phone_last4: phoneKey ? phoneKey.slice(-4) : "",
+        source,
+        device_id: device.id,
+      });
       continue;
     }
     const off = action === "stop";
-    for (const m of matches) {
-      if (m.off === off) continue; // already in that state
+    for (const person of matches) {
+      if (person.off === off) continue;
       const { error: upErr } = await admin
         .from("patients")
         .update({ text_reminders_off: off })
         .eq("workspace_id", device.workspace_id)
-        .eq("id", m.id);
+        .eq("id", person.id);
       if (upErr) continue;
-      m.off = off;
+      person.off = off;
       result.changed += 1;
       await admin.from("reminder_opt_outs").insert({
         workspace_id: device.workspace_id,
-        patient_id: m.id,
+        patient_id: person.id,
         action,
-        phone_last4: key.slice(-4),
+        phone_last4: phoneMatchKey(person.phone).slice(-4) || phoneKey.slice(-4),
         source,
         device_id: device.id,
       });
