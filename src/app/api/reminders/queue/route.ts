@@ -13,6 +13,7 @@ import {
   planReminderRun,
   planScheduledRun,
   shortcutBatchSize,
+  shortcutFetchDecision,
   withoutClosedDates,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
@@ -56,7 +57,10 @@ export const dynamic = "force-dynamic";
  *                Omitted = no limit (shortcuts installed before batching).
  *
  * Every call (outside quiet hours) also hands out queued "Message patients"
- * texts. Item ids: plain = appointment on `visitDate`; "r:<date>:<id>" =
+ * texts, including ones whose send day already passed. A closed day skips
+ * appointment texts. It does not remove a broadcast, and the shortcut
+ * message is the closed-day note only when this batch is empty. Item ids:
+ * plain = appointment on `visitDate`; "r:<date>:<id>" =
  * reminder for another date; "b:<id>" = broadcast; "bd:<year>:<patient id>" =
  * birthday text. /ack understands all.
  *
@@ -334,8 +338,7 @@ export async function GET(request: NextRequest) {
   };
 
   if (shortcut) {
-    let message = items.length ? `Sending ${describe()}.` : reason;
-    let sendItems = send && !preview ? items : [];
+    const summary = describe();
     if (run && !send && !preview && items.length) {
       // Dry run on the phone: log what would go out; the phone sends nothing.
       const logRows: Record<string, unknown>[] = [];
@@ -362,13 +365,19 @@ export async function GET(request: NextRequest) {
           .in("id", broadcasts.map((b) => b.recipientId));
       }
       if (reminderItems.length) await finishRun(`${visitDate}: ${reminderItems.length} dry-run`);
-      message = `Dry run: ${describe()} logged, nothing sent.`;
-      sendItems = [];
     }
+    const decision = shortcutFetchDecision({
+      itemCount: items.length,
+      reason,
+      summary,
+      dryRun,
+      preview,
+    });
+    const sendItems = decision.send === "yes" ? items : [];
     return reply({
       visitDate,
-      send: sendItems.length > 0 ? "yes" : "no",
-      message: message || "Nothing to send.",
+      send: decision.send,
+      message: decision.message,
       count: sendItems.length,
       items: sendItems,
     });

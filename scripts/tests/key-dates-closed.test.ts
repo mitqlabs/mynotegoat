@@ -18,7 +18,8 @@ import {
   summarizeKeyDateBookings,
   type KeyDateRecord,
 } from "../../src/lib/key-dates";
-import { broadcastTimeOk, normalizeHHMM } from "../../src/lib/reminder-automation";
+import { broadcastTimeOk, normalizeHHMM, shortcutFetchDecision } from "../../src/lib/reminder-automation";
+import { broadcastSendBlock } from "../../src/lib/reminder-format";
 import { loadBroadcastQueue } from "../../src/lib/reminder-server";
 import { keyDatesHelp } from "../../src/lib/goat-keydates-help";
 
@@ -150,15 +151,32 @@ assert.equal(broadcastTimeOk("09:00", { notBefore: "10:12" }), false, "a visit t
 assert.equal(broadcastTimeOk("11:00", { notBefore: "10:12" }), true);
 
 const bc = { message: "Mock office message", target_date: "2026-10-28", created_at: "2026-10-28T17:12:06Z", canceled_at: null, start_time: null, end_time: null };
-const recips = Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, patient_id: `p${i}`, appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: bc }));
-const pats = Array.from({ length: 30 }, (_, i) => ({ id: `p${i}`, phone: `(555) 010-${String(1000 + i)}`, text_reminders_off: false }));
+const yesterday = { ...bc, message: "Still queued from yesterday", target_date: "2026-10-27" };
+const recips = [
+  ...Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, patient_id: `p${i}`, appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: bc })),
+  { id: "old", patient_id: "p0", appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: yesterday },
+];
+const pats = Array.from({ length: 30 }, (_, i) => ({ id: `p${i}`, phone: `(555) 010-${String(1000 + i)}`, text_reminders_off: false, full_name: `Mock ${i}` }));
 const fakeAdmin = {
   from: (table: string) => {
+    const floors: { col: string; val: string }[] = [];
     const b: Record<string, unknown> = {
-      then: (res: (v: unknown) => void) =>
-        res({ data: table === "patients" ? pats : table === "reminder_broadcast_recipients" ? recips : [], error: null }),
+      then: (res: (v: unknown) => void) => {
+        let data: unknown[] = table === "patients" ? pats : table === "reminder_broadcast_recipients" ? recips : [];
+        for (const floor of floors) {
+          data = data.filter((row) => {
+            const nested = (row as { reminder_broadcasts?: { target_date?: string } }).reminder_broadcasts;
+            return String(nested?.target_date ?? "") >= floor.val;
+          });
+        }
+        res({ data, error: null });
+      },
     };
-    for (const m of ["select", "eq", "gte", "is", "order", "limit", "in", "neq"]) b[m] = () => b;
+    b.gte = (col: string, val: string) => {
+      if (col === "reminder_broadcasts.target_date") floors.push({ col, val });
+      return b;
+    };
+    for (const m of ["select", "eq", "is", "order", "limit", "in", "neq"]) b[m] = () => b;
     return b;
   },
 };
@@ -172,14 +190,42 @@ const fakeAdmin = {
     "10:12",
     { optOutLine: false },
   );
-  assert.equal(queued.length, 30, "all 30 all-active recipients are handed to the device mid-morning");
-  assert.ok(queued.every((q) => q.phone.startsWith("+1") && q.text === "Mock office message"));
+  assert.equal(queued.length, 31, "today's 30 plus the one still queued from yesterday");
+  assert.equal(queued.filter((q) => q.text === "Mock office message").length, 30);
+  assert.equal(queued.filter((q) => q.text === "Still queued from yesterday").length, 1, "a send day that already passed is still handed out");
   const routeSrc = readFileSync("src/app/api/reminders/queue/route.ts", "utf8");
   assert.ok(
     routeSrc.indexOf("withoutClosedDates(groups") < routeSrc.indexOf("loadBroadcastQueue(admin"),
     "closed-date filtering applies to reminder groups only; broadcasts load separately",
   );
+  assert.ok(!routeSrc.includes('gte("reminder_broadcasts.target_date"'), "a past send day is not filtered out of the broadcast query");
+  const closedNote = "The office is closed tomorrow (Key Dates).";
+  const withBroadcast = shortcutFetchDecision({
+    itemCount: 27,
+    reason: closedNote,
+    summary: "27 office message(s)",
+    dryRun: false,
+    preview: false,
+  });
+  assert.equal(withBroadcast.send, "yes", "a closed day does not turn send off while a broadcast is queued");
+  assert.equal(withBroadcast.message, "Sending 27 office message(s).");
+  assert.doesNotMatch(withBroadcast.message, /closed/i, "the shortcut must not say the office is closed when it should send");
+  const nothing = shortcutFetchDecision({ itemCount: 0, reason: closedNote, summary: "", dryRun: false, preview: false });
+  assert.equal(nothing.send, "no");
+  assert.equal(nothing.message, closedNote, "with nothing queued, the closed-day note is still the message");
+  assert.equal(
+    shortcutFetchDecision({ itemCount: 2, reason: closedNote, summary: "2 office message(s)", dryRun: true, preview: false }).send,
+    "no",
+  );
   const composer = readFileSync("src/components/message-patients-composer.tsx", "utf8");
   assert.ok(!/primaryBtn =[^;]*bg-white/.test(composer), "primary button must not also set bg-white (invisible white-on-white)");
+  assert.match(composer, /placeholder="Type your message"/);
+  assert.match(composer, /placeholder:italic/);
+  assert.doesNotMatch(composer, /Our office is closed today due to an emergency/);
+  assert.match(composer, /data-testid="message-patients-send-reason"/);
+  assert.equal(broadcastSendBlock({ text: "", loading: false, recipientCount: 27, windowError: "", booked: false }), "Type a message to send.");
+  assert.equal(broadcastSendBlock({ text: "We're closed Thursday.", loading: false, recipientCount: 27, windowError: "", booked: false }), "");
+  assert.equal(broadcastSendBlock({ text: "Hi", loading: false, recipientCount: 0, windowError: "", booked: false }), "No active patients with a phone number.");
+  assert.equal(broadcastSendBlock({ text: "Hi", loading: true, recipientCount: 0, windowError: "", booked: false }), "Still counting patients.");
   console.log("key-dates-closed: OK");
 })();

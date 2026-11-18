@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { fmtDate, queuedStatusText, sentFromText } from "@/lib/reminder-format";
+import { broadcastSendBlock, fmtDate, queuedStatusText, sentFromText } from "@/lib/reminder-format";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
@@ -278,6 +278,13 @@ export function MessagePatientsComposer({
             ? "visits still ahead"
             : "";
   const windowLine = isBooked && (startTime || endTime) ? `Texting patients ${windowLabel}` : "";
+  const sendBlock = broadcastSendBlock({
+    text,
+    loading,
+    recipientCount: recipients.length,
+    windowError,
+    booked: isBooked,
+  });
 
   const queue = async () => {
     setJustQueued(false);
@@ -364,10 +371,10 @@ export function MessagePatientsComposer({
       <label className="grid gap-1">
         <span className={label}>Message</span>
         <textarea
-          className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-[var(--text-main)]"
+          className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-[var(--text-main)] placeholder:font-normal placeholder:italic placeholder:text-[var(--text-muted)] placeholder:opacity-60"
           maxLength={MAX}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Our office is closed today due to an emergency. We'll call you to reschedule."
+          placeholder="Type your message"
           value={text}
         />
         <span className="text-xs text-[var(--text-muted)]">{text.length}/{MAX}</span>
@@ -430,6 +437,11 @@ export function MessagePatientsComposer({
           {busy ? "Sending…" : "Send message"}
         </button>
       </div>
+      {sendBlock && !busy ? (
+        <p className="text-sm font-semibold text-[var(--text-main)]" data-testid="message-patients-send-reason">
+          {sendBlock}
+        </p>
+      ) : null}
       {showList && recipients.length > 0 && (
         <ul className="max-h-48 overflow-y-auto rounded-lg border border-[var(--line-soft)] px-3 py-2 text-[var(--text-muted)]">
           {recipients.map((r) => (
