@@ -59,8 +59,8 @@ const runs = normalizeShortcutRuns({
   bad: { status: "maybe" },
 });
 assert.equal(Object.keys(runs).join(","), "birthday,soon");
-assert.equal(shortcutStatusText({ on: true }, runs.birthday, "America/Los_Angeles"), "Last run 11/18/26 9:05 AM · OK");
-assert.equal(shortcutStatusText({ on: true }, runs.soon, "America/Los_Angeles"), "Last run 11/18/26 8:00 AM · Error");
+assert.equal(shortcutStatusText({ on: true }, runs.birthday, "America/Los_Angeles"), "Last run 11/18/26 9:05 AM. OK");
+assert.equal(shortcutStatusText({ on: true }, runs.soon, "America/Los_Angeles"), "Last run 11/18/26 8:00 AM. Didn't connect. Tap Add to this Device again.");
 assert.equal(shortcutStatusText({ on: true }, undefined, "America/Los_Angeles"), "Not run yet");
 assert.equal(shortcutStatusText({ on: false }, runs.birthday, "America/Los_Angeles"), "Off");
 
@@ -126,7 +126,7 @@ assert.deepEqual(lines, [
   "Tap **Run Immediately**.",
   "Turn **Notify When Run** off.",
   "Tap **Next**.",
-  "Tap **NoteGoat – Birthdays 9 AM**.",
+  "Tap **\"NoteGoat – Birthdays 9 AM\"**.",
   "Tap **Done**.",
 ]);
 assert.equal(lines.filter((line) => line.includes("9:00 AM")).length, 1, "only one time");
@@ -135,7 +135,7 @@ assert.equal(lines.every((line) => line.split("**").length <= 3 || line.startsWi
 const mac = oneShortcutLines("mac", "NoteGoat – Birthdays 9 AM", "9:00 AM");
 assert.ok(mac[0].startsWith("Click "));
 assert.ok(mac.includes("Click **Daily**."));
-assert.ok(mac.includes("Click **NoteGoat – Birthdays 9 AM**."));
+assert.ok(mac.includes("Click **\"NoteGoat – Birthdays 9 AM\"**."));
 const stop = stopCatcherLines("iphone");
 assert.ok(stop.includes("Type **STOP**."));
 assert.ok(stop.includes("Tap **NoteGoat**."));

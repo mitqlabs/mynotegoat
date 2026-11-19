@@ -15,7 +15,7 @@ import { shortcutName } from "@/lib/text-rules";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { createSmsTemplate } from "@/lib/sms-templates";
 
-const field = "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-[var(--text-main)]";
+const field = "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 text-[var(--text-main)]";
 const wordBtn = "rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-sm font-semibold text-[var(--text-main)]";
 
 export function SmsTemplatesSection({

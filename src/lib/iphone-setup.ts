@@ -152,7 +152,7 @@ export function oneShortcutLines(platform: SetupPlatform, name: string, time: st
     `${press} **Run Immediately**.`,
     "Turn **Notify When Run** off.",
     `${press} **Next**.`,
-    `${press} **${name}**.`,
+    `${press} **"${name}"**.`,
     `${press} **Done**.`,
   ];
 }

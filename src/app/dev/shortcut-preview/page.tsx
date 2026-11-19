@@ -9,6 +9,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CreateShortcutSection } from "@/components/create-shortcut-section";
 import { SmsTemplatesSection } from "@/components/sms-templates-section";
+import { BRAND_STORAGE_KEY, TONE_STORAGE_KEY } from "@/lib/brand";
 import { defaultSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY, type SmsReminderSettings } from "@/lib/sms-reminders";
 import { SMS_TEMPLATES_STORAGE_KEY, type SmsTemplate } from "@/lib/sms-templates";
 import { shortcutName, withRules, type ShortcutRun } from "@/lib/text-rules";
@@ -43,9 +44,11 @@ function Preview() {
   if (typeof window !== "undefined" && !ready) {
     window.localStorage.setItem(SMS_TEMPLATES_STORAGE_KEY, JSON.stringify(TEMPLATES));
     window.localStorage.setItem(SMS_REMINDER_SETTINGS_KEY, JSON.stringify(demoSettings()));
+    window.localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify({ theme: "blue" }));
+    window.localStorage.setItem(TONE_STORAGE_KEY, "dark");
     const root = document.documentElement;
     root.setAttribute("data-brand", "blue");
-    root.setAttribute("data-tone", "light");
+    root.setAttribute("data-tone", "dark");
     root.setAttribute("data-theme-lock", "1");
     setReady(true);
   }

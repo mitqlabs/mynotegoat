@@ -173,11 +173,20 @@ export interface ShortcutRun {
   summary: string;
 }
 
+/** Plain words for a failed shortcut run: what went wrong, then what to do. */
+export function shortcutErrorText(summary: string): string {
+  const text = summary.trim();
+  if (/tap add to this device again/i.test(text)) return text;
+  if (/closed|key date/i.test(text)) return "The office is closed that day. Nothing goes out.";
+  return "Didn't connect. Tap Add to this Device again.";
+}
+
 export function shortcutStatusText(rule: Pick<TextRule, "on">, run: ShortcutRun | undefined, timeZone: string): string {
   if (!rule.on) return "Off";
   if (!run) return "Not run yet";
   const when = fmtDateTime(run.at, timeZone);
-  return run.status === "error" ? `Last run ${when} · Error` : `Last run ${when} · OK`;
+  if (run.status === "error") return `Last run ${when}. ${shortcutErrorText(run.summary)}`;
+  return `Last run ${when}. OK`;
 }
 
 export function normalizeShortcutRuns(value: unknown): Record<string, ShortcutRun> {

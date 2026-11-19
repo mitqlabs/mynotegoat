@@ -226,31 +226,38 @@ export function CreateShortcutSection({
     body = (
       <div className="grid gap-3" data-testid="shortcut-when">
         <p className="text-lg font-bold text-[var(--text-main)]">Send when?</p>
-        {WHEN.map((choice) => {
-          const selected = kind === choice.kind;
-          return (
-            <div className={selected ? big : "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-4 text-[var(--text-main)]"} key={choice.kind}>
-              <button className="w-full text-left text-lg font-bold" onClick={() => setKind(choice.kind)} type="button">
-                {choice.label}
-              </button>
-              <select
-                aria-label={`${choice.label} time`}
-                className="mt-3 h-[42px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-lg font-bold text-[var(--text-main)]"
-                onChange={(event) => {
-                  setKind(choice.kind);
-                  setHours((current) => ({ ...current, [choice.kind]: Number(event.target.value) }));
-                }}
-                value={hours[choice.kind]}
+        <div className="grid gap-3" role="radiogroup" aria-label="Send when?">
+          {WHEN.map((choice) => {
+            const selected = kind === choice.kind;
+            return (
+              <div
+                className={`rounded-xl px-4 py-4 text-[var(--text-main)] ${selected ? "border-2 border-[var(--brand-primary)] bg-[var(--bg-soft)]" : "border border-[var(--line-soft)] bg-[var(--bg-panel)]"}`}
+                key={choice.kind}
               >
-                {HOURS.map((hour) => (
-                  <option key={hour} value={hour}>
-                    {hourChoice(hour)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          );
-        })}
+                <button aria-checked={selected} className="flex w-full items-center gap-3 text-left text-lg font-bold" onClick={() => setKind(choice.kind)} role="radio" type="button">
+                  <span aria-hidden className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 ${selected ? "border-[var(--brand-primary)]" : "border-[var(--line-soft)]"}`}>
+                    {selected ? <span className="h-3 w-3 rounded-full bg-[var(--brand-primary)]" /> : null}
+                  </span>
+                  {choice.label}
+                </button>
+                {selected ? (
+                  <select
+                    aria-label={`${choice.label} time`}
+                    className="mt-3 h-[42px] w-full rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 text-lg font-bold text-[var(--text-main)]"
+                    onChange={(event) => setHours((current) => ({ ...current, [choice.kind]: Number(event.target.value) }))}
+                    value={hours[choice.kind]}
+                  >
+                    {HOURS.map((hour) => (
+                      <option key={hour} value={hour}>
+                        {hourChoice(hour)}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
         <button className={primary} data-testid="create-shortcut" disabled={!kind} onClick={create} type="button">
           Create Shortcut
         </button>
@@ -301,7 +308,10 @@ export function CreateShortcutSection({
                   <div className="min-w-0">
                     <p className="text-lg font-bold text-[var(--text-main)]">{rule.shortcutName || shortcutName(rule)}</p>
                     <p className="text-[var(--text-muted)]">{ruleWhen(rule)}</p>
-                    <p className="font-semibold text-[var(--text-main)]" data-testid="shortcut-status">
+                    <p
+                      className={`font-semibold ${runs[rule.id]?.status === "error" ? "text-danger" : runs[rule.id]?.status === "ok" && rule.on ? "text-[var(--status-active)]" : "text-[var(--text-main)]"}`}
+                      data-testid="shortcut-status"
+                    >
                       {shortcutStatusText(rule, runs[rule.id], settings.timeZone)}
                     </p>
                   </div>
