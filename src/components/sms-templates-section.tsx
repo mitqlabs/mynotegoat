@@ -5,7 +5,7 @@
  * The same saved messages Auto Texts already use.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DraftTextarea } from "@/components/draft-textarea";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { appConfirm } from "@/components/app-dialog";
@@ -43,13 +43,15 @@ export function SmsTemplatesSection({
     onToggle(true);
   };
 
+  const addRef = useRef(add);
   useEffect(() => {
-    const onNew = () => add();
+    addRef.current = add;
+  });
+  useEffect(() => {
+    const onNew = () => addRef.current();
     window.addEventListener("notegoat:new-text-template", onNew);
     return () => window.removeEventListener("notegoat:new-text-template", onNew);
-    // add() reads the latest templates through the hook updater.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateSmsTemplates]);
+  }, []);
 
   const usedBy = (id: string) =>
     (settings.rules ?? []).filter((rule) => rule.templateId === id).map((rule) => rule.shortcutName || shortcutName(rule));
