@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
 import { decodeQueueItemId } from "@/lib/reminder-automation";
 import { runSummary } from "@/lib/reminder-format";
 import { ackBirthday, ackBroadcast, adminClient, authenticateDevice } from "@/lib/reminder-server";
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
   const admin = adminClient();
   if (!admin) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
-  if (!device) return NextResponse.json({ error: "Invalid or revoked device token." }, { status: 401 });
+  if (!device) return NextResponse.json({ error: DEVICE_SETUP_AGAIN, message: DEVICE_SETUP_AGAIN, send: "no" }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as {
     visitDate?: unknown;
