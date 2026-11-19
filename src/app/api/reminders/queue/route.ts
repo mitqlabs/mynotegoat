@@ -17,6 +17,7 @@ import {
   withoutClosedDates,
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
+import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
 import { summaryAfterEmptyRun } from "@/lib/reminder-format";
 import { dueScope } from "@/lib/text-rules";
 import {
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
   const admin = adminClient();
   if (!admin) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
-  if (!device) return NextResponse.json({ error: "Invalid or revoked device token." }, { status: 401 });
+  if (!device) return NextResponse.json({ error: DEVICE_SETUP_AGAIN, message: DEVICE_SETUP_AGAIN, send: "no" }, { status: 401 });
 
   const params = request.nextUrl.searchParams;
   const preview = params.get("preview") === "1";

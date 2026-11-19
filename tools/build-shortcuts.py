@@ -10,6 +10,7 @@ OBJ = "\ufffc"
 # server says send=no, so a killed run only leases one small batch.
 BATCH = 5
 LOOPS = 8
+SETUP_AGAIN = "This Device needs to be set up again: open NoteGoat > Text Reminders > Add to this Device"
 # Same length as a real device code (ngr_ + 64 hex). The download route
 # swaps this for the office's code so nobody pastes it.
 TOKEN_SLOT = "NG" + ("0" * 66)
@@ -32,13 +33,36 @@ def fields(items):
         {"WFItemType": 0, "WFKey": tstr(k), "WFValue": v} for k, v in items]},
         "WFSerializationType": "WFDictionaryFieldValue"}
 
-def build(name, query):
+def failed_fetch_notice():
+    """send is not yes, or the queue call failed. Always show a notification."""
+    err_if, msg_if = U(), U()
+    d_err = U()
+    return [
+        act("is.workflow.actions.getvalueforkey", UUID=d_err, WFDictionaryKey="error",
+            WFInput=att(var("Queue"))),
+        act("is.workflow.actions.conditional", GroupingIdentifier=err_if, WFControlFlowMode=0,
+            WFCondition=100, WFInput=att(out(d_err, "Dictionary Value"))),
+        act("is.workflow.actions.notification", WFNotificationActionTitle="NoteGoat",
+            WFNotificationActionBody=tstr("", out(d_err, "Dictionary Value"))),
+        act("is.workflow.actions.conditional", GroupingIdentifier=err_if, WFControlFlowMode=1),
+        act("is.workflow.actions.conditional", GroupingIdentifier=msg_if, WFControlFlowMode=0,
+            WFCondition=100, WFInput=att(var("Message"))),
+        act("is.workflow.actions.notification", WFNotificationActionTitle="NoteGoat",
+            WFNotificationActionBody=tstr("", var("Message"))),
+        act("is.workflow.actions.conditional", GroupingIdentifier=msg_if, WFControlFlowMode=1),
+        act("is.workflow.actions.notification", WFNotificationActionTitle="NoteGoat",
+            WFNotificationActionBody=tstr(SETUP_AGAIN)),
+        act("is.workflow.actions.conditional", GroupingIdentifier=msg_if, WFControlFlowMode=2),
+        act("is.workflow.actions.conditional", GroupingIdentifier=err_if, WFControlFlowMode=2),
+    ]
+
+
+def build(name, query, notify_on_stop=False):
     """Fetch a small batch, text it, ack each one, then ask again.
 
-    Stops as soon as the server says send=no, so a catch-up run with nothing
-    left is a no-op. Send Message has Show When Run off so the automation
-    does not sit on a Messages prompt. An empty queue exits quietly; a batch
-    that actually sends shows one notification.
+    Stops as soon as the server says send=no. Send Message has Show When Run
+    off so the automation does not sit on a Messages prompt. NoteGoat shows
+    the error or message instead of exiting with nothing on screen.
     """
     auth = [("Authorization", tstr("Bearer ", var("Token")))]
     loop, iff, rep = U(), U(), U()
@@ -87,7 +111,7 @@ def build(name, query):
         act("is.workflow.actions.notification", WFNotificationActionTitle="NoteGoat",
             WFNotificationActionBody=tstr("", var("Message"))),
         act("is.workflow.actions.conditional", GroupingIdentifier=iff, WFControlFlowMode=1),
-        act("is.workflow.actions.exit"),
+        *(failed_fetch_notice() if notify_on_stop else [act("is.workflow.actions.exit")]),
         act("is.workflow.actions.conditional", GroupingIdentifier=iff, WFControlFlowMode=2),
         act("is.workflow.actions.repeat.count", GroupingIdentifier=loop, WFControlFlowMode=2, UUID=U()),
     ]
@@ -127,7 +151,7 @@ def build_notegoat(token):
     tk, body, sender = U(), U(), U()
     shortcut_in = {"Type": "ExtensionInput"}
     # Reuse the send shortcut's actions, minus its own code question.
-    send = build("NoteGoat", f"format=shortcut&force=1&batch={BATCH}")
+    send = build("NoteGoat", f"format=shortcut&force=1&batch={BATCH}", notify_on_stop=True)
     send_acts = send["WFWorkflowActions"][2:]
     acts = [
         act("is.workflow.actions.gettext", UUID=tk, WFTextActionText=token),

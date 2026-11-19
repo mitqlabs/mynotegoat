@@ -44,7 +44,7 @@ export function TextRuleWizard({
   settings: SmsReminderSettings;
   update: (patch: Partial<SmsReminderSettings>) => void;
   messages: SmsTemplate[];
-  devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null }[];
+  devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null; last_run_at?: string | null; last_rejected_at?: string | null; last_rejected_reason?: string | null }[];
   workspaceId: string;
   onChanged?: () => void;
   onConfirm: (confirmed: boolean) => void;
