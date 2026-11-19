@@ -103,7 +103,7 @@ const iPhones = panel.indexOf('data-testid="section-phones"');
 const iMore = panel.indexOf('testId="section-more"');
 const iTexts = panel.indexOf('testId="section-texts"');
 assert.ok(iWarn > 0 && iWarn < iSetup && iSetup < iPhones && iPhones < iMore && iMore < iTexts, "warning, texts, phones, More, Broadcast");
-assert.ok(panel.slice(iSetup, iPhones).includes("<TextRuleWizard"), "the short list is the first thing");
+assert.ok(panel.slice(iSetup, iPhones).includes("<SmsTemplatesSection") && panel.slice(iSetup, iPhones).includes("<CreateShortcutSection"), "templates and shortcuts come first");
 assert.ok(panel.slice(iPhones, iMore).includes("Phones and Macs"), "devices stay in Phones and Macs");
 const inTexts = panel.slice(iTexts);
 for (const needle of ["<MessagePatientsComposer", 'testId="recent-sends"'])

@@ -134,6 +134,54 @@ export function deviceSetupSteps(platform: SetupPlatform, clocks: { hour: number
   return platform === "mac" ? macSetupSteps(clocks) : phoneStepsForClocks(clocks);
 }
 
+/**
+ * Steps for one shortcut only. One action per line, in the words the Device shows.
+ * Apple will not let a website create the Time of Day automation, so this is that one automation.
+ */
+export function oneShortcutLines(platform: SetupPlatform, name: string, time: string): string[] {
+  const press = platform === "mac" ? "Click" : "Tap";
+  const day = platform === "mac" ? "Daily" : "Every Day";
+  return [
+    `${press} **Add Shortcut**.`,
+    "Open **Shortcuts**.",
+    `${press} **Automation**.`,
+    `${press} **+**.`,
+    `${press} **Time of Day**.`,
+    `Set **${time}**.`,
+    `${press} **${day}**.`,
+    `${press} **Run Immediately**.`,
+    "Turn **Notify When Run** off.",
+    `${press} **Next**.`,
+    `${press} **"${name}"**.`,
+    `${press} **Done**.`,
+  ];
+}
+
+/** STOP catcher and Test stay separate from each shortcut. */
+export function stopCatcherLines(platform: SetupPlatform): string[] {
+  const press = platform === "mac" ? "Click" : "Tap";
+  if (platform === "mac") {
+    return [
+      `${press} **+**.`,
+      "If you see **Message**, click it.",
+      "If you do not see **Message**, skip it. A Mac may not have **Message**.",
+    ];
+  }
+  return [
+    `${press} **+**.`,
+    `${press} **Message**.`,
+    `${press} **Message Contains**.`,
+    "Type **STOP**.",
+    `${press} **Done**.`,
+    `${press} **Run Immediately**.`,
+    "Turn **Notify When Run** off.",
+    `${press} **Next**.`,
+    `${press} **NoteGoat**.`,
+    "If you see **Shortcut Input**, tap it.",
+    `${press} **Done**.`,
+  ];
+}
+
 export interface SetupReport {
   /** Green only when the phone has reported a STOP test or a real STOP. */
   ok: boolean;
@@ -161,7 +209,7 @@ export function setupTestReport(input: {
     return {
       ok: true,
       title: "STOP catcher working ✓",
-      fix: `${when}. The phone also checked in ${fmtDateTime(input.lastSeenAt, input.timeZone)}.`,
+      fix: `${when}. The device also checked in ${fmtDateTime(input.lastSeenAt, input.timeZone)}.`,
     };
   }
   if (input.stopReportAt) {
