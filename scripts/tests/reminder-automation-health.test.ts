@@ -108,8 +108,8 @@ check("handbook says the shortcut does not run by itself", () => { assert.match(
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8") + readFileSync("src/components/reminder-setup-checklist.tsx", "utf8");
 check("panel has the required step, checkbox and warning", () => {
   assert.match(panel, /does not start by itself/);
-  assert.match(panel, /Add to this iPhone/);
-  assert.match(panel, /may not be set up — see the iPhone steps/);
+  assert.match(panel, /Add to this Device/);
+  assert.match(panel, /may not be set up — see the device steps/);
 });
 
 console.log(`${pass} passed, ${fail} failed`);

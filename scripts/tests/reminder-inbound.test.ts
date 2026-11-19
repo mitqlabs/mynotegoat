@@ -26,7 +26,7 @@ assert.equal(matchPatientByName([{ id: "a", fullName: "Doe, Jane" }], "555010000
 assert.equal(stopReplyChoices([{ id: "a", fullName: "Doe, Jane" }, { id: "b", fullName: "Smith, Jane" }], "Jane Doe").length, 2);
 
 const steps = iphoneSetupSteps(8).map((step) => step.text.replace(/\*\*/g, ""));
-assert.equal(steps[0], "Tap Add to this iPhone.");
+assert.equal(steps[0], "Tap Add to this Device.");
 assert.equal(steps[1], "Tap Add Shortcut.");
 assert.match(steps[3], /8:00 AM/);
 assert.match(steps[5], /8:30 AM/);

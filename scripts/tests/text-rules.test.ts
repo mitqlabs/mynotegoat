@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { phoneStepsForClocks } from "../../src/lib/iphone-setup";
+import { macSetupSteps, phoneStepsForClocks, readSetupPlatform } from "../../src/lib/iphone-setup";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 import { automationClocks, clockWords, dueScope, legacyRules, ruleWhen, withRules } from "../../src/lib/text-rules";
 
@@ -58,7 +58,7 @@ assert.equal(many.length, 3, "never more than 3 time automations");
 
 const built = phoneStepsForClocks(clocks);
 const steps = built.map((step) => step.text.replace(/\*\*/g, ""));
-assert.equal(steps[0], "Tap Add to this iPhone.");
+assert.equal(steps[0], "Tap Add to this Device.");
 assert.equal(steps[1], "Tap Add Shortcut.");
 assert.deepEqual(built[2].lines, [
   "Open **Shortcuts**.",
@@ -79,6 +79,18 @@ assert.ok(built[5].lines?.includes("Type **STOP**."));
 assert.equal(steps[6], "Tap Test.");
 assert.equal(steps.length, 7);
 assert.equal(steps.some((step) => step.includes("8:30")), false);
+
+assert.equal(readSetupPlatform("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", 0), "iphone");
+assert.equal(readSetupPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 0), "mac");
+assert.equal(readSetupPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 5), "iphone", "iPadOS reports as a Mac with touch");
+const mac = macSetupSteps(clocks);
+const macLines = mac.flatMap((step) => step.lines ?? [step.text]);
+assert.equal(macLines[0], "Click **Add to this Device**.");
+assert.ok(macLines.includes("Click **Time of Day**."));
+assert.ok(macLines.includes("Click **Daily**."));
+assert.ok(macLines.some((line) => line.includes("If you do not see **Message**")));
+assert.equal(macLines[macLines.length - 1], "Click **Test**.");
+assert.equal(macLines.some((line) => line.includes("Tap ")), false, "Mac steps use the words on a Mac");
 
 // Friday 8:00 AM Pacific, office closed Fridays, not a Key Date.
 const friday8 = new Date("2026-11-20T16:00:00Z");

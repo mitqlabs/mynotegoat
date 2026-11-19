@@ -388,7 +388,7 @@ export function TextRemindersSettingsPanel() {
   }, [history, settings, runDays, scheduleAppointments, devices, hasIphone]);
 
   return (
-    <div className="space-y-5" data-testid="text-reminders-panel">
+    <div className="w-full min-w-0 max-w-full space-y-5" data-testid="text-reminders-panel">
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
       <div data-testid="section-setup">
@@ -517,7 +517,7 @@ export function TextRemindersSettingsPanel() {
             <b>NoteGoat</b> on the iPhone texts 5 patients, then asks for the next 5. It also catches a reply of STOP. It runs at each time in the steps, and once more an hour after the last one. That later run sends anything still waiting.
           </li>
           <li>
-            <b>Send Reminders Now</b> (iPhone shortcut) is the backup. Tap it if the phone was off or dead. It sends today&apos;s missed
+            <b>Send Reminders Now</b> (Device shortcut) is the backup. Use it if the device was off or dead. It sends today&apos;s missed
             reminders (only visits still ahead, worded &quot;today&quot;), tomorrow&apos;s if due, and any Message patients texts that are waiting to go out.
             Anyone already texted is skipped.
           </li>
@@ -566,7 +566,7 @@ export function TextRemindersSettingsPanel() {
         status={iphoneCard.status}
         summary={iphoneCard.summary}
         testId="section-iphone"
-        title="iPhone setup (Shortcuts app)"
+        title="Device setup (Shortcuts app)"
       >
         <div className="space-y-3" data-testid="iphone-steps">
           <p>Use the steps at the top of this page. One shortcut, named <b>NoteGoat</b>, sends the texts and catches STOP.</p>

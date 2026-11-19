@@ -7,7 +7,6 @@
 
 import { useState, type ReactNode } from "react";
 import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
-import { phoneStepsForClocks } from "@/lib/iphone-setup";
 import type { SmsTemplate } from "@/lib/sms-template-core";
 import type { SmsReminderSettings, TextRule, TextWhenKind } from "@/lib/sms-reminders";
 import { automationClocks, legacyRules, newRuleId, ruleWhen, withRules } from "@/lib/text-rules";
@@ -205,8 +204,8 @@ export function TextRuleWizard({
           onConfirm={onConfirm}
           onToggle={() => {}}
           open
+          clocks={clocks}
           settings={settings}
-          steps={phoneStepsForClocks(clocks)}
           workspaceId={workspaceId}
         />
       )}

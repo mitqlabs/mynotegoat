@@ -13,11 +13,21 @@ export interface SetupStep {
   lines?: string[];
 }
 
-/** Exact words the office follows. **these** are the words on the iPhone screen. */
+export type SetupPlatform = "iphone" | "mac" | "other";
+
+/** iPhone, iPad, a desktop Mac, or something else. iPadOS reports itself as a Mac with touch. */
+export function readSetupPlatform(ua: string, touchPoints = 0): SetupPlatform {
+  if (/iPhone|iPad|iPod/.test(ua)) return "iphone";
+  if (/Macintosh/.test(ua) && touchPoints > 1) return "iphone";
+  if (/Macintosh|Mac OS X/.test(ua)) return "mac";
+  return "other";
+}
+
+/** Exact words the office follows. **these** are the words on the device screen. */
 export function iphoneSetupSteps(sendHour: number): SetupStep[] {
   const [atSend, atHalf, atNext] = catchUpClockLabels(sendHour);
   return [
-    { icon: "📱", text: "Tap **Add to this iPhone**." },
+    { icon: "📱", text: "Tap **Add to this Device**." },
     { icon: "⬇️", text: "Tap **Add Shortcut**." },
     { icon: "⏰", text: "Open **Shortcuts**. Tap **Automation**. Tap **+**. Tap **Time of Day**." },
     { icon: "⏰", text: `Set **${atSend}**. Tap **Every Day**. Tap **Run Immediately**. Turn **Notify When Run** off. Tap **Next**.` },
@@ -44,7 +54,7 @@ export function phoneStepsForClocks(clocks: { hour: number; minute: number }[]):
   if (!clocks.length) return [];
   const first = clockWords(clocks[0].hour, clocks[0].minute);
   const steps: SetupStep[] = [
-    step(["Tap **Add to this iPhone**."]),
+    step(["Tap **Add to this Device**."]),
     step(["Tap **Add Shortcut**."]),
     step([
       "Open **Shortcuts**.",
@@ -83,6 +93,47 @@ export function phoneStepsForClocks(clocks: { hour: number; minute: number }[]):
   return steps;
 }
 
+/**
+ * Shortcuts on macOS Sonoma or later. Time of Day is a Personal Automation.
+ * Message may be missing, so that step says so instead of sending someone looking for a button that is not there.
+ */
+export function macSetupSteps(clocks: { hour: number; minute: number }[]): SetupStep[] {
+  if (!clocks.length) return [];
+  const first = clockWords(clocks[0].hour, clocks[0].minute);
+  const steps: SetupStep[] = [
+    step(["Click **Add to this Device**."]),
+    step(["Click **Add Shortcut**."]),
+    step([
+      "Open **Shortcuts**.",
+      "Click **Automation**.",
+      "Click **+**.",
+      "Click **Time of Day**.",
+      `Set **${first}**.`,
+      "Click **Daily**.",
+      "Click **Run Immediately**.",
+      "Turn **Notify When Run** off.",
+      "Click **Next**.",
+      "Click **NoteGoat**.",
+      "Click **Done**.",
+    ]),
+  ];
+  clocks.slice(1).forEach((clock) => {
+    steps.push(step([`Same as step 3, but set **${clockWords(clock.hour, clock.minute)}**.`]));
+  });
+  steps.push(step([
+    "Click **+**.",
+    "If you see **Message**, click it.",
+    "If you do not see **Message**, skip it. A Mac may not have **Message**.",
+  ]));
+  steps.push(step(["Click **Test**."]));
+  return steps;
+}
+
+/** iPhone steps, or Mac steps when this browser is a Mac. */
+export function deviceSetupSteps(platform: SetupPlatform, clocks: { hour: number; minute: number }[]): SetupStep[] {
+  return platform === "mac" ? macSetupSteps(clocks) : phoneStepsForClocks(clocks);
+}
+
 export interface SetupReport {
   /** Green only when the phone has reported a STOP test or a real STOP. */
   ok: boolean;
@@ -117,7 +168,7 @@ export function setupTestReport(input: {
     return {
       ok: true,
       title: "STOP catcher working ✓",
-      fix: `${when}. Texts go out at ${atSend}. Leave the iPhone on and unlocked then.`,
+      fix: `${when}. Texts go out at ${atSend}. Leave the device on and unlocked then.`,
     };
   }
   if (input.unmatched > 0) {
@@ -131,12 +182,12 @@ export function setupTestReport(input: {
     return {
       ok: false,
       title: "Not done yet",
-      fix: "The phone can send texts. Tap Test so we know STOP replies work.",
+      fix: "The device can send texts. Tap Test so we know STOP replies work.",
     };
   }
   return {
     ok: false,
     title: "Not working yet",
-    fix: "Tap Add to this iPhone, tap Add Shortcut, then come back and tap Test.",
+    fix: "Use Add to this Device, then Add Shortcut, then come back and tap Test.",
   };
 }

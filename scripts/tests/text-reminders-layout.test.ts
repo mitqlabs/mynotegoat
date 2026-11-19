@@ -63,11 +63,11 @@ assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z", revoked_
 assert.equal(officeMacSeen([dev({ kind: "iphone", last_seen_at: "2026-10-28T10:00:00Z" })]), false, "an iPhone is not a Mac");
 assert.equal(officeMacSeen([dev({ last_seen_at: "2026-10-28T10:00:00Z" })]), true);
 assert.doesNotMatch(queuedStatusText(30, false, false), /iMac/);
-assert.match(queuedStatusText(30, false, false), /run "Send Reminders Now" on the office iPhone/);
+assert.match(queuedStatusText(30, false, false), /run "Send Reminders Now" on the office device/);
 assert.match(queuedStatusText(30, false, true), /iMac also sends it by itself within about 10 minutes/);
 assert.match(queuedStatusText(30, true, true), /Test mode is on, so nothing will be texted/);
-assert.equal(sentFromText(false), "your iPhone");
-assert.equal(sentFromText(true), "your iPhone or iMac");
+assert.equal(sentFromText(false), "your device");
+assert.equal(sentFromText(true), "your device or iMac");
 const composer = readFileSync("src/components/message-patients-composer.tsx", "utf8");
 assert.doesNotMatch(composer, /The iMac sends it automatically/);
 assert.match(composer, /macConnected = false/, "iMac text is off unless a Mac has been seen");
@@ -114,7 +114,7 @@ assert.ok(!panel.slice(iSetup, iTexts).includes('data-testid="opt-out-list"'), "
 assert.ok(!panel.includes('testId="section-library"') && !panel.includes("<MessagesLibraryPanel"), "no duplicate Messages section");
 assert.ok(!panel.includes("<AutoTextRows"), "Auto Texts is not a separate section");
 const inMore = panel.slice(iMore, iTexts);
-for (const needle of ["How it works", "Send Reminders Now</b> (iPhone shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"', "Edit messages in SMS / Text Templates", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
+for (const needle of ["How it works", "Send Reminders Now</b> (Device shortcut)", 'data-testid="opt-out-settings"', 'data-testid="iphone-steps"', 'data-testid="mac-steps"', "Edit messages in SMS / Text Templates", "Test mode (nothing is texted)", "Send time", "run-days-help", 'data-testid="birthday-log"'])
   assert.ok(inMore.includes(needle), `More contains ${needle}`);
 assert.match(panel, /title="Broadcast"/);
 assert.match(panel, /sectionOpen\(settings\.sections, "more", false\)/, "More starts closed");
@@ -152,7 +152,7 @@ const named = (o: Partial<{ name: string; kind: string; is_primary: boolean; rev
   name: "Office iPhone", kind: "iphone", is_primary: true, revoked_at: null, last_seen_at: null, last_run_at: null, ...o,
 });
 assert.equal(devicesStatus([]).status, "todo");
-assert.match(devicesStatus([]).summary, /Add to this iPhone/);
+assert.match(devicesStatus([]).summary, /Add to this Device/);
 assert.equal(devicesStatus([named({})]).status, "todo", "added but never checked in");
 const seenDev = named({ last_seen_at: "2026-10-28T17:41:00Z" });
 assert.deepEqual(devicesStatus([seenDev], "America/Los_Angeles"), { status: "done", summary: "Office iPhone · Last checked 10/28/26 10:41 AM" });
