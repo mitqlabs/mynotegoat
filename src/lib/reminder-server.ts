@@ -12,6 +12,7 @@ import { normalizeSmsTemplates } from "@/lib/sms-template-core";
 import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 import { BIRTHDAY_EXPIRED_ERROR, birthdayClaimDecision, birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
+import { decideDeviceToken, promotedTokenFields, type DeviceTokenRow } from "@/lib/device-token";
 
 export interface ReminderDevice {
   id: string;
@@ -38,12 +39,36 @@ export async function authenticateDevice(
   const token = (authorization ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token.startsWith("ngr_") || token.length < 40) return null;
   const hash = await hashDeviceToken(token);
-  const { data, error } = await admin
+  const cols = "id, workspace_id, name, kind, last_run_at, last_run_summary, run_requested_until, is_primary, revoked_at, token_hash, pending_token_hash, retired_token_hash, last_rejected_at";
+  let { data, error } = await admin
     .from("reminder_devices")
-    .select("id, workspace_id, name, kind, last_run_at, last_run_summary, run_requested_until, is_primary, revoked_at")
-    .eq("token_hash", hash)
+    .select(cols)
+    .or(`token_hash.eq.${hash},pending_token_hash.eq.${hash},retired_token_hash.eq.${hash}`)
+    .limit(1)
     .maybeSingle();
-  if (error || !data || data.revoked_at) return null;
+  // Columns not migrated yet: the code already on the phone still works.
+  if (error) {
+    ({ data, error } = await admin
+      .from("reminder_devices")
+      .select("id, workspace_id, name, kind, last_run_at, last_run_summary, run_requested_until, is_primary, revoked_at, token_hash")
+      .eq("token_hash", hash)
+      .maybeSingle());
+  }
+  if (error || !data) return null;
+  const row = data as DeviceTokenRow & typeof data;
+  const decision = decideDeviceToken(hash, row);
+  if (!decision.ok) {
+    await admin
+      .from("reminder_devices")
+      .update({ last_rejected_at: new Date().toISOString(), last_rejected_reason: decision.reject })
+      .eq("id", data.id);
+    return null;
+  }
+  if (decision.promote) {
+    await admin.from("reminder_devices").update(promotedTokenFields(row)).eq("id", data.id);
+  } else if (data.last_rejected_at) {
+    await admin.from("reminder_devices").update({ last_rejected_at: null, last_rejected_reason: null }).eq("id", data.id);
+  }
   return {
     id: data.id,
     workspace_id: data.workspace_id,

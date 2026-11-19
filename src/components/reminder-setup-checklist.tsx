@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { lastRunRejectedText } from "@/lib/device-token";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
 import { deviceSetupSteps, readSetupPlatform, setupTestReport, type SetupPlatform, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
@@ -88,7 +89,7 @@ export function ReminderSetupChecklist({
   open: boolean;
   onToggle: (next: boolean) => void;
   workspaceId: string;
-  devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null }[];
+  devices: { id: string; kind: string | null; revoked_at: string | null; last_seen_at: string | null; last_run_at?: string | null; last_rejected_at?: string | null; last_rejected_reason?: string | null }[];
   onChanged?: () => void;
   /** Times computed from the saved texts. Omit to use the older fixed list. */
   steps?: SetupStep[];
@@ -179,7 +180,7 @@ export function ReminderSetupChecklist({
     const kind = here === "mac" ? "mac" : "iphone";
     const existing = devices.find((d) => !d.revoked_at && d.kind === kind);
     const error = existing
-      ? (await client.from("reminder_devices").update({ token_hash: tokenHash }).eq("id", existing.id)).error
+      ? (await client.from("reminder_devices").update({ pending_token_hash: tokenHash }).eq("id", existing.id)).error
       : (
           await client.from("reminder_devices").insert({
             workspace_id: workspaceId,
@@ -227,8 +228,14 @@ export function ReminderSetupChecklist({
     window.setTimeout(() => loadRef.current(), 4000);
   };
 
+  const rejected = devices.map((device) => lastRunRejectedText(device)).filter(Boolean);
   const body = (
     <>
+      {rejected.map((text) => (
+        <p className="font-semibold text-[var(--text-main)]" data-testid="setup-last-rejected" key={text}>
+          {text}
+        </p>
+      ))}
       <ol className="grid gap-8" data-testid="iphone-setup-steps">
         {steps.map((step, index) => {
           const isAdd = index === 0;

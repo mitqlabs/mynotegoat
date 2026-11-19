@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
 import { adminClient, applyInboundReplies, authenticateDevice, type InboundReply } from "@/lib/reminder-server";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
   const admin = adminClient();
   if (!admin) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
-  if (!device) return NextResponse.json({ error: "Invalid or revoked device token." }, { status: 401 });
+  if (!device) return NextResponse.json({ error: DEVICE_SETUP_AGAIN, message: DEVICE_SETUP_AGAIN, send: "no" }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as { from?: unknown; text?: unknown; messages?: unknown };
   const raw: unknown[] = Array.isArray(body.messages) ? body.messages.slice(0, 200) : [body];

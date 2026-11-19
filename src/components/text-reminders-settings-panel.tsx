@@ -43,6 +43,7 @@ import { AutomationWarning } from "@/components/reminder-setup-checklist";
 import { InnerFold, SetupCard } from "@/components/setup-card";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { birthdayLogLabel } from "@/lib/birthday-texts";
+import { lastRunRejectedText } from "@/lib/device-token";
 import { devicesStatus, fmtDate, plainResult, senderRole, fmtDateTime, imacStatus, iphoneStatus, lastCheckedText, lastRunText, officeMacSeen, optOutSummary, optedOutSummary, sectionOpen, type ReminderSection } from "@/lib/reminder-format";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { automationHealth, AUTO_RUN_LOOKBACK_DAYS } from "@/lib/reminder-automation-health";
@@ -72,6 +73,8 @@ type DeviceRow = {
   last_seen_at: string | null;
   last_run_at: string | null;
   last_run_summary: string | null;
+  last_rejected_at: string | null;
+  last_rejected_reason: string | null;
   revoked_at: string | null;
 };
 type OptOutRow = { patientId: string; name: string; at: string; phoneLast4: string; source: string };
@@ -152,7 +155,7 @@ export function TextRemindersSettingsPanel() {
     const [{ data: d }, { data: l }] = await Promise.all([
       client
         .from("reminder_devices")
-        .select("id, name, kind, is_primary, run_requested_until, created_at, last_seen_at, last_run_at, last_run_summary, revoked_at")
+        .select("id, name, kind, is_primary, run_requested_until, created_at, last_seen_at, last_run_at, last_run_summary, last_rejected_at, last_rejected_reason, revoked_at")
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: false }),
       client
@@ -314,13 +317,13 @@ export function TextRemindersSettingsPanel() {
   };
 
   const newCode = async (id: string) => {
-    if (!(await appConfirm("Get a new setup code for this sender? The old code stops working, so you will need to paste the new one into the iPhone or iMac setup.", { confirmLabel: "Get new setup code", cancelLabel: "Cancel" }))) return;
+    if (!(await appConfirm("Get a new setup code for this sender? The code already on the device keeps working until this new one is used once.", { confirmLabel: "Get new setup code", cancelLabel: "Cancel" }))) return;
     const client = getSupabaseBrowserClient();
     if (!client) return;
     const token = generateDeviceToken();
     const { error } = await client
       .from("reminder_devices")
-      .update({ token_hash: await hashDeviceToken(token) })
+      .update({ pending_token_hash: await hashDeviceToken(token) })
       .eq("id", id);
     if (error) return setMessage(`Couldn't make a new setup code: ${error.message}`);
     const dev = devices.find((d) => d.id === id);
@@ -460,6 +463,7 @@ export function TextRemindersSettingsPanel() {
                     </p>
                     <p className="text-[var(--text-muted)]">{d.kind === "iphone" ? "iPhone" : "iMac"} · {lastCheckedText(d.last_seen_at, settings.timeZone)}</p>
                     {run && <p className="text-[var(--text-muted)]">{run}</p>}
+                    {lastRunRejectedText(d) ? <p className="font-semibold text-[var(--text-main)]" data-testid="device-last-rejected">{lastRunRejectedText(d)}</p> : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {!d.is_primary && (

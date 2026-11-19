@@ -45,7 +45,8 @@ const secret = "test-secret";
 const token = `ngr_${"ab".repeat(32)}`;
 const ticket = sealDeviceToken(token, secret, 1_000);
 assert.equal(openDeviceToken(ticket, secret, 1_000), token);
-assert.equal(openDeviceToken(ticket, secret, 1_000 + 16 * 60 * 1000), null);
+assert.equal(openDeviceToken(ticket, secret, 1_000 + 16 * 60 * 1000), token, "a 15-minute delay no longer kills the download");
+assert.equal(openDeviceToken(ticket, secret, 1_000 + 24 * 60 * 60 * 1000 + 1), null, "the link lasts 24 hours");
 assert.equal(openDeviceToken(ticket, "other", 1_000), null);
 
 type Row = Record<string, unknown>;

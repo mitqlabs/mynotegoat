@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ importUrl, fileUrl });
 }
 
-/** The Shortcuts app fetches this. The link expires in 15 minutes. */
+/** The Shortcuts app fetches this. The link lasts 24 hours. */
 export async function GET(request: NextRequest) {
   const keys = serverKeys();
   if (!keys) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
