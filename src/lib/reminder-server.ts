@@ -254,9 +254,10 @@ export interface BroadcastQueueRow {
 }
 
 /**
- * Queued "Message patients" texts for this workspace whose target date is
- * today or later, not canceled, not opted out, and not leased to another
- * device. The phone is read from the patient record at send time.
+ * Queued "Message patients" texts for this workspace: not canceled, not
+ * opted out, and not leased to another device. A send day that already
+ * passed is still due. A closed office day does not drop these. The phone
+ * is read from the patient record at send time.
  */
 export async function loadBroadcastQueue(
   admin: SupabaseClient,
@@ -273,7 +274,6 @@ export async function loadBroadcastQueue(
       .select(`id, patient_id, appointment_id, claimed_by, claimed_until, reminder_broadcasts!inner(${cols})`)
       .eq("workspace_id", device.workspace_id)
       .eq("status", "queued")
-      .gte("reminder_broadcasts.target_date", todayIso)
       .is("reminder_broadcasts.canceled_at", null)
       .order("created_at", { ascending: true })
       .limit(300);

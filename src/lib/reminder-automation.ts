@@ -631,10 +631,34 @@ export function pickAudienceRecipients(
 }
 
 /**
- * The day a list-audience broadcast is queued for ("send day"). The device
- * queue only reads broadcasts whose target date is today or later, so this is
- * today, unless it's the evening part of quiet hours: then the first
- * non-quiet moment is tomorrow, and today's date would expire before it.
+ * What the phone shortcut should do with one fetch.
+ * A closed-day note explains why appointment texts were skipped. It is the
+ * message only when this batch is empty. It never turns send off, and it is
+ * never the sentence the shortcut shows when a queued broadcast is in the batch.
+ */
+export function shortcutFetchDecision(input: {
+  itemCount: number;
+  reason: string;
+  summary: string;
+  dryRun: boolean;
+  preview: boolean;
+}): { send: "yes" | "no"; message: string } {
+  if (input.itemCount <= 0) {
+    return { send: "no", message: input.reason.trim() || "Nothing to send." };
+  }
+  if (input.dryRun && !input.preview) {
+    return { send: "no", message: `Dry run: ${input.summary} logged, nothing sent.` };
+  }
+  const sending = input.summary ? `Sending ${input.summary}.` : "Sending.";
+  if (input.preview) return { send: "no", message: sending };
+  return { send: "yes", message: sending };
+}
+
+/**
+ * The day a list-audience broadcast is queued for ("send day"). Today, unless
+ * it's the evening part of quiet hours: then the first moment it can go out
+ * is tomorrow, so the row is dated tomorrow. A row that is still queued after
+ * that day is still handed to the phone. A closed day does not drop it.
  */
 export function broadcastSendDay(
   now: Date,

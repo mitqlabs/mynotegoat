@@ -87,6 +87,23 @@ export function sectionOpen(
   return typeof v === "boolean" ? v : defaultOpen;
 }
 
+/** Why Send message can't be tapped. Empty when it can. */
+export function broadcastSendBlock(input: {
+  text: string;
+  loading: boolean;
+  recipientCount: number;
+  windowError: string;
+  booked: boolean;
+}): string {
+  if (!input.text.trim()) return "Type a message to send.";
+  if (input.loading) return "Still counting patients.";
+  if (input.windowError) return input.windowError;
+  if (!input.recipientCount) {
+    return input.booked ? "No patients with a phone number in that time." : "No active patients with a phone number.";
+  }
+  return "";
+}
+
 /** The line under "Send message". Nothing goes out until the iPhone runs; the iMac is named only when a Mac has really checked in. */
 export function queuedStatusText(count: number, testMode: boolean, macConnected: boolean): string {
   if (testMode) return `Ready for ${count} patient(s). Test mode is on, so nothing will be texted. It will only be written in Recent sends.`;
