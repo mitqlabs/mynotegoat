@@ -160,7 +160,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Text reminders didn't send / set up 8 AM reminders",
       steps: [
         "Ask: \"reminders didn't send\", \"why didn't my texts go out\", \"how do I set up 8 AM reminders\". G.O.A.T. gives the exact steps and links to Text Reminders.",
-        "The key point it always makes: the Send Reminders shortcut does NOT run by itself. You must also create three automations in the iPhone's Shortcuts → Automation tab (Time of Day, Every Day, Run Immediately, Run Shortcut → Send Reminders): the send time, 30 minutes later, and 60 minutes later. That is Step 2 on the Text Reminders page.",
+        "The key point it always makes: the NoteGoat shortcut does NOT run by itself. You also create automations in Shortcuts → Automation (Time of Day, Run Immediately). On a Mac, Time of Day is there. Message may not be. That is the device steps on the Text Reminders page.",
         "It uses your office's own send hour, so it says 7 AM or 9 AM if you changed it. Text Reminders shows a red warning if the phone hasn't sent by itself for two expected days. The same morning, a red line at the top of NoteGoat says to tap Send Reminders Now.",
       ],
       why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",

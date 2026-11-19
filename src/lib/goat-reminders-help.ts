@@ -19,7 +19,7 @@ const hourText = (sendHour?: number) => catchUpClockLabels(typeof sendHour === "
 const AUTOMATION_STEPS = (sendHour?: number) => {
   const [atSend, atHalf, atNext] = catchUpClockLabels(typeof sendHour === "number" ? sendHour : 8);
   return [
-    "1. On the office iPhone, open NoteGoat, Settings, Text Reminders, and tap Add to this iPhone. Then tap Add Shortcut. The code is already filled in.",
+    "1. On the office device, open NoteGoat, Settings, Text Reminders, and use Add to this Device. Then tap Add Shortcut. The code is already filled in.",
     "2. Open Shortcuts. Tap Automation. Tap +. Tap Time of Day.",
     `3. Set ${atSend}. Tap Every Day. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.`,
     `4. Do that again for ${atHalf}, then again for ${atNext}.`,
@@ -70,7 +70,7 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
   return {
     text: [
       `Setting up ${time} reminders: Step 2 is required because the shortcut does NOT run by itself.`,
-      "On the office iPhone, open Settings → Text Reminders and tap Add to this iPhone, then Add Shortcut. The code is already filled in.",
+      "On the office device, open Settings → Text Reminders and use Add to this Device, then Add Shortcut. The code is already filled in.",
       `Then set it to run by itself:`,
       AUTOMATION_STEPS(opts.sendHour),
       NOTES,

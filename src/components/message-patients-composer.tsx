@@ -36,7 +36,7 @@ const input = "h-[42px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg
 // Solid brand button. Do NOT also set bg-white here: two bg-* classes on one element
 // are resolved by stylesheet order, and white-on-white made this button invisible.
 const primaryBtn =
-  "h-[42px] shrink-0 rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--on-brand)] shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-[42px] max-w-full rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-4 text-sm font-semibold text-[var(--on-brand)] shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 const MAX = 640;
 /** Supabase returns at most 1000 rows per request; recipients insert in chunks. */
 const PAGE = 1000;
@@ -356,7 +356,7 @@ export function MessagePatientsComposer({
   };
 
   return (
-    <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-3 text-sm text-[var(--text-main)]" data-testid="message-patients" ref={rootRef}>
+    <div className="grid w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-3 text-sm text-[var(--text-main)]" data-testid="message-patients" ref={rootRef}>
       <div>
         <p className="font-semibold">Message patients</p>
         <p className="text-[var(--text-muted)]">
@@ -371,7 +371,7 @@ export function MessagePatientsComposer({
       <label className="grid gap-1">
         <span className={label}>Message</span>
         <textarea
-          className="min-h-[84px] rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-[var(--text-main)] placeholder:font-normal placeholder:italic placeholder:text-[var(--text-muted)] placeholder:opacity-60"
+          className="box-border min-h-[84px] w-full min-w-0 max-w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-[var(--text-main)] placeholder:font-normal placeholder:italic placeholder:text-[var(--text-muted)] placeholder:opacity-60"
           maxLength={MAX}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type your message"
@@ -379,7 +379,7 @@ export function MessagePatientsComposer({
         />
         <span className="text-xs text-[var(--text-muted)]">{text.length}/{MAX}</span>
       </label>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex w-full min-w-0 max-w-full flex-wrap items-end gap-3">
         <label className="grid gap-1">
           <span className={label}>Send to</span>
           <select
@@ -419,7 +419,7 @@ export function MessagePatientsComposer({
         {audienceOption.summary}
         {!isBooked && sendDay.deferred ? ` It's quiet hours, so it will go out after ${to12h(`${String(settings.quietEndHour).padStart(2, "0")}:00`)}.` : ""}
       </p>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-2">
         <button className="text-left font-semibold text-[var(--brand-primary)]" onClick={() => setShowList((v) => !v)} type="button">
           {loading
             ? "Counting…"
@@ -491,8 +491,8 @@ export function MessagePatientsComposer({
                   ? `Waiting · sent ${count("sent")} of ${rs.length}`
                   : `Sent ${count("sent")} of ${rs.length}${count("failed") ? ` · ${count("failed")} failed` : ""}`;
             return (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line-soft)] pt-1" key={h.id}>
-                <span className="min-w-0 flex-1 truncate">
+              <div className="flex w-full min-w-0 max-w-full flex-wrap items-baseline justify-between gap-2 border-t border-[var(--line-soft)] pt-1" key={h.id}>
+                <span className="min-w-0 max-w-full flex-1 basis-full break-words">
                   <b>{rs.length > 0 && rs.every((r) => !r.appointment_id) ? "Active patients" : usDate(h.target_date)}</b> · {h.message}
                 </span>
                 <span className="text-[var(--text-muted)]">{summary}</span>

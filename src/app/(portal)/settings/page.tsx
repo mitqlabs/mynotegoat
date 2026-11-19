@@ -955,7 +955,7 @@ function CollapsibleSection({
 }: CollapsibleSectionProps) {
   if (hidden) return null;
   return (
-    <section className="panel-card p-4" id={id}>
+    <section className="panel-card w-full min-w-0 max-w-full p-4" id={id}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button
           aria-expanded={isOpen}
@@ -978,7 +978,7 @@ function CollapsibleSection({
         </button>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      {isOpen ? <div className="mt-3">{children}</div> : null}
+      {isOpen ? <div className="mt-3 w-full min-w-0 max-w-full">{children}</div> : null}
     </section>
   );
 }

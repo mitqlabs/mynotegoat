@@ -444,7 +444,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Set up automatic reminders on the iPhone (3 steps)",
         steps: [
-          "Step 1 (one time): On the office iPhone, open Settings → Text Reminders and tap Add to this iPhone, then Add Shortcut. The code is already filled in. One shortcut, named NoteGoat, sends 5 texts at a time and also catches STOP.",
+          "Step 1 (one time): On the office device, open Settings → Text Reminders and use Add to this Device, then Add Shortcut. On a Mac, Shortcuts opens the same way, and you can download NoteGoat.shortcut if it does not. The code is already filled in. One shortcut, named NoteGoat, sends 5 texts at a time and also catches STOP.",
           "Step 2 (REQUIRED): set NoteGoat to run by itself. The shortcut does NOT run by itself until you do the steps below.",
           "Step 3: check Send reminders automatically in Text Reminders. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Tomorrow morning check Recent sends to see it ran.",
           "On the Text Reminders page, check \u201cI made the 8:00 AM, 8:30 AM and 9:00 AM automations\u201d when Step 2 is done. The card turns green.",

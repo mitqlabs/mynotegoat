@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
-import { iphoneSetupSteps, setupTestReport, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
+import { deviceSetupSteps, readSetupPlatform, setupTestReport, type SetupPlatform, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -17,9 +17,9 @@ import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? "PM" : "AM"}`;
 const TEST_URL = "shortcuts://run-shortcut?name=NoteGoat&input=STOP%20TEST";
 
-function onThisIphone(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+function thisPlatform(): SetupPlatform {
+  if (typeof navigator === "undefined") return "other";
+  return readSetupPlatform(navigator.userAgent, navigator.maxTouchPoints);
 }
 
 function StepWords({ text }: { text: string }) {
@@ -58,13 +58,13 @@ export function AutomationWarning({
   if (!warning.length || !hasIphone) return null;
   return (
     <div className="rounded-xl border border-[var(--brand-accent)] bg-[var(--bg-panel)] px-4 py-3 text-sm text-[var(--text-main)]" data-testid="automation-warning" role="alert">
-      <p className="font-bold">Your {time} run may not be set up — see the iPhone steps</p>
+      <p className="font-bold">Your {time} run may not be set up — see the device steps</p>
       <p className="mt-1 text-[var(--text-muted)]">
-        Reminders were due on {warning.slice(0, 2).map((d) => fmtDate(d)).join(" and ")}, but the phone didn&apos;t send
+        Reminders were due on {warning.slice(0, 2).map((d) => fmtDate(d)).join(" and ")}, but the device didn&apos;t send
         them by itself around {time}.
         {settings.automationConfirmed
-          ? " Open Shortcuts, tap Automation, and make sure each one says Run Immediately."
-          : " Do the iPhone steps below."}
+          ? " Open Shortcuts, open Automation, and make sure each one says Run Immediately."
+          : " Do the device steps below."}
       </p>
     </div>
   );
@@ -79,6 +79,7 @@ export function ReminderSetupChecklist({
   devices,
   onChanged,
   steps: stepsOverride,
+  clocks = [],
   embedded = false,
   hasMac = false,
 }: {
@@ -91,12 +92,21 @@ export function ReminderSetupChecklist({
   onChanged?: () => void;
   /** Times computed from the saved texts. Omit to use the older fixed list. */
   steps?: SetupStep[];
+  /** Saved send times. Mac and iPhone each get their own steps from these. */
+  clocks?: { hour: number; minute: number }[];
   /** Sit on the page with no extra card around it. */
   embedded?: boolean;
   hasMac?: boolean;
 }) {
   const [atSend] = catchUpClockLabels(settings.sendHour);
-  const steps = stepsOverride ?? iphoneSetupSteps(settings.sendHour);
+  const [platform, setPlatform] = useState<SetupPlatform>("iphone");
+  const [fileUrl, setFileUrl] = useState("");
+  useEffect(() => {
+    setPlatform(thisPlatform());
+  }, []);
+  const steps = clocks.length
+    ? deviceSetupSteps(platform, clocks)
+    : (stepsOverride ?? deviceSetupSteps(platform, [{ hour: settings.sendHour, minute: 0 }]));
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
@@ -151,39 +161,41 @@ export function ReminderSetupChecklist({
     };
   }, []);
 
-  const addToThisIphone = async () => {
+  const addToThisDevice = async () => {
     setNote("");
-    if (!onThisIphone()) {
-      setNote("Open this page on the office iPhone, then tap Add to this iPhone.");
+    const here = thisPlatform();
+    if (here === "other") {
+      setNote("Open this page on the office iPhone or Mac, then use Add to this Device.");
       return;
     }
     const client = getSupabaseBrowserClient();
     if (!client || !workspaceId) {
-      setNote("Sign in on this iPhone first.");
+      setNote("Sign in on this device first.");
       return;
     }
     setBusy("add");
     const token = generateDeviceToken();
     const tokenHash = await hashDeviceToken(token);
-    const existing = devices.find((d) => !d.revoked_at && d.kind === "iphone");
+    const kind = here === "mac" ? "mac" : "iphone";
+    const existing = devices.find((d) => !d.revoked_at && d.kind === kind);
     const error = existing
       ? (await client.from("reminder_devices").update({ token_hash: tokenHash }).eq("id", existing.id)).error
       : (
           await client.from("reminder_devices").insert({
             workspace_id: workspaceId,
-            name: "Office iPhone",
-            kind: "iphone",
-            is_primary: true,
+            name: kind === "mac" ? "Office iMac" : "Office iPhone",
+            kind,
+            is_primary: kind === "iphone" || !devices.some((d) => !d.revoked_at),
             token_hash: tokenHash,
           })
         ).error;
-    if (!error && !existing) {
+    if (!error && !existing && (kind === "iphone" || !devices.some((d) => !d.revoked_at))) {
       const others = devices.filter((d) => !d.revoked_at).map((d) => d.id);
       if (others.length) await client.from("reminder_devices").update({ is_primary: false }).in("id", others);
     }
     if (error) {
       setBusy("");
-      setNote("Couldn't add the iPhone. Try again.");
+      setNote("Couldn't add the device. Try again.");
       return;
     }
     onChanged?.();
@@ -194,19 +206,20 @@ export function ReminderSetupChecklist({
       headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     });
-    const body = (await res.json().catch(() => ({}))) as { importUrl?: string; error?: string };
+    const body = (await res.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
     setBusy("");
     if (!res.ok || !body.importUrl) {
       setNote(body.error || "Couldn't open the shortcut. Try again.");
       return;
     }
+    setFileUrl(body.fileUrl ?? "");
     window.location.href = body.importUrl;
   };
 
   const runTest = async () => {
     setNote("");
-    if (!onThisIphone()) {
-      setNote("Open this page on the office iPhone and tap Test.");
+    if (thisPlatform() === "other") {
+      setNote("Open this page on the office iPhone or Mac and use Test.");
       loadRef.current();
       return;
     }
@@ -231,10 +244,10 @@ export function ReminderSetupChecklist({
                     className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60"
                     data-testid="add-to-iphone"
                     disabled={busy === "add"}
-                    onClick={() => void addToThisIphone()}
+                    onClick={() => void addToThisDevice()}
                     type="button"
                   >
-                    {busy === "add" ? "Opening…" : "Add to this iPhone"}
+                    {busy === "add" ? "Opening…" : "Add to this Device"}
                   </button>
                 ) : isTest ? (
                   <button
@@ -254,7 +267,12 @@ export function ReminderSetupChecklist({
           );
         })}
       </ol>
-      {hasMac ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
+      {platform === "mac" && fileUrl ? (
+        <a className="text-lg font-bold text-[var(--brand-primary)] underline" data-testid="mac-shortcut-download" download="NoteGoat.shortcut" href={fileUrl}>
+          Download NoteGoat.shortcut
+        </a>
+      ) : null}
+      {hasMac && platform !== "mac" ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
       {note ? <p className="text-sm font-semibold text-[var(--text-main)]">{note}</p> : null}
     </>
   );
@@ -268,7 +286,7 @@ export function ReminderSetupChecklist({
       status={report.ok ? "done" : "todo"}
       summary={report.ok ? `STOP catcher working${confirmedOn ? ` · checked ${confirmedOn}` : ""}.` : "Follow these steps once."}
       testId="reminder-setup-checklist"
-      title={`iPhone texts at ${atSend}`}
+      title={`Device texts at ${atSend}`}
     >
       {body}
     </SetupCard>

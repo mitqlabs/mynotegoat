@@ -107,14 +107,14 @@ export function broadcastSendBlock(input: {
 /** The line under "Send message". Nothing goes out until the iPhone runs; the iMac is named only when a Mac has really checked in. */
 export function queuedStatusText(count: number, testMode: boolean, macConnected: boolean): string {
   if (testMode) return `Ready for ${count} patient(s). Test mode is on, so nothing will be texted. It will only be written in Recent sends.`;
-  return `Ready for ${count} patient(s). Now run "Send Reminders Now" on the office iPhone to send it.${
+  return `Ready for ${count} patient(s). Now run "Send Reminders Now" on the office device to send it.${
     macConnected ? " The iMac also sends it by itself within about 10 minutes." : ""
   }`;
 }
 
 /** The composer's one-line description of where the text goes out from. */
 export function sentFromText(macConnected: boolean): string {
-  return macConnected ? "your iPhone or iMac" : "your iPhone";
+  return macConnected ? "your device or iMac" : "your device";
 }
 
 /** "Last checked 10/28/26 10:41 AM", or "Has not checked in yet" for a device that never has. */
@@ -145,7 +145,7 @@ export type CardStatus = "done" | "todo" | "optional" | "info";
 /** Sending devices card: not done until a device is added; the summary names what is connected. */
 export function devicesStatus(devices: Array<DeviceLike & { name: string; is_primary: boolean | null }>, timeZone = "America/Los_Angeles"): { status: CardStatus; summary: string } {
   const active = devices.filter((d) => !d.revoked_at);
-  if (!active.length) return { status: "todo", summary: "No phone yet. Tap Add to this iPhone." };
+  if (!active.length) return { status: "todo", summary: "No device yet. Use Add to this Device." };
   const seen = active.map((d) => d.last_seen_at).filter((t): t is string => Boolean(t)).sort().pop();
   const names = active.length === 1 ? active[0].name : `${active.length} devices`;
   return { status: seen ? "done" : "todo", summary: `${names} · ${lastCheckedText(seen, timeZone)}` };
@@ -155,8 +155,8 @@ export function devicesStatus(devices: Array<DeviceLike & { name: string; is_pri
 export function iphoneStatus(devices: DeviceLike[]): { status: CardStatus; summary: string } {
   const ok = devices.some((d) => d.kind === "iphone" && !d.revoked_at && Boolean(d.last_seen_at));
   return ok
-    ? { status: "done", summary: "Done. Your iPhone is connected." }
-    : { status: "todo", summary: "Not done. Add the iPhone above, then follow these steps." };
+    ? { status: "done", summary: "Done. Your device is connected." }
+    : { status: "todo", summary: "Not done. Add this device, then follow these steps." };
 }
 
 /** iMac setup card: optional, done once a Mac has checked in. */

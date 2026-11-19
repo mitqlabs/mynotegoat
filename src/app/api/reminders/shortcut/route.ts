@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   if (!keys) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const ticket = request.nextUrl.searchParams.get("t") ?? "";
   const token = openDeviceToken(ticket, keys.service);
-  if (!token) return NextResponse.json({ error: "This link has expired. Tap Add to this iPhone again." }, { status: 404 });
+  if (!token) return NextResponse.json({ error: "This link has expired. Use Add to this Device again." }, { status: 404 });
   try {
     const file = shortcutWithToken(token);
     return new NextResponse(new Uint8Array(file), {
