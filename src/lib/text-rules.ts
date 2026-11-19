@@ -7,6 +7,7 @@
  * are written back onto the old fields so the phone keeps sending.
  */
 import { localNow, type OfficeHoursDay } from "@/lib/reminder-automation";
+import { fmtDateTime } from "@/lib/reminder-format";
 import type { SmsReminderSettings, TextRule, TextWhenKind } from "@/lib/sms-reminders";
 
 export function newRuleId(): string {
@@ -127,5 +128,114 @@ export function dueScope(input: {
     tomorrow: dayBefore || within,
     limitTomorrowToNow: within && !dayBefore,
     birthday: has("birthday"),
+  };
+}
+
+const SHORTCUT_KIND: Record<TextWhenKind, string> = {
+  birthday: "Birthdays",
+  "open-day": "Open Days",
+  "hours-before": "24 Hours Before",
+  "day-before": "Day Before",
+};
+
+/** "9 AM" for a shortcut name. Steps still say "9:00 AM". */
+export function shortcutClock(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  const shown = h % 12 === 0 ? 12 : h % 12;
+  return `${shown} ${h >= 12 ? "PM" : "AM"}`;
+}
+
+/** The shortcut the Device runs. Example: NoteGoat – Birthdays 9 AM. */
+export function shortcutName(rule: Pick<TextRule, "kind" | "hour">): string {
+  return `NoteGoat – ${SHORTCUT_KIND[rule.kind]} ${shortcutClock(rule.hour)}`;
+}
+
+/** Give every saved row the shortcut name for its when and time. Does not turn anything on or off. */
+export function ensureShortcutNames(settings: SmsReminderSettings): SmsReminderSettings {
+  if (!settings.rules) return settings;
+  let changed = false;
+  const rules = settings.rules.map((rule) => {
+    const name = shortcutName(rule);
+    if (rule.shortcutName === name) return rule;
+    changed = true;
+    return { ...rule, shortcutName: name };
+  });
+  return changed ? { ...settings, rules } : settings;
+}
+
+export const SHORTCUT_RUNS_KEY = "casemate.shortcut-runs.v1";
+export const SHORTCUT_SEAL_PREFIX = "casemate.reminder-shortcut-seal.";
+export const SHORTCUT_HASH_PREFIX = "casemate.reminder-shortcut-hash.";
+
+export interface ShortcutRun {
+  at: string;
+  status: "ok" | "error";
+  summary: string;
+}
+
+export function shortcutStatusText(rule: Pick<TextRule, "on">, run: ShortcutRun | undefined, timeZone: string): string {
+  if (!rule.on) return "Off";
+  if (!run) return "Not run yet";
+  const when = fmtDateTime(run.at, timeZone);
+  return run.status === "error" ? `Last run ${when} · Error` : `Last run ${when} · OK`;
+}
+
+export function normalizeShortcutRuns(value: unknown): Record<string, ShortcutRun> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, ShortcutRun> = {};
+  for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    if (row.status !== "ok" && row.status !== "error") continue;
+    if (typeof row.at !== "string" || !row.at) continue;
+    out[id.slice(0, 40)] = {
+      at: row.at,
+      status: row.status,
+      summary: typeof row.summary === "string" ? row.summary.slice(0, 200) : "",
+    };
+  }
+  return out;
+}
+
+export interface RuleQueuePick {
+  rule: TextRule | null;
+  scope: DueScope;
+  /** Visit wording for this rule. Empty means keep the office default. */
+  templateBody: string;
+  /** Birthday wording for this rule. Empty means keep the office default. */
+  birthdayBody: string;
+}
+
+/**
+ * One named shortcut asks for one rule.
+ * Closed days and Key Dates stay in dueScope. Other rules are left out.
+ * An unknown or off rule sends none of its texts.
+ */
+export function pickRuleQueue(input: {
+  ruleId: string;
+  settings: SmsReminderSettings;
+  templates: { id: string; body: string; deleted?: boolean }[];
+  now: Date;
+  officeHours: OfficeHoursDay[];
+  closedIsoDates: Set<string>;
+}): RuleQueuePick {
+  const rules = input.settings.rules ?? legacyRules(input.settings);
+  const rule = rules.find((item) => item.id === input.ruleId && item.on) ?? null;
+  const scope = dueScope({
+    rules: rule ? [rule] : [],
+    now: input.now,
+    timeZone: input.settings.timeZone,
+    officeHours: input.officeHours,
+    closedIsoDates: input.closedIsoDates,
+  });
+  const template = rule
+    ? input.templates.find((item) => item.id === rule.templateId && !item.deleted && item.body.trim())
+    : undefined;
+  const body = template?.body ?? "";
+  return {
+    rule,
+    scope,
+    templateBody: rule && rule.kind !== "birthday" ? body : "",
+    birthdayBody: rule && rule.kind === "birthday" ? body : "",
   };
 }

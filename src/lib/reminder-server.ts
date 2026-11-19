@@ -8,9 +8,11 @@ import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, splitPatientName, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { expandTokens } from "@/lib/sms-render";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
-import { normalizeSmsTemplates } from "@/lib/sms-template-core";
+import { normalizeSmsTemplates, type SmsTemplate } from "@/lib/sms-template-core";
 import { resolveBirthdayMessage, resolveReminderMessage } from "@/lib/message-library";
 import { normalizeSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
+import { normalizeShortcutRuns, SHORTCUT_HASH_PREFIX, SHORTCUT_RUNS_KEY, SHORTCUT_SEAL_PREFIX, type ShortcutRun } from "@/lib/text-rules";
+import { openDeviceToken, sealDeviceToken } from "@/lib/shortcut-ticket";
 import { BIRTHDAY_EXPIRED_ERROR, birthdayClaimDecision, birthdayDobSuffixes, pickBirthdayRecipients, type BirthdayPatient, type BirthdayRecipient } from "@/lib/birthday-texts";
 import { decideDeviceToken, promotedTokenFields, type DeviceTokenRow } from "@/lib/device-token";
 
@@ -54,10 +56,12 @@ export async function authenticateDevice(
       .eq("token_hash", hash)
       .maybeSingle());
   }
-  if (error || !data) return null;
+  if (error || !data) return deviceFromShortcutHash(admin, hash);
   const row = data as DeviceTokenRow & typeof data;
   const decision = decideDeviceToken(hash, row);
   if (!decision.ok) {
+    const kept = await deviceFromShortcutHash(admin, hash);
+    if (kept && kept.id === data.id) return kept;
     await admin
       .from("reminder_devices")
       .update({ last_rejected_at: new Date().toISOString(), last_rejected_reason: decision.reject })
@@ -81,8 +85,88 @@ export async function authenticateDevice(
   };
 }
 
+async function deviceFromShortcutHash(admin: SupabaseClient, hash: string): Promise<ReminderDevice | null> {
+  const { data: link, error } = await admin
+    .from("workspace_kv")
+    .select("value, workspace_id")
+    .eq("key", `${SHORTCUT_HASH_PREFIX}${hash}`)
+    .maybeSingle();
+  if (error || !link?.value || typeof link.value !== "object") return null;
+  const deviceId = String((link.value as { deviceId?: string }).deviceId ?? "");
+  if (!deviceId) return null;
+  const { data } = await admin
+    .from("reminder_devices")
+    .select("id, workspace_id, name, kind, last_run_at, last_run_summary, run_requested_until, is_primary, revoked_at")
+    .eq("id", deviceId)
+    .eq("workspace_id", link.workspace_id)
+    .maybeSingle();
+  if (!data || data.revoked_at) return null;
+  return {
+    id: data.id,
+    workspace_id: data.workspace_id,
+    name: data.name,
+    kind: data.kind ?? "mac",
+    last_run_at: data.last_run_at ?? null,
+    last_run_summary: data.last_run_summary ?? null,
+    run_requested_until: data.run_requested_until ?? null,
+    is_primary: data.is_primary === true,
+  };
+}
+
+/** Remember this code for later named shortcuts. Does not change the device row. */
+export async function saveShortcutToken(
+  admin: SupabaseClient,
+  workspaceId: string,
+  deviceId: string,
+  token: string,
+  secret: string,
+): Promise<void> {
+  const hash = await hashDeviceToken(token);
+  const sealed = sealDeviceToken(token, secret, Date.now(), SHORTCUT_SEAL_MS);
+  await admin.from("workspace_kv").upsert(
+    [
+      { workspace_id: workspaceId, key: `${SHORTCUT_SEAL_PREFIX}${deviceId}`, value: { sealed, hash } },
+      { workspace_id: workspaceId, key: `${SHORTCUT_HASH_PREFIX}${hash}`, value: { deviceId } },
+    ],
+    { onConflict: "workspace_id,key" },
+  );
+}
+
+/** The code already saved for this Device, if a named shortcut was created before. */
+export async function openShortcutToken(admin: SupabaseClient, workspaceId: string, deviceId: string, secret: string): Promise<string | null> {
+  const { data } = await admin
+    .from("workspace_kv")
+    .select("value")
+    .eq("workspace_id", workspaceId)
+    .eq("key", `${SHORTCUT_SEAL_PREFIX}${deviceId}`)
+    .maybeSingle();
+  const sealed = data?.value && typeof data.value === "object" ? String((data.value as { sealed?: string }).sealed ?? "") : "";
+  if (!sealed) return null;
+  return openDeviceToken(sealed, secret);
+}
+
+export async function recordShortcutRun(
+  admin: SupabaseClient,
+  workspaceId: string,
+  ruleId: string,
+  status: "ok" | "error",
+  summary: string,
+): Promise<void> {
+  const { data } = await admin.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", SHORTCUT_RUNS_KEY).maybeSingle();
+  const current = normalizeShortcutRuns(data?.value);
+  const next: Record<string, ShortcutRun> = {
+    ...current,
+    [ruleId.slice(0, 40)]: { at: new Date().toISOString(), status, summary: summary.slice(0, 200) },
+  };
+  await admin.from("workspace_kv").upsert({ workspace_id: workspaceId, key: SHORTCUT_RUNS_KEY, value: next }, { onConflict: "workspace_id,key" });
+}
+
+/** Stored seals outlive the 24-hour download link so later shortcuts reuse the same code. */
+const SHORTCUT_SEAL_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+
 export interface WorkspaceReminderConfig {
   settings: SmsReminderSettings;
+  templates: SmsTemplate[];
   templateBody: string;
   /** The message attached to Auto Texts → Birthday (words not filled in yet). */
   birthdayBody: string;
@@ -165,6 +249,7 @@ export async function loadWorkspaceConfig(
     : [];
   return {
     settings,
+    templates,
     templateBody: typeof template?.body === "string" ? template.body : "",
     birthdayBody: birthday.body,
     office: {

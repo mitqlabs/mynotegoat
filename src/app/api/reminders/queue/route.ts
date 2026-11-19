@@ -19,9 +19,10 @@ import {
 } from "@/lib/reminder-automation";
 import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
 import { summaryAfterEmptyRun } from "@/lib/reminder-format";
-import { dueScope } from "@/lib/text-rules";
+import { dueScope, pickRuleQueue } from "@/lib/text-rules";
 import {
   adminClient,
+  recordShortcutRun,
   alreadySentIds,
   authenticateDevice,
   claimBirthdays,
@@ -147,15 +148,32 @@ export async function GET(request: NextRequest) {
   // Saved texts pick their own hour. Until the office saves that list, the
   // old send-hour path above is unchanged. A 9 AM birthday does not ride
   // the 8 AM run. Open days follow office hours and Key Dates.
-  const scope = settings.rules
-    ? dueScope({
-        rules: settings.rules,
+  // A named shortcut passes rule= so only that rule's texts go out.
+  // No rule= keeps the old NoteGoat shortcut, which still sends every due rule.
+  const ruleId = (params.get("rule") ?? "").trim().slice(0, 40);
+  const picked = ruleId
+    ? pickRuleQueue({
+        ruleId,
+        settings,
+        templates: config.templates,
         now,
-        timeZone: settings.timeZone,
         officeHours: config.officeHours,
         closedIsoDates: config.closedIsoDates,
       })
     : null;
+  const scope = picked
+    ? picked.scope
+    : settings.rules
+      ? dueScope({
+          rules: settings.rules,
+          now,
+          timeZone: settings.timeZone,
+          officeHours: config.officeHours,
+          closedIsoDates: config.closedIsoDates,
+        })
+      : null;
+  const templateBody = picked?.templateBody || config.templateBody;
+  const birthdayBody = picked?.birthdayBody || config.birthdayBody;
   if (scope) {
     const hhmm = localHHMM(now, settings.timeZone);
     groups = groups
@@ -171,7 +189,7 @@ export async function GET(request: NextRequest) {
 
   // Reminder items, per date (raw appointment ids for claiming).
   const byDate = new Map<string, DeviceQueueItem[]>();
-  if (groups.length && !config.templateBody.trim()) {
+  if (groups.length && !templateBody.trim()) {
     reason = "No reminder template.";
     reminderRun = false;
   } else {
@@ -183,7 +201,7 @@ export async function GET(request: NextRequest) {
           ...day,
           settings,
           visitDate: g.visitDate,
-          templateBody: config.templateBody,
+          templateBody,
           office: config.office,
           alreadySentIds: await alreadySentIds(admin, device.workspace_id, g.visitDate),
           onlyAfter: g.onlyAfter,
@@ -211,7 +229,7 @@ export async function GET(request: NextRequest) {
           retryDryRun: willSend || preview,
           reofferClaims: willSend,
           now,
-          body: config.birthdayBody,
+          body: birthdayBody,
           office: config.office,
         })
       : [];
@@ -375,6 +393,13 @@ export async function GET(request: NextRequest) {
       preview,
     });
     const sendItems = decision.send === "yes" ? items : [];
+    if (ruleId) {
+      try {
+        await recordShortcutRun(admin, device.workspace_id, ruleId, "ok", decision.message || summary || "OK");
+      } catch {
+        // A missed status write must not stop the texts.
+      }
+    }
     return reply({
       visitDate,
       send: decision.send,

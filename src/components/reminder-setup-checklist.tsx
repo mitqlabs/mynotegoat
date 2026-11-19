@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { lastRunRejectedText } from "@/lib/device-token";
 import { fmtDate, fmtDay } from "@/lib/reminder-format";
 import { catchUpClockLabels, generateDeviceToken, hashDeviceToken, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX } from "@/lib/reminder-automation";
-import { deviceSetupSteps, readSetupPlatform, setupTestReport, type SetupPlatform, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
+import { deviceSetupSteps, readSetupPlatform, stopCatcherLines, setupTestReport, type SetupPlatform, type SetupReport, type SetupStep } from "@/lib/iphone-setup";
 import type { SmsReminderSettings } from "@/lib/sms-reminders";
 import { SetupCard } from "@/components/setup-card";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -83,6 +83,7 @@ export function ReminderSetupChecklist({
   clocks = [],
   embedded = false,
   hasMac = false,
+  mode = "times",
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
@@ -98,16 +99,27 @@ export function ReminderSetupChecklist({
   /** Sit on the page with no extra card around it. */
   embedded?: boolean;
   hasMac?: boolean;
+  /** "stop" is the STOP catcher and Test. It is not part of a shortcut's steps. */
+  mode?: "times" | "stop";
 }) {
   const [atSend] = catchUpClockLabels(settings.sendHour);
   const [platform, setPlatform] = useState<SetupPlatform>("iphone");
   const [fileUrl, setFileUrl] = useState("");
-  useEffect(() => {
-    setPlatform(thisPlatform());
-  }, []);
-  const steps = clocks.length
-    ? deviceSetupSteps(platform, clocks)
-    : (stepsOverride ?? deviceSetupSteps(platform, [{ hour: settings.sendHour, minute: 0 }]));
+  if (typeof navigator !== "undefined") {
+    const here = thisPlatform();
+    if (here !== platform) setPlatform(here);
+  }
+  const press = platform === "mac" ? "Click" : "Tap";
+  const stopSteps: SetupStep[] = [
+    { icon: "1", text: `${press} **Add to this Device**.`, lines: [`${press} **Add to this Device**.`] },
+    ...stopCatcherLines(platform).map((line) => ({ icon: "1", text: line, lines: [line] })),
+    { icon: "1", text: `${press} **Test**.`, lines: [`${press} **Test**.`] },
+  ];
+  const steps = mode === "stop"
+    ? stopSteps
+    : clocks.length
+      ? deviceSetupSteps(platform, clocks)
+      : (stepsOverride ?? deviceSetupSteps(platform, [{ hour: settings.sendHour, minute: 0 }]));
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");

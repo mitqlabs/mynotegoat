@@ -66,7 +66,7 @@ export interface SmsReminderSettings {
   rules: TextRule[] | null;
   /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
    *  computer shows the same layout. A section that is not listed uses its default. */
-  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more", boolean>>;
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more" | "templates" | "shortcuts" | "stop", boolean>>;
 }
 
 export type TextWhenKind = "day-before" | "birthday" | "open-day" | "hours-before";
@@ -78,6 +78,8 @@ export interface TextRule {
   on: boolean;
   kind: TextWhenKind;
   hour: number;
+  /** Shortcut the Device runs for this row, for example "NoteGoat – Birthdays 9 AM". */
+  shortcutName?: string;
 }
 
 export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
@@ -123,12 +125,14 @@ function normalizeTextRules(value: unknown): TextRule[] | null {
     const raw = item as Record<string, unknown>;
     if (typeof raw.id !== "string" || !TEXT_WHEN.has(String(raw.kind))) continue;
     const hour = Number(raw.hour);
+    const shortcutName = typeof raw.shortcutName === "string" ? raw.shortcutName.trim().slice(0, 80) : "";
     rules.push({
       id: raw.id.slice(0, 40),
       templateId: typeof raw.templateId === "string" ? raw.templateId : "",
       on: raw.on === true,
       kind: raw.kind as TextWhenKind,
       hour: Number.isFinite(hour) ? Math.min(23, Math.max(0, Math.round(hour))) : 8,
+      ...(shortcutName ? { shortcutName } : {}),
     });
   }
   return rules;
@@ -178,7 +182,7 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   base.rules = normalizeTextRules(raw.rules);
   if (raw.sections && typeof raw.sections === "object") {
     const sec = raw.sections as Record<string, unknown>;
-    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library", "more"] as const) {
+    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library", "more", "templates", "shortcuts", "stop"] as const) {
       if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
     }
   }
