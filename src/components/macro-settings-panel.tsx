@@ -5,6 +5,7 @@ import { useRef, useMemo, useState } from "react";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
+import { isMacroQuestionVisible } from "@/lib/macro-show-if";
 import {
   createQuestionId,
   getQuestionIdsFromBody,
@@ -14,6 +15,7 @@ import {
   insertQuestionToken,
   macroAutoFields,
   macroAutoFieldLabels,
+  macroInsertParts,
   macroSectionLabels,
   macroSections,
   renderMacroTemplate,
@@ -70,6 +72,75 @@ const macroTestContexts: MacroTestContext[] = [
     },
   },
 ];
+
+function ShowOnlyIfRow({
+  question,
+  earlier,
+  parentDraft,
+  onParentDraft,
+  onChange,
+}: {
+  question: MacroQuestion;
+  earlier: MacroQuestion[];
+  parentDraft: string;
+  onParentDraft: (parentId: string) => void;
+  onChange: (showIf: MacroQuestion["showIf"]) => void;
+}) {
+  if (!earlier.length) return null;
+  const parent = earlier.find((entry) => entry.id === (question.showIf?.questionId || parentDraft)) ?? null;
+  const selected = new Set(parent && question.showIf?.questionId === parent.id ? question.showIf.answers : []);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="inline-flex items-center gap-2 text-sm font-semibold">
+        Show only if
+        <select
+          className="max-w-full rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-sm font-normal text-[var(--text-main)]"
+          onChange={(event) => {
+            onParentDraft(event.target.value);
+            onChange(undefined);
+          }}
+          value={parent?.id ?? ""}
+        >
+          <option value="">Always</option>
+          {earlier.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {parent
+        ? parent.options
+            .map((option) => option.trim())
+            .filter((option) => option.length > 0)
+            .map((option) => {
+              const on = selected.has(option);
+              return (
+                <button
+                  key={option}
+                  className={
+                    on
+                      ? "rounded-full bg-[var(--brand-primary)] px-2.5 py-0.5 text-sm font-semibold text-white"
+                      : "rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2.5 py-0.5 text-sm text-[var(--text-main)]"
+                  }
+                  onClick={() => {
+                    const next = new Set(selected);
+                    if (next.has(option)) next.delete(option);
+                    else next.add(option);
+                    const answers = parent.options.filter((entry) => next.has(entry.trim()));
+                    onParentDraft(parent.id);
+                    onChange(answers.length ? { questionId: parent.id, answers } : undefined);
+                  }}
+                  type="button"
+                >
+                  {option}
+                </button>
+              );
+            })
+        : null}
+    </div>
+  );
+}
 
 function buildMacroContext(patientId: string): Record<string, string> {
   const selectedContext = macroTestContexts.find((entry) => entry.id === patientId);
@@ -148,6 +219,7 @@ export function MacroSettingsPanel() {
   const [questionLabelDraft, setQuestionLabelDraft] = useState("");
   const [questionOptionsDraft, setQuestionOptionsDraft] = useState("");
   const [questionMultiSelectDraft, setQuestionMultiSelectDraft] = useState(false);
+  const [showIfParentDraft, setShowIfParentDraft] = useState<Record<string, string>>({});
   const [questionOptionsDrafts, setQuestionOptionsDrafts] = useState<Record<string, string>>({});
   const [newChoiceDrafts, setNewChoiceDrafts] = useState<Record<string, string>>({});
 
@@ -360,6 +432,9 @@ export function MacroSettingsPanel() {
             ),
           }
         : {}),
+      ...(copiedQuestion.showIf
+        ? { showIf: { questionId: copiedQuestion.showIf.questionId, answers: [...copiedQuestion.showIf.answers] } }
+        : {}),
     };
     addQuestion(selectedMacro.id, pasted);
     appendToBody(insertQuestionToken(newId));
@@ -386,7 +461,8 @@ export function MacroSettingsPanel() {
       return;
     }
     const context = buildMacroContext(testPatientId);
-    setGeneratedOutput(renderMacroTemplate(selectedMacro.body, answers, context));
+    const parts = macroInsertParts(selectedMacro.body, selectedMacro.questions, answers);
+    setGeneratedOutput(renderMacroTemplate(parts.template, parts.answers, context));
     setRunOpen(false);
   };
 
@@ -904,6 +980,28 @@ export function MacroSettingsPanel() {
                         </button>
                       </div>
 
+                      <ShowOnlyIfRow
+                        earlier={selectedMacro.questions
+                          .slice(0, questionIndex)
+                          .filter((entry) => entry.options.some((option) => option.trim()))}
+                        onChange={(showIf) =>
+                          updateQuestion(selectedMacro.id, question.id, (current) => {
+                            if (!showIf) {
+                              if (!current.showIf) return current;
+                              const rest = { ...current };
+                              delete rest.showIf;
+                              return rest;
+                            }
+                            return { ...current, showIf };
+                          })
+                        }
+                        onParentDraft={(parentId) =>
+                          setShowIfParentDraft((current) => ({ ...current, [question.id]: parentId }))
+                        }
+                        parentDraft={showIfParentDraft[question.id] ?? ""}
+                        question={question}
+                      />
+
                       {/* Option pills with per-option linked-charge support.
                           Each pill shows its option text and a small "$" badge
                           whose color indicates whether a charge is linked.
@@ -1233,7 +1331,9 @@ export function MacroSettingsPanel() {
             </div>
 
             <div className="space-y-3">
-              {selectedMacro.questions.map((question) => {
+              {selectedMacro.questions
+                .filter((question) => isMacroQuestionVisible(question, selectedMacro.questions, answers))
+                .map((question) => {
                 const answerValue = answers[question.id];
                 const selectedOptions = Array.isArray(answerValue) ? answerValue : [];
                 const singleAnswer = typeof answerValue === "string" ? answerValue : "";
