@@ -12,6 +12,8 @@ import {
   moveSidebarId,
   reorderSidebarId,
   sidebarCatalog,
+  SIDEBAR_ORDER_KEY,
+  readSidebarOrderFromStorage,
   sidebarLandingHref,
   sidebarOrderFrom,
   sidebarOrderValue,
@@ -138,17 +140,41 @@ test("a hidden first page is skipped, and a fully blocked order uses the default
   assert.equal(sidebarLandingHref("complete", (feature) => feature !== "patients", null), "/dashboard");
 });
 
+test("a null snapshot is not a saved order; storage is", () => {
+  const mem = new Map<string, string>();
+  const previous = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    localStorage: { getItem: (key: string) => mem.get(key) ?? null },
+  };
+  try {
+    assert.equal(readSidebarOrderFromStorage(), null);
+    assert.equal(sidebarLandingHref("complete", seeAll, readSidebarOrderFromStorage()), "/patients");
+    mem.set(SIDEBAR_ORDER_KEY, '["contacts","patients"]');
+    assert.deepEqual(readSidebarOrderFromStorage(), ["contacts", "patients"]);
+    assert.equal(sidebarLandingHref("complete", seeAll, null), "/patients");
+    assert.equal(sidebarLandingHref("complete", seeAll, readSidebarOrderFromStorage()), "/contacts");
+  } finally {
+    if (previous === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = previous;
+  }
+});
+
 test("root, sign-in, and approval open the sidebar landing page behind the check-in screen", () => {
   assert.equal(existsSync("src/app/page.tsx"), false);
   const home = readFileSync("src/app/(portal)/page.tsx", "utf8");
   const login = readFileSync("src/app/auth/login/login-client.tsx", "utf8");
   const pending = readFileSync("src/app/auth/pending/page.tsx", "utf8");
   const layout = readFileSync("src/app/(portal)/layout.tsx", "utf8");
-  assert.match(home, /sidebarLandingHref\(planTier, canView, saved\)/);
+  // The redirect must follow the key sync just wrote. The hook's first
+  // value is the server snapshot (always null) and used to open Patient List.
+  assert.doesNotMatch(home, /useSidebarOrder\(/);
+  assert.match(home, /await syncUserPrefs\(\)/);
+  assert.match(home, /sidebarLandingHref\(planRef\.current, canViewRef\.current, readSidebarOrderFromStorage\(\)\)/);
   assert.match(home, /router\.replace\(href\)/);
   assert.match(login, /router\.replace\(next \?\? "\/"\)/);
   assert.match(pending, /router\.replace\("\/"\)/);
   assert.match(layout, /pathname === "\/"/);
+  assert.match(layout, /window\.location\.pathname/);
   assert.match(layout, /syncUserPrefs\(\)/);
   assert.match(layout, /<PortalBootScreen/);
   assert.match(layout, /<GoatCheckIn \/>/);

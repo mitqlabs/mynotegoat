@@ -27,6 +27,24 @@ async function main() {
   assert.deepEqual(order.sidebarOrderFrom(["caseList", "patients"]), ["caseList", "patients"]);
   assert.equal(order.sidebarLandingHref("complete", () => true, ["caseList", "patients"]), "/cases");
   assert.equal(order.sidebarLandingHref("complete", () => true, null), "/patients");
+  const mem = new Map<string, string>();
+  const previous = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    localStorage: { getItem: (key: string) => mem.get(key) ?? null },
+  };
+  try {
+    mem.set(order.SIDEBAR_ORDER_KEY, JSON.stringify(["caseList", "patients"]));
+    assert.deepEqual(order.readSidebarOrderFromStorage(), ["caseList", "patients"]);
+    assert.equal(order.sidebarLandingHref("complete", () => true, order.readSidebarOrderFromStorage()), "/cases");
+    // A null render snapshot must not override the stored Case List order.
+    assert.notEqual(order.sidebarLandingHref("complete", () => true, null), "/cases");
+  } finally {
+    if (previous === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = previous;
+  }
+  const home = await import("node:fs").then((fs) => fs.readFileSync("src/app/(portal)/page.tsx", "utf8"));
+  assert.match(home, /readSidebarOrderFromStorage\(\)/);
+  assert.match(home, /await syncUserPrefs\(\)/);
   console.log("ok - Case List is a movable sidebar page with the folder switch on");
 }
 
