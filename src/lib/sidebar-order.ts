@@ -137,6 +137,20 @@ export function sidebarOrderValue(ids: readonly string[]): string {
 }
 
 /**
+ * The order currently stored in this browser. Cloud prefs write this key
+ * before the app chooses a landing page. Returns null when nothing usable
+ * is stored (use the default first page).
+ */
+export function readSidebarOrderFromStorage(): string[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return sidebarOrderFrom(window.localStorage.getItem(SIDEBAR_ORDER_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Visible pages in this person's order. Settings is always last.
  * A visible page that the saved order does not mention is inserted beside
  * the default neighbor that is already placed.

@@ -323,9 +323,14 @@ export default function PortalLayout({
         }
         // Bring back this user's prefs (sorts, columns, the sidebar order…)
         // from the cloud. A prefs failure must not lock the office the way a
-        // failed record pull does. Opening the app at "/" waits for that
-        // order so the check-in screen stays up until we know which page is
-        // first. Every other route keeps going and lets the prefs catch up.
+        // failed record pull does. The URL this tab actually opened on is
+        // window.location — usePathname() can be empty on the prerendered
+        // root, and that used to skip this wait and open Patient List.
+        // Opening at "/" waits for the order so the check-in screen stays
+        // up until we know which page is first. Every other route keeps
+        // going and lets the prefs catch up. The home page reads the key
+        // again after this sync; it must not decide from an empty snapshot.
+        const entryPath = window.location.pathname || pathname;
         const prefs = import("@/lib/user-prefs-cloud")
           .then((m) => m.syncUserPrefs())
           .catch((err: unknown) => console.warn("[user-prefs] restore failed:", err));
@@ -333,12 +338,12 @@ export default function PortalLayout({
         // route, read them before choosing a page so a hidden section is
         // not opened and then bounced.
         const roles =
-          pathname === "/"
+          entryPath === "/"
             ? import("@/lib/role-settings-store")
                 .then((m) => m.fetchAccessFromCloud())
                 .catch((err: unknown) => console.warn("[roles] restore failed:", err))
             : Promise.resolve(null);
-        if (pathname === "/") {
+        if (entryPath === "/") {
           let timer: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             Promise.all([prefs, roles]).finally(() => {
@@ -496,8 +501,8 @@ export default function PortalLayout({
     // Deps are intentionally `[]` — router is accessed through
     // routerRef.current so re-runs on router-object identity changes
     // (which shouldn't happen in Next.js anyway) don't stack listeners.
-    // `pathname` is the route this tab opened on, which is what decides
-    // whether to wait for the sidebar order before leaving the check-in.
+    // The bootstrap reads window.location (not this render's pathname) to
+    // decide whether to wait for the sidebar order before leaving check-in.
   }, []);
 
   // (Auto-retry-on-focus was removed. The feature caused an event-listener
