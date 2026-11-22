@@ -17,12 +17,12 @@ function keyFor(secret: string): Buffer {
 /** 24 hours. The phone may not open the file the moment the link is made. */
 export const DEVICE_TICKET_MS = 24 * 60 * 60 * 1000;
 
-export function sealDeviceToken(token: string, secret: string, now = Date.now()): string {
+export function sealDeviceToken(token: string, secret: string, now = Date.now(), ttlMs = DEVICE_TICKET_MS): string {
   if (!isDeviceToken(token)) throw new Error("Bad device code.");
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", keyFor(secret), iv);
   const exp = Buffer.alloc(8);
-  exp.writeBigUInt64BE(BigInt(now + DEVICE_TICKET_MS));
+  exp.writeBigUInt64BE(BigInt(now + ttlMs));
   const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, exp, encrypted]).toString("base64url");

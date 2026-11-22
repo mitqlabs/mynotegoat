@@ -11,8 +11,10 @@ import { useSmsTemplates } from "@/hooks/use-sms-templates";
 import { markLocalWrite } from "@/lib/local-sync";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { planAutoTextMigration } from "@/lib/message-library";
-import { legacyRules, withRules } from "@/lib/text-rules";
-import { TextRuleWizard } from "@/components/text-rule-wizard";
+import { ensureShortcutNames, legacyRules, normalizeShortcutRuns, SHORTCUT_RUNS_KEY, withRules, type ShortcutRun } from "@/lib/text-rules";
+import { SmsTemplatesSection } from "@/components/sms-templates-section";
+import { CreateShortcutSection } from "@/components/create-shortcut-section";
+import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -105,6 +107,7 @@ export function TextRemindersSettingsPanel() {
   const [optOuts, setOptOuts] = useState<OptOutRow[]>([]);
   const [optOutQuery, setOptOutQuery] = useState("");
   const [birthdayLog, setBirthdayLog] = useState<BirthdayLogRow[]>([]);
+  const [runs, setRuns] = useState<Record<string, ShortcutRun>>({});
   const { ask, confirmDialog } = useSimpleConfirm();
 
   const update = (patch: Partial<SmsReminderSettings>) => {
@@ -132,6 +135,8 @@ export function TextRemindersSettingsPanel() {
         next = { ...s, ...plan.settingsPatch };
       }
       if (next.rules == null) next = withRules(next, legacyRules(next));
+      const named = ensureShortcutNames(next);
+      if (named !== next) next = named;
       if (next !== s) update(next);
     }, 2500);
     return () => window.clearTimeout(timer);
@@ -208,6 +213,8 @@ export function TextRemindersSettingsPanel() {
         };
       }),
     );
+    const { data: runRow } = await client.from("workspace_kv").select("value").eq("workspace_id", workspaceId).eq("key", SHORTCUT_RUNS_KEY).maybeSingle();
+    setRuns(normalizeShortcutRuns(runRow?.value));
   }, [workspaceId]);
 
   const reEnable = async (row: OptOutRow) => {
@@ -392,16 +399,36 @@ export function TextRemindersSettingsPanel() {
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
       <div data-testid="section-setup">
-        <TextRuleWizard
+        <SmsTemplatesSection
+          onToggle={(next) => setSection("templates", next)}
+          open={sectionOpen(settings.sections, "templates", true)}
+          settings={settings}
+        />
+        <CreateShortcutSection
           devices={devices}
-          hasMac={activeDevices.some((d) => d.kind === "mac")}
           messages={smsTemplates}
           onChanged={() => void refresh()}
-          onConfirm={confirmAutomation}
+          onToggle={(next) => setSection("shortcuts", next)}
+          open={sectionOpen(settings.sections, "shortcuts", true)}
+          runs={runs}
           settings={settings}
           update={update}
           workspaceId={workspaceId}
-        >
+        />
+        <div data-testid="section-stop">
+          <ReminderSetupChecklist
+            devices={devices}
+            embedded
+            hasMac={activeDevices.some((d) => d.kind === "mac")}
+            mode="stop"
+            onChanged={() => void refresh()}
+            onConfirm={confirmAutomation}
+            onToggle={() => {}}
+            open
+            settings={settings}
+            workspaceId={workspaceId}
+          />
+        </div>
       <div data-testid="section-phones">
       <SetupCard
         actions={
@@ -486,7 +513,6 @@ export function TextRemindersSettingsPanel() {
         {message && <p className="font-semibold text-[var(--text-main)]">{message}</p>}
       </SetupCard>
       </div>
-        </TextRuleWizard>
       </div>
 
       <CollapsibleSection

@@ -23,6 +23,11 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.sms-templates.v1": "workspace",
   "casemate.patient-forms.v1": "workspace",
   "casemate.sms-reminders.v1": "workspace",
+  // Per-shortcut last run. The queue writes this. The Text Reminders page reads it.
+  "casemate.shortcut-runs.v1": "system",
+  // Sealed device code for named shortcuts. Server only. Not the live device row.
+  "casemate.reminder-shortcut-seal.": "system",
+  "casemate.reminder-shortcut-hash.": "system",
   "casemate.contact-directory.v1": "workspace",
   "casemate.contact-categories.v1": "workspace",
   "casemate.contact-subcategories.v1": "workspace",
