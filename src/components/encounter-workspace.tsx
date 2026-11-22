@@ -55,9 +55,13 @@ import {
   type EncounterMacroRunRecord,
   type EncounterSection,
 } from "@/lib/encounter-notes";
+import { isMacroQuestionVisible, questionsHaveShowIf } from "@/lib/macro-show-if";
 import {
   formatMacroAnswerValue,
   groupMacrosByFolder,
+  insertMissingVisibleMacroSpans,
+  macroInsertParts,
+  removeHiddenPromptSpan,
   renderMacroPromptSpan,
   renderMacroTemplateWithPromptSpans,
   type MacroAnswerMap,
@@ -1539,14 +1543,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     const snippetId = existingRun?.id ?? createEncounterMacroRunId();
     // Render the full macro body with each prompt answer wrapped in an inline
     // atomic span. The static parts of the macro stay editable; only the
-    // answer pills are read-only and re-tappable.
+    // answer pills are read-only and re-tappable. A hidden show-if question
+    // is left out of the text. Macros with no rules use the body and answers
+    // unchanged.
+    const rulesOn = questionsHaveShowIf(macro.questions);
+    const insertParts = macroInsertParts(macro.body, macro.questions, answers);
     const generatedText = renderMacroTemplateWithPromptSpans(
-      macro.body,
-      answers,
+      insertParts.template,
+      insertParts.answers,
       context,
       snippetId,
     );
-    if (!generatedText) {
+    if (!generatedText && !(existingRun && rulesOn)) {
       setMessage("Generated macro output was empty.");
       return;
     }
@@ -1575,20 +1583,38 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         "i",
       );
 
-      if (hasPromptSpans) {
+      const onlyPrompt =
+        editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
+          ? editingMacroPromptId
+          : null;
+      // Full edit of a macro that has show-if rules: swap the previous
+      // inserted block for a fresh render so questions that just appeared
+      // or disappeared land in the right place. A single-pill edit stays
+      // surgical so the other pills are not rewritten.
+      const canReplaceSavedBlock =
+        rulesOn &&
+        !onlyPrompt &&
+        Boolean(existingRun.generatedText) &&
+        currentSectionText.includes(existingRun.generatedText);
+
+      if (canReplaceSavedBlock) {
+        nextSectionText = currentSectionText.replace(existingRun.generatedText, generatedText);
+      } else if (hasPromptSpans) {
         // When the user tapped a SINGLE prompt pill, only that pill may change.
         // Re-rendering every question's span from `answers` would overwrite the
         // other pills with their initial (possibly defaulted-to-first-option)
         // values — e.g. editing Weight would silently reset a blank-in-answers
         // Segment to option[0]. So restrict replacement to the edited prompt.
-        const onlyPrompt =
-          editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
-            ? editingMacroPromptId
-            : null;
         const questionsToReplace = onlyPrompt
           ? macro.questions.filter((question) => question.id === onlyPrompt)
           : macro.questions;
         questionsToReplace.forEach((question) => {
+          const hidden =
+            rulesOn && !onlyPrompt && !isMacroQuestionVisible(question, macro.questions, answers);
+          if (hidden) {
+            nextSectionText = removeHiddenPromptSpan(nextSectionText, snippetId, question.id);
+            return;
+          }
           const replacement = renderMacroPromptSpan(
             snippetId,
             question.id,
@@ -1600,6 +1626,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           );
           nextSectionText = nextSectionText.replace(promptPattern, replacement);
         });
+        if (rulesOn && !onlyPrompt) {
+          nextSectionText = insertMissingVisibleMacroSpans(
+            nextSectionText,
+            snippetId,
+            macro.questions,
+            answers,
+          );
+        }
       } else if (legacyWrapperPattern.test(currentSectionText)) {
         nextSectionText = currentSectionText.replace(legacyWrapperPattern, generatedText);
       } else {
@@ -4909,7 +4943,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
               {(editingMacroPromptId
                 ? runMacro.questions.filter((question) => question.id === editingMacroPromptId)
-                : runMacro.questions
+                : runMacro.questions.filter((question) =>
+                    isMacroQuestionVisible(question, runMacro.questions, runMacroAnswers),
+                  )
               ).map((question) => (
                 <MacroPromptQuestion
                   key={question.id}
