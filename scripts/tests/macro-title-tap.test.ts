@@ -143,7 +143,12 @@ test("the encounter picker wires the title and keeps the gesture hidden", () => 
   const card = readFileSync(new URL("../../src/components/macro-prompt-question.tsx", import.meta.url), "utf8");
   const workspace = readFileSync(new URL("../../src/components/encounter-workspace.tsx", import.meta.url), "utf8");
   assert.match(card, /canToggleAll = Boolean\(question\.multiSelect\) && !singlePick && selectableOptions\.length > 0/);
-  assert.match(card, /cursor-pointer/);
+  assert.match(card, /className="text-sm font-semibold"/);
+  assert.doesNotMatch(card, /cursor-pointer|hover:|underline|role="button"|tabIndex|<button|aria-label|\btitle=/);
+  assert.match(card, /cursor: "auto"/);
+  assert.match(card, /outline: "none"/);
+  assert.match(card, /touchAction: "manipulation"/);
+  assert.match(card, /WebkitTapHighlightColor: "transparent"/);
   assert.match(card, /toggleAllMacroCheckboxes\(current\[question\.id\], question\.options\)/);
   assert.match(card, /toggleMacroCheckbox\(current\[question\.id\], option, question\.options\)/);
   assert.match(card, /type="checkbox"/);

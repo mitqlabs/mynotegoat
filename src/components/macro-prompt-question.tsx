@@ -15,7 +15,7 @@ import { isDecompressionSinglePick } from "@/lib/treatment-plans";
  * One question inside the encounter macro picker: options, and the
  * Other / edit box that mirrors them. Multi-choice checkbox groups accept
  * a tap or click on the title to select every option, or to clear them
- * when they are already all selected. The title does not gain a label.
+ * when they are already all selected. The title stays plain text.
  */
 export function MacroPromptQuestion({
   question,
@@ -62,7 +62,8 @@ export function MacroPromptQuestion({
   const selectableOptions = normalizedOptions.length > 0 ? normalizedOptions : question.options;
   const useMultiColumn = !usePainScaleColumns && selectableOptions.length >= 5;
   // Hidden gesture: title tap selects every checkbox, or clears them when
-  // they are already all on. Single-pick groups stay radios.
+  // they are already all on. The title keeps the same look as a static
+  // label. Single-pick groups stay radios.
   const canToggleAll = Boolean(question.multiSelect) && !singlePick && selectableOptions.length > 0;
   const renderOptionRow = (option: string) => (
     <label
@@ -114,7 +115,7 @@ export function MacroPromptQuestion({
   return (
     <div className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
       <p
-        className={`text-sm font-semibold${canToggleAll ? " cursor-pointer touch-manipulation" : ""}`}
+        className="text-sm font-semibold"
         onClick={
           canToggleAll
             ? () =>
@@ -122,6 +123,16 @@ export function MacroPromptQuestion({
                   ...current,
                   [question.id]: toggleAllMacroCheckboxes(current[question.id], question.options),
                 }))
+            : undefined
+        }
+        style={
+          canToggleAll
+            ? {
+                cursor: "auto",
+                outline: "none",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }
             : undefined
         }
       >
