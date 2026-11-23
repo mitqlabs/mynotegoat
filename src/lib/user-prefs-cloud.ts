@@ -31,6 +31,23 @@ export function mergePrefs(...maps: PrefMap[]): PrefMap {
   return out;
 }
 
+/**
+ * Write a merged pref back into localStorage when the stored value is not
+ * the merged one and the merged entry is at least as new as the mirror.
+ *
+ * Removing the real key does not clear the mirror, so the mirror can still
+ * hold the same entry and timestamp. A strict "newer than the mirror" check
+ * then never restores it, and the sidebar order looks unsaved.
+ * Missing mirror entry, or merged.at >= mirror.at, means the key is missing
+ * or stale and should be written.
+ */
+export function shouldRestorePref(stored: string | null, merged: PrefEntry, mirror: PrefEntry | undefined): boolean {
+  if (!merged || typeof merged.v !== "string" || !Number.isFinite(merged.at)) return false;
+  if (stored === merged.v) return false;
+  if (!mirror || !Number.isFinite(mirror.at)) return true;
+  return merged.at >= mirror.at;
+}
+
 let rawSet: ((k: string, v: string) => void) | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let userKey: string | null = null;
@@ -48,6 +65,27 @@ function writeMirror(map: PrefMap) {
   (rawSet ?? window.localStorage.setItem.bind(window.localStorage))(MIRROR_KEY, s);
 }
 
+/** Copy merged prefs onto the real keys. `mirror` is the pre-merge snapshot. */
+export function applyUserPrefRestore(mirror: PrefMap, merged: PrefMap): void {
+  if (typeof window === "undefined") return;
+  const set = rawSet ?? window.localStorage.setItem.bind(window.localStorage);
+  for (const [k, e] of Object.entries(merged)) {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(k);
+    } catch {
+      continue;
+    }
+    if (!shouldRestorePref(stored, e, mirror[k])) continue;
+    try {
+      set(k, e.v);
+    } catch {
+      continue;
+    }
+    notifyChange(k);
+  }
+}
+
 async function cloudKey(): Promise<string | null> {
   if (userKey) return userKey;
   const client = getSupabaseBrowserClient();
@@ -57,40 +95,59 @@ async function cloudKey(): Promise<string | null> {
   return userKey;
 }
 
-/** Fetch the cloud copy, merge with this browser's, save both, apply newer values locally. */
-export async function syncUserPrefs(): Promise<void> {
-  if (typeof window === "undefined") return;
+let inFlight: Promise<void> | null = null;
+
+async function syncUserPrefsOnce(): Promise<void> {
   const client = getSupabaseBrowserClient();
   const workspaceId = getActiveWorkspaceIdSync();
   const key = await cloudKey();
-  if (!client || !workspaceId || !key) return;
-  const { data, error } = await client
-    .from("workspace_kv")
-    .select("value")
-    .eq("workspace_id", workspaceId)
-    .eq("key", key)
-    .maybeSingle();
-  if (error) {
-    console.warn("[user-prefs] cloud read failed:", error.message);
-    return;
+  let remote: PrefMap = {};
+  let remoteReady = false;
+  if (client && workspaceId && key) {
+    try {
+      const { data, error } = await client
+        .from("workspace_kv")
+        .select("value")
+        .eq("workspace_id", workspaceId)
+        .eq("key", key)
+        .maybeSingle();
+      if (error) console.warn("[user-prefs] cloud read failed:", error.message);
+      else {
+        remote = mergePrefs((data?.value ?? {}) as PrefMap);
+        remoteReady = true;
+      }
+    } catch (err) {
+      console.warn("[user-prefs] cloud read failed:", err);
+    }
   }
-  const remote = mergePrefs((data?.value ?? {}) as PrefMap);
+  // A failed or skipped cloud read still restores from the mirror. Returning
+  // early used to leave a wiped key empty, so the app opened on Patient List.
   const local = readMirror();
   const merged = mergePrefs(remote, local);
   writeMirror(merged);
-  const set = rawSet ?? window.localStorage.setItem.bind(window.localStorage);
-  for (const [k, e] of Object.entries(merged)) {
-    if (window.localStorage.getItem(k) !== e.v && (!local[k] || e.at > local[k].at)) {
-      set(k, e.v);
-      notifyChange(k);
-    }
-  }
-  if (JSON.stringify(merged) !== JSON.stringify(remote)) {
+  applyUserPrefRestore(local, merged);
+  if (remoteReady && client && workspaceId && key && JSON.stringify(merged) !== JSON.stringify(remote)) {
     const { error: upErr } = await client
       .from("workspace_kv")
       .upsert({ workspace_id: workspaceId, key, value: merged }, { onConflict: "workspace_id,key" });
     if (upErr) console.warn("[user-prefs] cloud save failed:", upErr.message);
   }
+}
+
+/**
+ * Fetch the cloud copy, merge with this browser's, save both, apply newer
+ * values locally. Callers that overlap (the portal boot and the home page)
+ * share one run, so a 10s boot cap cannot read the sidebar key before this
+ * restore has written it.
+ */
+export function syncUserPrefs(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (!inFlight) {
+    inFlight = syncUserPrefsOnce().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 }
 
 // Offline edits stay in the local mirror; push them as soon as we're back online.

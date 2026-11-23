@@ -45,6 +45,27 @@ async function main() {
   const home = await import("node:fs").then((fs) => fs.readFileSync("src/app/(portal)/page.tsx", "utf8"));
   assert.match(home, /readSidebarOrderFromStorage\(\)/);
   assert.match(home, /await syncUserPrefs\(\)/);
+  assert.equal(
+    order.shouldRedirectFreshPatientList({
+      freshLaunch: true,
+      pathname: "/patients",
+      search: "",
+      landingHref: order.sidebarLandingHref("complete", () => true, ["caseList", "patients"]),
+    }),
+    true,
+  );
+  assert.equal(
+    order.shouldRedirectFreshPatientList({
+      freshLaunch: false,
+      pathname: "/patients",
+      search: "",
+      landingHref: "/cases",
+    }),
+    false,
+  );
+  // Case List stays in a saved order while the folder switch is on. It is
+  // not dropped just because it is not the patients id.
+  assert.deepEqual(order.sidebarOrderFrom('["caseList","patients","contacts"]'), ["caseList", "patients", "contacts"]);
   console.log("ok - Case List is a movable sidebar page with the folder switch on");
 }
 

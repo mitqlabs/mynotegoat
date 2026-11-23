@@ -235,3 +235,57 @@ export function sidebarLandingHref(
   if (!savedStillVisible) return fallbackOpen ? fallback : (top?.href ?? fallback);
   return top?.href ?? fallback;
 }
+
+/**
+ * Per-tab flag: the first navigation of this tab. sessionStorage, so a new
+ * tab, bookmark, or Dock open is fresh, and a later visit in the same tab
+ * is not. Not a copy of the sidebar order.
+ */
+export const APP_LAUNCH_SESSION_KEY = "ng:app-launch";
+
+/** True until this tab has finished its first navigation. */
+export function readFreshAppLaunch(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(APP_LAUNCH_SESSION_KEY) !== "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Mark this tab's launch handled so later Patient List visits stay there. */
+export function consumeAppLaunch(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(APP_LAUNCH_SESSION_KEY, "1");
+  } catch {
+    // sessionStorage can be blocked; the launch is then treated as fresh again next time.
+  }
+}
+
+/** The default list itself, not a case file and not a query deep link. */
+export function isDefaultPatientListLaunch(pathname: string, search = ""): boolean {
+  let path = pathname || "";
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  if (path !== "/patients") return false;
+  const query = (search.startsWith("?") ? search.slice(1) : search).trim();
+  return query.length === 0;
+}
+
+/**
+ * A brand-new tab that opened on the default list follows the sidebar once
+ * prefs are in. In-app clicks, /patients/<id>, query deep links, and any
+ * later visit in the same tab do not.
+ */
+export function shouldRedirectFreshPatientList(input: {
+  freshLaunch: boolean;
+  pathname: string;
+  search?: string;
+  landingHref: string;
+}): boolean {
+  if (!input.freshLaunch) return false;
+  if (!isDefaultPatientListLaunch(input.pathname, input.search ?? "")) return false;
+  const href = input.landingHref;
+  if (!href || href === "/patients") return false;
+  return true;
+}

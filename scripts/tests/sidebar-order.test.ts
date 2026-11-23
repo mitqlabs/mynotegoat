@@ -13,13 +13,19 @@ import {
   reorderSidebarId,
   sidebarCatalog,
   SIDEBAR_ORDER_KEY,
+  APP_LAUNCH_SESSION_KEY,
+  consumeAppLaunch,
+  isDefaultPatientListLaunch,
+  readFreshAppLaunch,
   readSidebarOrderFromStorage,
+  shouldRedirectFreshPatientList,
   sidebarLandingHref,
   sidebarOrderFrom,
   sidebarOrderValue,
   visibleSidebarPages,
   type SidebarPage,
 } from "../../src/lib/sidebar-order";
+import { safeNextPath } from "../../src/lib/goat-app";
 import { toneReadbackOk } from "../../src/lib/brand";
 import { settingsSearchCatalog } from "../../src/lib/settings-catalog";
 import { SETTINGS_TABS } from "../../src/lib/settings-search";
@@ -159,6 +165,50 @@ test("a null snapshot is not a saved order; storage is", () => {
   }
 });
 
+test("a fresh open of the default list follows the sidebar; later visits and deep links do not", () => {
+  assert.equal(isDefaultPatientListLaunch("/patients", ""), true);
+  assert.equal(isDefaultPatientListLaunch("/patients/", ""), true);
+  assert.equal(isDefaultPatientListLaunch("/patients/p1", ""), false);
+  assert.equal(isDefaultPatientListLaunch("/patients", "?view=toDo"), false);
+  assert.equal(isDefaultPatientListLaunch("/patients", "?new=1"), false);
+  assert.equal(isDefaultPatientListLaunch("/cases", ""), false);
+  const go = { freshLaunch: true, pathname: "/patients", search: "", landingHref: "/contacts" };
+  assert.equal(shouldRedirectFreshPatientList(go), true);
+  assert.equal(shouldRedirectFreshPatientList({ ...go, freshLaunch: false }), false);
+  assert.equal(shouldRedirectFreshPatientList({ ...go, pathname: "/patients/p1" }), false);
+  assert.equal(shouldRedirectFreshPatientList({ ...go, search: "?view=toDo&task=1" }), false);
+  assert.equal(shouldRedirectFreshPatientList({ ...go, landingHref: "/patients" }), false);
+  assert.equal(shouldRedirectFreshPatientList({ ...go, pathname: "/cases", landingHref: "/cases" }), false);
+});
+
+test("the launch flag lives in sessionStorage for this tab only", () => {
+  const mem = new Map<string, string>();
+  const previous = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    sessionStorage: {
+      getItem: (key: string) => mem.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        mem.set(key, value);
+      },
+    },
+  };
+  try {
+    assert.equal(readFreshAppLaunch(), true);
+    consumeAppLaunch();
+    assert.equal(mem.get(APP_LAUNCH_SESSION_KEY), "1");
+    assert.equal(readFreshAppLaunch(), false);
+    assert.equal(shouldRedirectFreshPatientList({
+      freshLaunch: readFreshAppLaunch(),
+      pathname: "/patients",
+      search: "",
+      landingHref: "/contacts",
+    }), false);
+  } finally {
+    if (previous === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = previous;
+  }
+});
+
 test("root, sign-in, and approval open the sidebar landing page behind the check-in screen", () => {
   assert.equal(existsSync("src/app/page.tsx"), false);
   const home = readFileSync("src/app/(portal)/page.tsx", "utf8");
@@ -178,6 +228,24 @@ test("root, sign-in, and approval open the sidebar landing page behind the check
   assert.match(layout, /syncUserPrefs\(\)/);
   assert.match(layout, /<PortalBootScreen/);
   assert.match(layout, /<GoatCheckIn \/>/);
+  assert.match(layout, /readFreshAppLaunch\(\)/);
+  assert.match(layout, /isDefaultPatientListLaunch/);
+  assert.match(layout, /FreshPatientListLaunch/);
+  assert.match(layout, /consumeAppLaunch\(\)/);
+  const launch = readFileSync("src/components/fresh-patient-list-launch.tsx", "utf8");
+  assert.match(launch, /await syncUserPrefs\(\)/);
+  assert.match(launch, /shouldRedirectFreshPatientList/);
+  assert.match(launch, /readSidebarOrderFromStorage\(\)/);
+  assert.match(launch, /sessionStorage|readFreshAppLaunch|consumeAppLaunch/);
+  assert.doesNotMatch(launch, /localStorage/);
+  // Sign-in only honors the G.O.A.T. app path. A /patients bookmark is not
+  // a next target, so login lands on "/" and the sidebar order decides.
+  assert.equal(safeNextPath("/patients"), null);
+  assert.equal(safeNextPath("/patients/abc"), null);
+  assert.match(login, /router\.replace\(next \?\? "\/"\)/);
+  const guard = readFileSync("src/components/route-access-guard.tsx", "utf8");
+  assert.match(guard, /sidebarLandingHref\(planTier, canView, readSidebarOrderFromStorage\(\)\)/);
+  assert.doesNotMatch(guard, /firstAllowed \? firstAllowed\.href : "\/patients"/);
 });
 
 test("Sidebar is a Settings section on one tab and has no subtitle", () => {

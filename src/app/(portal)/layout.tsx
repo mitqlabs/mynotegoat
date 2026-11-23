@@ -31,8 +31,10 @@ import {
   type WorkspaceMembership,
 } from "@/lib/workspace-membership";
 import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
+import { FreshPatientListLaunch } from "@/components/fresh-patient-list-launch";
 import { RouteAccessGuard } from "@/components/route-access-guard";
 import { safeNextPath } from "@/lib/goat-app";
+import { consumeAppLaunch, isDefaultPatientListLaunch, readFreshAppLaunch } from "@/lib/sidebar-order";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -118,6 +120,9 @@ export default function PortalLayout({
   // and carrying on for hours without telling anyone, so it stays on screen
   // for the life of the tab — it can't be dismissed.
   const [offlineMode, setOfflineMode] = useState(false);
+  // Fresh tab opened on /patients: keep the check-in screen until we know
+  // whether the sidebar's first page is somewhere else.
+  const [listLaunchHold, setListLaunchHold] = useState(false);
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null);
   const [syncBlocked, setSyncBlocked] = useState<{ localSize: number; remoteSize: number } | null>(null);
 
@@ -126,6 +131,8 @@ export default function PortalLayout({
     let unsubscribeSync: (() => void) | null = null;
 
     async function bootstrap() {
+      // Set only when this tab's first URL is the default Patient List.
+      let holdPatientList = false;
       // Speed: the session is read locally (no network). With it we start the
       // access check AND the team-membership lookup at the same time. If this
       // browser has a fresh access hint for the same user we open on that
@@ -326,24 +333,28 @@ export default function PortalLayout({
         // failed record pull does. The URL this tab actually opened on is
         // window.location — usePathname() can be empty on the prerendered
         // root, and that used to skip this wait and open Patient List.
-        // Opening at "/" waits for the order so the check-in screen stays
-        // up until we know which page is first. Every other route keeps
-        // going and lets the prefs catch up. The home page reads the key
-        // again after this sync; it must not decide from an empty snapshot.
+        // Opening at "/" (and a brand-new tab opened on the default list)
+        // waits for the order so the check-in screen stays up until we know
+        // which page is first. The 10s cap only lets the check-in screen
+        // mount; the home page and the fresh-list redirect share that same
+        // sync and read the key after a wiped order has been restored.
         const entryPath = window.location.pathname || pathname;
+        const entrySearch = window.location.search || "";
+        const freshLaunch = readFreshAppLaunch();
+        holdPatientList = freshLaunch && isDefaultPatientListLaunch(entryPath, entrySearch);
         const prefs = import("@/lib/user-prefs-cloud")
           .then((m) => m.syncUserPrefs())
           .catch((err: unknown) => console.warn("[user-prefs] restore failed:", err));
-        // Role permissions are not in the main cloud pull. On the home
-        // route, read them before choosing a page so a hidden section is
+        // Role permissions are not in the main cloud pull. On a route that
+        // chooses the landing page, read them first so a hidden section is
         // not opened and then bounced.
-        const roles =
-          entryPath === "/"
-            ? import("@/lib/role-settings-store")
-                .then((m) => m.fetchAccessFromCloud())
-                .catch((err: unknown) => console.warn("[roles] restore failed:", err))
-            : Promise.resolve(null);
-        if (entryPath === "/") {
+        const waitForLanding = entryPath === "/" || holdPatientList;
+        const roles = waitForLanding
+          ? import("@/lib/role-settings-store")
+              .then((m) => m.fetchAccessFromCloud())
+              .catch((err: unknown) => console.warn("[roles] restore failed:", err))
+          : Promise.resolve(null);
+        if (waitForLanding) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             Promise.all([prefs, roles]).finally(() => {
@@ -392,6 +403,11 @@ export default function PortalLayout({
       console.info(`[boot] ready in ${Math.round(performance.now() - bootT0)}ms`);
 
       if (active) {
+        // Any first load other than the default list consumes the launch,
+        // so a later click or reload of Patient List in this tab stays there.
+        // The default-list case consumes the flag after it has read the order.
+        if (holdPatientList) setListLaunchHold(true);
+        else consumeAppLaunch();
         setMounted(true);
       }
     }
@@ -592,15 +608,25 @@ export default function PortalLayout({
     return <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />;
   }
 
+  const livePath = pathname || (typeof window === "undefined" ? "" : window.location.pathname);
+  const liveSearch = typeof window === "undefined" ? "" : window.location.search;
+  // Once the fresh open has left the default list, drop the hold so an
+  // in-app click back to Patient List stays on Patient List.
+  if (listLaunchHold && livePath && !isDefaultPatientListLaunch(livePath, liveSearch)) {
+    setListLaunchHold(false);
+  }
+  const holdingList = listLaunchHold && isDefaultPatientListLaunch(livePath, liveSearch);
+
   return (
     <PlanTierProvider planTier={planTier}>
       <WorkspaceAccessProvider membership={membership}>
-      {pathname === "/" ? (
+      {pathname === "/" || holdingList ? (
         <>
-          {/* Stay on the check-in screen until the home page replaces "/"
-              with the first sidebar page. The shell never paints the wrong one. */}
-          <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />
-          {children}
+          {/* Stay on the check-in screen until "/" or a fresh /patients
+              open is replaced with the first sidebar page. */}
+          <PortalBootScreen pathname={pathname || livePath} bootProgressText={bootProgressText} />
+          {holdingList ? <FreshPatientListLaunch onStay={() => setListLaunchHold(false)} /> : null}
+          {pathname === "/" ? children : null}
         </>
       ) : (
       <>
