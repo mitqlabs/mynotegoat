@@ -2,9 +2,10 @@
 
 import { DRILL_SORT_KEY, nextDrillSort, parseDrillSort, sortDrillPatients, type DrillSort } from "@/lib/referral-drill-sort";
 import { useReferralTicks } from "@/hooks/use-referral-ticks";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { PatientsByLocationCard } from "@/components/patients-by-location-card";
+import { PatientDemographicsSection } from "@/components/patient-demographics-section";
+import { ATTORNEY_PERFORMANCE_SECTION, useRememberedOpen } from "@/components/remembered-open";
 import { ScrollLock } from "@/components/scroll-lock";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
 import { ActivityLogPanel } from "@/components/activity-log-panel";
@@ -324,22 +325,6 @@ function getDefaultYear(): string {
   return hasCurrentYear ? currentYear : "ALL";
 }
 
-const DASHBOARD_SECTIONS_KEY = "casemate.dashboard.sections-open.v1";
-
-function subscribeToStorage(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
-}
-
-function readSectionOpen(id: string): boolean {
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
-    return saved[id] !== false;
-  } catch {
-    return true;
-  }
-}
-
 /** Collapsible Dashboard section; open/closed is remembered per user (cloud-backed prefs). */
 function DashboardSection({
   id,
@@ -350,26 +335,7 @@ function DashboardSection({
   title: string;
   children: React.ReactNode;
 }) {
-  // Saved open/closed via useSyncExternalStore: the server snapshot is
-  // "open", the client reads localStorage, and React reconciles the two
-  // without a hydration mismatch or a setState-in-effect.
-  const savedOpen = useSyncExternalStore(
-    subscribeToStorage,
-    () => readSectionOpen(id),
-    () => true,
-  );
-  const [override, setOverride] = useState<boolean | null>(null);
-  const open = override ?? savedOpen;
-  const toggle = () => {
-    const next = !open;
-    setOverride(next);
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
-      window.localStorage.setItem(DASHBOARD_SECTIONS_KEY, JSON.stringify({ ...saved, [id]: next }));
-    } catch {
-      // Per-browser convenience only.
-    }
-  };
+  const { open, toggle } = useRememberedOpen(id);
   return (
     <section className="panel-card p-4">
       <button
@@ -385,8 +351,24 @@ function DashboardSection({
   );
 }
 
+function CollapseChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      className={`h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      viewBox="0 0 24 24"
+    >
+      <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
   const { roleTier } = useWorkspaceAccess();
+  const attorneyPerformance = useRememberedOpen(ATTORNEY_PERFORMANCE_SECTION);
   // Discharge dates as the patient page's Discharge box shows them.
   const { scheduleAppointments } = useScheduleAppointments();
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
@@ -1385,9 +1367,20 @@ export default function DashboardPage() {
 
         <section>
           <article className="panel-card overflow-hidden">
-          <div className="border-b border-[var(--line-soft)] p-4">
-            <h4 className="text-lg font-semibold">Attorney Performance</h4>
+          <div className={attorneyPerformance.open ? "border-b border-[var(--line-soft)] p-4" : "p-4"}>
+            <h4 className="text-lg font-semibold">
+              <button
+                aria-expanded={attorneyPerformance.open}
+                className="flex w-full items-center gap-2 text-left"
+                onClick={attorneyPerformance.toggle}
+                type="button"
+              >
+                <CollapseChevron open={attorneyPerformance.open} />
+                <span>Attorney Performance</span>
+              </button>
+            </h4>
           </div>
+          {attorneyPerformance.open && (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
@@ -1446,6 +1439,7 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          )}
           </article>
         </section>
       </div>
@@ -1454,7 +1448,7 @@ export default function DashboardPage() {
       )}
 
       {visibleSections > 0 && (
-        <PatientsByLocationCard
+        <PatientDemographicsSection
           patients={locationPatients}
           statuses={statusFilterOptions}
         />
