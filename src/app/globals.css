@@ -1197,3 +1197,42 @@ button.bg-white {
 [data-tone="dark"] .status-pill {
   color: var(--text-main) !important;
 }
+
+/* Case page header: photo | name + patient info | patient alert.
+   Narrow screens stack photo+name, then the fields, then the alert. */
+.case-header {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "photo name"
+    "info info"
+    "actions actions";
+}
+.case-header:not(:has(.case-header-photo)) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "name"
+    "info"
+    "actions";
+}
+.case-header-photo { grid-area: photo; }
+.case-header-name { grid-area: name; }
+.case-header-info { grid-area: info; }
+.case-header-actions { grid-area: actions; }
+@media (min-width: 1280px) {
+  .case-header {
+    column-gap: 1.25rem;
+    grid-template-columns: 110px minmax(0, 1fr) minmax(24rem, 30rem);
+    grid-template-areas:
+      "photo name actions"
+      "photo info actions";
+  }
+  .case-header:not(:has(.case-header-photo)) {
+    grid-template-columns: minmax(0, 1fr) minmax(24rem, 30rem);
+    grid-template-areas:
+      "name actions"
+      "info actions";
+  }
+}

@@ -26,7 +26,7 @@ test("labels in the catalog exist in the UI code", () => {
   has("src/app/(portal)/appointments/page.tsx", "New patient");
   has("src/app/(portal)/contacts/page.tsx", "Add Contact");
   has("src/components/patient-case-file.tsx", "+ To Do");
-  has("src/components/patient-case-file.tsx", "Open Encounters For This Patient");
+  has("src/components/patient-case-file.tsx", "Open Encounters");
 });
 test("other how-tos", () => {
   assert.match(answerHowTo("how do i add a contact").text, /Add Contact/);

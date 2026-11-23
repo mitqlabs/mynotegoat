@@ -32,8 +32,9 @@ const CROP_HANDLES: { edge: CropEdge; label: string; className: string }[] = [
 ];
 
 /**
- * Free crop. Drag inside the box to move it. Drag any edge or corner to resize.
- * Pointer events cover a mouse and a finger, including an iPhone.
+ * Free crop. Pointer events cover a mouse and a finger, including an iPhone.
+ * The picture is drawn at the largest size that fits the frame. Crop numbers
+ * stay in source pixels; the on-screen box is those pixels times the live scale.
  */
 export function PatientPhotoCropper({
   src,
@@ -45,16 +46,18 @@ export function PatientPhotoCropper({
   onSave: (dataUrl: string) => void;
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [crop, setCrop] = useState<PhotoCrop | null>(null);
-  const [shownScale, setShownScale] = useState(1);
+  const [shownScale, setShownScale] = useState(0);
   const [error, setError] = useState("");
   const drag = useRef<{ mode: "move" | CropEdge; x: number; y: number; crop: PhotoCrop } | null>(null);
 
   const scale = () => {
     const img = imgRef.current;
-    if (!img || !img.naturalWidth) return 1;
-    return img.clientWidth / img.naturalWidth;
+    if (!img || !img.naturalWidth) return shownScale > 0 ? shownScale : 1;
+    const live = img.clientWidth / img.naturalWidth;
+    return live > 0 ? live : 1;
   };
 
   const onLoad = () => {
@@ -62,14 +65,24 @@ export function PatientPhotoCropper({
     if (!img) return;
     setNatural({ w: img.naturalWidth, h: img.naturalHeight });
     setCrop(initialPortraitCrop(img.naturalWidth, img.naturalHeight));
-    setShownScale(img.clientWidth / img.naturalWidth || 1);
   };
 
   useEffect(() => {
-    const refresh = () => setShownScale(scale());
-    window.addEventListener("resize", refresh);
-    return () => window.removeEventListener("resize", refresh);
-  }, []);
+    const frame = frameRef.current;
+    if (!frame || !natural.w || !natural.h) return;
+    const fit = () => {
+      const style = getComputedStyle(frame);
+      const maxW = frame.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const maxH = frame.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      if (maxW < 8 || maxH < 8) return;
+      const next = Math.min(maxW / natural.w, maxH / natural.h);
+      if (next > 0) setShownScale(next);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [natural.w, natural.h]);
 
   const onPointerDown = (event: React.PointerEvent, mode: "move" | CropEdge) => {
     if (!crop) return;
@@ -106,29 +119,30 @@ export function PatientPhotoCropper({
     onSave(dataUrl);
   };
 
-  const box = crop
+  const fitted = natural.w > 0 && shownScale > 0;
+  const box = crop && fitted
     ? { left: crop.x * shownScale, top: crop.y * shownScale, width: crop.w * shownScale, height: crop.h * shownScale }
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e2944]/70 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="patient-photo-title">
-      <div className="flex max-h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-3 px-4 py-3">
-          <div>
-            <h3 className="text-base font-semibold text-[#172a3a]" id="patient-photo-title">Crop photo</h3>
-            <p className="text-xs text-[#6b8496]">Drag inside the box to move it. Drag any edge or corner to resize.</p>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[#0e2944]/70 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="patient-photo-title">
+      <div className="flex h-[100dvh] w-full max-w-none flex-col overflow-hidden bg-white sm:h-[85vh] sm:max-h-[85vh] sm:max-w-[900px] sm:rounded-2xl">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <h3 className="text-base font-semibold text-[#172a3a]" id="patient-photo-title">Crop photo</h3>
           <button className="rounded-full px-2 py-1 text-sm font-semibold text-[#6b8496]" onClick={onCancel} type="button">
             Cancel
           </button>
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#10283d] px-3 py-4">
+        <div ref={frameRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#10283d] px-3 py-3">
           {src && (
-            <div className="relative inline-block max-w-full touch-none">
+            <div
+              className="relative touch-none"
+              style={fitted ? { width: natural.w * shownScale, height: natural.h * shownScale } : undefined}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 alt="Picture to crop"
-                className="block max-h-[62dvh] max-w-full select-none"
+                className={fitted ? "block h-full w-full select-none" : "pointer-events-none absolute h-px w-px opacity-0"}
                 draggable={false}
                 onLoad={onLoad}
                 ref={imgRef}

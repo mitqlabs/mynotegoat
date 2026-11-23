@@ -10,7 +10,7 @@
  * the production project.
  */
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
-import { isPatientPhotoDataUrl } from "@/lib/patient-photo";
+import { isPatientPhotoDataUrl, isPatientPhotoPath } from "@/lib/patient-photo";
 
 export const PATIENT_PHOTO_BUCKET = "patient-photos";
 
@@ -34,6 +34,22 @@ export async function uploadPatientPhoto(folderId: string, dataUrl: string): Pro
     });
     if (error) return "";
     return storagePath;
+  } catch {
+    return "";
+  }
+}
+
+/** Short-lived URL for a private patient-photos object. Empty when it cannot be signed. */
+export async function signedUrlForPatientPhoto(storagePath: string): Promise<string> {
+  const path = storagePath.trim();
+  if (!isPatientPhotoPath(path)) return "";
+  try {
+    const { getSupabaseBrowserClient } = await import("@/lib/supabase-browser");
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return "";
+    const { data, error } = await supabase.storage.from(PATIENT_PHOTO_BUCKET).createSignedUrl(path, 3600);
+    if (error || !data?.signedUrl) return "";
+    return data.signedUrl;
   } catch {
     return "";
   }
