@@ -5,7 +5,7 @@ import { flushSaveQueue } from "@/lib/save-queue";
 import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
 import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SkeletonCaseFile, SkeletonNote, SkeletonRows, SkeletonSchedule } from "@/components/ui/skeleton";
 import dynamic from "next/dynamic";
@@ -31,8 +31,10 @@ import {
   type WorkspaceMembership,
 } from "@/lib/workspace-membership";
 import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
+import { PatientsLaunchRedirect } from "@/components/patients-launch-redirect";
 import { RouteAccessGuard } from "@/components/route-access-guard";
 import { safeNextPath } from "@/lib/goat-app";
+import { claimFreshLaunch, isExactPatientsListEntry } from "@/lib/sidebar-launch";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -120,6 +122,10 @@ export default function PortalLayout({
   const [offlineMode, setOfflineMode] = useState(false);
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null);
   const [syncBlocked, setSyncBlocked] = useState<{ localSize: number; remoteSize: number } | null>(null);
+  // A new tab that opened exactly on Patient List stays on the check-in
+  // screen until prefs say whether that is really the first sidebar page.
+  const [holdPatientsLaunch, setHoldPatientsLaunch] = useState(false);
+  const releasePatientsLaunch = useCallback(() => setHoldPatientsLaunch(false), []);
 
   useEffect(() => {
     let active = true;
@@ -327,10 +333,16 @@ export default function PortalLayout({
         // window.location — usePathname() can be empty on the prerendered
         // root, and that used to skip this wait and open Patient List.
         // Opening at "/" waits for the order so the check-in screen stays
-        // up until we know which page is first. Every other route keeps
-        // going and lets the prefs catch up. The home page reads the key
-        // again after this sync; it must not decide from an empty snapshot.
+        // up until we know which page is first. A fresh tab that opened
+        // exactly on /patients does the same (bookmark, Dock, restored
+        // tab). Every other route keeps going. The home page and the
+        // patients launch redirector both join this same sync, so a 10s
+        // timeout cannot decide from an empty snapshot while the first
+        // read is still writing the sidebar order.
         const entryPath = window.location.pathname || pathname;
+        const entrySearch = window.location.search || "";
+        const freshLaunch = claimFreshLaunch(window.sessionStorage);
+        const patientsLaunch = freshLaunch && isExactPatientsListEntry(entryPath, entrySearch);
         const prefs = import("@/lib/user-prefs-cloud")
           .then((m) => m.syncUserPrefs())
           .catch((err: unknown) => console.warn("[user-prefs] restore failed:", err));
@@ -343,7 +355,7 @@ export default function PortalLayout({
                 .then((m) => m.fetchAccessFromCloud())
                 .catch((err: unknown) => console.warn("[roles] restore failed:", err))
             : Promise.resolve(null);
-        if (entryPath === "/") {
+        if (entryPath === "/" || patientsLaunch) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             Promise.all([prefs, roles]).finally(() => {
@@ -354,6 +366,7 @@ export default function PortalLayout({
             }),
           ]);
         }
+        if (patientsLaunch && active) setHoldPatientsLaunch(true);
       } catch (error) {
         if (!active) return;
         const message =
@@ -505,6 +518,13 @@ export default function PortalLayout({
     // decide whether to wait for the sidebar order before leaving check-in.
   }, []);
 
+  // The launch hold is only for the page this tab opened on. Once we leave
+  // /patients (or the redirector decides Patient List is correct), a later
+  // click on Patient List in this tab stays there.
+  useEffect(() => {
+    if (holdPatientsLaunch && pathname && pathname !== "/patients") setHoldPatientsLaunch(false);
+  }, [holdPatientsLaunch, pathname]);
+
   // (Auto-retry-on-focus was removed. The feature caused an event-listener
   //  leak — every syncStatus change re-ran the effect and stacked more
   //  listeners on window/document. That blew up Chrome's memory + pegged
@@ -590,6 +610,20 @@ export default function PortalLayout({
 
   if (!mounted) {
     return <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />;
+  }
+
+  // Fresh tab opened on Patient List. Stay on the check-in screen until the
+  // saved order says to leave. The patient list itself is not mounted, so it
+  // never flashes, and a later in-tab visit does not take this branch.
+  if (holdPatientsLaunch && pathname === "/patients") {
+    return (
+      <PlanTierProvider planTier={planTier}>
+        <WorkspaceAccessProvider membership={membership}>
+          <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />
+          <PatientsLaunchRedirect onStay={releasePatientsLaunch} />
+        </WorkspaceAccessProvider>
+      </PlanTierProvider>
+    );
   }
 
   return (
