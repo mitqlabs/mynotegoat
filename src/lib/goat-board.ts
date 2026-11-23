@@ -200,6 +200,16 @@ export function defaultBoard(): BoardBox[] {
   return pack([...DEFAULT_BOX_ORDER]);
 }
 
+/**
+ * Which briefing box is open when G.O.A.T. opens.
+ * Nothing remembered means nothing open. Do not substitute Appointment Check.
+ * A box id the person actually left open is kept, whatever it is.
+ */
+export function initialOpenBoxIds(remembered?: string | null): string[] {
+  const id = typeof remembered === "string" ? remembered.trim() : "";
+  return id ? [id] : [];
+}
+
 export function newStatusBox(statusName: string, title: string | undefined, existing: BoardBox[]): BoardBox {
   const size = BOX_SIZE["status-cases"];
   const y = existing.reduce((max, box) => Math.max(max, box.y + box.h), 0);

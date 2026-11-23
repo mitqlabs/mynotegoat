@@ -24,6 +24,7 @@ import {
   snapshotStatusesToShow,
   nextOpenDayLabel,
   nextOpenOfficeDay,
+  initialOpenBoxIds,
   orderedIds,
   patientsInStatus,
   rowFields,
@@ -54,19 +55,25 @@ type StatusConfig = { name: string; color?: string };
 
 type PatientLike = PatientRecord;
 
-function layoutOf(boxes: BoardBox[]): Layout[] {
+const COLLAPSED_H = 2;
+
+function layoutOf(boxes: BoardBox[], arranging: boolean, open: ReadonlySet<string>): Layout[] {
   return boxes.map((box) => {
     const maxH = clampMaxH(box.maxH);
-    return { i: box.i, x: box.x, y: box.y, w: box.w, h: Math.min(box.h, maxH), minW: 2, minH: 4, maxH };
+    const expanded = arranging || open.has(box.i);
+    const h = expanded ? Math.min(box.h, maxH) : COLLAPSED_H;
+    return { i: box.i, x: box.x, y: box.y, w: box.w, h, minW: 2, minH: expanded ? 4 : COLLAPSED_H, maxH: expanded ? maxH : COLLAPSED_H };
   });
 }
 
-function stack(boxes: BoardBox[]): Layout[] {
+function stack(boxes: BoardBox[], arranging: boolean, open: ReadonlySet<string>): Layout[] {
   let y = 0;
   return boxes.map((box) => {
     const maxH = clampMaxH(box.maxH);
-    const item = { i: box.i, x: 0, y, w: 1, h: Math.min(box.h, maxH), minH: 4, maxH };
-    y += box.h;
+    const expanded = arranging || open.has(box.i);
+    const h = expanded ? Math.min(box.h, maxH) : COLLAPSED_H;
+    const item = { i: box.i, x: 0, y, w: 1, h, minH: expanded ? 4 : COLLAPSED_H, maxH: expanded ? maxH : COLLAPSED_H };
+    y += h;
     return item;
   });
 }
@@ -168,6 +175,12 @@ export function GoatBriefingBoard({
   const boxes = useMemo(() => boxesFromSnapshot(snapshot), [snapshot]);
   const [pageSettings, setPageSettings] = useState(false);
   const [arrange, setArrange] = useState(false);
+  // Nothing is open on arrival. A missing remembered box is not Appointment Check.
+  const [openIds, setOpenIds] = useState<string[]>(() => initialOpenBoxIds(null));
+  const open = useMemo(() => new Set(openIds), [openIds]);
+  const toggleBox = (id: string) => {
+    setOpenIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  };
 
   const commit = (next: BoardBox[]) => {
     saveBoard(next);
@@ -178,41 +191,51 @@ export function GoatBriefingBoard({
     let changed = false;
     const next = prev.map((box) => {
       const item = current.find((row) => row.i === box.i);
-      if (!item || (item.x === box.x && item.y === box.y && item.w === box.w && item.h === box.h)) return box;
+      // Collapsed cards are 2 rows tall. Never save that as the box's real height.
+      if (!item || item.h < 4 || (item.x === box.x && item.y === box.y && item.w === box.w && item.h === box.h)) return box;
       changed = true;
       return { ...box, x: item.x, y: item.y, w: item.w, h: item.h };
     });
     if (changed) saveBoard(next);
   };
 
-  const briefs = useMemo(() => {
-    const data: BriefData = {
-      today: todayIso,
-      patients: patients.filter((patient) => !patient.deleted).map((patient) => ({
-        id: patient.id,
-        fullName: patient.fullName,
-        caseStatus: patient.caseStatus,
-        cash: patient.isCashPatient,
-        firstVisit: patient.matrix?.initialExam,
-        paidDate: patient.matrix?.paidDate,
-      })),
-      appointments: appointments.map((row) => ({
-        id: row.id,
-        patientId: row.patientId,
-        patientName: row.patientName,
-        date: row.date,
-        startTime: row.startTime,
-        status: row.status,
-        appointmentType: row.appointmentType,
-        location: row.location,
-      })),
-      tasks: [],
-      locations: [],
-    };
-    let review = "Case review is unavailable right now.";
+  const briefData = useMemo((): BriefData => ({
+    today: todayIso,
+    patients: patients.filter((patient) => !patient.deleted).map((patient) => ({
+      id: patient.id,
+      fullName: patient.fullName,
+      caseStatus: patient.caseStatus,
+      cash: patient.isCashPatient,
+      firstVisit: patient.matrix?.initialExam,
+      paidDate: patient.matrix?.paidDate,
+    })),
+    appointments: appointments.map((row) => ({
+      id: row.id,
+      patientId: row.patientId,
+      patientName: row.patientName,
+      date: row.date,
+      startTime: row.startTime,
+      status: row.status,
+      appointmentType: row.appointmentType,
+      location: row.location,
+    })),
+    tasks: [],
+    locations: [],
+  }), [appointments, patients, todayIso]);
+  const checkText = useMemo(() => {
+    if (!arrange && !open.has("appointment-check")) return "";
+    return isAdmin ? appointmentCheck(briefData).text : ADMIN_ONLY_REPLY;
+  }, [arrange, briefData, isAdmin, open]);
+  const bizText = useMemo(() => {
+    if (!arrange && !open.has("quick-biz")) return "";
+    return isAdmin ? quickBiz(briefData).text : ADMIN_ONLY_REPLY;
+  }, [arrange, briefData, isAdmin, open]);
+  const reviewText = useMemo(() => {
+    if (!arrange && !open.has("case-review")) return "";
+    if (!isAdmin) return ADMIN_ONLY_REPLY;
     try {
       const items = buildFollowUpItems(patients);
-      review = caseReviewAnswer(
+      return caseReviewAnswer(
         { mode: "summary" },
         {
           today: todayIso,
@@ -222,14 +245,9 @@ export function GoatBriefingBoard({
         },
       ).text;
     } catch {
-      review = "Case review is unavailable right now.";
+      return "Case review is unavailable right now.";
     }
-    return {
-      check: isAdmin ? appointmentCheck(data).text : ADMIN_ONLY_REPLY,
-      biz: isAdmin ? quickBiz(data).text : ADMIN_ONLY_REPLY,
-      review: isAdmin ? review : ADMIN_ONLY_REPLY,
-    };
-  }, [appointments, isAdmin, patients, todayIso]);
+  }, [arrange, isAdmin, open, patients, todayIso]);
 
   const officeDay = useMemo(() => nextOpenOfficeDay(todayIso, scheduleSettings, keyDates), [keyDates, scheduleSettings, todayIso]);
   const intakeIndex = useMemo(
@@ -256,9 +274,9 @@ export function GoatBriefingBoard({
   const body = (box: BoardBox): ReactNode => {
     if (box.kind === "goat-mail") return mail;
     if (box.kind === "todos") return todos;
-    if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm">{briefs.check}</p>;
-    if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{briefs.biz}</p>;
-    if (box.kind === "case-review") return <p className="whitespace-pre-wrap text-sm">{briefs.review}</p>;
+    if (box.kind === "appointment-check") return <p className="whitespace-pre-wrap text-sm" data-goat-appt-check>{checkText}</p>;
+    if (box.kind === "quick-biz") return <p className="whitespace-pre-wrap text-sm">{bizText}</p>;
+    if (box.kind === "case-review") return <p className="whitespace-pre-wrap text-sm">{reviewText}</p>;
     if (box.kind === "schedule" || box.kind === "tomorrow-schedule") {
       const day = box.kind === "schedule" ? todayIso : officeDay.date;
       const rows = sortAppointments(
@@ -507,7 +525,7 @@ export function GoatBriefingBoard({
         draggableHandle=".goat-box-drag"
         isDraggable={arrange}
         isResizable={arrange}
-        layouts={{ lg: layoutOf(boxes), md: layoutOf(boxes), sm: stack(boxes) }}
+        layouts={{ lg: layoutOf(boxes, arrange, open), md: layoutOf(boxes, arrange, open), sm: stack(boxes, arrange, open) }}
         margin={[12, 12]}
         onLayoutChange={(current) => {
           if (!arrange) return;
@@ -515,16 +533,32 @@ export function GoatBriefingBoard({
         }}
         rowHeight={32}
       >
-        {boxes.map((box) => (
-          <div className="h-full" id={`goat-box-${box.i}`} key={box.i}>
-            <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-white">
-              <header className={`goat-box-header ${arrange ? "goat-box-drag cursor-grab" : ""} rounded-t-2xl border-b border-[var(--line-soft)] bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] px-3 py-2`}>
-                <h2 className="truncate text-sm font-bold text-[var(--brand-primary)]">{boxTitle(box)}</h2>
+        {boxes.map((box) => {
+          const shown = arrange || open.has(box.i);
+          return (
+          <div className="h-full" data-goat-box={box.kind} data-goat-box-open={shown ? "yes" : "no"} id={`goat-box-${box.i}`} key={box.i}>
+            <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]">
+              <header className={`goat-box-header ${arrange ? "goat-box-drag cursor-grab" : ""} flex items-center bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] px-3 py-2 ${shown ? "rounded-t-2xl border-b border-[var(--line-soft)]" : "h-full rounded-2xl"}`}>
+                {arrange ? (
+                  <h2 className="truncate text-sm font-bold text-[var(--brand-primary)]">{boxTitle(box)}</h2>
+                ) : (
+                  <button
+                    aria-expanded={shown}
+                    className="flex w-full items-center gap-2 text-left"
+                    data-goat-box-toggle={box.kind}
+                    onClick={() => toggleBox(box.i)}
+                    type="button"
+                  >
+                    <h2 className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--brand-primary)]">{boxTitle(box)}</h2>
+                    <span aria-hidden className="text-xs font-bold text-[var(--brand-primary)]">{shown ? "▾" : "▸"}</span>
+                  </button>
+                )}
               </header>
-              <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">{body(box)}</div>
+              {shown ? <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">{body(box)}</div> : null}
             </article>
           </div>
-        ))}
+          );
+        })}
       </Grid>
     </div>
   );

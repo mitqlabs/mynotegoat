@@ -27,7 +27,7 @@ export function GoatLearnedPanel() {
     <div className="space-y-5" data-goat-library>
       <section>
         <h4 className="text-base font-semibold">Learned in your office</h4>
-        <p className="text-xs text-[var(--text-muted)]">Saved when someone corrects G.O.A.T. (👎 then pick, or typing &ldquo;no, I meant a to-do&rdquo;). Shared by everyone in the office. Names, days and times are stored as blanks.</p>
+        <p className="text-xs text-[var(--text-muted)]">Saved when someone corrects G.O.A.T. (Not what I meant?, then pick, or typing &ldquo;no, I meant a to-do&rdquo;). Shared by everyone in the office. Names, days and times are stored as blanks.</p>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
           <div>
             <p className="text-sm font-semibold">Phrases ({phrases.length})</p>

@@ -342,6 +342,21 @@ function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | 
   );
 }
 
+/** Under a reply: marks it missed and lets the person say what they meant. */
+export function GoatMeantLink({ onMiss }: { onMiss: () => void }) {
+  return (
+    <button
+      aria-label="That's not what I meant"
+      className="mt-1 text-[11px] text-[var(--text-muted)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-80"
+      data-goat-thumbsdown
+      onClick={onMiss}
+      type="button"
+    >
+      Not what I meant?
+    </button>
+  );
+}
+
 export function GlobalGoatPopup({
   patientsOverride,
   practiceOverride,
@@ -2674,7 +2689,7 @@ export function GlobalGoatPopup({
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
+                <div className="rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
                   <p data-goat-brief>
                     {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span>{` — ${greetingDate}.`} What can I do for you?</>}
@@ -2731,7 +2746,7 @@ export function GlobalGoatPopup({
               ) : (
                 <div key={m.id} className="flex gap-2">
                   <GoatAvatar size={28} />
-                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                     {m.todoDraft?.state === "open" && <div className="mb-0.5 text-[11px] font-bold tracking-wide text-[#2f7f93]">NEW TO-DO</div>}
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <LinkedText text={m.text} links={m.links} />
@@ -2828,9 +2843,7 @@ export function GlobalGoatPopup({
                     )}
                     {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — saved to the G.O.A.T. Library. I&apos;ll read it that way from now on.</p>}
                     {m.missed?.state === "noted" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Thanks — noted so it can be fixed.</p>}
-                    {!m.missed && m.text && (
-                      <button aria-label="That's not what I meant" className="mt-1 text-[11px] text-[var(--text-muted)] opacity-60 hover:opacity-100" data-goat-thumbsdown onClick={() => markMissed(m)} title="That's not what I meant" type="button">👎</button>
-                    )}
+                    {!m.missed && m.text && <GoatMeantLink onMiss={() => markMissed(m)} />}
                     {m.originals && m.originals.length > 0 && (
                       <details className="mt-1.5 text-xs">
                         <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show original</summary>
@@ -2875,7 +2888,7 @@ export function GlobalGoatPopup({
             {(job || practiceBusy) && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                   {jobPatient && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{displayName(jobPatient.fullName)}</div>}
                   {partial ? (
                     <div className="whitespace-pre-line leading-snug">

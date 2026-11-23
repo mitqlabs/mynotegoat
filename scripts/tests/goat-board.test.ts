@@ -15,6 +15,7 @@ import {
   clampMaxH,
   defaultBoard,
   defaultTypePriority,
+  initialOpenBoxIds,
   matchesPeriod,
   parseBoard,
   snapshotStatusesToShow,
@@ -190,5 +191,35 @@ assert.match(boardSrc, /data-testid="case-snapshot-status"/);
 assert.match(boardSrc, /All statuses/);
 assert.match(boardSrc, /snapshotStatus: event\.target\.value/);
 assert.match(boardSrc, /grid-cols-2/);
+
+assert.deepEqual(initialOpenBoxIds(), []);
+assert.deepEqual(initialOpenBoxIds(null), []);
+assert.deepEqual(initialOpenBoxIds(""), []);
+assert.deepEqual(initialOpenBoxIds("   "), []);
+assert.deepEqual(initialOpenBoxIds("schedule"), ["schedule"], "a box the person actually left open stays open");
+assert.notDeepEqual(initialOpenBoxIds(null), ["appointment-check"], "a missing remembered box is not Appointment Check");
+assert.match(boardSrc, /initialOpenBoxIds\(null\)/);
+assert.doesNotMatch(boardSrc, /initialOpenBoxIds\(\s*["']appointment-check["']\s*\)/);
+assert.match(boardSrc, /data-goat-box-open=\{shown \? "yes" : "no"\}/);
+assert.match(boardSrc, /aria-expanded=\{shown\}/);
+assert.match(boardSrc, /data-goat-box-toggle=\{box\.kind\}/);
+const checkMemo = boardSrc.slice(boardSrc.indexOf("const checkText"), boardSrc.indexOf("const bizText"));
+assert.match(checkMemo, /!open\.has\("appointment-check"\)/);
+assert.match(checkMemo, /return "";/);
+assert.match(boardSrc, /\{shown \? <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto p-3">\{body\(box\)\}<\/div> : null\}/);
+assert.doesNotMatch(boardSrc, /useState[^\n]*appointment-check/);
+
+const chat = readFileSync(new URL("../../src/components/global-goat.tsx", import.meta.url), "utf8");
+assert.match(chat, /data-goat-thumbsdown/);
+assert.match(chat, /Not what I meant\?/);
+assert.match(chat, /text-\[var\(--text-muted\)\]/);
+assert.match(chat, /<GoatMeantLink onMiss=\{\(\) => markMissed\(m\)\} \/>/);
+assert.doesNotMatch(chat, /👎/);
+assert.doesNotMatch(chat, /runChip\("Appointment Check"\)/);
+assert.doesNotMatch(chat, /useEffect\(\(\) => \{[^}]{0,240}appointmentCheck/);
+const handbook = readFileSync(new URL("../../src/lib/handbook-goat.ts", import.meta.url), "utf8");
+assert.match(handbook, /Each box starts closed/);
+assert.match(handbook, /Not what I meant\?/);
+assert.doesNotMatch(handbook, /👎/);
 
 console.log("goat board ok");
