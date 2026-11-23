@@ -104,12 +104,8 @@ async function getWorkspaceId(): Promise<string | null> {
       data: { user },
     } = await getSessionUser(sb);
     if (!user) return null;
-    const officeId =
-      (typeof process !== "undefined" &&
-        (process.env.NEXT_PUBLIC_CASEMATE_OFFICE_ID?.trim() ||
-          process.env.NEXT_PUBLIC_CASEMATE_WORKSPACE_ID?.trim())) ||
-      "main-office";
-    return `${user.id}:${officeId}`;
+    const { buildWorkspaceIdForUser } = await import("@/lib/cloud-state");
+    return buildWorkspaceIdForUser(user.id, user);
   } catch {
     return null;
   }

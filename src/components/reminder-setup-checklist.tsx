@@ -175,6 +175,7 @@ export function ReminderSetupChecklist({
   }, []);
 
   const addToThisDevice = async () => {
+    if ((await import("@/lib/demo-client")).blockDemoSend("device")) return;
     setNote("");
     const here = thisPlatform();
     if (here === "other") {

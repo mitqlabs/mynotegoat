@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEMO_NOT_SENT } from "@/lib/demo-office";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
 import { deleteMailConnection, goatMailEnv, goatMailWorkspaceId, loadMailBuckets, loadMailConnection, loadMailFolderIds, loadMailSecretExpiresOn, readMailbox, saveMailConnection } from "@/lib/goat-mail-server";
 
@@ -10,6 +11,7 @@ export async function GET(request: NextRequest) {
   const admin = adminClient(cfg);
   const caller = await verifyStaff(request, cfg, admin);
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (caller.demo) return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
   const workspaceId = goatMailWorkspaceId(caller.ownerId);
   const secretExpiresOn = (await loadMailSecretExpiresOn(admin, workspaceId)) ?? "";
   const buckets = await loadMailBuckets(admin, workspaceId);
@@ -59,6 +61,7 @@ export async function DELETE(request: NextRequest) {
   const admin = adminClient(cfg);
   const caller = await verifyStaff(request, cfg, admin);
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (caller.demo) return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
   await deleteMailConnection(admin, goatMailWorkspaceId(caller.ownerId));
   return NextResponse.json({ connected: false });
 }

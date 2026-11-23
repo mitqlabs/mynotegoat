@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe, priceIdForPeriod, SINGLE_PLAN_TIER, type BillingPeriod } from "@/lib/stripe-config";
+import { DEMO_NOT_SENT } from "@/lib/demo-office";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
@@ -10,6 +11,12 @@ export async function POST(request: NextRequest) {
       userId?: string;
       email?: string;
     };
+
+    const demoEmail = process.env.DEMO_USER_EMAIL?.trim().toLowerCase();
+    const demoUserId = (process.env.DEMO_WORKSPACE_ID ?? "").split(":")[0];
+    if ((demoEmail && email?.trim().toLowerCase() === demoEmail) || (demoUserId && userId === demoUserId)) {
+      return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
+    }
 
     if (!period || !userId || !email) {
       return NextResponse.json(

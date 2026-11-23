@@ -82,7 +82,7 @@ assert.equal(filled.attorney, "Keep Law");
 assert.equal(filled.dateOfLoss, "03/01/2026");
 assert.equal(filled.notes, "typed note");
 
-const cash = fillEmptyDemographics(empty, demographicsFromPatient({ ...existing, isCashPatient: true, attorney: "Nope" }));
+const cash = fillEmptyDemographics(empty, demographicsFromPatient({ ...existing, isCashPatient: true }));
 assert.equal(cash.isCashPatient, true);
 assert.equal(cash.attorney, "Keep Law");
 

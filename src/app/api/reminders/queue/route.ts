@@ -18,6 +18,7 @@ import {
   type DeviceQueueItem,
 } from "@/lib/reminder-automation";
 import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
+import { DEMO_NOT_SENT, isDemoWorkspaceId } from "@/lib/demo-office";
 import { summaryAfterEmptyRun } from "@/lib/reminder-format";
 import { dueScope, pickRuleQueue } from "@/lib/text-rules";
 import {
@@ -80,6 +81,9 @@ export async function GET(request: NextRequest) {
   if (!admin) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
   if (!device) return NextResponse.json({ error: DEVICE_SETUP_AGAIN, message: DEVICE_SETUP_AGAIN, send: "no" }, { status: 401 });
+  if (isDemoWorkspaceId(device.workspace_id)) {
+    return NextResponse.json({ items: [], send: "no", message: DEMO_NOT_SENT, demo: true });
+  }
 
   const params = request.nextUrl.searchParams;
   const preview = params.get("preview") === "1";

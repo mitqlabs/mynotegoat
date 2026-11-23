@@ -1,3 +1,9 @@
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+
+function patientFoldersOn(): boolean {
+  return patientFoldersEnabled();
+}
+
 export type PlanTier = "tracking" | "track_schedule" | "complete";
 
 export type PortalFeature =
@@ -114,9 +120,9 @@ export function hasPortalFeature(_planTier: PlanTier, _feature: PortalFeature) {
 }
 
 export function getVisiblePortalNavItems(_planTier: PlanTier) {
-  // Case List exists only while the patient-folder preview switch is on.
-  // Production does not set the switch, so the nav stays exactly as it is today.
-  if (process.env.NEXT_PUBLIC_PATIENT_FOLDERS !== "on") return portalNavItems;
+  // Case List exists only while patient folders are on (the preview switch,
+  // or the demo office after that login is confirmed).
+  if (!patientFoldersOn()) return portalNavItems;
   const items = [...portalNavItems];
   const index = items.findIndex((item) => item.href === "/patients");
   items.splice(index + 1, 0, { href: "/cases", label: "Case List", feature: "patients" });

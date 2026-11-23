@@ -2,6 +2,8 @@
 
 import { clearAccessHint } from "@/lib/access-hint";
 import { sameJson, unionMerge } from "@/lib/kv-merge";
+import { DEMO_OFFICE_ID, isDemoPrincipal, isRememberedDemoUser, type DemoPrincipal } from "@/lib/demo-office";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 
 /** Keys merged by union instead of "cloud replaces local" on boot. */
 export const UNION_MERGE_KEYS = new Set([
@@ -134,11 +136,13 @@ export function isCloudSyncEnabled() {
   return Boolean(getConfig());
 }
 
-export function buildWorkspaceIdForUser(userId: string) {
-  const officeId =
-    process.env.NEXT_PUBLIC_CASEMATE_OFFICE_ID?.trim() ||
-    process.env.NEXT_PUBLIC_CASEMATE_WORKSPACE_ID?.trim() ||
-    DEFAULT_OFFICE_ID;
+export function buildWorkspaceIdForUser(userId: string, principal?: DemoPrincipal | null) {
+  const demo = (principal && isDemoPrincipal(principal)) || isRememberedDemoUser(userId);
+  const officeId = demo
+    ? DEMO_OFFICE_ID
+    : process.env.NEXT_PUBLIC_CASEMATE_OFFICE_ID?.trim() ||
+      process.env.NEXT_PUBLIC_CASEMATE_WORKSPACE_ID?.trim() ||
+      DEFAULT_OFFICE_ID;
   return `${userId}:${officeId}`;
 }
 
@@ -303,7 +307,7 @@ function backupLocalWorkspaceData() {
   }
 }
 
-function clearLocalWorkspaceData() {
+export function clearLocalWorkspaceData() {
   if (typeof window === "undefined") {
     return;
   }
@@ -491,8 +495,9 @@ async function getAuthedConfig() {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const userId = session?.user?.id;
-  if (!userId) {
+  const user = session?.user;
+  const userId = user?.id;
+  if (!userId || !user) {
     return null;
   }
 
@@ -501,8 +506,9 @@ async function getAuthedConfig() {
   // id, not the member's own. Membership is resolved at bootstrap (cached)
   // before this runs. Owners (and any unresolved case) fall back to self.
   const membership = getCurrentMembershipSync();
-  const ownerId =
-    membership && membership.isMember && membership.userId === userId
+  const ownerId = isDemoPrincipal(user)
+    ? userId
+    : membership && membership.isMember && membership.userId === userId
       ? membership.ownerId
       : userId;
 
@@ -510,7 +516,7 @@ async function getAuthedConfig() {
     ...config,
     supabase,
     userId,
-    workspaceId: `${ownerId}:${config.officeId}`,
+    workspaceId: buildWorkspaceIdForUser(ownerId, user),
   };
 }
 
@@ -988,7 +994,7 @@ async function bootstrapTableBackedEntities() {
   }
   console.info(`[Cloud Sync] Loaded ${tableRows.length} patient(s) from table.`);
   // Folder preview only. The production build inlines this check as false.
-  if (process.env.NEXT_PUBLIC_PATIENT_FOLDERS === "on") {
+  if (patientFoldersEnabled()) {
     const { installFolderPersonOverlay } = await import("@/lib/patient-folder-runtime");
     installFolderPersonOverlay();
   }

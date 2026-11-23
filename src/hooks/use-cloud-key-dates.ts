@@ -89,7 +89,7 @@ async function getActiveWorkspaceId(): Promise<string | null> {
   // `${userId}:${officeId}` (e.g. "…:main-office"). Returning the BARE
   // user id read/wrote a DIFFERENT workspace_kv row, so every key date
   // saved through the legacy (correct-id) path was invisible here.
-  return buildWorkspaceIdForUser(userId);
+  return buildWorkspaceIdForUser(userId, data.user);
 }
 
 async function fetchKeyDatesFromCloud(): Promise<KeyDateRecord[]> {

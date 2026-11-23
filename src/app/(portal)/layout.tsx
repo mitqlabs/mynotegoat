@@ -3,7 +3,7 @@
 import { SaveBadge } from "@/components/save-badge";
 import { flushSaveQueue } from "@/lib/save-queue";
 import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
-import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
+import { clearBigCache, hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import { AppShell } from "@/components/app-shell";
 import { GoatCheckIn } from "@/components/goat-check-in";
 import {
   buildWorkspaceIdForUser,
+  clearLocalWorkspaceData,
   CloudBootstrapError,
   ensureWorkspaceForUser,
   prepareCloudStateBeforeMount,
@@ -34,6 +35,9 @@ import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
 import { PatientsLaunchRedirect } from "@/components/patients-launch-redirect";
 import { RouteAccessGuard } from "@/components/route-access-guard";
 import { safeNextPath } from "@/lib/goat-app";
+import { DEMO_GENERATION_KEY, isDemoPrincipal, rememberDemoPrincipal, setDemoFoldersActive } from "@/lib/demo-office";
+import { adoptDemoGeneration, installDemoOutboundGuard } from "@/lib/demo-client";
+import { DemoToast } from "@/components/demo-office-chrome";
 import { claimFreshLaunch, isExactPatientsListEntry } from "@/lib/sidebar-launch";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
@@ -141,12 +145,15 @@ export default function PortalLayout({
       // before mount below; the hint only skips the two round trips.
       const bootT0 = performance.now();
       const supabaseForSession = getSupabaseBrowserClient();
-      const sessionUserId = supabaseForSession
+      const sessionUser = supabaseForSession
         ? await supabaseForSession.auth
             .getSession()
-            .then(({ data }) => data.session?.user?.id ?? null)
+            .then(({ data }) => data.session?.user ?? null)
             .catch(() => null)
         : null;
+      const sessionUserId = sessionUser?.id ?? null;
+      rememberDemoPrincipal(sessionUser);
+      setDemoFoldersActive(isDemoPrincipal(sessionUser));
       if (!active) return;
       const accessFresh = resolveAuthAccessState();
       const membershipFresh: Promise<WorkspaceMembership | null> = sessionUserId
@@ -194,7 +201,7 @@ export default function PortalLayout({
                 ? "/auth/login?verify=1"
                 : fresh.state === "pending-approval"
                   ? "/auth/pending"
-                  : fresh.isAdmin
+                  : fresh.isAdmin && !isDemoPrincipal(sessionUser)
                     ? "/admin"
                     : "/auth/login";
           window.location.replace(target);
@@ -222,7 +229,7 @@ export default function PortalLayout({
           routerRef.current.replace("/auth/login");
           return;
         }
-        if (access.isAdmin) {
+        if (access.isAdmin && !isDemoPrincipal(sessionUser)) {
           routerRef.current.replace("/admin");
           return;
         }
@@ -251,9 +258,25 @@ export default function PortalLayout({
         return;
       }
 
+      if (isDemoPrincipal(sessionUser) && sessionUser) {
+        resolvedMembership = {
+          userId: sessionUser.id,
+          isMember: false,
+          ownerId: sessionUser.id,
+          permissions: {},
+          label: "",
+          officeAdmin: false,
+          disabled: false,
+        };
+        installDemoOutboundGuard();
+      }
+
       setMembership(resolvedMembership);
 
-      const workspaceId = buildWorkspaceIdForUser(resolvedMembership.ownerId);
+      const workspaceId = buildWorkspaceIdForUser(
+        isDemoPrincipal(sessionUser) && sessionUser ? sessionUser.id : resolvedMembership.ownerId,
+        sessionUser,
+      );
 
       // CRITICAL: Before doing ANYTHING else, make sure localStorage belongs
       // to THIS user. If the previous workspace pointer doesn't match (or is
@@ -261,6 +284,7 @@ export default function PortalLayout({
       // every casemate.* key. This prevents one account's data from being
       // shown to — or, worse, synced up to the cloud under — another account.
       ensureWorkspaceForUser(workspaceId);
+      if (isDemoPrincipal(sessionUser)) await adoptDemoGeneration(workspaceId);
 
       // Notes and appointments are cached in IndexedDB (localStorage is too small
       // for big offices). Load them, migrating the old localStorage copy once,
@@ -703,6 +727,7 @@ export default function PortalLayout({
             </button>
           </div>
         )}
+        <DemoToast />
         <GlobalTimerAlerts />
         <DraftRecoveryBanner />
         {/* Onboarding is the OWNER's one-time office setup. A team member

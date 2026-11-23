@@ -1,9 +1,18 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
 import { CasesListClient } from "@/app/(portal)/cases/cases-list-client";
 
-/** Today's patient list, one row per case. Hidden unless the folder switch is on. */
+/** Case List. On for the folder preview switch and for the demo office. */
 export default function CasesPage() {
-  if (!patientFoldersEnabled()) redirect("/patients");
+  const router = useRouter();
+  const [allow, setAllow] = useState(false);
+  useEffect(() => {
+    if (patientFoldersEnabled()) setAllow(true);
+    else router.replace("/patients");
+  }, [router]);
+  if (!allow) return null;
   return <CasesListClient />;
 }

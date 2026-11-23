@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { resolveAuthAccessState } from "@/lib/auth-access";
+import { isDemoPrincipal } from "@/lib/demo-office";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export default function AdminLayout({
@@ -24,6 +25,11 @@ export default function AdminLayout({
 
       if (access.state !== "access-granted" || !access.isAdmin) {
         router.replace("/auth/login");
+        return;
+      }
+      const session = (await getSupabaseBrowserClient()?.auth.getSession())?.data?.session;
+      if (isDemoPrincipal(session?.user)) {
+        router.replace("/");
         return;
       }
 
