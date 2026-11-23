@@ -45,6 +45,69 @@ async function main() {
   const home = await import("node:fs").then((fs) => fs.readFileSync("src/app/(portal)/page.tsx", "utf8"));
   assert.match(home, /readSidebarOrderFromStorage\(\)/);
   assert.match(home, /await syncUserPrefs\(\)/);
+
+  // Mirror still has the order and the same timestamp, but the live key was wiped.
+  const { prefsToRestore } = await import("../../src/lib/user-prefs-cloud");
+  const launch = await import("../../src/lib/sidebar-launch");
+  const orderValue = JSON.stringify(["caseList", "patients"]);
+  const mirror = { [order.SIDEBAR_ORDER_KEY]: { v: orderValue, at: 100 } };
+  const wiped = new Map<string, string>();
+  const restored = prefsToRestore((key) => wiped.get(key) ?? null, mirror, mirror);
+  assert.deepEqual(restored, [{ key: order.SIDEBAR_ORDER_KEY, value: orderValue }]);
+  for (const row of restored) wiped.set(row.key, row.value);
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    localStorage: { getItem: (key: string) => wiped.get(key) ?? null },
+  };
+  try {
+    assert.equal(order.sidebarLandingHref("complete", () => true, order.readSidebarOrderFromStorage()), "/cases");
+  } finally {
+    if (previousWindow === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = previousWindow;
+  }
+
+  const session = new Map<string, string>();
+  const sessionStorage = {
+    getItem: (key: string) => session.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      session.set(key, value);
+    },
+  };
+  launch.resetSidebarLaunchClaim();
+  const fresh = launch.claimFreshLaunch(sessionStorage);
+  assert.equal(fresh, true);
+  assert.equal(session.get(launch.SIDEBAR_LAUNCH_SEEN_KEY), "1");
+  // Strict mode's second mount is still the same launch.
+  assert.equal(launch.claimFreshLaunch(sessionStorage), true);
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh, pathname: "/patients", search: "", landingHref: "/cases" }),
+    "/cases",
+  );
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh, pathname: "/", search: "", landingHref: "/cases" }),
+    null,
+  );
+  // A new document in the same tab (refresh) is not a launch.
+  launch.resetSidebarLaunchClaim();
+  assert.equal(launch.claimFreshLaunch(sessionStorage), false);
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh: false, pathname: "/patients", search: "", landingHref: "/cases" }),
+    null,
+  );
+  // Deep links stay even on a fresh tab.
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh: true, pathname: "/patients/abc", search: "", landingHref: "/cases" }),
+    null,
+  );
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh: true, pathname: "/patients", search: "?view=toDo", landingHref: "/cases" }),
+    null,
+  );
+  assert.equal(launch.isExactPatientsListEntry("/patients/", ""), true);
+  assert.equal(
+    launch.patientsLaunchRedirect({ fresh: true, pathname: "/patients", search: "", landingHref: "/patients" }),
+    null,
+  );
   console.log("ok - Case List is a movable sidebar page with the folder switch on");
 }
 

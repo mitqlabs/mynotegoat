@@ -21,6 +21,7 @@ import {
   type SidebarPage,
 } from "../../src/lib/sidebar-order";
 import { toneReadbackOk } from "../../src/lib/brand";
+import { safeNextPath } from "../../src/lib/goat-app";
 import { settingsSearchCatalog } from "../../src/lib/settings-catalog";
 import { SETTINGS_TABS } from "../../src/lib/settings-search";
 
@@ -178,6 +179,22 @@ test("root, sign-in, and approval open the sidebar landing page behind the check
   assert.match(layout, /syncUserPrefs\(\)/);
   assert.match(layout, /<PortalBootScreen/);
   assert.match(layout, /<GoatCheckIn \/>/);
+  // Sign-in sends people to "/" (or the G.O.A.T. app). It never forces Patient List.
+  assert.match(login, /router\.replace\(next \?\? "\/"\)/);
+  assert.equal(safeNextPath("/patients"), null);
+  assert.equal(safeNextPath("/"), null);
+  assert.equal(safeNextPath("/goat"), "/goat");
+  const guard = readFileSync("src/components/route-access-guard.tsx", "utf8");
+  assert.match(guard, /if \(canView\(match\.feature\)\) return/);
+  assert.doesNotMatch(guard, /sidebarLandingHref/);
+  // A fresh tab that opened on Patient List waits on the check-in screen.
+  // The access guard is not mounted there, so it cannot bounce that launch.
+  assert.match(layout, /claimFreshLaunch\(window\.sessionStorage\)/);
+  assert.match(layout, /holdPatientsLaunch && pathname === "\/patients"/);
+  assert.match(layout, /<PatientsLaunchRedirect/);
+  assert.match(readFileSync("src/lib/user-prefs-cloud.ts", "utf8"), /if \(inflight\) return inflight/);
+  assert.equal(existsSync("public/sw.js"), false);
+  assert.equal(existsSync("public/service-worker.js"), false);
 });
 
 test("Sidebar is a Settings section on one tab and has no subtitle", () => {

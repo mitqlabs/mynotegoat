@@ -171,6 +171,9 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // cloud only when the user saves the form (patients / appointments are cloud-backed).
   "casemate.new-patient-prefill.v1": "system",
   "casemate.new-appointment-prefill.v1": "system",
+  // Per-tab flag (sessionStorage only): this tab already did its first navigation.
+  // Not practice data and not copied to the cloud.
+  "casemate.sidebar-launch.v1": "system",
   "casemate.cache.v1.": "system",
   "casemate.feature-flag.": "system",
   "casemate.theme": "system", // legacy Light/Dark, read only, never written
