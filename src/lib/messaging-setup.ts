@@ -150,14 +150,14 @@ export function shortcutFollowLines(platform: MessagingPlatform): string[] {
 }
 
 /**
- * One automation for one shortcut.
- * The Automation tab (iOS 18 and macOS Sonoma) is first.
- * Edit → Automation is what Apple's current Shortcuts guide shows when that tab is gone.
+ * One automation for one shortcut. Ends at Done.
+ * On this Automation-tab path (iOS 18 through iOS 26), Run Immediately is what
+ * lets Time of Day run while the Device is locked. Allow Running When Locked
+ * is not a button on that screen.
  */
 export function automationGuideLines(platform: MessagingPlatform, name: string, time: string): string[] {
   const word = press(platform);
   const day = platform === "mac" ? "Daily" : "Every Day";
-  const quoted = `**"${name}"**`;
   return [
     "Open **Shortcuts**.",
     `${word} **Automation**.`,
@@ -168,9 +168,20 @@ export function automationGuideLines(platform: MessagingPlatform, name: string, 
     `${word} **Run Immediately**.`,
     "Turn **Notify When Run** off.",
     `${word} **Next**.`,
-    `${word} ${quoted}.`,
+    `${word} **"${name}"**.`,
     `${word} **Done**.`,
-    "If you do not see **Automation**:",
+  ];
+}
+
+/**
+ * Current iOS, when Shortcuts has no Automation tab.
+ * Apple's guide: Edit, Automation, Time of Day, then Privacy, Allow Running When Locked.
+ * That switch is what lets the automation run while the Device is locked.
+ */
+export function automationFallbackLines(platform: MessagingPlatform, name: string, time: string): string[] {
+  const word = press(platform);
+  const quoted = `**"${name}"**`;
+  return [
     `${word} ${quoted}.`,
     `${word} **Edit**.`,
     `${word} **Automation**.`,

@@ -12,6 +12,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { generateDeviceToken, hashDeviceToken } from "@/lib/reminder-automation";
 import { readSetupPlatform } from "@/lib/iphone-setup";
 import {
+  automationFallbackLines,
   automationGuideLines,
   buildMessagingSteps,
   deviceCheckIn,
@@ -580,6 +581,12 @@ export function MessagingSetupFlow({
           <ol className="grid gap-4">
             <Lines lines={automationGuideLines(platform, name, time)} />
           </ol>
+          <details data-testid="automation-fallback">
+            <summary className="cursor-pointer text-lg font-bold text-[var(--brand-primary)]">Don't see Automation?</summary>
+            <ol className="mt-4 grid gap-4">
+              <Lines lines={automationFallbackLines(platform, name, time)} />
+            </ol>
+          </details>
         </div>
       );
   } else if (step.kind === "test" && (platform === "iphone" || platform === "mac")) {

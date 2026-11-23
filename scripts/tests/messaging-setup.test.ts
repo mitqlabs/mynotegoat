@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  automationFallbackLines,
   automationGuideLines,
   buildMessagingSteps,
   deviceCheckIn,
@@ -59,14 +60,23 @@ assert.ok(iphoneAuto.includes("Set **8:00 AM**."));
 assert.ok(iphoneAuto.includes("Tap **Every Day**."));
 assert.ok(iphoneAuto.includes("Tap **Run Immediately**."));
 assert.ok(iphoneAuto.includes("Turn **Notify When Run** off."));
-assert.ok(iphoneAuto.includes("Tap **Privacy**."));
-assert.ok(iphoneAuto.includes("Turn **Allow Running When Locked** on."));
-assert.equal(iphoneAuto.filter((line) => line.includes("8:00 AM")).length, 2);
+assert.equal(iphoneAuto.length, 11);
+assert.equal(iphoneAuto.at(-1), "Tap **Done**.");
+assert.equal(iphoneAuto.some((line) => /Privacy|Allow Running When Locked|do not see/i.test(line)), false);
+assert.equal(iphoneAuto.filter((line) => line.includes("8:00 AM")).length, 1);
 assert.ok(macAuto.includes("Click **Daily**."));
 assert.ok(macAuto.includes("Click **Run Immediately**."));
-assert.ok(macAuto.includes("Click **Privacy**."));
+assert.equal(macAuto.at(-1), "Click **Done**.");
 assert.equal(macAuto.some((line) => /\bTap\b/.test(line)), false);
 assert.equal(iphoneAuto.some((line) => /\bClick\b/.test(line)), false);
+const iphoneFallback = automationFallbackLines("iphone", visits.shortcutName!, "8:00 AM");
+const macFallback = automationFallbackLines("mac", visits.shortcutName!, "8:00 AM");
+assert.equal(iphoneFallback[0], 'Tap **"NoteGoat – Day Before 8 AM"**.');
+assert.ok(iphoneFallback.includes("Tap **Privacy**."));
+assert.equal(iphoneFallback.at(-1), "Turn **Allow Running When Locked** on.");
+assert.equal(iphoneFallback.some((line) => /do not see/i.test(line)), false);
+assert.equal(macFallback.some((line) => /\bTap\b/.test(line)), false);
+assert.ok(macFallback.includes("Click **Privacy**."));
 assert.equal(shortcutsAppLines("mac").join(" "), "Shortcuts is already on this Mac. Open **Shortcuts**.");
 assert.ok(shortcutsAppLines("iphone").includes("Tap **Get**."));
 assert.equal(shortcutsAppLines("iphone").some((line) => /Mac/.test(line)), false);
@@ -80,7 +90,7 @@ assert.ok(start.includes("Tap **Delete Shortcut**."));
 assert.ok(start.includes("Do not remove the Device in NoteGoat."));
 assert.equal(start.some((line) => /remove the Device/i.test(line) && !/Do not remove/.test(line)), false);
 assert.equal(startOverLines("mac").some((line) => /\bTap\b/.test(line)), false);
-for (const line of [...iphoneAuto, ...macAuto, ...start, ...startOverLines("mac"), ...shortcutsAppLines("iphone"), ...shortcutsAppLines("mac")]) {
+for (const line of [...iphoneAuto, ...macAuto, ...iphoneFallback, ...macFallback, ...start, ...startOverLines("mac"), ...shortcutsAppLines("iphone"), ...shortcutsAppLines("mac")]) {
   assert.equal(/\bphone\b/i.test(line), false, line);
   assert.equal(line.split("**").length <= 5, true, line);
 }
@@ -126,6 +136,10 @@ assert.match(flow, /Set up automatic Reminders and Messaging/);
 assert.match(flow, /Redo setup/);
 assert.match(flow, /Test it now/);
 assert.match(flow, /This Device checked in/);
+assert.match(flow, /Don't see Automation\?/);
+assert.match(flow, /<details data-testid="automation-fallback">/);
+assert.doesNotMatch(flow, /<details[^>]*\sopen/);
+assert.doesNotMatch(flow, /automation-fallback[\s\S]{0,200}bg-|automation-fallback[\s\S]{0,200}border/);
 assert.match(flow, /dualWriteKv|update\(\{[\s\S]*messagingSetup/);
 assert.doesNotMatch(flow, /localStorage/);
 assert.doesNotMatch(flow, /\bphone\b/i);
