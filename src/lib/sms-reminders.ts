@@ -67,6 +67,27 @@ export interface SmsReminderSettings {
   /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
    *  computer shows the same layout. A section that is not listed uses its default. */
   sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more" | "templates" | "shortcuts" | "stop", boolean>>;
+  /** Guided Reminders and Messaging setup. Saved with the office's text settings. */
+  messagingSetup: MessagingSetupState;
+}
+
+/** Where the office is in the guided setup. Kept in cloud settings, per office. */
+export interface MessagingSetupState {
+  platform: "" | "iphone" | "mac";
+  /** Step id, so leaving the page and coming back opens the same step. */
+  step: string;
+  /** Text rules they chose to set up. */
+  ruleIds: string[];
+  /** When the test saw this Device check in. Empty until then. */
+  checkedInAt: string;
+  /** When they tapped Test it now. Empty until then. */
+  testSince: string;
+  /** They opened Redo setup, so the start-over step is included. */
+  redo: boolean;
+}
+
+export function emptyMessagingSetup(): MessagingSetupState {
+  return { platform: "", step: "", ruleIds: [], checkedInAt: "", testSince: "", redo: false };
 }
 
 export type TextWhenKind = "day-before" | "birthday" | "open-day" | "hours-before";
@@ -112,7 +133,23 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     birthdayHour: 8,
     rules: null,
     sections: {},
+    messagingSetup: emptyMessagingSetup(),
   };
+}
+
+function normalizeMessagingSetup(value: unknown): MessagingSetupState {
+  const base = emptyMessagingSetup();
+  if (!value || typeof value !== "object") return base;
+  const raw = value as Record<string, unknown>;
+  if (raw.platform === "iphone" || raw.platform === "mac") base.platform = raw.platform;
+  if (typeof raw.step === "string") base.step = raw.step.slice(0, 80);
+  if (Array.isArray(raw.ruleIds)) {
+    base.ruleIds = raw.ruleIds.filter((id): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(id));
+  }
+  if (typeof raw.checkedInAt === "string" && raw.checkedInAt.trim()) base.checkedInAt = raw.checkedInAt.trim().slice(0, 40);
+  if (typeof raw.testSince === "string" && raw.testSince.trim()) base.testSince = raw.testSince.trim().slice(0, 40);
+  if (raw.redo === true) base.redo = true;
+  return base;
 }
 
 const TEXT_WHEN: ReadonlySet<string> = new Set(["day-before", "birthday", "open-day", "hours-before"]);
@@ -180,6 +217,7 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   if (typeof raw.birthdayTemplateId === "string") base.birthdayTemplateId = raw.birthdayTemplateId;
   base.birthdayHour = num("birthdayHour", 0, 23) ?? base.sendHour;
   base.rules = normalizeTextRules(raw.rules);
+  base.messagingSetup = normalizeMessagingSetup(raw.messagingSetup);
   if (raw.sections && typeof raw.sections === "object") {
     const sec = raw.sections as Record<string, unknown>;
     for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library", "more", "templates", "shortcuts", "stop"] as const) {

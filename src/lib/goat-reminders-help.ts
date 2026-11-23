@@ -69,6 +69,7 @@ export function remindersHelp(question: string, opts: { sendHour?: number; canSe
   }
   return {
     text: [
+      "Open Settings → Text Reminders and tap Set up automatic Reminders and Messaging. It asks iPhone or Mac, then shows only that Device's steps, one at a time. Doing it again: delete the old NoteGoat shortcuts and automations in Shortcuts first. Do not remove the Device in NoteGoat.",
       `Setting up ${time} reminders: Step 2 is required because the shortcut does NOT run by itself.`,
       "On the office device, open Settings → Text Reminders and use Add to this Device, then Add Shortcut. The code is already filled in.",
       `Then set it to run by itself:`,
