@@ -282,6 +282,14 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "Encounters, a to-do, or a form from a case",
+      steps: [
+        "Open the patient's case. Open Encounters, + To Do, and Send Form are at the top right of the case box.",
+        "Open Encounters opens that patient's encounters. + To Do adds a task for this case. Send Form sends a questionnaire.",
+        "Ask G.O.A.T. \"how do I open an encounter\" or \"how do I add a to-do\" and it names those same buttons.",
+      ],
+    },
+    {
       heading: "Duplicate encounters (patient page)",
       steps: [
         "When a patient has two encounters on the same date, G.O.A.T. shows a yellow banner → Review.",

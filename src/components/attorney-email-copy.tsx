@@ -14,7 +14,7 @@ export function AttorneyEmailCopy({ contact }: { contact: { email?: string; emai
   const [copied, setCopied] = useState(false);
   if (!contact || !options.length) {
     return (
-      <span className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 text-[var(--text-muted)]" data-testid="attorney-email-none">
+      <span className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-muted)]" data-testid="attorney-email-none">
         {contact ? "No email" : "—"}
       </span>
     );

@@ -62,7 +62,7 @@ export function SendFormButton({ patientId, patientName, firstName, phone, email
         title="Send this patient a questionnaire link (no login needed)"
         type="button"
       >
-        Send form
+        Send Form
       </button>
       {open && (
         <SendFormDialog
