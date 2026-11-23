@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { isDemoPrincipal } from "@/lib/demo-office";
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -57,6 +58,7 @@ async function verifyAdmin(request: Request) {
   });
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return { error: "Unauthorized", status: 401 };
+  if (isDemoPrincipal(user)) return { error: "Not allowed.", status: 403 };
 
   const admin = getSupabaseAdminClient();
   if (!admin) return { error: "Service role key not configured", status: 500 };

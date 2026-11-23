@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { resolveAuthAccessState } from "@/lib/auth-access";
+import { startDemoSession } from "@/lib/demo-client";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type LoginClientProps = {
@@ -230,6 +231,27 @@ export default function LoginClient({ verifyNotice, disabledNotice, next }: Logi
           className="w-full rounded-[14px] bg-[var(--brand-primary)] px-5 py-3 text-base font-semibold text-white disabled:opacity-50"
         >
           {loading ? "Signing in..." : "Sign In"}
+        </button>
+        <button
+          type="button"
+          disabled={loading || supabaseMissing}
+          onClick={() => {
+            void (async () => {
+              setError("");
+              setMessage("");
+              setLoading(true);
+              const result = await startDemoSession();
+              setLoading(false);
+              if (!result.ok) {
+                setError(result.error);
+                return;
+              }
+              router.replace("/");
+            })();
+          }}
+          className="w-full rounded-[14px] border border-[var(--line-strong)] bg-white px-5 py-3 text-base font-semibold text-[var(--text-main)] disabled:opacity-50"
+        >
+          Try the Demo
         </button>
       </form>
 

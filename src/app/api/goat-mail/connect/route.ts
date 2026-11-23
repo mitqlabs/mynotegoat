@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
 import { authorizeUrl, goatMailEnv, goatMailRedirectUri, signMailState } from "@/lib/goat-mail-server";
+import { DEMO_NOT_SENT } from "@/lib/demo-office";
 
 async function beginConnect(request: NextRequest) {
   const env = goatMailEnv();
@@ -10,6 +11,7 @@ async function beginConnect(request: NextRequest) {
   const admin = adminClient(cfg);
   const caller = await verifyStaff(request, cfg, admin);
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (caller.demo) return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
   const signed = signMailState(caller.ownerId, env.clientSecret);
   const url = authorizeUrl({
     tenant: env.tenant,

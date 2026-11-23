@@ -4,6 +4,7 @@ import { shortcutWithToken } from "@/lib/shortcut-file";
 import { buildNamedShortcut } from "@/lib/shortcut-plist";
 import { openShortcutToken, saveShortcutToken } from "@/lib/reminder-server";
 import { isDeviceToken, openDeviceToken, sealDeviceToken } from "@/lib/shortcut-ticket";
+import { DEMO_NOT_SENT, isDemoWorkspaceId } from "@/lib/demo-office";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,9 @@ export async function POST(request: NextRequest) {
     if (!device || device.revoked_at) return NextResponse.json({ error: "That Device was removed." }, { status: 404 });
     if (!(await canUseWorkspace(admin, data.user.id, device.workspace_id))) {
       return NextResponse.json({ error: "Not signed in." }, { status: 403 });
+    }
+    if (isDemoWorkspaceId(device.workspace_id)) {
+      return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
     }
     const saved = await openShortcutToken(admin, device.workspace_id, device.id, keys.service);
     if (saved) token = saved;

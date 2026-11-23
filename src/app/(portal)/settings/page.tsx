@@ -5434,7 +5434,8 @@ export default function SettingsPage() {
                       setRecoveryLoading(false);
                       return;
                     }
-                    const workspaceId = `${session.user.id}:main-office`;
+                    const { buildWorkspaceIdForUser } = await import("@/lib/cloud-state");
+                    const workspaceId = buildWorkspaceIdForUser(session.user.id, session.user);
                     const res = await fetch("/api/recover-snapshot", {
                       method: "POST",
                       headers: {

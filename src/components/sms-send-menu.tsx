@@ -9,6 +9,7 @@ import {
   expandTokens,
   type SmsTokenContext,
 } from "@/lib/sms-templates";
+import { blockDemoSend } from "@/lib/demo-client";
 
 type Props = {
   phone: string;
@@ -131,6 +132,10 @@ export function SmsSendMenu({
   }, [open]);
 
   const handlePick = (body: string) => {
+    if (blockDemoSend("sms")) {
+      setOpen(false);
+      return;
+    }
     const expanded = expandTokens(body, resolvedContext);
     const url = buildSmsUrl(phone, expanded);
     setOpen(false);
