@@ -174,12 +174,41 @@ function chatKey(): string {
   return `${GOAT_CHAT_PREFIX}${ws || "default"}`;
 }
 
+const APPT_CHECK_CHIP = /^(appointment check|appt check|appointments check|apptcheck)$/i;
+
+/** The list G.O.A.T. writes when the Appointment Check chip runs. */
+export function isApptCheckResult(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("Appointment Check —") || t.startsWith("Every active patient has a visit booked after this week");
+}
+
+/**
+ * The chip's generated list is not a conversation to reopen on.
+ * A typed question such as "who needs to be scheduled" stays.
+ */
+export function withoutAutoApptCheck(state: ChatState): ChatState {
+  const messages: ChatMessage[] = [];
+  for (let i = 0; i < state.messages.length; i++) {
+    const message = state.messages[i];
+    const next = state.messages[i + 1];
+    if (message.role === "user" && APPT_CHECK_CHIP.test(message.text.trim()) && next?.role === "goat" && isApptCheckResult(next.text)) {
+      i += 1;
+      continue;
+    }
+    messages.push(message);
+  }
+  return messages.length === state.messages.length ? state : { ...state, messages };
+}
+
 export function loadChat(): ChatState {
   if (typeof window === "undefined") return { messages: [], patientId: null };
   try {
     const raw = window.localStorage.getItem(chatKey());
     const v = raw ? (JSON.parse(raw) as Partial<ChatState>) : {};
-    return { messages: Array.isArray(v.messages) ? v.messages.slice(-200) : [], patientId: typeof v.patientId === "string" ? v.patientId : null };
+    return withoutAutoApptCheck({
+      messages: Array.isArray(v.messages) ? v.messages.slice(-200) : [],
+      patientId: typeof v.patientId === "string" ? v.patientId : null,
+    });
   } catch {
     return { messages: [], patientId: null };
   }

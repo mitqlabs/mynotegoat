@@ -12,6 +12,7 @@ import {
   findPatientsInQuestion,
   loadChat,
   saveChat,
+  withoutAutoApptCheck,
   stripPatientName,
   type ChatMessage,
   type ChatChoice,
@@ -54,7 +55,7 @@ import { detectCorrection, findDate, findTime, normalizeForIntent, GOAT_ACTIONS,
 import { planQuick, type QuickPlan } from "@/lib/goat-quick";
 import { learnedMap, loadLearned, safeTemplate, saveLearned, withMiss, withPhrase } from "@/lib/goat-learned";
 import { updatePatientRecordById } from "@/lib/mock-data";
-import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
+import { cardDate, carryPatient, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
@@ -342,6 +343,21 @@ function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | 
   );
 }
 
+/** Under a reply: marks it missed and lets the person say what they meant. */
+export function GoatMeantLink({ onMiss }: { onMiss: () => void }) {
+  return (
+    <button
+      aria-label="That's not what I meant"
+      className="mt-1 text-[11px] text-[var(--text-muted)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-80"
+      data-goat-thumbsdown
+      onClick={onMiss}
+      type="button"
+    >
+      Not what I meant?
+    </button>
+  );
+}
+
 export function GlobalGoatPopup({
   patientsOverride,
   practiceOverride,
@@ -430,17 +446,6 @@ export function GlobalGoatPopup({
   // Hidden heads-ups are a cloud-backed user pref (casemate.goat-nudges-dismissed.v1).
   const [dismissedNudges, setDismissedNudges] = useState<string[]>(() => Object.keys(readDismissed()));
   const [showNudges, setShowNudges] = useState(false);
-  // "Hide brief": a per-person setting backed up to the user's cloud prefs.
-  const [briefHidden, setBriefHidden] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("casemate.goat-brief-hidden.v1") === "1");
-  const toggleBrief = () => {
-    const next = !briefHidden;
-    setBriefHidden(next);
-    try {
-      window.localStorage.setItem("casemate.goat-brief-hidden.v1", next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  };
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
   const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
@@ -2510,7 +2515,7 @@ export function GlobalGoatPopup({
         .map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, attorney: p.attorney, cash: p.isCashPatient, firstVisit: data.patients.find((x) => x.id === p.id)?.firstVisit }));
       const rc = readRecall();
       const recall = rc && patientById(rc.patientId) ? recallLine(rc) : null;
-      return { brief: dailyBrief(data, new Date().getHours(), isGoatAdmin), nudges: nudges(data, people), recall };
+      return { nudges: nudges(data, people), recall };
     } catch {
       return null;
     }
@@ -2523,6 +2528,10 @@ export function GlobalGoatPopup({
     sendRef.current = send;
   });
   const isOpenNow = useGlobalGoatOpen();
+  useEffect(() => {
+    if (!(isOpenNow || fullScreen)) return;
+    setChat((current) => withoutAutoApptCheck(current));
+  }, [isOpenNow, fullScreen]);
   useEffect(() => {
     if (!(isOpenNow || fullScreen)) return;
     const text = takePendingAsk();
@@ -2674,22 +2683,17 @@ export function GlobalGoatPopup({
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
+                <div className="rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
                   <p data-goat-brief>
-                    {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span>{` — ${greetingDate}.`} What can I do for you?</>}
-                    {opening && !briefHidden && liveNudges.length > 0 && (
+                    <span className="font-semibold">{greeting}</span>{` — ${greetingDate}.`} What can I do for you?
+                    {opening && liveNudges.length > 0 && (
                       <button className="ml-1 text-xs font-semibold text-[var(--brand-primary)]" data-goat-headsups onClick={() => setShowNudges((v) => !v)} type="button">
                         {showNudges ? "Hide heads-ups" : `${liveNudges.length} heads-up${liveNudges.length === 1 ? "" : "s"} ›`}
                       </button>
                     )}
-                    {opening && (
-                      <button className="ml-2 text-[11px] text-[var(--text-muted)] hover:underline" data-goat-brief-toggle onClick={toggleBrief} type="button">
-                        {briefHidden ? "Show brief" : "Hide brief"}
-                      </button>
-                    )}
                   </p>
-                  {opening && !briefHidden && showNudges && liveNudges.length > 0 && (
+                  {opening && showNudges && liveNudges.length > 0 && (
                     <ul className="mt-1.5 space-y-1" data-goat-nudges>
                       {opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).map((x) => (
                         <li className="flex items-start gap-1.5 rounded-lg bg-[#fff8e6] px-2 py-1 text-xs" key={x.id}>
@@ -2701,7 +2705,7 @@ export function GlobalGoatPopup({
                       ))}
                     </ul>
                   )}
-                  {opening?.recall && !briefHidden && showNudges && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
+                  {opening?.recall && showNudges && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
                   <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
                       <button
@@ -2731,7 +2735,7 @@ export function GlobalGoatPopup({
               ) : (
                 <div key={m.id} className="flex gap-2">
                   <GoatAvatar size={28} />
-                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                     {m.todoDraft?.state === "open" && <div className="mb-0.5 text-[11px] font-bold tracking-wide text-[#2f7f93]">NEW TO-DO</div>}
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <LinkedText text={m.text} links={m.links} />
@@ -2828,9 +2832,7 @@ export function GlobalGoatPopup({
                     )}
                     {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — saved to the G.O.A.T. Library. I&apos;ll read it that way from now on.</p>}
                     {m.missed?.state === "noted" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Thanks — noted so it can be fixed.</p>}
-                    {!m.missed && m.text && (
-                      <button aria-label="That's not what I meant" className="mt-1 text-[11px] text-[var(--text-muted)] opacity-60 hover:opacity-100" data-goat-thumbsdown onClick={() => markMissed(m)} title="That's not what I meant" type="button">👎</button>
-                    )}
+                    {!m.missed && m.text && <GoatMeantLink onMiss={() => markMissed(m)} />}
                     {m.originals && m.originals.length > 0 && (
                       <details className="mt-1.5 text-xs">
                         <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show original</summary>
@@ -2875,7 +2877,7 @@ export function GlobalGoatPopup({
             {(job || practiceBusy) && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                   {jobPatient && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{displayName(jobPatient.fullName)}</div>}
                   {partial ? (
                     <div className="whitespace-pre-line leading-snug">
