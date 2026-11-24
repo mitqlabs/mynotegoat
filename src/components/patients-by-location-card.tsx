@@ -11,6 +11,9 @@ function subscribe(onChange: () => void) {
   window.addEventListener("storage", onChange);
   return () => window.removeEventListener("storage", onChange);
 }
+/** Rows shown before the rest fold into one "Other" row. */
+const TOP_N = 10;
+
 function readMode(): LocationMode {
   try {
     return window.localStorage.getItem(LOCATION_MODE_KEY) === "zip" ? "zip" : "city";
@@ -25,13 +28,19 @@ export function PatientsByLocationCard({ patients, statuses }: { patients: Locat
   const mode = modeOverride ?? savedMode;
   const [status, setStatus] = useState("ALL");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [otherOpen, setOtherOpen] = useState(false);
   const summary = useMemo(() => summarizeLocations(patients, mode, status), [patients, mode, status]);
   const byId = useMemo(() => new Map(patients.map((p) => [p.id, p])), [patients]);
-  const max = Math.max(1, ...summary.rows.map((r) => r.count), summary.noAddress?.count ?? 0);
+  const topRows = summary.rows.slice(0, TOP_N);
+  const otherRows = summary.rows.slice(TOP_N);
+  const otherCount = otherRows.reduce((n, r) => n + r.count, 0);
+  const otherPercent = summary.total > 0 ? Math.round((otherCount / summary.total) * 100) : 0;
+  const max = Math.max(1, ...topRows.map((r) => r.count), otherCount, summary.noAddress?.count ?? 0);
 
   const setMode = (m: LocationMode) => {
     setModeOverride(m);
     setOpenKey(null);
+    setOtherOpen(false);
     try {
       window.localStorage.setItem(LOCATION_MODE_KEY, m);
     } catch {
@@ -106,6 +115,7 @@ export function PatientsByLocationCard({ patients, statuses }: { patients: Locat
           onChange={(e) => {
             setStatus(e.target.value);
             setOpenKey(null);
+            setOtherOpen(false);
           }}
           value={status}
         >
@@ -134,7 +144,28 @@ export function PatientsByLocationCard({ patients, statuses }: { patients: Locat
             </tr>
           </thead>
           <tbody>
-            {summary.rows.flatMap((r, i) => renderRow(r, i))}
+            {topRows.flatMap((r, i) => renderRow(r, i))}
+            {otherRows.length > 0 && (
+              <tr
+                className="cursor-pointer border-b border-[#eef3f8] hover:bg-[#f5fafd]"
+                key="__other__"
+                onClick={() => setOtherOpen((v) => !v)}
+                title={otherOpen ? "Hide the other locations" : "Show the other locations"}
+              >
+                <td className="w-7 px-1.5 py-2.5 text-[#9ab0c1]">{otherOpen ? "▾" : "▸"}</td>
+                <td className="w-[230px] px-1.5 py-2.5 font-semibold">
+                  Other <span className="text-xs font-normal text-[#57758b]">({otherRows.length} {mode === "city" ? (otherRows.length === 1 ? "city" : "cities") : otherRows.length === 1 ? "ZIP" : "ZIPs"})</span>
+                </td>
+                <td className="px-1.5 py-2.5">
+                  <div className="h-3 rounded-md bg-[#eef6fb]">
+                    <div className="h-3 rounded-md bg-[#9fc3dc]" style={{ width: `${Math.min(100, (otherCount / max) * 100)}%` }} />
+                  </div>
+                </td>
+                <td className="w-[60px] px-1.5 py-2.5 text-right font-bold">{otherCount}</td>
+                <td className="w-14 px-1.5 py-2.5 text-right text-[#57758b]">{otherPercent}%</td>
+              </tr>
+            )}
+            {otherOpen && otherRows.flatMap((r, i) => renderRow(r, i + TOP_N))}
             {summary.noAddress && renderRow(summary.noAddress, null)}
           </tbody>
         </table>
