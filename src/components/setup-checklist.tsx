@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { MessagingSetupEntry } from "@/components/messaging-setup-flow";
+import { onLocalChange } from "@/lib/local-sync";
+import { messagingSetupComplete } from "@/lib/messaging-setup";
+import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
@@ -33,6 +39,38 @@ export function SetupChecklist() {
   const letterTemplateCount = documentTemplates.templates.length;
   const { onboardingState, markComplete } = useOnboarding();
   const [manuallyDismissed, setManuallyDismissed] = useState(false);
+  const [messagingDone, setMessagingDone] = useState(false);
+
+  useEffect(() => {
+    let cancel = false;
+    const read = () => {
+      try {
+        const saved = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
+        setMessagingDone((current) => current || messagingSetupComplete(saved.messagingSetup, []));
+      } catch {
+        setMessagingDone(false);
+      }
+    };
+    read();
+    const unsub = onLocalChange(SMS_REMINDER_SETTINGS_KEY, read);
+    const client = getSupabaseBrowserClient();
+    const workspaceId = getActiveWorkspaceIdSync();
+    if (client && workspaceId) {
+      void (async () => {
+        const { data } = await client
+          .from("reminder_devices")
+          .select("revoked_at, last_seen_at")
+          .eq("workspace_id", workspaceId);
+        if (cancel || !data) return;
+        const saved = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
+        if (messagingSetupComplete(saved.messagingSetup, data)) setMessagingDone(true);
+      })();
+    }
+    return () => {
+      cancel = true;
+      unsub();
+    };
+  }, []);
 
   const items: Item[] = useMemo(() => {
     return [
@@ -106,13 +144,19 @@ export function SetupChecklist() {
   const allDone = items.every((item) => item.done);
   const shouldHide =
     manuallyDismissed || allDone || Boolean(onboardingState.completedAt && allDone);
+  const messaging = (
+    <MessagingSetupEntry complete={messagingDone} href="/settings?section=textReminders" />
+  );
 
-  if (shouldHide) return null;
+  if (shouldHide) return <div data-testid="setup-checklist-messaging">{messaging}</div>;
 
   const doneCount = items.filter((i) => i.done).length;
 
   return (
-    <section className="panel-card p-4">
+    <section className="panel-card p-4" data-testid="setup-checklist">
+      <div className="mb-3" data-testid="setup-checklist-messaging">
+        {messaging}
+      </div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold">Setup checklist</h3>

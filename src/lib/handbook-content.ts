@@ -442,6 +442,23 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         why: "The setup file isn't from the App Store, so newer macOS blocks it the first time. Open Anyway tells your Mac you trust it. You only do this once. The card's Advanced section has the same setup typed by hand in Terminal.",
       },
       {
+        heading: "Set up automatic Reminders and Messaging",
+        steps: [
+          "Open Settings → Text Reminders.",
+          "Tap Set up automatic Reminders and Messaging. After it is done, the same spot says Redo setup.",
+          "Are you using an iPhone or a Mac? Tap one. The steps after that are only for that Device.",
+          "Tap Add to this Device. Then tap Add Shortcut.",
+          "On an iPhone, if you do not see Shortcuts: Open App Store. Tap Search. Type Shortcuts. Tap Get. On a Mac, Shortcuts is already on this Mac. Open Shortcuts.",
+          "Which texts? Tap the ones this Device should send. Tap Add to this Device for each one. Tap Add Shortcut.",
+          "For each shortcut: Open Shortcuts. Tap Automation (on a Mac, click Automation). Tap +. Tap Time of Day. Set the time. Tap Every Day (on a Mac, click Daily). Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap the shortcut name. Tap Done. Run Immediately is what lets it run while the Device is locked.",
+          "If you do not see Automation, open Don't see Automation? That list starts at 1. Tap the shortcut, tap Edit, tap Automation, tap Time of Day, set the time, tap Privacy, and turn Allow Running When Locked on. That switch is what lets it run while the Device is locked on current iOS. On a Mac, click those same words.",
+          "Tap Test it now. Tap Run if the Device asks. NoteGoat says this Device checked in when it sees the Device.",
+          "Doing it again: open Shortcuts and delete the old NoteGoat shortcuts and automations first. Tap Delete, then Delete Shortcut. Do not remove the Device in NoteGoat.",
+        ],
+        why: "The shortcut does not run by itself until the Time of Day automation is on that Device, set to Run Immediately. NoteGoat never sends a text on its own. The Device does, at the time you set.",
+        watchOut: "Redo setup does not remove the Device in NoteGoat. Delete only the old shortcuts and automations in the Shortcuts app.",
+      },
+      {
         heading: "Set up automatic reminders on the iPhone (3 steps)",
         steps: [
           "Step 1 (one time): On the office device, open Settings → Text Reminders and use Add to this Device, then Add Shortcut. On a Mac, Shortcuts opens the same way, and you can download NoteGoat.shortcut if it does not. The code is already filled in. One shortcut, named NoteGoat, sends 5 texts at a time and also catches STOP.",

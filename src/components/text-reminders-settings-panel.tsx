@@ -8,12 +8,13 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSmsTemplates } from "@/hooks/use-sms-templates";
-import { markLocalWrite } from "@/lib/local-sync";
+import { markLocalWrite, notifyChange } from "@/lib/local-sync";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { planAutoTextMigration } from "@/lib/message-library";
 import { ensureShortcutNames, legacyRules, normalizeShortcutRuns, SHORTCUT_RUNS_KEY, withRules, type ShortcutRun } from "@/lib/text-rules";
 import { SmsTemplatesSection } from "@/components/sms-templates-section";
 import { CreateShortcutSection } from "@/components/create-shortcut-section";
+import { MessagingSetupEntry, MessagingSetupFlow, messagingSetupComplete } from "@/components/messaging-setup-flow";
 import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import {
   buildReminderQueue,
@@ -62,6 +63,7 @@ function loadSettings(): SmsReminderSettings {
 function saveSettings(next: SmsReminderSettings) {
   markLocalWrite(SMS_REMINDER_SETTINGS_KEY);
   window.localStorage.setItem(SMS_REMINDER_SETTINGS_KEY, JSON.stringify(next));
+  notifyChange(SMS_REMINDER_SETTINGS_KEY);
   void import("@/lib/kv-cloud").then((m) => m.dualWriteKv(SMS_REMINDER_SETTINGS_KEY, "tasks", next));
 }
 
@@ -108,6 +110,7 @@ export function TextRemindersSettingsPanel() {
   const [optOutQuery, setOptOutQuery] = useState("");
   const [birthdayLog, setBirthdayLog] = useState<BirthdayLogRow[]>([]);
   const [runs, setRuns] = useState<Record<string, ShortcutRun>>({});
+  const [messagingFlow, setMessagingFlow] = useState<{ redo: boolean } | null>(null);
   const { ask, confirmDialog } = useSimpleConfirm();
 
   const update = (patch: Partial<SmsReminderSettings>) => {
@@ -144,6 +147,10 @@ export function TextRemindersSettingsPanel() {
   }, []);
 
   const workspaceId = typeof window === "undefined" ? "" : getActiveWorkspaceIdSync();
+  useEffect(() => {
+    const setup = new URLSearchParams(window.location.search).get("setup");
+    if (setup === "messaging" || setup === "redo") setMessagingFlow({ redo: setup === "redo" });
+  }, []);
   // Deep link from Key Dates ("Text affected patients"): a closure text for
   // that date / time window. No patient data travels in the URL.
   const [messagePrefill] = useState<MessagePatientsPrefill | null>(() => {
@@ -394,11 +401,39 @@ export function TextRemindersSettingsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, settings, runDays, scheduleAppointments, devices, hasIphone]);
 
+  const closeMessagingFlow = () => {
+    setMessagingFlow(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("setup");
+    window.history.replaceState(window.history.state, "", url.toString());
+  };
+
+  if (messagingFlow) {
+    return (
+      <div className="w-full min-w-0 max-w-full" data-testid="text-reminders-panel">
+        <MessagingSetupFlow
+          devices={devices}
+          initialRedo={messagingFlow.redo}
+          messages={smsTemplates}
+          onChanged={() => void refresh()}
+          onClose={closeMessagingFlow}
+          settings={settings}
+          update={update}
+          workspaceId={workspaceId}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-5" data-testid="text-reminders-panel">
       <AutomationWarning hasIphone={hasIphone} settings={settings} warning={missedAutoRuns} />
 
       <div data-testid="section-setup">
+        <MessagingSetupEntry
+          complete={messagingSetupComplete(settings.messagingSetup, devices)}
+          onStart={(redo) => setMessagingFlow({ redo })}
+        />
         <SmsTemplatesSection
           onToggle={(next) => setSection("templates", next)}
           open={sectionOpen(settings.sections, "templates", true)}

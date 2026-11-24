@@ -23,6 +23,7 @@ import { ReportTemplateSettingsPanel } from "@/components/report-template-settin
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
 import { PatientFormsSettingsPanel } from "@/components/patient-forms-settings-panel";
 import { TextRemindersSettingsPanel } from "@/components/text-reminders-settings-panel";
+import { SetupChecklist } from "@/components/setup-checklist";
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -3340,6 +3341,8 @@ export default function SettingsPage() {
           No settings match &quot;{searchQuery}&quot;. Try a different keyword or clear the search.
         </p>
       )}
+
+      <SetupChecklist />
 
       {/* Settings tabs. Search (above) looks across every tab. */}
       {!searchMatchKeys && (
