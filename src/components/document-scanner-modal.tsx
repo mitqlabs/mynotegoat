@@ -131,7 +131,6 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
   const refreshCameras = useCallback(async () => {
     if (!permittedRef.current || !navigator.mediaDevices?.enumerateDevices) return;
     try {
-      permittedRef.current = true;
       const list = (await navigator.mediaDevices.enumerateDevices())
         .filter((d) => d.kind === "videoinput")
         .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
@@ -179,6 +178,7 @@ export function DocumentScannerModal({ open, onClose, onCapture }: DocumentScann
         // Labels are blank until the browser has camera permission.
         const probe = await navigator.mediaDevices.getUserMedia({ video: true });
         probe.getTracks().forEach((t) => t.stop());
+        permittedRef.current = true;
       } catch (err) {
         if (cancelled) return;
         const n = (err as DOMException)?.name;
