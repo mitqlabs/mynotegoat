@@ -330,6 +330,8 @@ export interface UContext {
   today: string;
   patients: UPatient[];
   lastPatientId?: string | null;
+  /** The patient whose page G.O.A.T. was asked from: the default when no other patient is named. */
+  pagePatientId?: string | null;
   /** Office attorneys (for "switched to test legal"). */
   attorneys?: string[];
   /** Team first names (message recipients). */
@@ -422,7 +424,9 @@ export function understand(raw: string, ctx: UContext): Understood | null {
   if (parseApptStats(raw, ctx.today, ctx.patients.map((p) => p.fullName))) return null;
   const t = normalizeForIntent(raw);
   const template = phraseTemplate(raw, ctx.patients, ctx.today, [...(ctx.names ?? []), ...(ctx.attorneys ?? [])]);
-  const hit = findPatient(t, ctx.patients, ctx.lastPatientId);
+  let hit = findPatient(t, ctx.patients, ctx.lastPatientId ?? ctx.pagePatientId);
+  const pagePt = ctx.pagePatientId ? ctx.patients.find((p) => p.id === ctx.pagePatientId) ?? null : null;
+  const pageDefault = !hit.patient && !hit.ambiguous.length && pagePt ? pagePt : null;
   const learnedAction = ctx.learned?.[template];
   let action: ActionId | null = ctx.force ?? learnedAction ?? BUILTIN[template] ?? pickAction(t, Boolean(hit.patient || hit.ambiguous.length), ctx.attorneys);
   // "kara kim re exam 10/30 at 3": a patient plus a day/time and nothing else → book.
@@ -454,6 +458,8 @@ export function understand(raw: string, ctx: UContext): Understood | null {
     }
   }
   const def = GOAT_ACTIONS.find((a) => a.id === action);
+  // Asked from a patient page and no patient named: it's about that patient.
+  if (pageDefault && def?.required.includes("patient")) hit = { patient: pageDefault, ambiguous: [], span: null, viaPronoun: true, typo: false };
   const out: Understood = { action, patient: hit.patient, ambiguous: hit.ambiguous, date, time, text: "", attorney: "", status: "", canonical: null, ask: null, learned: Boolean(learnedAction), template, fromDate, typo: Boolean(hit.patient && hit.typo) };
   const who = hit.patient ? nameParts(hit.patient.fullName).display : "";
   const rest = cut(t, [hit.viaPronoun ? null : hit.span, date?.span, time?.span]);

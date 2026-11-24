@@ -123,7 +123,7 @@ import { loadPatientBillingMap } from "@/lib/patient-billing";
 
 // Open/closed store + nav button live in a tiny module so the shell can
 // render the button without downloading all of G.O.A.T. up front.
-import { setGlobalGoatOpen, takePendingAsk, useGlobalGoatOpen } from "@/components/global-goat-button";
+import { setGlobalGoatOpen, takePendingAsk, takePendingAskPatient, useGlobalGoatOpen } from "@/components/global-goat-button";
 import { appConfirm } from "@/components/app-dialog";
 
 export { askGlobalGoat, GlobalGoatButton, setGlobalGoatOpen } from "@/components/global-goat-button";
@@ -502,13 +502,19 @@ export function GlobalGoatPopup({
   const current = patientById(chat.patientId);
   /** Who "his/her/them" means: the patient carried from earlier in this message, this chat's patient, the last one mentioned, else last session's. */
   const carryRef = useRef<{ id: string; until: number } | null>(null);
+  /** Patient handed over by a patient page's G.O.A.T. box (read synchronously, before chat state updates). */
+  const handoffRef = useRef<string | null>(null);
   const contextPatient = (): PatientRecord | null => {
     const carried = carryRef.current && carryRef.current.until > Date.now() ? patientById(carryRef.current.id) : null;
     if (carried) return carried;
     if (current) return current;
+    const handed = patientById(handoffRef.current);
+    if (handed) return handed;
     const lastMentioned = [...chat.messages].reverse().find((m) => m.patientId)?.patientId ?? null;
-    return patientById(lastMentioned) ?? patientById(readRecall()?.patientId ?? null) ?? null;
+    return patientById(lastMentioned) ?? patientById(openPatientId) ?? patientById(readRecall()?.patientId ?? null) ?? null;
   };
+  /** The patient this chat is "on": handed off from a patient page, else the open patient page. */
+  const pagePatientId = (): string | null => current?.id ?? (patientById(handoffRef.current) ? handoffRef.current : null) ?? openPatientId ?? null;
 
   const push = useCallback((m0: Omit<ChatMessage, "id" | "at">, patientId?: string | null) => {
     let m = m0;
@@ -1844,6 +1850,7 @@ export function GlobalGoatPopup({
       today: practiceData().today,
       patients: people.map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
       lastPatientId: contextPatient()?.id ?? null,
+      pagePatientId: pagePatientId(),
       attorneys: loadContactDirectory().filter((c) => c.category === "Attorney").map((c) => c.name),
       learned: learnedMap(loadLearned()),
       names: workspaceNames(),
@@ -2248,7 +2255,7 @@ export function GlobalGoatPopup({
       const turn = goatTurn(question, dialogRef.current, {
         data: practiceData(),
         team,
-        openPatientId: current?.id ?? openPatientId ?? null,
+        openPatientId: pagePatientId(),
         settings: scheduleSettings() ?? loadScheduleSettings(),
       });
       const r = turn.reply;
@@ -2533,9 +2540,18 @@ export function GlobalGoatPopup({
     setChat((current) => withoutAutoApptCheck(current));
   }, [isOpenNow, fullScreen]);
   useEffect(() => {
-    if (!(isOpenNow || fullScreen)) return;
+    if (!(isOpenNow || fullScreen)) {
+      // Closed: the next open starts from wherever the user is then.
+      handoffRef.current = null;
+      return;
+    }
     const text = takePendingAsk();
+    const fromPatient = takePendingAskPatient();
     if (!text) return;
+    if (fromPatient) {
+      handoffRef.current = fromPatient;
+      setChat((c) => ({ ...c, patientId: fromPatient }));
+    }
     const t = window.setTimeout(() => sendRef.current(text), 0);
     return () => window.clearTimeout(t);
   }, [isOpenNow, fullScreen]);
