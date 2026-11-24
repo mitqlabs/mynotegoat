@@ -2,6 +2,7 @@
 
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { SmsSendMenu } from "@/components/sms-send-menu";
+import { ageOn } from "@/lib/age";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { downloadVCard } from "@/lib/vcard";
@@ -72,6 +73,8 @@ type IdentityProps = {
   /** Case page includes the case number on the contact card. */
   onAddToContacts?: () => void;
   emailClassName?: string;
+  /** Case page shows the age next to DOB. Folder page leaves it off. */
+  showAge?: boolean;
 };
 
 /**
@@ -85,9 +88,11 @@ export function PatientIdentityFields({
   onTextRemindersOff,
   onAddToContacts,
   emailClassName,
+  showAge,
 }: IdentityProps) {
   const set = (patch: Partial<PatientPersonDraft>) => onChange({ ...value, ...patch });
   const phoneDigits = value.phone.replace(/\D/g, "");
+  const age = showAge ? ageOn(value.dob) : null;
   return (
     <>
       <label className="grid gap-1">
@@ -107,7 +112,10 @@ export function PatientIdentityFields({
         />
       </label>
       <label className="grid gap-1">
-        <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
+          {age !== null && <span className="text-sm font-semibold tabular-nums text-[var(--text-muted)]">Age {age}</span>}
+        </span>
         <input
           className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
           inputMode="numeric"

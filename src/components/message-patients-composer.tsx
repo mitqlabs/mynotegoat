@@ -287,6 +287,7 @@ export function MessagePatientsComposer({
   });
 
   const queue = async () => {
+    if ((await import("@/lib/demo-client")).blockDemoSend("sms")) return;
     setJustQueued(false);
     const client = getSupabaseBrowserClient();
     const message = text.trim();

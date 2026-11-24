@@ -93,6 +93,8 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.team-settings.v1": "workspace",
   "casemate.team-member-order.v1": "workspace",
   "casemate.onboarding.v1": "workspace",
+  // Bumped when the demo office is reseeded so this browser drops yesterday's edits.
+  "casemate.demo-generation.v1": "workspace",
   "casemate.admin-access.v1": "workspace",
   // Role definitions (Settings → Roles & Permissions). Writes are limited to the owner by a database trigger.
   "casemate.role-settings.v1": "workspace",

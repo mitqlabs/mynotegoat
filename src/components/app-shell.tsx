@@ -17,6 +17,7 @@ import { applySidebarOrder, visibleSidebarPages, type SidebarPage } from "@/lib/
 import { SidebarIconView } from "@/components/sidebar-icons";
 import { ReminderMorningBanner } from "@/components/reminder-morning-banner";
 import { UnmatchedStopAlert } from "@/components/unmatched-stop-alert";
+import { DemoOfficeMarker, ResetDemoButton } from "@/components/demo-office-chrome";
 
 function classNames(...classes: Array<string | false | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -272,6 +273,7 @@ export function AppShell({
                         )}
                       </div>
                       <p className="mt-2 text-sm text-[var(--sidebar-muted)]">Secure office workspace</p>
+                      <DemoOfficeMarker compact />
                     </div>
 
                     <nav className="space-y-2">
@@ -374,8 +376,12 @@ export function AppShell({
                     {buildTitle(pathname, navItems)}
                   </h1>
                 </div>
-                <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
-                  {userEmail || "Secure cloud mode"}
+                <div className="flex flex-wrap items-center gap-2">
+                  <DemoOfficeMarker />
+                  <ResetDemoButton />
+                  <div className="inline-flex items-center rounded-full bg-[var(--bg-soft)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
+                    {userEmail || "Secure cloud mode"}
+                  </div>
                 </div>
               </header>
 

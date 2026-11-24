@@ -251,7 +251,17 @@ const stored = normalizeFolderCloud({
 });
 assert.equal(stored.people["pf-1"].photoDataUrl, jpeg);
 assert.equal(stored.people["pf-1"].photoPath, "user/patient-photos/pf-1.jpg");
-assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload Photo/);
+const cropper = readFileSync("src/components/patient-photo-cropper.tsx", "utf8");
+assert.match(cropper, /Upload Photo/);
+assert.match(cropper, /max-w-\[900px\]/);
+assert.match(cropper, /sm:h-\[85vh\]/);
+assert.doesNotMatch(cropper, /Drag inside the box/);
+const caseFile = readFileSync("src/components/patient-case-file.tsx", "utf8");
+assert.match(caseFile, /useCasePatientPhoto/);
+assert.match(caseFile, /Open Encounters/);
+assert.doesNotMatch(caseFile, /Case profile only/);
+assert.match(readFileSync("src/components/case-header-photo.tsx", "utf8"), /signedUrlForPatientPhoto/);
+assert.match(readFileSync("src/lib/patient-photo-storage.ts", "utf8"), /createSignedUrl/);
 assert.match(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Choose Photo/);
 assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Upload ID/);
 assert.doesNotMatch(readFileSync("src/components/patient-photo-cropper.tsx", "utf8"), /Take photo/);

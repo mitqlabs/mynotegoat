@@ -2,8 +2,6 @@
 
 import { caseNamePrefixFor } from "@/lib/file-storage";
 import { joinCaseNumberPrefix, splitCaseNumberPrefix } from "@/lib/file-naming";
-import { demographicsLine } from "@/lib/age";
-
 import { mainEmailOf } from "@/lib/contact-email";
 
 import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dates";
@@ -17,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { useCasePatientPhoto } from "@/components/case-header-photo";
 import { PatientAddressFields, PatientIdentityFields } from "@/components/patient-person-fields";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
@@ -1413,6 +1412,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const name = parts.lastName && parts.firstName ? `${parts.lastName}, ${parts.firstName}` : patient.fullName.trim() || "Patient";
     return { id: `pf-${patient.id}`, name };
   }, [patient.id, patient.fullName, allPatients.length]);
+  const patientPhotoSrc = useCasePatientPhoto(folderCrumb?.id ?? null);
   const imagingCenterContacts = useMemo(
     () =>
       contacts
@@ -5244,8 +5244,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     <div className="space-y-5">
       {checkoutNoteDialog}
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
+        <div className="case-header">
+          {patientPhotoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              alt=""
+              className="case-header-photo h-[140px] w-[110px] rounded-xl object-cover"
+              src={patientPhotoSrc}
+            />
+          ) : null}
+          <div className="case-header-name min-w-0">
             <p className="text-sm text-[var(--text-muted)]">
               {folderCrumb ? (
                 <>
@@ -5268,115 +5276,91 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               )}
             </p>
             <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
-            {demographicsLine(patientSex, maritalStatus, patientDob) && (
-              <p className="text-sm text-[var(--text-muted)]" data-patient-demographics>
-                {demographicsLine(patientSex, maritalStatus, patientDob)}
-              </p>
-            )}
-            <p className="text-sm text-[var(--text-muted)]">
-              Case profile only. SOAP charting is kept in the Encounters module.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {isCashPatient && (
-                <span className="tone-ok inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider">
-                  Non-PI Patient
-                </span>
-              )}
-              {isFeatureEnabled("encounters") && (
-                <Link
-                  className="btn btn-secondary btn-sm"
-                  href={`/encounters?patientId=${patient.id}`}
-                >
-                  Open Encounters For This Patient
-                </Link>
-              )}
-              <button
-                className="btn btn-secondary btn-sm inline-flex items-center"
-                onClick={(event) => openQuickTaskModal(event)}
-                ref={quickTaskButtonRef}
-                type="button"
-              >
-                + To Do
-              </button>
-              <SendFormButton
-                email={patientEmail}
-                firstName={firstName}
-                patientId={patient.id}
-                patientName={patient.fullName}
-                phone={patientPhone}
-                visitTypes={formVisitTypes}
+          </div>
+          <div className="case-header-info min-w-0" data-patient-demographics>
+            <div className="grid grid-cols-1 items-start gap-x-3 gap-y-2 sm:grid-cols-2">
+              <PatientIdentityFields
+                emailClassName="sm:col-span-2"
+                onAddToContacts={addPatientToContacts}
+                onChange={(next) => {
+                  setLastName(next.lastName);
+                  setFirstName(next.firstName);
+                  setPatientDob(next.dob);
+                  setPatientPhone(next.phone);
+                  setPatientSex(next.sex);
+                  setMaritalStatus(next.maritalStatus);
+                  setPatientEmail(next.email);
+                }}
+                onTextRemindersOff={handleTextRemindersChange}
+                showAge
+                value={{
+                  lastName,
+                  firstName,
+                  dob: patientDob,
+                  phone: patientPhone,
+                  sex: patientSex,
+                  maritalStatus,
+                  email: patientEmail,
+                  address: patientAddress,
+                  textRemindersOff,
+                }}
+              />
+              <PatientAddressFields
+                address={patientAddress}
+                className="sm:col-span-2"
+                onChange={setPatientAddress}
               />
             </div>
-            {quickTaskStatusMessage && (
-              <p className="text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
+          </div>
+          <div className="case-header-actions flex min-w-0 flex-col gap-2">
+            {patientAlerts.length > 0 && (
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {patientAlerts.map((alert, index) => (
+                  <span
+                    key={`alert-${index}`}
+                    className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
+                  >
+                    ⚠ {alert}
+                    <button
+                      className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
+                      onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
+                      title="Remove alert"
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
-          {!isCashPatient && (
-            <span
-              className="status-pill"
-              style={softPillStyle(statusColor)}
-            >
-              {caseStatus}
-            </span>
-          )}
-          {complianceEnabled && complianceOption && (
-            <span
-              className="status-pill"
-              style={compliancePillStyle(complianceOption)}
-              title="Compliance"
-            >
-              Compliance: {complianceOption.label}
-            </span>
-          )}
-        </div>
-
-        {/* Patient Alerts */}
-        {patientAlerts.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {patientAlerts.map((alert, index) => (
-              <span
-                key={`alert-${index}`}
-                className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
+            <div className="flex items-center gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
+                onChange={(event) => setAlertDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && alertDraft.trim()) {
+                    event.preventDefault();
+                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
+                    setAlertDraft("");
+                  }
+                }}
+                placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
+                value={alertDraft}
+              />
+              <button
+                className="btn btn-secondary btn-sm shrink-0"
+                onClick={() => {
+                  if (alertDraft.trim()) {
+                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
+                    setAlertDraft("");
+                  }
+                }}
+                type="button"
               >
-                ⚠ {alert}
-                <button
-                  className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
-                  onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
-                  title="Remove alert"
-                  type="button"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+                + Alert
+              </button>
+            </div>
           </div>
-        )}
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
-            onChange={(event) => setAlertDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && alertDraft.trim()) {
-                event.preventDefault();
-                setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                setAlertDraft("");
-              }
-            }}
-            placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
-            value={alertDraft}
-          />
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              if (alertDraft.trim()) {
-                setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                setAlertDraft("");
-              }
-            }}
-            type="button"
-          >
-            + Alert
-          </button>
         </div>
       </section>
 
@@ -5405,39 +5389,54 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       <section className="panel-card overflow-hidden" data-goat-section="info">
-        <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
-          {/* Field order is deliberate, four to a row on xl:
-                1. Last Name | First Name | DOB | Phone
-                2. Sex | Marital Status | Email | Case #
-                3. Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam (five on xl)
-              Everything from Case # onward is PI-only, so a cash patient
-              simply drops those and the rest reflows. */}
-          <PatientIdentityFields
-            onAddToContacts={addPatientToContacts}
-            onChange={(next) => {
-              setLastName(next.lastName);
-              setFirstName(next.firstName);
-              setPatientDob(next.dob);
-              setPatientPhone(next.phone);
-              setPatientSex(next.sex);
-              setMaritalStatus(next.maritalStatus);
-              setPatientEmail(next.email);
-            }}
-            onTextRemindersOff={handleTextRemindersChange}
-            value={{
-              lastName,
-              firstName,
-              dob: patientDob,
-              phone: patientPhone,
-              sex: patientSex,
-              maritalStatus,
-              email: patientEmail,
-              address: patientAddress,
-              textRemindersOff,
-            }}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line-soft)] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {isCashPatient && (
+              <span className="tone-ok inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider">
+                Non-PI Patient
+              </span>
+            )}
+            {!isCashPatient && (
+              <span className="status-pill" style={softPillStyle(statusColor)}>
+                {caseStatus}
+              </span>
+            )}
+            {complianceEnabled && complianceOption && (
+              <span className="status-pill" style={compliancePillStyle(complianceOption)} title="Compliance">
+                Compliance: {complianceOption.label}
+              </span>
+            )}
+          </div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {isFeatureEnabled("encounters") && (
+            <Link className="btn btn-secondary btn-sm" href={`/encounters?patientId=${patient.id}`}>
+              Open Encounters
+            </Link>
+          )}
+          <button
+            className="btn btn-secondary btn-sm inline-flex items-center"
+            onClick={(event) => openQuickTaskModal(event)}
+            ref={quickTaskButtonRef}
+            type="button"
+          >
+            + To Do
+          </button>
+          <SendFormButton
+            email={patientEmail}
+            firstName={firstName}
+            patientId={patient.id}
+            patientName={patient.fullName}
+            phone={patientPhone}
+            visitTypes={formVisitTypes}
           />
-
-          {!isCashPatient && showCaseFields && (
+          </div>
+        </div>
+        {quickTaskStatusMessage && (
+          <p className="px-4 pt-2 text-right text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
+        )}
+        {!isCashPatient && (
+        <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.9fr)]">
+          {showCaseFields && (
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
               <input
@@ -5449,9 +5448,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {/* Row 3 has five columns on xl: Attorney | Attorney Phone | Attorney Email | Date Of Injury | Initial Exam. */}
-          <div className={!isCashPatient && showCaseFields ? "grid items-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]" : "contents"}>
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
               <AttorneyFirmSelect
@@ -5471,7 +5468,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
@@ -5483,14 +5480,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <div className="grid min-w-0 gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Email</span>
               <AttorneyEmailCopy contact={matchedAttorneyContact} key={matchedAttorneyContact?.name ?? ""} />
             </div>
           )}
 
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <div className="grid gap-1 self-start" data-testid="doi-field">
               <div className="flex items-baseline justify-between gap-2">
                 <label className="text-sm font-semibold text-[var(--text-muted)]" htmlFor="patient-doi-input">Date Of Injury</label>
@@ -5575,8 +5572,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           )}
 
-          {!isCashPatient && (
-            <div className="grid content-start gap-1">
+          <div className="grid content-start gap-1">
               <label className="grid gap-1">
                 {/* Drives Case Flow's Initial Visit step, the initial-to-discharge
                     duration and the Initial Exam column on the patient list.
@@ -5629,15 +5625,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </span>
               )}
             </div>
-          )}
-          </div>
-
-          <PatientAddressFields
-            address={patientAddress}
-            className="md:col-span-2 xl:col-span-4"
-            onChange={setPatientAddress}
-          />
         </div>
+        )}
 
         {/* Every field has a fixed width on sm+ (full width on phones) so the
             row wraps tidily. Prior Care is capped; Location is sized to fit the

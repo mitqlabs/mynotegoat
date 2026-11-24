@@ -20,11 +20,13 @@ const patients = [
 const u = (q: string, lastPatientId?: string) => understand(q, { today: TODAY, patients, lastPatientId });
 
 const typo = u("book tylr smith tomorrow at 3");
+if (!typo) throw new Error("expected a match");
 assert.equal(typo.patient?.fullName, "Smith, Tyler");
 assert.equal(typo.typo, true);
 assert.equal(typo.ask, null);
 
 const exact = u("book tyler smith tomorrow at 3");
+if (!exact) throw new Error("expected a match");
 assert.equal(exact.patient?.fullName, "Smith, Tyler");
 assert.equal(exact.typo, false);
 
@@ -38,17 +40,21 @@ assert.equal(callTyler.patient?.fullName, "Smith, Tyler");
 
 // A typed name beats the open chart. A pronoun uses the remembered patient.
 const named = u("book kara tomorrow at 3", "t");
+if (!named) throw new Error("expected a match");
 assert.equal(named.patient?.fullName, "Testpatient, Kara");
 const remembered = u("book her tomorrow at 3", "k");
+if (!remembered) throw new Error("expected a match");
 assert.equal(remembered.patient?.fullName, "Testpatient, Kara");
 assert.equal(remembered.typo, false);
 
 const several = u("book john tomorrow at 3");
+if (!several) throw new Error("expected a match");
 assert.equal(several.patient, null);
 assert.equal(several.ask, "Which patient?");
 assert.ok(several.ambiguous.length >= 2);
 
 const none = u("book Zzzzzz tomorrow at 3");
+if (!none) throw new Error("expected a match");
 assert.equal(none.patient, null);
 assert.equal(none.ask, "No match");
 assert.equal(none.ambiguous.length, 0);

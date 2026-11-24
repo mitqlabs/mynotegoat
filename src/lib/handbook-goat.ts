@@ -52,13 +52,13 @@ export const goatHandbookChapter: HandbookChapter = {
       why: "The list above comes straight from G.O.A.T.'s own list of actions, so it's always current.",
     },
     {
-      heading: "Teach G.O.A.T. (👎 or just type the fix)",
+      heading: "Teach G.O.A.T. (Not what I meant? or just type the fix)",
       steps: [
-        "Under any reply, tap 👎 if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
+        "Under any reply, tap Not what I meant? if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
         "Or just type the fix: \"no I wanted you to book it\", \"not a note, a to-do\", \"I meant reschedule\", \"no, move it to Friday\". G.O.A.T. closes the wrong card, shows the right one, and learns it the same way. (\"No\" or \"no, cancel\" on its own just dismisses the card.)",
         "Names, days, times and numbers are saved as blanks, never the actual name. Any word matching a patient, contact or attorney in your office is removed, whether it's capitalized or not.",
         "Settings → G.O.A.T. is one page. G.O.A.T. chat holds the Library, words, answers, and note signatures. The Library has two parts. Learned in your office lists the wording your office taught it and the misses; Delete any you don't want. Built in is the read-only list that comes with NoteGoat. Office wording that matches a built-in one is merged away.",
-        "Too much on open? Tap Hide brief. The heads-ups sit behind a small \"N heads-ups ›\" link.",
+        "The chat opens with the greeting and the buttons. Appointment Check runs when you tap it. The heads-ups sit behind a small \"N heads-ups ›\" link.",
       ],
       why: "Saved to the office's cloud settings, so it works on every computer.",
     },
@@ -279,6 +279,14 @@ export const goatHandbookChapter: HandbookChapter = {
         "\"Message the team …\" / \"let everyone know …\" posts to General with no @mention.",
         "Type @ and pick a teammate: \"@hannah please call kara back\".",
         "Tap 🔒 on the card for Eyes only — just you and them see it. Otherwise it posts to General.",
+      ],
+    },
+    {
+      heading: "Encounters, a to-do, or a form from a case",
+      steps: [
+        "Open the patient's case. Open Encounters, + To Do, and Send Form are at the top right of the case box.",
+        "Open Encounters opens that patient's encounters. + To Do adds a task for this case. Send Form sends a questionnaire.",
+        "Ask G.O.A.T. \"how do I open an encounter\" or \"how do I add a to-do\" and it names those same buttons.",
       ],
     },
     {

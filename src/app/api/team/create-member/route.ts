@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizePermissions } from "@/lib/team-permissions";
 import { resolveTeamWorkspace } from "@/lib/team-workspace";
+import { DEMO_NOT_SENT, isDemoPrincipal } from "@/lib/demo-office";
 
 /**
  * Owner creates a staff (team member) login.
@@ -37,6 +38,9 @@ export async function POST(request: NextRequest) {
   } = await authClient.auth.getUser(token);
   if (authError || !owner) {
     return NextResponse.json({ error: "Invalid session." }, { status: 401 });
+  }
+  if (isDemoPrincipal(owner)) {
+    return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
   }
 
   // 2. Validate input.

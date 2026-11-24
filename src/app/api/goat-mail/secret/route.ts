@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEMO_NOT_SENT } from "@/lib/demo-office";
 import { adminClient, serverConfig, verifyStaff } from "@/lib/patient-forms-server";
 import { normalizeSecretExpiresOn } from "@/lib/goat-mail";
 import { goatMailWorkspaceId, saveMailSecretExpiresOn } from "@/lib/goat-mail-server";
@@ -10,6 +11,7 @@ export async function POST(request: NextRequest) {
   const admin = adminClient(cfg);
   const caller = await verifyStaff(request, cfg, admin);
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (caller.demo) return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403 });
   const body = (await request.json().catch(() => null)) as { expiresOn?: unknown } | null;
   const raw = typeof body?.expiresOn === "string" ? body.expiresOn.trim() : "";
   if (raw && !normalizeSecretExpiresOn(raw)) return NextResponse.json({ error: "Enter a real date." }, { status: 400 });

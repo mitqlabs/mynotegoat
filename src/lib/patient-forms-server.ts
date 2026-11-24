@@ -5,6 +5,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
+import { isDemoPrincipal } from "@/lib/demo-office";
 
 export const FORM_TABLE = "patient_form_requests";
 export const DEFAULT_EXPIRY_DAYS = 14;
@@ -42,6 +43,7 @@ export interface StaffCaller {
   userId: string;
   ownerId: string;
   label: string;
+  demo: boolean;
 }
 
 /**
@@ -55,6 +57,8 @@ export async function verifyStaff(request: NextRequest, cfg: { url: string; anon
   const { data, error } = await authClient.auth.getUser(token);
   const user = data?.user;
   if (error || !user) return null;
+  const demo = isDemoPrincipal(user);
+  if (demo) return { userId: user.id, ownerId: user.id, label: user.email || "Demo office", demo: true };
   const { data: member } = await admin
     .from("workspace_members")
     .select("workspace_owner_id, label, permissions")
@@ -63,9 +67,9 @@ export async function verifyStaff(request: NextRequest, cfg: { url: string; anon
   if (member) {
     const perms = (member.permissions ?? {}) as Record<string, unknown>;
     if (perms.disabled === true) return null;
-    return { userId: user.id, ownerId: String(member.workspace_owner_id), label: String(member.label || user.email || "Team Member") };
+    return { userId: user.id, ownerId: String(member.workspace_owner_id), label: String(member.label || user.email || "Team Member"), demo: false };
   }
-  return { userId: user.id, ownerId: user.id, label: user.email || "Owner" };
+  return { userId: user.id, ownerId: user.id, label: user.email || "Owner", demo: false };
 }
 
 /** The caller's office owns this workspace id ("<ownerId>:<officeId>"). */
