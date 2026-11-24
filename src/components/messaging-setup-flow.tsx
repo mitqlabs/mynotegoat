@@ -6,7 +6,7 @@
  * Progress is written through the office text settings (cloud). Nothing is sent from here.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { generateDeviceToken, hashDeviceToken } from "@/lib/reminder-automation";
@@ -214,27 +214,36 @@ export function MessagingSetupFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [check.ok, check.at, forced]);
 
+  const pollRef = useRef({ forced: Boolean(forced), testing: false, since: "", workspaceId: "" });
+  pollRef.current = {
+    forced: Boolean(forced),
+    testing: step.kind === "test" && Boolean(since),
+    since,
+    workspaceId,
+  };
   useEffect(() => {
-    if (forced || step.kind !== "test" || !since) return;
     let stop = false;
-    const load = async () => {
+    const load = () => {
+      const current = pollRef.current;
+      if (current.forced || !current.testing || !current.since || !current.workspaceId) return;
       const client = getSupabaseBrowserClient();
-      if (!client || !workspaceId) return;
-      const { data } = await client
+      if (!client) return;
+      void client
         .from("reminder_devices")
         .select("kind, revoked_at, last_seen_at, last_run_at, last_run_summary")
-        .eq("workspace_id", workspaceId);
-      if (!stop) setLive((data as CheckInDevice[] | null) ?? []);
+        .eq("workspace_id", current.workspaceId)
+        .then(({ data }) => {
+          if (!stop) setLive((data as CheckInDevice[] | null) ?? []);
+        });
     };
-    void load();
-    const timer = window.setInterval(() => void load(), 2000);
+    const timer = window.setInterval(load, 2000);
     window.addEventListener("focus", load);
     return () => {
       stop = true;
       window.clearInterval(timer);
       window.removeEventListener("focus", load);
     };
-  }, [forced, step.kind, since, workspaceId]);
+  }, []);
 
   const go = (delta: number) => {
     const next = steps[index + delta];
