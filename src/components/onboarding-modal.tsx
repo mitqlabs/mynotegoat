@@ -518,6 +518,13 @@ function TemplatesStep({ onContinue }: { onContinue: () => void }) {
         These are optional — set them up now or skip and come back later via
         Settings.
       </p>
+      <Link
+        className="block w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-center text-lg font-bold text-[var(--on-brand)]"
+        data-testid="messaging-setup-start"
+        href="/settings?section=textReminders&setup=messaging"
+      >
+        Set up automatic Reminders and Messaging
+      </Link>
       <ul className="space-y-2">
         {[
           {
@@ -590,6 +597,14 @@ function Done({ onFinish }: { onFinish: () => void }) {
         You&apos;re ready. Note Goat is configured — everything else is
         refinable from Settings at your own pace.
       </p>
+      <Link
+        className="mt-5 block w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-center text-lg font-bold text-[var(--on-brand)]"
+        data-testid="messaging-setup-start"
+        href="/settings?section=textReminders&setup=messaging"
+        onClick={onFinish}
+      >
+        Set up automatic Reminders and Messaging
+      </Link>
       <div className="mt-5 grid gap-2 md:grid-cols-3">
         <Link
           className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-3 text-center font-semibold"
