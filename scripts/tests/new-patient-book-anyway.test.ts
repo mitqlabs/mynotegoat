@@ -77,10 +77,13 @@ test("bad date / missing time still give plain errors", () => {
 });
 
 test("popup saves the override flag and wires chips + checkbox", () => {
-  const src = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+  const src = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
+  const popup = readFileSync("src/components/new-patient-case-popup.tsx", "utf8");
   assert.match(src, /overrideOfficeHours: firstVisit\.override/);
-  assert.match(src, /new-patient-slot-chip/);
-  assert.match(src, /Book anyway at \{to12hLabel/);
+  assert.match(popup, /new-patient-slot-chip/);
+  assert.match(popup, /Book anyway at \{to12hLabel/);
+  assert.doesNotMatch(popup, /Books it outside office hours/);
+  assert.doesNotMatch(popup, /bg-\[#fdf4f3\]/);
 });
 
 console.log(`${passed} passed`);

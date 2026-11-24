@@ -80,7 +80,7 @@ const full = reviewCasePopup(
 assert.equal(full.ok, false);
 if (!full.ok) assert.equal(full.conflict?.reason, "taken");
 
-const page = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 const popup = readFileSync(new URL("../../src/components/new-patient-case-popup.tsx", import.meta.url), "utf8");
 const intake = readFileSync(new URL("../../src/components/new-patient-intake-section.tsx", import.meta.url), "utf8");
 assert.match(page, /reviewCasePopup/);

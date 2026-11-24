@@ -92,7 +92,7 @@ const dupes = findDuplicateCases(
 );
 assert.equal(dupes.length, 1);
 
-const page = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 assert.match(page, /findDuplicateCases/);
 assert.match(page, /DuplicateCaseWarning/);
 assert.match(page, /ReturningPatientBanner/);

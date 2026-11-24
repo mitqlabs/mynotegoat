@@ -115,10 +115,14 @@ const scanner = readFileSync(join(root, "src/components/document-scanner-modal.t
 const hook = readFileSync(join(root, "src/hooks/use-office-camera.ts"), "utf8");
 const reader = readFileSync(join(root, "src/lib/id-scan-read.ts"), "utf8");
 for (const src of [picker, idModal, scanner]) {
-  assert.doesNotMatch(src, /\bphone\b/i);
+  assert.doesNotMatch(src.replace(/iPhone/g, "Device"), /\bphone\b/i);
 }
+assert.match(picker, /Don&apos;t see your iPhone\? Turn on Continuity Camera on the iPhone/);
+assert.match(picker, /Settings &gt; General &gt; AirPlay &amp; Continuity/);
 assert.match(picker, /Device/);
 assert.match(picker, /Refresh/);
+assert.doesNotMatch(hook, /facingMode\s*:/);
+assert.match(hook, /enumerateDevices\(\)[\s\S]{0,500}getTracks\(\)/);
 assert.match(scanner, /useOfficeCamera/);
 assert.match(scanner, /CameraPicker/);
 assert.match(idModal, /useOfficeCamera/);

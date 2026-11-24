@@ -63,7 +63,7 @@ assert.equal(isInNewPatientIntake(savedRow()), true, "attorney alone does not le
 updatePatientRecordById(savedWithoutCase.id, { matrix: { initialExam: "2026-03-01" } });
 assert.equal(isInNewPatientIntake(savedRow()), false, "attorney plus Initial Exam leaves New Patient");
 assert.equal(savedRow().onPatientList, undefined, "leaving the list does not write onPatientList");
-const pageSave = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const pageSave = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(pageSave.slice(pageSave.indexOf("const createdPatient"), pageSave.indexOf("const createdPatient") + 800), /onPatientList:\s*true/);
 
 assert.equal(intakeDeleteReason({ inIntake: true, hasNotes: false, appointmentCount: 0 }), null);
@@ -75,7 +75,7 @@ assert.equal(intakePatientHasNotes("preview-only", "Added from G.O.A.T. Mail."),
 assert.equal(intakePatientHasNotes("preview-only", "Added from G.O.A.T. Mail. Missing: phone, date of injury."), false);
 assert.equal(intakePatientHasNotes("preview-only", "Spoke with the attorney."), true);
 
-const page = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 assert.match(page, /NewPatientIntakeSection/);
 assert.match(page, /listedPatients/);
 assert.match(page, /isInNewPatientIntake\(patient, initialExamIndex\)/);

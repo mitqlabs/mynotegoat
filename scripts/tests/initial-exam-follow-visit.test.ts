@@ -20,7 +20,7 @@ assert.equal(info(pt(), [visit("2026-10-27", "Canceled"), { ...visit("2026-11-02
 for (const v of [[visit("2026-10-22")], [visit("2026-10-30")], [visit("2026-10-22", "Canceled")], []]) assert.equal(info(pt("06/26/2026"), v).date, "06/26/2026");
 
 // A New Patient booking never saves Initial Exam (patient list and schedule create paths).
-const pts = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+const pts = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
 const create = pts.slice(pts.indexOf("const createdPatient = createPatientRecord({"), pts.indexOf("const createdPatient = createPatientRecord({") + 1500);
 assert.match(create, /initialExam: "",/);
 assert.doesNotMatch(create, /initialExam: firstVisit/);

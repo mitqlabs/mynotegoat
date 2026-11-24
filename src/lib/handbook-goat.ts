@@ -31,7 +31,7 @@ export const goatHandbookChapter: HandbookChapter = {
       heading: "Scan an ID",
       steps: [
         "Patient List → New Patient → Scan ID, or Scan ID in the G.O.A.T. chat box. The camera is the one on the computer you are already logged into. A Device used as a Continuity Camera shows up in the Camera list. You do not sign in on the Device, and there is no QR code.",
-        "Pick the camera. Refresh looks again, and the list updates when a camera appears. The last camera you picked is remembered on your account. If you have not picked one, a Continuity Camera is used when it is there.",
+        "Pick the camera. Refresh looks again, and the list updates when a camera appears, including a Continuity Camera that shows up a moment later. The last camera you picked is remembered on your account. If you have not picked one, a Continuity Camera is used when it is there. If the iPhone is missing: turn on Continuity Camera on the iPhone (Settings > General > AirPlay & Continuity), then click Refresh.",
         "Hold the back of the license up and click Capture. The PDF417 barcode is read in the browser. If there is no barcode, the front is read in the browser. Nothing is sent to an AI service.",
         "One card shows the name, date of birth, sex and address. Fix anything that is wrong. Confirm fills the New Patient form, or updates the patient whose chart is open. It does not create a patient. Create Patient still does that. Save ID image to Files is optional.",
         "If the camera is blocked: in Chrome, click the lock icon in the address bar and set Camera to Allow. In Safari, choose Safari → Settings for This Website → Camera → Allow. Then click Refresh.",

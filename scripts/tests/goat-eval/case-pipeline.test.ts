@@ -99,6 +99,6 @@ for (const [w, t] of [["case review", "review"], ["needs mri", "pipeline:needsMr
 check("pipeline phrases break a waiting step", () => { assert.ok(breaksFlow("who needs an mri referral", { k: "notePick" })); assert.ok(breaksFlow("Case Review", { k: "notePick" })); });
 const ui = readFileSync("src/components/global-goat.tsx", "utf8");
 check("admin gate in runPipeline + runReview", () => assert.equal((ui.match(/if \(!isGoatAdmin\) \{\n\s+push\(\{ role: "goat", text: statsGate\(\) \?\? ADMIN_ONLY_REPLY/g) ?? []).length, 2));
-check("uses Case Flow's own options", () => { assert.match(ui, /caseFlowOptions\(loadDashboardWorkspaceSettings\(\)\.patientFollowUp/); assert.match(readFileSync("src/app/(portal)/patients/page.tsx", "utf8"), /\.\.\.caseFlowOptions\(followUpSettings, closedCaseStatuses, followUpOverridesByPatientId\)/); });
+check("uses Case Flow's own options", () => { assert.match(ui, /caseFlowOptions\(loadDashboardWorkspaceSettings\(\)\.patientFollowUp/); assert.match(readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8"), /\.\.\.caseFlowOptions\(followUpSettings, closedCaseStatuses, followUpOverridesByPatientId\)/); });
 console.log(`case-pipeline: ${pass}/${pass + fail} passed (fictional data only)`);
 if (fail) process.exit(1);

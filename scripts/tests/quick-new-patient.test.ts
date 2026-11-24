@@ -49,7 +49,7 @@ test("Case Flow builds without crashing for a patient with no case details", () 
 });
 
 test("forms: only last, first and phone are required", () => {
-  const page = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+  const page = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
   assert.doesNotMatch(page, /Date Of Injury is required/);
   assert.match(page, />Phone \*</);
   assert.match(page, /phone number \(10 digits\)/);
@@ -61,7 +61,7 @@ test("forms: only last, first and phone are required", () => {
 });
 
 test("New Patient popup = patient info only; case fields behind + Case; no evaluation date/time", () => {
-  const page = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+  const page = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
   const modal = page.slice(page.indexOf('data-testid="new-patient-modal"'), page.indexOf("Create Patient\n"));
   assert.ok(modal.length > 1000);
   assert.doesNotMatch(modal, /new-patient-eval-date|New Patient Evaluation|>Notes</);

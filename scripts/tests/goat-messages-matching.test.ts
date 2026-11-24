@@ -66,6 +66,6 @@ test("wiring: confirm-first message via the Messages save path; show inactive", 
   assert.ok(g.includes("const ok = await postMessage({"));
   assert.ok(g.indexOf("postMessage({") > g.indexOf("function OpenMessageCard"));
   assert.ok(g.includes("Show inactive ("));
-  for (const f of ["src/app/(portal)/patients/page.tsx", "src/app/(portal)/appointments/page.tsx", "src/components/new-appointment-modal.tsx", "src/components/patient-case-file.tsx"]) assert.ok(readFileSync(f, "utf8").includes("nameSearchMatches("), f);
+  for (const f of ["src/app/(portal)/patients/patients-screen.tsx", "src/app/(portal)/appointments/page.tsx", "src/components/new-appointment-modal.tsx", "src/components/patient-case-file.tsx"]) assert.ok(readFileSync(f, "utf8").includes("nameSearchMatches("), f);
 });
 console.log(`${passed} passed`);

@@ -29,7 +29,7 @@ check("cleared row gone (Case Flow + counts), others stay", () => { const left =
 check("not regenerated when the stage changes (id is case+category)", () => assert.equal(followUpClearId("p1", cat), `fu:p1|${cat}`));
 check("includeCleared shows it again", () => assert.equal(buildFollowUpItems([pt], { clearedIds: ids, includeCleared: true }).length, base.length));
 
-const page = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+const page = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
 check("Case Flow + To-Do have Clear task + Show cleared", () => { assert.ok((page.match(/Clear task/g) ?? []).length >= 2); assert.match(page, /Show cleared/); assert.match(page, /appConfirm\(`Clear/); });
 check("Case Flow passes cleared ids", () => assert.match(page, /effectiveInitialExam: [^\n]+\n\s+clearedIds,/));
 check("To-Do filters cleared", () => assert.match(page, /clearedIds\.has\(taskClearId\(task\.id\)\)/));

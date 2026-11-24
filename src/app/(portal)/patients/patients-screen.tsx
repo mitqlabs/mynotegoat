@@ -3348,7 +3348,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                     inputMode="numeric"
                     maxLength={12}
                     onChange={(event) => setNewPatientDraft((current) => ({ ...current, phone: formatUsPhoneInput(event.target.value) }))}
-                    placeholder="818-555-0123"
+                    placeholder="Phone"
                     value={newPatientDraft.phone}
                   />
                 </label>
@@ -3446,7 +3446,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                     className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
                     maxLength={2}
                     onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressState: event.target.value.toUpperCase().replace(/[^A-Z]/g, "") }))}
-                    placeholder="CA"
+                    placeholder="State"
                     value={newPatientDraft.addressState}
                   />
                 </label>
@@ -3459,7 +3459,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
                     inputMode="numeric"
                     maxLength={10}
                     onChange={(event) => setNewPatientDraft((current) => ({ ...current, addressZip: event.target.value.replace(/[^\d-]/g, "") }))}
-                    placeholder="91205"
+                    placeholder="ZIP"
                     value={newPatientDraft.addressZip}
                   />
                 </label>

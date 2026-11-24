@@ -32,7 +32,7 @@ assert.deepEqual(
 assert.equal(findDuplicateCases(rows, { firstName: "Ana", lastName: "Torres", dateOfLoss: "02/11/2026" })[0]?.id, "b");
 
 for (const file of [
-  "src/app/(portal)/patients/page.tsx",
+  "src/app/(portal)/patients/patients-screen.tsx",
   "src/app/(portal)/appointments/page.tsx",
 ]) {
   const src = readFileSync(file, "utf8");

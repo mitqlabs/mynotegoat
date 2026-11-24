@@ -184,7 +184,7 @@ if (previous !== undefined) process.env[envKey] = previous;
 
 assert.notEqual(PATIENT_FOLDERS_KEY, CASE_NOTE_ENTRIES_KEY);
 assert.match(readFileSync("src/lib/patient-folder-store.ts", "utf8"), /Case notes stay in/);
-assert.match(readFileSync("src/app/(portal)/patients/page.tsx", "utf8"), /All Patients Workspace/);
+assert.match(readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8"), /All Patients Workspace/);
 assert.match(readFileSync("src/lib/patient-folder-flag.ts", "utf8"), /NEXT_PUBLIC_PATIENT_FOLDERS === "on"/);
 assert.doesNotMatch(readFileSync("src/lib/patient-folder-flag.ts", "utf8"), /localStorage\./);
 

@@ -173,7 +173,7 @@ check("parseSlash /new", () => assert.deepEqual(parseSlash("/new Jane Doe"), { c
 check("parseSlash /schedule", () => assert.deepEqual(parseSlash("/schedule john smith fri 3"), { cmd: "schedule", rest: "john smith fri 3" }));
 const read = (f: string) => readFileSync(f, "utf8");
 const sched = read("src/app/(portal)/appointments/page.tsx");
-const pts = read("src/app/(portal)/patients/page.tsx");
+const pts = read("src/app/(portal)/patients/patients-screen.tsx");
 const goat = read("src/components/global-goat.tsx");
 const hb = read("src/lib/handbook-goat.ts") + read("src/lib/handbook-content.ts");
 check("schedule: Existing / New patient toggle", () => { assert.ok(sched.includes('data-testid="patient-mode-toggle"')); assert.ok(sched.includes('"New patient"')); assert.ok(!sched.includes("Create Patient")); assert.ok(!sched.includes("Quick New Patient")); });

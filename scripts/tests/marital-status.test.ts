@@ -38,7 +38,7 @@ test("tokens: {{MARITAL_STATUS}} in macros, reports and documents", () => {
   }
 });
 test("New Patient: Marital Status right after Sex; tidy 3-column grid; same input classes", () => {
-  const s = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+  const s = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
   const at = s.indexOf('data-row="new-patient-identity"');
   const row = s.slice(s.lastIndexOf("<div", at), s.indexOf("</div>", at));
   assert.ok(row.includes("sm:grid-cols-3"));

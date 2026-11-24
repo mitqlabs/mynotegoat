@@ -142,7 +142,7 @@ assert.equal(selectedLabel(openFirm), SELF_ATTORNEY_LABEL);
 
 const patientFile = readFileSync(new URL("../../src/components/patient-case-file.tsx", import.meta.url), "utf8");
 const popupFile = readFileSync(new URL("../../src/components/new-patient-case-popup.tsx", import.meta.url), "utf8");
-const patientsPage = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const patientsPage = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 assert.match(patientFile, /AttorneyFirmSelect/);
 assert.match(popupFile, /AttorneyFirmSelect/);
 assert.match(patientFile, /if \(isSelfRepresentedAttorney\(attorney\)\) return null/);

@@ -45,7 +45,7 @@ assert.equal(
   0,
 );
 
-const page = readFileSync(new URL("../../src/app/(portal)/patients/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../../src/app/(portal)/patients/patients-screen.tsx", import.meta.url), "utf8");
 assert.match(page, /QuickFillBox/);
 assert.match(page, /DuplicateCaseWarning/);
 

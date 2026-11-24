@@ -28,6 +28,52 @@ function rememberCamera(id: string) {
   }
 }
 
+function videoInputs(devices: MediaDeviceInfo[]): CameraOption[] {
+  return devices
+    .filter((d) => d.kind === "videoinput" && d.deviceId)
+    .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+}
+
+/**
+ * Permission first, then list cameras while that capture is still open.
+ * Safari and Chrome on macOS often omit a Continuity Camera until a stream
+ * is running, and drop it again if the stream is stopped first. A facing
+ * mode is not set: that prefers a built-in camera and can hide the iPhone.
+ */
+async function camerasAfterPermission(): Promise<CameraOption[]> {
+  const probe = await navigator.mediaDevices.getUserMedia({ audio: false, video: {} });
+  try {
+    let list = videoInputs(await navigator.mediaDevices.enumerateDevices());
+    if (!list.some((c) => isIphoneCamera(c.label))) {
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      const again = videoInputs(await navigator.mediaDevices.enumerateDevices());
+      if (again.length > 0) list = again;
+    }
+    return list;
+  } finally {
+    probe.getTracks().forEach((t) => t.stop());
+  }
+}
+
+async function openChosenCamera(deviceId: string): Promise<MediaStream> {
+  const attempts: MediaStreamConstraints[] = [
+    { audio: false, video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+    { audio: false, video: { deviceId: { exact: deviceId } } },
+    { audio: false, video: { deviceId: { ideal: deviceId } } },
+  ];
+  let last: unknown;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      last = err;
+      const name = (err as DOMException)?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") throw err;
+    }
+  }
+  throw last instanceof Error ? last : new Error("camera");
+}
+
 function camErrorName(err: unknown): CamState {
   const n = (err as DOMException)?.name;
   if (n === "NotAllowedError" || n === "SecurityError") return "denied";
@@ -94,23 +140,18 @@ export function useOfficeCamera(
       setCamState("none");
       return;
     }
-    if (!permittedRef.current) {
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        probe.getTracks().forEach((t) => t.stop());
+    try {
+      if (!permittedRef.current) {
+        const list = await camerasAfterPermission();
         permittedRef.current = true;
-      } catch (err) {
-        setCamState(camErrorName(err));
+        publishList(list, "refresh");
         return;
       }
-    }
-    try {
-      const list = (await navigator.mediaDevices.enumerateDevices())
-        .filter((d) => d.kind === "videoinput")
-        .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+      const list = videoInputs(await navigator.mediaDevices.enumerateDevices());
       publishList(list, "refresh");
-    } catch (e) {
-      console.warn("[camera] refresh failed", e);
+    } catch (err) {
+      if (!permittedRef.current) setCamState(camErrorName(err));
+      else console.warn("[camera] refresh failed", err);
     }
   }, [publishList]);
 
@@ -149,9 +190,9 @@ export function useOfficeCamera(
         setCamState("none");
         return;
       }
+      let list: CameraOption[] = [];
       try {
-        const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        probe.getTracks().forEach((t) => t.stop());
+        list = await camerasAfterPermission();
       } catch (err) {
         if (cancelled) return;
         setCamState(camErrorName(err));
@@ -159,19 +200,8 @@ export function useOfficeCamera(
       }
       if (cancelled) return;
       permittedRef.current = true;
-      try {
-        const list = (await navigator.mediaDevices.enumerateDevices())
-          .filter((d) => d.kind === "videoinput")
-          .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
-        if (cancelled) return;
-        camerasRef.current = [];
-        publishList(list, "initial");
-      } catch (e) {
-        if (!cancelled) {
-          console.warn("[camera] list failed", e);
-          setCamState("error");
-        }
-      }
+      camerasRef.current = [];
+      publishList(list, "initial");
     })();
     return () => {
       cancelled = true;
@@ -183,11 +213,7 @@ export function useOfficeCamera(
     let cancelled = false;
     stopStream();
     setCamState("starting");
-    navigator.mediaDevices
-      .getUserMedia({
-        video: { deviceId: { exact: cameraId }, width: { ideal: 4032 }, height: { ideal: 3024 } },
-        audio: false,
-      })
+    openChosenCamera(cameraId)
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -212,6 +238,13 @@ export function useOfficeCamera(
   }, [active, cameraId, stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
+
+  // Safari often never fires devicechange when a Continuity Camera wakes up.
+  useEffect(() => {
+    if (!active || camState !== "live") return;
+    const timers = [1500, 4000].map((ms) => window.setTimeout(() => void refreshRef.current(), ms));
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [active, camState]);
 
   const chooseCamera = (id: string) => {
     userPickedRef.current = true;

@@ -33,7 +33,7 @@ t("staff typed 06/26/2026 → sticks through moves, reschedules, cancels, check-
 });
 
 const sched = readFileSync("src/app/(portal)/appointments/page.tsx", "utf8");
-const pts = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
+const pts = readFileSync("src/app/(portal)/patients/patients-screen.tsx", "utf8");
 const file = readFileSync("src/components/patient-case-file.tsx", "utf8");
 t("booking a new patient never saves an Initial Exam (so it can't go stale or look 'typed')", () => {
   const create = sched.slice(sched.indexOf("const created = createPatientRecord({"), sched.indexOf("if (!created)", sched.indexOf("const created = createPatientRecord({")));

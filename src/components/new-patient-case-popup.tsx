@@ -29,7 +29,6 @@ const emptyDraft: CasePopupDraft = { attorney: "", attorneyPhone: "", dateOfLoss
 export function NewPatientCasePopup({
   initial,
   attorneys,
-  purpose,
   message,
   conflict,
   onCaseNumber,
@@ -235,13 +234,6 @@ export function NewPatientCasePopup({
         </div>
 
         <div className="grid gap-2 px-5 pb-4">
-          {!showPatientPicker && (
-          <p className="text-xs text-[var(--text-muted)]">
-            {purpose === "intake"
-              ? "Save writes this onto the chart. An exam date and time book a New Patient visit and set the Initial Exam date. They leave New Patient Intake only when an attorney is set (Self counts) and that exam is booked or an Initial Exam date is saved. Attorney alone keeps them here."
-              : "Save keeps this with the new patient. Create Patient books the visit. They stay in New Patient Intake until an attorney is set (Self counts) and an Initial Exam date is saved or a New Patient visit is booked. The exam date is saved as the Initial Exam."}
-          </p>
-          )}
           {message && !conflict && (
             <p className="text-sm font-semibold text-[#b43b34]" role="alert">{message}</p>
           )}
@@ -280,16 +272,16 @@ function SlotConflict({
   onBookAnyway: (on: boolean) => void;
 }) {
   return (
-    <div className="grid gap-2 rounded-xl border border-[#efc9c5] bg-[#fdf4f3] px-3 py-2.5" data-testid="new-patient-slot-issue" role="alert">
-      <p className="text-sm font-semibold text-[#b43b34]">
+    <div className="grid gap-2 rounded-xl border border-[#c9423a] px-3 py-2.5" data-testid="new-patient-slot-issue" role="alert">
+      <p className="text-sm font-semibold text-[#c9423a]">
         {to12hLabel(conflict.time)} {conflict.reason === "outside" ? "is outside office hours that day." : "is taken."}
       </p>
       {conflict.suggestions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-[var(--text-muted)]">{conflict.reason === "outside" ? "Open times:" : "Open nearby:"}</span>
+          <span className="text-sm text-[var(--text-main)]">{conflict.reason === "outside" ? "Open times:" : "Open nearby:"}</span>
           {conflict.suggestions.map((time) => (
             <button
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
+              className="rounded-lg border border-[var(--line-soft)] px-2.5 py-1 text-sm font-semibold text-[var(--text-main)]"
               data-testid="new-patient-slot-chip"
               key={time}
               onClick={() => onPick(time)}
@@ -301,22 +293,17 @@ function SlotConflict({
         </div>
       )}
       {conflict.canOverride ? (
-        <label className="flex items-start gap-2 text-sm" data-testid="new-patient-book-anyway">
+        <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-main)]" data-testid="new-patient-book-anyway">
           <input
             checked={bookAnyway}
-            className="mt-0.5 h-4 w-4"
+            className="h-4 w-4"
             onChange={(event) => onBookAnyway(event.target.checked)}
             type="checkbox"
           />
-          <span>
-            <span className="block font-semibold">Book anyway at {to12hLabel(conflict.time)}</span>
-            <span className="block text-xs text-[var(--text-muted)]">
-              {conflict.reason === "outside" ? "Books it outside office hours." : "Double-books this time."} Then click Save.
-            </span>
-          </span>
+          Book anyway at {to12hLabel(conflict.time)}
         </label>
       ) : (
-        <p className="text-xs text-[var(--text-muted)]">Overrides are turned off in Settings → Schedule, so pick an open time.</p>
+        <p className="text-sm text-[var(--text-main)]">Overrides are turned off in Settings → Schedule, so pick an open time.</p>
       )}
     </div>
   );

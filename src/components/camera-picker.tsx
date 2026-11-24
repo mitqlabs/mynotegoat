@@ -57,8 +57,10 @@ export function CameraPicker({
       <button className="btn btn-secondary btn-sm" disabled={refreshing} onClick={onRefresh} title="Look for cameras again" type="button">
         {refreshing ? "Refreshing…" : "Refresh"}
       </button>
-      {cameras.length > 0 && !continuityListed && (
-        <span className="text-xs text-[var(--text-muted)]">Don&apos;t see your Device? Lock it, set it near the Mac, then click Refresh.</span>
+      {!continuityListed && (
+        <p className="basis-full text-sm text-[var(--text-main)]">
+          Don&apos;t see your iPhone? Turn on Continuity Camera on the iPhone (Settings &gt; General &gt; AirPlay &amp; Continuity), then click Refresh.
+        </p>
       )}
     </div>
   );
