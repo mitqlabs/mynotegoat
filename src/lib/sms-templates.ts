@@ -4,8 +4,9 @@ import type { OfficeSettings } from "@/lib/office-settings";
 
 import type { SmsTemplate } from "@/lib/sms-template-core";
 export type { SmsTemplate } from "@/lib/sms-template-core";
-import { DEFAULT_REMINDER_BODY, normalizeSmsTemplates } from "@/lib/sms-template-core";
-export { DEFAULT_REMINDER_BODY, normalizeSmsTemplates };
+import { BLANK_REMINDER_BODY, DEFAULT_REMINDER_BODY, normalizeSmsTemplates } from "@/lib/sms-template-core";
+export { BLANK_REMINDER_BODY, DEFAULT_REMINDER_BODY, normalizeSmsTemplates };
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export type { SmsTokenContext } from "@/lib/sms-render";
 import type { SmsTokenContext } from "@/lib/sms-render";
@@ -51,6 +52,12 @@ export function getDefaultSmsTemplates(): SmsTemplate[] {
     createdAt: created,
     updatedAt: created,
   });
+  if (isBlankStarterWorkspace()) {
+    return [
+      mk("Appointment Reminder", BLANK_REMINDER_BODY),
+      mk("Birthday", "Happy birthday, {{FIRST_NAME}}!"),
+    ];
+  }
   return [
     mk("🎂 Birthday", "Happy birthday, {{FIRST_NAME}}!"),
     mk("⏰ Appointment Reminder", DEFAULT_REMINDER_BODY),

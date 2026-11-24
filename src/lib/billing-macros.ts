@@ -1,3 +1,5 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
+
 export interface TreatmentMacro {
   id: string;
   name: string;
@@ -166,6 +168,15 @@ function createBundle(id: string, name: string, diagnosisIds: string[]): Diagnos
 }
 
 export function getDefaultBillingMacroLibrary(): BillingMacroLibraryConfig {
+  if (isBlankStarterWorkspace()) {
+    return {
+      treatments: [],
+      diagnosisFolders: [createDiagnosisFolder(GENERAL_DIAGNOSIS_FOLDER_ID, "General")],
+      diagnoses: [],
+      bundles: [],
+      packages: [],
+    };
+  }
   const diagnoses = [
     createDiagnosis("dx-cervical-sprain", "S13.4XXA", "Sprain of ligaments of cervical spine, initial encounter"),
     createDiagnosis("dx-cervical-strain", "S16.1XXA", "Strain of muscle, fascia and tendon at neck level, initial encounter"),

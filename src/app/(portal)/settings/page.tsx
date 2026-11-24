@@ -6,6 +6,7 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import Link from "next/link";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { hasSafetyBackup, recoverFromRemote, restoreFromSafetyBackup } from "@/lib/cloud-state";
+import { openSetupWalkthrough } from "@/lib/setup-walkthrough";
 import { BillingMacroSettingsPanel } from "@/components/billing-macro-settings-panel";
 import { DocumentTemplateSettingsPanel } from "@/components/document-template-settings-panel";
 import { MacroSettingsPanel } from "@/components/macro-settings-panel";
@@ -3291,6 +3292,9 @@ export default function SettingsPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button className="btn btn-secondary" onClick={() => openSetupWalkthrough()} type="button">
+            Setup
+          </button>
           <button
             className="btn btn-secondary"
             onClick={() => setAllSections(true)}

@@ -1193,6 +1193,8 @@ async function bootstrapTableBackedEntities() {
           "casemate.team-settings.v1",
           "casemate.team-member-order.v1",
           "casemate.onboarding.v1",
+          "casemate.workspace-starter.v1",
+          "casemate.setup-walkthrough.v1",
         ],
       };
 
@@ -1211,6 +1213,15 @@ async function bootstrapTableBackedEntities() {
         ? new Map(Array.from(remoteKvRows, ([key, row]) => [key, row.value] as const))
         : null;
       if (remoteKv !== null && kvRes) {
+        try {
+          const starter = await import("@/lib/workspace-starter");
+          await starter.settleWorkspaceStarter({
+            cloudKeys: kvRes.meta.map((row) => row.key),
+            cloudMarker: remoteKv.get(starter.WORKSPACE_STARTER_KEY),
+          });
+        } catch (starterErr) {
+          console.error("[Cloud Sync] workspace starter decision failed (leaving this office unchanged):", starterErr);
+        }
         if (kvRes.skipped > 0) {
           console.info(`[Cloud Sync] workspace_kv: ${kvRes.skipped} unchanged key(s) skipped, ${remoteKv.size} downloaded.`);
         }

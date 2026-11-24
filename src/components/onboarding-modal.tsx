@@ -4,6 +4,7 @@ import { NumberInput } from "@/components/number-input";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { mayShowSetupWizard, probeCloudOffice, type CloudOfficeProbe } from "@/lib/onboarding-gate";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -74,7 +75,9 @@ export function OnboardingModal() {
 
   const cloudAllows = mayShowSetupWizard({ isTeamMember: false, localCompleted, probe });
 
-  if (!shouldShow || dismissed || !cloudAllows) return null;
+  // A new office uses the setup walkthrough. This older wizard stays for
+  // an empty legacy office only.
+  if (!shouldShow || dismissed || !cloudAllows || isBlankStarterWorkspace()) return null;
 
   const finish = () => {
     markComplete();

@@ -93,6 +93,10 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.team-settings.v1": "workspace",
   "casemate.team-member-order.v1": "workspace",
   "casemate.onboarding.v1": "workspace",
+  // Set once when a new office is created. Missing means the original defaults.
+  "casemate.workspace-starter.v1": "workspace",
+  // Setup walkthrough checkboxes. Shared by the office, not this browser.
+  "casemate.setup-walkthrough.v1": "workspace",
   // Bumped when the demo office is reseeded so this browser drops yesterday's edits.
   "casemate.demo-generation.v1": "workspace",
   "casemate.admin-access.v1": "workspace",

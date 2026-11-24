@@ -1,3 +1,5 @@
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
+
 export interface AppointmentTypePatientTypes {
   pi: boolean;
   cash: boolean;
@@ -117,6 +119,8 @@ function ensureSingleDefault(types: AppointmentTypeConfig[]) {
 }
 
 export function getDefaultAppointmentTypes(): AppointmentTypeConfig[] {
+  // A new office adds its own types. Existing offices keep the list below.
+  if (isBlankStarterWorkspace()) return [];
   return defaultAppointmentTypes.map((type, index) => ({
     ...type,
     id: createTypeId(`default-${index + 1}`),
