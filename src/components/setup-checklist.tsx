@@ -56,16 +56,15 @@ export function SetupChecklist() {
     const client = getSupabaseBrowserClient();
     const workspaceId = getActiveWorkspaceIdSync();
     if (client && workspaceId) {
-      void client
-        .from("reminder_devices")
-        .select("revoked_at, last_seen_at")
-        .eq("workspace_id", workspaceId)
-        .then(({ data }) => {
-          if (cancel || !data) return;
-          const saved = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
-          if (messagingSetupComplete(saved.messagingSetup, data)) setMessagingDone(true);
-        })
-        .catch(() => undefined);
+      void (async () => {
+        const { data } = await client
+          .from("reminder_devices")
+          .select("revoked_at, last_seen_at")
+          .eq("workspace_id", workspaceId);
+        if (cancel || !data) return;
+        const saved = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
+        if (messagingSetupComplete(saved.messagingSetup, data)) setMessagingDone(true);
+      })();
     }
     return () => {
       cancel = true;
